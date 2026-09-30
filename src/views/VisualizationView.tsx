@@ -1082,16 +1082,17 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             // All rows available locally — use in-memory data
             // When sample size covers all rows, preserve original order
             // (_.sampleSize shuffles, which destroys data-driven sort order)
-            const rowsToUse = sampleSize >= table.rows.length
-                ? table.rows
-                : _.sampleSize(table.rows, sampleSize);
+            const preparedRows = prepVisTable(table.rows, conceptShelfItems, focusedChart.encodingMap);
+            const rowsToUse = sampleSize >= preparedRows.length
+                ? preparedRows
+                : _.sampleSize(preparedRows, sampleSize);
             const clonedRows = structuredClone(rowsToUse);
             const versionId = computeVersionId();
             setVisTableRows(clonedRows);
-            setVisTableTotalRowCount(table.rows.length);
+            setVisTableTotalRowCount(preparedRows.length);
             setDataVersion(versionId);
             // Cache for instant reuse on chart revisit
-            displayRowsCache.set(versionId, { rows: clonedRows, totalCount: table.rows.length });
+            displayRowsCache.set(versionId, { rows: clonedRows, totalCount: preparedRows.length });
             dispatch(dfActions.bumpDisplayRowsTick());
         }
     }

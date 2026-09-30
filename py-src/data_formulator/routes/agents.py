@@ -197,8 +197,8 @@ def _set_cors(response):
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     return response
 
-def get_client(model_config, trusted=False):
-    """Build a LiteLLM client for *model_config*.
+def _resolve_global_model(model_config, trusted=False):
+    """Resolve a global model claim and return its configuration and trust status.
 
     ``trusted`` marks a config that came from the server-side registry rather
     than from a request body.  Callers that already resolved a config through
@@ -229,6 +229,12 @@ def get_client(model_config, trusted=False):
         model_config = resolved
         trusted = True
 
+    return model_config, trusted
+
+
+def get_client(model_config, trusted=False, *, use_small_model=False):
+    """Build a client using Model or the same connection's optional Small Model."""
+    model_config, trusted = _resolve_global_model(model_config, trusted)
     from data_formulator.configuration import user_models_disabled
     if user_models_disabled() and not trusted:
         raise AppError(
@@ -242,6 +248,12 @@ def get_client(model_config, trusted=False):
     for key in model_config:
         if isinstance(model_config[key], str):
             model_config[key] = model_config[key].strip()
+
+    small_model = model_config.get('small_model')
+    if small_model is not None and not isinstance(small_model, str):
+        raise AppError(ErrorCode.INVALID_REQUEST, 'Small Model must be a model name on the same endpoint.')
+    if use_small_model and small_model:
+        model_config['model'] = small_model
 
     # Validate caller-provided api_base against the allowlist (SSRF
     # protection).  Registry configs are exempt because their api_base is set
@@ -273,6 +285,15 @@ def get_client(model_config, trusted=False):
     )
 
     return client
+
+
+def get_test_clients(model_config, trusted=False):
+    model_config, trusted = _resolve_global_model(model_config, trusted)
+    clients = [get_client(model_config, trusted=trusted)]
+    small_model = model_config.get('small_model')
+    if small_model and small_model.strip() != model_config['model'].strip():
+        clients.append(get_client(model_config, trusted=trusted, use_small_model=True))
+    return clients
 
 
 @agent_bp.route('/list-global-models', methods=['GET', 'POST'])
@@ -315,9 +336,9 @@ def check_available_models():
         error = None
 
         try:
-            client = get_client(full_config, trusted=True)
             logger.info(f"  [{model_id}] Sending connectivity ping (max_tokens=3)...")
-            client.ping(timeout=10)
+            for client in get_test_clients(full_config, trusted=True):
+                client.ping(timeout=10)
             status = "connected"
             logger.info(f"  [{model_id}] Connected ({time.time() - t0:.1f}s)")
         except Exception as e:
@@ -362,21 +383,16 @@ def test_model():
     logger.debug(content)
 
     try:
-        client = get_client(content['model'])
-        response = client.get_completion(
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": "Respond 'I can hear you.' if you can hear me. Do not say anything other than 'I can hear you.'"},
-            ]
-        )
-
-        logger.debug(f"model: {content['model']}")
-        logger.debug(f"welcome message: {response.choices[0].message.content}")
-
-        if "I can hear you." in response.choices[0].message.content:
-            return json_ok({"model": content['model'], "message": ""})
-        else:
-            raise AppError(ErrorCode.AGENT_ERROR, "Model responded but did not pass connectivity check")
+        for client in get_test_clients(content['model']):
+            response = client.get_completion(
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": "Respond 'I can hear you.' if you can hear me. Do not say anything other than 'I can hear you.'"},
+                ]
+            )
+            if "I can hear you." not in (response.choices[0].message.content or ''):
+                raise AppError(ErrorCode.AGENT_ERROR, f"Model {client.model} responded but did not pass connectivity check")
+        return json_ok({"model": content['model'], "message": ""})
     except AppError:
         raise
     except Exception as e:
@@ -424,7 +440,7 @@ def sort_data_request():
     content = request.get_json()
 
     try:
-        client = get_client(content['model'])
+        client = get_client(content['model'], use_small_model=True)
 
         language_instruction = get_language_instruction(mode="compact")
         agent = SortDataAgent(client=client, language_instruction=language_instruction)
@@ -451,7 +467,7 @@ def derive_starter_questions_request():
     content = request.get_json()
 
     try:
-        client = get_client(content['model'])
+        client = get_client(content['model'], use_small_model=True)
 
         n = content.get('n', 2)
         language_instruction = get_language_instruction(mode="compact")
@@ -825,7 +841,7 @@ def request_code_expl():
 
     logger.info("# code-expl request")
     content = request.get_json()
-    client = get_client(content['model'])
+    client = get_client(content['model'], use_small_model=True)
 
     input_tables = content["input_tables"]
     code = content["code"]
@@ -996,7 +1012,7 @@ def workspace_name():
         raise AppError(ErrorCode.INVALID_REQUEST, "No model configured")
 
     try:
-        client = get_client(model_config)
+        client = get_client(model_config, use_small_model=True)
         ctx = content.get('context', {})
 
         language_instruction = get_language_instruction(mode="full")
@@ -1011,91 +1027,6 @@ def workspace_name():
         raise
     except Exception as e:
         logger.warning("Failed to generate workspace name", exc_info=e)
-        raise classify_and_wrap_llm_error(e) from e
-
-
-# ---------------------------------------------------------------------------
-# NL → structured filter conditions
-# ---------------------------------------------------------------------------
-
-@agent_bp.route('/nl-to-filter', methods=['POST'])
-def nl_to_filter():
-    """Translate a natural language filter instruction to structured conditions.
-
-    Request body:
-        model: model config object (same as other agent routes)
-        columns: [{name, type}, ...]  — the table's column schema
-        instruction: str — the user's NL filter description
-
-    Response:
-        {status: "success", data: {conditions, sort_columns?, sort_order?, limit?}}
-    """
-    try:
-        content = request.get_json() or {}
-        instruction = (content.get("instruction") or "").strip()
-        columns = content.get("columns") or []
-        model_config = content.get("model")
-
-        if not instruction:
-            return json_ok({"conditions": [], "sort_columns": [], "sort_order": None, "limit": None})
-
-        if not model_config:
-            raise AppError(ErrorCode.INVALID_REQUEST, "No model configured")
-
-        client = get_client(model_config)
-        agent = SimpleAgents(client=client)
-        result = agent.nl_to_filter(columns=columns, instruction=instruction)
-
-        return json_ok(result)
-
-    except AppError:
-        raise
-    except json.JSONDecodeError:
-        raise AppError(ErrorCode.AGENT_ERROR, "Failed to parse LLM response as JSON")
-    except Exception as e:
-        logger.warning(f"NL-to-filter failed: {e}")
-        raise classify_and_wrap_llm_error(e) from e
-
-
-@agent_bp.route('/classify-chart-intent', methods=['POST'])
-def classify_chart_intent():
-    """Classify a chart-prompt as STYLE or DATA.
-
-    Used by the encoding-shelf input on Enter to route the prompt to either
-    the chart-restyle agent (visual changes) or the data agent (data shape /
-    chart-type changes). Multilingual by design — keyword heuristics are too
-    brittle for non-English prompts. See agent_simple.classify_chart_intent
-    and the chat discussion in design history.
-
-    Request body:
-        model: model config object
-        instruction: str — the user's NL prompt
-
-    Response:
-        {status: "success", data: {intent: "style" | "data"}}
-        On any failure the agent itself defaults to 'data' (the safe choice);
-        only transport / model-config errors return non-2xx here.
-    """
-    try:
-        content = request.get_json() or {}
-        instruction = (content.get("instruction") or "").strip()
-        model_config = content.get("model")
-
-        if not instruction:
-            return json_ok({"intent": "data"})
-
-        if not model_config:
-            raise AppError(ErrorCode.INVALID_REQUEST, "No model configured")
-
-        client = get_client(model_config)
-        agent = SimpleAgents(client=client)
-        intent = agent.classify_chart_intent(instruction=instruction)
-        return json_ok({"intent": intent})
-
-    except AppError:
-        raise
-    except Exception as e:
-        logger.warning(f"classify-chart-intent failed: {e}")
         raise classify_and_wrap_llm_error(e) from e
 
 

@@ -296,7 +296,7 @@ def resource_options(section: str, identifier: str) -> dict:
 
 def public_connection_definition(section: str, definition: dict) -> dict:
     if section == 'models':
-        allowed = {'endpoint', 'model', 'api_base', 'api_version', 'auth_mode', 'managed_identity_client_id'}
+        allowed = {'endpoint', 'model', 'small_model', 'api_base', 'api_version', 'auth_mode', 'managed_identity_client_id'}
         if (not isinstance(definition.get('endpoint'), str) or not isinstance(definition.get('model'), str)
                 or not definition['endpoint'].strip() or not definition['model'].strip()
                 or any(not isinstance(value, str) for value in definition.values())):

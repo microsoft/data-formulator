@@ -42,11 +42,18 @@ describe('ClarificationPanel', () => {
     render(<><ExplanationPanel content="Normal answer" onClose={vi.fn()} onDelete={vi.fn()} />
       <ToolActivityPanel execution={execution} onClose={vi.fn()} /></>);
     const bodySize = getComputedStyle(screen.getByText('Normal answer').parentElement!.parentElement!).fontSize;
+    const frame = screen.getByRole('group', { name: kind === 'terminal' ? 'terminal.command' : 'tool.pythonCode' });
+    const code = frame.querySelector('pre')!;
     expect(getComputedStyle(screen.getByText('Run a check')).fontSize).toBe(bodySize);
-    expect(getComputedStyle(screen.getByText(kind === 'terminal' ? 'echo result' : 'print(42)')).fontSize).toBe(bodySize);
+    expect(getComputedStyle(code).fontSize).toBe(bodySize);
     expect(getComputedStyle(screen.getByText('Check output')).fontSize).toBe(bodySize);
     expect(screen.getByText('Run a check')).toHaveStyle({ lineHeight: '1.6' });
-    expect(screen.getByText(kind === 'terminal' ? 'echo result' : 'print(42)')).toHaveStyle({ lineHeight: '1.6' });
+    expect(code).toHaveStyle({ lineHeight: '1.6' });
+    expect(code.textContent).toBe(kind === 'terminal' ? 'echo result' : 'print(42)');
+    expect(code.querySelector(`code.language-${kind === 'terminal' ? 'bash' : 'python'} .token`)).not.toBeNull();
+    expect(screen.getByText('Check output').querySelector('.token')).toBeNull();
+    expect(frame).toContainElement(screen.getByText('terminal.output'));
+    expect(frame).toContainElement(screen.getByText('Check output'));
   });
 
   it('opens only the selected command directly in the panel', () => {
@@ -76,9 +83,12 @@ describe('ClarificationPanel', () => {
         code: 'print(total)', output: '42', error: 'Example error', status: 'failed' }} />);
     expect(screen.queryByText('The total is 42.')).toBeNull();
     expect(screen.getAllByTestId('CodeIcon')).toHaveLength(1);
-    expect(screen.getByText('print(total)')).toBeVisible();
+    expect(screen.getByRole('group', { name: 'tool.pythonCode' }).querySelector('code')).toHaveTextContent('print(total)');
     expect(screen.getByText('42')).toBeVisible();
     expect(screen.getByText('Example error')).toBeVisible();
+    expect(screen.getByRole('group', { name: 'tool.pythonCode' })).toContainElement(screen.getByText('terminal.error'));
+    expect(screen.getByText('Example error').tagName).toBe('PRE');
+    expect(screen.queryByText(/terminal.directory/)).toBeNull();
     expect(screen.queryByRole('button', { expanded: false })).toBeNull();
     expect(screen.queryByRole('tablist')).toBeNull();
   });

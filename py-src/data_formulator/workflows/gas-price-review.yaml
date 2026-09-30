@@ -133,12 +133,12 @@ steps:
       peak observations, and strongest descriptive seasonal differences. State
       all category filters, units, missing-data exclusions, and the difference
       between historical observations and current prices. After publishing the
-      report, run an independent verification script against raw inputs and all
-      final derived tables; verify headline numbers and embedded chart IDs.
-      Preserve still-valid earlier checks; rerun only invalidated checks. Record
-      the final checker using post-publication evidence and complete_workflow
-      only after accounting for all four deliverables.
+      report, review its headline numbers and embedded chart IDs against existing
+      evidence and the final derived tables. Preserve still-valid earlier checks;
+      investigate only unsupported claims, inconsistencies, or changed inputs.
+      Record the final checker citing the report and supporting evidence, then
+      complete_workflow after accounting for all four deliverables.
     checkers:
       - id: fuel_final_delivery
-        condition: Three distinct native charts and their supporting data exist, report references and numerical claims match final outputs, and successful independent verification ran after the report.
+        condition: Three distinct native charts and their supporting data exist, and the published report's references and numerical claims agree with final outputs and supporting evidence.
         on_fail: brief

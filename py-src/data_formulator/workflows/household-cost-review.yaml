@@ -124,13 +124,13 @@ steps:
       change. State quantities, baseline, missing-data exclusions, source snapshot
       dates, and that the figures are historical sample prices, not current quotes
       or an official inflation index. Avoid causal claims unsupported by this data.
-      After publishing the report, run an independent verification script against
-      the raw inputs and final published chart data, including the basket chart's
-      derived table. Re-record
-      every required checker against current evidence after the final output;
-      earlier checks may have been invalidated by later publications. Verify all
-      three chart references and every headline number before complete_workflow.
+      After publishing the report, review all three chart references and every
+      headline number against existing evidence and the final published chart
+      data, including the basket chart's derived table. Preserve valid earlier
+      checks; investigate only unsupported claims, inconsistencies, or changed
+      inputs. Record the final checker citing the report and supporting evidence,
+      then complete_workflow after accounting for all four deliverables.
     checkers:
       - id: final_delivery
-        condition: Three distinct native charts exist with monthly component costs and totals in the basket chart's derived table, the report embeds the correct chart IDs, all stated dates and headline numbers agree with final outputs and raw data, and all required checks have fresh post-publication evidence.
+        condition: Three distinct native charts exist with monthly component costs and totals in the basket chart's derived table, the report embeds the correct chart IDs, and all stated dates and headline numbers agree with final outputs and supporting evidence.
         on_fail: brief

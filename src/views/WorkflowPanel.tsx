@@ -22,6 +22,8 @@ import { readingTypography, sidebarPrimaryActionSx, sidebarToolbarSx } from '../
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import CodeIcon from '@mui/icons-material/Code';
+import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
@@ -37,7 +39,7 @@ import { notifyWorkspaceFilesChanged } from '../app/workspaceService';
 import { createConversationRootId, createDictTable, computeInsightKey, FieldItem, TextTurn, ClarificationResponse } from '../components/ComponentType';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { textVar, iconVar } from '../app/layout';
-import { TerminalApprovalDialog, TerminalProposal } from '../components/TerminalApprovalDialog';
+import { ExecutionCodeBlock, formatTerminalCommand, TerminalApprovalDialog, TerminalProposal } from '../components/TerminalApprovalDialog';
 import { ConnectorFormCard } from '../components/ConnectorFormCard';
 import { parseDataOperation } from '../dataOperations/models';
 import { ClarificationPanel, FailedDraftPanel } from './AgentPausePanel';
@@ -69,7 +71,7 @@ export interface Run {
     name?: string; instance?: { name: string; overview?: string; prompt?: string; deliverables?: string[]; steps?: { id: string; description?: string; instructions: string; next?: string;
         checkers?: { id: string; condition?: string; when?: 'before' | 'during' | 'after'; on_fail?: string }[] }[] }; report?: string; calls?: number; tool_calls?: number;
     checks?: Record<string, { status: string; explanation: string; evidence_ids: string[] }>;
-    evidence?: Record<string, { tool: string; text: string; call?: number; step_id?: string; plan_revision?: number; details?: Record<string, string> }>;
+    evidence?: Record<string, { tool: string; text: string; call?: number; step_id?: string; plan_revision?: number; details?: Record<string, string>; input?: Record<string, unknown> }>;
     transitions?: { from: string; to: string; reason: string; plan_revision?: number }[];
     artifacts?: string[];
     terminal_request?: TerminalProposal;
@@ -347,23 +349,13 @@ export async function publishWorkflowRun(run: Run, workspaceId: string) {
 const executions = new Map<string, AbortController>();
 
 export function selectChatWorkflow(state: DataFormulatorState): TextTurn | undefined {
-    const active = state.textTurns.filter(turn => turn.workflow && ['running', 'paused'].includes(turn.workflow.status));
     const focus = state.focusedId;
-    const nodeId = focus?.type === 'text' ? focus.textId : focus?.type === 'chart'
-        ? dfSelectors.getAllCharts(state).find(chart => chart.id === focus.chartId)?.tableRef
-        : focus?.type === 'table' ? focus.tableId : focus?.type === 'report' ? focus.reportId
-        : focus?.type === 'file' ? state.fileNodes.find(file => file.path === focus.fileName)?.id
-        : focus?.type === 'reference' ? focus.referenceId : undefined;
-    let currentId = nodeId;
-    const seen = new Set<string>();
-    while (currentId && !seen.has(currentId)) {
-        seen.add(currentId);
-        const owner = active.find(turn => turn.id === currentId || turn.outputIds?.includes(currentId!));
-        if (owner) return owner;
-        currentId = state.textTurns.find(turn => turn.id === currentId)?.parentNodeId
-            || state.loadedTableNodes.find(node => node.id === currentId)?.parentNodeId;
-    }
-    return undefined;
+    if (focus?.type !== 'text') return undefined;
+    const focusedTurn = state.textTurns.find(turn => turn.id === focus.textId);
+    const workflowTurn = focusedTurn?.workflowCardFor
+        ? state.textTurns.find(turn => turn.id === focusedTurn.workflowCardFor) : focusedTurn;
+    return workflowTurn?.workflow && ['running', 'paused'].includes(workflowTurn.workflow.status)
+        ? workflowTurn : undefined;
 }
 
 function canAnswerWorkflowQuestion(turn: TextTurn) {
@@ -567,10 +559,11 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
     useEffect(() => {
         const needsOutputOrder = turn.outputIds === undefined && savedLog === undefined;
         const needsArtifacts = workflow?.artifacts === undefined && savedPlan === undefined;
+        const needsInputs = savedLog === undefined && workflow?.log?.some(entry => entry.input === undefined);
         const needsPlan = workflow?.steps.some(step => step.checkers === undefined)
             || workflow?.planHistory?.some(plan => plan.steps.some(step => step.checkers === undefined))
             || workflow?.overview === undefined;
-        if (!canvas || !workflow || historyUnavailable || (!needsArtifacts && !needsOutputOrder && (workflow.log !== undefined || savedLog !== undefined)
+        if (!canvas || !workflow || historyUnavailable || (!needsInputs && !needsArtifacts && !needsOutputOrder && (workflow.log !== undefined || savedLog !== undefined)
             && (!needsPlan || savedPlan !== undefined))) return;
         const workspaceId = store.getState().activeWorkspace?.id;
         if (!workspaceId) return;
@@ -624,14 +617,19 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
     const sectionContentSx = { py: 0.75, minWidth: 0 };
     const activeTool = workflow.status === 'running' ? workflow.activeTool : undefined;
     const toolTitle = (details?: Record<string, string>) => details?.title || details?.purpose || details?.display_name || details?.table_name || details?.filename;
-    const renderToolDetails = (details?: Record<string, string>) => details && <Box component="dl" sx={{ m: 0, display: 'grid',
+    const renderToolDetails = (details?: Record<string, string>, summary?: string) => {
+        const entries = Object.entries(details || {}).filter(([, value]) => value && value !== summary);
+        return entries.length > 0 ? <Box component="dl" sx={{ m: 0, display: 'grid',
         gridTemplateColumns: 'max-content minmax(0, 1fr)', columnGap: 1, fontSize: textVar.xs, color: 'text.secondary' }}>
-        {Object.entries(details).filter(([, value]) => value).map(([name, value]) => <React.Fragment key={name}>
+        {entries.map(([name, value]) => <React.Fragment key={name}>
             <Box component="dt" sx={{ textTransform: 'capitalize' }}>{name.replaceAll('_', ' ')}</Box>
             <Box component="dd" sx={{ m: 0, overflowWrap: 'anywhere' }}>{value}</Box>
         </React.Fragment>)}
-    </Box>;
-    const allLog = workflow.log || savedLog || [];
+        </Box> : null;
+    };
+    const savedInputs = new Map(savedLog?.map(entry => [entry.id, entry.input]));
+    const allLog = (workflow.log || savedLog || []).map(entry => entry.input !== undefined
+        ? entry : { ...entry, input: savedInputs.get(entry.id) });
     const artifacts = workflow.artifacts || (savedPlan ? workflowArtifacts(savedPlan) : []);
     const unassignedArtifacts = artifacts.filter(artifact => !artifact.stepId);
     const log = allLog.filter(entry => (entry.plan_revision || 0) === (workflow.planRevision || 0));
@@ -661,34 +659,48 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
         <Box sx={{ minWidth: 0 }}><Typography sx={{ fontSize: textVar.sm, fontWeight: 600 }}>{check.id} · {check.status}</Typography>
             <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', lineHeight: 1.6 }}>{check.explanation}</Typography></Box>
     </Box>);
-    const renderCall = (entry: typeof log[number]) => {
+    const callPresentation = (tool: string) => tool === 'execute_python_script'
+        ? { type: 'python', label: 'Python', Icon: CodeIcon }
+        : tool === 'run_terminal' ? { type: 'terminal', label: 'Terminal', Icon: TerminalIcon }
+        : { type: 'tool', label: 'Tool', Icon: BuildOutlinedIcon };
+    const renderCallBody = (tool: string, input?: Record<string, unknown>, text?: string) => {
+        const presentation = callPresentation(tool);
+        let language: 'python' | 'bash' | 'json' = 'json';
+        let code = input === undefined ? undefined : JSON.stringify(input, null, 2);
+        if (presentation.type === 'python' && typeof input?.code === 'string') {
+            code = input.code;
+            language = 'python';
+        } else if (presentation.type === 'terminal' && Array.isArray(input?.argv)
+                && input.argv.every((argument): argument is string => typeof argument === 'string')) {
+            code = formatTerminalCommand(input.argv);
+            language = 'bash';
+        }
         let parsed: unknown;
-        try { parsed = JSON.parse(entry.text); } catch {}
-        const fields = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-            ? Object.entries(parsed).filter(([, value]) => value !== null && ['string', 'number', 'boolean'].includes(typeof value)) : [];
-        return <Box component="details" key={entry.id} data-workflow-call={entry.id}>
+        if (text !== undefined) {
+            try { parsed = JSON.parse(text); } catch {}
+        }
+        const payload = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
+        const result = text === undefined ? undefined : presentation.type === 'terminal' && payload
+            ? payload.result && typeof payload.result === 'object' && !Array.isArray(payload.result)
+                ? payload.result as Record<string, unknown> : payload
+            : { output: parsed === undefined ? text : JSON.stringify(parsed, null, 2) };
+        return <ExecutionCodeBlock code={code} language={language} label={`${presentation.label} input`}
+            copyLabel="Copy input" result={result} />;
+    };
+    const renderCall = (entry: typeof log[number]) => {
+        const presentation = callPresentation(entry.tool);
+        return <Box component="details" key={entry.id} data-workflow-call={entry.id} data-workflow-call-type={presentation.type}>
             <Box component="summary" sx={{ display: 'flex', alignItems: 'center', gap: 0.75, '&&': { py: 0.25 } }}>
                 <ChevronRightIcon className="workflow-chevron" sx={{ fontSize: 16, flexShrink: 0 }} />
-                <TerminalIcon sx={{ fontSize: 16, color: 'text.secondary', flexShrink: 0 }} />
+                <presentation.Icon sx={{ fontSize: 16, color: 'text.secondary', flexShrink: 0 }} />
+                <Box component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary', flexShrink: 0 }}>{presentation.label}</Box>
                 <Box component="span" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{entry.call !== undefined ? `Call ${entry.call}: ` : ''}{entry.tool.replaceAll('_', ' ')}
                     {toolTitle(entry.details) && <Box component="span" sx={{ color: 'text.secondary' }}> · {toolTitle(entry.details)}</Box>}
                 </Box>
             </Box>
             <Box sx={{ pl: { xs: 1, sm: 4 }, pb: 1.5 }}>
-                {renderToolDetails(entry.details)}
-                {fields.length > 0 ? <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: 'minmax(80px, 140px) minmax(0, 1fr)', gap: 1 }}>
-                    {fields.map(([name, value]) => <React.Fragment key={name}>
-                        <Box component="dt" sx={{ color: 'text.secondary', overflowWrap: 'anywhere' }}>{name.replaceAll('_', ' ')}</Box>
-                        <Box component="dd" sx={{ m: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{String(value)}</Box>
-                    </React.Fragment>)}
-                </Box> : parsed === undefined ? <Typography sx={{ fontSize: textVar.sm, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{entry.text}</Typography> : null}
-                {parsed !== undefined && <Box component="details" sx={{ mt: fields.length ? 1 : 0 }}>
-                    <Box component="summary" sx={{ color: 'text.secondary' }}>Raw JSON</Box>
-                    <Box component="pre" sx={{ fontFamily: 'var(--df-font-mono, monospace)', fontSize: textVar.sm, lineHeight: 1.6,
-                        whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', m: 0, p: 1.5, bgcolor: 'action.hover', maxHeight: 360, overflow: 'auto' }}>
-                        {JSON.stringify(parsed, null, 2)}
-                    </Box>
-                </Box>}
+                {renderToolDetails(entry.details, toolTitle(entry.details))}
+                {renderCallBody(entry.tool, entry.input, entry.text)}
             </Box>
         </Box>;
     };
@@ -706,6 +718,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 const checkers = step.checkers || definition?.checkers || (step.checkIds || []).map(id => ({ id, condition: undefined, when: undefined, on_fail: undefined }));
                 const active = !archived && isActiveStep(step.id);
                 const runningTool = active && activeTool?.step_id === step.id ? activeTool : undefined;
+                const runningPresentation = runningTool ? callPresentation(runningTool.tool) : undefined;
                 const activeIndex = workflow.status === 'completed' ? steps.length - 1 : steps.findIndex(item => item.id === workflow.stepId);
                 const reached = !archived && !workflow.planReviewPending && index <= activeIndex;
                 const status = displayedStepStatus(step.status, archived);
@@ -717,7 +730,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 const tabKey = `${turn.id}-${revision}-${step.id}`;
                 const pending = status === 'pending' && !active;
                 const collapsed = pending && !expandedPendingSteps[tabKey];
-                const selectedTab = stepTabs[tabKey] || (stepArtifacts.length ? 'artifacts' : 'action');
+                const selectedTab = stepTabs[tabKey] || (active ? 'activity' : stepArtifacts.length ? 'artifacts' : 'action');
                 const tabId = (name: string) => `${encodeURIComponent(tabKey)}-${name}`;
                 const panelProps = (name: string) => ({ role: 'tabpanel', id: `${tabId(name)}-panel`,
                     'aria-labelledby': tabId(name), hidden: selectedTab !== name, tabIndex: 0 });
@@ -753,8 +766,9 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                                 aria-label={`${step.id} details`} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile
                                 sx={{ minHeight: 36, '& .MuiTab-root': {
                                     minHeight: 36, minWidth: 0, px: 1.25, py: 0.5, fontSize: textVar.xs, textTransform: 'none' } }}>
-                                {[['action', 'Action'], ['checks', `Checks (${results.filter(result => result.status === 'passed').length}/${checkers.length})`],
-                                    ['activity', `Activities (${entries.length})`], ['artifacts', `Artifacts (${stepArtifacts.length})`]].map(([name, label]) =>
+                                {[['activity', `Activities (${entries.length + (runningTool && !entries.some(entry => entry.id === runningTool.id) ? 1 : 0)})`],
+                                    ['action', 'Action'], ['checks', `Checks (${results.filter(result => result.status === 'passed').length}/${checkers.length})`],
+                                    ['artifacts', `Artifacts (${stepArtifacts.length})`]].map(([name, label]) =>
                                     <Tab key={name} value={name} label={label} id={tabId(name)} aria-controls={`${tabId(name)}-panel`} />)}
                             </Tabs>
                             <Box {...panelProps('action')} data-workflow-action={step.id}>
@@ -801,14 +815,19 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                                 Progress assessment: {step.assessment.status} · {step.assessment.explanation}
                                 {step.assessment.evidence_ids.length ? ` · Evidence: ${step.assessment.evidence_ids.join(', ')}` : ''}
                             </Typography>}
-                            {entries.map(renderCall)}
-                            {runningTool && <Box data-workflow-running-tool={runningTool.id} sx={{ py: 0.5 }}>
+                            {runningTool && runningPresentation && <Box data-workflow-running-tool={runningTool.id}
+                                data-workflow-call-type={runningPresentation.type} sx={{ py: 0.5 }}>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.5, color: 'primary.main', fontSize: textVar.sm }}>
                                     <CircularProgress size={12} sx={{ flexShrink: 0 }} />
-                                    <Box component="span">Running {runningTool.tool.replaceAll('_', ' ')}</Box>
+                                    <runningPresentation.Icon sx={{ fontSize: 16, flexShrink: 0 }} />
+                                    <Box component="span">{runningPresentation.label} · Running {runningTool.tool.replaceAll('_', ' ')}</Box>
                                 </Box>
-                                <Box sx={{ pl: 2.25 }}>{renderToolDetails(runningTool.details)}</Box>
+                                <Box sx={{ pl: 2.25 }}>
+                                    {renderToolDetails(runningTool.details)}
+                                    {renderCallBody(runningTool.tool, runningTool.input)}
+                                </Box>
                             </Box>}
+                            {entries.map(renderCall)}
                             {transitions.map((transition, transitionIndex) => <Typography key={transitionIndex} sx={{ mt: 1, fontSize: textVar.sm, color: 'text.secondary' }}>{transition.from} → {transition.to}: {transition.reason}</Typography>)}
                             </Box>
                         </Box>

@@ -1,4 +1,4 @@
-"""Tests for the workspace display-name API.
+"""Tests for workspace naming and lightweight helper model routing.
 
 The endpoint is used by the frontend auto-naming hook and must preserve the
 selected model payload so both server-managed and user-managed models work.
@@ -65,7 +65,7 @@ class TestWorkspaceNameEndpoint:
         assert body["status"] == "success"
         assert body["data"] == {"display_name": "销售分析"}
 
-        get_client.assert_called_once_with(model_config)
+        get_client.assert_called_once_with(model_config, use_small_model=True)
         get_lang.assert_called_once_with(mode="full")
         simple_agents.assert_called_once_with(client=client_obj, language_instruction="LANG")
         simple_agents.return_value.workspace_name.assert_called_once_with(
@@ -83,3 +83,42 @@ class TestWorkspaceNameEndpoint:
         body = resp.get_json()
         assert body["status"] == "error"
         assert body["error"]["code"] == "INVALID_REQUEST"
+
+
+@pytest.mark.parametrize("route,agent_name,payload,result", [
+    (
+        "sort-data", "SortDataAgent",
+        {"field": "month", "items": ["March", "January"]},
+        [{"status": "ok", "content": {"sorted_values": ["January", "March"]}}],
+    ),
+    (
+        "derive-starter-questions", "StarterQuestionsAgent",
+        {"input_tables": [{"name": "Orders", "columns": ["revenue"]}]},
+        ["Compare revenue across orders"],
+    ),
+    (
+        "code-expl", "CodeExplanationAgent",
+        {"input_tables": [], "code": "result_df = source_df.copy()"},
+        [{"status": "ok", "concepts": []}],
+    ),
+])
+def test_helper_routes_use_small_model(flask_client, route, agent_name, payload, result):
+    model_config = {
+        "endpoint": "openai", "model": "gpt-4o", "small_model": "gpt-4o-mini",
+    }
+    client_obj = object()
+    with (
+        patch("data_formulator.routes.agents.get_client", return_value=client_obj) as get_client,
+        patch("data_formulator.routes.agents.get_workspace"),
+        patch(f"data_formulator.routes.agents.{agent_name}") as agent,
+    ):
+        agent.return_value.run.return_value = result
+        response = flask_client.post(
+            f"/api/agent/{route}", json={"model": model_config, **payload},
+        )
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "success"
+    get_client.assert_called_once_with(model_config, use_small_model=True)
+    assert agent.call_args.kwargs["client"] is client_obj
+    agent.return_value.run.assert_called_once()

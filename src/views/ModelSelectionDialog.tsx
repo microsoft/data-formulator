@@ -100,6 +100,27 @@ const PROVIDERS: Record<string, { label: string; model: string; base: string; co
     cheaperinference: { label: 'Cheaper Inference', model: 'gpt-5.4-mini', base: 'https://api.cheaperinference.com/v1', connectionMethod: 'api' },
 };
 
+const getModelEndpointLabel = (model: ModelConfig): string => {
+    const provider = PROVIDERS[model.endpoint];
+    const label = provider?.label || model.endpoint;
+    if (provider?.connectionMethod === 'account') return label;
+    const base = model.api_base?.trim() || (model.endpoint === 'ollama' ? provider?.base : '');
+    if (!base) return label;
+    try {
+        const url = new URL(base);
+        if (!['https:', 'http:'].includes(url.protocol)) return label;
+        if (model.endpoint !== 'azure' && model.endpoint !== 'ollama'
+            && provider?.base && url.host === new URL(provider.base).host) return label;
+        const azureResource = model.endpoint === 'azure' && url.hostname.match(
+            /^([a-z0-9-]+)\.(?:openai\.azure\.com|cognitiveservices\.azure\.com|services\.ai\.azure\.com)$/,
+        );
+        const identifier = azureResource ? `${azureResource[1]}${url.port ? `:${url.port}` : ''}` : url.host;
+        return `${label} \u00b7 ${identifier}`;
+    } catch {
+        return label;
+    }
+};
+
 const connectionRequest = (provider: string, action: string, body: object = {}) => apiRequest(
     `/api/model-endpoints/connections/${provider}/${action}`,
     { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Model-Connection': '1' }, body: JSON.stringify(body) },
@@ -153,6 +174,7 @@ interface ModelSelectionButtonProps {
 interface RememberedModelEndpoint {
     endpoint: string;
     model: string;
+    small_model?: string;
     api_base: string;
     api_version: string;
     auth_mode: string;
@@ -210,6 +232,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     const accountProvider = isAccountProvider ? newEndpoint : 'openrouter';
     const accountConnectionUrl = `/api/model-endpoints/connections/${accountProvider}`;
     const [newModel, setNewModel] = useState<string>(initialDefinition?.model || "");
+    const [newSmallModel, setNewSmallModel] = useState(initialDefinition?.small_model || '');
     const [newApiKey, setNewApiKey] = useState<string>("");
     const [newApiBase, setNewApiBase] = useState<string>(initialDefinition?.api_base || "");
     const [newApiVersion, setNewApiVersion] = useState<string>(initialDefinition?.api_version || "");
@@ -518,6 +541,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         const entry = {
             endpoint: model.endpoint,
             model: model.model,
+            ...(model.small_model ? { small_model: model.small_model } : {}),
             api_base: model.api_base || '',
             api_version: model.api_version || '',
             auth_mode: model.auth_mode || '',
@@ -598,7 +622,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         : false;
 
     let modelExists = allModels.some(m => m.id !== detailModelId &&
-        m.endpoint == newEndpoint && m.model == newModel.trim() && (isAccountProvider
+        m.endpoint == newEndpoint && m.model == newModel.trim()
+        && (m.small_model || m.model) === (newSmallModel.trim() || newModel.trim()) && (isAccountProvider
             ? m.connection_id === accountProvider
             : m.api_base == newApiBase && (m.api_key || '') == newApiKey && (m.api_version || '') == newApiVersion));
 
@@ -626,6 +651,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     const baseIsPrimary = newEndpoint === 'azure' || newEndpoint === 'ollama';
     const hasConnection = isAccountProvider
         ? openRouterConnected && !openRouterLoading && !openRouterAuthUrl && openRouterModels.some(model => model.id === newModel)
+            && (!newSmallModel || openRouterModels.some(model => model.id === newSmallModel))
         : newEndpoint === 'azure'
         ? Boolean(newApiBase.trim()) && (azureAuthMethod !== 'api_key' || Boolean(newApiKey.trim()) || hasStoredCredentials)
             && (!browseAzure || (!!azureCliStatus?.signed_in && !azureSubscriptionsLoading && !azureDeploymentsLoading
@@ -639,6 +665,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         setRecentMenuAnchor(null);
         setNewEndpoint("");
         setNewModel("");
+        setNewSmallModel('');
         setNewApiKey("");
         setNewApiBase("");
         setNewApiVersion("");
@@ -658,6 +685,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
             setNewModelError('');
             try {
                 await onStageConnection({ endpoint: newEndpoint, model: newModel.trim(), api_key: newApiKey,
+                    small_model: newSmallModel.trim(),
                     api_base: newApiBase.trim(), api_version: newApiVersion.trim(),
                     auth_mode: newEndpoint === 'azure' && azureAuthMethod !== 'api_key'
                         ? (azureAuthMethod === 'managed_identity' ? 'managed_identity' : 'azure_identity') : 'key',
@@ -671,10 +699,11 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         const updatingUserModel = detailModelId && !detailIsGlobal;
         const id = updatingUserModel
             ? detailModelId
-            : simpleHash(`${newEndpoint}-${newModel}-${newApiKey}-${newApiBase}-${newApiVersion}${isAccountProvider ? '-account' : ''}`);
+            : simpleHash(`${newEndpoint}-${newModel}-${newSmallModel.trim()}-${newApiKey}-${newApiBase}-${newApiVersion}${isAccountProvider ? '-account' : ''}`);
         const model: ModelConfig = {
             endpoint: newEndpoint,
             model: newModel.trim(),
+            small_model: newSmallModel.trim() || undefined,
             api_key: isAccountProvider ? undefined : newApiKey,
             api_base: isAccountProvider ? undefined : newApiBase.trim(),
             api_version: isAccountProvider ? undefined : newApiVersion.trim(),
@@ -724,6 +753,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         setTempSelectedModelId(model.id);
         setNewEndpoint(model.endpoint);
         setNewModel(model.model);
+        setNewSmallModel(model.small_model || '');
         setNewApiBase(model.api_base || '');
         setNewApiVersion(model.api_version || '');
         setNewApiKey(model.is_global ? '' : model.api_key || '');
@@ -1146,6 +1176,25 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                 </Box>}
             </Box>}
 
+            {newEndpoint && (isAccountProvider ? <Autocomplete
+                fullWidth size="small"
+                options={openRouterModels}
+                value={openRouterModels.find(model => model.id === newSmallModel) || null}
+                getOptionLabel={model => model.name}
+                isOptionEqualToValue={(option, value) => option.id === value.id}
+                disabled={!isEditingDetails || !openRouterConnected || openRouterLoading}
+                onChange={(_event, model) => setNewSmallModel(model?.id || '')}
+                renderInput={params => <TextField {...params} label={t('model.smallModelOptional')}
+                    placeholder={t('model.sameAsModel')} />}
+            /> : <TextField
+                fullWidth size="small" disabled={!isEditingDetails}
+                label={t('model.smallModelOptional')}
+                value={newSmallModel}
+                onChange={event => setNewSmallModel(event.target.value)}
+                placeholder={t('model.sameAsModel')}
+                autoComplete="off"
+            />)}
+
             {newEndpoint && newEndpoint !== 'ollama' && !isAccountProvider
                 && (newEndpoint !== 'azure' || azureAuthMethod === 'api_key') && apiKeyField}
 
@@ -1259,6 +1308,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                     {newEndpoint === 'azure' ? t('model.deploymentName') : t('model.model')}
                 </Typography>
                 <Typography component="dd" variant="body2">{newModel}</Typography>
+                <Typography component="dt" variant="body2">{t('model.smallModel')}</Typography>
+                <Typography component="dd" variant="body2">{newSmallModel || t('model.sameAsModel')}</Typography>
                 <Typography component="dt" variant="body2">{t(detailUsesAccount ? 'model.account' : 'model.authentication')}</Typography>
                 <Box component="dd">
                     {!detailUsesAccount && <Typography variant="body2">
@@ -1311,40 +1362,60 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         }}>
             <Box sx={{ pr: { md: 2.5 }, borderRight: { md: '1px solid' }, borderColor: { md: 'divider' } }}>
                 <Box sx={{ display: 'grid' }}>
-                    {allModels.map(model => (
+                    {allModels.map(model => {
+                        const endpointLabel = getModelEndpointLabel(model);
+                        return (
                             <Box
                                 key={model.id}
                                 onClick={() => loadModelDetails(model)}
                                 sx={{
                                     display: 'grid',
-                                    gridTemplateColumns: 'minmax(0, 1fr) auto',
+                                    gridTemplateColumns: 'minmax(0, 1fr) 24px',
                                     alignItems: 'center',
-                                    gap: 1,
+                                    gap: 0.75,
                                     px: 1,
-                                    py: 1.25,
+                                    py: 1,
                                     borderBottom: '1px solid',
                                     borderColor: 'divider',
                                     bgcolor: detailModelId === model.id ? 'action.selected' : 'transparent',
                                     cursor: 'pointer',
                                     '&:hover': { bgcolor: 'action.hover' },
+                                    '& .model-remove': { opacity: 0 },
+                                    '&:hover .model-remove, &:focus-within .model-remove': { opacity: 1 },
+                                    '@media (hover: none)': { '& .model-remove': { opacity: 1 } },
                                 }}
                             >
                                 <Box sx={{ minWidth: 0 }}>
-                                    <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>{model.display_name || model.model}</Typography>
-                                    <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
-                                        {PROVIDERS[model.endpoint]?.label || model.endpoint}
-                                    </Typography>
-                                </Box>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    {selectedModelId === model.id && (
-                                        <Typography variant="caption" color="text.secondary">
-                                            {t('model.current')}
+                                    <Tooltip title={endpointLabel}>
+                                        <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', mb: 0.5 }}>
+                                            {endpointLabel}
                                         </Typography>
-                                    )}
+                                    </Tooltip>
+                                    <Box component="dl" sx={{ display: 'grid', gridTemplateColumns: 'max-content minmax(0, 1fr)', alignItems: 'baseline', columnGap: 1, rowGap: 0.25, m: 0 }}>
+                                        <Typography component="dt" variant="caption" color="text.secondary">{t('model.mainShort')}</Typography>
+                                        <Tooltip title={model.model}>
+                                            <Typography component="dd" variant="body2" noWrap sx={{ m: 0, fontWeight: 500 }}>{model.model}</Typography>
+                                        </Tooltip>
+                                        {model.small_model?.trim() && model.small_model.trim() !== model.model.trim() && <>
+                                            <Typography component="dt" variant="caption" color="text.secondary">{t('model.smallShort')}</Typography>
+                                            <Tooltip title={`${t('model.smallModel')}: ${model.small_model}`}>
+                                                <Typography component="dd" variant="body2" color="text.secondary" noWrap sx={{ m: 0 }}>{model.small_model}</Typography>
+                                            </Tooltip>
+                                        </>}
+                                    </Box>
+                                </Box>
+                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', alignSelf: 'start', width: 24, height: 48 }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 24, width: 24 }}>
+                                        {selectedModelId === model.id && <Tooltip title={t('model.current')}>
+                                            <CheckCircleOutlineIcon titleAccess={t('model.current')} color="primary" sx={{ fontSize: 16 }} />
+                                        </Tooltip>}
+                                    </Box>
                                     {!globalModels.some(globalModel => globalModel.id === model.id) && (
                                         <Tooltip title={t('model.removeModel')}>
                                             <IconButton
+                                                className="model-remove"
                                                 size="small"
+                                                sx={{ width: 24, height: 24, '& .MuiSvgIcon-root': { fontSize: 16 } }}
                                                 aria-label={t('model.removeModel')}
                                                 onClick={(event) => {
                                                     event.stopPropagation();
@@ -1362,7 +1433,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                                     )}
                                 </Box>
                             </Box>
-                    ))}
+                        );
+                    })}
                     {!serverConfig.DISABLE_CUSTOM_MODELS && <Button
                         size="small"
                         startIcon={<AddCircleIcon />}
@@ -1417,6 +1489,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                                     onClick={() => {
                                         setNewEndpoint(option.endpoint);
                                         setNewModel(option.model);
+                                        setNewSmallModel(option.small_model || '');
                                         setNewApiBase(option.api_base);
                                         setNewApiVersion(option.api_version);
                                         setNewApiKey('');
@@ -1434,6 +1507,9 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                                         <Typography variant="body2">
                                             {PROVIDERS[option.endpoint]?.label || option.endpoint} / {option.model}
                                         </Typography>
+                                        {option.small_model && <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                            {t('model.smallModel')}: {option.small_model}
+                                        </Typography>}
                                         {option.api_base && <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                                             {option.api_base}
                                         </Typography>}

@@ -30,8 +30,9 @@ authorization. Never put credentials in a definition.
   artifacts that answer its analytical question and checks their correctness; coverage notes or tables may suffice for
   nonvisual work. Reuse valid data, computations, and outputs on resume, and honor
   explicit reuse requests.
-5. Place checks where they detect failures early. Include final independent
-   verification after the last published output, not only before writing a report.
+5. Place checks where they detect failures early. Finish by reviewing published
+  outputs against existing evidence. Require new calculations only for gaps,
+  contradictions, changed inputs or requirements, or explicitly requested independent validation.
 6. Give failures an actionable recovery route. A failed check is information to
    repair from, not a reason to silently weaken its condition.
 7. Check that every deliverable has a producing step and meaningful verification.
@@ -80,7 +81,7 @@ steps:
         on_fail: growth_drivers
   - id: synthesize_findings
     description: Summarize the findings and confirm that the review agrees with the data.
-    instructions: Publish the review, then independently verify its numerical claims against the final outputs.
+    instructions: Publish the review, then compare its numerical claims and references with the existing verified outputs. Reuse earlier evidence and investigate only unsupported or inconsistent claims.
     checkers:
       - id: final_review
         condition: Final tables, charts, and report agree; all required outputs and limitations are present.
@@ -112,17 +113,21 @@ The review UI and its preview do not themselves execute a load.
 
 Use actual returned evidence IDs for checks. Keep failed and inconclusive results
 honest. Navigation and unrelated new outputs do not invalidate passing step checks.
-Do not repeat them merely because the output revision increased. The current plan's
-`current_checks` lists retained results. Changed or deleted evidence inputs, resolved
-user decisions, and plan changes can require fresh checks. Evidence conservatively
+Do not repeat them merely because the output revision increased or the user acknowledged
+progress. The current plan's `current_checks` lists retained results. Changed or deleted
+evidence inputs invalidate dependent checks. Review new user decisions for changed
+requirements and reassess affected conclusions using applicable evidence. Evidence conservatively
 tracks all workspace tables, files, and scratch files present when it was recorded;
 scripts do not yet expose precise read dependencies. Legacy evidence without input
 fingerprints remains tied to its original output revision.
 
-Final-output verification is separate from step checks. Delivery still requires
-current checks, evidence for every deliverable, and a successful independent
-verification script after the final outputs. Neither prose nor `write_report`
-completes a workflow.
+Final validation reviews existing evidence against the published deliverables. Compare
+report claims, dates, units, limitations, and chart references with the supporting results.
+Use `complete_workflow` to cite evidence and explain how it supports each final deliverable;
+all required checks must still be current and passed. A new script after publication is
+not required unless the workflow explicitly calls for one. Do not repeat verified analysis
+or re-record unchanged checks for this review. Inspect or calculate only what is missing,
+inconsistent, or affected by a change. Neither prose nor `write_report` completes a workflow.
 
 ## Adapt the Active Run
 
@@ -143,8 +148,10 @@ exactly once with its `id`, `status` (`pending` or `completed`), `explanation`, 
 `evidence_ids`, plus the `step_id` to execute next. For every step, distinguish work that is still pending
 from work supported by reusable evidence. Explain carry-forward decisions and cite
 the actual earlier evidence. An old step's matching ID, visited marker, or checkmark
-does not prove the new step is complete. Reassess changed criteria even when IDs
-are reused. Pick the first step that needs work only after this assessment.
+does not prove the new step is complete. Reassess checks against the revised criteria
+even when IDs are reused; cite unchanged earlier evidence when it still establishes the
+condition rather than repeating its computation. Pick the first step that needs work
+only after this assessment.
 
 Keep earlier plans, progress, checks, transitions, tool evidence, and outputs as
 history. Do not relabel old calls as actions performed under the new plan. The

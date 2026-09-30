@@ -147,13 +147,13 @@ steps:
       genre median differences, and critic/audience association. Explain missing
       budgets, sample selection, unadjusted nominal dollars, rating-system
       differences, and why gross multiples are not profitability. After writing
-      the report, run an independent verification script against raw rows and
-      all final derived tables, checking cohorts, ratios, quartiles, ratings,
-      headline numbers, and chart references. Preserve still-valid earlier
-      checks; rerun invalidated checks only. Record the final checker with
-      post-publication evidence and account for every deliverable before
+      the report, review its cohorts, ratios, quartiles, ratings, headline numbers,
+      and chart references against existing evidence and the final derived tables.
+      Preserve still-valid earlier checks; investigate only unsupported claims,
+      inconsistencies, or changed inputs. Record the final checker citing the
+      report and supporting evidence and account for every deliverable before
       complete_workflow.
     checkers:
       - id: movie_final_delivery
-        condition: Three distinct native charts and a report exist, all references and headline calculations reconcile to final outputs, limitations are explicit, and independent verification ran after the report.
+        condition: Three distinct native charts and a report exist, all references and headline calculations agree with final outputs and supporting evidence, and limitations are explicit.
         on_fail: brief

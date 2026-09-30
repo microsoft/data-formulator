@@ -58,6 +58,7 @@ class ModelRegistry:
             api_base = os.getenv(f"{env}_API_BASE", "").strip()
             api_version = os.getenv(f"{env}_API_VERSION", "").strip()
             models_str = os.getenv(f"{env}_MODELS", "").strip()
+            small_model = os.getenv(f"{env}_SMALL_MODEL", "").strip()
 
             if not (api_key or api_base) or not models_str:
                 continue
@@ -77,6 +78,7 @@ class ModelRegistry:
                     "id": model_id,
                     "endpoint": endpoint,
                     "model": model_name,
+                    **({'small_model': small_model} if small_model else {}),
                     "api_key": api_key,
                     "api_base": api_base,
                     "api_version": api_version,
@@ -108,6 +110,7 @@ class ModelRegistry:
                 "id": m["id"],
                 "endpoint": m["endpoint"],
                 "model": m["model"],
+                **({'small_model': m['small_model']} if m.get('small_model') else {}),
                 "api_base": m["api_base"],
                 "api_version": m["api_version"],
                 "auth_mode": (

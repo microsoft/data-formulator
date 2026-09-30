@@ -46,22 +46,14 @@ export function getUrls() {
         SYNC_TABLE_DATA: `/api/tables/sync-table-data`,
         EXPORT_TABLE_CSV: `/api/tables/export-table-csv`,
 
-        GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
-
         // Starter exploration questions (generated on data load)
         DERIVE_STARTER_QUESTIONS: `/api/agent/derive-starter-questions`,
 
         // Workspace display name (auto-naming)
         WORKSPACE_NAME: `/api/agent/workspace-name`,
 
-        // NL-to-filter
-        NL_TO_FILTER: `/api/agent/nl-to-filter`,
-
         // Chart style refinement (restyle agent)
         CHART_RESTYLE: `/api/agent/chart-restyle`,
-
-        // Intent classifier — routes a chart prompt to restyle vs. data agent
-        CLASSIFY_CHART_INTENT: `/api/agent/classify-chart-intent`,
 
         // Refresh data endpoint
         REFRESH_DERIVED_DATA: `/api/agent/refresh-derived-data`,

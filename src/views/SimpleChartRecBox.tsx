@@ -228,8 +228,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
     const selectedWorkflow = useSelector(selectChatWorkflow);
     const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
-    const availableWorkflow = selectedWorkflow || [...textTurns].reverse().find(turn =>
-        turn.workflow && ['running', 'paused'].includes(turn.workflow.status));
+    const availableWorkflow = selectedWorkflow;
     const [workflowMessageChoice, setWorkflowMessageChoice] = useState<{
         workspaceId?: string; runId: string; enabled: boolean;
     }>();
@@ -805,8 +804,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const routeWorkflowPrompt = useCallback((prompt: string, files?: { scratchPath: string }[]) => {
         const state = currentStore.getState() as DataFormulatorState;
         const selected = selectChatWorkflow(state);
-        const available = selected || [...state.textTurns].reverse().find(turn =>
-            turn.workflow && ['running', 'paused'].includes(turn.workflow.status));
+        const available = selected;
         const workflow = workflowMessageChoice?.workspaceId === state.activeWorkspace?.id
             && workflowMessageChoice?.runId === available?.workflow?.runId
             ? (workflowMessageChoice?.enabled ? available : undefined) : selected;
@@ -955,11 +953,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             }
             return null;
         })();
-        const askedFromNode = resolveRunParentNodeId(
+        const requestedParentNode = resolveRunParentNodeId(
             clarificationContext?.parentNodeId,
             focusedConversationNodeId,
             createConversationRootId(),
         );
+        const requestedParentTurn = textTurns.find(turn => turn.id === requestedParentNode);
+        const askedFromNode = (requestedParentTurn?.workflow
+            ? textTurns.find(turn => turn.workflowCardFor === requestedParentTurn.id)?.id : undefined) || requestedParentNode;
         runLastNodeRef.current = askedFromNode;
         // A continuation (answering a turn) — its leading prompt is already the
         // prior turn's reply, so don't re-render it as a fresh prompt bubble.
@@ -967,6 +968,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             askedFromNode
             && askedFromNode.startsWith('textTurn')
             && focusedId?.type !== 'draft'
+            && !requestedParentTurn?.workflow
+            && !requestedParentTurn?.workflowCardFor
         );
         // The TABLE the pending draft anchors to (drafts are table-keyed): the
         // asked-from node resolved to its thread table, so the "working…" banner
@@ -2275,7 +2278,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const conversationParentId = resolveConversationParentNodeId(
             focusedTurn?.id,
             focusedTableId,
-            textTurns,
+            textTurns.filter(turn => !turn.workflow && !turn.workflowCardFor && !turn.workflowMessage),
             tables.map(table => table.id),
         );
         if (focusedTurn) {

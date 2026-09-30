@@ -42,7 +42,7 @@ def test_copilot_managed_endpoint_works_with_custom_url_allowlist(connection_api
     stored[(identity[0], model_endpoints._COPILOT_CONNECTION_KEY)] = {
         "id": "connected", "access_token": "private-oauth", "api_key": "private-copilot",
         "api_base": api_base, "expires_at": model_endpoints.time.time() + 3600,
-        "model_api_types": {"test-model": "responses"},
+        "model_api_types": {"test-model": "responses", "small-test-model": "chat_completions"},
     }
     client_constructor = Mock()
     monkeypatch.setattr("data_formulator.routes.agents.Client", client_constructor)
@@ -53,6 +53,10 @@ def test_copilot_managed_endpoint_works_with_custom_url_allowlist(connection_api
     assert client_constructor.call_args.kwargs["api_type"] == "responses"
     assert "api_base" not in config
 
+    get_client({**config, 'small_model': 'small-test-model'}, use_small_model=True)
+    assert client_constructor.call_args.args[1:4] == ('small-test-model', 'private-copilot', api_base)
+    assert client_constructor.call_args.kwargs['api_type'] == 'chat_completions'
+
     client_constructor.reset_mock()
     with pytest.raises(model_endpoints.AppError, match="Invalid model connection configuration"):
         get_client({**config, "api_base": "https://api.openai.com/v1"})
@@ -62,6 +66,46 @@ def test_copilot_managed_endpoint_works_with_custom_url_allowlist(connection_api
     with pytest.raises(model_endpoints.AppError, match="Invalid GitHub Copilot API host"):
         get_client(config)
     client_constructor.assert_not_called()
+
+
+@pytest.mark.parametrize('route', ['test-model', 'check-available-models'])
+@pytest.mark.parametrize('small_model,small_passes,expected_models', [
+    (None, True, ['openai/main-model']),
+    ('main-model', True, ['openai/main-model']),
+    ('small-model', True, ['openai/main-model', 'openai/small-model']),
+    ('small-model', False, ['openai/main-model', 'openai/small-model']),
+])
+def test_model_pair_connectivity(connection_api, monkeypatch, route, small_model, small_passes, expected_models):
+    from data_formulator.routes import agents
+    from data_formulator.agents.client_utils import Client
+
+    client, _, _ = connection_api
+    client.application.register_blueprint(agents.agent_bp)
+    config = {'id': 'pair', 'endpoint': 'openai', 'model': 'main-model',
+              'small_model': small_model, 'api_key': 'private-key'}
+    checked = []
+
+    def completion(instance, **kwargs):
+        checked.append(instance.model)
+        response = Mock()
+        response.choices = [Mock(message=Mock(content='I can hear you.' if small_passes or instance.model != 'openai/small-model' else 'wrong response'))]
+        return response
+
+    def ping(instance, **kwargs):
+        checked.append(instance.model)
+        if not small_passes and instance.model == 'openai/small-model':
+            raise ValueError('Small model unavailable')
+
+    monkeypatch.setattr(Client, 'get_completion', completion)
+    monkeypatch.setattr(Client, 'ping', ping)
+    monkeypatch.setattr(agents.model_registry, 'get_config', lambda identifier: config)
+    monkeypatch.setattr(agents.model_registry, 'list_public', lambda: [{'id': 'pair', 'endpoint': 'openai', 'model': 'main-model'}])
+    response = client.post('/api/agent/' + route, json={'model': config}).get_json()
+    assert checked == expected_models
+    if route == 'test-model':
+        assert response['status'] == ('success' if small_passes else 'error')
+    else:
+        assert response['data'][0]['status'] == ('connected' if small_passes else 'disconnected')
 
 
 def test_kusto_cluster_discovery_uses_explicit_subscription(connection_api, monkeypatch):
@@ -550,18 +594,21 @@ def test_invalid_history_is_treated_as_empty(tmp_path):
     assert model_endpoints._read_history(path) == []
 
 
-def test_history_file_contains_no_unrecognized_fields(tmp_path):
+@pytest.mark.parametrize('small_model', [None, 'llama-small'])
+def test_history_file_contains_no_unrecognized_fields(tmp_path, small_model):
     path = tmp_path / "model_endpoints.json"
     entry = model_endpoints._sanitize_entry({
         "endpoint": "ollama",
         "model": "llama3",
+        "small_model": small_model,
         "api_base": "http://localhost:11434",
         "api_key": "secret",
     })
     model_endpoints._write_history(path, [entry])
 
     stored = json.loads(path.read_text(encoding="utf-8"))
-    assert set(stored[0]) == set(model_endpoints._FIELDS)
+    assert set(stored[0]) == set(model_endpoints._FIELDS) - (set() if small_model else {'small_model'})
+    assert model_endpoints._read_history(path)[0].get('small_model') == small_model
     assert "secret" not in path.read_text(encoding="utf-8")
 
 

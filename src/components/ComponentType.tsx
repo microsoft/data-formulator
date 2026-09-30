@@ -289,7 +289,7 @@ export interface TextTurn {
         prompt?: string;
         deliverables?: string[];
         setup?: { parameters: Record<string, string | number | boolean>; instructions: string };
-        activeTool?: { id: string; tool: string; step_id: string; details: Record<string, string> };
+        activeTool?: { id: string; tool: string; step_id: string; details: Record<string, string>; input?: Record<string, unknown> };
         appliedMessageIds?: string[];
         planRevision?: number;
         planReviewPending?: boolean;
@@ -308,7 +308,7 @@ export interface TextTurn {
         artifacts?: { nodeId: string; chartId?: string; stepId?: string; planRevision: number }[];
         checks?: { id: string; status: string; explanation: string }[];
         transitions?: { from: string; to: string; reason: string; plan_revision?: number }[];
-        log?: { id: string; tool: string; text: string; call?: number; step_id?: string; plan_revision?: number; details?: Record<string, string> }[];
+        log?: { id: string; tool: string; text: string; call?: number; step_id?: string; plan_revision?: number; details?: Record<string, string>; input?: Record<string, unknown> }[];
     };
     executions?: TerminalExecution[];
     codeExecutions?: CodeExecution[];

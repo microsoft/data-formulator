@@ -68,7 +68,7 @@ steps:
         on_fail: analyze
     next: report
   - id: report
-    instructions: Write the report with the returned chart ID embedded as a chart:// image and independently verify its claims against published data.
+    instructions: Write the report with the returned chart ID embedded as a chart:// image and review its claims against existing evidence and published data.
     checkers: []
 ```
 
@@ -129,11 +129,16 @@ run directory. The final report filename is reserved. Each script has a
 fresh namespace and can reread saved files. These scratch outputs are internal
 intermediates. User-facing deliverables must use the native publication tools.
 
-Checks reference actual tool observation IDs. Output hashes and a run revision
-invalidate previous checks after outputs change or acquisition completes. Merely
-revisiting a step preserves checks. Delivery requires published outputs, an
-independent verification script after the final outputs, current
-passing checks, and evidence for every declared deliverable. These are structural
+Checks reference actual tool observation IDs. Changed or deleted evidence inputs
+invalidate dependent checks; unrelated new outputs, navigation, and acknowledgments
+preserve them. Evidence currently fingerprints all workspace tables, files, and scratch
+files present at observation time, so unrelated edits can also invalidate checks.
+User decisions require reassessment of affected conclusions, not automatic repetition
+of completed work. Delivery reviews published outputs against existing evidence, with
+current passing checks and a supporting explanation for every declared deliverable.
+There is no blanket requirement for a new post-publication script: investigate only
+gaps, inconsistencies, or changed inputs or requirements, while honoring any explicit
+independent validation required by the workflow. These are structural
 guards: check outcomes and analytical correctness remain agent-reported, not
 independently guaranteed by the runtime.
 
@@ -176,7 +181,16 @@ prove that a remote executor stopped, and Retry still obeys its execution lock.
 There is no fixed model-round or total execution-time cap. Runs continue until
 verified completion, a blocker or approval requiring input, user pause, or an error.
 Existing provider/tool timeouts remain in force. Without a total budget backstop,
-a stalled run may continue consuming model usage until paused.
+a stalled run may continue consuming model usage until paused. Both analyst and workflow
+agents require a structured `progress_check` after every 16 model-response rounds,
+counting inspection, actions, and self-directed text continuations together. Parallel
+tool calls count as one round; provider retries do not add rounds to the trajectory.
+Only the checkpoint tool is offered until a valid assessment is recorded. Its brief
+`progress`, `blocker`, and `next_step` fields support a `continue`, `change_approach`,
+or `report_and_pause` decision. Reporting opens the existing question/pause UI and
+preserves the trajectory for resume. Accepted checkpoints reset the cadence; invalid
+responses execute no tools and stop after three failed attempts. Checks use the same
+agent and existing context, not a separate evaluator, and do not guarantee stall detection.
 While a workflow runs, the chat input uses a subtly accented border and routes instructions
 exclusively to that workflow, even when a different artifact is selected. Messages
 are queued persistently, visibly acknowledged as queued and then received, and injected
@@ -205,10 +219,12 @@ the current steps, so reused IDs do not mix their histories.
 After adaptation, substantive tools are gated until `review_plan` assesses every new
 step exactly once. Inspection tools remain available. Completed assessments require
 successful substantive evidence and an explanation; pending steps may have no evidence.
-Earlier evidence may justify reusing work, but does not become current verification.
+Earlier evidence remains reusable when its inputs are unchanged, but must be assessed
+against the revised requirements before recording a check result.
 The agent chooses the next step after assessment; the UI distinguishes progress
-assessments from checker results. Plan adaptation invalidates checks and still requires
-independent verification of final outputs. Assessment quality is agent-reported,
+assessments from checker results. Plan adaptation clears check statuses, not the underlying
+evidence; checks can be reassessed without repeating applicable computations. Final
+delivery still reviews the published outputs and supporting evidence. Assessment quality is agent-reported,
 not independently guaranteed. No adaptation bypasses authorization or tool restrictions.
 
 Each explicit resume gets a fresh execution window; cumulative calls and time remain

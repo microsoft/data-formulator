@@ -52,7 +52,7 @@ def enforce_user_model_creation_policy():
 _FILENAME = "model_endpoints.json"
 _MAX_ENTRIES = 20
 _MAX_FIELD_LENGTH = 2048
-_FIELDS = ("endpoint", "model", "api_base", "api_version", "auth_mode")
+_FIELDS = ("endpoint", "model", "small_model", "api_base", "api_version", "auth_mode")
 _lock = threading.Lock()
 _OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 _CONNECTION_KEY = "model-connection:openrouter"
@@ -931,6 +931,8 @@ def _sanitize_entry(value: object) -> dict[str, str]:
     if not isinstance(value, dict):
         raise AppError(ErrorCode.INVALID_REQUEST, "Invalid model endpoint configuration")
     entry = {field: str(value.get(field) or "").strip() for field in _FIELDS}
+    if not entry['small_model']:
+        del entry['small_model']
     if not entry["endpoint"] or not entry["model"]:
         raise AppError(ErrorCode.INVALID_REQUEST, "Provider and model are required")
     if any(len(field_value) > _MAX_FIELD_LENGTH for field_value in entry.values()):

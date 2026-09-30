@@ -27,7 +27,7 @@ def public_connector_params(definition: dict) -> dict:
 
 def public_model_definition(definition: dict) -> dict:
     return {key: value for key, value in definition.items()
-            if key in ('endpoint', 'model', 'api_base', 'api_version', 'auth_mode', 'managed_identity_client_id')}
+            if key in ('endpoint', 'model', 'small_model', 'api_base', 'api_version', 'auth_mode', 'managed_identity_client_id')}
 
 
 def can_configure() -> bool:
@@ -127,12 +127,19 @@ def terminal_settings():
             if 'DF_TERMINAL_MODE' in os.environ:
                 raise ValueError('Terminal mode is controlled by the environment.')
             body = request.get_json()
-            if not isinstance(body, dict) or set(body) != {'mode', 'revision'} or body['mode'] not in ('off', 'ask', 'auto'):
+            if (not isinstance(body, dict) or not {'mode', 'revision'} <= set(body)
+                    or set(body) - {'mode', 'revision', 'sandbox'} or body['mode'] not in ('off', 'ask', 'auto')):
                 raise ValueError('Provide revision and terminal mode: off, ask, or auto.')
-            if body['mode'] != 'off' and not terminal_available():
+            if (body['mode'] != 'off' or 'sandbox' in body) and not terminal_available():
                 raise ValueError('Terminal access is unavailable under the current deployment policy.')
             current = read_configuration()
-            save_configuration({**current['overrides'], 'terminal_mode': body['mode']}, body['revision'])
+            overrides = {**current['overrides'], 'terminal_mode': body['mode']}
+            if 'sandbox' in body:
+                if body['sandbox'] is None:
+                    overrides.pop('sandbox', None)
+                else:
+                    overrides['sandbox'] = body['sandbox']
+            save_configuration(overrides, body['revision'])
         return json_ok({'revision': read_configuration()['revision'], 'mode': terminal_mode(),
                         'available': terminal_available(), 'locked': 'DF_TERMINAL_MODE' in os.environ,
                         'sandboxFilesystem': sandbox_filesystem_policy() if is_local_mode() else None})
@@ -224,11 +231,12 @@ def test_connection():
         try:
             if body['section'] == 'models':
                 from data_formulator.model_registry import model_registry
-                from data_formulator.routes.agents import get_client
+                from data_formulator.routes.agents import get_test_clients
                 definition = model_registry.get_config(identifier, configured=False)
                 if definition is None:
                     raise ValueError('Unknown model.')
-                get_client(definition, trusted=True).ping(timeout=20)
+                for client in get_test_clients(definition, trusted=True):
+                    client.ping(timeout=20)
             elif body['section'] == 'connectors':
                 from data_formulator.data_connector import DATA_CONNECTORS, _ADMIN_CONNECTOR_IDS
                 if identifier not in _ADMIN_CONNECTOR_IDS or identifier not in DATA_CONNECTORS:
@@ -278,7 +286,7 @@ def test_connection():
             if section == 'connectors' and definition.get('type') != previous_definition['type']:
                 raise ValueError('Connector type cannot change during editing.')
         if section == 'models':
-            allowed = {'endpoint', 'model', 'api_key', 'api_base', 'api_version', 'auth_mode', 'managed_identity_client_id'}
+            allowed = {'endpoint', 'model', 'small_model', 'api_key', 'api_base', 'api_version', 'auth_mode', 'managed_identity_client_id'}
             if set(definition) - allowed or any(not isinstance(value, str) for value in definition.values()):
                 raise ValueError('Unsupported model connection fields.')
             if previous_definition:
@@ -298,9 +306,9 @@ def test_connection():
             from data_formulator.agents.client_utils import effective_api_base
             from data_formulator.security.url_allowlist import validate_api_base
             validate_api_base(effective_api_base(definition.get('endpoint'), definition.get('api_base')))
-            from data_formulator.routes.agents import get_client
-            client = get_client(definition, trusted=True)
-            client.ping(timeout=20)
+            from data_formulator.routes.agents import get_test_clients
+            for client in get_test_clients(definition, trusted=True):
+                client.ping(timeout=20)
             public = {key: definition[key] for key in ('endpoint', 'model')}
             public['definition'] = public_model_definition(definition)
         elif section == 'connectors':

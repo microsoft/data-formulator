@@ -313,6 +313,7 @@ export function buildDistillModelConfig(selectedModel: ModelConfig): Record<stri
         api_base: selectedModel.api_base,
         api_version: selectedModel.api_version,
         model: selectedModel.model,
+        small_model: selectedModel.small_model,
         is_global: selectedModel.is_global,
         connection_id: selectedModel.connection_id,
         auth_mode: selectedModel.auth_mode,

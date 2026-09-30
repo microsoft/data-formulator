@@ -117,6 +117,7 @@ export interface ModelConfig {
     display_name?: string;
     endpoint: string;
     model: string;
+    small_model?: string;
     api_key?: string;
     api_base?: string;
     api_version?: string;

@@ -31,6 +31,35 @@ class TestGetClientGlobalResolution:
     """get_client() must resolve real credentials from model_registry
     when the model config has is_global=True."""
 
+    @pytest.mark.parametrize('small_model', [None, '', 'gpt-4o', ' gpt-4o-mini '])
+    @patch.dict(os.environ, SAMPLE_ENV, clear=True)
+    def test_small_model_shares_connection_and_falls_back(self, small_model):
+        from data_formulator.routes.agents import get_client, get_test_clients
+
+        config = {'endpoint': 'openai', 'model': 'gpt-4o', 'small_model': small_model,
+                  'api_key': 'user-key', 'api_base': 'https://api.openai.com/v1'}
+        client = get_client(config, use_small_model=True)
+        assert client.model == 'openai/' + (small_model.strip() if small_model else 'gpt-4o')
+        assert client.params['api_key'] == 'user-key'
+        assert client.params['api_base'] == config['api_base']
+        assert config['model'] == 'gpt-4o'
+        clients = get_test_clients(config)
+        assert len(clients) == (2 if small_model == ' gpt-4o-mini ' else 1)
+
+    @patch.dict(os.environ, {**SAMPLE_ENV, 'OPENAI_SMALL_MODEL': 'gpt-4o-mini'}, clear=True)
+    def test_global_small_model_cannot_be_overridden_by_request(self):
+        from data_formulator.routes.agents import get_client, get_test_clients
+
+        registry = ModelRegistry()
+        config = {'id': 'global-openai-gpt-4o', 'is_global': True,
+                  'model': 'attacker-model', 'small_model': 'attacker-small-model'}
+        with patch('data_formulator.routes.agents.model_registry', registry):
+            client = get_client(config, use_small_model=True)
+            assert client.model == 'openai/gpt-4o-mini'
+            assert client.params['api_key'] == SAMPLE_ENV['OPENAI_API_KEY']
+            assert [client.model for client in get_test_clients(config)] == ['openai/gpt-4o', 'openai/gpt-4o-mini']
+        assert registry.list_public()[0]['small_model'] == 'gpt-4o-mini'
+
     @pytest.mark.parametrize("managed", [False, True])
     @pytest.mark.parametrize("is_global", [False, True])
     @patch.dict(os.environ, SAMPLE_ENV, clear=True)

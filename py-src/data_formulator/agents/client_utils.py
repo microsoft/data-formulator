@@ -2,6 +2,7 @@ import json
 import litellm
 import os
 from types import SimpleNamespace
+from litellm.responses.utils import ResponsesAPIRequestUtils
 
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
@@ -473,6 +474,26 @@ class Client(object):
         for Ollama we always call non-streaming and, when the caller asked for a
         stream, replay the buffered response as streaming chunks via
         ``_synthesize_stream``. All other providers stream natively."""
+        if self.endpoint == "azure":
+            messages = list(messages)
+            for index, message in enumerate(messages):
+                if not message.get("reasoning_items"):
+                    continue
+                items = []
+                for incoming in message["reasoning_items"]:
+                    item = incoming.model_dump(exclude_none=True) if hasattr(incoming, "model_dump") else dict(incoming)
+                    item_id = item.get("id")
+                    while isinstance(item_id, str):
+                        decoded = ResponsesAPIRequestUtils._decode_encrypted_item_id(item_id)
+                        if not decoded or len(decoded["item_id"]) >= len(item_id):
+                            break
+                        item_id = decoded["item_id"]
+                    if isinstance(item_id, str) and len(item_id) > 64:
+                        continue
+                    if "id" in item:
+                        item["id"] = item_id
+                    items.append(item)
+                messages[index] = {**message, "reasoning_items": items}
         is_ollama = self.endpoint == "ollama"
         effective_stream = stream and not is_ollama
         call_kwargs = dict(model=self.model, messages=messages,

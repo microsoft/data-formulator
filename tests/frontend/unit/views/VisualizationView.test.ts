@@ -2,10 +2,14 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
+import { DndProvider } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
+import { createTheme, ThemeProvider } from '@mui/material';
 import { describe, expect, it, vi } from 'vitest';
 
-import { normalizeOperationPreview, VisualizationViewFC } from '../../../../src/views/VisualizationView';
-import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
+import { ChartEditorFC, checkChartAvailabilityOnPreparedData, normalizeOperationPreview, VisualizationViewFC } from '../../../../src/views/VisualizationView';
+import { dataFormulatorReducer, dfActions, dfSelectors, generateFreshChart } from '../../../../src/app/dfSlice';
+import { computeDisplayRowsCacheKey, displayRowsCache } from '../../../../src/app/displayRowsCache';
 import { ConversationCanvas, conversationPath } from '../../../../src/views/ConversationCanvas';
 import { CompactMarkdown, InteractionEntryCard, workspaceFileFromHref } from '../../../../src/views/InteractionEntryCard';
 import { invalidateChart, setCachedChart } from '../../../../src/app/chartCache';
@@ -16,6 +20,57 @@ import { DataThread } from '../../../../src/views/DataThread';
 import { buildDictTableFromWorkspace } from '../../../../src/app/tableThunks';
 
 const CONVERSATION_ROOT_ID = 'conversation-root:test';
+
+it.each([false, true])('preserves locally prepared chart aggregates after refresh (virtual=%s)', async virtual => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+    const rows = [
+        { month: 'January', price: 2 },
+        { month: 'January', price: 4 },
+        { month: 'February', price: 6 },
+        { month: 'February', price: 10 },
+    ];
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+        status: 'success', data: { rows, columns: ['month', 'price'], row_count: rows.length },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    const table = {
+        kind: 'table', id: 'local-aggregate-chart', displayId: 'Monthly prices',
+        names: ['month', 'price'], rows,
+        metadata: { month: { type: 'string', levels: ['January', 'February'] }, price: { type: 'number', levels: [2, 4, 6, 10] } },
+        ...(virtual ? { virtual: { tableId: 'local-aggregate-chart', rowCount: rows.length } } : {}),
+    } as any;
+    const fields = ['month', 'price'].map(name => ({ id: name, name, source: 'custom', tableRef: 'custom' })) as any;
+    const chart = generateFreshChart(table.id, 'Line Chart');
+    chart.encodingMap.x = { fieldID: 'month', dtype: 'ordinal' };
+    chart.encodingMap.y = { fieldID: 'price', dtype: 'quantitative', aggregate: 'average' };
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.addTableToStore(table));
+    store.dispatch(dfActions.addConceptItems(fields));
+    store.dispatch(dfActions.addChart(chart));
+    store.dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
+    const storedTable = dfSelectors.getAllTables(store.getState()).find(candidate => candidate.id === table.id)!;
+    const cacheKey = computeDisplayRowsCacheKey(storedTable, chart, fields);
+    try {
+        const { container, unmount } = render(React.createElement(Provider, { store,
+            children: React.createElement(ThemeProvider, {
+                theme: createTheme({ palette: { custom: { main: '#a34d16', bgcolor: '#fff' } } } as any),
+                children: React.createElement(DndProvider, { backend: HTML5Backend,
+                    children: React.createElement(ChartEditorFC),
+                }),
+            }),
+        }));
+        await waitFor(() => expect(displayRowsCache.get(cacheKey)?.rows).toEqual([
+            { month: 'January', price_average: 3 },
+            { month: 'February', price_average: 8 },
+        ]));
+        expect(checkChartAvailabilityOnPreparedData(chart, fields, displayRowsCache.get(cacheKey)!.rows)).toBe(true);
+        expect(displayRowsCache.get(cacheKey)?.totalCount).toBe(2);
+        expect(container.querySelector(`[id="focused-chart-element-${chart.id}"]`)).not.toBeNull();
+        unmount();
+    } finally {
+        displayRowsCache.delete(cacheKey);
+        vi.unstubAllGlobals();
+    }
+});
 
 it.each(['native', 'structured', 'restored', 'unavailable', 'error'])('handles load query availability for %s tables', async mode => {
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });

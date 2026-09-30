@@ -115,12 +115,13 @@ steps:
       endpoint medians, the largest country gains, and the ending-year pattern.
       Distinguish medians across this country sample from population-weighted
       global estimates and historical observations from current conditions.
-      After publishing, run an independent verification script against the raw
-      input and all final derived tables. Reconcile headline values, country
-      counts, ranking, and embedded chart IDs. Preserve valid earlier checks;
-      rerun only invalidated checks. Record final post-publication evidence and
-      complete_workflow only after accounting for all four deliverables.
+      After publishing, review headline values, country counts, ranking, and
+      embedded chart IDs against existing evidence and the final derived tables.
+      Preserve valid earlier checks; investigate only unsupported claims,
+      inconsistencies, or changed inputs. Record the final checker citing the
+      report and supporting evidence, then complete_workflow after accounting
+      for all four deliverables.
     checkers:
       - id: historical_final_delivery
-        condition: Three native charts and supporting data exist, report claims match final outputs, and independent post-publication verification succeeded.
+        condition: Three native charts and supporting data exist, and the published report's claims and chart references agree with final outputs and supporting evidence.
         on_fail: brief

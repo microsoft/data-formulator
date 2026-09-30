@@ -27,6 +27,54 @@ pytestmark = [pytest.mark.backend]
 # ---------------------------------------------------------------------------
 
 class TestModelNamePrefixing:
+    @pytest.mark.parametrize("wrapping_depth", [0, 1, 2])
+    @pytest.mark.parametrize("api_type", [None, "responses"])
+    @pytest.mark.parametrize("original_id", ["rs_" + "a" * 48, "a" * 432])
+    def test_responses_replays_compatible_reasoning_items(self, monkeypatch, wrapping_depth, api_type, original_id):
+        import copy
+        import httpx
+        from litellm.llms.custom_httpx.http_handler import HTTPHandler
+        from litellm.responses.utils import ResponsesAPIRequestUtils
+
+        wrapped_id = original_id
+        for _ in range(wrapping_depth):
+            wrapped_id = ResponsesAPIRequestUtils._build_encrypted_item_id("test-deployment", wrapped_id)
+        messages = [
+            {"role": "user", "content": "Continue"},
+            {"role": "assistant", "content": None,
+             "reasoning_items": [{"type": "reasoning", "id": wrapped_id, "summary": [], "encrypted_content": "opaque-test"}],
+             "tool_calls": [{"id": "call_test", "type": "function", "function": {"name": "query", "arguments": "{}"}}]},
+            {"role": "tool", "tool_call_id": "call_test", "content": "1"},
+        ]
+        original_messages = copy.deepcopy(messages)
+        requests = []
+
+        def respond(handler, url, **kwargs):
+            requests.append(kwargs["json"])
+            return httpx.Response(200, request=httpx.Request("POST", url), json={
+                "id": "resp_test", "object": "response", "created_at": 1, "status": "completed",
+                "model": "gpt-5.4", "output": [{"type": "message", "id": "msg_test",
+                    "role": "assistant", "status": "completed", "content": [
+                        {"type": "output_text", "text": "ok", "annotations": []}]}],
+                "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+            })
+
+        monkeypatch.setattr(HTTPHandler, "post", respond)
+        monkeypatch.setattr(httpx.Client, "send", lambda *args, **kwargs: pytest.fail("Unexpected network request"))
+        client = Client("azure", "responses/gpt-5.4" if api_type is None else "gpt-5.4", api_key="test-key",
+                        api_base="https://example.openai.azure.com", api_type=api_type)
+        client.get_completion(messages)
+        inputs = requests[-1]["input"]
+        reasoning = [item for item in inputs if item.get("type") == "reasoning"]
+        if len(original_id) > 64:
+            assert reasoning == []
+        else:
+            assert reasoning[0]["id"] == original_id
+            assert reasoning[0]["encrypted_content"] == "opaque-test"
+        assert any(item.get("type") == "function_call" and item["call_id"] == "call_test" for item in inputs)
+        assert any(item.get("type") == "function_call_output" and item["call_id"] == "call_test" for item in inputs)
+        assert messages == original_messages
+
     def test_chatgpt_uses_private_native_responses_transport(self, monkeypatch):
         import base64
         import httpx

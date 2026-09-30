@@ -793,7 +793,8 @@ def test_local_terminal_settings_without_administration(config_client, monkeypat
 
 
 @pytest.mark.parametrize('case', ['hosted', 'identity', 'origin', 'no-origin', 'header', 'cross-site', 'remote', 'host', 'locked', 'disabled', 'extra-field'])
-def test_local_terminal_settings_reject_untrusted_changes(config_client, monkeypatch, case):
+@pytest.mark.parametrize('with_sandbox', [False, True])
+def test_local_terminal_settings_reject_untrusted_changes(config_client, monkeypatch, case, with_sandbox):
     from data_formulator.routes import configurations
     monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: case != 'hosted')
     monkeypatch.setattr(configurations, 'get_identity_id', lambda: 'user:admin' if case == 'identity' else 'local:owner')
@@ -809,11 +810,56 @@ def test_local_terminal_settings_reject_untrusted_changes(config_client, monkeyp
     if case == 'cross-site':
         headers['Sec-Fetch-Site'] = 'cross-site'
     body = {'revision': 0, 'mode': 'auto'}
+    if with_sandbox:
+        body['sandbox'] = {'filesystem': {'allowWrite': []}}
     if case == 'extra-field':
         body['overrides'] = {'disable_user_connectors': False}
     response = config_client.put('/api/configurations/terminal', json=body, headers=headers,
         base_url='http://other.example' if case == 'host' else 'http://localhost',
         environ_base={'REMOTE_ADDR': '203.0.113.1' if case == 'remote' else '127.0.0.1'})
+    assert response.get_json()['status'] == 'error'
+    assert read_configuration()['revision'] == 0
+
+
+def test_local_terminal_settings_save_and_reset_write_paths(config_client, monkeypatch, tmp_path):
+    from data_formulator.routes import configurations
+    monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: True)
+    monkeypatch.setattr(configurations, 'get_identity_id', lambda: 'local:owner')
+    monkeypatch.setattr(configurations, 'can_configure', lambda: False)
+    save_configuration({'app_name': 'Keep this', 'terminal_mode': 'ask'}, 0)
+    directory = tmp_path.parent / f'{tmp_path.name}-cli-state'
+    directory.mkdir()
+    paths = [str(directory), str(tmp_path / 'missing-state')]
+    headers = {'Origin': 'http://localhost', 'X-DF-Configuration': '1'}
+    body = {'revision': 1, 'mode': 'ask', 'sandbox': {'filesystem': {'allowWrite': paths}}}
+    response = config_client.put('/api/configurations/terminal', json=body, headers=headers).get_json()['data']
+    assert response['sandboxFilesystem'] == {'configured': True, 'requested': paths,
+        'allowWrite': [str(directory.resolve())], 'skipped': [paths[1]]}
+    assert read_configuration()['overrides']['app_name'] == 'Keep this'
+    assert config_client.put('/api/configurations/terminal', json=body, headers=headers).status_code == 409
+    response = config_client.put('/api/configurations/terminal', json={'revision': 2, 'mode': 'ask',
+        'sandbox': {'filesystem': {'allowWrite': []}}}, headers=headers).get_json()['data']
+    assert response['sandboxFilesystem']['configured'] is True
+    assert response['sandboxFilesystem']['requested'] == []
+    response = config_client.put('/api/configurations/terminal', json={'revision': 3, 'mode': 'ask',
+        'sandbox': None}, headers=headers).get_json()['data']
+    assert response['sandboxFilesystem']['configured'] is False
+    assert read_configuration()['overrides'] == {'app_name': 'Keep this', 'terminal_mode': 'ask'}
+
+
+@pytest.mark.parametrize('sandbox', [
+    {'filesystem': {'allowWrite': ['relative/path']}},
+    {'filesystem': {'allowWrite': ['/']}},
+    {'filesystem': {'allowWrite': ['~/']}},
+    {'filesystem': {'allowWrite': 'not-a-list'}},
+    {'filesystem': {'allowWrite': [], 'extra': True}},
+])
+def test_local_terminal_settings_reject_invalid_write_paths(config_client, monkeypatch, sandbox):
+    from data_formulator.routes import configurations
+    monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: True)
+    monkeypatch.setattr(configurations, 'get_identity_id', lambda: 'local:owner')
+    response = config_client.put('/api/configurations/terminal', json={'revision': 0, 'mode': 'ask', 'sandbox': sandbox},
+        headers={'Origin': 'http://localhost', 'X-DF-Configuration': '1'})
     assert response.get_json()['status'] == 'error'
     assert read_configuration()['revision'] == 0
 
@@ -885,7 +931,8 @@ def test_configuration_api_denies_reads_and_writes(config_client, monkeypatch):
     assert read_configuration()['revision'] == 0
 
 
-def test_staged_model_requires_save_and_never_returns_credentials(config_client, monkeypatch):
+@pytest.mark.parametrize('small_passes', [True, False])
+def test_staged_model_requires_save_and_never_returns_credentials(config_client, monkeypatch, small_passes):
     from types import SimpleNamespace
     from data_formulator.auth import vault
     from data_formulator.auth.vault.local_vault import LocalCredentialVault
@@ -897,15 +944,27 @@ def test_staged_model_requires_save_and_never_returns_credentials(config_client,
     monkeypatch.setattr(vault, 'get_credential_vault', lambda: protected)
     monkeypatch.setattr(configurations, 'get_identity_id', lambda: 'user:admin')
     monkeypatch.delenv('DF_ALLOWED_API_BASES', raising=False)
-    monkeypatch.setattr(agents, 'get_client', lambda *args, **kwargs: SimpleNamespace(
-        ping=lambda **kwargs: None))
+    checked = []
+
+    def ping(client, **kwargs):
+        checked.append(client.model)
+        if client.model == 'openai/small-test-model' and not small_passes:
+            raise ValueError('Small model unavailable')
+
+    monkeypatch.setattr(agents.Client, 'ping', ping)
     headers = {'X-DF-Configuration': '1'}
-    tested = config_client.post('/api/configurations/test-connection', headers=headers, json={'section': 'models',
-        'definition': {'endpoint': 'openai', 'model': 'test-model', 'api_key': 'private-key'}}).get_json()['data']
+    response = config_client.post('/api/configurations/test-connection', headers=headers, json={'section': 'models',
+        'definition': {'endpoint': 'openai', 'model': 'test-model', 'small_model': 'small-test-model', 'api_key': 'private-key'}}).get_json()
+    assert checked == ['openai/test-model', 'openai/small-test-model']
+    if not small_passes:
+        assert response['status'] == 'error'
+        assert read_configuration()['revision'] == 0
+        return
+    tested = response['data']
     assert 'private-key' not in str(tested)
     assert model_registry.get_config(tested['id']) is None
     staged_settings = {**tested['definition'], 'credential_ref': tested['reference']}
-    for changes in ({'model': 'untested-model'}, {'api_base': 'https://untested.example'}, {'api_key': 'plaintext-key'}):
+    for changes in ({'model': 'untested-model'}, {'small_model': 'untested-small'}, {'api_base': 'https://untested.example'}, {'api_key': 'plaintext-key'}):
         rejected = config_client.put('/api/configurations', headers=headers, json={'revision': 0,
             'overrides': {'connections': {'models': {tested['id']: {**staged_settings, **changes}}}}}).get_json()
         assert rejected['status'] == 'error'
@@ -919,6 +978,9 @@ def test_staged_model_requires_save_and_never_returns_credentials(config_client,
     connection = saved['data']['overrides']['connections']['models'][tested['id']]
     assert connection['endpoint'] == 'openai'
     assert connection['model'] == 'test-model'
+    assert connection['small_model'] == 'small-test-model'
+    assert model_registry.get_config(tested['id'])['small_model'] == 'small-test-model'
+    assert next(model for model in model_registry.list_public() if model['id'] == tested['id'])['small_model'] == 'small-test-model'
     assert protected.retrieve('installation:configuration', connection['credential_ref']) == {
         'id': tested['id'], 'section': 'models', 'secrets': {'api_key': 'private-key'}}
     for changes in ({'model': 'untested-model'}, {'api_base': 'https://untested.example'}):

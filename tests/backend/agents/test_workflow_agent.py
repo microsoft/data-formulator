@@ -270,6 +270,27 @@ def test_public_run_counts_tool_invocations_not_model_turns(instance):
     assert "trajectory" not in result
 
 
+def test_public_run_recovers_call_inputs_without_rewriting_saved_evidence(instance):
+    state = new_run(instance, "inputs")
+    arguments = {"code": "print(42)", "purpose": "Verify totals"}
+    state["evidence"] = {
+        "python": {"tool": "execute_python_script", "text": "42"},
+        "legacy": {"tool": "list_workspace_items", "text": "Old result"},
+        "invalid": {"tool": "find_data", "text": "Invalid arguments"},
+    }
+    state["trajectory"] = [{"role": "assistant", "tool_calls": [
+        {"id": "python", "function": {"name": "execute_python_script", "arguments": json.dumps(arguments)}},
+        {"id": "invalid", "function": {"name": "find_data", "arguments": "{"}},
+    ]}]
+    before = json.dumps(state)
+    result = public_run(state)
+    assert result["evidence"]["python"]["input"] == arguments
+    assert "input" not in result["evidence"]["legacy"]
+    assert "input" not in result["evidence"]["invalid"]
+    assert "trajectory" not in result
+    assert json.dumps(state) == before
+
+
 def test_step_description_survives_parsing_and_checkpoint_creation(instance):
     instance["steps"][0]["description"] = "Compare recent market performance with a verified baseline."
     parsed = parse_workflow(yaml.safe_dump(instance))
@@ -344,6 +365,9 @@ def test_workflow_guidance_has_one_completion_policy(agent):
     assert "Both finish the run" not in prompt
     assert "it publishes both the derived table and chart" in prompt
     assert "do not call create_data merely to stage or duplicate" in prompt
+    assert "not a mandatory new script" in prompt
+    assert "Do not repeat verified analysis" in prompt
+    assert "requires an independent verification script after the last output" not in prompt
     tools = {item["function"]["name"]: item["function"] for item in agent._current_tools()}
     assert "No separate create_data call" in tools["visualize"]["description"]
     assert "use visualize directly" in tools["create_data"]["description"]
@@ -423,9 +447,29 @@ def test_workflow_virtual_source_survives_checkpoint_and_resume(agent, monkeypat
     assert len(restored._run_payload["external_references"]) == 1
 
 
-def test_legacy_help_uses_the_question_interaction(agent):
+@pytest.mark.parametrize("changed_input", [False, True])
+def test_help_reply_preserves_checks_unless_observed_inputs_changed(agent, changed_input):
+    source = agent.run_dir / "input.csv"
+    source.write_text("value\n42\n")
+    agent._refresh_artifacts()
+    agent._evidence("observed", "execute_python_script", "Verified 42")
+    agent._execute("record_check", {"check_id": "coverage", "status": "passed",
+        "evidence_ids": ["observed"], "explanation": "Inputs verified"}, "check")
+    previous_revision = agent.state["revision"]
     agent._execute("request_help", {"question": "Please confirm the source."}, "help")
     assert agent.state["interaction"]["questions"][0]["text"] == "Please confirm the source."
+    if changed_input:
+        source.write_text("value\n99\n")
+    agent.resolve_pending({"user_reply": "Should be fine"})
+    if changed_input:
+        assert not agent.state["checks"]
+        with pytest.raises(ValueError, match="current evidence"):
+            agent._require_evidence(["observed"], current_revision=False)
+    else:
+        assert agent.state["checks"]["coverage"]["status"] == "passed"
+        assert agent.state["revision"] == previous_revision
+        agent._require_evidence(["observed"], current_revision=False)
+    assert "If the reply changes requirements" in agent.state["trajectory"][-1]["content"]
 
 
 def test_steering_is_injected_once_without_changing_progress(agent):
@@ -458,7 +502,7 @@ def test_new_steering_allows_returning_to_an_earlier_step(agent):
     assert "including earlier steps" in agent._build_system_prompt()
 
 
-def test_adapt_plan_updates_only_the_run_and_requires_fresh_verification(agent, tmp_path):
+def test_adapt_plan_updates_only_the_run_and_requires_check_reassessment(agent, tmp_path):
     store = WorkflowStore(tmp_path)
     original = json.loads(json.dumps(agent.state["instance"]))
     store.save("review.yaml", yaml.safe_dump(original))
@@ -491,6 +535,9 @@ def test_adapt_plan_updates_only_the_run_and_requires_fresh_verification(agent, 
         for step in steps]}, "review")
     assert not agent.state["plan_review_pending"]
     assert "write_report" in {spec["function"]["name"] for spec in agent._current_tools()}
+    agent._execute("record_check", {"check_id": "coverage", "status": "inconclusive",
+        "evidence_ids": ["observed"], "explanation": "Existing coverage does not establish the newly requested dates."}, "reassess")
+    assert agent.state["checks"]["coverage"]["status"] == "inconclusive"
 
 
 def test_plan_review_can_carry_evidence_but_not_old_check_status(agent):
@@ -509,8 +556,7 @@ def test_plan_review_can_carry_evidence_but_not_old_check_status(agent):
     agent._execute("review_plan", {"step_id": "work", "steps": [assessment]}, "review")
     assert agent.state["step_progress"]["work"]["status"] == "completed"
     assert not agent.state["checks"]
-    with pytest.raises(ValueError, match="current evidence"):
-        agent._require_evidence(["observed"])
+    agent._require_evidence(["observed"], current_revision=False)
     agent._execute("adapt_plan", {"reason": "Add final verification", "step_id": "verify",
         "steps": [{"id": "work", "instructions": "Inspect inputs"}, {"id": "verify", "instructions": "Verify outputs"}]}, "adapt-again")
     assert len(agent.state["plan_revisions"]) == 2
@@ -621,6 +667,8 @@ def test_household_demo_uses_catalog_sample_and_progressive_chart_steps():
     assert "transform the raw price input directly" in basket["instructions"]
     assert "not a separate create_data call" in basket["instructions"]
     assert "chart's derived table" in instance["deliverables"][2]
+    assert "against existing evidence" in instance["steps"][-1]["instructions"]
+    assert "Re-record every required checker" not in instance["steps"][-1]["instructions"]
 
 
 @pytest.mark.parametrize("filename,dataset,columns", [
@@ -642,7 +690,8 @@ def test_enhanced_demo_workflows_are_discoverable_and_use_available_samples(tmp_
     assert len(workflow["deliverables"]) == 4
     assert len(workflow["steps"]) == 5
     assert all(step.get("description") and step.get("checkers") for step in workflow["steps"])
-    assert "independent verification script" in workflow["steps"][-1]["instructions"]
+    assert "against existing evidence" in workflow["steps"][-1]["instructions"]
+    assert "independent verification script" not in workflow["steps"][-1]["instructions"]
     assert "historical" in workflow["prompt"]
 
 
@@ -679,14 +728,14 @@ def test_invalid_instances(instance, mutation):
         parse_workflow(yaml.safe_dump(instance))
 
 
-def test_delivery_requires_current_post_report_verification(agent, monkeypatch):
+def test_delivery_reviews_current_evidence_and_required_checks(agent, monkeypatch):
     state = agent.state
     completion = {"summary": "Verified", "deliverables": [{"index": 0, "evidence_ids": ["verify"], "explanation": "Checked"}]}
     with pytest.raises(ValueError):
         agent._execute("complete_workflow", completion, "end")
     state["calls"] = 1
     agent._execute("write_report", {"report": "# Review\n42 observations"}, "report")
-    with pytest.raises(ValueError, match="verification script"):
+    with pytest.raises(ValueError, match="Required checks"):
         agent._execute("complete_workflow", completion, "end")
     state["calls"] = 2
     monkeypatch.setattr(agent, "_run_explore_code", lambda *args, **kwargs: {"status": "ok", "stdout": "42 rows reconciled", "output": {}})
@@ -695,8 +744,7 @@ def test_delivery_requires_current_post_report_verification(agent, monkeypatch):
     agent._execute("complete_workflow", completion, "end")
     assert state["status"] == "completed"
     (agent.run_dir / "changed.csv").write_text("value\n4\n")
-    with pytest.raises(ValueError):
-        agent._execute("complete_workflow", completion, "end")
+    agent._execute("complete_workflow", completion, "end")
     assert state["checks"]["coverage"]["status"] == "passed"
     (agent.run_dir / "report.md").unlink()
     with pytest.raises(ValueError, match="write the report"):
@@ -705,7 +753,7 @@ def test_delivery_requires_current_post_report_verification(agent, monkeypatch):
     assert not state["checks"]
 
 
-def test_later_output_preserves_step_checks_but_requires_final_verification(agent, monkeypatch):
+def test_later_output_preserves_checks_and_delivery_evidence_without_recalculation(agent, monkeypatch):
     agent._execute("create_data", {"table_name": "prices", "rows": [{"value": 42}], "input_sources": []}, "data")
     monkeypatch.setattr(agent, "_run_explore_code", lambda *args, **kwargs: {
         "status": "ok", "stdout": "42 rows reconciled", "output": {}})
@@ -719,15 +767,17 @@ def test_later_output_preserves_step_checks_but_requires_final_verification(agen
     agent._execute("write_report", {"report": "# Review\n42 observations"}, "report")
     assert agent.state["checks"]["coverage"]["status"] == "passed"
     completion = {"summary": "Verified", "deliverables": [
-        {"index": 0, "evidence_ids": ["verify"], "explanation": "Final report checked"}]}
-    with pytest.raises(ValueError, match="verification script"):
-        agent._execute("complete_workflow", completion, "early")
-    agent.state["calls"] = 3
-    agent._execute("execute_python_script", {"code": "print(42)"}, "verify")
-    agent.state["evidence"]["verify"]["status"] = "failed"
-    with pytest.raises(ValueError, match="verification script"):
+        {"index": 0, "evidence_ids": ["inspect", "report"],
+         "explanation": "The report's 42 observations agree with the previously verified inputs."}]}
+    assert agent.state["evidence"]["inspect"]["revision"] < agent.state["revision"]
+    agent.state["evidence"]["inspect"]["status"] = "failed"
+    with pytest.raises(ValueError, match="successful substantive evidence"):
         agent._execute("complete_workflow", completion, "failed-verification")
-    agent.state["evidence"]["verify"].pop("status")
+    agent.state["evidence"]["inspect"].pop("status")
+    completion["deliverables"][0]["explanation"] = " "
+    with pytest.raises(ValueError, match="Explain how"):
+        agent._execute("complete_workflow", completion, "unexplained")
+    completion["deliverables"][0]["explanation"] = "Report reconciles to the existing 42-row evidence."
     agent._execute("complete_workflow", completion, "done")
     assert agent.state["status"] == "completed"
 
@@ -794,16 +844,13 @@ def test_failed_check_and_repair(agent):
     assert agent.state["transitions"][0]["to"] == "work"
 
 
-def test_table_only_workflow_can_verify_and_complete(agent, monkeypatch):
+def test_table_only_workflow_can_review_and_complete(agent):
     agent.state["instance"]["deliverables"] = ["Analysis table"]
     agent.state["plan"]["steps"][0]["checkers"] = []
     agent.state["calls"] = 1
     agent._execute("create_data", {"table_name": "values", "rows": [{"value": 2}], "input_sources": []}, "data")
-    agent.state["calls"] = 2
-    monkeypatch.setattr(agent, "_run_explore_code", lambda *args, **kwargs: {"status": "ok", "stdout": "Verified values", "output": {}})
-    agent._execute("execute_python_script", {"code": "print('checked')"}, "verify")
     agent._execute("complete_workflow", {"summary": "Verified", "deliverables": [
-        {"index": 0, "evidence_ids": ["data", "verify"], "explanation": "Table checked"}]}, "done")
+        {"index": 0, "evidence_ids": ["data"], "explanation": "The published table contains the requested single value, 2."}]}, "done")
     assert agent.state["status"] == "completed"
 
 
@@ -907,6 +954,71 @@ def test_step_time_includes_model_and_tool_work_but_not_paused_time(agent, monke
     agent.state["status"] = "running"
     list(agent.run_workflow())
     assert agent.state["step_elapsed_seconds"][first_step] == 10
+
+
+@pytest.mark.parametrize("decision", ["continue", "change_approach", "report_and_pause"])
+def test_workflow_progress_checkpoint_counts_text_and_tools_and_resumes(agent, monkeypatch, decision):
+    assessment = {"decision": decision, "progress": "Inspected the workspace inventory.",
+                  "blocker": "The requested source is unavailable.", "next_step": "Choose an accessible source."}
+    observed_tools = []
+
+    def stream(trajectory, tools):
+        observed_tools.append([tool["function"]["name"] for tool in tools])
+        round_number = len(observed_tools)
+        if round_number <= 16:
+            name, arguments = ("list_workspace_items", {"scope": "input"}) if round_number % 2 else (None, None)
+        elif round_number == 17:
+            name, arguments = "progress_check", assessment
+            assert "Progress checkpoint:" in trajectory[-1]["content"]
+        else:
+            name, arguments = "request_help", {"question": "Choose an accessible source."}
+        if False:
+            yield
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=None if name else "Still inspecting.",
+            tool_calls=[SimpleNamespace(id=f"call-{round_number}", function=SimpleNamespace(name=name,
+                arguments=json.dumps(arguments)))] if name else []))])
+
+    monkeypatch.setattr(agent, "_stream_llm", stream)
+    list(agent.run_workflow())
+    assert observed_tools[16] == ["progress_check"]
+    assert all("progress_check" not in tools for tools in observed_tools[:16])
+    assert len(observed_tools) == (17 if decision == "report_and_pause" else 18)
+    assert agent.state["status"] == "paused"
+    assert "call-17" not in agent.state["evidence"]
+    if decision == "report_and_pause":
+        assert agent.state["message"] == agent._progress_check_report(assessment)
+        assert agent.state["interaction"]["tool"] == "request_help"
+    restored = WorkflowAgent(agent.client, agent.workspace, json.loads(json.dumps(agent.state)),
+                             lambda state: None, Event(), "")
+    restored.resolve_pending({"answer": "Use the available sources."})
+    restored.state["status"] = "running"
+    monkeypatch.setattr(restored, "_stream_llm", stream)
+    list(restored.run_workflow())
+    assert "progress_check" not in observed_tools[-1]
+    assert restored.state["status"] == "paused"
+
+
+def test_workflow_progress_checkpoint_rejects_execution_and_bounds_invalid_retries(agent, monkeypatch):
+    agent.state["trajectory"] = [{"role": "system", "content": "Workflow"},
+                                *[{"role": "assistant", "content": "Working."} for _ in range(16)]]
+    executions = []
+    monkeypatch.setattr(agent, "_execute", lambda *args: executions.append(args))
+
+    def stream(trajectory, tools):
+        assert [tool["function"]["name"] for tool in tools] == ["progress_check"]
+        if False:
+            yield
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=None, tool_calls=[
+            SimpleNamespace(id=f"invalid-{agent.state['calls']}", function=SimpleNamespace(
+                name="complete_workflow", arguments='{"summary":"Not actually complete."}'))]))])
+
+    monkeypatch.setattr(agent, "_stream_llm", stream)
+    with pytest.raises(ValueError, match="progress_check alone"):
+        list(agent.run_workflow())
+    assert executions == []
+    assert agent.state["calls"] == 3
+    assert agent.state["status"] == "paused"
+    assert agent._progress_check_due(agent.state["trajectory"])
 
 
 def test_workflow_forwards_report_stream_before_committing(agent, monkeypatch):

@@ -2082,16 +2082,29 @@ let SingleThreadGroupView: FC<{
     timelineItems = orderThreadOutputs(timelineItems, textTurns);
     const workflowTurns = textTurns.filter(turn => turn.workflow && timelineItems.some(item => item.key === `textturn-${turn.id}`
         || item.key.startsWith(`textturn-prompt-${turn.id}-`)
-        || item.key === `textturn-textTurn-workflow-card-${turn.workflow!.runId}`));
+        || item.key === `textturn-textTurn-workflow-card-${turn.workflow!.runId}`
+        || (item.outputNodeId && turn.outputIds?.includes(item.outputNodeId))));
     for (const turn of workflowTurns) {
         for (const message of textTurns.filter(item => item.workflowMessage?.runId === turn.workflow!.runId
             || (item.parentNodeId === turn.id && item.id.startsWith('textTurn-workflow-reply-')))) {
+            const precedingOutputs = new Set(message.workflowMessage?.afterOutputIds || turn.outputIds || []);
+            const nextOutputId = turn.outputIds?.find(id => !precedingOutputs.has(id));
+            const ownsMessage = nextOutputId
+                ? timelineItems.some(item => item.outputNodeId === nextOutputId)
+                : timelineItems.some(item => item.key === `textturn-${turn.id}`
+                    || item.key === `textturn-textTurn-workflow-card-${turn.workflow!.runId}`);
+            if (!ownsMessage) {
+                timelineItems = timelineItems.filter(item => item.key !== `textturn-${message.id}`
+                    && !item.key.startsWith(`textturn-prompt-${message.id}-`));
+                continue;
+            }
             if (!timelineItems.some(item => item.key === `textturn-${message.id}`)) {
                 for (const part of getTurnConversationParts(message, undefined, turn.id, false, 'trigger', false)) part.render();
             }
         }
         const completion = textTurns.find(item => item.id === `textTurn-workflow-completed-${turn.workflow!.runId}`);
         if (completion && !textTurns.some(card => card.workflowCardFor === turn.id)
+            && timelineItems.some(item => item.key === `textturn-${turn.id}`)
             && !timelineItems.some(item => item.key === `textturn-${completion.id}`)) {
             timelineItems.push(buildTextTurnTimelineItem(completion, highlightedTextTurnIds.has(completion.id), false));
         }

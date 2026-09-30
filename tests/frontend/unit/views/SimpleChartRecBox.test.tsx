@@ -71,6 +71,12 @@ describe('Analyst landing attachment handoff', () => {
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'paused-run', displayId: 'Paused run', textKind: 'explain',
             content: 'Waiting for inputs', parentNodeId: 'conversation-root:run', createdAt: 1,
             workflow: { runId: 'run', status: 'paused', stepId: 'inspect', calls: 1, steps: [] } }));
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'textTurn-workflow-card-run', displayId: 'Workflow',
+            textKind: 'explain', content: '', parentNodeId: 'paused-run', createdAt: 2, workflowCardFor: 'paused-run' }));
+        const proposal = { content: 'name: New workflow', definition: { name: 'New workflow' } };
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'completion', status: 'success', content: { summary: 'A new proposal.', workflow_definition: proposal } };
+        });
         store.dispatch(dfActions.setFocused({ type: 'text', textId: 'paused-run' }));
         store.dispatch(dfActions.queueAnalystTask({ text: 'I want to create a workflow from this analysis.',
             images: [], attachments: [], intent: 'workflow-authoring' }));
@@ -82,6 +88,12 @@ describe('Analyst landing attachment handoff', () => {
             workflow: expect.objectContaining({ run_id: 'run' }),
         })]));
         expect(apiRequest).not.toHaveBeenCalledWith('/api/workflows/message', expect.anything());
+        await waitFor(() => expect(store.getState().textTurns.find(turn => turn.workflowDefinition)).toBeDefined());
+        expect(store.getState().textTurns.find(turn => turn.workflowDefinition)).toMatchObject({
+            parentNodeId: 'textTurn-workflow-card-run', prompt: 'I want to create a workflow from this analysis.',
+            workflowDefinition: proposal,
+        });
+        expect(store.getState().textTurns.find(turn => turn.id === 'paused-run')?.workflow?.status).toBe('paused');
     });
 
     it.each(['running', 'paused'] as const)('allows general chat while a %s workflow is selected', async status => {
@@ -108,12 +120,15 @@ describe('Analyst landing attachment handoff', () => {
         fireEvent.click(newRequest);
         act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: 'active-run' })));
         expect(newRequest).toHaveAttribute('aria-pressed', 'true');
+        fireEvent.click(targetSwitch);
+        expect(targetSwitch).toHaveAttribute('aria-pressed', 'true');
         act(() => {
             store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'workflow-result', displayId: 'Workflow result',
                 textKind: 'explain', content: 'Hourly comparison', parentNodeId: 'active-run', createdAt: 2 }));
             store.dispatch(dfActions.setFocused({ type: 'text', textId: 'workflow-result' }));
         });
-        expect(newRequest).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.queryByRole('button', { name: 'Message workflow agent' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'New request' })).not.toBeInTheDocument();
         expect(input).toHaveValue('Create a new workflow organized around analytical goals.');
         if (status === 'running') fireEvent.keyDown(input, { key: 'Enter' });
         else fireEvent.click(screen.getByRole('button', { name: 'Explore' }));
@@ -134,6 +149,7 @@ describe('Analyst landing attachment handoff', () => {
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id, displayId: id, textKind: 'explain',
             content: 'Inspecting data', parentNodeId: 'conversation-root:run', createdAt: 1,
             workflow: { runId: 'run', status: 'running', calls: 1, steps: [] } }));
+        store.dispatch(dfActions.setFocused({ type: 'text', textId: id }));
         render(<Provider store={store}><SimpleChartRecBox /></Provider>);
         const workflowButton = screen.getByRole('button', { name: 'Message workflow agent' });
         expect(workflowButton).toHaveTextContent(/^Workflow agent$/);
@@ -153,8 +169,8 @@ describe('Analyst landing attachment handoff', () => {
             content: 'Previous analysis', parentNodeId: 'conversation-root:other', createdAt: 2 }));
         store.dispatch(dfActions.setFocused({ type: 'text', textId: 'other-chat' }));
         render(<Provider store={store}><SimpleChartRecBox /></Provider>);
-        expect(screen.getByRole('button', { name: 'Message workflow agent' })).toHaveAttribute('aria-pressed', 'false');
-        expect(screen.getByRole('button', { name: 'New request' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.queryByRole('button', { name: 'Message workflow agent' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'New request' })).not.toBeInTheDocument();
         fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Explain this analysis' } });
         fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));

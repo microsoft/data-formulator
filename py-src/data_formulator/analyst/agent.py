@@ -42,6 +42,7 @@ from types import SimpleNamespace
 from typing import Any, Generator
 
 import pandas as pd
+from jsonschema import ValidationError, validate
 
 from data_formulator.agent_config import ANALYST_EXECUTION_DEFAULTS, AnalystExecutionConfig, reasoning_effort_for
 from data_formulator.agents.agent_utils import (
@@ -80,6 +81,36 @@ from data_formulator.analyst.workspace_inputs import (
 logger = logging.getLogger(__name__)
 
 _AGENT_ID = "analyst"
+
+_PROGRESS_CHECK_INTERVAL = 16
+_PROGRESS_CHECK_ACCEPTED = "Progress checkpoint accepted. Follow the recorded decision and next step."
+_PROGRESS_CHECK_INSTRUCTION = (
+    "Progress checkpoint: Review work since the previous checkpoint (or the start of this task). "
+    "Call progress_check alone before doing any further work. Cite concrete results or useful discoveries, "
+    "unresolved blockers, and repeated unsuccessful approaches. Continue if productive; change_approach "
+    "only with a materially different next step; report_and_pause if user input is needed or there is no "
+    "credible path forward. Compare progress with the previous checkpoint's proposed next step. "
+    "Keep each field brief; do not repeat the conversation. This does not change scope, permissions, "
+    "or completion requirements."
+)
+_PROGRESS_CHECK_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "progress_check",
+        "description": "Assess recent progress and decide whether to continue, change approach, or report and pause.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "decision": {"type": "string", "enum": ["continue", "change_approach", "report_and_pause"]},
+                "progress": {"type": "string", "minLength": 1, "maxLength": 1200, "pattern": r"\S"},
+                "blocker": {"type": "string", "maxLength": 1200},
+                "next_step": {"type": "string", "minLength": 1, "maxLength": 1200, "pattern": r"\S"},
+            },
+            "required": ["decision", "progress", "blocker", "next_step"],
+            "additionalProperties": False,
+        },
+    },
+}
 
 # The always-on baseline profile. It composes concrete capability skills but
 # owns no tools, actions, schemas, or handlers itself.
@@ -523,7 +554,6 @@ class AnalystAgent:
                 external_references, focused_external_reference,
             )})
 
-            # TODO: Measure progress and repeated failures to detect stalled runs.
             while True:
                 iteration += 1
 
@@ -550,6 +580,15 @@ class AnalystAgent:
                             iteration, time.time() - t_start, action_reason)
 
                 if action is None:
+                    if action_reason == "progress_pause":
+                        yield {
+                            "type": "interact", "iteration": iteration,
+                            "questions": [{"text": final_text, "responseType": "free_text", "required": True}],
+                            "trajectory": self._strip_images(trajectory),
+                            "completed_step_count": len(completed_steps),
+                        }
+                        self._log_session_end(rlog, "paused", iteration, total_llm_calls, session_start_time)
+                        return
                     # ── No committing action → the run is over ────────────────
                     # The normal close: the model answered in plain text and
                     # committed nothing. That final text IS the completion (the
@@ -1570,6 +1609,54 @@ class AnalystAgent:
 
             self._explore_session = None
 
+    @staticmethod
+    def _progress_check_due(messages: list[dict]) -> bool:
+        rounds = 0
+        for message in reversed(messages):
+            if (message.get("role") == "tool" and message.get("name") == "progress_check"
+                    and message.get("content") == _PROGRESS_CHECK_ACCEPTED):
+                break
+            if message.get("role") == "assistant":
+                rounds += 1
+                if rounds >= _PROGRESS_CHECK_INTERVAL:
+                    return True
+        return False
+
+    @staticmethod
+    def _progress_check_request(messages: list[dict]) -> tuple[list[dict], list[dict]]:
+        return messages + [{"role": "user", "content": _PROGRESS_CHECK_INSTRUCTION}], [_PROGRESS_CHECK_TOOL]
+
+    @staticmethod
+    def _record_progress_check(messages: list[dict], message: Any) -> dict[str, str]:
+        calls = list(getattr(message, "tool_calls", None) or [])
+        assistant = {"role": "assistant", "content": message.content or None}
+        attach_reasoning_content(assistant, message)
+        if calls:
+            assistant["tool_calls"] = [{"id": call.id, "type": "function", "function": {
+                "name": call.function.name, "arguments": call.function.arguments}} for call in calls]
+        error = "Call progress_check alone with decision, progress, blocker, and next_step. No tools were executed."
+        assessment = None
+        if len(calls) == 1 and calls[0].function.name == "progress_check":
+            try:
+                assessment = json.loads(calls[0].function.arguments)
+                validate(assessment, _PROGRESS_CHECK_TOOL["function"]["parameters"])
+            except (ValueError, TypeError, ValidationError):
+                assessment = None
+                error = "Invalid progress_check arguments. Follow the schema and keep fields brief. No tools were executed."
+        messages.append(assistant)
+        for call in calls:
+            messages.append({"role": "tool", "tool_call_id": call.id, "name": call.function.name,
+                             "content": _PROGRESS_CHECK_ACCEPTED if assessment is not None else error})
+        if assessment is None:
+            if not calls:
+                messages.append({"role": "user", "content": error})
+            raise ValueError(error)
+        return assessment
+
+    @staticmethod
+    def _progress_check_report(assessment: dict[str, str]) -> str:
+        return "\n\n".join(assessment[key] for key in ("progress", "blocker", "next_step") if assessment[key].strip())
+
     def _current_tools(self) -> list[dict[str, Any]]:
         """The tool set offered this turn: baseline inspection tools plus
         load_skill + loaded skills' tools) plus the committing **action**
@@ -1607,16 +1694,19 @@ class AnalystAgent:
         """Inner tool-calling loop, wrapped by _get_next_action in a
         SandboxSession context manager."""
         empty_responses = 0
+        checkpoint_failures = 0
         for round_idx in count():
             llm_calls_in_cycle += 1
-            tools = self._current_tools()
+            checkpoint_due = self._progress_check_due(messages)
+            request_messages, tools = (self._progress_check_request(messages) if checkpoint_due
+                                       else (messages, self._current_tools()))
             rlog.log("llm_request", iteration=outer_iteration,
                      round=round_idx + 1,
                      messages_count=len(messages),
                      tools_available=[t["function"]["name"] for t in tools])
             llm_t0 = time.time()
             try:
-                response = yield from self._stream_llm(messages, tools)
+                response = yield from self._stream_llm(request_messages, tools)
             except Exception as exc:
                 llm_latency = int((time.time() - llm_t0) * 1000)
                 rlog.log("llm_response", iteration=outer_iteration,
@@ -1659,6 +1749,26 @@ class AnalystAgent:
                 rlog.log("llm_response", iteration=outer_iteration,
                          round=round_idx + 1,
                          latency_ms=llm_latency, finish_reason=finish_reason)
+
+            if checkpoint_due and (tool_calls or content.strip()):
+                try:
+                    assessment = self._record_progress_check(messages, choice.message)
+                except ValueError as exc:
+                    checkpoint_failures += 1
+                    if checkpoint_failures < 3:
+                        continue
+                    yield {"type": "agent_action", "action_data": None, "reason": "llm_error",
+                           "error_message": "The model could not produce a valid progress checkpoint. " + str(exc),
+                           "llm_calls": llm_calls_in_cycle}
+                    return
+                checkpoint_failures = 0
+                rlog.log("progress_check", iteration=outer_iteration, **assessment)
+                if assessment["decision"] == "report_and_pause":
+                    yield {"type": "agent_action", "action_data": None, "reason": "progress_pause",
+                           "final_text": self._progress_check_report(assessment), "llm_calls": llm_calls_in_cycle}
+                    return
+                yield {"type": "thinking_text", "content": assessment["next_step"]}
+                continue
 
             # --- tool calls: partition into committing actions vs inspection ---
             if tool_calls:
@@ -2105,6 +2215,7 @@ class AnalystAgent:
         tool_calls_acc: dict[int, dict[str, Any]] = {}
         # idx -> {"active", "channel", "extractor", "announced"} for streaming actions
         streamers: dict[int, dict[str, Any]] = {}
+        available_tool_names = {tool["function"]["name"] for tool in tools}
 
         for chunk in stream:
             if not getattr(chunk, "choices", None):
@@ -2137,7 +2248,8 @@ class AnalystAgent:
                     arg_delta = getattr(fn, "arguments", None)
                     if arg_delta:
                         slot["arguments"] += arg_delta
-                yield from self._forward_stream_delta(slot, streamers)
+                if slot["name"] in available_tool_names:
+                    yield from self._forward_stream_delta(slot, streamers)
 
         # Reconstruct a non-streaming-shaped response for the loop.
         tool_call_objs: list[Any] = []

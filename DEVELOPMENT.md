@@ -1052,6 +1052,17 @@ OPENAI_API_KEY=sk-...
 OPENAI_MODELS=gpt-4.1
 ```
 
+Each model connection can optionally specify **Small Model** on the same endpoint,
+using the same credentials. An empty Small Model uses **Model** instead. Test and
+save succeeds only when both distinct model names pass; identical names are tested
+once. For environment-managed connections, set `{PROVIDER}_SMALL_MODEL`, for example
+`OPENAI_SMALL_MODEL=gpt-4.1-mini`. It applies to every Model configured for that
+provider. Backend callers explicitly opt in with `get_client(config,
+use_small_model=True)`. Workspace naming, starter questions, Smart Sort, and code
+explanation use Small Model (or Model when Small Model is not configured). Other
+agent tasks continue using Model, including the analyst and workflow agents,
+semantic annotation, chart restyling, and knowledge distillation.
+
 | Setting | Value | Why |
 |---------|-------|-----|
 | `AUTH_PROVIDER` | *(unset)* | Anonymous access for demos |

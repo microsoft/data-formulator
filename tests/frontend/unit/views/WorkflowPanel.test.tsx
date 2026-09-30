@@ -252,7 +252,8 @@ describe('Workflow session publication', () => {
         expect(selectChatWorkflow(store.getState())).toBeUndefined();
         expect(screen.queryByPlaceholderText('Message workflow...')).toBeNull();
         if (focused) act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: turn.id })));
-        else fireEvent.click(screen.getByRole('button', { name: 'Message workflow agent' }));
+        else act(() => store.dispatch(dfActions.setFocused({ type: 'text',
+            textId: store.getState().textTurns.find(item => item.workflowCardFor === turn.id)!.id })));
         const input = screen.getByPlaceholderText('Message workflow...');
         fireEvent.change(input, { target: { value: 'Compare weekly returns instead.' } });
         fireEvent.click(screen.getByRole('button', { name: 'Send to workflow' }));
@@ -298,6 +299,26 @@ describe('Workflow session publication', () => {
         expect(store.getState().textTurns.filter(turn => turn.workflowMessage?.kind === 'reply')).toHaveLength(1);
         expect(screen.queryByText('Queued for workflow.')).toBeNull();
         expect(screen.queryByText('Which period should be reviewed?')).toBeNull();
+    });
+
+    it.each([0, 3, 8])('renders a workflow reply and acknowledgment once across split output segments after %s outputs', async afterOutputs => {
+        const outputs = Array.from({ length: 8 }, (_, index) => {
+            const output = structuredClone(run().outputs![2]);
+            output.id = `chart-${index}`;
+            output.content.result.chart_id = `chart-${index}`;
+            output.content.result.content.virtual.table_name = `chart_values_${index}`;
+            output.content.result.refined_goal.display_name = `Chart values ${index}`;
+            return output;
+        });
+        await publishWorkflowRun({ ...run(), outputs }, 'session');
+        const turn = store.getState().textTurns.find(item => item.workflow)!;
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'textTurn-workflow-reply-native-question',
+            displayId: 'Workflow reply', textKind: 'explain', prompt: 'should be fine', content: 'Answered workflow question.',
+            parentNodeId: turn.id, createdAt: Date.now(), workflowMessage: { runId: 'native', messageId: 'question',
+                kind: 'reply', status: 'received', afterOutputIds: turn.outputIds!.slice(0, afterOutputs) } }));
+        renderThread(true);
+        expect(screen.getAllByText('should be fine')).toHaveLength(1);
+        expect(screen.getAllByText('Answered workflow question.')).toHaveLength(1);
     });
 
     it('places steering after existing outputs and before outputs created later', async () => {
@@ -351,7 +372,7 @@ describe('Workflow session publication', () => {
         expect(container.querySelector('[data-workflow-step="gather"]')?.textContent).toContain('Existing input still fits');
     });
 
-    it.each(['running', 'paused'])('routes selected %s workflow outputs and stops routing after completion', async status => {
+    it.each(['running', 'paused'])('routes only a directly focused %s workflow box and stops routing after completion', async status => {
         const snapshot = run();
         snapshot.status = status;
         await publishWorkflowRun(snapshot, 'session');
@@ -361,12 +382,68 @@ describe('Workflow session publication', () => {
         for (const focus of [{ type: 'file' as const, fileName: 'notes.txt' },
             { type: 'reference' as const, referenceId: 'workflow-data-native-measurements' },
             { type: 'chart' as const, chartId: 'chart-native' },
+            { type: 'table' as const, tableId: 'chart_values' },
             { type: 'report' as const, reportId: 'workflow-report-native' }]) {
             store.dispatch(dfActions.setFocused(focus));
+            expect(selectChatWorkflow(store.getState())).toBeUndefined();
+        }
+        const workflowTurn = store.getState().textTurns.find(turn => turn.workflow?.runId === 'native')!;
+        const card = store.getState().textTurns.find(turn => turn.workflowCardFor === workflowTurn.id)!;
+        for (const textId of [workflowTurn.id, card.id]) {
+            store.dispatch(dfActions.setFocused({ type: 'text', textId }));
             expect(selectChatWorkflow(store.getState())?.workflow?.runId).toBe('native');
         }
         await publishWorkflowRun({ ...snapshot, status: 'completed' }, 'session');
         expect(selectChatWorkflow(store.getState())).toBeUndefined();
+    });
+
+    it.each(['workflow', 'card', 'chart', 'table'])('places a new analyst request after the focused %s artifact', async target => {
+        store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
+        store.dispatch(dfActions.selectModel('test-model'));
+        const snapshot = run();
+        await publishWorkflowRun(snapshot, 'session');
+        const workflowTurn = store.getState().textTurns.find(turn => turn.workflow)!;
+        const card = store.getState().textTurns.find(turn => turn.workflowCardFor === workflowTurn.id)!;
+        const fromWorkflow = target === 'workflow' || target === 'card';
+        const parentId = fromWorkflow ? card.id : 'chart_values';
+        const focus = target === 'chart' ? { type: 'chart' as const, chartId: 'chart-native' }
+            : target === 'table' ? { type: 'table' as const, tableId: 'chart_values' }
+            : { type: 'text' as const, textId: target === 'workflow' ? workflowTurn.id : card.id };
+        store.dispatch(dfActions.setFocused(focus));
+        let finish!: () => void;
+        const pending = new Promise<void>(resolve => { finish = resolve; });
+        const proposal = { content: 'name: Follow-up review', definition: { name: 'Follow-up review' } };
+        vi.mocked(streamRequest).mockImplementation(async function* () {
+            await pending;
+            yield { type: 'completion', status: 'success', content: {
+                summary: 'A separate workflow proposal.', workflow_definition: proposal,
+            } } as any;
+        });
+        const { container } = renderThread();
+        if (fromWorkflow) fireEvent.click(screen.getByRole('button', { name: 'New request' }));
+        else expect(screen.queryByRole('button', { name: 'Message workflow agent' })).toBeNull();
+        const prompt = 'Create a new workflow based on this artifact';
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: prompt } });
+        fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        expect(String(vi.mocked(streamRequest).mock.calls[0][0])).not.toContain('/workflows/');
+        expect(store.getState().draftNodes[0]?.parentNodeId).toBe(parentId);
+        const expectPromptAfterArtifact = () => {
+            const artifact = fromWorkflow ? container.querySelector(`[data-thread-item="textturn-${card.id}"]`)!
+                : screen.getByText('Category Values').closest('[data-thread-item]')!;
+            expect(artifact).toBeTruthy();
+            const prompts = screen.getAllByText(prompt).filter(node => node.closest('[data-thread-item]'));
+            expect(prompts).toHaveLength(1);
+            expect(artifact.compareDocumentPosition(prompts[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        };
+        expectPromptAfterArtifact();
+        await act(async () => { finish(); });
+        await waitFor(() => expect(store.getState().textTurns.find(turn => turn.workflowDefinition)).toBeDefined());
+        const proposalTurn = store.getState().textTurns.find(turn => turn.workflowDefinition)!;
+        expect(proposalTurn).toMatchObject({ parentNodeId: parentId, prompt, workflowDefinition: proposal });
+        expectPromptAfterArtifact();
+        expect(store.getState().textTurns.find(turn => turn.id === workflowTurn.id)?.workflow).toEqual(workflowTurn.workflow);
+        expect(vi.mocked(apiRequest).mock.calls.some(([url]) => String(url).includes('/workflows/message'))).toBe(false);
     });
 
     it('publishes native data, chart, file and report under one initial turn, without replay duplicates', async () => {
@@ -1153,6 +1230,62 @@ describe('Workflow session publication', () => {
         expect(screen.getAllByRole('button', { name: /Streaming fuel review/ })).toHaveLength(1);
     });
 
+    it('advances streaming reports in stages, pauses for reading, and preserves the final position', () => {
+        let resize = () => {};
+        const frames: FrameRequestCallback[] = [];
+        vi.stubGlobal('ResizeObserver', class {
+            constructor(callback: () => void) { resize = callback; }
+            observe() {} unobserve() {} disconnect() {}
+        });
+        vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => frames.push(callback)));
+        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+        const report = { id: 'staged-report', title: 'Review', content: '# Writing', status: 'generating' as const,
+            generatingPhase: 'writing' as const, selectedChartIds: [], createdAt: 1 };
+        store.dispatch(dfActions.saveGeneratedReport(report));
+        store.dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }));
+        const { container } = render(<Provider store={store}><ThemeProvider theme={createTheme()}>
+            <ReportView />
+        </ThemeProvider></Provider>);
+        const scroller = container.querySelector('[data-report-scroll]') as HTMLDivElement;
+        const content = container.querySelector('[data-report-content]') as HTMLDivElement;
+        let contentHeight = 500;
+        Object.defineProperty(scroller, 'clientHeight', { value: 600 });
+        vi.spyOn(scroller, 'getBoundingClientRect').mockImplementation(() => ({ top: 0 } as DOMRect));
+        vi.spyOn(content, 'getBoundingClientRect').mockImplementation(() => ({ height: contentHeight, bottom: contentHeight - scroller.scrollTop } as DOMRect));
+        const grow = (height: number) => act(() => {
+            contentHeight = height;
+            resize();
+            frames.splice(0).forEach(callback => callback(0));
+        });
+        grow(500);
+        expect(scroller.scrollTop).toBe(0);
+        grow(580);
+        expect(scroller.scrollTop).toBe(190);
+        grow(650);
+        expect(scroller.scrollTop).toBe(190);
+        grow(780);
+        expect(scroller.scrollTop).toBe(390);
+        fireEvent.wheel(scroller, { deltaY: -60 });
+        scroller.scrollTop = 200;
+        fireEvent.scroll(scroller);
+        grow(1000);
+        expect(scroller.scrollTop).toBe(200);
+        expect(screen.getByRole('button', { name: 'Jump to latest' })).toHaveStyle({ left: '24px', bottom: '20px' });
+        fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }));
+        grow(1000);
+        expect(scroller.scrollTop).toBe(610);
+        expect(screen.queryByRole('button', { name: 'Jump to latest' })).toBeNull();
+        const reportFrame = content.parentElement as HTMLElement;
+        const space = reportFrame.nextElementSibling as HTMLElement;
+        expect(space.style.height).toBe('210px');
+        expect(reportFrame.style.minHeight).toBe('1000px');
+        act(() => store.dispatch(dfActions.updateGeneratedReportContent({ id: report.id, status: 'completed', content: '# Finished' })));
+        expect(scroller.scrollTop).toBe(610);
+        expect(space.style.height).toBe('210px');
+        expect(reportFrame.style.minHeight).toBe('1000px');
+        expect(content.contains(space)).toBe(false);
+    });
+
     it.each(['', '# Partial report'])('renders final report content read-only after a stream containing %j', async partial => {
         vi.stubGlobal('requestAnimationFrame', vi.fn(() => 0));
         vi.stubGlobal('cancelAnimationFrame', vi.fn());
@@ -1355,7 +1488,8 @@ describe('Workflow session publication', () => {
         snapshot.status = 'completed';
         snapshot.outputs = [];
         snapshot.message = 'Compared the observed values.';
-        snapshot.evidence = { observed: { tool: 'execute_python_script', text: 'Validated 61 rows', call: 2 } };
+        snapshot.evidence = { observed: { tool: 'execute_python_script', text: 'Validated 61 rows', call: 2,
+            input: { code: 'print("Validated 61 rows")' } } };
         await publishWorkflowRun(snapshot, 'session');
         const onSelect = vi.fn();
         const { container } = render(<div onClick={onSelect}><WorkflowProgress turn={store.getState().textTurns[0]} /></div>);
@@ -1545,6 +1679,9 @@ describe('Workflow session publication', () => {
         await publishWorkflowRun({ ...snapshot, step_id: 'report' }, 'session');
         rerender(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
         expect(report.getByRole('tablist')).toBeVisible();
+        expect(report.getByRole('tab', { name: 'Activities (0)' })).toHaveAttribute('aria-selected', 'true');
+        expect(report.getByText('Write the final report.')).not.toBeVisible();
+        fireEvent.click(report.getByRole('tab', { name: 'Action' }));
         expect(report.getByText('Write the final report.')).toBeVisible();
         expect(report.queryByRole('button', { name: 'Show details for report' })).not.toBeInTheDocument();
     });
@@ -1616,6 +1753,50 @@ describe('Workflow session publication', () => {
         expect(within(summary).getByText('Exclude incomplete months.')).toBeVisible();
     });
 
+    it('prioritizes running activities, distinguishes call types, and preserves manual tab choices', async () => {
+        const snapshot = run();
+        snapshot.outputs = snapshot.outputs!.map(output => ({ ...output, step_id: 'analyze' }));
+        snapshot.active_tool = { id: 'live', tool: 'execute_python_script', step_id: 'analyze', details: { purpose: 'Compare medians' }, input: { code: 'print(43)' } };
+        snapshot.evidence = {
+            inspected: { tool: 'list_workspace_items', text: 'Inputs found', step_id: 'analyze', call: 1, input: { scope: 'input' } },
+            computed: { tool: 'execute_python_script', text: 'Median: 42', step_id: 'analyze', call: 2,
+                details: { purpose: 'Calculate cohort median', filename: 'cohort.parquet' }, input: { code: 'print(42)' } },
+            command: { tool: 'run_terminal', text: JSON.stringify({ result: { stdout: 'Downloaded sample', exit_code: 0 } }), step_id: 'analyze', call: 3, input: { argv: ['echo', 'sample file'] } },
+        };
+        await publishWorkflowRun(snapshot, 'session');
+        const { container, rerender } = render(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
+        const step = container.querySelector('[data-workflow-step="analyze"]') as HTMLElement;
+        const activities = within(step).getByRole('tab', { name: 'Activities (4)' });
+        expect(activities).toHaveAttribute('aria-selected', 'true');
+        expect(within(step).getAllByRole('tab')[0]).toBe(activities);
+        const live = step.querySelector('[data-workflow-running-tool="live"]')!;
+        expect(live).toBeVisible();
+        expect(live).toHaveAttribute('data-workflow-call-type', 'python');
+        expect(live.querySelector('code.language-python')?.textContent).toBe('print(43)');
+        expect(live).toHaveTextContent('Compare medians');
+        const computed = step.querySelector('[data-workflow-call="computed"]') as HTMLElement;
+        expect(within(computed).getAllByText(/Calculate cohort median/)).toHaveLength(1);
+        expect(computed.querySelector('dl')).not.toHaveTextContent('Calculate cohort median');
+        expect(computed.querySelector('dl')).toHaveTextContent('cohort.parquet');
+        const firstCall = step.querySelector('[data-workflow-call="inspected"]')!;
+        expect(live.compareDocumentPosition(firstCall) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        for (const [id, type, icon] of [['inspected', 'tool', 'BuildOutlinedIcon'], ['computed', 'python', 'CodeIcon'], ['command', 'terminal', 'TerminalIcon']]) {
+            const call = step.querySelector(`[data-workflow-call="${id}"]`)!;
+            expect(call).toHaveAttribute('data-workflow-call-type', type);
+            expect(call.querySelector(`[data-testid="${icon}"]`)).not.toBeNull();
+        }
+        expect(step.querySelector('[data-workflow-call="inspected"] code.language-json')?.textContent).toBe(JSON.stringify({ scope: 'input' }, null, 2));
+        expect(step.querySelector('[data-workflow-call="computed"] code.language-python')?.textContent).toBe('print(42)');
+        expect(step.querySelector('[data-workflow-call="command"] code.language-bash')?.textContent).toBe("echo 'sample file'");
+        expect(step.querySelector('[data-workflow-call="command"]')).toHaveTextContent('Downloaded sample');
+        expect(step.querySelector('[data-workflow-call="command"]')).toHaveTextContent('Exit code: 0');
+        fireEvent.click(within(step).getByRole('tab', { name: 'Action' }));
+        await publishWorkflowRun({ ...snapshot, activity: 'Still comparing medians' }, 'session');
+        rerender(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
+        expect(within(step).getByRole('tab', { name: 'Action' })).toHaveAttribute('aria-selected', 'true');
+        expect(live).not.toBeVisible();
+    });
+
     it('groups calls and checks by step and reveals their evidence on demand', async () => {
         const snapshot = run();
         snapshot.status = 'completed';
@@ -1659,9 +1840,11 @@ describe('Workflow session publication', () => {
         expect(gather.querySelector('[data-workflow-activity]')).not.toBeVisible();
         fireEvent.click(within(gather as HTMLElement).getByRole('tab', { name: 'Activities (1)' }));
         fireEvent.click(within(gather as HTMLElement).getByText('Call 1: fetch live data'));
-        expect(within(gather as HTMLElement).getByText('61')).toBeVisible();
-        fireEvent.click(within(gather as HTMLElement).getByText('Raw JSON'));
-        expect(JSON.parse(within(gather as HTMLElement).getByText(/"source": "live"/).textContent!)).toEqual({ rows: 61, metadata: { source: 'live' } });
+        const inputOutput = within(gather as HTMLElement).getByRole('group', { name: 'Tool input' });
+        expect(inputOutput).toBeVisible();
+        expect(inputOutput).toHaveTextContent('Input not retained for this call.');
+        expect(within(inputOutput).queryByRole('button', { name: 'Copy input' })).toBeNull();
+        expect(JSON.parse(inputOutput.querySelector('pre')!.textContent!)).toEqual({ rows: 61, metadata: { source: 'live' } });
         expect(screen.getByText('Observed rows')).not.toBeVisible();
         fireEvent.click(within(gather as HTMLElement).getByRole('tab', { name: 'Checks (1/1)' }));
         fireEvent.click(gather.querySelector('[data-workflow-check="coverage"] summary')!);
@@ -1725,6 +1908,28 @@ describe('Workflow session publication', () => {
         expect(await screen.findByText('All requested regions have observations.')).not.toBeVisible();
         expect(apiRequest).toHaveBeenCalledTimes(1);
         expect(store.getState().textTurns[0]).toEqual(turn);
+    });
+
+    it('restores missing call inputs once without changing saved outputs or focus', async () => {
+        const snapshot = run();
+        snapshot.status = 'completed';
+        snapshot.outputs = [];
+        snapshot.instance!.overview = 'Saved review';
+        snapshot.evidence = { python: { tool: 'execute_python_script', text: '42', step_id: 'analyze' } };
+        await publishWorkflowRun(snapshot, 'session');
+        const before = store.getState();
+        const turn = before.textTurns[0];
+        vi.mocked(apiRequest).mockClear();
+        vi.mocked(apiRequest).mockResolvedValueOnce({ data: { run: { ...snapshot, evidence: {
+            python: { ...snapshot.evidence.python, input: { code: 'print(42)' } },
+        } } } } as any);
+        const { container, rerender } = render(<WorkflowProgress turn={turn} canvas />);
+        await waitFor(() => expect(container.querySelector('[data-workflow-call="python"] code.language-python')?.textContent).toBe('print(42)'));
+        rerender(<WorkflowProgress turn={turn} canvas />);
+        expect(apiRequest).toHaveBeenCalledTimes(1);
+        expect(store.getState().textTurns[0]).toEqual(turn);
+        expect(store.getState().focusedId).toEqual(before.focusedId);
+        expect(store.getState().generatedReports).toEqual(before.generatedReports);
     });
 
     it('includes the report once as an ordered conversation node rather than a turn attachment', async () => {

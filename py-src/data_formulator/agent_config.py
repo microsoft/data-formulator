@@ -100,7 +100,7 @@ AGENT_REASONING_EFFORT: dict[str, ReasoningEffort] = {
     "chart_restyle":       "minimal",  # apply style edits to a Vega-Lite spec
     "code_explanation":    "minimal",  # describe derived fields
     "sort_data":           "minimal",  # natural-order sort a small list
-    "simple":              "minimal",  # nl_to_filter / workspace_name / intent
+    "simple":              "minimal",  # workspace_name
 }
 
 DEFAULT_REASONING_EFFORT: ReasoningEffort = "low"
