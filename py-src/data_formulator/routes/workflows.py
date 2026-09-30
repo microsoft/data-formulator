@@ -23,6 +23,15 @@ _cancellations: dict[str, threading.Event] = {}
 _lock = threading.Lock()
 
 
+class WorkflowCancellation(threading.Event):
+    def __init__(self, path: Path):
+        super().__init__()
+        self.path = path
+
+    def is_set(self):
+        return super().is_set() or self.path.exists()
+
+
 def context(require_workspace: bool = True):
     if not (is_local_mode() or is_managed_mode()):
         raise AppError(ErrorCode.ACCESS_DENIED, "Workflows require local or managed mode.")
@@ -322,7 +331,7 @@ def run_instance():
     except Exception:
         lock.release()
         raise
-    cancellation = threading.Event()
+    cancellation = WorkflowCancellation(path.with_suffix(".pause"))
     path.with_suffix(".pause").unlink(missing_ok=True)
     with _lock:
         _cancellations[str(path)] = cancellation
@@ -346,15 +355,13 @@ def run_instance():
                 from data_formulator.analyst.skills.terminal.skill import run_command
                 state["terminal_request"]["execution_started"] = True
                 checkpoint(state)
-                execution = run_command(terminal_proposal, scratch_dir=workspace.confined_scratch.root)
+                execution = run_command(terminal_proposal, scratch_dir=workspace.confined_scratch.root, cancel=cancellation)
                 terminal_result = {"interrupted": True, "output": "Command interrupted; inspect scratch before retrying."}
                 try:
                     for event in execution:
                         if event["type"] == "terminal_result":
                             terminal_result = event["result"]
                         checkpoint(state)
-                        if cancellation.is_set():
-                            break
                         yield json.dumps(event, ensure_ascii=False) + "\n"
                 except (OSError, ValueError) as exc:
                     terminal_result = {"error": str(exc), "exit_code": None}

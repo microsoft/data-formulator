@@ -32,7 +32,7 @@ import { getCachedChart } from '../app/chartCache';
 import { ApiRequestError, apiRequest, streamRequest } from '../app/apiClient';
 import { handleApiError } from '../app/errorHandler';
 import { getUrls, resolveRecommendedChart } from '../app/utils';
-import { DataFormulatorState, dfActions, dfSelectors, generateFreshChart } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
 import { store } from '../app/store';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
 import { notifyWorkspaceFilesChanged } from '../app/workspaceService';
@@ -57,6 +57,7 @@ export interface Run {
     external_references?: import('../components/ComponentType').ExternalTableReference[];
     setup?: WorkflowSetup;
     activity?: string;
+    interrupted_response?: string;
     active_tool?: NonNullable<TextTurn['workflow']>['activeTool'];
     step_elapsed_seconds?: Record<string, number>;
     revision?: number;
@@ -229,9 +230,11 @@ export async function publishWorkflowRun(run: Run, workspaceId: string) {
             setup: run.setup ?? existing?.workflow?.setup,
             artifacts: [...workflowArtifacts(run), ...(existing?.workflow?.artifacts || []).filter(artifact =>
                 !outputIds.includes(artifact.nodeId) && store.getState().generatedReports.some(report =>
-                    report.id === artifact.nodeId && report.status === 'generating'))],
+                    report.id === artifact.nodeId))],
             planRevision: run.plan_revision || 0, planReviewPending: run.plan_review_pending || false,
             activity: run.activity,
+            pauseRequested: run.status === 'running' && existing?.workflow?.pauseRequested,
+            interruptedResponse: run.interrupted_response,
             activeTool: run.active_tool,
             planHistory: (run.plan_revisions || []).map((previous, index) => ({ revision: previous.plan_revision ?? index,
                 reason: previous.reason, steps: workflowSteps({ instance: { name: '', steps: previous.previous_steps },
@@ -271,6 +274,7 @@ export async function publishWorkflowRun(run: Run, workspaceId: string) {
             const existingTable = dfSelectors.getAllTables(store.getState()).find(item => item.id === table.id);
             table.displayId = existingTable?.displayId || metadata.display_name || table.displayId;
             store.dispatch(dfActions.addTableToStore(table));
+            store.dispatch(fetchFieldSemanticType(table));
             store.dispatch(dfActions.addLoadedTableNode({ kind: 'loaded-table', id: `workflow-data-${run.id}-${table.id}`,
                 tableId: table.id, parentNodeId: store.getState().loadedTableNodes.find(node => node.id === `workflow-data-${run.id}-${table.id}`)?.parentNodeId
                     || outputParent(`workflow-data-${run.id}-${table.id}`), createdAt }));
@@ -312,6 +316,7 @@ export async function publishWorkflowRun(run: Run, workspaceId: string) {
             chart.titleKey = computeInsightKey(chart);
             store.dispatch(dfActions.addConceptItems(concepts));
             store.dispatch(dfActions.insertDerivedTables(table));
+            store.dispatch(fetchFieldSemanticType(table));
             if (!dfSelectors.getAllCharts(store.getState()).some(item => item.id === chart.id)) store.dispatch(dfActions.addChart(chart));
             store.dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
             store.dispatch(dfActions.setViewMode('editor'));
@@ -508,9 +513,19 @@ async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => void) {
 }
 
 export async function pauseWorkflowRun(runId: string) {
+    const workspaceId = store.getState().activeWorkspace?.id;
+    const turn = store.getState().textTurns.find(item => item.workflow?.runId === runId);
+    if (!turn?.workflow || turn.workflow.status !== 'running' || turn.workflow.pauseRequested) return;
+    store.dispatch(dfActions.updateTextTurn({ id: turn.id, workflow: { ...turn.workflow, pauseRequested: true } }));
     try {
         await post('pause', { run_id: runId });
-    } catch (reason) { handleApiError(reason, 'Workflow execution'); }
+    } catch (reason) {
+        const current = store.getState().textTurns.find(item => item.id === turn.id);
+        if (store.getState().activeWorkspace?.id === workspaceId && current?.workflow) {
+            store.dispatch(dfActions.updateTextTurn({ id: current.id, workflow: { ...current.workflow, pauseRequested: false } }));
+        }
+        handleApiError(reason, 'Workflow execution');
+    }
 }
 
 export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; selected?: boolean; interactionOnly?: boolean; onCloseInteraction?: () => void }> = ({ turn, canvas = false, selected = false, interactionOnly = false, onCloseInteraction = () => {} }) => {
@@ -519,8 +534,6 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
     const [questionAnswers, setQuestionAnswers] = useState<Record<number, ClarificationResponse>>({});
     const [savedLog, setSavedLog] = useState<NonNullable<TextTurn['workflow']>['log']>();
     const [savedPlan, setSavedPlan] = useState<Run>();
-    const [stepTabs, setStepTabs] = useState<Record<string, string>>({});
-    const [expandedPendingSteps, setExpandedPendingSteps] = useState<Record<string, boolean>>({});
     const [loadingLog, setLoadingLog] = useState(false);
     const [historyUnavailable, setHistoryUnavailable] = useState(false);
     const [approvalOpen, setApprovalOpen] = useState(false);
@@ -687,172 +700,107 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
         return <ExecutionCodeBlock code={code} language={language} label={`${presentation.label} input`}
             copyLabel="Copy input" result={result} />;
     };
-    const renderCall = (entry: typeof log[number]) => {
+    const renderCall = (entry: typeof log[number] & { running?: boolean }) => {
         const presentation = callPresentation(entry.tool);
-        return <Box component="details" key={entry.id} data-workflow-call={entry.id} data-workflow-call-type={presentation.type}>
+        return <Box component="details" key={entry.id} data-workflow-call={entry.running ? undefined : entry.id}
+            data-workflow-running-tool={entry.running ? entry.id : undefined} data-workflow-call-type={presentation.type}>
             <Box component="summary" sx={{ display: 'flex', alignItems: 'center', gap: 0.75, '&&': { py: 0.25 } }}>
                 <ChevronRightIcon className="workflow-chevron" sx={{ fontSize: 16, flexShrink: 0 }} />
+                {entry.running && <CircularProgress size={12} sx={{ flexShrink: 0 }} />}
                 <presentation.Icon sx={{ fontSize: 16, color: 'text.secondary', flexShrink: 0 }} />
                 <Box component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary', flexShrink: 0 }}>{presentation.label}</Box>
-                <Box component="span" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{entry.call !== undefined ? `Call ${entry.call}: ` : ''}{entry.tool.replaceAll('_', ' ')}
+                <Box component="span" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{entry.running ? 'Running ' : entry.call !== undefined ? `Call ${entry.call}: ` : ''}{entry.tool.replaceAll('_', ' ')}
                     {toolTitle(entry.details) && <Box component="span" sx={{ color: 'text.secondary' }}> · {toolTitle(entry.details)}</Box>}
                 </Box>
             </Box>
             <Box sx={{ pl: { xs: 1, sm: 4 }, pb: 1.5 }}>
                 {renderToolDetails(entry.details, toolTitle(entry.details))}
-                {renderCallBody(entry.tool, entry.input, entry.text)}
+                {renderCallBody(entry.tool, entry.input, entry.running ? undefined : entry.text)}
             </Box>
         </Box>;
     };
     const renderTimeline = (steps: NonNullable<TextTurn['workflow']>['steps'], checks: NonNullable<NonNullable<TextTurn['workflow']>['checks']>, revision: number, archived = false) => (
-        <Box component="ol" aria-label={archived ? `Plan ${revision + 1} timeline` : 'Workflow plan timeline'}
-            sx={{ listStyle: 'none', m: 0, p: 0 }}>
-            {steps.map((step, index) => {
-                const entries = allLog.filter(entry => (entry.plan_revision || 0) === revision && entry.step_id === step.id);
-                const stepArtifacts = artifacts.filter(artifact => artifact.planRevision === revision && artifact.stepId === step.id);
-                const results = checks.filter(check => step.checkIds?.includes(check.id));
-                const transitions = (workflow.transitions || []).filter(transition => (transition.plan_revision || 0) === revision && transition.from === step.id);
-                const savedSteps = revision === (savedPlan?.plan_revision || 0) ? savedPlan?.instance?.steps
-                    : savedPlan?.plan_revisions?.find((plan, planIndex) => (plan.plan_revision ?? planIndex) === revision)?.previous_steps;
-                const definition = savedSteps?.find(item => item.id === step.id);
-                const checkers = step.checkers || definition?.checkers || (step.checkIds || []).map(id => ({ id, condition: undefined, when: undefined, on_fail: undefined }));
-                const active = !archived && isActiveStep(step.id);
-                const runningTool = active && activeTool?.step_id === step.id ? activeTool : undefined;
-                const runningPresentation = runningTool ? callPresentation(runningTool.tool) : undefined;
-                const activeIndex = workflow.status === 'completed' ? steps.length - 1 : steps.findIndex(item => item.id === workflow.stepId);
-                const reached = !archived && !workflow.planReviewPending && index <= activeIndex;
-                const status = displayedStepStatus(step.status, archived);
-                const finished = status === 'passed' || status === 'completed';
-                const progressColor = step.status === 'failed' ? 'error.main' : finished ? 'success.main'
-                    : workflow.status === 'paused' && index === activeIndex ? 'warning.main' : 'primary.main';
-                const connectorReached = reached && index < activeIndex;
-                const connectorStyle = connectorReached && !finished ? 'dashed' : 'solid';
-                const tabKey = `${turn.id}-${revision}-${step.id}`;
-                const pending = status === 'pending' && !active;
-                const collapsed = pending && !expandedPendingSteps[tabKey];
-                const selectedTab = stepTabs[tabKey] || (active ? 'activity' : stepArtifacts.length ? 'artifacts' : 'action');
-                const tabId = (name: string) => `${encodeURIComponent(tabKey)}-${name}`;
-                const panelProps = (name: string) => ({ role: 'tabpanel', id: `${tabId(name)}-panel`,
-                    'aria-labelledby': tabId(name), hidden: selectedTab !== name, tabIndex: 0 });
-                return <Box component="li" key={step.id} data-workflow-step={archived ? undefined : step.id} aria-busy={active}
-                    sx={{ position: 'relative', display: 'grid', gridTemplateColumns: '28px minmax(0, 1fr)', columnGap: 1.5,
-                        pb: index === steps.length - 1 ? 0 : 1.25 }}>
-                    {index < steps.length - 1 && <Box component="span" aria-hidden="true"
-                        data-workflow-connector={connectorReached ? connectorStyle : 'pending'}
-                        sx={{ position: 'absolute', left: connectorReached || active ? 12 : 13, top: 30, bottom: 0,
-                            borderLeftWidth: connectorReached || active ? 4 : 2, borderLeftStyle: connectorStyle,
-                            borderColor: connectorReached || active ? progressColor : 'divider' }} />}
-                    <Box data-workflow-marker sx={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        '& > .MuiSvgIcon-root': { fontSize: 24, ...(reached ? { color: progressColor } : {}) } }}>
-                        {active ? <CircularProgress size={24} aria-label="Current step running" sx={{ flexShrink: 0 }} /> : stepIcon(status)}
+        <Box component="ol" aria-label={archived ? `Plan ${revision + 1} timeline` : 'Workflow plan timeline'} sx={{ listStyle: 'none', m: 0, p: 0 }}>
+        {steps.map((step, index) => {
+        const entries = allLog.filter(entry => (entry.plan_revision || 0) === revision && entry.step_id === step.id);
+        const stepArtifacts = artifacts.filter(artifact => artifact.planRevision === revision && artifact.stepId === step.id);
+        const results = checks.filter(check => step.checkIds?.includes(check.id));
+        const transitions = (workflow.transitions || []).filter(transition => (transition.plan_revision || 0) === revision && transition.from === step.id);
+        const savedSteps = revision === (savedPlan?.plan_revision || 0) ? savedPlan?.instance?.steps
+            : savedPlan?.plan_revisions?.find((plan, planIndex) => (plan.plan_revision ?? planIndex) === revision)?.previous_steps;
+        const definition = savedSteps?.find(item => item.id === step.id);
+        const checkers = step.checkers || definition?.checkers || (step.checkIds || []).map(id => ({ id, condition: undefined, when: undefined, on_fail: undefined }));
+        const active = !archived && isActiveStep(step.id);
+        const runningTool = active && activeTool?.step_id === step.id ? activeTool : undefined;
+        const calls = runningTool && !entries.some(entry => entry.id === runningTool.id)
+            ? [{ ...runningTool, text: '', running: true }, ...entries] : entries;
+        const status = displayedStepStatus(step.status, archived);
+        const finished = status === 'passed' || status === 'completed';
+        return <Box component="li" key={step.id} data-workflow-step={archived ? undefined : step.id} aria-busy={active}
+            sx={{ position: 'relative', display: 'grid', gridTemplateColumns: '24px minmax(0, 1fr)', columnGap: 1.25, pb: 1.5 }}>
+            {index < steps.length - 1 && <Box aria-hidden="true" data-workflow-connector={finished ? 'solid' : 'pending'} sx={{ position: 'absolute', left: 11, top: 26, bottom: 2,
+                borderLeft: 2, borderColor: finished ? 'success.main' : 'divider' }} />}
+            <Box data-workflow-marker sx={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{stepIcon(status, active)}</Box>
+            <Box sx={{ minWidth: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: 1, minHeight: 24 }}>
+                    <Typography component="h3" sx={{ fontSize: textVar.md, fontWeight: active ? 600 : 500, flex: 1, minWidth: 0,
+                        color: status === 'pending' ? 'text.secondary' : 'text.primary', overflowWrap: 'anywhere' }}>{step.description || definition?.description || step.id.replaceAll('_', ' ')}</Typography>
+                    <Typography component="span" sx={{ fontSize: textVar.xs, color: finished ? 'success.main' : 'text.secondary' }}>{status}</Typography>
+                </Box>
+                {stepArtifacts.length > 0 && <Box data-workflow-artifacts={step.id} sx={{ mt: 1, mb: 0.5 }}><WorkflowArtifacts artifacts={stepArtifacts} /></Box>}
+                <Box component="details" data-workflow-execution={step.id}>
+                    <Box component="summary" sx={{ color: 'text.secondary', '&&': { py: 0.5 }, fontSize: textVar.xs }}>Execution details</Box>
+                    <Box data-workflow-action={step.id} sx={proseSx}><ReactMarkdown>{step.instructions || definition?.instructions || ''}</ReactMarkdown></Box>
+                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', my: 1 }}>{calls.length} calls · {results.filter(result => result.status === 'passed').length}/{checkers.length} checks{stepDuration(step.elapsedSeconds, active)}</Typography>
+                    {step.next && step.next !== steps[index + 1]?.id && <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>Next: {step.next}</Typography>}
+                    <Box data-workflow-activity={step.id} sx={sectionContentSx}>
+                        <Typography component="h3" sx={{ fontWeight: 600, mb: 0.75 }}>Activities</Typography>
+                        {!calls.length && !transitions.length && !step.assessment && <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary' }}>No activity yet.</Typography>}
+                        {step.assessment && <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', my: 1 }}>
+                            Progress assessment: {step.assessment.status} · {step.assessment.explanation}
+                            {step.assessment.evidence_ids.length ? ` · Evidence: ${step.assessment.evidence_ids.join(', ')}` : ''}
+                        </Typography>}
+                        {calls.map(renderCall)}
+                        {transitions.map((transition, transitionIndex) => <Typography key={transitionIndex} sx={{ mt: 1, fontSize: textVar.sm, color: 'text.secondary' }}>{transition.reason}</Typography>)}
                     </Box>
-                    <Box sx={{ minWidth: 0, containerType: 'inline-size' }}>
-                        <Box sx={{ minHeight: 24, display: 'flex', alignItems: 'baseline', gap: 1, flexWrap: 'wrap' }}>
-                            {pending && <Tooltip title={collapsed ? 'Show step details' : 'Hide step details'}>
-                                <IconButton size="small" aria-label={`${collapsed ? 'Show' : 'Hide'} details for ${step.id}`}
-                                    aria-expanded={!collapsed} aria-controls={`${tabId('details')}-content`}
-                                    onClick={() => setExpandedPendingSteps(previous => ({ ...previous, [tabKey]: !previous[tabKey] }))}
-                                    sx={{ p: 0.25, alignSelf: 'center' }}>
-                                    <ChevronRightIcon sx={{ fontSize: 20, transform: collapsed ? 'none' : 'rotate(90deg)' }} />
-                                </IconButton>
-                            </Tooltip>}
-                            <Typography component="h3" sx={{ m: 0, fontSize: textVar.md, fontWeight: 600,
-                                color: 'text.primary', flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{step.description || definition?.description || step.id.replaceAll('_', ' ')}</Typography>
-                            <Typography component="span" sx={{ fontSize: textVar.xs, fontWeight: reached ? 600 : 400,
-                                color: reached ? progressColor : 'text.secondary' }}>{status}{stepDuration(step.elapsedSeconds, active)}</Typography>
-                        </Box>
-                        <Box id={`${tabId('details')}-content`} hidden={collapsed} sx={{ mt: 0.25, minWidth: 0 }}>
-                            <Tabs value={selectedTab} onChange={(_, value: string) => setStepTabs(previous => ({ ...previous, [tabKey]: value }))}
-                                aria-label={`${step.id} details`} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile
-                                sx={{ minHeight: 36, '& .MuiTab-root': {
-                                    minHeight: 36, minWidth: 0, px: 1.25, py: 0.5, fontSize: textVar.xs, textTransform: 'none' } }}>
-                                {[['activity', `Activities (${entries.length + (runningTool && !entries.some(entry => entry.id === runningTool.id) ? 1 : 0)})`],
-                                    ['action', 'Action'], ['checks', `Checks (${results.filter(result => result.status === 'passed').length}/${checkers.length})`],
-                                    ['artifacts', `Artifacts (${stepArtifacts.length})`]].map(([name, label]) =>
-                                    <Tab key={name} value={name} label={label} id={tabId(name)} aria-controls={`${tabId(name)}-panel`} />)}
-                            </Tabs>
-                            <Box {...panelProps('action')} data-workflow-action={step.id}>
-                                    <Box data-workflow-section-content sx={sectionContentSx}>
-                                    <Typography sx={{ mb: 0.5, fontSize: textVar.xs, color: 'text.secondary' }}>Step: {step.id}</Typography>
-                                    <Typography sx={{ fontSize: textVar.md, lineHeight: 1.6, overflowWrap: 'anywhere' }}>{step.instructions}</Typography>
-                                    {step.next && step.next !== steps[index + 1]?.id && <Typography sx={{ mt: 0.5, fontSize: textVar.xs, color: 'text.secondary' }}>Next: {step.next}</Typography>}
-                                    </Box>
-                            </Box>
-                            <Box {...panelProps('checks')} data-workflow-checks={step.id}>
-                                <Box data-workflow-section-content sx={sectionContentSx}>
-                                {!checkers.length && <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary' }}>No checks specified.</Typography>}
-                                <Box component="ul" sx={{ listStyle: 'none', p: 0, m: 0 }}>
-                                {checkers.map(check => {
-                                    const result = results.find(item => item.id === check.id);
-                                    return <Box component="li" key={check.id} data-workflow-check={check.id} sx={{ pb: 0.5 }}>
-                                        <Box component="details" sx={{ '&[open] .workflow-step-preview': { WebkitLineClamp: 'unset', display: 'block' } }}>
-                                            <Box component="summary" sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75, '&&': { py: 0.25 } }}>
-                                                <ChevronRightIcon className="workflow-chevron" sx={{ fontSize: 16, mt: 0.25, flexShrink: 0 }} />
-                                                <Box component="span" aria-label={`${check.id}: ${result?.status || 'pending'}`}
-                                                    sx={{ display: 'inline-flex', pt: 0.25, flexShrink: 0 }}>{stepIcon(result?.status || 'pending')}</Box>
-                                                <Typography component="span" className="workflow-step-preview" sx={{ fontSize: textVar.md,
-                                                    color: 'text.secondary', lineHeight: 1.6, minWidth: 0, display: '-webkit-box',
-                                                    WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, overflow: 'hidden',
-                                                    overflowWrap: 'anywhere' }}>{check.condition || check.id}</Typography>
-                                            </Box>
-                                            <Box sx={{ pl: 5.5, py: 0.5 }}>
-                                                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', mb: 0.5 }}>{check.id} · {result?.status || 'pending'} (agent-reported)</Typography>
-                                                <Typography sx={{ fontSize: textVar.md, lineHeight: 1.6 }}>{result?.explanation || 'Not checked yet.'}</Typography>
-                                                <Typography sx={{ mt: 0.5, fontSize: textVar.xs, color: 'text.secondary' }}>
-                                                    {check.when === 'before' ? 'Before' : check.when === 'during' ? 'During' : 'After'} this step{check.on_fail ? ` · On failure: ${check.on_fail}` : ''}
-                                                </Typography>
-                                            </Box>
-                                        </Box>
-                                    </Box>;
-                                })}
+                    <Box data-workflow-checks={step.id} sx={sectionContentSx}>
+                        <Typography component="h3" sx={{ fontWeight: 600, mb: 0.75 }}>Checks</Typography>
+                        {!checkers.length && <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary' }}>No checks specified.</Typography>}
+                        {checkers.map(check => {
+                            const result = results.find(item => item.id === check.id);
+                            return <Box component="details" key={check.id} data-workflow-check={check.id}>
+                                <Box component="summary" sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75 }}>
+                                    <ChevronRightIcon className="workflow-chevron" sx={{ fontSize: 16, mt: 0.25, flexShrink: 0 }} />
+                                    <Box component="span" aria-label={`${check.id}: ${result?.status || 'pending'}`} sx={{ display: 'inline-flex', pt: 0.25 }}>{stepIcon(result?.status || 'pending')}</Box>
+                                    <Box component="span" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{check.condition || check.id}</Box>
                                 </Box>
+                                <Box sx={{ pl: 5.5, py: 0.5 }}>
+                                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{check.id} · {result?.status || 'pending'} (agent-reported)</Typography>
+                                    <Typography sx={{ fontSize: textVar.md, lineHeight: 1.6 }}>{result?.explanation || 'Not checked yet.'}</Typography>
+                                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{check.when === 'before' ? 'Before' : check.when === 'during' ? 'During' : 'After'} this step{check.on_fail ? ` · On failure: ${check.on_fail}` : ''}</Typography>
                                 </Box>
-                            </Box>
-                        <Box {...panelProps('activity')} data-workflow-activity={step.id}>
-                            <Box data-workflow-section-content sx={sectionContentSx}>
-                            {!entries.length && !transitions.length && !step.assessment && !runningTool && <Typography sx={{ fontSize: textVar.md, color: 'text.secondary' }}>No activity yet.</Typography>}
-                            {step.assessment && <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', my: 1 }}>
-                                Progress assessment: {step.assessment.status} · {step.assessment.explanation}
-                                {step.assessment.evidence_ids.length ? ` · Evidence: ${step.assessment.evidence_ids.join(', ')}` : ''}
-                            </Typography>}
-                            {runningTool && runningPresentation && <Box data-workflow-running-tool={runningTool.id}
-                                data-workflow-call-type={runningPresentation.type} sx={{ py: 0.5 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.5, color: 'primary.main', fontSize: textVar.sm }}>
-                                    <CircularProgress size={12} sx={{ flexShrink: 0 }} />
-                                    <runningPresentation.Icon sx={{ fontSize: 16, flexShrink: 0 }} />
-                                    <Box component="span">{runningPresentation.label} · Running {runningTool.tool.replaceAll('_', ' ')}</Box>
-                                </Box>
-                                <Box sx={{ pl: 2.25 }}>
-                                    {renderToolDetails(runningTool.details)}
-                                    {renderCallBody(runningTool.tool, runningTool.input)}
-                                </Box>
-                            </Box>}
-                            {entries.map(renderCall)}
-                            {transitions.map((transition, transitionIndex) => <Typography key={transitionIndex} sx={{ mt: 1, fontSize: textVar.sm, color: 'text.secondary' }}>{transition.from} → {transition.to}: {transition.reason}</Typography>)}
-                            </Box>
-                        </Box>
-                        <Box {...panelProps('artifacts')} data-workflow-artifacts={step.id}>
-                            <Box data-workflow-section-content sx={sectionContentSx}>
-                                {!stepArtifacts.length && <Typography sx={{ fontSize: textVar.md, color: 'text.secondary' }}>No outputs yet.</Typography>}
-                                <WorkflowArtifacts artifacts={stepArtifacts} />
-                            </Box>
-                        </Box>
-                        </Box>
+                            </Box>;
+                        })}
                     </Box>
-                </Box>;
-            })}
+                </Box>
+            </Box>
+        </Box>;
+        })}
         </Box>
     );
     const statusAction = (label: string, icon: React.ReactNode, onClick: () => void, disabled = false) => canvas || interactionOnly
         ? <Tooltip title={label}><span><IconButton size="small" color={workflow.status === 'paused' ? 'warning' : 'primary'} aria-label={label} disabled={disabled} onClick={onClick}>{icon}</IconButton></span></Tooltip>
         : <Button size="small" color={workflow.status === 'paused' ? 'warning' : 'primary'} startIcon={icon} disabled={disabled} onClick={onClick}>{label}</Button>;
     const pauseWorkflow = () => { void pauseWorkflowRun(workflow.runId); };
+    const currentStepIndex = workflow.steps.findIndex(step => step.id === workflow.stepId);
+    const currentStep = workflow.steps[currentStepIndex];
+    const needsReview = !!(workflow.terminalRequest || workflow.dataOperation || turn.form || questions.length);
     const summary = (
         <Box component="span" sx={{ flex: 1, minWidth: 0, ...(canvas ? { display: 'block' } : {}) }}>
             <Typography component="span" sx={{ display: 'block', fontSize: textVar.xs, color: 'text.secondary', overflowWrap: 'anywhere', mb: 0.75, pr: canvas ? 0 : 3.5 }}>
                 <Box component="span"
                     sx={{ fontWeight: 600, color: statusColor, textTransform: 'capitalize' }}>
-                    {workflow.status === 'running' ? <ShimmerText tone="neutral" fontSize="inherit" fontWeight={600}>{workflow.planReviewPending ? 'Reviewing plan' : workflow.status}</ShimmerText> : workflow.status}
+                    {workflow.status === 'running' ? <ShimmerText tone="neutral" fontSize="inherit" fontWeight={600}>{workflow.pauseRequested ? 'Stopping...' : workflow.planReviewPending ? 'Reviewing plan' : workflow.status}</ShimmerText> : workflow.status}
                 </Box> · {workflow.toolCalls ?? workflow.log?.length ?? 0} tool calls
             </Typography>
             {workflow.status === 'running' && workflow.activity && <Box component="span" data-workflow-current-action
@@ -881,16 +829,34 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
         <Box data-workflow-scroll={canvas ? workflow.runId : undefined} sx={canvas ? { height: '100%', overflow: 'auto', boxSizing: 'border-box',
             p: { xs: 2, sm: 3 }, '& > *': { maxWidth: 960, mx: 'auto' } } : { display: 'contents' }}>
         {!interactionOnly && <>
-        {canvas && <Box sx={{ mb: 2, overflowWrap: 'anywhere' }}>
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.25 }}>
-                <Box sx={{ display: 'flex', flexShrink: 0, pt: '1px', color: 'text.secondary' }}>
-                    <WorkflowGears running={workflow.status === 'running'} size={28} showTooltip={false} />
+        {canvas && <Box component="header" aria-label="Workflow status" sx={{ mb: 1.5, overflowWrap: 'anywhere' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap' }}>
+                <Typography component="h1" sx={{ minWidth: 0, fontFamily: 'inherit', fontSize: '1.375rem', lineHeight: 1.25, fontWeight: 700, letterSpacing: 0 }}>{turn.prompt?.replace(/^Run workflow: /, '') || 'Workflow'}</Typography>
+                <Typography sx={{ fontSize: textVar.sm, color: statusColor, textTransform: 'capitalize' }}>
+                    {workflow.status === 'running' ? <ShimmerText tone="neutral" fontSize="inherit">{workflow.pauseRequested ? 'Stopping...' : workflow.planReviewPending ? 'Reviewing plan' : 'Running'}</ShimmerText> : workflow.status}
+                </Typography>
+                <Box sx={{ ml: 'auto' }}>
+                    {workflow.status === 'running' && <Button size="small" disabled={workflow.pauseRequested} startIcon={<PauseIcon />} onClick={pauseWorkflow}>Pause</Button>}
+                    {workflow.status === 'paused' && <Button size="small" disabled={submitting} startIcon={needsReview ? <QuestionAnswerOutlinedIcon /> : <PlayArrowIcon />}
+                        onClick={() => {
+                            if (workflow.terminalRequest) setApprovalOpen(true);
+                            else if (needsReview) store.dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }));
+                            else void resume({});
+                        }}>{needsReview ? 'Review request' : 'Resume'}</Button>}
                 </Box>
-                <Typography component="h1" sx={{ minWidth: 0, fontFamily: 'inherit', fontSize: '1.375rem', lineHeight: 1.25, fontWeight: 700, letterSpacing: '-0.01em' }}>{turn.prompt?.replace(/^Run workflow: /, '') || 'Workflow'}</Typography>
             </Box>
-            {overview && <Box data-workflow-overview sx={{ ...proseSx, mt: 1, color: 'text.secondary' }}><ReactMarkdown>{overview}</ReactMarkdown></Box>}
+            {currentStep && workflow.status !== 'completed' && !workflow.planReviewPending && <Typography sx={{ mt: 1, fontSize: textVar.md }}>
+                <Box component="span" sx={{ color: 'text.secondary' }}>Step {currentStepIndex + 1} of {workflow.steps.length}: </Box>
+                {currentStep.description || currentStep.id.replaceAll('_', ' ')}
+            </Typography>}
+            {workflow.status === 'running' && workflow.activity && <Typography data-workflow-current-action sx={{ mt: 0.5, fontSize: textVar.sm, color: 'text.secondary' }}>{workflow.activity}</Typography>}
+            {workflow.status !== 'running' && workflow.status !== 'completed' && <Box sx={{ ...proseSx, mt: 0.5, color: 'text.secondary' }}><ReactMarkdown>{turn.content}</ReactMarkdown></Box>}
+            {workflow.interruptedResponse && <Box component="details" sx={{ mt: 1, fontSize: textVar.sm }}>
+                <Box component="summary" sx={{ cursor: 'pointer', color: 'text.secondary' }}>Interrupted response</Box>
+                <Typography component="pre" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: textVar.xs }}>{workflow.interruptedResponse}</Typography>
+            </Box>}
         </Box>}
-        {canvas ? summary : <ThreadArtifactCard artifactType="workflow" warning={workflow.status === 'paused'} title="Open workflow response and analysis log" selected={selected} onClick={() => {
+        {!canvas && <ThreadArtifactCard artifactType="workflow" warning={workflow.status === 'paused'} title="Open workflow response and analysis log" selected={selected} onClick={() => {
             store.dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }));
             store.dispatch(dfActions.setViewMode('editor'));
         }} actions={<ArtifactDeleteButton label="Delete workflow node" disabled={deleting} onClick={async () => {
@@ -914,15 +880,11 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
             {workflow.status === 'completed' ? <>
                 <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: 600 }}>Results</Typography>
                 <ReactMarkdown>{turn.content}</ReactMarkdown>
-            </> : workflow.status !== 'running' && <>
-                <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: 600 }}>
-                    {workflow.status === 'paused' ? 'Needs attention' : 'Run stopped'}
-                </Typography>
-                <ReactMarkdown>{turn.content}</ReactMarkdown>
-            </>}
-            {(scope || deliverables.length > 0 || setup?.instructions || Object.keys(setup?.parameters || {}).length > 0) && <Box component="details" sx={{ mt: 1.5,
+            </> : null}
+            {(overview || scope || deliverables.length > 0 || setup?.instructions || Object.keys(setup?.parameters || {}).length > 0) && <Box component="details" sx={{ mt: 1,
                 '& summary': { cursor: 'pointer', color: 'text.secondary' } }}>
-                <Box component="summary">Scope and inputs</Box>
+                <Box component="summary">Workflow details</Box>
+                {overview && <Box data-workflow-overview sx={{ my: 1 }}><ReactMarkdown>{overview}</ReactMarkdown></Box>}
                 {scope && <ReactMarkdown>{scope}</ReactMarkdown>}
                 {deliverables.length > 0 && <Box sx={{ mt: 0.75 }}>
                     <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: 600 }}>Expected outputs</Typography>
@@ -977,17 +939,17 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
         </Box>
         <Box sx={{ display: 'contents' }}>
         {workflow.status === 'paused' && workflow.terminalRequest && <>
-            {statusAction('Review command', <TerminalIcon sx={{ fontSize: 18 }} />, () => {
+            {!canvas && statusAction('Review command', <TerminalIcon sx={{ fontSize: 18 }} />, () => {
                 if (!interactionOnly) store.dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }));
                 else setApprovalOpen(true);
             }, submitting)}
-            {interactionOnly && !submitting && (approvalOpen || dismissedApproval !== workflow.terminalRequest.id) && <TerminalApprovalDialog key={workflow.terminalRequest.id} proposal={workflow.terminalRequest} onDecision={decision => {
+            {(interactionOnly || canvas) && !submitting && (approvalOpen || (interactionOnly && dismissedApproval !== workflow.terminalRequest.id)) && <TerminalApprovalDialog key={workflow.terminalRequest.id} proposal={workflow.terminalRequest} onDecision={decision => {
                 setApprovalOpen(false); setDismissedApproval(workflow.terminalRequest!.id);
                 void resume({ terminal_response: { request_id: workflow.terminalRequest!.id, decision } })
                     .then(success => { if (success === false) setApprovalOpen(true); });
             }} />}
         </>}
-        {workflow.status === 'paused' && workflow.dataOperation && (interactionOnly ? <Box sx={submitting ? { pointerEvents: 'none', filter: 'grayscale(1)' } : undefined}>
+        {!canvas && workflow.status === 'paused' && workflow.dataOperation && (interactionOnly ? <Box sx={submitting ? { pointerEvents: 'none', filter: 'grayscale(1)' } : undefined}>
             <ClarificationPanel key={questionKey} questions={questions} dataOperation={workflow.dataOperation}
                 selectedAnswers={questionAnswers}
                 onSelectAnswer={(index, response) => {
@@ -1007,7 +969,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
             key={workflow.interactionId} messageId={turn.id} prompt={turn.form.connector} variant="bare" onResolved={resolution => {
                 void resume({ reply: `Connection created: ${resolution.connectionName} (connector ID: ${resolution.connectorId || ''}). Inspect this connector and continue the workflow.` });
             }} />}
-        {workflow.status === 'paused' && !workflow.terminalRequest && !workflow.dataOperation && !turn.form && (
+        {!canvas && workflow.status === 'paused' && !workflow.terminalRequest && !workflow.dataOperation && !turn.form && (
             interactionOnly ? questions.length > 0 ? <Box sx={submitting ? { pointerEvents: 'none', filter: 'grayscale(1)' } : undefined}>
                     <ClarificationPanel key={questionKey} questions={questions}
                         selectedAnswers={questionAnswers}
@@ -1029,7 +991,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 questions.length ? <QuestionAnswerOutlinedIcon sx={{ fontSize: 18 }} /> : <ErrorOutlineIcon sx={{ fontSize: 18 }} />,
                 () => store.dispatch(dfActions.setFocused({ type: 'text', textId: turn.id })))
         )}
-        {!canvas && !interactionOnly && workflow.status === 'running' && statusAction('Pause', <PauseIcon sx={{ fontSize: 18 }} />, pauseWorkflow)}
+        {!canvas && !interactionOnly && workflow.status === 'running' && statusAction('Pause', <PauseIcon sx={{ fontSize: 18 }} />, pauseWorkflow, workflow.pauseRequested)}
         </Box>
     </Box>;
 };

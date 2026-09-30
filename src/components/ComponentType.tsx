@@ -285,6 +285,8 @@ export interface TextTurn {
         calls: number;
         toolCalls?: number;
         activity?: string;
+        pauseRequested?: boolean;
+        interruptedResponse?: string;
         overview?: string;
         prompt?: string;
         deliverables?: string[];

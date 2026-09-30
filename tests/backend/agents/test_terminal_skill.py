@@ -89,6 +89,28 @@ def test_terminal_policy_controls_first_turn_prompt_and_tools(tmp_path, monkeypa
     assert ("terminal" in agent._loaded_skills) == (mode != "off")
 
 
+@pytest.mark.parametrize("ignore_interrupt", [False, True])
+def test_terminal_pause_retains_partial_output_and_stops_process(tmp_path, ignore_interrupt):
+    from threading import Event
+    import time
+
+    cancel = Event()
+    code = ("import signal\n"
+            + ("signal.signal(signal.SIGINT, signal.SIG_IGN)\n" if ignore_interrupt else "")
+            + "print('partial output', flush=True)\nwhile True: pass")
+    events = terminal.run_command({"argv": [sys.executable, "-c", code],
+        "cwd": str(tmp_path), "timeout_seconds": 30}, scratch_dir=tmp_path, cancel=cancel)
+    assert next(events)["type"] == "terminal_running"
+    started = time.monotonic()
+    cancel.set()
+    result = list(events)[-1]["result"]
+    assert time.monotonic() - started < 3
+    assert result["interrupted"]
+    assert not result["timed_out"]
+    assert result["exit_code"] != 0
+    assert "partial output" in result["output"]
+
+
 def test_terminal_acquired_data_can_be_analyzed_and_published_without_connector(tmp_path):
     from data_formulator.analyst.agent import AnalystAgent
     from data_formulator.analyst.skills.analysis.skill import get_skill as analysis_skill

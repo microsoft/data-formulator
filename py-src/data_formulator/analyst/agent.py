@@ -1143,6 +1143,9 @@ class AnalystAgent:
                     stdout = stdout[:8000] + "\n... (truncated)"
                 return {"status": "ok", "stdout": stdout,
                     **({"output": pack.get("output")} if output_variable else {})}
+            elif raw.get("status") == "interrupted":
+                return {"status": "interrupted", "error": raw.get("error_message", "Python execution interrupted."),
+                        "stdout": raw.get("stdout", "")}
             else:
                 err = raw.get("error_message", raw.get("content", "Unknown error"))
                 logger.warning(
@@ -2160,7 +2163,10 @@ class AnalystAgent:
         """
         last_exc: Exception | None = None
         max_attempts = self.execution_config.stream_open_retries + 1
+        cancel = getattr(self, "cancel", None)
         for attempt in range(max_attempts):
+            if cancel is not None and cancel.is_set():
+                raise InterruptedError("Model request interrupted.")
             try:
                 return self.client.get_completion_with_tools(
                     messages, tools=tools, stream=True,
@@ -2176,7 +2182,10 @@ class AnalystAgent:
                         "retrying in %gs: %s",
                         attempt + 1, max_attempts, wait, e,
                     )
-                    time.sleep(wait)
+                    if cancel is not None:
+                        cancel.wait(wait)
+                    else:
+                        time.sleep(wait)
                     continue
                 raise
         raise last_exc  # pragma: no cover

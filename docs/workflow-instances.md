@@ -166,7 +166,22 @@ form and require user confirmation. Targeted analyst form-editing tools are not
 offered in workflows. Missing data alone should lead to discovery before requesting
 manual uploads. Provider-specific source handlers are not used.
 
-Pause is cooperative at model/tool boundaries. Questions appear in the shared
+Pause immediately shows Stopping until the executor confirms its checkpoint is
+paused. Model turns stop waiting for the provider, close an available stream on a
+best-effort basis, and retain partial text and unfinished tool arguments as inert
+context. Unfinished tool calls are never dispatched; late model responses cannot
+advance a paused run. A provider request still opening may finish in the background,
+but its returned stream is closed and discarded without executing its response.
+Terminal commands receive SIGINT followed by forced termination if needed, retaining
+captured output. Local Python workers receive an interrupt and are discarded after
+shutdown; captured stdout is retained when the worker can return it. Interrupted
+results cannot serve as evidence for a passed check or verified completion.
+Pause does not roll back files, writes, or other completed side effects. Connector,
+database, and other operations without cancellation support still finish their
+current blocking operation before the workflow can pause. Resume continues from
+retained context rather than automatically replaying the interrupted operation.
+
+Questions appear in the shared
 question panel above the workflow chat input; answers are recorded in the thread
 and continue the same workflow. A main-chat reply also answers the pending
 question instead of becoming steering. Approvals, imports, and connection forms

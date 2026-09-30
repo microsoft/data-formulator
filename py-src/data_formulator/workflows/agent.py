@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hashlib
 from copy import deepcopy
+from contextvars import copy_context
 import json
 import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import Event
+from queue import Empty, Full, Queue
+from threading import Event, Thread
 
 from data_formulator.analyst.agent import AnalystAgent
 from data_formulator.analyst.skills.base import SkillContext
@@ -167,6 +169,10 @@ def public_run(state: dict) -> dict:
             "tool_calls": sum(message.get("role") == "tool" for message in state.get("trajectory", []))}
 
 
+class WorkflowInterrupted(Exception):
+    pass
+
+
 class WorkflowAgent(AnalystAgent):
     def __init__(self, client, workspace, state: dict, checkpoint, cancel: Event, identity_id: str):
         super().__init__(client, workspace, identity_id=identity_id)
@@ -187,6 +193,93 @@ class WorkflowAgent(AnalystAgent):
         self._loaded_skills = {"analysis", "workspace", "visualization"} | ({"terminal"} if self.terminal_skill else set())
         self._rehydrate_loaded_skills(state["trajectory"])
         self._refresh_context()
+
+    def _open_stream(self, messages: list[dict], tools: list[dict]):
+        messages = deepcopy(messages)
+        pending = Queue(maxsize=1)
+        stopped = Event()
+        sources = []
+        content = []
+        calls = {}
+
+        def close_source():
+            for source in sources:
+                try:
+                    close = getattr(source, "close", None)
+                    if close:
+                        close()
+                except Exception:
+                    pass
+
+        def publish(kind, value):
+            while not stopped.is_set():
+                try:
+                    pending.put((kind, value), timeout=0.05)
+                    return
+                except Full:
+                    continue
+
+        def read_stream():
+            try:
+                source = super(WorkflowAgent, self)._open_stream(messages, tools)
+                sources.append(source)
+                if not stopped.is_set():
+                    for chunk in source:
+                        if stopped.is_set():
+                            break
+                        publish("chunk", chunk)
+                publish("done", None)
+            except Exception as exc:
+                publish("error", exc)
+            finally:
+                close_source()
+
+        Thread(target=copy_context().run, args=(read_stream,), daemon=True).start()
+        try:
+            while True:
+                if self.cancel.is_set():
+                    stopped.set()
+                try:
+                    kind, value = pending.get(timeout=0 if stopped.is_set() else 0.05)
+                except Empty:
+                    if stopped.is_set():
+                        raise WorkflowInterrupted()
+                    continue
+                if kind == "done":
+                    if self.cancel.is_set():
+                        raise WorkflowInterrupted()
+                    return
+                if kind == "error":
+                    if self.cancel.is_set():
+                        raise WorkflowInterrupted()
+                    raise value
+                for choice in getattr(value, "choices", []) or []:
+                    delta = getattr(choice, "delta", None)
+                    if delta is None:
+                        continue
+                    if getattr(delta, "content", None):
+                        content.append(delta.content)
+                    for call in getattr(delta, "tool_calls", []) or []:
+                        partial = calls.setdefault(getattr(call, "index", 0) or 0, {"name": "", "arguments": ""})
+                        function = getattr(call, "function", None)
+                        if function is not None:
+                            partial["name"] = getattr(function, "name", None) or partial["name"]
+                            partial["arguments"] += getattr(function, "arguments", None) or ""
+                if not self.cancel.is_set():
+                    yield value
+        finally:
+            stopped.set()
+            if self.cancel.is_set():
+                partial_text = "".join(content)
+                if calls:
+                    partial_text += "\n\nIncomplete tool input (not executed):\n" + json.dumps(list(calls.values()), ensure_ascii=False)
+                if partial_text:
+                    self.state["interrupted_response"] = partial_text
+                    self.state["trajectory"].append({"role": "assistant", "content": partial_text})
+                self.state["trajectory"].append({"role": "user", "content":
+                    "The user interrupted this response. Partial text and tool input are unfinished, not verified evidence. "
+                    "No tool from this response was executed. Continue from the saved checkpoint when resumed."})
+                Thread(target=close_source, daemon=True).start()
 
     def _refresh_context(self) -> None:
         from data_formulator.analyst.workspace_inputs import normalize_external_references
@@ -221,6 +314,8 @@ class WorkflowAgent(AnalystAgent):
         self._refresh_artifacts()
         text = json.dumps({"request": terminal_request, "result": result} if terminal_request else result, ensure_ascii=False)
         self._evidence(pending["call_id"], pending.get("tool", "run_terminal"), text)
+        if result.get("interrupted"):
+            self.state["evidence"][pending["call_id"]]["status"] = "failed"
         self._refresh_context()
         self.state["trajectory"].append({"role": "user", "content":
             "The application resolved the pending interaction. Continue from this result; do not repeat "
@@ -330,6 +425,17 @@ class WorkflowAgent(AnalystAgent):
         self.state["report"] = (self.run_dir / "report.md").read_text(encoding="utf-8") if "report.md" in hashes else ""
 
     def _execute(self, name: str, args: dict, call_id: str) -> str:
+        from data_formulator.sandbox.local_sandbox import execution_cancellation
+
+        if self.cancel.is_set():
+            raise WorkflowInterrupted()
+        token = execution_cancellation.set(self.cancel)
+        try:
+            return self._execute_tool(name, args, call_id)
+        finally:
+            execution_cancellation.reset(token)
+
+    def _execute_tool(self, name: str, args: dict, call_id: str) -> str:
         state = self.state
         if state.get("plan_review_pending") and name not in PLAN_REVIEW_TOOLS:
             raise ValueError("Review the revised plan with review_plan before continuing work. Inspect retained evidence first if needed.")
@@ -348,8 +454,6 @@ class WorkflowAgent(AnalystAgent):
             try:
                 while True:
                     event = next(events)
-                    if self.cancel.is_set():
-                        raise ValueError("Workflow execution cancelled.")
                     if event.get("terminal_request"):
                         state["terminal_request"] = {**event["terminal_request"], "call_id": call_id}
                         state.update(status="paused", message="Terminal command awaiting approval.")
@@ -396,6 +500,11 @@ class WorkflowAgent(AnalystAgent):
             state["last_output_call"] = state["calls"]
         elif name == "execute_python_script":
             result_data = self._run_explore_code("outputs = {}\n" + args["code"], self._run_payload["input_tables"], output_variable="outputs")
+            if result_data.get("status") == "interrupted":
+                result = "Python interrupted by user. Partial stdout:\n" + result_data.get("stdout", "")
+                self._evidence(call_id, name, result)
+                state["evidence"][call_id]["status"] = "failed"
+                return result
             if result_data.get("error") or result_data.get("status") == "error":
                 raise ValueError(str(result_data.get("error") or result_data.get("stdout")))
             outputs = result_data.get("output", {})
@@ -443,6 +552,9 @@ class WorkflowAgent(AnalystAgent):
             if args.get("check_id") not in checks or args.get("status") not in ("passed", "failed", "inconclusive"):
                 raise ValueError("Unknown checker or invalid status.")
             self._require_evidence(args.get("evidence_ids"), current_revision=False)
+            if args["status"] == "passed" and any(state["evidence"][identifier].get("status") == "failed"
+                                                  for identifier in args["evidence_ids"]):
+                raise ValueError("Passed checks require successful evidence, not interrupted or failed tools.")
             if not isinstance(args.get("explanation"), str) or not args["explanation"].strip():
                 raise ValueError("Explain the check result.")
             state["checks"][args["check_id"]] = {**args, "revision": state["revision"]}
@@ -582,7 +694,11 @@ class WorkflowAgent(AnalystAgent):
                 events.close()
         else:
             raise ValueError("Unknown workflow tool.")
+        if self.cancel.is_set():
+            result = "Interrupted by user. Partial results follow; inspect existing effects before retrying.\n" + result
         self._evidence(call_id, name, result)
+        if self.cancel.is_set():
+            state["evidence"][call_id]["status"] = "failed"
         for output in state["outputs"]:
             if "version" not in output:
                 output["version"] = hashlib.sha256(json.dumps(output, sort_keys=True).encode()).hexdigest()
@@ -714,13 +830,19 @@ class WorkflowAgent(AnalystAgent):
                             "step_id": state["step_id"], "details": details, "input": deepcopy(args)}
                         yield {"type": "activity", "tool": call.function.name, "message": state["activity"],
                             "active_tool": state["active_tool"]}
+                        if self.cancel.is_set():
+                            raise WorkflowInterrupted()
                         self._run_payload["action_narration"] = message.content or ""
                         observation = self._execute(call.function.name, args, call.id)
+                    except WorkflowInterrupted:
+                        raise
                     except Exception as exc:
                         observation = f"Tool failed: {str(exc)[:2000]}. Inspect the failure and repair, or request_help."
                         self._evidence(call.id, call.function.name, observation)
                         state["evidence"][call.id]["status"] = "failed"
                     tool_response["content"] = observation
+                    if self.cancel.is_set():
+                        state.update(status="paused", message="Paused by user. Partial tool output is retained.")
                     if call.id in state["evidence"] and state.get("active_tool"):
                         state["evidence"][call.id]["details"] = state["active_tool"]["details"]
                     state.pop("active_tool", None)
@@ -729,6 +851,9 @@ class WorkflowAgent(AnalystAgent):
                 state["artifacts"] = [path.name for path in sorted(self.run_dir.iterdir()) if path.is_file() and not path.name.startswith(".")]
                 self.checkpoint(state)
                 yield {"type": "workflow_state", "run": public_run(state)}
+        except WorkflowInterrupted:
+            state.update(status="paused", message="Paused by user. Unfinished output is retained as partial context.")
+            state.pop("active_tool", None)
         except GeneratorExit:
             state.update(status="paused", message="Connection interrupted. Review and resume the checkpoint.")
             raise

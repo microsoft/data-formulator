@@ -175,12 +175,14 @@ def confined_command(argv: list[str], scratch_dir: Path, *, write_paths: list[st
     raise OSError("Terminal write confinement is unavailable on this platform; command was not run.")
 
 
-def run_command(proposal: dict[str, Any], *, scratch_dir: Path) -> Generator[Event, None, None]:
+def run_command(proposal: dict[str, Any], *, scratch_dir: Path, cancel=None) -> Generator[Event, None, None]:
     with tempfile.TemporaryDirectory(prefix="df-terminal-") as directory:
-        yield from _run_command(proposal, scratch_dir=scratch_dir, runtime_dir=Path(directory))
+        yield from _run_command(
+            proposal, scratch_dir=scratch_dir, runtime_dir=Path(directory), cancel=cancel,
+        )
 
 
-def _run_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir: Path) -> Generator[Event, None, None]:
+def _run_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir: Path, cancel=None) -> Generator[Event, None, None]:
     from flask import has_request_context
     from data_formulator.configuration import read_configuration, terminal_mode
 
@@ -192,6 +194,10 @@ def _run_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir: Pa
                 raise ValueError("Application policy changed; command execution stopped.")
 
     check_policy()
+    if cancel is not None and cancel.is_set():
+        yield {"type": "terminal_result", "result": {"interrupted": True, "exit_code": None,
+            "output": "Interrupted before command execution."}}
+        return
     output = bytearray()
     total = 0
     scratch_dir = scratch_dir.resolve(strict=True)
@@ -239,12 +245,20 @@ def _run_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir: Pa
     deadline = time.monotonic() + proposal["timeout_seconds"]
     last_heartbeat = time.monotonic()
     timed_out = False
+    interrupted = False
     try:
         while True:
             check_policy()
+            if not interrupted and cancel is not None and cancel.is_set():
+                interrupted = True
+                try:
+                    os.killpg(process.pid, signal.SIGINT)
+                except ProcessLookupError:
+                    pass
+                deadline = min(deadline, time.monotonic() + 0.75)
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                timed_out = True
+                timed_out = not interrupted
                 break
             ready = selector.select(timeout=min(0.25, remaining))
             for key, _ in ready:
@@ -274,6 +288,7 @@ def _run_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir: Pa
         "exit_code": process.returncode, "timed_out": timed_out,
         "output": decoded_output, "truncated": total > 32768,
         "sandboxed": not proposal.get("dangerouslyDisableSandbox", False), "sandboxFilesystem": policy,
+        **({"interrupted": True} if interrupted else {}),
     }
     if (process.returncode != 0
             and any(message in decoded_output.lower() for message in
@@ -325,7 +340,9 @@ class TerminalSkill:
             proposal = broker.consume(proposal["id"], owner, conversation, workspace_id=workspace_id)
             proposal.update(decision="auto", policy_mode="auto")
             yield {"type": "terminal_started", "request": proposal}
-            execution = run_command(proposal, scratch_dir=ctx.workspace.confined_scratch.root)
+            cancel = getattr(ctx.runtime, "cancel", None)
+            execution = run_command(proposal, scratch_dir=ctx.workspace.confined_scratch.root,
+                                    **({"cancel": cancel} if cancel is not None else {}))
             for event in execution:
                 if event["type"] == "terminal_result":
                     result = event["result"]

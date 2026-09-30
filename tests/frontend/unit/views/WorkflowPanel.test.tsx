@@ -11,7 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { store } from '../../../../src/app/store';
 import { dfActions, dfSelectors } from '../../../../src/app/dfSlice';
 import { apiRequest, streamRequest } from '../../../../src/app/apiClient';
-import { publishWorkflowRun, sendWorkflowMessage, WorkflowProgress, WorkflowPanel, Run, selectChatWorkflow } from '../../../../src/views/WorkflowPanel';
+import { getUrls } from '../../../../src/app/utils';
+import { pauseWorkflowRun, publishWorkflowRun, sendWorkflowMessage, WorkflowProgress, WorkflowPanel, Run, selectChatWorkflow } from '../../../../src/views/WorkflowPanel';
 import { SimpleChartRecBox } from '../../../../src/views/SimpleChartRecBox';
 import { FreeDataViewFC } from '../../../../src/views/DataView';
 import { DataThread } from '../../../../src/views/DataThread';
@@ -70,6 +71,34 @@ describe('Workflow session publication', () => {
     it('publishes the workflow name instead of an internal turn ID', async () => {
         await publishWorkflowRun({ ...run(), outputs: [] }, 'session');
         expect(store.getState().textTurns.find(turn => turn.workflow?.runId === 'native')?.displayId).toBe('Native review');
+    });
+
+    it('infers semantics and units for workflow source and derived tables once per published output version', async () => {
+        const fallback = vi.mocked(apiRequest).getMockImplementation()!;
+        const inferenceUrl = getUrls().SERVER_PROCESS_DATA_ON_LOAD;
+        vi.mocked(apiRequest).mockImplementation(async (url, options) => url === inferenceUrl
+            ? { data: { result: [{ fields: { value: { semantic_type: 'Currency', unit: 'USD', intrinsic_domain: [0, 100] },
+                category: { semantic_type: 'Category', sort_order: ['A', 'B'] } } }] } } as any
+            : fallback(url, options));
+        const snapshot = run();
+        await publishWorkflowRun(snapshot, 'session');
+        await waitFor(() => expect(store.getState().tableSemantics).toEqual(expect.arrayContaining([
+            expect.objectContaining({ tableId: 'measurements', fields: { value: { semanticType: 'Currency', unit: 'USD', intrinsicDomain: [0, 100] } } }),
+            expect.objectContaining({ tableId: 'chart_values', fields: {
+                value: { semanticType: 'Currency', unit: 'USD', intrinsicDomain: [0, 100] },
+                category: { semanticType: 'Category', sortOrder: ['A', 'B'] },
+            } }),
+        ])));
+        const inferenceCalls = () => vi.mocked(apiRequest).mock.calls.filter(([url]) => url === inferenceUrl);
+        expect(inferenceCalls().map(([, options]) => JSON.parse(options!.body as string).input_data)).toEqual([
+            { name: 'measurements', rows: [{ value: 2 }], virtual: true },
+            { name: 'chart_values', rows: [{ category: 'A', value: 2 }], virtual: true },
+        ]);
+        await publishWorkflowRun(snapshot, 'session');
+        expect(inferenceCalls()).toHaveLength(2);
+        await publishWorkflowRun({ ...snapshot, outputs: snapshot.outputs!.map(output => output.id === 'data'
+            ? { ...output, tool: 'update_data', version: 'updated' } : output) }, 'session');
+        expect(inferenceCalls()).toHaveLength(3);
     });
 
     it('keeps a published derived table out of the workspace source shelf', () => {
@@ -466,7 +495,9 @@ describe('Workflow session publication', () => {
         expect(state.textTurns[0].outputIds).toEqual(['workflow-data-native-measurements', 'file-notes.txt', 'chart_values', 'workflow-report-native']);
         expect([state.loadedTableNodes[0], state.fileNodes[0], state.derivedTables[0], state.generatedReports[0]]
             .map(output => output.parentNodeId)).toEqual([state.textTurns[0].id, 'workflow-data-native-measurements', 'file-notes.txt', 'chart_values']);
-        expect(apiRequest).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(apiRequest).mock.calls.filter(([url]) => url === getUrls().LIST_TABLES)).toHaveLength(1);
+        expect(vi.mocked(apiRequest).mock.calls.filter(([url]) => url === getUrls().SERVER_PROCESS_DATA_ON_LOAD)).toHaveLength(2);
+        expect(apiRequest).toHaveBeenCalledTimes(3);
     });
 
     it.each([false, true])('keeps workflow thread order as outputs arrive (older outputs already exist: %s)', async olderHasOutputs => {
@@ -706,7 +737,7 @@ describe('Workflow session publication', () => {
         expect(store.getState().textTurns.find(turn => turn.id === 'textTurn-workflow-native')?.answered).not.toBe(true);
     });
 
-    it.each(['Run once', 'Reject'])('resumes terminal approval through %s with only the saved request ID', async label => {
+    it.each([false, true].flatMap(canvas => ['Run once', 'Reject'].map(label => ({ canvas, label }))))('resumes terminal approval through $label with only the saved request ID (canvas=$canvas)', async ({ canvas, label }) => {
         store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
         store.dispatch(dfActions.selectModel('test-model'));
         const snapshot = { ...run(), status: 'paused', outputs: [], terminal_request: {
@@ -716,7 +747,11 @@ describe('Workflow session publication', () => {
         vi.mocked(streamRequest).mockImplementation(async function* () {
             yield { type: 'workflow_state', run: { ...snapshot, status: 'completed', terminal_request: undefined } } as any;
         });
-        render(<Provider store={store}><WorkflowProgress turn={store.getState().textTurns[0]} interactionOnly /></Provider>);
+        render(<Provider store={store}><WorkflowProgress turn={store.getState().textTurns[0]} interactionOnly={!canvas} canvas={canvas} /></Provider>);
+        if (canvas) {
+            expect(screen.queryByRole('dialog')).toBeNull();
+            fireEvent.click(screen.getByRole('button', { name: 'Review request' }));
+        }
         expect(screen.queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument();
         expect(screen.getByRole('dialog').textContent).toContain('prices');
         fireEvent.click(screen.getByRole('button', { name: label }));
@@ -1312,7 +1347,7 @@ describe('Workflow session publication', () => {
         expect(screen.queryByText('Partial report')).toBeNull();
     });
 
-    it('continues an interrupted checkpoint from the workflow agent box without synthesizing a question', async () => {
+    it.each([false, true])('continues an interrupted checkpoint without synthesizing a question (canvas=%s)', async canvas => {
         store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
         store.dispatch(dfActions.selectModel('test-model'));
         const snapshot = { ...run(), outputs: [], status: 'paused', message: 'Connection interrupted. Review and resume the checkpoint.' };
@@ -1331,11 +1366,11 @@ describe('Workflow session publication', () => {
             yield { type: 'workflow_state', run: { ...snapshot, status: 'completed' } } as any;
         });
         render(<Provider store={store}><WorkflowProgress turn={{ ...turn, workflow: { ...turn.workflow!,
-            questions: [{ text: snapshot.message, responseType: 'free_text' }] } }} interactionOnly /></Provider>);
-        expect(screen.getByText('Interrupted')).toBeTruthy();
+            questions: [{ text: snapshot.message, responseType: 'free_text' }] } }} interactionOnly={!canvas} canvas={canvas} /></Provider>);
+        if (!canvas) expect(screen.getByText('Interrupted')).toBeTruthy();
         expect(screen.queryByRole('textbox')).toBeNull();
         expect(screen.queryByText('Respond to agent')).toBeNull();
-        fireEvent.click(screen.getByRole('button', { name: 'Continue workflow' }));
+        fireEvent.click(screen.getByRole('button', { name: canvas ? 'Resume' : 'Continue workflow' }));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
         const body = JSON.parse(vi.mocked(streamRequest).mock.calls[0][1]!.body as string);
         expect(body.run_id).toBe(snapshot.id);
@@ -1616,8 +1651,10 @@ describe('Workflow session publication', () => {
         expect(container.querySelector('[data-workflow-step="gather"]')).toHaveTextContent('gather · passed · 1m 13s');
         await publishWorkflowRun({ ...snapshot, checks: {} }, 'session');
         rerender(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
-        expect(container.querySelector('[data-workflow-step="gather"]')).toHaveTextContent('visited · 1m 13s');
-        expect(container.querySelector('[data-workflow-step="analyze"]')).toHaveTextContent('current · 10s');
+        expect(container.querySelector('[data-workflow-step="gather"]')).toHaveTextContent('visited');
+        expect(container.querySelector('[data-workflow-step="gather"] [data-workflow-execution]')).toHaveTextContent('1m 13s');
+        expect(container.querySelector('[data-workflow-step="analyze"]')).toHaveTextContent('current');
+        expect(container.querySelector('[data-workflow-step="analyze"] [data-workflow-execution]')).toHaveTextContent('10s');
     });
 
     it.each([false, true])('ticks active step time between checkpoints and stops when paused (canvas=%s)', async canvas => {
@@ -1629,13 +1666,14 @@ describe('Workflow session publication', () => {
         const { container, rerender, unmount } = render(<WorkflowProgress turn={store.getState().textTurns[0]} canvas={canvas} />);
         try {
             const activeStep = () => container.querySelector('[data-workflow-step="analyze"]')!;
-            expect(activeStep()).toHaveTextContent('current · 10s');
+            expect(activeStep()).toHaveTextContent('current');
+            expect(activeStep()).toHaveTextContent('10s');
             act(() => vi.advanceTimersByTime(3000));
-            expect(activeStep()).toHaveTextContent('current · 13s');
+            expect(activeStep()).toHaveTextContent('13s');
             expect(container.querySelector('[data-workflow-step="gather"]')).toHaveTextContent('1m 12s');
             const action = container.querySelector('[data-workflow-current-action]')!;
             expect(action).toHaveTextContent('Inspect source data.');
-            expect(action.previousElementSibling).toHaveTextContent('3 tool calls');
+            expect(action.previousElementSibling).toHaveTextContent(canvas ? 'Step 2 of 2' : '3 tool calls');
             expect(action.previousElementSibling).not.toHaveTextContent('Inspect source data.');
             if (canvas) {
                 expect(activeStep().querySelector('[data-workflow-running-tool]')).toHaveTextContent('Weekly prices');
@@ -1645,13 +1683,13 @@ describe('Workflow session publication', () => {
             } else expect(action).toHaveTextContent('Weekly prices');
             await act(async () => { await publishWorkflowRun({ ...snapshot, step_elapsed_seconds: { gather: 72, analyze: 20 } }, 'session'); });
             rerender(<WorkflowProgress turn={store.getState().textTurns[0]} canvas={canvas} />);
-            expect(activeStep()).toHaveTextContent('current · 20s');
+            expect(activeStep()).toHaveTextContent('20s');
             act(() => vi.advanceTimersByTime(2000));
-            expect(activeStep()).toHaveTextContent('current · 22s');
+            expect(activeStep()).toHaveTextContent('22s');
             await act(async () => { await publishWorkflowRun({ ...snapshot, status: 'paused', step_elapsed_seconds: { gather: 72, analyze: 22 } }, 'session'); });
             rerender(<WorkflowProgress turn={store.getState().textTurns[0]} canvas={canvas} />);
             act(() => vi.advanceTimersByTime(5000));
-            expect(activeStep()).toHaveTextContent('current · 22s');
+            expect(activeStep()).toHaveTextContent('22s');
             expect(container.querySelector('[data-workflow-current-action]')).toBeNull();
             expect(container.querySelector('[data-workflow-running-tool]')).toBeNull();
         } finally {
@@ -1660,30 +1698,25 @@ describe('Workflow session publication', () => {
         }
     });
 
-    it('collapses pending step details, allows preview, and opens them when work starts', async () => {
+    it('keeps a preview timeline with instructions and execution details closed by default', async () => {
         const snapshot = run();
         snapshot.outputs = [];
         snapshot.instance!.steps!.push({ id: 'report', description: 'Explain the findings', instructions: 'Write the final report.' });
         await publishWorkflowRun(snapshot, 'session');
         const { container, rerender } = render(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
+        expect(screen.getByRole('list', { name: 'Workflow plan timeline' }).children).toHaveLength(3);
+        expect(screen.queryByRole('tablist')).toBeNull();
         const report = within(container.querySelector('[data-workflow-step="report"]') as HTMLElement);
-        expect(report.getByRole('heading', { name: 'Explain the findings' })).toBeVisible();
         expect(report.getByText('pending')).toBeVisible();
-        expect(report.queryByRole('tablist')).not.toBeInTheDocument();
         expect(report.getByText('Write the final report.')).not.toBeVisible();
-        fireEvent.click(report.getByRole('button', { name: 'Show details for report' }));
-        expect(report.getByRole('tablist')).toBeVisible();
+        fireEvent.click(report.getByText('Execution details'));
         expect(report.getByText('Write the final report.')).toBeVisible();
-        fireEvent.click(report.getByRole('button', { name: 'Hide details for report' }));
-        expect(report.queryByRole('tablist')).not.toBeInTheDocument();
+        expect(report.getByText('No activity yet.')).toBeVisible();
+        fireEvent.click(report.getByText('Execution details'));
         await publishWorkflowRun({ ...snapshot, step_id: 'report' }, 'session');
         rerender(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
-        expect(report.getByRole('tablist')).toBeVisible();
-        expect(report.getByRole('tab', { name: 'Activities (0)' })).toHaveAttribute('aria-selected', 'true');
         expect(report.getByText('Write the final report.')).not.toBeVisible();
-        fireEvent.click(report.getByRole('tab', { name: 'Action' }));
-        expect(report.getByText('Write the final report.')).toBeVisible();
-        expect(report.queryByRole('button', { name: 'Show details for report' })).not.toBeInTheDocument();
+        expect(report.getByRole('progressbar', { name: 'Current step running' })).toBeVisible();
     });
 
     it('resets step progress to pending when the revised plan needs review', async () => {
@@ -1726,7 +1759,7 @@ describe('Workflow session publication', () => {
         snapshot.step_progress = { gather: { status: 'completed', explanation: 'All four regions have matching periods.', evidence_ids: ['observed'] } };
         await publishWorkflowRun(snapshot, 'session');
         const { container } = render(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
-        expect(screen.getByText('regional revenue')).toBeVisible();
+        expect(screen.getByText('regional revenue')).not.toBeVisible();
         expect(container.querySelector('[data-workflow-scroll]')?.parentElement).toHaveStyle({
             '--df-text-md': '0.875rem', '--df-text-sm': '0.8125rem', '--df-text-xs': '0.75rem',
         });
@@ -1740,12 +1773,16 @@ describe('Workflow session publication', () => {
             expect(within(summary).getByText('Revenue increased in three regions.')).toBeVisible();
             expect(within(summary).queryByText('Planned next')).not.toBeInTheDocument();
         } else if (state === 'paused') {
-            expect(within(summary).getByRole('heading', { name: 'Needs attention' })).toBeVisible();
-            expect(within(summary).getByText('Choose which regions to include.')).toBeVisible();
+            const header = screen.getByRole('banner', { name: 'Workflow status' });
+            expect(within(header).getByText('Choose which regions to include.')).toBeVisible();
+            expect(within(header).getByRole('button', { name: 'Resume' })).toBeVisible();
+            expect(within(header).getByText('Step 2 of 3:')).toBeVisible();
+            expect(within(header).queryByText(/tool calls/)).toBeNull();
         }
         expect(within(summary).queryByText(/^(Completed so far|Working on|Planned next|Reviewing the plan)$/)).not.toBeInTheDocument();
         expect(within(summary).getByText('Last quarter')).not.toBeVisible();
-        fireEvent.click(within(summary).getByText('Scope and inputs'));
+        fireEvent.click(within(summary).getByText('Workflow details'));
+        expect(screen.getByText('regional revenue')).toBeVisible();
         expect(within(summary).getByText('Regional comparison chart')).toBeVisible();
         expect(within(summary).getByText('Summary report')).toBeVisible();
         expect(within(summary).getByText('Last quarter')).toBeVisible();
@@ -1753,7 +1790,35 @@ describe('Workflow session publication', () => {
         expect(within(summary).getByText('Exclude incomplete months.')).toBeVisible();
     });
 
-    it('prioritizes running activities, distinguishes call types, and preserves manual tab choices', async () => {
+    it('shows stopping immediately and waits for confirmed pause while retaining interrupted text', async () => {
+        const snapshot = { ...run(), outputs: [] };
+        await publishWorkflowRun(snapshot, 'session');
+        const { rerender } = render(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
+        fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+        expect(store.getState().textTurns[0].workflow).toMatchObject({ status: 'running', pauseRequested: true });
+        await act(async () => { await publishWorkflowRun(snapshot, 'session'); });
+        rerender(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
+        expect(screen.getByText('Stopping...')).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Pause' })).toBeDisabled();
+        await pauseWorkflowRun(snapshot.id);
+        expect(vi.mocked(apiRequest).mock.calls.filter(([url]) => url === '/api/workflows/pause')).toHaveLength(1);
+        await act(async () => { await publishWorkflowRun({ ...snapshot, status: 'paused',
+            interrupted_response: 'Partial analysis, not finished.' }, 'session'); });
+        rerender(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
+        expect(screen.queryByText('Stopping...')).toBeNull();
+        expect(screen.getByRole('button', { name: 'Resume' })).toBeEnabled();
+        fireEvent.click(screen.getByText('Interrupted response'));
+        expect(screen.getByText('Partial analysis, not finished.')).toBeVisible();
+    });
+
+    it('clears stopping when the pause request fails', async () => {
+        await publishWorkflowRun({ ...run(), outputs: [] }, 'session');
+        vi.mocked(apiRequest).mockRejectedValueOnce(new Error('Pause unavailable'));
+        await pauseWorkflowRun('native');
+        expect(store.getState().textTurns[0].workflow).toMatchObject({ status: 'running', pauseRequested: false });
+    });
+
+    it('keeps typed running calls inside execution details and preserves manual expansion', async () => {
         const snapshot = run();
         snapshot.outputs = snapshot.outputs!.map(output => ({ ...output, step_id: 'analyze' }));
         snapshot.active_tool = { id: 'live', tool: 'execute_python_script', step_id: 'analyze', details: { purpose: 'Compare medians' }, input: { code: 'print(43)' } };
@@ -1766,12 +1831,16 @@ describe('Workflow session publication', () => {
         await publishWorkflowRun(snapshot, 'session');
         const { container, rerender } = render(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
         const step = container.querySelector('[data-workflow-step="analyze"]') as HTMLElement;
-        const activities = within(step).getByRole('tab', { name: 'Activities (4)' });
-        expect(activities).toHaveAttribute('aria-selected', 'true');
-        expect(within(step).getAllByRole('tab')[0]).toBe(activities);
+        expect(within(step).queryByRole('tab')).toBeNull();
+        const execution = step.querySelector('[data-workflow-execution]')!;
+        expect(execution).not.toHaveAttribute('open');
+        fireEvent.click(within(step).getByText('Execution details'));
+        expect(execution).toHaveAttribute('open');
         const live = step.querySelector('[data-workflow-running-tool="live"]')!;
-        expect(live).toBeVisible();
+        expect(live.querySelector('summary')).toBeVisible();
         expect(live).toHaveAttribute('data-workflow-call-type', 'python');
+        expect(live).not.toHaveAttribute('open');
+        expect(live.querySelector('code.language-python')).not.toBeVisible();
         expect(live.querySelector('code.language-python')?.textContent).toBe('print(43)');
         expect(live).toHaveTextContent('Compare medians');
         const computed = step.querySelector('[data-workflow-call="computed"]') as HTMLElement;
@@ -1790,10 +1859,20 @@ describe('Workflow session publication', () => {
         expect(step.querySelector('[data-workflow-call="command"] code.language-bash')?.textContent).toBe("echo 'sample file'");
         expect(step.querySelector('[data-workflow-call="command"]')).toHaveTextContent('Downloaded sample');
         expect(step.querySelector('[data-workflow-call="command"]')).toHaveTextContent('Exit code: 0');
-        fireEvent.click(within(step).getByRole('tab', { name: 'Action' }));
+        fireEvent.click(live.querySelector('summary')!);
+        expect(live.querySelector('code.language-python')).toBeVisible();
+        snapshot.evidence.live = { tool: 'execute_python_script', text: '43', step_id: 'analyze', call: 4, input: { code: 'print(43)' } };
+        await publishWorkflowRun({ ...snapshot, active_tool: undefined }, 'session');
+        rerender(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
+        const completed = step.querySelector('[data-workflow-call="live"]')!;
+        expect(completed).toBe(live);
+        expect(completed).toHaveAttribute('open');
+        expect(completed.querySelector('code.language-python')).toBeVisible();
+        expect(step.querySelector('[data-workflow-call="computed"]')).not.toHaveAttribute('open');
+        fireEvent.click(within(step).getByText('Execution details'));
         await publishWorkflowRun({ ...snapshot, activity: 'Still comparing medians' }, 'session');
         rerender(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
-        expect(within(step).getByRole('tab', { name: 'Action' })).toHaveAttribute('aria-selected', 'true');
+        expect(execution).not.toHaveAttribute('open');
         expect(live).not.toBeVisible();
     });
 
@@ -1815,18 +1894,16 @@ describe('Workflow session publication', () => {
         const gather = container.querySelector('[data-workflow-step="gather"]')!;
         const analyze = container.querySelector('[data-workflow-step="analyze"]')!;
         expect(screen.getByRole('list', { name: 'Workflow plan timeline' }).children).toHaveLength(2);
-        expect(screen.getByText('Collect data')).toBeVisible();
+        expect(screen.getByText('Collect data')).not.toBeVisible();
         expect(screen.getByText('Collect comparable observations for the requested regions.')).toBeVisible();
         const actionPreview = screen.getByText('Collect data');
-        expect(within(gather as HTMLElement).getByRole('tab', { name: 'Action' })).toHaveAttribute('aria-selected', 'true');
-        expect(actionPreview).toBeVisible();
+        expect(within(gather as HTMLElement).queryByRole('tab')).toBeNull();
+        expect(actionPreview).not.toBeVisible();
         expect(screen.getByText('Requested dates and regions are covered.')).not.toBeVisible();
         expect(screen.getByText('Totals reconcile to the source data.')).not.toBeVisible();
-        fireEvent.click(within(gather as HTMLElement).getByRole('tab', { name: 'Checks (1/1)' }));
+        fireEvent.click(within(gather as HTMLElement).getByText('Execution details'));
         expect(screen.getByText('Requested dates and regions are covered.')).toBeVisible();
-        expect(actionPreview).not.toBeVisible();
-        expect(within(gather as HTMLElement).getAllByRole('tabpanel')).toHaveLength(1);
-        expect(within(gather as HTMLElement).getByRole('tabpanel', { name: 'Checks (1/1)' })).toHaveTextContent('Requested dates and regions are covered.');
+        expect(actionPreview).toBeVisible();
         expect(gather.querySelector('[data-workflow-action]')).toHaveTextContent('Collect data');
         expect(screen.getByLabelText('accuracy: pending')).not.toBeVisible();
         expect(screen.getByText('Before this step · On failure: gather')).not.toBeVisible();
@@ -1837,8 +1914,7 @@ describe('Workflow session publication', () => {
         expect(gather.textContent).not.toContain('Returns reconciled');
         expect(analyze.querySelector('[data-workflow-call="analyzed"]')).toBeTruthy();
         expect(screen.getByText('Unassigned calls (1)').closest('details')!.textContent).toContain('Older result without step metadata');
-        expect(gather.querySelector('[data-workflow-activity]')).not.toBeVisible();
-        fireEvent.click(within(gather as HTMLElement).getByRole('tab', { name: 'Activities (1)' }));
+        expect(gather.querySelector('[data-workflow-activity]')).toBeVisible();
         fireEvent.click(within(gather as HTMLElement).getByText('Call 1: fetch live data'));
         const inputOutput = within(gather as HTMLElement).getByRole('group', { name: 'Tool input' });
         expect(inputOutput).toBeVisible();
@@ -1846,15 +1922,14 @@ describe('Workflow session publication', () => {
         expect(within(inputOutput).queryByRole('button', { name: 'Copy input' })).toBeNull();
         expect(JSON.parse(inputOutput.querySelector('pre')!.textContent!)).toEqual({ rows: 61, metadata: { source: 'live' } });
         expect(screen.getByText('Observed rows')).not.toBeVisible();
-        fireEvent.click(within(gather as HTMLElement).getByRole('tab', { name: 'Checks (1/1)' }));
         fireEvent.click(gather.querySelector('[data-workflow-check="coverage"] summary')!);
         expect(screen.getByText('Observed rows')).toBeVisible();
         expect(screen.getByText('Before this step · On failure: gather')).toBeVisible();
-        expect(screen.getByText('Collect data')).not.toBeVisible();
-        fireEvent.click(within(gather as HTMLElement).getByRole('tab', { name: 'Artifacts (0)' }));
-        expect(within(gather as HTMLElement).getByText('No outputs yet.')).toBeVisible();
-        fireEvent.click(within(gather as HTMLElement).getByRole('tab', { name: 'Action' }));
         expect(screen.getByText('Collect data')).toBeVisible();
+        expect(within(gather as HTMLElement).queryByText('No outputs yet.')).toBeNull();
+        fireEvent.click(within(gather as HTMLElement).getByText('Execution details'));
+        expect(screen.getByText('Collect data')).not.toBeVisible();
+        expect(screen.getByText('Observed rows')).not.toBeVisible();
         expect(container.textContent!.indexOf('Final verified response')).toBeLessThan(container.textContent!.indexOf('Unassigned calls'));
     });
 
@@ -1872,8 +1947,8 @@ describe('Workflow session publication', () => {
         expect(analyze.querySelector('[data-workflow-artifact="chart_values"]')).toBeTruthy();
         expect(analyze.querySelector('[data-workflow-artifact="workflow-report-native"]')).toBeTruthy();
         expect(gather.querySelector('[data-workflow-artifact="chart_values"]')).toBeNull();
-        expect(gather.querySelector('[data-workflow-connector]')).toHaveStyle('border-left-width: 4px; border-left-color: #2e7d32; left: 12px');
-        expect(gather.querySelector('[data-workflow-marker] .MuiSvgIcon-root')).toHaveStyle('font-size: 24px');
+        expect(gather.querySelector('[data-workflow-connector]')).toHaveStyle('border-left-width: 2px; border-left-color: #2e7d32; left: 11px');
+        expect(gather.querySelector('[data-workflow-marker] .MuiSvgIcon-root')).toHaveStyle('font-size: 16px');
         for (const artifact of container.querySelectorAll('[data-workflow-artifact]')) {
             const style = getComputedStyle(artifact);
             expect(style.borderTopStyle).toBe('solid');
@@ -1881,8 +1956,9 @@ describe('Workflow session publication', () => {
             expect(style.minWidth).toBe('0px');
             expect(style.boxSizing).toBe('border-box');
         }
-        expect(within(gather as HTMLElement).getByRole('tab', { name: 'Artifacts (2)' })).toHaveAttribute('aria-selected', 'true');
-        expect(within(analyze as HTMLElement).getByRole('tab', { name: 'Artifacts (2)' })).toHaveAttribute('aria-selected', 'true');
+        expect(gather.querySelector('[data-workflow-artifacts]')).toBeVisible();
+        expect(analyze.querySelector('[data-workflow-artifacts]')).toBeVisible();
+        expect(screen.queryByRole('tablist')).toBeNull();
         expect(screen.getByText('1 rows · 1 columns')).toBeVisible();
         fireEvent.click(screen.getByRole('button', { name: 'Open Values by category' }));
         expect(store.getState().focusedId).toEqual({ type: 'chart', chartId: 'chart-native' });

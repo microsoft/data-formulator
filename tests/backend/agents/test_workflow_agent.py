@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
@@ -331,9 +332,10 @@ def test_terminal_auto_result_records_evidence_and_closes_execution(agent, monke
             closed.append(True)
     monkeypatch.setattr(agent.terminal_skill, "handle_action", execute)
     if cancelled:
-        with pytest.raises(ValueError, match="cancelled"):
-            agent._execute("run_terminal", {"argv": ["pwd"]}, "auto-command")
-        assert "auto-command" not in agent.state["evidence"]
+        result = agent._execute("run_terminal", {"argv": ["pwd"]}, "auto-command")
+        assert "Interrupted by user" in result
+        assert "data.csv" in result
+        assert agent.state["evidence"]["auto-command"]["status"] == "failed"
     else:
         revision = agent.state["revision"]
         result = agent._execute("run_terminal", {"argv": ["pwd"]}, "auto-command")
@@ -1042,6 +1044,140 @@ def test_workflow_forwards_report_stream_before_committing(agent, monkeypatch):
     events.close()
 
 
+def test_pause_interrupts_stalled_model_and_retains_partial_context(agent):
+    from threading import Thread
+
+    waiting = Event()
+    closed = Event()
+    finished = Event()
+
+    class Stream:
+        def __iter__(self):
+            yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(
+                content="The partial analysis", tool_calls=[SimpleNamespace(index=0, id="partial-call",
+                    function=SimpleNamespace(name="execute_python_script", arguments='{"code":"print('))]))])
+            waiting.set()
+            assert closed.wait(3), "The provider stream was not closed on pause"
+
+        def close(self):
+            closed.set()
+
+    agent.client.get_completion_with_tools.return_value = Stream()
+    events = []
+
+    def run():
+        try:
+            events.extend(agent.run_workflow())
+        finally:
+            finished.set()
+
+    worker = Thread(target=run, daemon=True)
+    worker.start()
+    try:
+        assert waiting.wait(3)
+        agent.cancel.set()
+        assert finished.wait(1), "Pause waited for the model response to finish"
+        assert closed.wait(1)
+        assert agent.state["status"] == "paused"
+        assert events[-1]["run"]["status"] == "paused"
+        partial = agent.state["trajectory"][-2]
+        assert partial["role"] == "assistant"
+        assert "The partial analysis" in partial["content"]
+        assert 'print(' in partial["content"]
+        assert not partial.get("tool_calls")
+        assert "interrupted" in agent.state["trajectory"][-1]["content"].lower()
+        assert not agent.state["outputs"]
+    finally:
+        closed.set()
+        worker.join(3)
+
+
+def test_python_pause_stops_worker_and_keeps_partial_stdout(agent):
+    from threading import Timer
+    from data_formulator.sandbox.local_sandbox import LocalSandbox
+
+    assert LocalSandbox._run_in_warm_subprocess("value = 1", {"value": None})["status"] == "ok"
+    timer = Timer(0.5, agent.cancel.set)
+    timer.start()
+    try:
+        result = agent._execute("execute_python_script", {
+            "code": "print('partial calculation', flush=True)\nwhile True: pass",
+            "purpose": "Test interruption"}, "partial-python")
+    finally:
+        timer.cancel()
+    assert "Python interrupted" in result
+    assert "partial calculation" in result
+    assert agent.state["evidence"]["partial-python"]["status"] == "failed"
+    assert not agent.state["outputs"]
+    assert LocalSandbox._run_in_warm_subprocess("value = 2", {"value": None})["allowed_objects"]["value"] == 2
+
+
+def test_pause_during_model_open_discards_late_response(agent):
+    from threading import Thread
+
+    opening, release, closed, finished = Event(), Event(), Event(), Event()
+    source = MagicMock()
+    source.close.side_effect = closed.set
+
+    def open_stream(*args, **kwargs):
+        opening.set()
+        assert release.wait(3)
+        return source
+
+    def run():
+        try:
+            list(agent.run_workflow())
+        finally:
+            finished.set()
+
+    agent.client.get_completion_with_tools.side_effect = open_stream
+    worker = Thread(target=run, daemon=True)
+    worker.start()
+    try:
+        assert opening.wait(3)
+        agent.cancel.set()
+        assert finished.wait(1)
+        assert agent.state["status"] == "paused"
+        trajectory = deepcopy(agent.state["trajectory"])
+        release.set()
+        assert closed.wait(1)
+        assert agent.state["trajectory"] == trajectory
+        source.__iter__.assert_not_called()
+    finally:
+        release.set()
+        worker.join(3)
+
+
+def test_pause_before_tool_dispatch_never_executes_call(agent, monkeypatch):
+    def stream(*args):
+        if False:
+            yield
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=None, tool_calls=[
+            SimpleNamespace(id="pending", function=SimpleNamespace(name="execute_python_script",
+                arguments=json.dumps({"code": "print('not executed')", "purpose": "Check"})))]))])
+
+    monkeypatch.setattr(agent, "_stream_llm", stream)
+    execute = MagicMock()
+    monkeypatch.setattr(agent, "_execute", execute)
+    events = agent.run_workflow()
+    assert next(events)["type"] == "activity"
+    agent.cancel.set()
+    list(events)
+    execute.assert_not_called()
+    assert agent.state["status"] == "paused"
+    assert "interrupted" in agent.state["trajectory"][-1]["content"]
+
+
+def test_interrupted_approved_terminal_is_not_successful_evidence(agent):
+    agent.state["terminal_request"] = {"call_id": "partial-command", "argv": ["fetch"]}
+    agent.resolve_pending({"interrupted": True, "output": "partial download", "exit_code": -2})
+    assert "partial download" in agent.state["trajectory"][-1]["content"]
+    assert agent.state["evidence"]["partial-command"]["status"] == "failed"
+    with pytest.raises(ValueError, match="successful evidence"):
+        agent._execute("record_check", {"check_id": "coverage", "status": "passed",
+            "evidence_ids": ["partial-command"], "explanation": "Incomplete"}, "check")
+
+
 def test_plain_text_does_not_finish_and_pause_resumes(agent, monkeypatch):
     responses = iter([(None, "Done"), ("request_help", {"question": "Need permission"})])
 
@@ -1336,8 +1472,9 @@ def test_terminal_resume_executes_only_approved_stored_command(workflow_client, 
     monkeypatch.setattr("data_formulator.routes.agents.get_client", lambda model: MagicMock())
     commands = []
 
-    def command(spec, *, scratch_dir):
+    def command(spec, *, scratch_dir, cancel):
         commands.append(spec["argv"])
+        assert not cancel.is_set()
         assert spec["decision"] == "approve"
         assert spec["dangerouslyDisableSandbox"] is True
         assert spec["sandboxDisablingReason"] == "Client state outside policy"
