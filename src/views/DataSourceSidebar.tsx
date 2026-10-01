@@ -70,7 +70,8 @@ import { getConnectorIcon, connectorSortOrder, RelationalDBIcon } from '../icons
 import { loadTable } from '../app/tableThunks';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, updateWorkspaceMeta, onWorkspaceListChanged, WorkspaceLoadSupersededError } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
-import { borderColor, sidebarEdge, sidebarPrimaryActionSx, sidebarToolbarSx } from '../app/tokens';
+import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
+import { borderColor, sidebarEdge, sidebarMenuSx, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarRowDangerActionSx, sidebarRowMetaSx, sidebarRowSx, sidebarRowTitleSx, sidebarToolbarSx } from '../app/tokens';
 
 import type { ConnectorInstance, DictTable } from '../components/ComponentType';
 import {
@@ -607,8 +608,17 @@ const DataSourceSidebarPanel: React.FC<{
         return onWorkspaceListChanged(refreshSessions);
     }, [refreshSessions]);
 
+    useEffect(() => {
+        if (activeTab !== 'sessions') return;
+        refreshSessions();
+        const refresh = () => { if (document.visibilityState === 'visible') refreshSessions(); };
+        document.addEventListener('visibilitychange', refresh);
+        return () => document.removeEventListener('visibilitychange', refresh);
+    }, [activeTab, refreshSessions]);
+
     const buildSessionTooltip = useCallback((s: WorkspaceSummary): string => {
         const parts: string[] = [];
+        if (s.scheduled_run) parts.push(`${s.scheduled_run.scheduleName}: ${new Date(s.scheduled_run.scheduledFor).toLocaleString()}`);
         if (s.table_count != null) {
             parts.push(t('sidebar.tableCount', { count: s.table_count }));
         }
@@ -627,7 +637,7 @@ const DataSourceSidebarPanel: React.FC<{
             const result = await loadWorkspace(sessionId);
             if (result) {
                 const displayName = metaDisplayName || result.displayName;
-                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: sessionId, displayName, readOnly: result.readOnly } }));
+                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { ...result.state.activeWorkspace, id: sessionId, displayName, readOnly: result.readOnly } }));
             } else {
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(), type: 'error', component: 'workspace',
@@ -1642,7 +1652,7 @@ const DataSourceSidebarPanel: React.FC<{
                                     position: 'absolute', right: 0, top: 0, bottom: 0, zIndex: 1,
                                     display: 'flex', alignItems: 'center', gap: 0, px: 0.25,
                                     bgcolor: 'var(--connector-row-background)',
-                                    '& .connector-row-action': { width: 24, height: 24, borderRadius: 1 },
+                                    '& .connector-row-action': sidebarRowActionSx,
                                     opacity: (isLoading && !bodySpinnerVisible) ? 1 : 0,
                                     pointerEvents: (isLoading && !bodySpinnerVisible) ? 'auto' : 'none',
                                     '@media (hover: none)': { opacity: 1, pointerEvents: 'auto' },
@@ -1817,9 +1827,9 @@ const DataSourceSidebarPanel: React.FC<{
                                                                 className="catalog-hover-action"
                                                                 aria-label={t('sidebar.openInDataView', { defaultValue: 'Open in data view' })}
                                                                 onClick={(e) => { e.stopPropagation(); onOpenUploadDialog(`connector:${connector.id}`, node.path); }}
-                                                                sx={{ p: 0, ml: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
+                                                                sx={sidebarRowActionSx}
                                                             >
-                                                                <NorthEastIcon sx={{ fontSize: iconVar.xs }} />
+                                                                <NorthEastIcon />
                                                             </IconButton>
                                                         </Tooltip>
                                                     )}
@@ -1827,10 +1837,11 @@ const DataSourceSidebarPanel: React.FC<{
                                                     <Tooltip title={t('sidebar.refresh', { defaultValue: 'Refresh data' })}>
                                                         <IconButton
                                                             size="small"
+                                                            aria-label={t('sidebar.refresh', { defaultValue: 'Refresh data' })}
                                                             onClick={(e) => { e.stopPropagation(); handleRefreshTable(connector.id, node, e); }}
-                                                            sx={{ p: 0, ml: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
+                                                            sx={sidebarRowActionSx}
                                                         >
-                                                            <RefreshIcon sx={{ fontSize: iconVar.sm }} />
+                                                            <RefreshIcon />
                                                         </IconButton>
                                                     </Tooltip>
                                                     )}
@@ -1988,6 +1999,7 @@ const DataSourceSidebarPanel: React.FC<{
                         onClose={() => setSessionSortAnchor(null)}
                         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
                         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                        sx={sidebarMenuSx}
                     >
                         <ListSubheader sx={{ fontSize: textVar.xxs, lineHeight: '28px', color: 'text.disabled' }}>
                             {t('sidebar.sortSessions', { defaultValue: 'Sort' })}
@@ -2005,17 +2017,16 @@ const DataSourceSidebarPanel: React.FC<{
                                     setSessionSort(key);
                                     setSessionSortAnchor(null);
                                 }}
-                                sx={{ fontSize: textVar.sm, py: 0.75 }}
                             >
-                                <ListItemIcon sx={{ minWidth: 28 }}>
-                                    {sessionSort === key && <CheckIcon sx={{ fontSize: iconVar.sm }} />}
+                                <ListItemIcon>
+                                    {sessionSort === key && <CheckIcon />}
                                 </ListItemIcon>
-                                <ListItemText primary={label} slotProps={{ primary: { sx: { fontSize: textVar.sm } } }} />
+                                <ListItemText primary={label} />
                             </MenuItem>
                         ))}
                     </Menu>
                 </Box>
-            <ScrollFadeContainer sx={{ overflowX: 'hidden', overscrollBehavior: 'contain' }} resetKey={sessions.length}>
+            <ScrollFadeContainer sx={{ overflowX: 'hidden', overscrollBehavior: 'contain', pt: 0.5 }} resetKey={sessions.length}>
                 {sessions.length === 0 ? (
                     <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
                         <Typography sx={{ fontSize: textVar.sm, color: 'text.disabled', fontStyle: 'italic' }}>
@@ -2039,23 +2050,7 @@ const DataSourceSidebarPanel: React.FC<{
                         >
                         <Box
                             onClick={() => { if (!isRenaming && activeWorkspace?.id !== s.id) handleOpenSession(s.id, s.display_name); }}
-                            sx={{
-                                position: 'relative',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 0.75,
-                                mx: 0.75,
-                                px: 0.75,
-                                py: 0.5,
-                                borderRadius: 0.75,
-                                backgroundColor: 'transparent',
-                                cursor: isRenaming ? 'default' : (activeWorkspace?.id === s.id ? 'default' : 'pointer'),
-                                // Reserve room for the hover actions so the title truncates instead of running under them.
-                                '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.045)', pr: isRenaming ? 0.75 : '80px' },
-                                '&:hover .row-actions': { display: 'flex' },
-                                '&:hover .row-timestamp': { display: 'none' },
-                                userSelect: 'none',
-                            }}
+                            sx={{ ...sidebarRowSx, cursor: isRenaming || activeWorkspace?.id === s.id ? 'default' : 'pointer' }}
                         >
                             {activeWorkspace?.id === s.id && (
                                 <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: 'primary.main', flexShrink: 0 }} />
@@ -2085,77 +2080,53 @@ const DataSourceSidebarPanel: React.FC<{
                                     }}
                                 />
                             ) : (
-                                <Typography noWrap sx={{
-                                    fontSize: textVar.sm, flex: 1, fontWeight: 500,
+                                <Typography noWrap sx={{ ...sidebarRowTitleSx,
                                     color: activeWorkspace?.id === s.id ? 'primary.main' : 'text.primary',
                                 }}>
                                     {s.display_name}
                                 </Typography>
                             )}
+                            {s.scheduled_run && !s.scheduled_run.forked && <Box component="span" role="img" aria-label="Scheduled"
+                                sx={{ display: 'inline-flex', color: 'text.secondary', flexShrink: 0 }}>
+                                <ScheduleOutlinedIcon sx={{ fontSize: iconVar.sm }} />
+                            </Box>}
+                            {s.shared && <Typography component="span" sx={{ fontSize: textVar.xxs, color: 'text.secondary', ml: 0.5 }}>Shared</Typography>}
                             {!isRenaming && (() => {
                                 // Show the timestamp that matches the active sort so the
                                 // visual order is self-explanatory: created time when
                                 // sorted by creation, last-saved otherwise.
                                 const useCreated = sessionSort === 'created_desc' || sessionSort === 'created_asc';
                                 const stamp = formatCompactTime(useCreated ? s.created_at : (s.saved_at || s.created_at));
-                                if (!stamp) return null;
+                                const actionable = !s.read_only;
+                                if (!stamp && !actionable) return null;
                                 return (
-                                    <Typography
-                                        className="row-timestamp"
-                                        sx={{
-                                            fontSize: textVar.xxs,
-                                            color: 'text.secondary',
-                                            flexShrink: 0,
-                                            ml: 0.5,
-                                        }}
-                                    >
-                                        {stamp}
-                                    </Typography>
+                                    <Box className="sidebar-row-trailing" sx={{ ml: 0.5 }}>
+                                        {stamp && <Typography className={actionable ? 'sidebar-row-meta' : undefined} sx={sidebarRowMetaSx}>
+                                            {stamp}
+                                        </Typography>}
+                                        {actionable && <Box className="sidebar-row-actions">
+                                            <Tooltip title={t('sidebar.rename', { defaultValue: 'Rename' })}>
+                                                <IconButton size="small" aria-label={t('sidebar.rename', { defaultValue: 'Rename' })} sx={sidebarRowActionSx}
+                                                    onClick={(e) => { e.stopPropagation(); startRenameSession(s.id, s.display_name); }}>
+                                                    <EditIcon />
+                                                </IconButton>
+                                            </Tooltip>
+                                            <Tooltip title={t('sidebar.exportSession', { defaultValue: 'Export' })}>
+                                                <IconButton size="small" aria-label={t('sidebar.exportSession', { defaultValue: 'Export' })} sx={sidebarRowActionSx}
+                                                    onClick={(e) => { e.stopPropagation(); handleExportSession(s.id, s.display_name); }}>
+                                                    <DownloadIcon />
+                                                </IconButton>
+                                            </Tooltip>
+                                            <Tooltip title={t('workspace.deleteSession')}>
+                                                <IconButton size="small" aria-label={t('workspace.deleteSession')} sx={sidebarRowDangerActionSx}
+                                                    onClick={(e) => handleDeleteSession(s.id, e)}>
+                                                    <DeleteIcon />
+                                                </IconButton>
+                                            </Tooltip>
+                                        </Box>}
+                                    </Box>
                                 );
                             })()}
-                            {!isRenaming && (
-                                <Box
-                                    className="row-actions"
-                                    sx={{
-                                        position: 'absolute',
-                                        top: '50%',
-                                        right: 8,
-                                        transform: 'translateY(-50%)',
-                                        display: 'none',
-                                        gap: 0.25,
-                                    }}
-                                >
-                                    <Tooltip title={t('sidebar.rename', { defaultValue: 'Rename' })}>
-                                        <IconButton
-                                            size="small"
-                                            color="primary"
-                                            onClick={(e) => { e.stopPropagation(); startRenameSession(s.id, s.display_name); }}
-                                            sx={{ p: 0.25 }}
-                                        >
-                                            <EditIcon sx={{ fontSize: iconVar.sm }} />
-                                        </IconButton>
-                                    </Tooltip>
-                                    <Tooltip title={t('sidebar.exportSession', { defaultValue: 'Export' })}>
-                                        <IconButton
-                                            size="small"
-                                            color="primary"
-                                            onClick={(e) => { e.stopPropagation(); handleExportSession(s.id, s.display_name); }}
-                                            sx={{ p: 0.25 }}
-                                        >
-                                            <DownloadIcon sx={{ fontSize: iconVar.sm }} />
-                                        </IconButton>
-                                    </Tooltip>
-                                    <IconButton
-                                        size="small"
-                                        color="error"
-                                        aria-label={t('workspace.deleteSession')}
-                                        onClick={(e) => handleDeleteSession(s.id, e)}
-                                        sx={{ p: 0.25 }}
-                                    >
-                                        <DeleteIcon sx={{ fontSize: iconVar.sm }} />
-                                    </IconButton>
-                                </Box>
-                            )}
                         </Box>
                         </Tooltip>
                         );
@@ -2168,7 +2139,7 @@ const DataSourceSidebarPanel: React.FC<{
             {/* ── Knowledge tab ── */}
             {activeTab === 'knowledge' && (
             <Box sx={{ flex: '0 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <WorkflowPanel onCreateSession={createNewSession} headerActions={<>
+                <WorkflowPanel onCreateSession={createNewSession} onOpenSession={handleOpenSession} headerActions={<>
                     {pinAction}
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
                         <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>

@@ -123,6 +123,7 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
         table_count: Optional[int] = None,
         chart_count: Optional[int] = None,
         source_ids: Optional[list[str]] = None,
+        scheduled_run: Optional[dict] = None,
     ) -> None:
         """Upload a lightweight ``workspace_meta.json`` blob for fast listing.
 
@@ -165,6 +166,10 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
             meta["sourceIds"] = source_ids
         elif isinstance(existing.get("sourceIds"), list):
             meta["sourceIds"] = existing["sourceIds"]
+        if scheduled_run is not None:
+            meta["scheduledRun"] = scheduled_run
+        elif existing.get("scheduledRun"):
+            meta["scheduledRun"] = existing["scheduledRun"]
         self._upload_blob(blob_name, json.dumps(meta, ensure_ascii=False))
 
     def _ensure_meta(self, workspace_id: str) -> dict:
@@ -219,6 +224,7 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
                 "created_at": meta.get("createdAt") or meta.get("updatedAt"),
                 "updated_at": meta.get("updatedAt"),
                 "table_count": meta.get("tableCount"),
+                "scheduled_run": meta.get("scheduledRun"),
                 "chart_count": meta.get("chartCount"),
                 "source_ids": meta.get("sourceIds", []),
             })
@@ -355,6 +361,7 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
             table_count=tc,
             chart_count=cc,
             source_ids=_session_source_ids(clean_state),
+            scheduled_run=aw.get("scheduledRun") if isinstance(aw, dict) else None,
         )
 
         logger.debug(f"Saved session state to blob {blob_name}")

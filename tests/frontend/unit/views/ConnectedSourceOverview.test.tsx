@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -220,7 +220,7 @@ it('browses a connector using the artifact preview inside the load dialog', asyn
     const onClose = vi.fn();
     render(<Provider store={store}><UnifiedDataUploadDialog open onClose={onClose} /></Provider>);
     fireEvent.click(screen.getByRole('button', { name: 'Browse data sources' }));
-    fireEvent.change(await screen.findByRole('combobox', { name: 'Data source' }), { target: { value: 'source' } });
+    fireEvent.click(await within(screen.getByRole('navigation', { name: 'Browse data sources' })).findByRole('button', { name: /Example source/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Events' }));
     await screen.findByText('Preview: 1 / 100');
     expect(screen.getByRole('dialog')).toBeTruthy();
@@ -239,7 +239,7 @@ it.each([false, true])('opens a connector directly in the appropriate view (conn
     });
     const store = configureStore({ reducer: dataFormulatorReducer });
     render(<Provider store={store}><UnifiedDataUploadDialog open initialTab="connector:source" onClose={vi.fn()} /></Provider>);
-    await screen.findByDisplayValue('Example source');
+    await screen.findByRole('button', { name: 'Rename connector' });
     expect(screen.getByRole('button', { name: 'Delete connector' })).toBeTruthy();
     if (connected) {
         await screen.findByRole('button', { name: 'Events' });

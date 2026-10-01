@@ -72,6 +72,40 @@ it.each([false, true])('preserves locally prepared chart aggregates after refres
     }
 });
 
+it('keeps an unmapped sortBy column and contains assembly failures to the chart', async () => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+    const rows = [{ model: 'a', requests: 2, total_tokens: 9 }, { model: 'b', requests: 5, total_tokens: 3 }];
+    const table = { kind: 'table', id: 'token-usage', displayId: 'Token usage', names: ['model', 'requests', 'total_tokens'], rows,
+        metadata: { model: { type: 'string', levels: ['a', 'b'] }, requests: { type: 'number', levels: [] }, total_tokens: { type: 'number', levels: [] } } } as any;
+    const fields = table.names.map((name: string) => ({ id: name, name, source: 'custom', tableRef: 'custom' })) as any;
+    const chart = generateFreshChart(table.id, 'Bar Chart');
+    chart.encodingMap.x = { fieldID: 'model', dtype: 'nominal', sortBy: 'total_tokens', sortOrder: 'descending' };
+    chart.encodingMap.y = { fieldID: 'requests', dtype: 'quantitative' };
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.addTableToStore(table));
+    store.dispatch(dfActions.addConceptItems(fields));
+    store.dispatch(dfActions.addChart(chart));
+    store.dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
+    const cacheKey = computeDisplayRowsCacheKey(dfSelectors.getAllTables(store.getState()).find(item => item.id === table.id)!, chart, fields);
+    const utils = await import('../../../../src/app/utils');
+    const assemble = vi.spyOn(utils, 'assembleVegaChart').mockImplementation(() => { throw new Error('encodings.x.sortBy is invalid'); });
+    try {
+        render(React.createElement(Provider, { store,
+            children: React.createElement(ThemeProvider, {
+                theme: createTheme({ palette: { custom: { main: '#a34d16', bgcolor: '#fff' } } } as any),
+                children: React.createElement(DndProvider, { backend: HTML5Backend, children: React.createElement(ChartEditorFC) }),
+            }),
+        }));
+        await waitFor(() => expect(displayRowsCache.get(cacheKey)?.rows[0]).toHaveProperty('total_tokens', 9));
+        expect(await screen.findByRole('alert')).toHaveTextContent("This chart can't be rendered: encodings.x.sortBy is invalid");
+        expect(assemble.mock.calls.at(-1)?.[3]?.[0]).toHaveProperty('total_tokens');
+    } finally {
+        assemble.mockRestore();
+        displayRowsCache.delete(cacheKey);
+        vi.unstubAllGlobals();
+    }
+});
+
 it.each(['native', 'structured', 'restored', 'unavailable', 'error'])('handles load query availability for %s tables', async mode => {
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     const text = 'Trips | summarize pickup_count=count() by pickup_date';

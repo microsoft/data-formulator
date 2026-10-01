@@ -148,7 +148,7 @@ it('opens an unselected form and switches connectors without retaining credentia
     ] } } as any);
     const store = configureStore({ reducer: dataFormulatorReducer });
     store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'selector', displayId: 'selector', textKind: 'explain',
-        content: 'Connect', createdAt: 1, form: { kind: 'connector', title: 'Connect a data source',
+        content: 'Connect', createdAt: 1, parentNodeId: 'conversation-root:test', form: { kind: 'connector', title: 'Connect a data source',
             connector: { sourceType: '' }, draft: { revision: 0, fields: [], changedByAgent: [], conflict: false } } }));
     const Form = () => {
         const prompt = useSelector((state: ReturnType<typeof store.getState>) => state.textTurns[0].form!.connector);
@@ -191,7 +191,7 @@ it('keeps the form pending through creation and failed connection, resolving onl
     const store = configureStore({ reducer: dataFormulatorReducer });
     const prompt = { sourceType: 'mysql', prefilled: { host: 'db.example' } };
     store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'pending-form', displayId: 'pending-form', textKind: 'explain',
-        content: 'Connect', createdAt: 1, form: { kind: 'connector', title: 'MySQL', connector: prompt } }));
+        content: 'Connect', createdAt: 1, parentNodeId: 'conversation-root:test', form: { kind: 'connector', title: 'MySQL', connector: prompt } }));
     const onResolved = vi.fn();
     render(<Provider store={store}><ConnectorFormCard messageId="pending-form" prompt={prompt} onResolved={onResolved} /></Provider>);
     await screen.findByDisplayValue('db.example');
@@ -223,7 +223,7 @@ it('keeps reopened drafts, tracks typing before blur, and applies agent updates 
     const store = configureStore({ reducer: dataFormulatorReducer });
     const prompt = { sourceType: 'mysql', prefilled: { host: 'initial.example' } };
     store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'form', displayId: 'form', textKind: 'explain',
-        content: 'Connect', createdAt: 1, form: { kind: 'connector', title: 'MySQL', connector: prompt } }));
+        content: 'Connect', createdAt: 1, parentNodeId: 'conversation-root:test', form: { kind: 'connector', title: 'MySQL', connector: prompt } }));
     const mount = () => render(<Provider store={store}><ConnectorFormCard messageId="form" prompt={prompt} onResolved={() => {}} /></Provider>);
     const first = mount();
     await screen.findByDisplayValue('initial.example');

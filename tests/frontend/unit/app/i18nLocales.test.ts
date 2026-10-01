@@ -4,7 +4,7 @@ import en from "../../../../src/i18n/locales/en";
 import zh from "../../../../src/i18n/locales/zh";
 import id from "../../../../src/i18n/locales/id";
 
-type TranslationValue = string | Record<string, TranslationValue>;
+type TranslationValue = string | string[] | { [key: string]: TranslationValue };
 type TranslationMap = Record<string, TranslationValue>;
 
 function collectKeys(value: TranslationMap, prefix = ""): Set<string> {
@@ -12,7 +12,7 @@ function collectKeys(value: TranslationMap, prefix = ""): Set<string> {
 
   for (const [key, child] of Object.entries(value)) {
     const nextPrefix = prefix ? `${prefix}.${key}` : key;
-    if (typeof child === "string") {
+    if (typeof child === "string" || Array.isArray(child)) {
       keys.add(nextPrefix);
     } else {
       for (const childKey of collectKeys(child, nextPrefix)) {

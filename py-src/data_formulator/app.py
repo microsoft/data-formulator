@@ -319,6 +319,8 @@ def _register_blueprints():
 
     from data_formulator.routes.workflows import workflow_bp
     app.register_blueprint(workflow_bp)
+    from data_formulator.routes.schedules import schedule_bp
+    app.register_blueprint(schedule_bp)
 
     from data_formulator.routes.configurations import configuration_bp
     app.register_blueprint(configuration_bp)
@@ -376,6 +378,13 @@ def _safety_checks():
 configure_logging()
 _register_blueprints()
 _safety_checks()
+
+
+@app.before_request
+def ensure_workflow_scheduler():
+    if not app.testing:
+        from data_formulator.workflows.scheduler import start_scheduler
+        start_scheduler(app)
 
 
 @app.route("/", defaults={"path": ""})
@@ -590,6 +599,10 @@ def run_app():
     _register_blueprints()
     _safety_checks()
 
+    from data_formulator.workflows.scheduler import start_scheduler
+    if not args.dev or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        start_scheduler(app)
+
     url = "http://localhost:{0}".format(args.port)
     print(f"Ready! Open {url} in your browser.", flush=True)
     
@@ -597,7 +610,11 @@ def run_app():
         threading.Timer(1.5, lambda: webbrowser.open(url, new=2)).start()
 
     debug_mode = args.dev
-    app.run(host=args.host, port=args.port, debug=debug_mode, use_reloader=debug_mode)
+    try:
+        app.run(host=args.host, port=args.port, debug=debug_mode, use_reloader=debug_mode)
+    finally:
+        from data_formulator.workflows.scheduler import stop_scheduler
+        stop_scheduler(app)
 
 if __name__ == '__main__':
     run_app()

@@ -9,10 +9,10 @@ import { HTML5Backend } from 'react-dnd-html5-backend';
 import { ThemeProvider, createTheme } from '@mui/material';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { store } from '../../../../src/app/store';
-import { dfActions, dfSelectors } from '../../../../src/app/dfSlice';
+import { dfActions, dfSelectors, fetchGlobalModelList } from '../../../../src/app/dfSlice';
 import { apiRequest, streamRequest } from '../../../../src/app/apiClient';
 import { getUrls } from '../../../../src/app/utils';
-import { pauseWorkflowRun, publishWorkflowRun, sendWorkflowMessage, WorkflowProgress, WorkflowPanel, Run, selectChatWorkflow } from '../../../../src/views/WorkflowPanel';
+import { pauseWorkflowRun, publishWorkflowRun, sendWorkflowMessage, WorkflowProgress, WorkflowPanel, WorkflowRunObserver, Run, selectChatWorkflow } from '../../../../src/views/WorkflowPanel';
 import { SimpleChartRecBox } from '../../../../src/views/SimpleChartRecBox';
 import { FreeDataViewFC } from '../../../../src/views/DataView';
 import { DataThread } from '../../../../src/views/DataThread';
@@ -68,9 +68,200 @@ describe('Workflow session publication', () => {
         ] } } as any);
     });
 
+    it.each([false, true])('simplifies schedule defaults and reveals missing required inputs (missing: %s)', async missing => {
+        const previous = store.getState();
+        let rendered: ReturnType<typeof render> | undefined;
+        try {
+            store.dispatch(dfActions.setServerConfig({ ...previous.serverConfig, IS_LOCAL_MODE: true }));
+            store.dispatch(fetchGlobalModelList.fulfilled([
+                { id: 'server-first', endpoint: 'openai', model: 'First', api_key: '', api_base: '', api_version: '' },
+                { id: 'server-selected', endpoint: 'openai', model: 'Selected', api_key: '', api_base: '', api_version: '' },
+            ], 'schedule-test', undefined));
+            store.dispatch(dfActions.selectModel('server-selected'));
+            const item = { path: 'review.yaml', name: 'Review values', origin: 'user', parameters: [
+                { name: 'subscription', label: 'Subscription', required: true, ...(missing ? {} : { default: 'example' }) },
+                { name: 'days', label: 'Days', type: 'number', required: true, default: 28 },
+            ] };
+            let savedSchedules: { id: string; config: Record<string, unknown>; next_at: string;
+                history: { id: string; status: string; scheduled_for: string }[] }[] = [];
+            vi.mocked(apiRequest).mockImplementation(async (url, options) => {
+                if (url === '/api/schedules' && options?.method === 'POST') {
+                    savedSchedules = [{ id: 'saved-schedule', config: JSON.parse(options.body as string).config, next_at: '2026-10-01T16:00:00Z',
+                        history: [{ id: 'skipped-run', status: 'skipped', scheduled_for: '2026-09-30T16:00:00Z' },
+                            { id: 'latest-run', status: 'needs_attention', scheduled_for: '2026-09-29T16:00:00Z' },
+                            { id: 'older-run', status: 'completed', scheduled_for: '2026-09-28T16:00:00Z' }] }];
+                }
+                return { data: url === '/api/workflows/list'
+                    ? { items: [item], runs: [] } : { available: true, hosted: false, schedules: savedSchedules } } as any;
+            });
+            const openSession = vi.fn();
+            rendered = render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} onOpenSession={openSession} /></Provider>);
+            await screen.findByRole('button', { name: 'Open Review values' });
+            await waitFor(() => expect(screen.getByRole('button', { name: 'New schedule' })).toBeEnabled());
+            expect(screen.getByRole('button', { name: 'New workflow' }).parentElement)
+                .toContainElement(screen.getByRole('button', { name: 'New schedule' }));
+            expect(screen.getByRole('region', { name: 'Schedules' }))
+                .not.toContainElement(screen.getByRole('button', { name: 'New schedule' }));
+            expect(screen.getByRole('region', { name: 'Schedules' })).toHaveTextContent('No schedules yet');
+            fireEvent.click(screen.getByRole('button', { name: 'New schedule' }));
+            const workflowSelect = await screen.findByRole('combobox', { name: 'Workflow' });
+            fireEvent.change(workflowSelect.parentElement!.querySelector('input')!, { target: { value: 'review.yaml' } });
+            expect(screen.getByText('Workflow inputs')).toBeVisible();
+            expect(screen.getByText('Run settings')).toBeVisible();
+            expect(document.querySelector('[role="dialog"] details')).toBeNull();
+            if (missing) fireEvent.change(screen.getByLabelText(/Subscription/), { target: { value: 'example' } });
+            const scheduleName = screen.getByLabelText(/Schedule name/);
+            expect(scheduleName).toHaveValue('Review values');
+            if (missing) fireEvent.change(scheduleName, { target: { value: 'Daily review' } });
+            expect(screen.queryByRole('group', { name: 'Weekdays' })).not.toBeInTheDocument();
+            expect(screen.getByRole('checkbox', { name: 'Auto-approve commands and data loads' })).not.toBeChecked();
+            const repeatInput = screen.getByRole('combobox', { name: 'Repeat' }).parentElement!.querySelector('input')!;
+            fireEvent.change(repeatInput, { target: { value: 'weekdays' } });
+            fireEvent.change(repeatInput, { target: { value: 'custom' } });
+            fireEvent.click(screen.getByRole('checkbox', { name: 'Sun' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Save schedule' }));
+            await waitFor(() => expect(vi.mocked(apiRequest).mock.calls.some(([url, options]) => url === '/api/schedules' && options?.method === 'POST')).toBe(true));
+            const submission = vi.mocked(apiRequest).mock.calls.find(([url, options]) => url === '/api/schedules' && options?.method === 'POST')!;
+            expect(JSON.parse(submission[1]!.body as string).config).toMatchObject({
+                name: missing ? 'Daily review' : 'Review values', workflow: 'review.yaml', model_id: 'server-selected', weekdays: [0, 1, 2, 3, 4, 6],
+                enabled: true, max_retries: 2, auto_approve: false, catch_up: false,
+                setup: { parameters: { subscription: 'example', days: 28 }, instructions: '' },
+            });
+            await waitFor(() => expect(screen.getByRole('button', { name: 'Close' })).toBeEnabled());
+            fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+            const scheduleTitle = missing ? 'Daily review' : 'Review values';
+            const editSchedule = await screen.findByRole('button', { name: `Edit schedule ${scheduleTitle}` });
+            const schedules = screen.getByRole('region', { name: 'Schedules' });
+            expect(schedules).toContainElement(editSchedule);
+            expect(screen.getByRole('region', { name: 'Workflows' })).not.toContainElement(editSchedule);
+            expect(within(schedules).getByRole('img', { name: 'Next run, Mon, Tue, Wed, Thu, Fri, Sun at 09:00' })).toBeInTheDocument();
+            expect(schedules).not.toHaveTextContent(/Last run/);
+            expect(within(schedules).getByRole('img', { name: 'Needs attention' })).toBeInTheDocument();
+            expect(schedules.textContent).not.toContain('·');
+            fireEvent.click(within(schedules).getByRole('button', { name: `Open latest run for schedule ${scheduleTitle}` }));
+            expect(openSession).toHaveBeenLastCalledWith('scheduled-latest-run');
+            const runItems = within(within(schedules).getByRole('group', { name: `Runs of schedule ${scheduleTitle}` }))
+                .getAllByRole('button', { name: /^Open run .* for schedule / });
+            expect(runItems).toHaveLength(1);
+            fireEvent.click(runItems[0]);
+            expect(openSession).toHaveBeenLastCalledWith('scheduled-older-run');
+            expect(screen.queryByRole('group', { name: 'Runs of Review values' })).toBeNull();
+            fireEvent.click(screen.getByRole('button', { name: 'Open Review values' }));
+            fireEvent.click(within(await screen.findByRole('group', { name: 'Runs of Review values' })).getAllByRole('button')[0]);
+            await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Workflows' })).toBeNull());
+            expect(openSession).toHaveBeenCalledTimes(3);
+            expect(openSession).toHaveBeenLastCalledWith('scheduled-latest-run');
+            fireEvent.click(editSchedule);
+            expect(await screen.findByLabelText(/Schedule name/)).toHaveValue(missing ? 'Daily review' : 'Review values');
+            expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+            const scheduleList = screen.getByRole('navigation', { name: 'Schedule list' });
+            expect(within(scheduleList).getByRole('button', { name: new RegExp(scheduleTitle) })).toHaveAttribute('aria-current', 'true');
+            fireEvent.click(within(scheduleList).getByRole('button', { name: 'New schedule' }));
+            expect(screen.getByLabelText(/Schedule name/)).toHaveValue('');
+            fireEvent.click(within(scheduleList).getByRole('button', { name: new RegExp(scheduleTitle) }));
+            expect(screen.getByLabelText(/Schedule name/)).toHaveValue(scheduleTitle);
+        } finally {
+            rendered?.unmount();
+            store.dispatch(dfActions.setServerConfig(previous.serverConfig));
+            store.dispatch(fetchGlobalModelList.fulfilled(previous.globalModels, 'restore-schedule-test', undefined));
+        }
+    });
+
     it('publishes the workflow name instead of an internal turn ID', async () => {
         await publishWorkflowRun({ ...run(), outputs: [] }, 'session');
         expect(store.getState().textTurns.find(turn => turn.workflow?.runId === 'native')?.displayId).toBe('Native review');
+    });
+
+    it('recovers a running node after reload without executing or stealing focus', async () => {
+        await publishWorkflowRun({ ...run(), status: 'running', outputs: [] }, 'session', false);
+        const snapshot = { ...run(), status: 'completed', outputs: [{ id: 'report', type: 'report', content: 'Finished in the background' }] };
+        vi.mocked(apiRequest).mockImplementation(async () => ({ data: { run: snapshot } }) as any);
+        store.dispatch(dfActions.setFocused({ type: 'text', textId: 'current-view' }));
+        const rendered = render(<Provider store={store}><WorkflowRunObserver /></Provider>);
+        await waitFor(() => expect(store.getState().generatedReports[0]?.content).toBe('Finished in the background'));
+        expect(store.getState().textTurns[0].workflow?.status).toBe('completed');
+        expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'current-view' });
+        expect(streamRequest).not.toHaveBeenCalled();
+        expect(vi.mocked(apiRequest).mock.calls.map(([url]) => url)).toEqual(['/api/workflows/run-state']);
+        rendered.unmount();
+    });
+
+    it('follows a read-only scheduled run and reloads its final snapshot', async () => {
+        const scheduledRun = { scheduleId: 'schedule', scheduleName: 'Daily', scheduledFor: '2026-09-30T09:00:00Z' };
+        store.dispatch(dfActions.setActiveWorkspace({ id: 'scheduled-native', displayName: 'Daily', readOnly: true, scheduledRun }));
+        await publishWorkflowRun({ ...run(), outputs: [] }, 'scheduled-native', false);
+        const states = [{ ...run(), outputs: [], activity: 'Checking sources' }, { ...run(), outputs: [], status: 'completed' }];
+        const snapshots = [true, false].map(readOnly => ({ state: { activeWorkspace: { id: 'scheduled-native', displayName: 'Daily', readOnly, scheduledRun },
+            textTurns: [{ id: 'final', kind: 'text', textKind: 'explain', displayId: 'Daily', content: readOnly ? 'Pending' : 'Done', createdAt: 1, parentNodeId: 'root' }] } }));
+        vi.mocked(apiRequest).mockImplementation(async url => ({ data: url === '/api/workflows/run-state'
+            ? { run: states.length > 1 ? states.shift() : states[0] } : snapshots.length > 1 ? snapshots.shift() : snapshots[0] }) as any);
+        vi.useFakeTimers();
+        try {
+            const rendered = render(<Provider store={store}><WorkflowRunObserver /></Provider>);
+            await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+            expect(store.getState().textTurns[0].workflow).toMatchObject({ status: 'running', activity: 'Checking sources' });
+            await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+            expect(store.getState().activeWorkspace?.readOnly).toBe(true);
+            await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+            expect(store.getState().activeWorkspace).toMatchObject({ id: 'scheduled-native', readOnly: false });
+            expect(store.getState().textTurns.map(turn => turn.content)).toEqual(['Done']);
+            expect(streamRequest).not.toHaveBeenCalled();
+            expect(vi.mocked(apiRequest).mock.calls.some(([url]) => url === '/api/workflows/pause')).toBe(false);
+            rendered.unmount();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('opens the latest workflow checkpoint by path even when workflow names are duplicated', async () => {
+        vi.mocked(apiRequest).mockImplementation(async url => ({ data: url === '/api/workflows/run-state'
+            ? { run: { ...run(), id: 'newest', outputs: [], status: 'paused' } }
+            : { items: [{ path: 'mine.yaml', name: 'Review', origin: 'user' }, { path: 'demo/review.yaml', name: 'Review', origin: 'demo' }],
+                runs: [{ ...run(), id: 'oldest', name: 'Old name', workflow_path: 'mine.yaml', started_at: '2026-09-28T00:00:00Z' },
+                    { ...run(), id: 'newest', name: 'Old name', workflow_path: 'mine.yaml', started_at: '2026-09-30T00:00:00Z' }] } }) as any);
+        render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} /></Provider>);
+        fireEvent.click((await screen.findAllByRole('button', { name: 'Open Review' }))[0]);
+        const workflowRuns = within(await screen.findByRole('group', { name: 'Runs of Review' })).getAllByRole('button');
+        expect(workflowRuns).toHaveLength(2);
+        fireEvent.click(workflowRuns[0]);
+        await waitFor(() => expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'textTurn-workflow-newest' }));
+        const request = vi.mocked(apiRequest).mock.calls.find(([url]) => url === '/api/workflows/run-state');
+        expect(JSON.parse(request![1]!.body as string)).toEqual({ run_id: 'newest' });
+        expect(streamRequest).not.toHaveBeenCalled();
+    });
+
+    it('opens hosted scheduled runs using the admin-only session ID', async () => {
+        const previous = store.getState().serverConfig;
+        store.dispatch(dfActions.setServerConfig({ ...previous, CAN_CONFIGURE: true }));
+        const openSession = vi.fn();
+        let rendered: ReturnType<typeof render> | undefined;
+        try {
+            vi.mocked(apiRequest).mockImplementation(async url => ({ data: url === '/api/workflows/list'
+                ? { items: [{ path: 'server/review.yaml', name: 'Shared review', origin: 'server' }], runs: [] }
+                : { available: true, hosted: true, schedules: [{ id: 'schedule', config: { name: 'Daily review', workflow: 'server/review.yaml', enabled: true, weekdays: [0, 1, 2, 3, 4, 5, 6], time: '09:00' },
+                    next_at: '2026-10-01T09:00:00Z', history: [{ id: 'hosted-run', status: 'completed', scheduled_for: '2026-09-30T09:00:00Z' }] }] } }) as any);
+            rendered = render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} onOpenSession={openSession} /></Provider>);
+            fireEvent.click(await screen.findByRole('button', { name: 'Open Shared review' }));
+            fireEvent.click(within(await screen.findByRole('group', { name: 'Runs of Shared review' })).getAllByRole('button')[0]);
+            expect(openSession).toHaveBeenLastCalledWith('scheduled-private-hosted-run');
+            fireEvent.click(screen.getByRole('button', { name: 'Open latest run for schedule Daily review' }));
+            expect(openSession).toHaveBeenLastCalledWith('scheduled-private-hosted-run');
+            expect(streamRequest).not.toHaveBeenCalled();
+        } finally {
+            rendered?.unmount();
+            store.dispatch(dfActions.setServerConfig(previous));
+        }
+    });
+
+    it('shows private read-only workflow details without resume controls', async () => {
+        await publishWorkflowRun({ ...run(), status: 'paused', outputs: [], message: 'Execution failed.' }, 'session');
+        store.dispatch(dfActions.setActiveWorkspace({ id: 'scheduled-private-test', displayName: 'Scheduled run', readOnly: true }));
+        render(<Provider store={store}><WorkflowProgress turn={store.getState().textTurns[0]} canvas /></Provider>);
+        expect(screen.getByRole('heading', { name: 'Native review' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Review request' })).not.toBeInTheDocument();
+        expect(streamRequest).not.toHaveBeenCalled();
     });
 
     it('infers semantics and units for workflow source and derived tables once per published output version', async () => {
@@ -944,7 +1135,9 @@ describe('Workflow session publication', () => {
         await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/workflows/save', expect.anything()));
         expect(JSON.parse(vi.mocked(apiRequest).mock.calls.find(([url]) => url === '/api/workflows/save')![1]!.body as string))
             .toEqual({ path: 'sales.workflow.yaml', content });
-        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled());
+        expect(screen.getByRole('dialog', { name: 'Workflows' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Create with agent' })).toBeNull();
         expect(store.getState().analystChatPending).toBeNull();
         expect(streamRequest).not.toHaveBeenCalled();
     });
@@ -957,23 +1150,26 @@ describe('Workflow session publication', () => {
             ? { content: 'version: 1\nname: Monthly Household Cost Review', content_hash: 'original-hash' }
             : { items: [demo, user, server], runs: [] } }) as any);
         render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} /></Provider>);
-        await screen.findByRole('button', { name: `Customize ${demo.name}` });
-        expect(screen.getByRole('region', { name: 'Other workflows' })).toHaveTextContent(demo.name);
-        expect(screen.getByRole('region', { name: 'Other workflows' })).toHaveTextContent(server.name);
-        expect(screen.getByRole('region', { name: 'My workflows' })).toHaveTextContent(user.name);
-        expect(screen.getByRole('region', { name: 'My workflows' })).not.toHaveTextContent(demo.name);
+        await screen.findByRole('button', { name: `Open ${demo.name}` });
+        const workflows = screen.getByRole('region', { name: 'Workflows' });
+        expect(workflows).toHaveTextContent(demo.name);
+        expect(workflows).toHaveTextContent(server.name);
+        expect(workflows).toHaveTextContent(user.name);
+        const cards = within(workflows).getAllByRole('article');
+        expect(cards).toHaveLength(3);
+        expect(cards[0]).toHaveTextContent(user.name);
+        expect(screen.getByRole('button', { name: `Open ${demo.name}` })).toHaveTextContent(/^demo/);
+        expect(screen.getByRole('button', { name: `Open ${user.name}` })).not.toHaveTextContent(/^demo/);
         expect(screen.queryByText('Workspace workflows')).not.toBeInTheDocument();
         expect(screen.queryByText('Demo workflows')).not.toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'Other workflows' }));
-        expect(screen.getByRole('button', { name: 'Other workflows' })).toHaveAttribute('aria-expanded', 'false');
-        expect(screen.queryByRole('button', { name: `Customize ${demo.name}` })).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: `Edit ${user.name}` })).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'Other workflows' }));
+        expect(screen.queryByRole('button', { name: 'Workflows' })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: `Open ${user.name}` }));
+        expect(await screen.findByRole('button', { name: `Delete ${user.path}` })).toBeTruthy();
+        const workflowList = screen.getByRole('navigation', { name: 'Workflow list' });
+        fireEvent.click(within(workflowList).getByRole('button', { name: new RegExp(demo.name) }));
+        await waitFor(() => expect(screen.getByLabelText('Workflow filename')).toHaveValue('household-cost-review-copy-2.yaml'));
         expect(screen.queryByRole('button', { name: `Delete ${demo.path}` })).toBeNull();
-        expect(screen.getByRole('button', { name: `Delete ${user.path}` })).toBeTruthy();
-        fireEvent.click(screen.getByRole('button', { name: `Customize ${demo.name}` }));
-        expect(await screen.findByLabelText('Workflow filename')).toHaveValue('household-cost-review-copy-2.yaml');
-        expect(JSON.parse(vi.mocked(apiRequest).mock.calls.find(([url]) => url === '/api/workflows/read')![1]!.body as string)).toEqual({ path: demo.path });
+        expect(JSON.parse(vi.mocked(apiRequest).mock.calls.filter(([url]) => url === '/api/workflows/read').at(-1)![1]!.body as string)).toEqual({ path: demo.path });
         fireEvent.click(screen.getByRole('button', { name: 'Save' }));
         await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/workflows/save', expect.anything()));
         expect(JSON.parse(vi.mocked(apiRequest).mock.calls.find(([url]) => url === '/api/workflows/save')![1]!.body as string).path).toBe('household-cost-review-copy-2.yaml');
@@ -1140,14 +1336,16 @@ describe('Workflow session publication', () => {
         await waitFor(() => expect(store.getState().dataSourceSidebarOpen).toBe(false));
     });
 
-    it('collapses the sidebar after opening a recent workflow run', async () => {
+    it('collapses the sidebar after opening a workflow run from its card', async () => {
         store.dispatch(dfActions.setDataSourceSidebarOpen(true));
         const snapshot = { ...run(), status: 'completed', outputs: [] };
         vi.mocked(apiRequest).mockImplementation(async url => ({ data: url === '/api/workflows/run-state'
             ? { run: snapshot }
-            : { items: [], runs: [{ ...snapshot, name: 'Recent review' }] } }) as any);
+            : { items: [{ path: 'recent.yaml', name: 'Recent review' }], runs: [{ ...snapshot, name: 'Recent review', workflow_path: 'recent.yaml' }] } }) as any);
         render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} /></Provider>);
-        fireEvent.click(await screen.findByRole('button', { name: /Recent review/ }));
+        expect(within(await screen.findByRole('group', { name: 'Previous runs of Recent review' })).getAllByRole('button')).toHaveLength(1);
+        fireEvent.click(await screen.findByRole('button', { name: 'Open Recent review' }));
+        fireEvent.click(within(await screen.findByRole('group', { name: 'Runs of Recent review' })).getAllByRole('button')[0]);
         await waitFor(() => expect(store.getState().dataSourceSidebarOpen).toBe(false));
         expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'textTurn-workflow-native' });
     });
@@ -1378,16 +1576,49 @@ describe('Workflow session publication', () => {
         await waitFor(() => expect(store.getState().textTurns[0].workflow?.status).toBe('completed'));
     });
 
-    it.each(['orphaned', 'unreachable'])('interrupts a restored %s run without discarding its outputs', async failure => {
+    it('detaches on session switch without pausing backend execution', async () => {
+        store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
+        store.dispatch(dfActions.selectModel('test-model'));
+        const snapshot = { ...run(), outputs: [], status: 'paused' };
+        await publishWorkflowRun(snapshot, 'session');
+        let signal: AbortSignal | undefined;
+        let detached = false;
+        vi.mocked(streamRequest).mockImplementation(async function* (_url, _options, abortSignal) {
+            signal = abortSignal;
+            const disconnected = new Promise<void>(resolve => abortSignal?.addEventListener('abort', () => resolve(), { once: true }));
+            yield { type: 'workflow_state', run: { ...snapshot, status: 'running' } } as any;
+            await disconnected;
+            detached = true;
+        });
+        const rendered = render(<Provider store={store}><WorkflowProgress turn={store.getState().textTurns[0]} interactionOnly /></Provider>);
+        fireEvent.click(screen.getByRole('button', { name: 'Continue workflow' }));
+        await waitFor(() => expect(store.getState().textTurns[0].workflow?.status).toBe('running'));
+        act(() => store.dispatch(dfActions.setActiveWorkspace({ id: 'another-session', displayName: 'Other session' })));
+        await waitFor(() => expect(detached).toBe(true));
+        expect(signal?.aborted).toBe(true);
+        expect(store.getState().textTurns[0].workflow?.status).toBe('running');
+        expect(vi.mocked(apiRequest).mock.calls.some(([url]) => url === '/api/workflows/pause')).toBe(false);
+        rendered.unmount();
+    });
+
+    it.each(['orphaned', 'unreachable'])('recovers a restored %s run without guessing its execution status', async failure => {
         const snapshot = run();
         await publishWorkflowRun(snapshot, 'session');
         const original = store.getState().textTurns[0];
         const outputIds = original.outputIds;
-        if (failure === 'orphaned') vi.mocked(apiRequest).mockResolvedValueOnce({ data: { run: {
-            ...snapshot, status: 'paused', message: 'Execution interrupted: the workflow executor stopped.',
-        } } } as any);
-        else vi.mocked(apiRequest).mockRejectedValueOnce(new Error('Backend unavailable'));
-        const { rerender } = render(<Provider store={store}><WorkflowProgress turn={original} /></Provider>);
+        vi.mocked(apiRequest).mockImplementation(async () => {
+            if (failure === 'unreachable') throw new Error('Backend unavailable');
+            return { data: { run: {
+                ...snapshot, status: 'paused', message: 'Execution interrupted: the workflow executor stopped.',
+            } } } as any;
+        });
+        const { rerender } = render(<Provider store={store}><WorkflowRunObserver /><WorkflowProgress turn={original} /></Provider>);
+        if (failure === 'unreachable') {
+            await waitFor(() => expect(store.getState().textTurns[0].workflow?.activity).toBe('Reconnecting to workflow...'));
+            expect(store.getState().textTurns[0].workflow?.status).toBe('running');
+            expect(store.getState().textTurns[0].outputIds).toEqual(outputIds);
+            return;
+        }
         await waitFor(() => expect(store.getState().textTurns[0].workflow?.status).toBe('paused'));
         const interrupted = store.getState().textTurns[0];
         expect(interrupted.outputIds).toEqual(outputIds);
@@ -1428,9 +1659,9 @@ describe('Workflow session publication', () => {
             expect(store.getState().textTurns[0].workflow?.status).toBe('running');
             await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
             expect(apiRequest).toHaveBeenCalledWith('/api/workflows/run-state', expect.objectContaining({ signal: expect.anything() }));
-            expect(signal?.aborted).toBe(health !== 'healthy');
-            expect(store.getState().textTurns[0].workflow?.status).toBe(health === 'healthy' ? 'running' : 'paused');
-            if (health === 'healthy') await act(async () => { finish(); });
+            expect(signal?.aborted).toBe(health === 'orphaned');
+            expect(store.getState().textTurns[0].workflow?.status).toBe(health === 'orphaned' ? 'paused' : 'running');
+            if (health !== 'orphaned') await act(async () => { finish(); });
             expect(streamFinished).toBe(true);
             expect(vi.getTimerCount()).toBe(0);
         } finally {
@@ -2082,7 +2313,7 @@ describe('Workflow session publication', () => {
         vi.mocked(apiRequest).mockClear();
         render(<WorkflowProgress turn={turn} />);
         fireEvent.click(screen.getByRole('button', { name: 'Delete workflow node' }));
-        expect(store.getState().textTurns.some(item => item.id === turn.id)).toBe(false);
+        await waitFor(() => expect(store.getState().textTurns.some(item => item.id === turn.id)).toBe(false));
         const state = store.getState();
         expect(state.inputTables).toHaveLength(1);
         expect(state.derivedTables).toHaveLength(1);
@@ -2098,29 +2329,34 @@ describe('Workflow session publication', () => {
     it('confirms the filename before deleting a saved workflow and preserves same-titled instances', async () => {
         const items = [{ path: 'old.yaml', name: 'Review' }, { path: 'native.yaml', name: 'Review' }];
         vi.mocked(apiRequest).mockImplementation(async (url) => ({ data: url === '/api/workflows/list'
-            ? { items, runs: [] } : { path: 'old.yaml' } }) as any);
+            ? { items, runs: [] } : url === '/api/workflows/read' ? { content: 'version: 1' } : { path: 'old.yaml' } }) as any);
         render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} /></Provider>);
+        fireEvent.click((await screen.findAllByRole('button', { name: 'Open Review' }))[0]);
         fireEvent.click(await screen.findByRole('button', { name: 'Delete old.yaml' }));
-        expect(screen.getByRole('dialog').textContent).toContain('old.yaml');
-        expect(apiRequest).toHaveBeenCalledTimes(1);
+        expect(screen.getByText('Delete workflow?').closest('[role="dialog"]')!.textContent).toContain('old.yaml');
+        expect(vi.mocked(apiRequest).mock.calls.some(([url]) => url === '/api/workflows/delete')).toBe(false);
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+        await waitFor(() => expect(screen.queryByText('Delete workflow?')).toBeNull());
         fireEvent.click(screen.getByRole('button', { name: 'Delete old.yaml' }));
         fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
         await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-        expect(screen.queryByRole('button', { name: 'Delete old.yaml' })).toBeNull();
         expect(apiRequest).toHaveBeenCalledWith('/api/workflows/delete', expect.objectContaining({ body: JSON.stringify({ path: 'old.yaml' }) }));
-        expect(screen.getByRole('button', { name: 'Delete native.yaml' })).toBeTruthy();
+        expect(screen.getAllByRole('button', { name: 'Open Review' })).toHaveLength(1);
+        fireEvent.click(screen.getByRole('button', { name: 'Open Review' }));
+        expect(await screen.findByRole('button', { name: 'Delete native.yaml' })).toBeTruthy();
     });
 
     it('keeps a saved workflow when deletion fails', async () => {
-        vi.mocked(apiRequest).mockResolvedValueOnce({ data: { items: [{ path: 'old.yaml', name: 'Review' }], runs: [] } } as any)
-            .mockRejectedValueOnce(new Error('Deletion failed'));
+        vi.mocked(apiRequest).mockImplementation(async (url) => {
+            if (url === '/api/workflows/delete') throw new Error('Deletion failed');
+            return { data: url === '/api/workflows/read' ? { content: 'version: 1' } : { items: [{ path: 'old.yaml', name: 'Review' }], runs: [] } } as any;
+        });
         render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} /></Provider>);
+        fireEvent.click(await screen.findByRole('button', { name: 'Open Review' }));
         fireEvent.click(await screen.findByRole('button', { name: 'Delete old.yaml' }));
         fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
         await waitFor(() => expect(store.getState().messages.some(message => message.value === 'Deletion failed')).toBe(true));
-        expect(screen.getByRole('dialog').textContent).not.toContain('Deletion failed');
+        expect(screen.getByText('Delete workflow?').closest('[role="dialog"]')!.textContent).not.toContain('Deletion failed');
         expect(screen.getByRole('button', { name: 'Delete old.yaml', hidden: true })).toBeTruthy();
         expect(screen.getByRole('button', { name: 'Delete' })).not.toBeDisabled();
     });

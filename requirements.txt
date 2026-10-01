@@ -3,6 +3,7 @@ pandas
 flask
 flask-cors
 flask-limiter
+apscheduler>=3.11,<4
 openai
 python-dotenv
 # litellm 1.92 switched to native Rust/maturin packaging. Keep the last

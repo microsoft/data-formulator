@@ -67,6 +67,7 @@ dependencies = [
     "requests", # GitHub OAuth code exchange, Superset API calls
     "flask-session>=0.8.0", # Server-side session (SQLite) for TokenStore
     "filelock>=3.20",
+    "apscheduler>=3.11,<4",
     "pypdf>=6.16.2",
 ]
 

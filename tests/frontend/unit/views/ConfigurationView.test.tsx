@@ -16,6 +16,8 @@ vi.mock('../../../../src/views/DBTableManager', () => ({ DataLoaderForm: ({ init
         <button onClick={() => onStageConnection({ ...initialConnectionParams, host: 'updated-host' })}>Test data connection</button></div> }));
 vi.mock('../../../../src/components/ScrollFade', () => ({
     ScrollFadeContainer: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    ScrollFadeEdge: () => null,
+    useScrollFade: () => ({ moreAbove: false, moreBelow: false, update: () => {} }),
 }));
 vi.mock('../../../../src/components/MarkdownEditor', () => ({
     MarkdownEditor: ({ value, onChange, readOnly, fileName }: { value: string; onChange: (value: string) => void; readOnly: boolean; fileName?: string }) =>

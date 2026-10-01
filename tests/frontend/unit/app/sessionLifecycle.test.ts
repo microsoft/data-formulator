@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
 import { ensureActiveWorkspace, generateWorkspaceId, leaveSession } from '../../../../src/app/sessionThunks';
 import { deleteWorkspace, saveWorkspaceState } from '../../../../src/app/workspaceService';
+import type { AppDispatch } from '../../../../src/app/store';
 
 vi.mock('../../../../src/app/workspaceService', async importOriginal => ({
     ...(await importOriginal<typeof import('../../../../src/app/workspaceService')>()),
@@ -10,10 +11,14 @@ vi.mock('../../../../src/app/workspaceService', async importOriginal => ({
     saveWorkspaceState: vi.fn(() => Promise.resolve()),
 }));
 
-const makeStore = () => configureStore({
-    reducer: dataFormulatorReducer,
-    middleware: getDefaultMiddleware => getDefaultMiddleware({ serializableCheck: false, immutableCheck: false }),
-});
+const makeStore = () => {
+    const store = configureStore({
+        reducer: dataFormulatorReducer,
+        middleware: getDefaultMiddleware => getDefaultMiddleware({ serializableCheck: false, immutableCheck: false }),
+    });
+    // The session thunks are typed against the app store's (persisted) dispatch.
+    return store as typeof store & { dispatch: AppDispatch };
+};
 
 describe('session lifecycle', () => {
     beforeEach(() => {

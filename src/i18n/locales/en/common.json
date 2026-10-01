@@ -929,7 +929,6 @@
     "noMatchingRows": "No rows match the current filters",
     "knowledge": "Knowledge",
     "metadataPartial": "Partial metadata",
-    "metadataUnavailable": "Metadata unavailable",
     "largeTableChatPrompt": "I want to load the following table(s) from \"{{connector}}\": {{tables}}. These are too large to import in full: {{large}}. Help me load a filtered, sampled, or aggregated subset instead of the entire table.",
     "semanticFieldCounts": "{{measures}} measures · {{dimensions}} dimensions",
     "semanticModelSummary": "Semantic model · {{measures}} measures · {{dimensions}} dimensions",

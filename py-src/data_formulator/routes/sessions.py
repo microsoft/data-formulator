@@ -22,6 +22,7 @@ Note: URL prefix kept as /api/sessions for frontend compatibility.
 """
 
 import errno
+import json
 import io
 import logging
 from datetime import datetime
@@ -29,7 +30,7 @@ from typing import NoReturn
 
 from flask import Blueprint, request, send_file
 
-from data_formulator.auth.identity import get_identity_id
+from data_formulator.auth.identity import get_identity_id, is_local_mode
 from data_formulator.error_handler import json_ok
 from data_formulator.errors import AppError, ErrorCode
 from data_formulator.workspace_factory import (
@@ -41,6 +42,59 @@ from data_formulator.workspace_factory import (
 logger = logging.getLogger(__name__)
 
 session_bp = Blueprint("sessions", __name__, url_prefix="/api/sessions")
+
+
+@session_bp.before_request
+def protect_shared_sessions():
+    if request.endpoint in {"sessions.load_session", "sessions.list_sessions", "sessions.fork_shared_session"}:
+        return
+    body = request.get_json(silent=True) or request.form
+    identifiers = [get_active_workspace_id(), body.get("id"), body.get("name"), body.get("workspace_id")]
+    if any(isinstance(value, str) and value.startswith(("shared-", "scheduled-private-")) for value in identifiers):
+        raise AppError(ErrorCode.ACCESS_DENIED, "Shared sessions are read-only. Fork this session first.")
+
+
+def shared_session(workspace_id: str) -> dict | None:
+    from data_formulator.workflows.scheduler import schedule_store
+    return schedule_store().publication(workspace_id)
+
+
+def scheduled_checkpoint(manager, workspace_id: str, identity_id: str) -> dict | None:
+    from data_formulator.routes.workflows import run_path
+    from data_formulator.workflows.agent import public_run
+    try:
+        workspace = manager.open_workspace(workspace_id, identity_id)
+        path = run_path(workspace, workspace_id.removeprefix("scheduled-"))
+        return public_run(json.loads(path.read_text())) if path.exists() else None
+    except (OSError, ValueError, AppError):
+        logger.warning("Scheduled checkpoint unavailable for %s", workspace_id)
+        return None
+
+
+@session_bp.route("/fork", methods=["POST"])
+def fork_shared_session():
+    from uuid import uuid4
+    import pyarrow as pa
+
+    identity = get_identity_id()
+    snapshot = shared_session((request.get_json() or {}).get("id", ""))
+    if snapshot is None:
+        raise AppError(ErrorCode.TABLE_NOT_FOUND, "Shared session not found.")
+    workspace_id = "session_" + uuid4().hex
+    manager = get_workspace_manager(identity)
+    manager.create_workspace(workspace_id)
+    workspace = manager.open_workspace(workspace_id, identity)
+    try:
+        for artifact in snapshot.get("scheduledArtifacts", []):
+            if artifact["kind"] == "chart":
+                workspace.add_parquet_from_arrow(pa.Table.from_pylist(artifact["rows"]), artifact["tableId"])
+        snapshot["activeWorkspace"].update(id=workspace_id, readOnly=False)
+        snapshot["activeWorkspace"]["scheduledRun"]["forked"] = True
+        manager.save_session_state(workspace_id, snapshot)
+    except Exception:
+        manager.delete_workspace(workspace_id)
+        raise
+    return json_ok({"id": workspace_id})
 
 
 def _raise_if_storage_full(exc: OSError) -> NoReturn:
@@ -127,7 +181,27 @@ def list_sessions():
         if w.get("chart_count") is not None:
             entry["chart_count"] = w["chart_count"]
         entry["source_ids"] = w.get("source_ids", [])
+        if w.get("scheduled_run"):
+            entry["scheduled_run"] = w["scheduled_run"]
         sessions.append(entry)
+    if not source:
+        from data_formulator.workflows.scheduler import schedule_store
+        from data_formulator.routes.configurations import can_configure
+        store = schedule_store()
+        for item in store.publications():
+            sessions.append({"id": item["id"], "display_name": item["display_name"], "created_at": item["published_at"],
+                             "saved_at": item["published_at"], "read_only": True, "shared": True,
+                             "scheduled_run": item["scheduled_run"]})
+        if can_configure():
+            for schedule in store.list("admin"):
+                for occurrence in store.history(schedule["id"]):
+                    if occurrence["status"] == "skipped":
+                        continue
+                    sessions.append({"id": "scheduled-private-" + occurrence["id"], "display_name": schedule["config"]["name"],
+                                     "created_at": occurrence["scheduled_for"], "saved_at": occurrence["scheduled_for"], "read_only": True,
+                                     "scheduled_run": {"scheduleId": schedule["id"], "scheduleName": schedule["config"]["name"],
+                                                       "scheduledFor": occurrence["scheduled_for"]}})
+    sessions.sort(key=lambda item: item.get("saved_at") or "", reverse=True)
     return json_ok({"sessions": sessions})
 
 
@@ -140,6 +214,25 @@ def load_session():
         raise AppError(ErrorCode.INVALID_REQUEST, "Workspace id is required")
 
     identity_id = get_identity_id()
+    if workspace_id.startswith("shared-"):
+        snapshot = shared_session(workspace_id)
+        if snapshot is None:
+            raise AppError(ErrorCode.TABLE_NOT_FOUND, "Shared session not found.")
+        return json_ok({"id": workspace_id, "state": snapshot, "read_only": True})
+    if workspace_id.startswith("scheduled-private-"):
+        from data_formulator.routes.configurations import can_configure
+        from data_formulator.workflows.scheduler import schedule_store, execution_identity
+        if not can_configure():
+            raise AppError(ErrorCode.ACCESS_DENIED, "Scheduled execution details are admin-only.")
+        store = schedule_store()
+        for schedule in store.list("admin"):
+            if any("scheduled-private-" + occurrence["id"] == workspace_id for occurrence in store.history(schedule["id"])):
+                manager = get_workspace_manager(execution_identity(schedule))
+                execution_id = workspace_id.replace("scheduled-private-", "scheduled-", 1)
+                state = manager.load_session_state(execution_id)
+                return json_ok({"id": workspace_id, "state": state, "read_only": True,
+                                "workflow_run": scheduled_checkpoint(manager, execution_id, execution_identity(schedule))})
+        raise AppError(ErrorCode.TABLE_NOT_FOUND, "Scheduled session not found.")
     mgr = get_workspace_manager(identity_id)
 
     if not mgr.workspace_exists(workspace_id):
@@ -155,6 +248,9 @@ def load_session():
     if state is None:
         state = {}
 
+    if workspace_id.startswith("scheduled-") and state.get("activeWorkspace", {}).get("scheduledRun"):
+        return json_ok({"id": workspace_id, "state": state,
+                        "workflow_run": scheduled_checkpoint(mgr, workspace_id, identity_id)})
     return json_ok({"id": workspace_id, "state": state})
 
 
@@ -171,6 +267,10 @@ def delete_session():
 
     if not mgr.delete_workspace(workspace_id):
         raise AppError(ErrorCode.TABLE_NOT_FOUND, f"Workspace '{workspace_id}' not found")
+    if workspace_id.startswith("scheduled-") and is_local_mode():
+        from data_formulator.workflows.scheduler import schedule_store, scheduling_available
+        if scheduling_available():
+            schedule_store().forget(workspace_id.removeprefix("scheduled-"))
 
     return json_ok({"id": workspace_id})
 

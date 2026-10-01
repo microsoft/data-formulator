@@ -98,7 +98,7 @@
                         "type": {"type": "string", "enum": ["quantitative", "nominal", "ordinal", "temporal"]},
                         "aggregate": {"type": "string", "enum": ["count", "sum", "average", "mean"]},
                         "sortOrder": {"type": "string", "enum": ["ascending", "descending"]},
-                        "sortBy": {"type": "string"},
+                        "sortBy": {"type": "string", "description": "Category order: x, y, or color (a mapped channel); a column of this chart's data (unaggregated charts only); or a JSON array string of category values in display order."},
                         "scheme": {"type": "string"}
                       },
                       "required": ["field"],

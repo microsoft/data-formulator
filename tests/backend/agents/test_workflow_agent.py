@@ -958,20 +958,20 @@ def test_step_time_includes_model_and_tool_work_but_not_paused_time(agent, monke
     assert agent.state["step_elapsed_seconds"][first_step] == 10
 
 
-@pytest.mark.parametrize("decision", ["continue", "change_approach", "report_and_pause"])
-def test_workflow_progress_checkpoint_counts_text_and_tools_and_resumes(agent, monkeypatch, decision):
-    assessment = {"decision": decision, "progress": "Inspected the workspace inventory.",
-                  "blocker": "The requested source is unavailable.", "next_step": "Choose an accessible source."}
+def _is_reminder(message):
+    return isinstance(message.get("content"), str) and message["content"].startswith("[Automatic message]")
+
+
+def test_workflow_progress_reminder_is_soft_and_counts_text_and_tools(agent, monkeypatch):
     observed_tools = []
+    reminded = []
 
     def stream(trajectory, tools):
         observed_tools.append([tool["function"]["name"] for tool in tools])
+        reminded.append(_is_reminder(trajectory[-1]))
         round_number = len(observed_tools)
         if round_number <= 16:
             name, arguments = ("list_workspace_items", {"scope": "input"}) if round_number % 2 else (None, None)
-        elif round_number == 17:
-            name, arguments = "progress_check", assessment
-            assert "Progress checkpoint:" in trajectory[-1]["content"]
         else:
             name, arguments = "request_help", {"question": "Choose an accessible source."}
         if False:
@@ -982,45 +982,80 @@ def test_workflow_progress_checkpoint_counts_text_and_tools_and_resumes(agent, m
 
     monkeypatch.setattr(agent, "_stream_llm", stream)
     list(agent.run_workflow())
-    assert observed_tools[16] == ["progress_check"]
-    assert all("progress_check" not in tools for tools in observed_tools[:16])
-    assert len(observed_tools) == (17 if decision == "report_and_pause" else 18)
+    assert [index + 1 for index, value in enumerate(reminded) if value] == [17]
+    reminder = next(message for message in agent.state["trajectory"] if _is_reminder(message))
+    assert "step 'work' for 16 turns" in reminder["content"]
+    assert "request_help" in reminder["content"]
+    assert observed_tools[16] == observed_tools[0]
     assert agent.state["status"] == "paused"
-    assert "call-17" not in agent.state["evidence"]
-    if decision == "report_and_pause":
-        assert agent.state["message"] == agent._progress_check_report(assessment)
-        assert agent.state["interaction"]["tool"] == "request_help"
-    restored = WorkflowAgent(agent.client, agent.workspace, json.loads(json.dumps(agent.state)),
-                             lambda state: None, Event(), "")
-    restored.resolve_pending({"answer": "Use the available sources."})
-    restored.state["status"] = "running"
-    monkeypatch.setattr(restored, "_stream_llm", stream)
-    list(restored.run_workflow())
-    assert "progress_check" not in observed_tools[-1]
-    assert restored.state["status"] == "paused"
+    assert agent.state["interaction"]["tool"] == "request_help"
 
 
-def test_workflow_progress_checkpoint_rejects_execution_and_bounds_invalid_retries(agent, monkeypatch):
-    agent.state["trajectory"] = [{"role": "system", "content": "Workflow"},
-                                *[{"role": "assistant", "content": "Working."} for _ in range(16)]]
-    executions = []
-    monkeypatch.setattr(agent, "_execute", lambda *args: executions.append(args))
+def test_workflow_progress_reminder_resets_on_step_change_and_user_steering(agent, instance, monkeypatch):
+    instance["steps"].append({"id": "verify", "instructions": "Verify the results"})
+    agent = WorkflowAgent(agent.client, agent.workspace, new_run(instance, "steps"), lambda value: None, Event(), "")
+    reminded = []
+
+    def execute(name, args, call_id):
+        if name == "move_to_step":
+            agent.state["step_id"] = args["step_id"]
+        return "ok"
+
+    monkeypatch.setattr(agent, "_execute", execute)
+    agent.read_messages = lambda: [{"id": "steer", "text": "Focus on MSFT."}] if len(reminded) >= 19 else []
 
     def stream(trajectory, tools):
-        assert [tool["function"]["name"] for tool in tools] == ["progress_check"]
+        reminded.append(_is_reminder(trajectory[-1]))
+        if len(reminded) >= 37:
+            agent.cancel.set()
+        if False:
+            yield
+        name, arguments = (("move_to_step", {"step_id": "verify", "reason": "Next"}) if len(reminded) == 10
+                           else ("list_workspace_items", {"scope": "input"}))
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=None, tool_calls=[
+            SimpleNamespace(id=f"call-{len(reminded)}", function=SimpleNamespace(name=name, arguments=json.dumps(arguments)))]))])
+
+    monkeypatch.setattr(agent, "_stream_llm", stream)
+    list(agent.run_workflow())
+    # The step changes after round 10 and steering arrives before round 20, so 16 rounds first elapse before round 36.
+    assert [index + 1 for index, value in enumerate(reminded) if value] == [36]
+
+
+def test_workflow_retries_failed_model_requests_with_backoff(agent, monkeypatch):
+    monkeypatch.setattr("data_formulator.workflows.agent.MODEL_RETRY_BASE_SECONDS", 0)
+    attempts = []
+
+    def stream(trajectory, tools):
+        attempts.append(1)
+        if len(attempts) < 3:
+            raise ConnectionError("Connection reset by peer")
         if False:
             yield
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=None, tool_calls=[
-            SimpleNamespace(id=f"invalid-{agent.state['calls']}", function=SimpleNamespace(
-                name="complete_workflow", arguments='{"summary":"Not actually complete."}'))]))])
+            SimpleNamespace(id="help", function=SimpleNamespace(name="request_help", arguments='{"question": "Which source?"}'))]))])
 
     monkeypatch.setattr(agent, "_stream_llm", stream)
-    with pytest.raises(ValueError, match="progress_check alone"):
-        list(agent.run_workflow())
-    assert executions == []
-    assert agent.state["calls"] == 3
+    list(agent.run_workflow())
+    assert len(attempts) == 3
     assert agent.state["status"] == "paused"
-    assert agent._progress_check_due(agent.state["trajectory"])
+    assert agent.state["interaction"]["tool"] == "request_help"
+
+
+@pytest.mark.parametrize("message, expected_attempts", [("401 Unauthorized: invalid api key", 1), ("Service unavailable", 5)])
+def test_workflow_model_retries_stop_for_permanent_errors_and_after_limit(agent, monkeypatch, message, expected_attempts):
+    monkeypatch.setattr("data_formulator.workflows.agent.MODEL_RETRY_BASE_SECONDS", 0)
+    attempts = []
+
+    def stream(trajectory, tools):
+        attempts.append(1)
+        raise RuntimeError(message)
+        yield
+
+    monkeypatch.setattr(agent, "_stream_llm", stream)
+    with pytest.raises(RuntimeError):
+        list(agent.run_workflow())
+    assert len(attempts) == expected_attempts
+    assert agent.state["status"] == "paused"
 
 
 def test_workflow_forwards_report_stream_before_committing(agent, monkeypatch):
@@ -1252,6 +1287,54 @@ def workflow_client(tmp_path, monkeypatch, request):
     monkeypatch.setattr(workflows, "get_user_home", lambda identity: tmp_path / "user")
     monkeypatch.setattr(workflows, "get_workspace", lambda identity: workspaces[request.headers["X-Workspace-Id"]])
     return app.test_client(), workspaces
+
+
+@pytest.mark.parametrize("ending", ["complete", "pause", "shutdown", "slow-viewer"])
+def test_workflow_continues_after_response_disconnect(workflow_client, instance, monkeypatch, ending):
+    import threading
+    from flask import request
+    from data_formulator.routes import workflows
+
+    client, workspaces = workflow_client
+    monkeypatch.setattr(workflows, "is_local_mode", lambda: True)
+    monkeypatch.setattr("data_formulator.routes.agents.get_client", lambda *args: object())
+    release = threading.Event()
+    finished = threading.Event()
+
+    def execute(agent):
+        assert request.headers["X-Workspace-Id"] == "first"
+        assert release.wait(5)
+        if ending == "slow-viewer":
+            for sequence in range(300):
+                yield {"type": "activity", "message": str(sequence)}
+        agent.state.update(status="paused" if agent.cancel.is_set() else "completed", message="Finished without a viewer")
+        agent.checkpoint(agent.state)
+        yield {"type": "workflow_state", "run": public_run(agent.state)}
+        finished.set()
+
+    monkeypatch.setattr(workflows.WorkflowAgent, "run_workflow", execute)
+    response = client.post("/api/workflows/run", json={"content": yaml.safe_dump(instance), "model": {}},
+                           headers={"X-Workspace-Id": "first"}, buffered=False)
+    event = json.loads(next(iter(response.response)))
+    identifier = event["run"]["id"]
+    try:
+        if ending != "slow-viewer":
+            response.close()
+        state = client.post("/api/workflows/run-state", json={"run_id": identifier}, headers={"X-Workspace-Id": "first"}).json["data"]["run"]
+        assert state["status"] == "running"
+        duplicate = client.post("/api/workflows/run", json={"run_id": identifier, "model": {}}, headers={"X-Workspace-Id": "first"})
+        assert duplicate.status_code == 400
+        assert "already running" in duplicate.json["error"]
+        if ending == "pause":
+            assert client.post("/api/workflows/pause", json={"run_id": identifier}, headers={"X-Workspace-Id": "first"}).status_code == 200
+        elif ending == "shutdown":
+            from data_formulator.workflows.scheduler import stop_scheduler
+            stop_scheduler(client.application)
+    finally:
+        release.set()
+    assert finished.wait(3)
+    response.close()
+    assert json.loads(workflows.run_path(workspaces["first"], identifier).read_text())["status"] == ("paused" if ending in {"pause", "shutdown"} else "completed")
 
 
 def test_workflow_routes_require_enabled_mode_and_identity(workflow_client, monkeypatch):

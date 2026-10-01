@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import * as React from 'react';
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { borderColor, transition, radius } from '../app/tokens';
 import { dialogHeight, dialogWidth, iconVar, textVar } from '../app/layout';
 import { InlineLoadingStatus } from '../components/FunComponents';
@@ -11,6 +11,7 @@ import {
     AlertTitle,
     Box,
     Button,
+    ButtonBase,
     Chip,
     Dialog,
     DialogContent,
@@ -37,8 +38,6 @@ import { StreamIcon, getConnectorIcon, connectorSortOrder, connectorCategory } f
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import Paper from '@mui/material/Paper';
 import CircularProgress from '@mui/material/CircularProgress';
 
 import { useDispatch, useSelector } from 'react-redux';
@@ -48,10 +47,10 @@ import { loadTable } from '../app/tableThunks';
 import { DataSourceConfig, DictTable, ConnectorAuthPath, ConnectorInstance } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, readFileText } from '../data/utils';
 import { ScrollFadeContainer } from '../components/ScrollFade';
-import { getUrls, CONNECTOR_URLS } from '../app/utils';
+import { ListDetailList, ListDetailNav, listDetailItemSx } from '../components/ListDetailDialog';
+import { CONNECTOR_URLS, CONNECTOR_ACTION_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { deriveConnectorDisplayName } from '../app/connectorNames';
-import { generateUUID } from '../app/identity';
 import { DataLoaderForm } from './DBTableManager';
 import { ConnectedSourceOverview } from '../components/ConnectedSourceOverview';
 import { MultiTablePreview } from './MultiTablePreview';
@@ -65,7 +64,6 @@ import {
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import CloudIcon from '@mui/icons-material/Cloud';
-import LanguageIcon from '@mui/icons-material/Language';
 import { useTranslation } from 'react-i18next';
 import {
     uploadWorkspaceFile,
@@ -155,92 +153,6 @@ interface DataSourceCardProps {
      */
     accent?: boolean;
 }
-
-const DataSourceCard: React.FC<DataSourceCardProps> = ({ 
-    icon, 
-    title, 
-    description, 
-    onClick, 
-    disabled = false,
-    variant = 'data',
-    badge,
-    tooltip,
-}) => {
-    const theme = useTheme();
-    const isAction = variant === 'action';
-
-    const card = (
-        <Paper
-            elevation={0}
-            onClick={disabled ? undefined : onClick}
-            sx={{
-                p: 1.5,
-                cursor: disabled ? 'not-allowed' : 'pointer',
-                // 'action' cards (e.g. Add Connection, Link local folder)
-                // create new connectors. A dashed outline reads as "empty
-                // slot to fill" — a clearer affordance than another solid
-                // tile sitting next to real data sources.
-                border: `1px ${isAction ? 'dashed' : 'solid'} ${borderColor.divider}`,
-                borderRadius: radius.sm,
-                opacity: disabled ? 0.5 : 1,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1.5,
-                '&:hover': disabled ? {} : {
-                    transform: 'translateY(-2px)',
-                    backgroundColor: 'action.hover',
-                }
-            }}
-        >
-            <Box sx={{ 
-                color: disabled ? 'text.disabled' : 'primary.main',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 32,
-                height: 32,
-                borderRadius: 1,
-                backgroundColor: alpha(theme.palette.primary.main, 0.08),
-                flexShrink: 0,
-                '& .MuiSvgIcon-root': { fontSize: iconVar.lg }
-            }}>
-                {icon}
-            </Box>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                    <Typography 
-                        variant="body2" 
-                        sx={{ 
-                            fontWeight: 500,
-                            color: disabled ? 'text.disabled' : 'text.primary',
-                        }}
-                    >
-                        {title}
-                    </Typography>
-                    {badge}
-                </Box>
-                <Typography
-                    variant="caption"
-                    sx={{
-                        color: disabled ? 'text.disabled' : 'text.secondary',
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
-                        lineHeight: 1.3,
-                        mt: 0.25,
-                    }}
-                >
-                    {description}
-                </Typography>
-            </Box>
-        </Paper>
-    );
-
-    return tooltip
-        ? <Tooltip title={tooltip} placement="top" arrow>{card}</Tooltip>
-        : card;
-};
 
 // Text-link variant of a source affordance. Used across the chat-focused
 // landing so every source/action reads as a single, lightweight link style
@@ -804,82 +716,51 @@ const ConnectorTypePicker: React.FC<{
     disabledLoaders?: Record<string, { install_hint: string }>;
 }> = ({ loaderTypes, selectedType, onSelect, disabledLoaders = {} }) => {
     const { t } = useTranslation();
-    const sidebarButtonSx = (typeKey: string) => ({
-        fontSize: '0.8125rem',
-        fontWeight: selectedType === typeKey ? 600 : 400,
-        textTransform: 'none' as const,
-        width: { xs: 'auto', sm: '100%' },
-        minWidth: { xs: 'max-content', sm: 0 },
-        justifyContent: 'flex-start',
-        textAlign: 'left' as const,
-        borderRadius: 0,
-        py: 0.75,
-        px: 2.5,
-        color: selectedType === typeKey ? 'primary.main' : 'text.primary',
-        bgcolor: selectedType === typeKey ? 'action.selected' : 'transparent',
-    });
-    return <Box role="group" aria-label={t('upload.dataSourceTypes', { defaultValue: 'Data Sources' })} sx={{
-        display: 'flex', flexDirection: { xs: 'row', sm: 'column' },
-        width: { xs: '100%', sm: 184 }, minWidth: { xs: 0, sm: 184 }, maxWidth: { xs: 'none', sm: 184 },
-        borderRight: { xs: 0, sm: `1px solid ${borderColor.divider}` },
-        borderBottom: { xs: `1px solid ${borderColor.divider}`, sm: 0 },
-        overflowY: { xs: 'hidden', sm: 'auto' }, overflowX: { xs: 'auto', sm: 'hidden' },
-        pt: { xs: 0, sm: 1 },
-        pb: { xs: 0, sm: 1 },
-        flexShrink: 0,
-    }}>
-        <Typography variant="subtitle2" sx={{
-            px: 2.5, py: 0.75, fontSize: '0.8125rem', fontWeight: 600,
-            display: { xs: 'none', sm: 'block' },
-        }}>
-            {t('upload.dataSourceTypes', { defaultValue: 'Data Sources' })}
-        </Typography>
+    const itemSx = (selected: boolean) => ({ ...listDetailItemSx(selected), display: 'flex', alignItems: 'center', gap: 0.75,
+        '& .MuiSvgIcon-root': { fontSize: iconVar.md, color: 'text.secondary' } });
+    return <ListDetailList role="group" aria-label={t('upload.dataSourceTypes', { defaultValue: 'Data Sources' })}>
         {[...loaderTypes].sort((first, second) => connectorSortOrder(first.type, second.type)).map((loader, index, sorted) => {
             const isPlugin = loader.source === 'plugin';
             const category = connectorCategory(loader.type);
             const header = (index === 0 || connectorCategory(sorted[index - 1].type) !== category) && <Typography
                 key={`group-${category}`} role="presentation" sx={{
-                    display: { xs: 'none', sm: 'block' }, px: 2.5, pt: index === 0 ? 0.25 : 1, pb: 0.25,
-                    fontSize: '0.6875rem', fontWeight: 400, color: 'text.disabled',
+                    display: { xs: 'none', sm: 'block' }, px: 0.5, pt: index === 0 ? 0.25 : 0.75,
+                    fontSize: textVar.xs, color: 'text.disabled',
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0,
                 }}>
                 {t(`upload.connectorGroups.${category}`)}
             </Typography>;
-            const button = <Button
+            const button = <ButtonBase
                 key={loader.type}
-                variant="text" size="small" color="primary"
                 aria-pressed={selectedType === loader.type}
                 onClick={() => onSelect(loader.type)}
-                sx={sidebarButtonSx(loader.type)}
-                startIcon={getConnectorIcon(loader.type, { sx: { fontSize: iconVar.lg } })}
+                sx={itemSx(selectedType === loader.type)}
             >
+                {getConnectorIcon(loader.type)}
                 <Box component="span" title={loader.name} sx={{ flex: 1, minWidth: 0, textAlign: 'left',
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{loader.name}</Box>
                 {isPlugin && <Box component="span" sx={{
-                    ml: 0.5, px: 0.5, fontSize: '0.75rem', color: 'text.secondary', flexShrink: 0,
-                    border: '1px solid', borderColor: 'divider', borderRadius: 0.5, lineHeight: 1.4,
+                    px: 0.5, fontSize: textVar.xxs, color: 'text.secondary', flexShrink: 0,
+                    bgcolor: 'rgba(0,0,0,0.045)', borderRadius: 0.5, lineHeight: 1.6,
                 }}>plugin</Box>}
-            </Button>;
+            </ButtonBase>;
             const item = isPlugin ? <Tooltip key={loader.type} title={`External plugin loaded from ${loader.source_path}`} placement="right" arrow>
-                <span>{button}</span>
+                {button}
             </Tooltip> : button;
             return header ? [header, item] : item;
         })}
         {Object.entries(disabledLoaders).sort(([first], [second]) => connectorSortOrder(first, second)).map(([name, { install_hint }]) => (
             <Tooltip key={name} title={install_hint} placement="right" arrow>
-                <span style={{ width: '100%', flexShrink: 0 }}>
-                    <Button variant="text" size="small" disabled sx={{
-                        fontSize: '0.8125rem', textTransform: 'none', width: { xs: 'auto', sm: '100%' },
-                        minWidth: { xs: 'max-content', sm: 0 }, justifyContent: 'flex-start', textAlign: 'left',
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        borderRadius: 0, py: 0.75, px: 2.5, color: 'text.disabled !important',
-                    }} startIcon={getConnectorIcon(name, { sx: { fontSize: iconVar.lg, opacity: 0.4 } })}>
-                        {name}
-                    </Button>
-                </span>
+                <Box component="span" sx={{ display: 'flex', flexShrink: 0 }}>
+                    <ButtonBase disabled sx={{ ...itemSx(false), width: '100%', color: 'text.disabled', borderStyle: 'dashed',
+                        '& .MuiSvgIcon-root': { fontSize: iconVar.md, opacity: 0.4 } }}>
+                        {getConnectorIcon(name)}
+                        <Box component="span" sx={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</Box>
+                    </ButtonBase>
+                </Box>
             </Tooltip>
         ))}
-    </Box>;
+    </ListDetailList>;
 };
 
 export const ConnectorSetupForm: React.FC<{
@@ -1102,7 +983,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const dispatch = useDispatch<AppDispatch>();
     const existingTables = useSelector(dfSelectors.getAllTables);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
-    const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 2_000_000);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
     const existingNames = new Set(existingTables.map(t => t.id));
@@ -1124,6 +1004,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const [connectorListError, setConnectorListError] = useState('');
     const [connectorPendingDelete, setConnectorPendingDelete] = useState<ConnectorInstance | null>(null);
     const [connectorNameDraft, setConnectorNameDraft] = useState('');
+    const [renameOpen, setRenameOpen] = useState(false);
 
     // Fetch connector list when dialog opens
     const refreshConnectors = useCallback(() => {
@@ -1179,7 +1060,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const [tableLoading, setTableLoading] = useState<boolean>(false);
 
     // Constants
-    const MAX_DISPLAY_LINES = 20;
     const LARGE_CONTENT_THRESHOLD = 50000;
 
     // Update active tab when initialTab changes
@@ -1802,18 +1682,14 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         ? connectorInstances.find(c => c.id === activeTab.slice('connector:'.length))
         : activeTab === 'database' ? browseConnector : undefined;
 
-    useEffect(() => {
-        setConnectorNameDraft(activeConnector?.display_name || '');
-    }, [activeConnector?.id, activeConnector?.display_name]);
-
     const commitConnectorName = async () => {
         if (!activeConnector) return;
         const displayName = connectorNameDraft.trim();
-        if (!displayName) {
-            setConnectorNameDraft(activeConnector.display_name);
+        if (!displayName) return;
+        if (displayName === activeConnector.display_name) {
+            setRenameOpen(false);
             return;
         }
-        if (displayName === activeConnector.display_name) return;
 
         try {
             await apiRequest(CONNECTOR_URLS.UPDATE(activeConnector.id), {
@@ -1826,12 +1702,33 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     ? { ...connector, display_name: displayName }
                     : connector
             )));
+            setRenameOpen(false);
             onConnectorsChanged?.();
         } catch (err: any) {
-            setConnectorNameDraft(activeConnector.display_name);
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(), component: 'connector', type: 'error',
                 value: err.message || t('upload.errors.failedToRenameConnector', { defaultValue: 'Failed to rename connector' }),
+            }));
+        }
+    };
+
+    const disconnectConnector = async (connector: ConnectorInstance) => {
+        try {
+            await apiRequest(CONNECTOR_ACTION_URLS.DISCONNECT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connector.id }),
+            });
+            setConnectorInstances(prev => prev.map(c => c.id === connector.id ? { ...c, connected: false, has_stored_credentials: false } : c));
+            onConnectorsChanged?.();
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), component: 'connector', type: 'success',
+                value: t('sidebar.connectorDisconnected', { name: connector.display_name, defaultValue: 'Connector "{{name}}" disconnected' }),
+            }));
+        } catch (err: any) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), component: 'connector', type: 'error',
+                value: err?.apiError?.message || err.message || t('sidebar.failedDisconnectConnector', { defaultValue: 'Failed to disconnect connector' }),
             }));
         }
     };
@@ -1888,56 +1785,39 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     </IconButton>
                 )}
                 {activeConnector ? (
-                    <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75 }}>
-                        <TextField
-                            value={connectorNameDraft}
-                            onChange={(event) => setConnectorNameDraft(event.target.value)}
-                            onBlur={() => void commitConnectorName()}
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter') event.currentTarget.querySelector('input')?.blur();
-                                if (event.key === 'Escape') {
-                                    setConnectorNameDraft(activeConnector.display_name);
-                                    event.currentTarget.querySelector('input')?.blur();
-                                }
-                            }}
-                            variant="standard"
-                            inputProps={{ 'aria-label': t('upload.connectionName', { defaultValue: 'Connector name' }) }}
-                            sx={{
-                                width: `clamp(120px, ${Math.max(connectorNameDraft.length + 1, 8)}ch, 360px)`,
-                                maxWidth: '100%',
-                                minWidth: 0,
-                                '& .MuiInputBase-input': {
-                                    py: 0,
-                                    fontSize: 18,
-                                    lineHeight: 1.35,
-                                    fontWeight: 500,
-                                    letterSpacing: 0,
-                                },
-                                '& .MuiInput-underline:before': { borderBottomColor: 'transparent' },
-                                '& .MuiInput-underline:hover:not(.Mui-disabled):before': { borderBottomColor: 'divider' },
-                            }}
-                        />
-                        <Typography sx={{ flexShrink: 0, fontSize: '0.75rem', color: 'text.secondary', fontWeight: 500 }}>
-                            ({activeConnector.icon.replaceAll('_', ' ').toUpperCase()})
+                    <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 1 }}>
+                        <Typography component="span" noWrap title={activeConnector.display_name}
+                            sx={{ minWidth: 0, fontSize: 18, lineHeight: 1.35, fontWeight: 500 }}>
+                            {activeConnector.display_name}
                         </Typography>
+                        {activeConnector.type_name && activeConnector.type_name.toLowerCase() !== activeConnector.display_name.trim().toLowerCase() &&
+                            <Typography component="span" sx={{ flexShrink: 0, fontSize: textVar.sm, color: 'text.secondary' }}>
+                                {activeConnector.type_name}
+                            </Typography>}
                     </Box>
                 ) : (
                     <Typography variant="h6" component="span" noWrap sx={{ minWidth: 0 }}>
                         {activeTab === 'menu' ? t('upload.title') : getCurrentTabTitle()}
                     </Typography>
                 )}
-                {activeConnector?.deletable && (
-                    <Tooltip title={t('sidebar.deleteConnector', { defaultValue: 'Delete connector' })}>
-                        <IconButton
-                            size="small"
-                            color="error"
-                            aria-label={t('sidebar.deleteConnector', { defaultValue: 'Delete connector' })}
-                            onClick={() => setConnectorPendingDelete(activeConnector)}
-                        >
-                            <DeleteOutlineIcon sx={{ fontSize: iconVar.lg }} />
-                        </IconButton>
-                    </Tooltip>
-                )}
+                {activeConnector && <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexShrink: 0,
+                    '& .MuiButton-root': { fontSize: textVar.sm, textTransform: 'none', minWidth: 0, py: 0.25, px: 1 } }}>
+                    <Button size="small" variant="outlined" color="inherit" sx={{ color: 'text.secondary', borderColor: 'divider' }}
+                        aria-label={t('upload.renameConnector', { defaultValue: 'Rename connector' })}
+                        onClick={() => { setConnectorNameDraft(activeConnector.display_name); setRenameOpen(true); }}>
+                        {t('sidebar.rename', { defaultValue: 'Rename' })}
+                    </Button>
+                    {activeConnector.connected && <Button size="small" variant="outlined" color="inherit"
+                        sx={{ color: 'text.secondary', borderColor: 'divider' }}
+                        onClick={() => void disconnectConnector(activeConnector)}>
+                        {t('sidebar.disconnectConnector', { defaultValue: 'Disconnect' })}
+                    </Button>}
+                    {activeConnector.deletable && <Button size="small" variant="outlined" color="error"
+                        aria-label={t('sidebar.deleteConnector', { defaultValue: 'Delete connector' })}
+                        onClick={() => setConnectorPendingDelete(activeConnector)}>
+                        {t('app.delete', { defaultValue: 'Delete' })}
+                    </Button>}
+                </Box>}
                 {activeTab !== 'menu' && (
                     <Tooltip title={
                         isEphemeral
@@ -1982,53 +1862,32 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
                 <TabPanel value={activeTab} index={activeTab.startsWith('connector:') ? activeTab : 'database'}>
                     <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: { xs: 'column', sm: 'row' } }}>
-                    <Box component="nav" aria-label={t('upload.browseDataSources', { defaultValue: 'Browse data sources' })}
-                        sx={{ pt: 1, px: { xs: 2, sm: 0 }, width: { xs: '100%', sm: 184 }, boxSizing: 'border-box', flexShrink: 0, overflow: 'auto', maxHeight: { xs: '35%', sm: '100%' }, borderRight: { sm: `1px solid ${theme.palette.divider}` }, borderBottom: { xs: `1px solid ${theme.palette.divider}`, sm: 'none' }, display: 'flex', flexDirection: 'column' }}>
-                        <Typography variant="subtitle2" sx={{ px: 2.5, py: 0.75, fontSize: '0.8125rem', fontWeight: 600, display: { xs: 'none', sm: 'block' } }}>
-                            {t('upload.dataSourceTypes', { defaultValue: 'Data Sources' })}
-                        </Typography>
-                        {connectorListLoading && <InlineLoadingStatus label={t('common.loading', { defaultValue: 'Loading...' })}
-                            sx={{ px: { xs: 0, sm: 2.5 }, py: 0.75 }} />}
+                    <ListDetailNav listLabel={t('upload.browseDataSources', { defaultValue: 'Browse data sources' })}
+                        selectedKey={browseConnector?.id ?? ''} onSelect={key => key === null ? setActiveTab('add-connection') : selectBrowseConnector(key)}
+                        createLabel={serverConfig.DISABLE_DATA_CONNECTORS ? undefined : t('upload.addConnection', { defaultValue: 'Connect databases' })}
+                        items={connectorInstances.map(conn => {
+                            const status = conn.connected
+                                ? t('upload.connectorConnected', { defaultValue: 'Connected' })
+                                : t('upload.connectorDisconnected', { defaultValue: 'Disconnected' });
+                            const typeName = conn.type_name?.trim() ?? '';
+                            const name = typeName && conn.display_name.toLowerCase().startsWith(typeName.toLowerCase())
+                                ? conn.display_name.slice(typeName.length).replace(/^\s*[-·:|]\s*/, '').trim() || conn.display_name
+                                : conn.display_name;
+                            return { key: conn.id, primary: name, icon: getConnectorIcon(conn.icon),
+                                secondary: typeName && typeName.toLowerCase() !== name.toLowerCase() ? typeName : undefined,
+                                trailing: <Tooltip title={status}><Box component="span" role="img" aria-label={status}
+                                    sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: conn.connected ? 'success.main' : 'error.main' }} /></Tooltip> };
+                        })}>
+                        {connectorListLoading && <InlineLoadingStatus label={t('common.loading', { defaultValue: 'Loading...' })} sx={{ px: 0.5, py: 0.75 }} />}
                         {connectorListError && <Alert severity="error" sx={{ overflowWrap: 'anywhere' }}
                             action={<Button size="small" onClick={refreshConnectors}>{t('common.retry', { defaultValue: 'Retry' })}</Button>}>
                             {connectorListError}
                         </Alert>}
                         {!connectorListLoading && !connectorListError && connectorInstances.length === 0 &&
-                            <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary' }}>
+                            <Typography sx={{ px: 0.5, fontSize: textVar.sm, color: 'text.secondary' }}>
                                 {t('upload.noDataSources', { defaultValue: 'No data sources connected.' })}
                             </Typography>}
-                        {connectorInstances.length > 0 && <TextField select size="small"
-                            label={t('upload.dataSource', { defaultValue: 'Data source' })}
-                            value={browseConnector?.id || ''}
-                            onChange={event => selectBrowseConnector(event.target.value)}
-                            slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
-                            sx={{ display: { xs: 'flex', sm: 'none' }, '& select': { textOverflow: 'ellipsis' } }}>
-                            <option value="" disabled>{t('upload.selectDataSource', { defaultValue: 'Select a data source' })}</option>
-                            {connectorInstances.map(conn => <option key={conn.id} value={conn.id}>{conn.display_name}</option>)}
-                        </TextField>}
-                        {connectorInstances.map(conn => (
-                            <Button key={conn.id} variant="text" size="small" startIcon={getConnectorIcon(conn.icon, { sx: { fontSize: iconVar.lg } })}
-                                aria-pressed={browseConnector?.id === conn.id}
-                                sx={{ display: { xs: 'none', sm: 'inline-flex' }, width: '100%', minWidth: 0, flexShrink: 0, justifyContent: 'flex-start', textTransform: 'none', overflowWrap: 'anywhere', borderRadius: 0, py: 0.75, px: 2.5, fontSize: '0.8125rem', fontWeight: browseConnector?.id === conn.id ? 600 : 400, color: browseConnector?.id === conn.id ? 'primary.main' : 'text.primary', bgcolor: browseConnector?.id === conn.id ? 'action.selected' : undefined }}
-                                onClick={() => selectBrowseConnector(conn.id)}>
-                                <Tooltip title={conn.display_name}>
-                                    <Box component="span" sx={{ flex: 1, minWidth: 0, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{conn.display_name}</Box>
-                                </Tooltip>
-                                <Tooltip title={conn.connected
-                                    ? t('upload.connectorConnected', { defaultValue: 'Connected' })
-                                    : t('upload.connectorDisconnected', { defaultValue: 'Disconnected' })}>
-                                    <Box component="span" role="img" aria-label={conn.connected
-                                        ? t('upload.connectorConnected', { defaultValue: 'Connected' })
-                                        : t('upload.connectorDisconnected', { defaultValue: 'Disconnected' })}
-                                        sx={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, ml: 1,
-                                            bgcolor: conn.connected ? 'success.main' : 'error.main' }} />
-                                </Tooltip>
-                            </Button>
-                        ))}
-                        {!serverConfig.DISABLE_DATA_CONNECTORS && <Button size="small" startIcon={<AddIcon sx={{ fontSize: iconVar.lg }} />} onClick={() => setActiveTab('add-connection')} sx={{ width: '100%', justifyContent: 'flex-start', textTransform: 'none', borderRadius: 0, py: 0.75, px: 2.5, mt: 0.75, fontSize: '0.8125rem', flexShrink: 0 }}>
-                            {t('upload.addConnection', { defaultValue: 'Connect databases' })}
-                        </Button>}
-                    </Box>
+                    </ListDetailNav>
                     <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, px: 2, pb: 2, display: 'flex', flexDirection: 'column' }}>
                         {browseConnector?.connected
                             ? <ConnectedSourceOverview
@@ -2708,6 +2567,26 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     with the local_folder loader pre-selected. */}
 
             </DialogContent>
+            <Dialog open={renameOpen && !!activeConnector} onClose={() => setRenameOpen(false)} maxWidth="xs" fullWidth>
+                <Box component="form" onSubmit={(event: React.FormEvent) => { event.preventDefault(); void commitConnectorName(); }}>
+                    <DialogTitle sx={{ fontSize: textVar.lg, fontWeight: 600, pb: 1 }}>
+                        {t('upload.renameConnector', { defaultValue: 'Rename connector' })}
+                    </DialogTitle>
+                    <DialogContent sx={{ pt: '8px !important' }}>
+                        <TextField autoFocus fullWidth size="small" value={connectorNameDraft}
+                            label={t('upload.connectionName', { defaultValue: 'Connection name' })}
+                            onChange={event => setConnectorNameDraft(event.target.value)}
+                            sx={{ '& .MuiInputBase-root, & .MuiInputLabel-root': { fontSize: textVar.md } }} />
+                    </DialogContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, px: 3, pb: 2,
+                        '& .MuiButton-root': { fontSize: textVar.md, textTransform: 'none' } }}>
+                        <Button onClick={() => setRenameOpen(false)}>{t('cancel', { defaultValue: 'Cancel' })}</Button>
+                        <Button type="submit" variant="contained" disabled={!connectorNameDraft.trim()}>
+                            {t('common.save', { defaultValue: 'Save' })}
+                        </Button>
+                    </Box>
+                </Box>
+            </Dialog>
             <Dialog open={connectorPendingDelete !== null} onClose={() => setConnectorPendingDelete(null)} maxWidth="xs" fullWidth>
                 <DialogTitle>
                     {t('sidebar.deleteConnectorTitle', { defaultValue: 'Delete connector' })}

@@ -5,22 +5,21 @@ import { Alert, Autocomplete, Box, Button, ButtonBase, Checkbox, CircularProgres
     IconButton, Tab, Tabs, TextField, Tooltip, Typography, useTheme } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
-import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
+import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
+import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SaveIcon from '@mui/icons-material/Save';
 import AddIcon from '@mui/icons-material/Add';
-import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import EditIcon from '@mui/icons-material/Edit';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
 import { ArtifactDeleteButton, ThreadArtifactCard } from './DataThreadCards';
-import { readingTypography, sidebarPrimaryActionSx, sidebarToolbarSx } from '../app/tokens';
+import { readingTypography, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarRowTitleSx, sidebarToolbarSx } from '../app/tokens';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import CodeIcon from '@mui/icons-material/Code';
 import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
@@ -35,10 +34,11 @@ import { getUrls, resolveRecommendedChart } from '../app/utils';
 import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
 import { store } from '../app/store';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
-import { notifyWorkspaceFilesChanged } from '../app/workspaceService';
+import { loadWorkspace, notifyWorkspaceFilesChanged, WorkspaceLoadSupersededError } from '../app/workspaceService';
 import { createConversationRootId, createDictTable, computeInsightKey, FieldItem, TextTurn, ClarificationResponse } from '../components/ComponentType';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { textVar, iconVar } from '../app/layout';
+import { ListDetailDialog } from '../components/ListDetailDialog';
 import { ExecutionCodeBlock, formatTerminalCommand, TerminalApprovalDialog, TerminalProposal } from '../components/TerminalApprovalDialog';
 import { ConnectorFormCard } from '../components/ConnectorFormCard';
 import { parseDataOperation } from '../dataOperations/models';
@@ -54,6 +54,7 @@ interface WorkflowParameter {
 interface WorkflowSetup { parameters: Record<string, string | number | boolean>; instructions: string }
 interface Instance { path: string; name: string; overview?: string; error?: string; origin?: 'user' | 'demo' | 'server'; parameters?: WorkflowParameter[]; content?: string }
 export interface Run {
+    workflow_path?: string;
     external_references?: import('../components/ComponentType').ExternalTableReference[];
     setup?: WorkflowSetup;
     activity?: string;
@@ -196,22 +197,12 @@ function workflowSteps(run: Pick<Run, 'instance' | 'checks' | 'step_progress' | 
     });
 }
 
-export async function publishWorkflowRun(run: Run, workspaceId: string) {
-    if (store.getState().activeWorkspace?.id !== workspaceId || deletedWorkflowRuns.has(`${workspaceId}/${run.id}`)) return;
+export function workflowTextTurn(run: Run, existing?: TextTurn): TextTurn {
     const turnId = `textTurn-workflow-${run.id}`;
-    const existing = store.getState().textTurns.find(turn => turn.id === turnId);
-    for (const message of store.getState().textTurns) {
-        if (message.workflowMessage?.runId === run.id && message.workflowMessage.status === 'queued'
-            && run.applied_message_ids?.includes(message.workflowMessage.messageId)) {
-            store.dispatch(dfActions.updateTextTurn({ id: message.id, content: 'Received by workflow.',
-                workflowMessage: { ...message.workflowMessage, status: 'received' } }));
-        }
-    }
     const outputVersions = { ...existing?.workflow?.outputVersions };
     const outputIds = [...new Set([...(existing?.outputIds || []), ...workflowOutputIds(run)])];
-    const outputParent = (id: string) => outputIds[outputIds.indexOf(id) - 1] || turnId;
     const createdAt = Date.parse(run.started_at);
-    store.dispatch(dfActions.addTextTurn({
+    return {
         kind: 'text', id: turnId, displayId: run.instance?.name || run.name || 'Workflow', textKind: 'explain',
         parentNodeId: createConversationRootId(run.id), createdAt, actionId: run.id,
         prompt: existing?.prompt || `Run workflow: ${run.instance?.name || run.name || run.id}`,
@@ -253,8 +244,26 @@ export async function publishWorkflowRun(run: Run, workspaceId: string) {
             log: Object.entries(run.evidence || {}).map(([id, evidence]) => ({ id, ...evidence })),
             steps: workflowSteps(run),
         },
-    }));
-    if (!existing) {
+    };
+}
+
+export async function publishWorkflowRun(run: Run, workspaceId: string, focus = true) {
+    if (store.getState().activeWorkspace?.id !== workspaceId || deletedWorkflowRuns.has(`${workspaceId}/${run.id}`)) return;
+    const turnId = `textTurn-workflow-${run.id}`;
+    const existing = store.getState().textTurns.find(turn => turn.id === turnId);
+    for (const message of store.getState().textTurns) {
+        if (message.workflowMessage?.runId === run.id && message.workflowMessage.status === 'queued'
+            && run.applied_message_ids?.includes(message.workflowMessage.messageId)) {
+            store.dispatch(dfActions.updateTextTurn({ id: message.id, content: 'Received by workflow.',
+                workflowMessage: { ...message.workflowMessage, status: 'received' } }));
+        }
+    }
+    const outputVersions = { ...existing?.workflow?.outputVersions };
+    const outputIds = [...new Set([...(existing?.outputIds || []), ...workflowOutputIds(run)])];
+    const outputParent = (id: string) => outputIds[outputIds.indexOf(id) - 1] || turnId;
+    const createdAt = Date.parse(run.started_at);
+    store.dispatch(dfActions.addTextTurn(workflowTextTurn(run, existing)));
+    if (!existing && focus) {
         store.dispatch(dfActions.setFocused({ type: 'text', textId: turnId }));
         store.dispatch(dfActions.setViewMode('editor'));
     }
@@ -318,16 +327,20 @@ export async function publishWorkflowRun(run: Run, workspaceId: string) {
             store.dispatch(dfActions.insertDerivedTables(table));
             store.dispatch(fetchFieldSemanticType(table));
             if (!dfSelectors.getAllCharts(store.getState()).some(item => item.id === chart.id)) store.dispatch(dfActions.addChart(chart));
-            store.dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
-            store.dispatch(dfActions.setViewMode('editor'));
+            if (focus) {
+                store.dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
+                store.dispatch(dfActions.setViewMode('editor'));
+            }
         } else if (output.type === 'report') {
             const reportId = `workflow-report-${run.id}`;
             store.dispatch(dfActions.saveGeneratedReport({ id: reportId, content: output.content,
                 title: run.instance?.name, parentNodeId: store.getState().generatedReports.find(report => report.id === reportId)?.parentNodeId
                     || outputParent(reportId), createdAt, status: 'completed',
                 selectedChartIds: (run.outputs || []).filter(item => item.type === 'result').map(item => item.content.result.chart_id) }));
-            store.dispatch(dfActions.setFocused({ type: 'report', reportId }));
-            store.dispatch(dfActions.setViewMode('report'));
+            if (focus) {
+                store.dispatch(dfActions.setFocused({ type: 'report', reportId }));
+                store.dispatch(dfActions.setViewMode('report'));
+            }
         }
         outputVersions[output.id] = version;
         const workflow = store.getState().textTurns.find(turn => turn.id === turnId)?.workflow;
@@ -345,7 +358,7 @@ export async function publishWorkflowRun(run: Run, workspaceId: string) {
             textKind: 'explain', parentNodeId: cardId, createdAt: completion?.createdAt || Date.now(),
             content: run.message || 'Workflow completed.' }));
     }
-    if (run.status === 'paused' && (existing?.workflow?.status !== 'paused' || existing.workflow.calls !== run.calls)) {
+    if (focus && run.status === 'paused' && (existing?.workflow?.status !== 'paused' || existing.workflow.calls !== run.calls)) {
         store.dispatch(dfActions.setFocused({ type: 'text', textId: turnId }));
         store.dispatch(dfActions.setViewMode('editor'));
     }
@@ -446,10 +459,8 @@ async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => void) {
             }
         } catch {
             if (monitoring && latest?.status === 'running' && store.getState().activeWorkspace?.id === workspaceId) {
-                latest = { ...latest, status: 'paused', message: 'Connection interrupted. Execution status could not be confirmed. Review and retry to reconnect.' };
-                controller.abort();
+                latest = { ...latest, activity: 'Reconnecting to workflow...' };
                 await publishWorkflowRun(latest, workspaceId);
-                return;
             }
         }
         if (monitoring) healthTimer = setTimeout(checkExecution, 5000);
@@ -495,19 +506,32 @@ async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => void) {
                 throw new Error(event.message || 'Workflow execution failed');
             }
         }
+    } catch (reason) {
+        if (latest?.status !== 'running') throw reason;
     } finally {
         flushReport();
         if (streamingReportId && store.getState().activeWorkspace?.id === workspaceId
+            && latest?.status !== 'running'
             && store.getState().generatedReports.find(report => report.id === streamingReportId)?.status === 'generating') {
             store.dispatch(dfActions.updateGeneratedReportContent({ id: streamingReportId, content: reportContent, status: 'error' }));
         }
         monitoring = false;
         if (healthTimer) clearTimeout(healthTimer);
         unsubscribe();
-        executions.delete(workspaceId);
-        if (latest && store.getState().activeWorkspace?.id === workspaceId) {
-            if (latest.status === 'running') latest = { ...latest, status: 'paused', message: 'Connection interrupted. Resume this workflow to continue.' };
-            await publishWorkflowRun(latest, workspaceId);
+        try {
+            if (latest && store.getState().activeWorkspace?.id === workspaceId) {
+                if (latest.status === 'running') {
+                    try {
+                        const { run } = await post<{ run: Run }>('run-state', { run_id: latest.id }, AbortSignal.timeout(10000));
+                        latest = run;
+                    } catch {
+                        latest = { ...latest, activity: 'Reconnecting to workflow...' };
+                    }
+                }
+                await publishWorkflowRun(latest, workspaceId);
+            }
+        } finally {
+            executions.delete(workspaceId);
         }
     }
 }
@@ -528,8 +552,69 @@ export async function pauseWorkflowRun(runId: string) {
     }
 }
 
+export const WorkflowRunObserver: React.FC = () => {
+    const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
+    const readOnly = useSelector((state: DataFormulatorState) => state.activeWorkspace?.readOnly);
+    const scheduledView = useSelector((state: DataFormulatorState) => !!state.activeWorkspace?.readOnly && !!state.activeWorkspace?.scheduledRun);
+    const runningIds = useSelector((state: DataFormulatorState) => state.textTurns
+        .flatMap(turn => turn.workflow?.status === 'running' ? [turn.workflow.runId] : []).join(','));
+    useEffect(() => {
+        // Hosted private runs execute in a service workspace this browser cannot address.
+        if (!workspaceId || !runningIds || (readOnly && !scheduledView) || workspaceId.startsWith('scheduled-private-')) return;
+        let active = true;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        let snapshotReloads = 0;
+        const observe = async () => {
+            let delay = 2000;
+            try {
+                if (executions.has(workspaceId)) return;
+                for (const runId of runningIds.split(',')) {
+                    const { run } = await post<{ run: Run }>('run-state', { run_id: runId }, AbortSignal.timeout(10000));
+                    if (!active || store.getState().activeWorkspace?.id !== workspaceId || executions.has(workspaceId)) return;
+                    if (!scheduledView) {
+                        await publishWorkflowRun(run, workspaceId, false);
+                    } else if (run.status === 'running') {
+                        const existing = store.getState().textTurns.find(turn => turn.workflow?.runId === run.id);
+                        const turn = workflowTextTurn(run, existing);
+                        store.dispatch(dfActions.addTextTurn({ ...turn, outputIds: existing?.outputIds,
+                            workflow: { ...turn.workflow!, artifacts: existing?.workflow?.artifacts } }));
+                    } else {
+                        if (store.getState().sessionLoading) return;
+                        const result = await loadWorkspace(workspaceId);
+                        if (!active || store.getState().activeWorkspace?.id !== workspaceId) return;
+                        // The scheduler saves the final snapshot just after the run releases its lock.
+                        if (!result || (result.readOnly && ++snapshotReloads < 5)) return;
+                        store.dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { ...result.state.activeWorkspace,
+                            id: workspaceId, displayName: result.displayName, readOnly: result.readOnly } }));
+                        return;
+                    }
+                }
+            } catch (reason) {
+                if (reason instanceof WorkspaceLoadSupersededError) return;
+                if (reason instanceof ApiRequestError && ['ACCESS_DENIED', 'AUTH_REQUIRED', 'WORKSPACE_EXPIRED'].includes(reason.apiError.code)) {
+                    active = false;
+                    return;
+                }
+                delay = 3000;
+                if (active && store.getState().activeWorkspace?.id === workspaceId) {
+                    for (const turn of store.getState().textTurns) {
+                        if (turn.workflow?.status === 'running') store.dispatch(dfActions.updateTextTurn({ id: turn.id,
+                            workflow: { ...turn.workflow, activity: 'Reconnecting to workflow...' } }));
+                    }
+                }
+            } finally {
+                if (active) timer = setTimeout(observe, delay);
+            }
+        };
+        void observe();
+        return () => { active = false; if (timer) clearTimeout(timer); };
+    }, [workspaceId, readOnly, scheduledView, runningIds]);
+    return null;
+};
+
 export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; selected?: boolean; interactionOnly?: boolean; onCloseInteraction?: () => void }> = ({ turn, canvas = false, selected = false, interactionOnly = false, onCloseInteraction = () => {} }) => {
     const theme = useTheme();
+    const readOnly = useSyncExternalStore(store.subscribe, () => !!store.getState().activeWorkspace?.readOnly);
     const [deleting, setDeleting] = useState(false);
     const [questionAnswers, setQuestionAnswers] = useState<Record<number, ClarificationResponse>>({});
     const [savedLog, setSavedLog] = useState<NonNullable<TextTurn['workflow']>['log']>();
@@ -553,7 +638,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
     const questions = workflow?.interactionId ? workflow.questions || [] : [];
     useEffect(() => { setQuestionAnswers({}); }, [questionKey]);
     const resume = async (response: Omit<WorkflowRequest, 'run_id' | 'path'>) => {
-        if (!workflow || submittingRef.current) return;
+        if (!workflow || readOnly || submittingRef.current) return;
         submittingRef.current = true;
         setSubmitting(true);
         try {
@@ -597,28 +682,6 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
         });
         return () => { active = false; };
     }, [canvas, workflow?.runId, workflow?.log, workflow?.steps, workflow?.planHistory, savedLog, savedPlan, turn.id, turn.outputIds, historyUnavailable]);
-    useEffect(() => {
-        const workspaceId = store.getState().activeWorkspace?.id;
-        if (canvas || interactionOnly || !workflow || workflow.status !== 'running' || !workspaceId || executions.has(workspaceId)) return;
-        let active = true;
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        const recover = async () => {
-            try {
-                const { run } = await post<{ run: Run }>('run-state', { run_id: workflow.runId }, AbortSignal.timeout(10000));
-                if (!active || store.getState().activeWorkspace?.id !== workspaceId) return;
-                await publishWorkflowRun(run, workspaceId);
-                if (active && run.status === 'running') timer = setTimeout(recover, 2000);
-            } catch {
-                if (!active || store.getState().activeWorkspace?.id !== workspaceId || executions.has(workspaceId)) return;
-                const current = store.getState().textTurns.find(item => item.id === turn.id);
-                if (current?.workflow?.status === 'running') store.dispatch(dfActions.updateTextTurn({ id: current.id,
-                    content: 'Connection interrupted. Execution status could not be confirmed. Review and retry to reconnect.',
-                    workflow: { ...current.workflow, status: 'paused', activity: undefined } }));
-            }
-        };
-        void recover();
-        return () => { active = false; if (timer) clearTimeout(timer); };
-    }, [canvas, interactionOnly, workflow?.runId, workflow?.status]);
     if (!workflow) return null;
     const overview = workflow.overview || savedPlan?.instance?.overview;
     const scope = workflow.prompt ?? savedPlan?.instance?.prompt;
@@ -836,8 +899,8 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                     {workflow.status === 'running' ? <ShimmerText tone="neutral" fontSize="inherit">{workflow.pauseRequested ? 'Stopping...' : workflow.planReviewPending ? 'Reviewing plan' : 'Running'}</ShimmerText> : workflow.status}
                 </Typography>
                 <Box sx={{ ml: 'auto' }}>
-                    {workflow.status === 'running' && <Button size="small" disabled={workflow.pauseRequested} startIcon={<PauseIcon />} onClick={pauseWorkflow}>Pause</Button>}
-                    {workflow.status === 'paused' && <Button size="small" disabled={submitting} startIcon={needsReview ? <QuestionAnswerOutlinedIcon /> : <PlayArrowIcon />}
+                    {!readOnly && workflow.status === 'running' && <Button size="small" disabled={workflow.pauseRequested} startIcon={<PauseIcon />} onClick={pauseWorkflow}>Pause</Button>}
+                    {!readOnly && workflow.status === 'paused' && <Button size="small" disabled={submitting} startIcon={needsReview ? <QuestionAnswerOutlinedIcon /> : <PlayArrowIcon />}
                         onClick={() => {
                             if (workflow.terminalRequest) setApprovalOpen(true);
                             else if (needsReview) store.dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }));
@@ -937,7 +1000,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
         </Box>}
         </>}
         </Box>
-        <Box sx={{ display: 'contents' }}>
+        {!readOnly && <Box sx={{ display: 'contents' }}>
         {workflow.status === 'paused' && workflow.terminalRequest && <>
             {!canvas && statusAction('Review command', <TerminalIcon sx={{ fontSize: 18 }} />, () => {
                 if (!interactionOnly) store.dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }));
@@ -992,7 +1055,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 () => store.dispatch(dfActions.setFocused({ type: 'text', textId: turn.id })))
         )}
         {!canvas && !interactionOnly && workflow.status === 'running' && statusAction('Pause', <PauseIcon sx={{ fontSize: 18 }} />, pauseWorkflow, workflow.pauseRequested)}
-        </Box>
+        </Box>}
     </Box>;
 };
 
@@ -1201,23 +1264,345 @@ export const WorkflowProposal: React.FC<{ turn: TextTurn; canvas?: boolean }> = 
 
 export const WORKFLOW_AUTHORING_PROMPT = 'Help me create a workflow from our current conversation and data. Suggest a few useful directions for me to choose from before drafting it. Do not save or execute it yet.';
 
-export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; headerActions?: React.ReactNode;
+interface ScheduleConfig {
+    name: string; workflow: string; model_id: string; time: string; timezone: string; weekdays: number[];
+    enabled: boolean; auto_approve: boolean; max_retries: number; catch_up: boolean; publish: boolean; setup?: WorkflowSetup;
+}
+interface WorkflowSchedule {
+    id: string; config: ScheduleConfig; next_at: string;
+    history?: { id: string; scheduled_for: string; status: string; message: string; attempts: number }[];
+}
+
+const scheduleCadence = (config: ScheduleConfig) => {
+    const days = [...config.weekdays].sort();
+    const cadence = days.length === 7 ? 'Daily' : days.join() === '0,1,2,3,4' ? 'Weekdays'
+        : days.map(day => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][day]).join(', ');
+    return `${cadence} at ${config.time}`;
+};
+
+const WorkflowSchedules: React.FC<{ items: Instance[]; onClose: () => void; initialSchedule?: WorkflowSchedule; startNew?: boolean;
+    onOpenSession?: (id: string) => void | Promise<void> }> = ({ items, onClose, initialSchedule, startNew, onOpenSession }) => {
+    const models = useSelector((state: DataFormulatorState) => state.globalModels);
+    const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
+    const [schedules, setSchedules] = useState<WorkflowSchedule[]>([]);
+    const [available, setAvailable] = useState(false);
+    const [hosted, setHosted] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
+    const [identifier, setIdentifier] = useState(initialSchedule?.id || '');
+    const [customDays, setCustomDays] = useState(false);
+    const [confirmDelete, setConfirmDelete] = useState(false);
+    const emptyConfig = (): ScheduleConfig => ({ name: '', workflow: '', model_id: models.find(model => model.id === selectedModelId)?.id || models[0]?.id || '', time: '09:00',
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, weekdays: [0, 1, 2, 3, 4, 5, 6], enabled: true,
+        auto_approve: false, max_retries: 2, catch_up: false, publish: false });
+    const [config, setConfig] = useState<ScheduleConfig>(() => initialSchedule ? { ...emptyConfig(), ...initialSchedule.config } : emptyConfig());
+    const workflow = items.find(item => item.path === config.workflow);
+    const repeat = customDays ? 'custom' : config.weekdays.length === 7 ? 'daily'
+        : config.weekdays.length === 5 && [0, 1, 2, 3, 4].every(day => config.weekdays.includes(day)) ? 'weekdays' : 'custom';
+    const current = schedules.find(schedule => schedule.id === identifier);
+    const currentRuns = current?.history?.filter(run => run.status !== 'skipped') ?? [];
+    const select = (schedule?: WorkflowSchedule) => {
+        setIdentifier(schedule?.id || ''); setConfig(schedule ? { ...emptyConfig(), ...schedule.config } : emptyConfig());
+        setCustomDays(false); setError('');
+    };
+    const refresh = async () => {
+        const { data } = await apiRequest<{ available: boolean; hosted?: boolean; schedules: WorkflowSchedule[] }>('/api/schedules');
+        setAvailable(data.available); setHosted(!!data.hosted); setSchedules(data.schedules);
+        return data.schedules;
+    };
+    useEffect(() => {
+        void refresh().then(list => { if (!initialSchedule && !startNew && list[0]) select(list[0]); })
+            .catch(reason => setError(String(reason))).finally(() => setLoading(false));
+    }, []);
+    const persist = async (next: ScheduleConfig) => {
+        const { data } = await apiRequest<{ schedule: WorkflowSchedule }>('/api/schedules', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...(identifier ? { id: identifier } : {}), config: next }) });
+        const list = await refresh();
+        return list.find(schedule => schedule.id === data?.schedule?.id);
+    };
+    const act = async (action: () => Promise<void>, failure: string) => {
+        setSaving(true); setError('');
+        try { await action(); } catch (reason) { setError(reason instanceof Error ? reason.message : failure); }
+        finally { setSaving(false); }
+    };
+    return <><ListDetailDialog title="Schedules" listLabel="Schedule list" createLabel="New schedule" busy={saving} onClose={onClose} width={780} contentMaxWidth={460}
+        selectedKey={identifier || null} onSelect={key => select(schedules.find(schedule => schedule.id === key))}
+        items={schedules.map(schedule => ({ key: schedule.id, primary: schedule.config.name, secondary: scheduleCadence(schedule.config),
+            muted: !schedule.config.enabled }))}
+        onSubmit={event => {
+            event.preventDefault();
+            void act(async () => select(await persist(config)), 'Unable to save schedule.');
+        }}
+        footer={available && <>
+            {current && <Button color="error" disabled={saving} sx={{ mr: 'auto' }} onClick={() => setConfirmDelete(true)}>Delete</Button>}
+            {current && hosted && current.config.publish && <Button color="error" disabled={saving} onClick={() => void act(async () => {
+                await apiRequest(`/api/schedules/${identifier}/publication`, { method: 'DELETE' });
+                await refresh(); setConfig(previous => ({ ...previous, enabled: false, publish: false }));
+            }, 'Unable to withdraw publication.')}>Unpublish</Button>}
+            {current && <Button variant="outlined" disabled={saving} onClick={() => void act(async () => {
+                const enabled = !current.config.enabled;
+                await persist({ ...current.config, enabled });
+                setConfig(previous => ({ ...previous, enabled }));
+            }, 'Unable to update schedule.')}>{current.config.enabled ? 'Pause' : 'Resume'}</Button>}
+            <Button type="submit" variant="contained" disableElevation
+                disabled={saving || !config.weekdays.length || !config.model_id || !config.workflow || hosted && !config.publish}>Save schedule</Button>
+        </>}>
+                        {current && <Box>
+                            <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
+                                {current.config.enabled ? `Next run ${shortRunTime(current.next_at)}` : 'Paused'}</Typography>
+                            {currentRuns.length > 0 && <RunList caption="Previous runs:" label={`Runs of ${current.config.name}`} limit={6} runs={currentRuns.map(run => ({
+                                key: run.id, status: run.status, time: run.scheduled_for, disabled: !onOpenSession,
+                                open: () => { void onOpenSession?.(`${hosted ? 'scheduled-private-' : 'scheduled-'}${run.id}`); onClose(); },
+                            }))} />}
+                        </Box>}
+                        {error && <Alert severity="error">{error}</Alert>}
+                        {loading ? <CircularProgress size={18} /> : !available ? <Alert severity="info">Scheduling is unavailable for this deployment or account.</Alert> : <>
+                    <TextField size="small" select required label="Workflow" value={config.workflow} disabled={saving}
+                        onChange={event => {
+                            const selected = items.find(item => item.path === event.target.value);
+                            setConfig({ ...config, workflow: event.target.value, name: !config.name || config.name === workflow?.name ? selected?.name || '' : config.name,
+                                setup: { parameters: Object.fromEntries((selected?.parameters || []).flatMap(parameter => parameter.default === undefined ? [] : [[parameter.name, parameter.default]])), instructions: '' } });
+                        }}>
+                        {items.filter(item => !hosted || item.origin === 'demo' || item.origin === 'server').map(item => <MenuItem key={item.path} value={item.path}>{item.name}</MenuItem>)}
+                    </TextField>
+                    <TextField size="small" required label="Schedule name" value={config.name} disabled={saving}
+                        onChange={event => setConfig({ ...config, name: event.target.value })} />
+                    <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 2 }}>
+                        <TextField size="small" select label="Repeat" value={repeat} disabled={saving} onChange={event => {
+                            setCustomDays(event.target.value === 'custom');
+                            if (event.target.value !== 'custom') setConfig({ ...config,
+                                weekdays: event.target.value === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4] });
+                        }}>
+                            <MenuItem value="daily">Every day</MenuItem>
+                            <MenuItem value="weekdays">Weekdays</MenuItem>
+                            <MenuItem value="custom">Custom days</MenuItem>
+                        </TextField>
+                        <TextField size="small" required type="time" label="Time" value={config.time} disabled={saving} helperText={config.timezone}
+                            slotProps={{ inputLabel: { shrink: true } }} onChange={event => setConfig({ ...config, time: event.target.value })} />
+                    </Box>
+                    {repeat === 'custom' && <Box role="group" aria-label="Weekdays" sx={{ display: 'flex', flexWrap: 'wrap', mt: -1 }}>
+                        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, index) => <FormControlLabel key={label} sx={{ mr: 1 }} label={label}
+                            control={<Checkbox size="small" checked={config.weekdays.includes(index)} disabled={saving} onChange={event => setConfig({ ...config,
+                                weekdays: event.target.checked ? [...config.weekdays, index].sort() : config.weekdays.filter(day => day !== index) })} />} />)}
+                    </Box>}
+                    {workflow && <>
+                        <Divider><Typography variant="caption">Workflow inputs</Typography></Divider>
+                        {!!workflow.parameters?.length && <WorkflowSetupFields parameters={workflow.parameters} values={config.setup?.parameters || {}} disabled={saving}
+                            onChange={parameters => setConfig({ ...config, setup: { parameters, instructions: config.setup?.instructions || '' } })} />}
+                        <TextField size="small" multiline minRows={2} label="Additional instructions" value={config.setup?.instructions || ''} disabled={saving}
+                            onChange={event => setConfig({ ...config, setup: { parameters: config.setup?.parameters || {}, instructions: event.target.value } })} />
+                    </>}
+                    <Divider><Typography variant="caption">Run settings</Typography></Divider>
+                    <TextField size="small" select required label="Server model connection" value={config.model_id} disabled={saving}
+                        error={!config.model_id} helperText={!config.model_id ? 'Server model connection required.' : undefined}
+                        onChange={event => setConfig({ ...config, model_id: event.target.value })}>
+                        {models.map(model => <MenuItem key={model.id} value={model.id}>{model.model}</MenuItem>)}
+                    </TextField>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', mt: -0.5,
+                        '& .MuiFormControlLabel-root': { m: 0, gap: 0.5 }, '& .MuiCheckbox-root': { p: 0.5 } }}>
+                        <FormControlLabel label="Run once after missed occurrences" control={<Checkbox size="small" checked={config.catch_up} disabled={saving} onChange={event => setConfig({ ...config, catch_up: event.target.checked })} />} />
+                        <Tooltip describeChild title="Local terminal commands and single-option data loads only. Application policy still applies; questions and credentials pause the run.">
+                            <FormControlLabel label="Auto-approve commands and data loads" control={<Checkbox size="small" checked={config.auto_approve} disabled={saving} onChange={event => setConfig({ ...config, auto_approve: event.target.checked })} />} />
+                        </Tooltip>
+                        {hosted && <FormControlLabel label="Publish final reports and all chart data for everyone to view" control={<Checkbox size="small" checked={config.publish} disabled={saving} onChange={event => setConfig({ ...config, publish: event.target.checked })} />} />}
+                    </Box>
+                </>}
+    </ListDetailDialog>
+    <Dialog open={confirmDelete} onClose={() => !saving && setConfirmDelete(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Delete schedule?</DialogTitle>
+        <DialogContent>
+            <Typography sx={{ overflowWrap: 'anywhere', mb: 1 }}>{current?.config.name}</Typography>
+            <Typography variant="body2" color="text.secondary">Future runs stop. Sessions from past runs are kept.</Typography>
+        </DialogContent>
+        <DialogActions>
+            <Button disabled={saving} onClick={() => setConfirmDelete(false)}>Cancel</Button>
+            <Button color="error" variant="contained" disableElevation disabled={saving} onClick={() => void act(async () => {
+                await apiRequest(`/api/schedules/${identifier}`, { method: 'DELETE' });
+                const list = await refresh();
+                setConfirmDelete(false);
+                select(list[0]);
+            }, 'Unable to delete schedule.')}>Delete</Button>
+        </DialogActions>
+    </Dialog>
+    </>;
+};
+
+const shortRunTime = (value: string) => new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+const runStatusDisplay = (value: string) => ({
+    completed: { label: 'Completed', color: 'success.main', icon: <CheckCircleOutlineIcon /> },
+    needs_attention: { label: 'Needs attention', color: 'warning.main', icon: <WarningAmberOutlinedIcon /> },
+    paused: { label: 'Paused', color: 'warning.main', icon: <PauseIcon /> },
+    failed: { label: 'Failed', color: 'error.main', icon: <ErrorOutlineIcon /> },
+    retry: { label: 'Retrying', color: 'text.secondary', icon: <HistoryOutlinedIcon /> },
+    running: { label: 'Running', color: 'primary.main', icon: <CircularProgress size={11} color="inherit" /> },
+} as Record<string, { label: string; color: string; icon: React.ReactNode }>)[value]
+    ?? { label: value.replaceAll('_', ' '), color: 'text.secondary', icon: <HistoryOutlinedIcon /> };
+
+
+// Transform and shadow only, so hovering never reflows neighbouring cards.
+const cardHoverSx = {
+    transition: 'box-shadow 150ms ease, transform 150ms ease, border-color 150ms ease',
+    '&:hover': { borderColor: 'rgba(0, 0, 0, 0.18)', boxShadow: '0 2px 8px rgba(32, 33, 36, 0.08)', transform: 'translateY(-1px)' },
+    '@media (prefers-reduced-motion: reduce)': { transition: 'none', '&:hover': { transform: 'none' } },
+} as const;
+
+/** Filled background shared by run chips and the demo tag. */
+const mutedChipBg = 'rgba(0, 0, 0, 0.045)';
+
+/** The latest two runs, shown inside a card under its metadata; the panel lists the rest. */
+const CardRuns: React.FC<{ label: string; runs: RunEntry[]; next?: NextRun }> = ({ label, runs, next }) =>
+    <RunList label={label} runs={runs.slice(0, 2)} next={next} />;
+
+/** Small filled chip that prefixes a card title (e.g. the schedule clock or the demo tag). */
+const titleChipSx = { display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle', mr: 0.75, px: 0.5, borderRadius: 0.5,
+    bgcolor: mutedChipBg, color: 'text.secondary', fontSize: textVar.xxs, fontWeight: 400, lineHeight: 1.6 } as const;
+
+/** A status icon plus run time, shown as a small filled chip that opens the run. */
+const RunLink: React.FC<{ status: string; time: string; label?: string; disabled?: boolean; onOpen: () => void }> = ({ status, time, label, disabled, onOpen }) => {
+    const display = runStatusDisplay(status);
+    return <Tooltip title={display.label}>
+        <ButtonBase disabled={disabled} aria-label={label ?? `${display.label}, ${shortRunTime(time)}`}
+            onClick={event => { event.stopPropagation(); onOpen(); }}
+            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0, px: 0.625,
+                borderRadius: 0.5, bgcolor: mutedChipBg,
+                fontSize: textVar.xs, lineHeight: 1.7, color: 'text.secondary',
+                '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.09)', color: 'text.primary' },
+                '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
+            <Box component="span" role="img" aria-label={display.label}
+                sx={{ display: 'inline-flex', color: display.color, '& .MuiSvgIcon-root': { fontSize: 13 } }}>{display.icon}</Box>
+            <span>{shortRunTime(time)}</span>
+        </ButtonBase>
+    </Tooltip>;
+};
+
+/** The upcoming run (or paused state): same chip shape as a run, but dashed and inert; the cadence lives in its tooltip. */
+const NextRunChip: React.FC<NextRun> = ({ time, cadence }) => {
+    const state = time ? 'Next run' : 'Paused';
+    return <Tooltip title={<>{state}<br />{cadence}</>}>
+        <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0, px: 0.5,
+            boxSizing: 'border-box', height: '1.7em', fontFamily: theme => theme.typography.fontFamily,
+            borderRadius: 0.5, border: '1px dashed', borderColor: 'divider', fontSize: textVar.xs, lineHeight: 1, color: 'text.secondary' }}>
+            <Box component="span" role="img" aria-label={`${state}, ${cadence}`} sx={{ display: 'inline-flex', '& .MuiSvgIcon-root': { fontSize: 13 } }}>
+                {time ? <ScheduleOutlinedIcon /> : <PauseIcon />}</Box>
+            <span>{time ? shortRunTime(time) : 'Paused'}</span>
+        </Box>
+    </Tooltip>;
+};
+
+type NextRun = { time?: string; cadence: string };
+
+type RunEntry = { key: string; status: string; time: string; label?: string; disabled?: boolean; open: () => void };
+
+/** Newest-first run chips; `(more)` reveals the rest in a scrollable area. */
+const RunList: React.FC<{ label: string; runs: RunEntry[]; limit?: number; caption?: string; next?: NextRun }> = ({ label, runs, limit = 3, caption, next }) => {
+    const [showAll, setShowAll] = useState(false);
+    return <Box role="group" aria-label={label} sx={{ mt: 0.5,
+        display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5, ...(showAll ? { maxHeight: 160, overflowY: 'auto' } : {}) }}>
+        {caption && <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary', mr: 0.25 }}>{caption}</Typography>}
+        {next && <NextRunChip {...next} />}
+        {(showAll ? runs : runs.slice(0, limit)).map(run => <RunLink key={run.key} status={run.status} time={run.time}
+            label={run.label} disabled={run.disabled} onOpen={run.open} />)}
+        {runs.length > limit && <ButtonBase onClick={event => { event.stopPropagation(); setShowAll(previous => !previous); }}
+            sx={{ fontSize: textVar.xs, lineHeight: 1.7, color: 'text.secondary', borderRadius: 0.5, '&:hover': { color: 'text.primary', textDecoration: 'underline' } }}>
+            {showAll ? '(less)' : '(more)'}
+        </ButtonBase>}
+    </Box>;
+};
+
+const WorkflowScheduleSection: React.FC<{ items: Instance[]; busy: boolean; newScheduleOpen: boolean; onOpenSession?: (id: string) => void | Promise<void>;
+    onChange: (value: { schedules: WorkflowSchedule[]; hosted: boolean; available: boolean }) => void }> = ({ items, busy, newScheduleOpen, onOpenSession, onChange }) => {
+    const [schedules, setSchedules] = useState<WorkflowSchedule[]>([]);
+    const [available, setAvailable] = useState(false);
+    const [hosted, setHosted] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const [open, setOpen] = useState(false);
+    const [tick, setTick] = useState(0);
+    const [selected, setSelected] = useState<WorkflowSchedule>();
+    const openRun = (id: string) => void onOpenSession?.(`${hosted ? 'scheduled-private-' : 'scheduled-'}${id}`);
+    useEffect(() => {
+        let cancelled = false;
+        setLoading(true);
+        setError('');
+        void apiRequest<{ available: boolean; hosted?: boolean; schedules: WorkflowSchedule[] }>('/api/schedules').then(({ data }) => {
+            if (!cancelled) {
+                setAvailable(data.available); setSchedules(data.schedules || []); setHosted(!!data.hosted);
+                onChange({ schedules: data.schedules || [], hosted: !!data.hosted, available: data.available });
+            }
+        }).catch(reason => {
+            if (!cancelled) {
+                setError(reason instanceof Error ? reason.message : 'Unable to load schedules.');
+                onChange({ schedules: [], hosted: false, available: false });
+            }
+        }).finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
+    }, [items, busy, open, newScheduleOpen, onChange, tick]);
+    const anyOccurrenceActive = schedules.some(schedule => schedule.history?.some(run => run.status === 'running' || run.status === 'retry'));
+    useEffect(() => {
+        const onVisible = () => { if (document.visibilityState === 'visible') setTick(value => value + 1); };
+        document.addEventListener('visibilitychange', onVisible);
+        const timer = anyOccurrenceActive ? window.setInterval(() => setTick(value => value + 1), 10000) : undefined;
+        return () => { document.removeEventListener('visibilitychange', onVisible); window.clearInterval(timer); };
+    }, [anyOccurrenceActive]);
+    return <Box component="section" aria-label="Schedules" sx={{ pb: 0.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, pt: 1, pb: 0.5, gap: 0.5 }}>
+            <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, color: 'text.secondary', flex: 1 }}>Schedules</Typography>
+            {loading && !schedules.length && <CircularProgress size={12} />}
+        </Box>
+        <Box sx={{ mx: 0.75, display: 'grid', gap: 0.75 }}>
+            {error ? <Alert severity="error" sx={{ fontSize: textVar.xs }}>{error}</Alert> : !loading && !schedules.length &&
+                <Typography sx={{ px: 1, py: 0.75, fontSize: textVar.xs, color: 'text.secondary' }}>{available ? 'No schedules yet' : 'Scheduling unavailable'}</Typography>}
+            {schedules.map(schedule => {
+                const runs = schedule.history?.filter(run => run.status !== 'skipped') ?? [];
+                const name = schedule.config.name;
+                // The whole card opens the editor; the Edit button remains the keyboard-accessible target.
+                return <React.Fragment key={schedule.id}><Box component="article" onClick={() => { setSelected(schedule); setOpen(true); }}
+                    sx={{ px: 1, py: 0.75, border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper', cursor: 'pointer',
+                        minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0.25, ...cardHoverSx }}>
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Typography sx={{ ...sidebarRowTitleSx, overflowWrap: 'anywhere',
+                                color: schedule.config.enabled ? 'text.primary' : 'text.disabled' }}>
+                                <Box component="span" sx={{ ...titleChipSx, py: 0.25 }}><ScheduleOutlinedIcon sx={{ fontSize: 12 }} /></Box>{name}</Typography>
+                        </Box>
+                        <Tooltip title="Edit schedule"><IconButton size="small" aria-label={`Edit schedule ${name}`} sx={sidebarRowActionSx}
+                            onClick={event => { event.stopPropagation(); setSelected(schedule); setOpen(true); }}>
+                            <EditIcon />
+                        </IconButton></Tooltip>
+                    </Box>
+                    <CardRuns label={`Runs of schedule ${name}`}
+                        next={{ time: schedule.config.enabled ? schedule.next_at : undefined, cadence: scheduleCadence(schedule.config) }} runs={runs.map((run, index) => ({
+                        key: run.id, status: run.status, time: run.scheduled_for, disabled: !onOpenSession, open: () => openRun(run.id),
+                        label: index === 0 ? `Open latest run for schedule ${name}` : `Open run ${shortRunTime(run.scheduled_for)} for schedule ${name}`,
+                    }))} />
+                </Box>
+                </React.Fragment>;
+            })}
+        </Box>
+        {open && <WorkflowSchedules items={items} initialSchedule={selected} onOpenSession={onOpenSession} onClose={() => setOpen(false)} />}
+    </Box>;
+};
+
+export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; onOpenSession?: (id: string) => void | Promise<void>; headerActions?: React.ReactNode;
     presentation?: 'sidebar' | 'landing';
     renderLanding?: (content: { examples: React.ReactNode; saved: React.ReactNode; toolbar: React.ReactNode }) => React.ReactNode;
-}> = ({ onCreateSession, headerActions, presentation = 'sidebar', renderLanding }) => {
+}> = ({ onCreateSession, onOpenSession, headerActions, presentation = 'sidebar', renderLanding }) => {
     const landing = presentation === 'landing';
+    const canSchedule = useSelector((state: DataFormulatorState) => state.serverConfig?.IS_LOCAL_MODE || state.serverConfig?.CAN_CONFIGURE);
+    const [schedulesOpen, setSchedulesOpen] = useState<false | 'new' | 'browse'>(false);
+    const [scheduleLibrary, setScheduleLibrary] = useState<{ schedules: WorkflowSchedule[]; hosted: boolean; available: boolean }>({ schedules: [], hosted: false, available: false });
     const model = useSelector((state: DataFormulatorState) => [...state.globalModels, ...state.models]
         .find(item => item.id === state.selectedModelId));
     const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
     const inSession = useSelector(dfSelectors.selectInSession);
     const readOnly = useSelector((state: DataFormulatorState) => state.activeWorkspace?.readOnly);
     const [items, setItems] = useState<Instance[]>([]);
-    const [expandedDescriptions, setExpandedDescriptions] = useState<string[]>([]);
-    const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
     const [runs, setRuns] = useState<Run[]>([]);
     const busy = useSelector((state: DataFormulatorState) => state.textTurns.some(turn => turn.workflow?.status === 'running'));
     const [loading, setLoading] = useState(false);
-    const [editor, setEditor] = useState<{ path: string; content: string; content_hash?: string; creating?: boolean } | null>(null);
+    const [editor, setEditor] = useState<{ path: string; content: string; content_hash?: string; creating?: boolean; source?: string } | null>(null);
     const [saving, setSaving] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState<Instance | null>(null);
     const [deletingInstance, setDeletingInstance] = useState(false);
@@ -1228,24 +1613,14 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
     const [pendingRun, setPendingRun] = useState<{ path: string; content?: string; setup: WorkflowSetup; previousWorkspaceId?: string } | null>(null);
     const generation = useRef(0);
 
-    const relativeRunTime = (timestamp: string) => {
-        const seconds = (new Date(timestamp).getTime() - Date.now()) / 1000;
-        if (!Number.isFinite(seconds)) return timestamp;
-        const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
-        if (Math.abs(seconds) < 60) return formatter.format(Math.round(seconds), 'second');
-        if (Math.abs(seconds) < 3600) return formatter.format(Math.round(seconds / 60), 'minute');
-        if (Math.abs(seconds) < 86400) return formatter.format(Math.round(seconds / 3600), 'hour');
-        return formatter.format(Math.round(seconds / 86400), 'day');
-    };
-
-    const refresh = async () => {
+    const refresh = async (quiet = false) => {
         const current = generation.current;
-        setLoading(true);
+        if (!quiet) setLoading(true);
         try {
             const result = await post<{ items: Instance[]; runs: Run[] }>('list');
             if (current === generation.current) { setItems(result.items); setRuns(result.runs); }
-        } catch (reason) { if (current === generation.current) handleApiError(reason, 'Load workflows'); }
-        finally { if (current === generation.current) setLoading(false); }
+        } catch (reason) { if (current === generation.current && !quiet) handleApiError(reason, 'Load workflows'); }
+        finally { if (current === generation.current && !quiet) setLoading(false); }
     };
 
     useEffect(() => {
@@ -1257,6 +1632,20 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         void refresh();
         return () => { generation.current += 1; };
     }, [workspaceId]);
+
+    // Run status changes server-side, so refresh when a run ends, the tab returns, or while any run is active.
+    const wasBusy = useRef(busy);
+    const anyRunActive = runs.some(run => run.status === 'running');
+    useEffect(() => {
+        if (wasBusy.current && !busy) void refresh(true);
+        wasBusy.current = busy;
+    }, [busy]);
+    useEffect(() => {
+        const onVisible = () => { if (document.visibilityState === 'visible') void refresh(true); };
+        document.addEventListener('visibilitychange', onVisible);
+        const timer = anyRunActive ? window.setInterval(() => void refresh(true), 10000) : undefined;
+        return () => { document.removeEventListener('visibilitychange', onVisible); window.clearInterval(timer); };
+    }, [workspaceId, anyRunActive]);
 
     const edit = async (item: Instance) => {
         const current = generation.current;
@@ -1270,7 +1659,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                 let suffix = 2;
                 while (items.some(existing => existing.path === path)) path = `${stem}-copy-${suffix++}.yaml`;
             }
-            setEditor({ path, content: result.content, content_hash: path === item.path ? result.content_hash : undefined });
+            setEditor({ path, content: result.content ?? '', content_hash: path === item.path ? result.content_hash : undefined, source: item.path });
         }
         catch (reason) { handleApiError(reason, 'Read workflow'); }
     };
@@ -1315,110 +1704,135 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         }
     }, [workspaceId, pendingRun]);
 
-    const toolbar = <Box sx={{ ...sidebarToolbarSx, ...(landing ? { p: 0, borderBottom: 0, bgcolor: 'transparent' } : {}) }}>
+    const openRun = async (item: Run) => {
+        try {
+            const { run } = await post<{ run: Run }>('run-state', { run_id: item.id });
+            if (workspaceId) {
+                deletedWorkflowRuns.delete(`${workspaceId}/${run.id}`);
+                await publishWorkflowRun(run, workspaceId);
+            }
+            store.dispatch(dfActions.setFocused({ type: 'text', textId: `textTurn-workflow-${run.id}` }));
+            store.dispatch(dfActions.setDataSourceSidebarOpen(false));
+        } catch (reason) { handleApiError(reason, 'Open workflow run'); }
+    };
+    const openRunSession = onOpenSession ? async (id: string) => {
+        await onOpenSession(id);
+        store.dispatch(dfActions.setDataSourceSidebarOpen(false));
+    } : undefined;
+
+    const createWorkflow = () => {
+        let path = 'workflow.workflow.yaml';
+        let suffix = 2;
+        while (items.some(item => item.path === path)) path = `workflow-${suffix++}.workflow.yaml`;
+        setEditor({ path, content: '', creating: true });
+    };
+    const editorItem = editor && !editor.creating ? items.find(item => item.path === editor.source) : undefined;
+    const workflowRunsFor = (item: Instance, beforeOpen?: () => void): RunEntry[] => [
+        ...runs.filter(run => run.workflow_path === item.path || !run.workflow_path && run.name === item.name
+            && items.filter(candidate => candidate.name === item.name).length === 1)
+            .map(run => ({ key: run.id, status: run.status, time: run.started_at, disabled: busy, open: () => { beforeOpen?.(); void openRun(run); } })),
+        ...(openRunSession ? scheduleLibrary.schedules.filter(schedule => schedule.config.workflow === item.path)
+            .flatMap(schedule => (schedule.history || []).filter(run => run.status !== 'skipped'))
+            .map(run => ({ key: `scheduled-${run.id}`, status: run.status, time: run.scheduled_for,
+                open: () => { beforeOpen?.(); void openRunSession(`${scheduleLibrary.hosted ? 'scheduled-private-' : 'scheduled-'}${run.id}`); } })) : []),
+    ].sort((left, right) => Date.parse(right.time) - Date.parse(left.time));
+    const editorRuns = editorItem ? workflowRunsFor(editorItem, () => setEditor(null)) : [];
+
+    const toolbar = <Box sx={{ ...sidebarToolbarSx, flexWrap: 'wrap', ...(landing ? { p: 0, borderBottom: 0, bgcolor: 'transparent' } : {}) }}>
             <Button variant="outlined" size="small" startIcon={<AddIcon />} disabled={readOnly} sx={sidebarPrimaryActionSx}
-                onClick={() => {
-                    let path = 'workflow.workflow.yaml';
-                    let suffix = 2;
-                    while (items.some(item => item.path === path)) path = `workflow-${suffix++}.workflow.yaml`;
-                    setEditor({ path, content: '', creating: true });
-                }}>
+                onClick={createWorkflow}>
                 New workflow
             </Button>
+            {!landing && canSchedule && <Button variant="outlined" size="small" startIcon={<AddIcon />}
+                disabled={!scheduleLibrary.available} sx={sidebarPrimaryActionSx} onClick={() => setSchedulesOpen('new')}>
+                New schedule
+            </Button>}
             {!landing && <Box sx={{ flex: 1 }} />}
-            <Tooltip title="Refresh workflows"><span><IconButton aria-label="Refresh workflows" size="small" disabled={loading} onClick={refresh}
+            {landing && canSchedule && <Tooltip title="Workflow schedules"><IconButton aria-label="Workflow schedules" size="small" onClick={() => setSchedulesOpen('browse')}>
+                <ScheduleOutlinedIcon sx={{ fontSize: iconVar.md }} />
+            </IconButton></Tooltip>}
+            <Tooltip title="Refresh workflows"><span><IconButton aria-label="Refresh workflows" size="small" disabled={loading} onClick={() => void refresh()}
                 sx={{ width: 24, height: 24, p: 0, color: 'text.secondary', '&:hover': { color: 'text.primary', bgcolor: 'action.hover' } }}>
                 {loading ? <CircularProgress size={16} /> : <RefreshIcon sx={{ fontSize: iconVar.md }} />}
             </IconButton></span></Tooltip>
         </Box>;
-    const renderGroups = (groupIds: readonly ('demo' | 'user' | 'server' | 'other')[]) => groupIds.map(groupId => {
+    const renderGroups = (groupIds: readonly ('demo' | 'user' | 'server' | 'all')[]) => groupIds.map(groupId => {
             const group = items.filter(item => landing ? (item.origin || 'user') === groupId
-                : ((item.origin || 'user') === 'user') === (groupId === 'user'));
-            if ((groupId === 'other' || groupId === 'server') && !group.length) return null;
+                : true).sort((left, right) => Number((right.origin || 'user') === 'user') - Number((left.origin || 'user') === 'user'));
+            if (groupId === 'server' && !group.length) return null;
             const label = landing ? groupId === 'demo' ? 'Example workflows' : groupId === 'user' ? 'Your workflows' : 'Shared workflows'
-                : groupId === 'user' ? 'My workflows' : 'Other workflows';
-            const expanded = landing || !collapsedGroups.includes(groupId);
+                : 'Workflows';
             return <Box component="section" aria-label={label} key={groupId} sx={landing ? {
                 minWidth: 0, pt: groupId === 'server' || (!renderLanding && groupId === 'user') ? 1.5 : 0,
             } : {}}>
             {(!landing || groupId === 'server' || (!renderLanding && groupId === 'user')) && (
             <Box sx={landing ? { display: 'flex', alignItems: 'center', gap: 1, minHeight: 32, mb: 1 } : {}}>
-            {landing ? <Typography sx={{ flex: 1, fontSize: textVar.sm, color: 'text.secondary', textAlign: 'left' }}>{label}</Typography> : <ButtonBase aria-label={label} aria-expanded={expanded} aria-controls={`workflow-${presentation}-group-${groupId}`}
-                onClick={() => setCollapsedGroups(previous => expanded ? [...previous, groupId] : previous.filter(item => item !== groupId))}
-                sx={{ width: '100%', justifyContent: 'flex-start', gap: 0.5, px: 1.5, pt: groupId === 'user' ? 1 : 1.5, pb: 0.5, textAlign: 'left',
-                    color: 'text.secondary', '&:hover': { color: 'text.primary' },
-                    '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 },
-                    ...(landing ? { p: 0, minHeight: 32, minWidth: 0, flex: 1 } : {}) }}>
-                <Typography sx={{ fontSize: landing ? textVar.sm : textVar.xs, fontWeight: landing ? 400 : 600, color: 'inherit', flex: 1 }}>{label}</Typography>
-                <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled' }}>{group.length}</Typography>
-                <ExpandMoreIcon sx={{ fontSize: iconVar.sm, color: 'text.disabled', transform: expanded ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }} />
-            </ButtonBase>}
+            <Typography sx={landing ? { flex: 1, fontSize: textVar.sm, color: 'text.secondary', textAlign: 'left' }
+                : { px: 1.5, pt: groupId === 'user' ? 1 : 1.5, pb: 0.5, fontSize: textVar.xs, fontWeight: 600, color: 'text.secondary' }}>{label}</Typography>
             {landing && groupId === 'user' && toolbar}
             </Box>
             )}
             {landing && groupId === 'demo' && !model && <Alert severity="info" sx={{ mb: 1 }}>Select a model to run a workflow.</Alert>}
-            <Box id={`workflow-${presentation}-group-${groupId}`} hidden={!expanded} sx={{ mx: landing ? 0 : 0.75,
-                ...(landing && expanded ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))', gap: 1 } : {}) }}>
+            <Box id={`workflow-${presentation}-group-${groupId}`} sx={{ mx: landing ? 0 : 0.75, display: 'grid', gap: landing ? 1 : 0.75,
+                ...(landing ? { gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))' } : {}) }}>
         {!group.length && <Typography sx={{ px: 1, py: 0.75, fontSize: textVar.xs, color: 'text.secondary' }}>
             {loading ? 'Loading workflows...' : 'No saved workflows'}
         </Typography>}
         {group.map(item => {
             const origin = item.origin || 'user';
             const runDisabled = busy || starting || readOnly || !!item.error;
+            const cardRuns = landing ? [] : workflowRunsFor(item);
             const openSetup = () => {
                 setSetupValues(Object.fromEntries((item.parameters || []).map(parameter => [parameter.name,
                     parameter.default ?? (parameter.type === 'boolean' ? false : '')])));
                 setSetupInstructions('');
                 setRunTarget(item);
             };
-            return <Box key={item.path} component={landing ? 'article' : 'div'} sx={{ px: 0.75, py: 0.5, borderRadius: 0.5, '&:hover, &:focus-within': { bgcolor: 'action.hover' },
+            return <React.Fragment key={item.path}><Box component="article" sx={{ px: 1, py: 0.75, border: 1, borderColor: 'divider', bgcolor: 'background.paper', borderRadius: 1, minWidth: 0, ...cardHoverSx,
                 ...(landing ? { p: 0, display: 'flex', position: 'relative', border: '1px solid rgba(0, 0, 0, 0.18)', borderRadius: 1, bgcolor: 'background.paper',
                     boxShadow: '0 1px 3px rgba(32, 33, 36, 0.06)' } : {}),
                 '& .workflow-secondary-action': { opacity: 0 },
                 '&:hover .workflow-secondary-action, &:focus-within .workflow-secondary-action': { opacity: 1 },
                 '@media (hover: none)': { '& .workflow-secondary-action': { opacity: 1 } } }}>
             <Box sx={{ display: landing ? 'contents' : 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'start', columnGap: 0.5 }}>
-            <ButtonBase aria-label={`${landing ? 'Run' : 'Description for'} ${item.name}`}
-                    aria-expanded={landing ? undefined : expandedDescriptions.includes(item.path)}
+            <Tooltip title={!landing && !item.error ? item.overview || '' : ''} placement="right" enterDelay={600}>
+            <ButtonBase aria-label={`${landing ? 'Run' : 'Open'} ${item.name}`}
                     disabled={landing && runDisabled}
-                    onClick={landing ? openSetup : () => setExpandedDescriptions(previous => previous.includes(item.path)
-                        ? previous.filter(path => path !== item.path) : [...previous, item.path])}
+                    onClick={landing ? openSetup : () => void edit(item)}
                     sx={{ display: 'block', width: '100%', minWidth: 0, textAlign: 'left', py: 0.25,
-                        ...(landing ? { p: 1.25, flex: 1, borderRadius: 'inherit', '&.Mui-disabled': { opacity: 0.6 } } : {}),
+                        ...(landing ? { p: 1.25, flex: 1, borderRadius: 'inherit', '&.Mui-disabled': { opacity: 0.6 } } : { gridColumn: '1 / -1', gridRow: 1 }),
                         '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pr: landing && origin === 'user' ? 2.5 : 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pr: landing ? (origin === 'user' ? 2.5 : 0) : 3 }}>
                     {landing && <WorkflowGears running={false} size={16} color="text.secondary" showTooltip={false} />}
-                    <Typography sx={{ fontSize: landing ? textVar.md : textVar.sm, fontWeight: landing ? 400 : 500, lineHeight: 1.4, minWidth: 0, overflowWrap: 'anywhere' }}>{item.name}</Typography>
+                    <Typography sx={{ fontSize: landing ? textVar.md : textVar.sm, fontWeight: landing ? 400 : 500, lineHeight: 1.4, minWidth: 0, overflowWrap: 'anywhere' }}>
+                        {!landing && origin === 'demo' && <Box component="span" sx={titleChipSx}>demo</Box>}
+                        {item.name}
+                    </Typography>
                     {landing && <PlayArrowIcon sx={{ ml: 'auto', flexShrink: 0, fontSize: iconVar.md, color: runDisabled ? 'action.disabled' : 'primary.main' }} />}
                 </Box>
-                <Typography sx={{ mt: 0.25, fontSize: textVar.xs, lineHeight: 1.5,
+                {(item.error || (landing && item.overview)) && <Typography sx={{ mt: 0.25, fontSize: textVar.xs, lineHeight: 1.5,
                     color: item.error ? 'error.main' : 'text.secondary', overflowWrap: 'anywhere',
-                    ...(!expandedDescriptions.includes(item.path) && !item.error ? {
+                    ...(!item.error ? {
                         ...(landing ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' } : { whiteSpace: 'nowrap', textOverflow: 'ellipsis' }),
                         overflow: 'hidden',
-                    } : {}) }}>{item.error || item.overview}</Typography>
+                    } : {}) }}>{item.error || item.overview}</Typography>}
             </ButtonBase>
+            </Tooltip>
             {!landing && <>
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', '& .MuiIconButton-root': { width: 24, height: 24, p: 0.25 } }}>
-            <Tooltip title="Run workflow"><span><IconButton aria-label={`Run ${item.name}`} size="small" color="primary" disabled={runDisabled}
-                onClick={openSetup}><PlayArrowIcon sx={{ fontSize: iconVar.md }} /></IconButton></span></Tooltip>
-            <Box className="workflow-secondary-action" sx={{ display: 'flex', alignItems: 'center',
-                '& .MuiIconButton-root': { width: 22, height: 22, p: 0.25 }, '& .MuiSvgIcon-root': { fontSize: iconVar.sm } }}>
-            <Tooltip title={origin === 'demo' || origin === 'server' ? 'Customize a copy' : 'Edit definition'}><span><IconButton aria-label={`${origin === 'demo' || origin === 'server' ? 'Customize' : 'Edit'} ${item.name}`} size="small" color="primary" disabled={busy} onClick={() => edit(item)}>
-                {origin === 'demo' || origin === 'server' ? <ContentCopyIcon sx={{ fontSize: iconVar.md }} /> : <EditIcon sx={{ fontSize: iconVar.md }} />}</IconButton></span></Tooltip>
-            {origin === 'user' && <ArtifactDeleteButton label={`Delete ${item.path}`} disabled={busy || deletingInstance}
-                onClick={() => setDeleteTarget(item)} />}
+            <Box component="span" sx={{ gridColumn: 2, gridRow: 1, position: 'relative', zIndex: 1, display: 'flex' }}>
+                <Tooltip title="Run workflow"><span><IconButton aria-label={`Run ${item.name}`} size="small" disabled={runDisabled}
+                    sx={sidebarRowActionSx}
+                    onClick={openSetup}><PlayArrowIcon /></IconButton></span></Tooltip>
             </Box>
-            </Box>
-            {expandedDescriptions.includes(item.path) && <Typography sx={{ gridColumn: '1 / -1', mb: 0.25, fontSize: textVar.xs,
-                color: 'text.secondary', overflowWrap: 'anywhere' }}>{item.path}</Typography>}
+            {cardRuns.length > 0 && <Box sx={{ gridColumn: '1 / -1' }}><CardRuns label={`Previous runs of ${item.name}`} runs={cardRuns} /></Box>}
             </>}
             </Box>
             {landing && origin === 'user' && <Box className="workflow-secondary-action" sx={{ position: 'absolute', top: 4, right: 4 }}>
                 <ArtifactDeleteButton label={`Delete ${item.path}`} disabled={busy || deletingInstance}
                     onClick={() => setDeleteTarget(item)} />
             </Box>}
-        </Box>;
+        </Box>
+        </React.Fragment>;
         })}</Box></Box>;
         });
     return <Box sx={{ display: landing ? 'contents' : 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, flex: '0 1 auto', overflow: landing ? 'visible' : 'hidden' }}>
@@ -1431,27 +1845,13 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         </Box>
         {!landing && toolbar}
         <Box sx={{ overflowY: landing ? 'visible' : 'auto', minHeight: 0, pb: 1 }}>
+        {!landing && canSchedule && <WorkflowScheduleSection items={items} busy={busy} newScheduleOpen={!!schedulesOpen} onChange={setScheduleLibrary} onOpenSession={openRunSession} />}
         {!landing && !model && <Alert severity="info" sx={{ mx: 1, mb: 1 }}>Select a model to run a workflow.</Alert>}
-        {renderGroups(landing ? ['demo', 'user', 'server'] : ['user', 'other'])}
-        {!landing && runs.length > 0 && <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, px: 1.5, pt: 1.5, pb: 0.5 }}>Recent runs</Typography>}
-        {!landing && runs.map(item => <Button key={item.id} disabled={busy} onClick={async () => {
-            try {
-                const { run } = await post<{ run: Run }>('run-state', { run_id: item.id });
-                if (workspaceId) {
-                    deletedWorkflowRuns.delete(`${workspaceId}/${run.id}`);
-                    await publishWorkflowRun(run, workspaceId);
-                }
-                store.dispatch(dfActions.setFocused({ type: 'text', textId: `textTurn-workflow-${run.id}` }));
-                store.dispatch(dfActions.setDataSourceSidebarOpen(false));
-            } catch (reason) { handleApiError(reason, 'Open workflow run'); }
-        }} sx={{ justifyContent: 'flex-start', display: 'block', textAlign: 'left', px: 1.5, textTransform: 'none', borderRadius: 0 }}>
-            <Typography sx={{ fontSize: textVar.sm, overflowWrap: 'anywhere' }}>{item.name}</Typography>
-            <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{item.status} · <Box component="time" dateTime={item.started_at}
-                title={new Date(item.started_at).toLocaleString()}>{relativeRunTime(item.started_at)}</Box></Typography>
-        </Button>)}
+        {renderGroups(landing ? ['demo', 'user', 'server'] : ['all'])}
         </Box>
         </>}
 
+        {schedulesOpen && <WorkflowSchedules items={items} startNew={schedulesOpen === 'new'} onOpenSession={openRunSession} onClose={() => setSchedulesOpen(false)} />}
         <Dialog open={!!runTarget} onClose={() => !starting && setRunTarget(null)} maxWidth="sm" fullWidth aria-labelledby="workflow-setup-title">
             <Box component="form" onSubmit={event => {
                 event.preventDefault();
@@ -1503,6 +1903,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                         await post('delete', { path });
                         if (current !== generation.current) return;
                         setItems(previous => previous.filter(item => item.path !== path));
+                        setEditor(previous => previous?.source === path ? null : previous);
                         setDeleteTarget(null);
                     } catch (reason) { if (current === generation.current) handleApiError(reason, 'Delete workflow'); }
                     finally { if (current === generation.current) setDeletingInstance(false); }
@@ -1510,45 +1911,55 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
             </DialogActions>
         </Dialog>
 
-        <Dialog open={!!editor} onClose={() => !saving && setEditor(null)} maxWidth="md" fullWidth aria-labelledby="workflow-editor-title">
-            <DialogTitle id="workflow-editor-title">{editor?.creating ? 'Create a workflow' : 'Workflow definition'}</DialogTitle>
-            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {editor?.creating && <Typography variant="body2" color="text.secondary">
-                    Paste a workflow YAML definition below, then save it to My workflows.
-                </Typography>}
-                <TextField size="small" label="Workflow filename" disabled={saving} value={editor?.path || ''} onChange={event => setEditor(previous => previous && ({ ...previous, path: event.target.value, content_hash: undefined }))} sx={{ mt: 1 }} />
-                <Box sx={{ height: editor?.creating ? '45vh' : '55vh', minHeight: 200, flexShrink: 0, border: 1, borderColor: 'divider' }}>
-                    <MarkdownEditor fileName="workflow.yaml" value={editor?.content || ''} readOnly={saving}
-                        placeholder="Paste workflow YAML here..."
-                        onChange={content => setEditor(previous => previous && ({ ...previous, content }))} />
-                </Box>
-            </DialogContent>
-            <DialogActions disableSpacing sx={{ px: 3, pb: 2, gap: 1, flexWrap: 'wrap' }}>
-            {editor?.creating && <Tooltip title={!model ? 'Select a model to create a workflow with the agent.'
-                : !workspaceId ? 'Start a new session and create a workflow with the agent.'
-                : busy ? 'Wait for the running workflow to pause or finish.'
-                : 'Discuss your goal in chat and review a suggested workflow.'}>
-                <Box component="span" sx={{ mr: 'auto' }}>
-                <Button startIcon={<AccountTreeOutlinedIcon />} disabled={saving || !model || readOnly || busy}
-                    sx={{ textTransform: 'none' }} onClick={() => {
-                        if (!workspaceId) onCreateSession('Create a workflow');
-                        setEditor(null);
-                        store.dispatch(dfActions.queueAnalystTask({ text: WORKFLOW_AUTHORING_PROMPT,
-                            images: [], attachments: [], intent: 'workflow-authoring' }));
-                        store.dispatch(dfActions.setDataSourceSidebarOpen(false));
-                    }}>Create with agent</Button>
-                </Box>
-            </Tooltip>}
-                <Box sx={{ display: 'flex', gap: 1, ml: 'auto' }}>
-                    <Button disabled={saving} onClick={() => setEditor(null)}>Cancel</Button>
-                    <Button startIcon={<SaveIcon />} disabled={saving || !editor?.content.trim() || !editor?.path.trim()} onClick={async () => {
-                        setSaving(true);
-                        try { await post('save', { path: editor!.path.trim(), content: editor!.content, content_hash: editor!.content_hash }); setEditor(null); await refresh(); } catch (reason) { handleApiError(reason, 'Save workflow'); }
-                        finally { setSaving(false); }
-                    }}>Save</Button>
-                </Box>
-            </DialogActions>
-        </Dialog>
+        {editor && <ListDetailDialog title="Workflows" listLabel="Workflow list" createLabel="New workflow" busy={saving} onClose={() => setEditor(null)} fillHeight
+            selectedKey={editor.creating ? null : editor.source ?? null}
+            onSelect={key => { const item = items.find(candidate => candidate.path === key); if (item) void edit(item); else createWorkflow(); }}
+            items={[...items].sort((left, right) => Number((right.origin || 'user') === 'user') - Number((left.origin || 'user') === 'user'))
+                .map(item => ({ key: item.path, primary: item.name,
+                    secondary: item.origin === 'demo' ? 'demo' : item.origin === 'server' ? 'shared' : item.path }))}
+            footer={<>
+                {!editor.creating && (editorItem?.origin || 'user') === 'user' && editorItem && <Button color="error"
+                    aria-label={`Delete ${editorItem.path}`} disabled={saving || busy || deletingInstance} sx={{ mr: 'auto' }}
+                    onClick={() => setDeleteTarget(editorItem)}>Delete</Button>}
+                {editor.creating && <Tooltip title={!model ? 'Select a model to create a workflow with the agent.'
+                    : !workspaceId ? 'Start a new session and create a workflow with the agent.'
+                    : busy ? 'Wait for the running workflow to pause or finish.'
+                    : 'Discuss your goal in chat and review a suggested workflow.'}>
+                    <Box component="span">
+                    <Button variant="outlined" disabled={saving || !model || readOnly || busy}
+                        sx={{ textTransform: 'none' }} onClick={() => {
+                            if (!workspaceId) onCreateSession('Create a workflow');
+                            setEditor(null);
+                            store.dispatch(dfActions.queueAnalystTask({ text: WORKFLOW_AUTHORING_PROMPT,
+                                images: [], attachments: [], intent: 'workflow-authoring' }));
+                            store.dispatch(dfActions.setDataSourceSidebarOpen(false));
+                        }}>Create with agent</Button>
+                    </Box>
+                </Tooltip>}
+                <Button variant="contained" disableElevation disabled={saving || !editor.content.trim() || !editor.path.trim()} onClick={async () => {
+                    const path = editor.path.trim();
+                    setSaving(true);
+                    try {
+                        const saved = await post<{ path: string; content_hash?: string }>('save', { path, content: editor.content, content_hash: editor.content_hash });
+                        setEditor(previous => previous && ({ ...previous, path, creating: false, source: path, content_hash: saved?.content_hash }));
+                        await refresh();
+                    } catch (reason) { handleApiError(reason, 'Save workflow'); }
+                    finally { setSaving(false); }
+                }}>Save</Button>
+            </>}>
+            <Box>
+                <Typography sx={{ fontSize: textVar.lg, fontWeight: 500, overflowWrap: 'anywhere' }}>
+                    {editor.creating ? 'New workflow' : editorItem?.name ?? editor.path}</Typography>
+                {editorRuns.length > 0 && <RunList caption="Previous runs:" label={`Runs of ${editorItem?.name}`} limit={6} runs={editorRuns} />}
+            </Box>
+            <TextField size="small" label="Workflow filename" disabled={saving} value={editor.path}
+                onChange={event => setEditor(previous => previous && ({ ...previous, path: event.target.value, content_hash: undefined }))} />
+            <Box sx={{ flex: 1, minHeight: 240, overflow: 'hidden', border: 1, borderColor: 'divider' }}>
+                <MarkdownEditor fileName="workflow.yaml" value={editor.content} readOnly={saving}
+                    placeholder="Paste workflow YAML here..."
+                    onChange={content => setEditor(previous => previous && ({ ...previous, content }))} />
+            </Box>
+        </ListDetailDialog>}
 
     </Box>;
 };

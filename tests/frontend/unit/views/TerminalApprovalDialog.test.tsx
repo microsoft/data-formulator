@@ -45,7 +45,7 @@ it.each(['off', 'ask', 'auto'] as const)('saves terminal mode %s in place withou
         expect(screen.queryByRole('alert')).toBeNull();
     }
     expect(screen.queryByRole('link')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(store.getState().serverConfig.TERMINAL_MODE).toBe(mode));
     expect(apiRequest).toHaveBeenLastCalledWith('/api/configurations/terminal', {
         method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-DF-Configuration': '1' },
@@ -65,7 +65,7 @@ it.each(['deployment', 'environment'])('keeps controls disabled for a %s restric
     fireEvent.click(screen.getByRole('button', { name: 'Terminal: Off' }));
     await screen.findByText(restriction === 'deployment' ? /deployment policy disables/ : /DF_TERMINAL_MODE/);
     for (const radio of screen.getAllByRole('radio')) expect(radio).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
     expect(store.getState().serverConfig.TERMINAL_MODE).toBe('off');
     unmount();
     store.dispatch(dfActions.resetState());
@@ -80,7 +80,7 @@ it('discards an unsaved terminal choice on Close', async () => {
     const choice = screen.getByRole('radio', { name: 'Auto approve' });
     await waitFor(() => expect(choice).toBeEnabled());
     fireEvent.click(choice);
-    fireEvent.click(screen.getByRole('button', { name: 'Close', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(apiRequest).toHaveBeenCalledTimes(1);
     expect(store.getState().serverConfig.TERMINAL_MODE).toBe('off');
     unmount();
@@ -98,7 +98,7 @@ it.each(['load', 'save'])('keeps the actual policy unchanged after a failed %s',
         const choice = screen.getByRole('radio', { name: 'Auto approve' });
         await waitFor(() => expect(choice).toBeEnabled());
         fireEvent.click(choice);
-        fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     }
     await screen.findByText('Configuration changed. Reload before saving.');
     expect(store.getState().serverConfig.TERMINAL_MODE).toBe('off');
@@ -124,13 +124,13 @@ it.each(['paths', 'empty', 'defaults', 'close'] as const)('edits sandbox write p
     fireEvent.click(policyButton);
     expect(screen.getByRole('region', { name: 'Sandbox policy' })).toBeVisible();
     await waitFor(() => expect(screen.getByRole('dialog')).toHaveClass('MuiDialog-paperWidthMd'));
-    expect(screen.getByRole('heading', { name: 'Read', exact: true })).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Write', exact: true })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Read' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Write' })).toBeVisible();
     expect(screen.getByText(/Allowed: create, modify, or delete files/)).toBeVisible();
     expect(screen.getByText(/Blocked: writes to other local paths/)).toBeVisible();
     expect(screen.getByText(/Not blocked by the sandbox: changes to cloud services/)).toBeVisible();
     expect(screen.getByText(/Command output is shared with your AI model provider/)).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
     const defaults = screen.getByRole('checkbox', { name: 'Use default CLI state paths' });
     if (action === 'defaults') {
         fireEvent.click(defaults);
@@ -143,8 +143,8 @@ it.each(['paths', 'empty', 'defaults', 'close'] as const)('edits sandbox write p
     }
     fireEvent.click(policyButton);
     await waitFor(() => expect(screen.getByRole('dialog')).toHaveClass('MuiDialog-paperWidthXs'));
-    expect(screen.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: action === 'close' ? 'Close' : 'Save', exact: true }));
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: action === 'close' ? 'Close' : 'Save' }));
     if (action === 'close') {
         expect(apiRequest).toHaveBeenCalledTimes(1);
         await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -154,7 +154,7 @@ it.each(['paths', 'empty', 'defaults', 'close'] as const)('edits sandbox write p
         expect(reopened).toHaveAttribute('aria-expanded', 'false');
         fireEvent.click(reopened);
         expect(screen.getByRole('checkbox', { name: 'Use default CLI state paths' })).toBeChecked();
-        expect(screen.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
     } else {
         await waitFor(() => expect(apiRequest).toHaveBeenCalledTimes(2));
         expect(JSON.parse(vi.mocked(apiRequest).mock.calls[1][1]!.body as string)).toEqual({ revision: 2, mode: 'ask',
@@ -182,7 +182,7 @@ it('disables the header policy button when Off is selected and closes the open p
     fireEvent.click(ask);
     fireEvent.click(policyButton);
     expect(screen.getByRole('region', { name: 'Sandbox policy' })).toBeVisible();
-    fireEvent.click(screen.getByRole('radio', { name: 'Off', exact: true }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Off' }));
     expect(policyButton).toBeDisabled();
     expect(policyButton).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('region', { name: 'Sandbox policy' })).toBeNull();
@@ -199,7 +199,7 @@ it.each(['compact', 'document'] as const)('resolves delayed chart images in %s M
     const chartId = `markdown-comparison-${variant}`;
     const image = 'data:image/png;base64,cG5n';
     store.dispatch(dfActions.resetState());
-    const { container } = render(<Provider store={store}><TerminalMessageContent variant={variant}
+    const { container } = render(<Provider store={store}><TerminalMessageContent variant={variant === 'document' ? variant : undefined}
         content={`## Two-period comparison\n\n![Price changes by item and period](chart://${chartId})\n\n![Unsafe](javascript:alert%281%29)\n\n[Unsafe link](javascript:alert%281%29)`} /></Provider>);
     expect(container.querySelector('img')).toBeNull();
     expect(screen.getByRole('img', { name: 'Price changes by item and period' })).toBeTruthy();

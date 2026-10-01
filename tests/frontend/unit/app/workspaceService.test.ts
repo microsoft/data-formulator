@@ -22,7 +22,7 @@ vi.mock('../../../../src/app/stateMigrations', () => ({
 
 import { ApiRequestError } from '../../../../src/app/apiClient';
 import { workspaceDB } from '../../../../src/app/workspaceDB';
-import { listWorkspaceFiles, listWorkspaces, loadWorkspace, saveWorkspaceState, WorkspaceLoadSupersededError, isLargeConnectorTable, loadsAsConnectorReference, createExternalTableReference } from '../../../../src/app/workspaceService';
+import { listWorkspaceFiles, listWorkspaces, loadWorkspace, saveWorkspaceState, WorkspaceLoadSupersededError, isLargeConnectorTable, loadsAsConnectorReference, createExternalTableReference, materializeScheduledSnapshot } from '../../../../src/app/workspaceService';
 import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
 import { getInputTablePreview } from '../../../../src/app/inputTablePreviewCache';
 
@@ -30,6 +30,62 @@ beforeEach(() => {
     vi.restoreAllMocks();
     mockState.serverConfig.WORKSPACE_BACKEND = 'ephemeral';
     mockState.activeWorkspace = { id: 'workspace-1', displayName: 'Temporary session' };
+});
+
+describe('scheduled snapshots', () => {
+    const snapshot = {
+        activeWorkspace: { id: 'shared-test', displayName: 'Daily report', readOnly: true,
+            scheduledRun: { scheduleId: 'test', scheduleName: 'Daily report', scheduledFor: '2026-09-30T09:00:00Z' } },
+        textTurns: [{ id: 'summary', kind: 'text', content: 'Completed', createdAt: 1 }],
+        scheduledArtifacts: [
+            { kind: 'chart', id: 'chart-test', tableId: 'summary_data', rows: [{ category: 'A', value: 3 }],
+                goal: { title: 'Values', chart: { chart_type: 'Bar Chart', encodings: { x: { field: 'category' }, y: { field: 'value' } } } } },
+            { kind: 'report', content: 'Final findings' },
+        ],
+    };
+
+    it('loads complete chart rows without private workspace fetches', () => {
+        const materialized = materializeScheduledSnapshot(snapshot);
+        const state = dataFormulatorReducer(undefined, dfActions.loadState(materialized));
+        expect(state.charts[0].id).toBe('chart-test');
+        expect(state.conceptShelfItems).toHaveLength(2);
+        expect(state.derivedTables[0].rows).toEqual([{ category: 'A', value: 3 }]);
+        expect(state.derivedTables[0].virtual).toBeUndefined();
+        expect(state.generatedReports[0].content).toBe('Final findings');
+        expect(state.loadedTableNodes[0].tableId).toBe('summary_data');
+        expect(state.focusedId).toEqual({ type: 'report', reportId: state.generatedReports[0].id });
+        expect(state.activeWorkspace?.scheduledRun).toEqual(snapshot.activeWorkspace.scheduledRun);
+        expect(snapshot).toHaveProperty('scheduledArtifacts');
+        expect(materialized).not.toHaveProperty('scheduledArtifacts');
+    });
+
+    it('honors the server read-only flag without saving a browser recovery copy', async () => {
+        mockState.serverConfig.WORKSPACE_BACKEND = 'local';
+        const requestSpy = vi.spyOn(await import('../../../../src/app/apiClient'), 'apiRequest')
+            .mockResolvedValue({ data: { state: snapshot, read_only: true } });
+        const result = await loadWorkspace('shared-test');
+        expect(result?.readOnly).toBe(true);
+        expect(result?.state.charts[0].id).toBe('chart-test');
+        expect(requestSpy).toHaveBeenCalledOnce();
+    });
+
+    it('restores private scheduled workflow controls and focuses the failed checkpoint', async () => {
+        mockState.serverConfig.WORKSPACE_BACKEND = 'local';
+        vi.spyOn(await import('../../../../src/app/apiClient'), 'apiRequest').mockResolvedValue({ data: {
+            state: { ...snapshot, activeWorkspace: { ...snapshot.activeWorkspace, id: 'scheduled-run', readOnly: false },
+                textTurns: [{ id: 'scheduled-summary-run', content: 'Execution failed.', createdAt: 1 }] },
+            workflow_run: { id: 'run', status: 'paused', step_id: 'inspect', message: 'Execution failed.', started_at: '2026-09-30T09:00:00Z',
+                instance: { name: 'Daily report', steps: [{ id: 'inspect', instructions: 'Inspect source' }] },
+                evidence: { failed: { tool: 'inspect_data', text: 'Source unavailable', step_id: 'inspect' } } },
+        } });
+        const result = await loadWorkspace('scheduled-run');
+        expect(result?.readOnly).toBe(false);
+        expect(result?.state.textTurns).toHaveLength(1);
+        expect(result?.state.textTurns[0].workflow).toMatchObject({ runId: 'run', status: 'paused',
+            steps: [expect.objectContaining({ id: 'inspect' })], log: [expect.objectContaining({ text: 'Source unavailable' })] });
+        expect(result?.state.focusedId).toEqual({ type: 'text', textId: 'textTurn-workflow-run' });
+        expect(result?.state.generatedReports[0].parentNodeId).toBe('textTurn-workflow-run');
+    });
 });
 
 describe('external table reference artifacts', () => {

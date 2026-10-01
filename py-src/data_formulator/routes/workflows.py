@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import hashlib
 import threading
+from contextvars import copy_context
 from pathlib import Path
+from queue import Empty, Full, Queue
 from uuid import UUID, uuid4
 
 from filelock import FileLock, Timeout
-from flask import Blueprint, Response, request, stream_with_context, send_file, current_app
+from flask import Blueprint, Response, request, stream_with_context, send_file, current_app, copy_current_request_context
 
 from data_formulator.auth.identity import get_identity_id, is_local_mode
 from data_formulator.configuration import is_managed_mode
@@ -21,6 +23,8 @@ from data_formulator.workflows.agent import WorkflowAgent, new_run, public_run
 workflow_bp = Blueprint("workflows", __name__, url_prefix="/api/workflows")
 _cancellations: dict[str, threading.Event] = {}
 _lock = threading.Lock()
+_execution_slots = threading.BoundedSemaphore(8)
+EXECUTOR_BUSY = "WORKFLOW_EXECUTOR_BUSY"
 
 
 class WorkflowCancellation(threading.Event):
@@ -122,7 +126,8 @@ def list_instances():
             try:
                 state = json.loads(path.read_text())
                 runs.append({key: state[key] for key in ("id", "status", "started_at", "step_id", "message")}
-                            | {"name": state["instance"]["name"]})
+                            | {"name": state["instance"]["name"]}
+                            | ({"workflow_path": state["workflow_path"]} if "workflow_path" in state else {}))
             except (ValueError, KeyError):
                 continue
     items = store.list_all()
@@ -239,11 +244,14 @@ def run_instance():
         raise AppError(ErrorCode.INVALID_REQUEST, "Select a model to execute the workflow.")
     identifier = body.get("run_id") or uuid4().hex
     path = run_path(workspace, identifier)
-    lock = FileLock(str(path) + ".lock")
+    lock = FileLock(str(path) + ".lock", thread_local=False)
     try:
         lock.acquire(timeout=0)
     except Timeout as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, "This workflow is already running.") from exc
+    if not _execution_slots.acquire(blocking=False):
+        lock.release()
+        raise AppError(EXECUTOR_BUSY, "The workflow executor is busy. Try again after a run finishes.", retry=True)
     try:
         terminal_proposal = None
         operation_repository = None
@@ -307,6 +315,7 @@ def run_instance():
                 resolved_interaction = {"user_reply": str(body["reply"]),
                                         "instruction": "Verify source availability with discovery tools before using it."}
             state.update(status="running", message="")
+            state.pop("execution_error", None)
             reply = body.get("reply", "")
             if reply:
                 state["trajectory"].append({"role": "user", "content": str(reply)})
@@ -315,6 +324,8 @@ def run_instance():
                 raise ValueError("An interaction response requires an existing workflow run.")
             content = body.get("content") if "content" in body else read_definition(store, body.get("path"))[0]
             state = new_run(parse_definition(content), UUID(identifier).hex, body.get("setup"))
+            if isinstance(body.get("path"), str):
+                state["workflow_path"] = body["path"]
         if "external_references" in body:
             from data_formulator.analyst.workspace_inputs import normalize_external_references
 
@@ -327,9 +338,11 @@ def run_instance():
         save_run(path, state)
     except (ValueError, FileNotFoundError) as exc:
         lock.release()
+        _execution_slots.release()
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
     except Exception:
         lock.release()
+        _execution_slots.release()
         raise
     cancellation = WorkflowCancellation(path.with_suffix(".pause"))
     path.with_suffix(".pause").unlink(missing_ok=True)
@@ -388,18 +401,59 @@ def run_instance():
                 checkpoint(state)
             for event in agent.run_workflow():
                 yield json.dumps(event, ensure_ascii=False) + "\n"
-        except GeneratorExit:
-            state.update(status="paused", message="Connection interrupted. Review and resume the checkpoint.")
-            save_run(path, state)
-            raise
         except Exception as exc:
-            state.update(status="paused", message="Execution failed. Check source access and model configuration, then resume.")
+            error = classify_and_wrap_llm_error(exc)
+            state.update(status="paused", message=error.message, execution_error=error.to_dict())
             save_run(path, state)
             yield json.dumps({"type": "workflow_state", "run": public_run(state)}) + "\n"
-            yield stream_error_event(classify_and_wrap_llm_error(exc))
+            yield stream_error_event(error)
         finally:
             with _lock:
                 _cancellations.pop(str(path), None)
             lock.release()
 
-    return Response(stream_with_context(generate()), mimetype="application/x-ndjson")
+    updates: Queue[str] = Queue(maxsize=128)
+    detached = threading.Event()
+    finished = threading.Event()
+
+    @copy_current_request_context
+    def execute():
+        try:
+            for update in generate():
+                if detached.is_set():
+                    continue
+                try:
+                    updates.put_nowait(update)
+                except Full:
+                    detached.set()
+        finally:
+            _execution_slots.release()
+            finished.set()
+
+    execution_context = copy_context()
+    worker = threading.Thread(target=execution_context.run, args=(execute,), name="workflow-" + path.stem, daemon=True)
+    try:
+        worker.start()
+    except Exception:
+        with _lock:
+            _cancellations.pop(str(path), None)
+        lock.release()
+        _execution_slots.release()
+        raise
+
+    def observe():
+        try:
+            while not finished.is_set() or not updates.empty():
+                try:
+                    yield updates.get(timeout=1)
+                except Empty:
+                    if detached.is_set():
+                        break
+                    if not finished.is_set():
+                        yield json.dumps({"type": "heartbeat"}) + "\n"
+        finally:
+            detached.set()
+
+    response = Response(stream_with_context(observe()), mimetype="application/x-ndjson")
+    response.call_on_close(detached.set)
+    return response

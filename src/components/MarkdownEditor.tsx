@@ -68,28 +68,26 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ value, onChange,
     const extensions = [language, editorTheme, ...(lineWrap ? [EditorView.lineWrapping] : [])];
 
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, bgcolor: 'background.paper' }}>
-            {showToolbar && <Box sx={{
-                display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-                minHeight: 34, px: 0.75, borderBottom: '1px solid', borderColor: 'divider',
-                bgcolor: '#f7f8fa', flexShrink: 0,
-            }}>
-                <Tooltip title={lineWrap ? 'Disable line wrap' : 'Enable line wrap'}>
-                    <IconButton
-                        size="small"
-                        aria-label={lineWrap ? 'Disable line wrap' : 'Enable line wrap'}
-                        aria-pressed={lineWrap}
-                        onClick={() => setLineWrap(wrapped => !wrapped)}
-                        sx={{
-                            width: 26, height: 26,
-                            color: lineWrap ? 'primary.main' : 'text.secondary',
-                            bgcolor: lineWrap ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
-                        }}
-                    >
-                        <WrapTextIcon sx={{ fontSize: iconVar.md }} />
-                    </IconButton>
-                </Tooltip>
-            </Box>}
+        <Box sx={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, bgcolor: 'background.paper',
+            '& .md-editor-wrap-toggle': { opacity: 0.55, transition: 'opacity 150ms ease' },
+            '&:hover .md-editor-wrap-toggle, & .md-editor-wrap-toggle:focus-visible': { opacity: 1 } }}>
+            {showToolbar && <Tooltip title={lineWrap ? 'Disable line wrap' : 'Enable line wrap'}>
+                <IconButton
+                    className="md-editor-wrap-toggle"
+                    size="small"
+                    aria-label={lineWrap ? 'Disable line wrap' : 'Enable line wrap'}
+                    aria-pressed={lineWrap}
+                    onClick={() => setLineWrap(wrapped => !wrapped)}
+                    sx={{
+                        position: 'absolute', top: 6, right: 14, zIndex: 2, width: 26, height: 26,
+                        border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper',
+                        color: lineWrap ? 'primary.main' : 'text.secondary',
+                        '&:hover': { bgcolor: 'background.paper', borderColor: 'text.disabled' },
+                    }}
+                >
+                    <WrapTextIcon sx={{ fontSize: iconVar.md }} />
+                </IconButton>
+            </Tooltip>}
             <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', bgcolor: readOnly ? '#fafafa' : 'background.paper' }}>
                 <CodeMirror
                     value={value}

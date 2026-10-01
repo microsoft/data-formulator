@@ -132,6 +132,7 @@ class WorkspaceManager:
         chart_count: Optional[int] = None,
         source_ids: Optional[list[str]] = None,
         provisional: Optional[bool] = None,
+        scheduled_run: Optional[dict] = None,
     ) -> None:
         """Write a lightweight ``workspace_meta.json`` used by list_workspaces.
 
@@ -178,6 +179,10 @@ class WorkspaceManager:
             meta["sourceIds"] = existing["sourceIds"]
         if provisional:
             meta["provisional"] = True
+        if scheduled_run is not None:
+            meta["scheduledRun"] = scheduled_run
+        elif existing.get("scheduledRun"):
+            meta["scheduledRun"] = existing["scheduledRun"]
         meta_file.write_text(
             json.dumps(meta, ensure_ascii=False), encoding="utf-8",
         )
@@ -280,6 +285,7 @@ class WorkspaceManager:
                 "table_count": tc,
                 "chart_count": cc,
                 "source_ids": meta.get("sourceIds", []),
+                "scheduled_run": meta.get("scheduledRun"),
             })
 
         workspaces.sort(key=lambda w: w.get("updated_at") or "", reverse=True)
@@ -573,6 +579,7 @@ class WorkspaceManager:
             table_count=tc,
             chart_count=cc,
             source_ids=_session_source_ids(clean_state),
+            scheduled_run=aw.get("scheduledRun") if isinstance(aw, dict) else None,
         )
 
         logger.debug(f"Saved session state to {state_file}")

@@ -928,7 +928,6 @@
     "noMatchingRows": "Tidak ada baris yang cocok dengan filter saat ini",
     "knowledge": "Pengetahuan",
     "metadataPartial": "Metadata sebagian",
-    "metadataUnavailable": "Metadata tidak tersedia",
     "largeTableChatPrompt": "Saya ingin memuat tabel berikut dari \"{{connector}}\": {{tables}}. Tabel ini terlalu besar untuk diimpor penuh: {{large}}. Bantu saya memuat subset yang difilter, disampel, atau diagregat alih-alih seluruh tabel.",
     "semanticFieldCounts": "{{measures}} ukuran · {{dimensions}} dimensi",
     "semanticModelSummary": "Model semantik · {{measures}} ukuran · {{dimensions}} dimensi",

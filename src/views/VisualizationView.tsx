@@ -633,8 +633,10 @@ const VegaChartRenderer: FC<{
     // Vega's own CSS width for the current render — the baseline the shrink is
     // measured against. Captured in the embed callback, never re-derived.
     const naturalWidthRef = useRef<number | null>(null);
+    const [assemblyError, setAssemblyError] = useState<string>();
 
     useEffect(() => {
+        setAssemblyError(undefined);
 
         if (chart.chartType === "Auto" || chart.chartType === "Table" || chartUnavailable) {
             onSpecReady?.(null);
@@ -676,28 +678,35 @@ const VegaChartRenderer: FC<{
             spec = applyVariantConfigUI(spec, activeVariant.configUI, activeVariant.configValues);
 
         } else {
-            spec = assembleVegaChart(
-                chart.chartType,
-                chart.encodingMap,
-                conceptShelfItems,
-                visTableRows,
-                tableMetadata,
-                chartWidth,
-                chartHeight,
-                true,
-                chart.config,
-                // Deliberately 1: pre-scaling the compiler's *input* re-runs
-                // flint's layout (band size scales with canvas, stretch caps
-                // are derived from it) and the factors compound. Scale the
-                // compiled output instead — see the uniform scale below.
-                1,
-                maxStretchFactor,
-                undefined,
-                fieldSemantics,
-                insightTitle,
-                insightSubtitle,
-                themePreview?.active ? themePreview.themeId : chart.themeId,
-            );
+            try {
+                spec = assembleVegaChart(
+                    chart.chartType,
+                    chart.encodingMap,
+                    conceptShelfItems,
+                    visTableRows,
+                    tableMetadata,
+                    chartWidth,
+                    chartHeight,
+                    true,
+                    chart.config,
+                    // Deliberately 1: pre-scaling the compiler's *input* re-runs
+                    // flint's layout (band size scales with canvas, stretch caps
+                    // are derived from it) and the factors compound. Scale the
+                    // compiled output instead — see the uniform scale below.
+                    1,
+                    maxStretchFactor,
+                    undefined,
+                    fieldSemantics,
+                    insightTitle,
+                    insightSubtitle,
+                    themePreview?.active ? themePreview.themeId : chart.themeId,
+                );
+            } catch (error) {
+                console.warn('VegaChartRenderer: chart assembly failed', error);
+                setAssemblyError(error instanceof Error ? error.message : String(error));
+                onSpecReady?.(null);
+                return;
+            }
         }
 
         if (!spec || spec === "Table") {
@@ -801,6 +810,14 @@ const VegaChartRenderer: FC<{
     }
 
     const chartTemplate = getChartTemplate(chart.chartType);
+    if (assemblyError) {
+        return <Box role="alert" sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, p: 2, textAlign: 'center' }}>
+            {generateChartSkeleton(chartTemplate?.icon, 48, 48)}
+            <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', maxWidth: 480, overflowWrap: 'anywhere' }}>
+                This chart can't be rendered: {assemblyError}
+            </Typography>
+        </Box>;
+    }
     if (!checkChartAvailabilityOnPreparedData(chart, conceptShelfItems, visTableRows)) {
         return <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }} >
             {generateChartSkeleton(chartTemplate?.icon, 48, 48)}
@@ -972,6 +989,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let visFieldIds = Object.keys(focusedChart.encodingMap).filter(key => focusedChart.encodingMap[key as keyof EncodingMap].fieldID != undefined).map(key => focusedChart.encodingMap[key as keyof EncodingMap].fieldID);
     let visFields = conceptShelfItems.filter(f => visFieldIds.includes(f.id));
     let dataFieldsAllAvailable = visFields.every(f => table.names.includes(f.name));
+    const visDataFieldNames = [...new Set([...visFields.map(f => f.name),
+        ...extractFieldsFromEncodingMap(focusedChart.encodingMap, conceptShelfItems).groupByFields])].filter(name => table.names.includes(name));
 
     // Create a stable identifier for data requirements (fields + aggregations)
     const dataRequirements = useMemo(() => {
@@ -998,7 +1017,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             return rows;
         }
         
-        let filteredRows = rows.map(row => Object.fromEntries(visFields.filter(f => table.names.includes(f.name)).map(f => [f.name, row[f.name]])));
+        let filteredRows = rows.map(row => Object.fromEntries(visDataFieldNames.map(name => [name, row[name]])));
         let visTable = prepVisTable(filteredRows, conceptShelfItems, focusedChart.encodingMap);
 
         if (visTable.length > serverConfig.MAX_DISPLAY_ROWS) {
@@ -1057,7 +1076,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     table: table.id,
                     size: sampleSize,
                     method: 'random',
-                    select_fields: groupByFields,
+                    select_fields: groupByFields.filter(name => table.names.includes(name)),
                     aggregate_fields_and_functions: aggregateFields,
                 }),
             })

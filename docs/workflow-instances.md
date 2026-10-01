@@ -1,10 +1,66 @@
 # Concrete Workflow Instances
 
 The Workflows sidebar runs concrete YAML analysis instances using the analyst's
-Python sandbox and workspace tools, without workflow-specific source adapters. This
-initial implementation is local-only and does not include templates,
-parameterization, distillation, scheduling, or unattended background execution.
+Python sandbox and workspace tools, without workflow-specific source adapters.
+Saved instances support parameterized, interactive and scheduled execution.
 Ordinary AnalystAgent conversations are unchanged.
+
+## Scheduled Runs
+
+Use **New schedule** beside **New workflow** in the Workflows sidebar, or select
+an existing schedule to edit it. Choose a saved
+workflow, a server-configured model connection, weekdays, local time, and an IANA
+timezone. Browser-only model credentials cannot support unattended runs. Each
+occurrence creates a separate session tagged **Scheduled**, with its schedule name
+and intended execution time. Background runs do not change the open session.
+
+Local schedules execute while the backend is running. In hosted managed mode,
+only administrators can manage schedules; execution uses isolated service
+workspaces and installation workflows, models, and connectors, not the admin's
+personal session or browser credentials. Set `DF_SCHEDULER_ENABLED=1` to enable
+hosted dispatch. Ephemeral deployments cannot schedule runs.
+
+The scheduler stores definitions, occurrence records, and published snapshots in
+`<data-dir>/scheduling/schedules.sqlite3`. Keep this directory on durable storage.
+Deploy **one scheduling host** per installation; same-host workers share a file
+lease and transactional occurrence claims. Independent replicas must not each
+enable their own dispatcher or use separate copies of this database. A clustered
+distributed scheduler is not supported. Azure-backed workspace data is supported,
+but does not make the scheduler database durable automatically. WSGI workers
+initialize scheduling on their first request; the CLI initializes it at startup.
+
+Retries apply only to classified transient model errors, at 30/60/120-second
+backoff, with at most three retries and the same session/checkpoint. When all
+workflow executor slots are busy, the occurrence is deferred one minute using the
+same retry budget. Tool side
+effects are not blindly replayed. A backend interruption marks active occurrences
+**Needs attention** instead of automatically replaying uncertain work. Overlapping
+ticks are recorded as skipped. Missed occurrences are skipped unless run-once
+catch-up is enabled; no historical backlog is replayed.
+
+Scheduled runs have a two-hour limit. At the limit the run is paused, the
+occurrence is marked **Needs attention**, and later occurrences are no longer
+blocked. Operations without cancellation support may still finish in the
+background. A scheduled session stays read-only while its occurrence is running
+or awaiting a retry, and follows the run live in local mode; it becomes editable
+once the occurrence completes or needs attention.
+
+Auto-approval is opt-in. It covers permitted local terminal requests and loading
+proposals with a single option; sandbox and connector authorization still apply.
+Questions, credentials, alternatives, and interrupted commands need attention.
+Use the **Open latest run** control on a workflow or schedule card to visit its
+latest available run. Hosted private run
+snapshots and their status remain admin-only.
+
+Hosted publication requires explicit approval to expose final reports and all
+chart data. Only successful runs replace the shared snapshot; a failed refresh
+keeps the previous success. Shared sessions are read-only and can be forked into
+the viewer's own workspace. Forks retain provenance but do not carry the active
+Scheduled tag. Publication excludes checkpoints, source references, tool logs,
+execution code, and reasoning. Final report text and chart values themselves are
+published, so administrators must choose workflows whose deliverables are safe
+for every viewer. Snapshots currently support reports and chart data up to 100,000
+rows per chart; arbitrary workspace files are not published.
 
 ## Try It
 
@@ -189,23 +245,38 @@ retain their explicit controls. Other interruptions use the shared Interrupted
 panel with Retry. Command approvals remain separate exact-command dialogs, not
 plain-text authorization. Per-run locks prevent duplicate execution and detect
 orphaned running checkpoints after a backend restart. Recovery preserves their
-outputs and trajectory and marks them paused for review and resumption. Live
-streams check executor status every five seconds with a ten-second request timeout;
-unavailable status is shown as interrupted, not indefinite progress. This does not
-prove that a remote executor stopped, and Retry still obeys its execution lock.
+outputs and trajectory and marks them paused for review and resumption.
+
+Manual and scheduled runs execute in backend-owned workers. Refreshing the page,
+closing the tab, switching sessions, or losing the update stream only detaches
+the viewer; it does not pause execution. A bounded update queue prevents a slow
+viewer from blocking the worker. Each backend process accepts up to eight active
+workflow executions; additional starts are rejected until capacity is available.
+Execution still requires the backend process to remain running.
+
+Opening a session polls the checkpoints of its running workflow nodes and restores
+outputs created while the viewer was away, without starting a new execution or
+changing the current view's focus. Connection
+failures display **Reconnecting to workflow...** while retaining the last known
+execution status; they do not prove that the executor stopped. Explicit Pause,
+required input, execution failure, or backend shutdown can interrupt a run.
+Deleting a workflow node pauses it when active; its checkpoint remains available
+for explicit reopening through Recent runs or Open latest run. In `--dev` mode the
+backend auto-reloads on source edits, which stops active runs; resume them from
+their checkpoints.
 There is no fixed model-round or total execution-time cap. Runs continue until
 verified completion, a blocker or approval requiring input, user pause, or an error.
 Existing provider/tool timeouts remain in force. Without a total budget backstop,
 a stalled run may continue consuming model usage until paused. Both analyst and workflow
-agents require a structured `progress_check` after every 16 model-response rounds,
-counting inspection, actions, and self-directed text continuations together. Parallel
-tool calls count as one round; provider retries do not add rounds to the trajectory.
-Only the checkpoint tool is offered until a valid assessment is recorded. Its brief
-`progress`, `blocker`, and `next_step` fields support a `continue`, `change_approach`,
-or `report_and_pause` decision. Reporting opens the existing question/pause UI and
-preserves the trajectory for resume. Accepted checkpoints reset the cadence; invalid
-responses execute no tools and stop after three failed attempts. Checks use the same
-agent and existing context, not a separate evaluator, and do not guarantee stall detection.
+agents add a soft `[Automatic message]` progress reminder after every 16 model-response
+rounds, counting inspection, actions, and self-directed text continuations together.
+Parallel tool calls count as one round; provider retries do not add rounds. The reminder
+asks the agent to take stock and, if blocked, ask the user or request help; it never
+restricts tools or stops the run. The count resets on new user input (each analyst
+request or workflow steering message) and whenever a workflow moves to a different step.
+Failed workflow model requests are retried up to four times with exponential backoff
+unless the error cannot be fixed by retrying (authentication, context length, missing
+model, content filtering, or access denial).
 While a workflow runs, the chat input uses a subtly accented border and routes instructions
 exclusively to that workflow, even when a different artifact is selected. Messages
 are queued persistently, visibly acknowledged as queued and then received, and injected

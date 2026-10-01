@@ -91,7 +91,7 @@ describe('ConnectorTablePreview source metadata', () => {
 
         expect(screen.getByText(`sample-${limit}`)).toBeDefined();
         expect(screen.queryByText('beyond-limit')).toBeNull();
-        fireEvent.click(screen.getByRole('button', { name: 'Preview', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
         await waitFor(() => expect(onRefreshPreview).toHaveBeenCalledWith(
             rows, [{ name: 'value', type: 'STRING' }], null,
         ));

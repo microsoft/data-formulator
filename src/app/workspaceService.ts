@@ -8,7 +8,7 @@
  * manager is active. All backends expose the same API contract.
  */
 
-import { CONNECTOR_ACTION_URLS, fetchWithIdentity, getUrls } from './utils';
+import { CONNECTOR_ACTION_URLS, fetchWithIdentity, getUrls, resolveRecommendedChart } from './utils';
 import { apiRequest, ApiRequestError, assertDownloadResponseOk } from './apiClient';
 import { workspaceDB, TableIndexEntry } from './workspaceDB';
 import { INPUT_TABLE_PREVIEW_ROW_LIMIT, replaceInputTablePreviews } from './inputTablePreviewCache';
@@ -16,6 +16,50 @@ import { migrateState } from './stateMigrations';
 import { workspaceTableIdOf } from './tableResolution';
 import type { InputTable, ExternalTableReference } from '../components/ComponentType';
 import type { ServerConfig } from './dfSlice';
+import { createDictTable, createConversationRootId, FieldItem } from '../components/ComponentType';
+
+export interface ScheduledRunProvenance {
+    scheduleId: string;
+    scheduleName: string;
+    scheduledFor: string;
+    forked?: boolean;
+}
+
+export function materializeScheduledSnapshot(state: Record<string, any>): Record<string, any> {
+    if (!Array.isArray(state.scheduledArtifacts)) return state;
+    const snapshot: Record<string, any> = { ...state, derivedTables: [], charts: [], conceptShelfItems: [], generatedReports: [], loadedTableNodes: [] };
+    const parent = state.textTurns?.[0]?.id;
+    const createdAt = state.textTurns?.[0]?.createdAt || Date.now();
+    snapshot.textTurns = (state.textTurns || []).map((turn: any) => ({ ...turn, parentNodeId: createConversationRootId(turn.id) }));
+    for (const artifact of state.scheduledArtifacts) {
+        if (artifact.kind === 'chart') {
+            const table = createDictTable(artifact.tableId, artifact.rows, undefined);
+            table.displayId = artifact.goal.display_name || artifact.tableId;
+            table.parentNodeId = parent;
+            const fields: FieldItem[] = table.names.map(name => ({ id: `scheduled-field-${artifact.id}-${name}`, name, source: 'custom', tableRef: 'custom' }));
+            const chart = resolveRecommendedChart(artifact.goal, fields, table);
+            chart.id = artifact.id;
+            chart.title = artifact.goal.title;
+            chart.subtitle = artifact.goal.subtitle;
+            snapshot.derivedTables.push(table);
+            snapshot.loadedTableNodes.push({ kind: 'loaded-table', id: `scheduled-data-${artifact.id}`, tableId: table.id, parentNodeId: parent, createdAt });
+            snapshot.charts.push(chart);
+            snapshot.conceptShelfItems.push(...fields);
+        } else if (artifact.kind === 'report') {
+            snapshot.generatedReports.push({ id: `scheduled-report-${snapshot.generatedReports.length}`, content: artifact.content,
+                title: state.activeWorkspace?.displayName, status: 'completed', parentNodeId: parent, createdAt,
+                selectedChartIds: state.scheduledArtifacts.filter((item: any) => item.kind === 'chart').map((item: any) => item.id) });
+        }
+    }
+    delete snapshot.scheduledArtifacts;
+    if (snapshot.generatedReports[0]) {
+        snapshot.focusedId = { type: 'report', reportId: snapshot.generatedReports[0].id };
+        snapshot.viewMode = 'report';
+    } else if (snapshot.charts[0]) {
+        snapshot.focusedId = { type: 'chart', chartId: snapshot.charts[0].id };
+    }
+    return snapshot;
+}
 
 export function createExternalTableReference(reference: Omit<ExternalTableReference, 'id'>): ExternalTableReference {
     return { ...reference, id: `external:${encodeURIComponent(reference.connectorId)}:${encodeURIComponent(reference.tableKey)}` };
@@ -47,6 +91,8 @@ export interface WorkspaceSummary {
     chart_count?: number | null;
     source_ids?: string[];
     read_only?: boolean;
+    shared?: boolean;
+    scheduled_run?: ScheduledRunProvenance;
 }
 
 export interface WorkspaceFile {
@@ -211,7 +257,29 @@ export async function loadWorkspace(id: string): Promise<{ state: Record<string,
             body: JSON.stringify({ id }),
         });
         if (!data.state) return null;
-        const state = migrateState(data.state);
+        const state = migrateState(materializeScheduledSnapshot(data.state));
+        if (data.workflow_run && !id.startsWith('shared-')) {
+            const { workflowTextTurn } = await import('../views/WorkflowPanel');
+            const run = data.workflow_run;
+            const turn = workflowTextTurn(run, state.textTurns?.find((item: any) => item.workflow?.runId === run.id));
+            const summaryId = `scheduled-summary-${run.id}`;
+            state.textTurns = [...(state.textTurns || []).filter((item: any) => item.id !== summaryId && item.id !== turn.id), turn];
+            for (const nodes of [state.derivedTables, state.loadedTableNodes, state.generatedReports]) {
+                for (const node of nodes || []) {
+                    if (node.parentNodeId === summaryId) node.parentNodeId = turn.id;
+                }
+            }
+            if (Array.isArray(data.state.scheduledArtifacts)) {
+                turn.outputIds = [...state.loadedTableNodes.map((node: any) => node.id), ...state.generatedReports.map((report: any) => report.id)];
+                turn.workflow!.artifacts = turn.workflow!.artifacts?.map(artifact => ({ ...artifact,
+                    nodeId: state.loadedTableNodes.find((node: any) => node.tableId === artifact.nodeId)?.id
+                        || (artifact.nodeId === `workflow-report-${run.id}` ? state.generatedReports[0]?.id : undefined) || artifact.nodeId }));
+            }
+            if (run.status !== 'completed' || !state.focusedId) {
+                state.focusedId = { type: 'text', textId: turn.id };
+                state.viewMode = 'editor';
+            }
+        }
         const previews = await prepareInputTablePreviews(state, id);
         assertCurrentWorkspaceLoad(generation);
         replaceInputTablePreviews(previews);
@@ -220,7 +288,7 @@ export async function loadWorkspace(id: string): Promise<{ state: Record<string,
         if (ephemeral) {
             await workspaceDB.save(id, displayName, createRecoveryState(state), createTableIndex(state));
         }
-        return { state, displayName, readOnly: false };
+        return { state, displayName, readOnly: data.read_only === true || state.activeWorkspace?.readOnly === true };
     } catch (error) {
         if (error instanceof WorkspaceLoadSupersededError) throw error;
         assertCurrentWorkspaceLoad(generation);

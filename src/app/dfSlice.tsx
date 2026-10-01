@@ -289,7 +289,8 @@ export interface DataFormulatorState {
     // provisional: an ID minted only so backend requests have a home (e.g. a
     // landing-page attachment). The UI stays on the landing page until the
     // workspace holds real work, at which point the flag is cleared for good.
-    activeWorkspace: { id: string; displayName: string; readOnly?: boolean; provisional?: boolean } | null;
+    activeWorkspace: { id: string; displayName: string; readOnly?: boolean; provisional?: boolean;
+        scheduledRun?: import('./workspaceService').ScheduledRunProvenance } | null;
 
     /** Backend-synchronized count of persisted non-table files in the active workspace. */
     workspaceFileCount: number;
@@ -1088,7 +1089,8 @@ export const dataFormulatorSlice = createSlice({
                     return {
                         ...rest,
                         description: typeof rest.description === 'string' ? rest.description : '',
-                        virtual: rest.virtual || { tableId: rest.id, rowCount: rest.rows?.length || 0 },
+                        virtual: saved.activeWorkspace?.readOnly && saved.activeWorkspace?.scheduledRun
+                            ? undefined : rest.virtual || { tableId: rest.id, rowCount: rest.rows?.length || 0 },
                     };
                 }),
                 loadedTableNodes: saved.loadedTableNodes || [],

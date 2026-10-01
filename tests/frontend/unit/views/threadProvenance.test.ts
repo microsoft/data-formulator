@@ -342,7 +342,7 @@ it('highlights the displayed file when its closing chat response or follow-up is
     prompt: 'Create a daily trip workflow', content: 'Created Daily Trip Trend Workflow.',
     parentNodeId: CONVERSATION_ROOT_ID, createdAt: 1 }));
   const file = { kind: 'file' as const, id: 'workflow-file', path: 'files/daily_trip_trend_workflow.md',
-    displayName: 'Daily Trip Trend Workflow', parentNodeId: 'file-summary', createdAt: 2 };
+    displayName: 'Daily Trip Trend Workflow', parentNodeId: 'file-summary', createdAt: 2, contentHash: 'workflow-hash' };
   store.dispatch(dfActions.upsertFileNode(file));
   store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'follow-up', displayId: 'Follow-up', textKind: 'explain',
     content: 'The target date is configurable.', parentNodeId: 'file-summary', createdAt: 3 }));
@@ -644,7 +644,7 @@ it('shows one live activity spinner and opens the execution step directly', asyn
   expect(screen.getByText(/Running command fixture/)).toBeVisible();
   expect(screen.queryByRole('progressbar')).toBeNull();
   expect(within(screen.getByRole('button', { name: 'Query 6' })).getByTestId('CheckCircleOutlineIcon')).toBeVisible();
-  act(() => store.dispatch(dfActions.removeDraftNode({ draftId: 'live-draft' })));
+  act(() => store.dispatch(dfActions.removeDraftNode('live-draft')));
   expect(screen.queryByText(/Running command fixture/)).toBeNull();
   expect(screen.queryByRole('progressbar')).toBeNull();
   window.addEventListener('df-view-tool-activity', onActivity, { once: true });

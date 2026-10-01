@@ -22,7 +22,7 @@ import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AddchartIcon from '@mui/icons-material/Addchart';
 
 import { TriggerCard } from './EncodingShelfCard';
-import { ComponentBorderStyle, shadow } from '../app/tokens';
+import { ComponentBorderStyle, shadow, sidebarRowActionSx, sidebarRowDangerActionSx } from '../app/tokens';
 import { iconVar, textVar } from '../app/layout';
 
 
@@ -159,9 +159,9 @@ export const ArtifactMenuButton = ({ label, tooltip = label, onClick }: {
     tooltip?: string;
     onClick: (anchorEl: HTMLElement) => void;
 }) => <Tooltip title={tooltip}>
-    <IconButton aria-label={label} size="small" sx={{ p: 0.25, color: 'text.secondary' }}
+    <IconButton aria-label={label} size="small" sx={sidebarRowActionSx}
         onClick={event => { event.stopPropagation(); onClick(event.currentTarget); }}>
-        <MoreVertIcon sx={{ fontSize: iconVar.md }} />
+        <MoreVertIcon />
     </IconButton>
 </Tooltip>;
 
@@ -170,9 +170,9 @@ export const ArtifactDeleteButton = ({ label, onClick, disabled = false }: {
     onClick: () => void;
     disabled?: boolean;
 }) => <Tooltip title={label}><span>
-    <IconButton aria-label={label} size="small" color="error" disabled={disabled}
-        sx={{ p: 0.5 }} onClick={event => { event.stopPropagation(); onClick(); }}>
-        <DeleteIcon sx={{ fontSize: iconVar.md }} />
+    <IconButton aria-label={label} size="small" disabled={disabled}
+        sx={sidebarRowDangerActionSx} onClick={event => { event.stopPropagation(); onClick(); }}>
+        <DeleteIcon />
     </IconButton>
 </span></Tooltip>;
 

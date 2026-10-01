@@ -123,7 +123,7 @@ describe('Model connection form', () => {
         render(<Provider store={store}><ModelSelectionButton initialDefinition={{ endpoint: 'azure', model: 'deployment',
             api_base: 'https://example.openai.azure.com', auth_mode: 'key' }} hasStoredCredentials onStageConnection={stage} /></Provider>);
         fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'old-key' } });
-        fireEvent.click(screen.getByRole('button', { name: authMode === 'azure_identity' ? 'Microsoft Entra ID' : 'Managed identity', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: authMode === 'azure_identity' ? 'Microsoft Entra ID' : 'Managed identity' }));
         if (authMode === 'managed_identity') {
             fireEvent.change(screen.getByLabelText('Managed identity client ID (optional)'), { target: { value: 'identity-client' } });
         } else {
@@ -140,7 +140,7 @@ describe('Model connection form', () => {
         const store = configureStore({ reducer: dataFormulatorReducer });
         render(<Provider store={store}><ModelSelectionButton initialDefinition={{ endpoint: 'azure', model: 'deployment',
             auth_mode: 'managed_identity', managed_identity_client_id: 'saved-identity' }} onStageConnection={vi.fn()} /></Provider>);
-        expect(screen.getByRole('button', { name: 'Managed identity', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: 'Managed identity' })).toHaveAttribute('aria-pressed', 'true');
         expect(screen.getByLabelText('Managed identity client ID (optional)')).toHaveValue('saved-identity');
     });
 

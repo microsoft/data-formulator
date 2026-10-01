@@ -8,7 +8,7 @@ describe('connector form persistence', () => {
         let state = dataFormulatorReducer(undefined, { type: 'init' });
         state = dataFormulatorReducer(state, dfActions.addTextTurn({
             kind: 'text', id: 'form-1', displayId: 'form-1', textKind: 'explain', content: 'Connect MySQL',
-            createdAt: 1, form: { kind: 'connector', title: 'MySQL', connector: { sourceType: 'mysql', status: 'pending' } },
+            createdAt: 1, parentNodeId: 'conversation-root:test', form: { kind: 'connector', title: 'MySQL', connector: { sourceType: 'mysql', status: 'pending' } },
         }));
         state = dataFormulatorReducer(state, dfActions.initializeConnectorDraft({ id: 'form-1', fields: ['host'] }));
         state = dataFormulatorReducer(state, dfActions.patchConnectorDraft({ id: 'form-1', revision: 0,

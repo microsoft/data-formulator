@@ -63,13 +63,14 @@ import { ReportView } from './ReportView';
 import { DataSourceSidebar } from './DataSourceSidebar';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions } from './ExampleSessions';
-import { WorkflowPanel } from './WorkflowPanel';
+import { WorkflowPanel, WorkflowRunObserver } from './WorkflowPanel';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import { useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { listWorkspaceFiles, listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, updateWorkspaceMeta, WorkspaceLoadSupersededError } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
+import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import { AppDispatch, store } from '../app/store';
 import { generateWorkspaceId, ensureActiveWorkspace } from '../app/sessionThunks';
 import Card from '@mui/material/Card';
@@ -176,6 +177,9 @@ export const DataFormulatorFC = ({ }) => {
     useEffect(() => {
         if (!inSession) {
             fetchWorkspaces();
+            const refresh = () => { if (document.visibilityState === 'visible') void fetchWorkspaces(); };
+            document.addEventListener('visibilitychange', refresh);
+            return () => document.removeEventListener('visibilitychange', refresh);
         }
     }, [inSession, fetchWorkspaces]);
 
@@ -189,7 +193,7 @@ export const DataFormulatorFC = ({ }) => {
             const result = await loadWorkspace(name);
             if (result) {
                 const displayName = metaDisplayName || result.displayName;
-                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: name, displayName, readOnly: result.readOnly } }));
+                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { ...result.state.activeWorkspace, id: name, displayName, readOnly: result.readOnly } }));
             } else {
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(), type: 'error', component: 'workspace',
@@ -1054,6 +1058,10 @@ export const DataFormulatorFC = ({ }) => {
                                         {w.display_name}
                                     </Typography>
                                 )}
+                                {w.scheduled_run && !w.scheduled_run.forked && <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: textVar.xs, color: 'text.secondary', mt: 0.5 }}
+                                    title={`${w.scheduled_run.scheduleName}: ${new Date(w.scheduled_run.scheduledFor).toLocaleString()}`}>
+                                    <ScheduleOutlinedIcon sx={{ fontSize: iconVar.sm }} />Scheduled{w.shared ? ' · Shared' : ''}
+                                </Box>}
                                 {w.saved_at && (
                                     <Typography variant="caption" color="text.disabled" sx={{ fontSize: textVar.xs }}>
                                         {new Date(w.saved_at).toLocaleString()}
@@ -1062,7 +1070,7 @@ export const DataFormulatorFC = ({ }) => {
                             </CardContent>
                             <Box className="ws-actions" sx={{
                                 position: 'absolute', top: 2, right: 2,
-                                display: isRenaming ? 'none' : 'flex',
+                                display: isRenaming || w.read_only ? 'none' : 'flex',
                                 alignItems: 'center',
                                 opacity: 0,
                                 transition: 'opacity 0.15s',
@@ -1125,9 +1133,23 @@ export const DataFormulatorFC = ({ }) => {
     
     return (
         <Box sx={{ display: 'block', width: "100%", height: '100%', position: 'relative' }}>
+            <WorkflowRunObserver />
             {activeWorkspace?.readOnly && (
                 <Alert severity="warning" sx={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 1200, maxWidth: 720 }}>
-                    {t('workspace.expiredReadOnly', 'This temporary session has expired on the server. You are viewing a read-only browser snapshot.')}
+                    {activeWorkspace.id.startsWith('shared-') ? <>Shared scheduled session
+                        <Button size="small" onClick={async () => {
+                            try {
+                                const { apiRequest } = await import('../app/apiClient');
+                                const { data } = await apiRequest<{ id: string }>('/api/sessions/fork', {
+                                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: activeWorkspace.id }),
+                                });
+                                await handleOpenWorkspace(data.id);
+                            } catch (error) {
+                                const { handleApiError } = await import('../app/errorHandler');
+                                handleApiError(error, 'Fork shared session');
+                            }
+                        }}>Fork session</Button></> : activeWorkspace.scheduledRun ? 'Scheduled run snapshot (read-only)'
+                        : t('workspace.expiredReadOnly', 'This temporary session has expired on the server. You are viewing a read-only browser snapshot.')}
                 </Alert>
             )}
             <DndProvider backend={HTML5Backend}>

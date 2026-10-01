@@ -514,6 +514,14 @@ export function extractFieldsFromEncodingMap(encodingMap: EncodingMap, allFields
         }
     }
 
+    // Flint orders categories by an unmapped sortBy field; aggregation would drop that column.
+    if (aggregateFields.length === 0) {
+        for (const { sortBy } of Object.values(encodingMap)) {
+            if (sortBy && !['x', 'y', 'color'].includes(sortBy) && !groupByFields.includes(sortBy)
+                && allFields.some(field => field.name === sortBy)) groupByFields.push(sortBy);
+        }
+    }
+
     return { aggregateFields, groupByFields };
 }
 
@@ -604,6 +612,22 @@ export const assembleVegaChart = (
             sortBy: encoding.sortBy,
             scheme: encoding.scheme,
         };
+    }
+
+    // Flint rejects sort references it cannot resolve; an unusable sort hint must not block the chart.
+    const columns = new Set(Object.keys(workingTable[0] ?? {}));
+    for (const encoding of Object.values(encodings)) {
+        const sortBy = encoding.sortBy;
+        if (sortBy === undefined) continue;
+        if (sortBy === 'x' || sortBy === 'y' || sortBy === 'color') {
+            if (!encodings[sortBy]?.field && encodings[sortBy]?.aggregate !== 'count') encoding.sortBy = undefined;
+        } else if (!columns.has(sortBy)) {
+            let values: unknown;
+            try { values = JSON.parse(sortBy); } catch { values = undefined; }
+            const valid = Array.isArray(values) ? values.filter(value => typeof value === 'string'
+                || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))) : [];
+            encoding.sortBy = valid.length > 0 ? JSON.stringify(valid) : undefined;
+        }
     }
 
     const semanticTypes: Record<string, string | any> = {};

@@ -70,7 +70,7 @@ describe('Analyst landing attachment handoff', () => {
         const store = configureStore({ reducer: dataFormulatorReducer });
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'paused-run', displayId: 'Paused run', textKind: 'explain',
             content: 'Waiting for inputs', parentNodeId: 'conversation-root:run', createdAt: 1,
-            workflow: { runId: 'run', status: 'paused', stepId: 'inspect', calls: 1, steps: [] } }));
+            workflow: { runId: 'run', status: 'paused', stepId: 'inspect', calls: 1, steps: [], outputVersions: {} } }));
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'textTurn-workflow-card-run', displayId: 'Workflow',
             textKind: 'explain', content: '', parentNodeId: 'paused-run', createdAt: 2, workflowCardFor: 'paused-run' }));
         const proposal = { content: 'name: New workflow', definition: { name: 'New workflow' } };
@@ -148,7 +148,7 @@ describe('Analyst landing attachment handoff', () => {
         const id = 'textTurn-workflow-internal-run';
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id, displayId: id, textKind: 'explain',
             content: 'Inspecting data', parentNodeId: 'conversation-root:run', createdAt: 1,
-            workflow: { runId: 'run', status: 'running', calls: 1, steps: [] } }));
+            workflow: { runId: 'run', status: 'running', stepId: '', calls: 1, steps: [], outputVersions: {} } }));
         store.dispatch(dfActions.setFocused({ type: 'text', textId: id }));
         render(<Provider store={store}><SimpleChartRecBox /></Provider>);
         const workflowButton = screen.getByRole('button', { name: 'Message workflow agent' });
@@ -371,9 +371,9 @@ describe('Analyst landing attachment handoff', () => {
         expect(screen.getByRole('button', { name: 'Quick actions' })).toBeEnabled();
         const input = screen.getByRole('textbox');
         fireEvent.change(input, { target: { value: 'Count events by region' } });
-        expect(screen.getByRole('button', { name: 'Explore', exact: true })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Explore' })).toBeEnabled();
         if (method === 'enter') fireEvent.keyDown(input, { key: 'Enter' });
-        else fireEvent.click(screen.getByRole('button', { name: 'Explore', exact: true }));
+        else fireEvent.click(screen.getByRole('button', { name: 'Explore' }));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
         expect(requestBody().external_references).toEqual([reference]);
         expect(requestBody().focused_external_reference).toBe(reference.id);
@@ -498,7 +498,7 @@ describe('Analyst landing attachment handoff', () => {
             expect(derived?.displayId).toBe('Doubled Measurements');
             expect(derived?.derive?.source).toEqual(['measurements']);
             expect(derived?.derive?.trigger.tableId).toBe('measurements');
-            expect(derived?.derive?.trigger.interaction.at(-1)?.inputTableNames).toEqual(['Measurements']);
+            expect(derived?.derive?.trigger.interaction?.at(-1)?.inputTableNames).toEqual(['Measurements']);
             expect(store.getState().fileNodes).toEqual([]);
         } finally {
             await act(async () => { finishRun(); });
@@ -707,6 +707,7 @@ describe('Analyst landing attachment handoff', () => {
                 store.dispatch(dfActions.addChart({ id: 'newer-chart', chartType: 'Bar Chart', tableRef: 'orders', source: 'user', encodingMap: {} } as any));
                 store.dispatch(dfActions.addTextTurn({
                     kind: 'text', id: 'question', displayId: 'question', textKind: 'clarify', content: 'Which metric?', createdAt: 2,
+                    parentNodeId: 'conversation-root:test',
                     options: [{ text: 'Which metric?', responseType: 'single_choice', options: [{ label: 'Revenue' }] }],
                     ...(target === 'chart' ? { sourceChartId: 'original-chart' } : {}),
                     ...(target === 'self' ? { form: { kind: 'connector' as const, title: 'Connect', connector: { sourceType: 'mysql' } } } : {}),
@@ -808,7 +809,7 @@ describe('Analyst landing attachment handoff', () => {
         act(() => {
             store.dispatch(dfActions.addTextTurn({
                 kind: 'text', id: 'form-owner', displayId: 'form-owner', textKind: 'explain',
-                content: 'Connect MySQL', createdAt: 1,
+                content: 'Connect MySQL', createdAt: 1, parentNodeId: 'conversation-root:test',
                 form: { kind: 'connector', title: 'MySQL', connector: { sourceType: 'mysql' } },
             }));
             store.dispatch(dfActions.addTextTurn({
@@ -824,7 +825,7 @@ describe('Analyst landing attachment handoff', () => {
         act(() => {
             store.dispatch(dfActions.addTextTurn({
                 kind: 'text', id: 'ordinary-explanation', displayId: 'ordinary-explanation', textKind: 'explain',
-                content: 'An unrelated answer.', createdAt: 3,
+                content: 'An unrelated answer.', createdAt: 3, parentNodeId: 'conversation-root:test',
             }));
             store.dispatch(dfActions.setFocused({ type: 'text', textId: 'ordinary-explanation' }));
         });
@@ -1013,7 +1014,7 @@ describe('Analyst landing attachment handoff', () => {
             store.dispatch(dfActions.addChart({ id: 'original-chart', chartType: 'Bar Chart', tableRef: 'orders', source: 'user', encodingMap: {} } as any));
             store.dispatch(dfActions.addChart({ id: 'other-chart', chartType: 'Bar Chart', tableRef: 'orders', source: 'user', encodingMap: {} } as any));
             store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'answer', displayId: 'Answer', textKind: 'explain',
-                content: 'Existing answer', createdAt: 1, sourceChartId: 'original-chart',
+                content: 'Existing answer', createdAt: 1, sourceChartId: 'original-chart', parentNodeId: 'conversation-root:test',
                 ...(target === 'long_response' ? { presentation: 'long_response' as const } : {}) }));
             store.dispatch(dfActions.setFocused(target === 'chart'
                 ? { type: 'chart', chartId: 'original-chart' } : { type: 'text', textId: 'answer' }));
@@ -1206,7 +1207,7 @@ describe('Analyst landing attachment handoff', () => {
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
         expect(requestBody().focused_file).toBe(fileName);
         expect(requestBody()).not.toHaveProperty('scratch_files');
-        await waitFor(() => expect(store.getState().draftNodes.every(draft => draft.status !== 'running')).toBe(true));
+        await waitFor(() => expect(store.getState().draftNodes.every(draft => draft.derive.status !== 'running')).toBe(true));
         act(() => store.dispatch(dfActions.setFocused(undefined)));
         act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Next question', images: [], attachments: [] })));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(2));

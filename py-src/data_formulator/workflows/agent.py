@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from copy import deepcopy
 from contextvars import copy_context
+from itertools import count
 import json
 import re
 import time
@@ -15,7 +17,11 @@ from data_formulator.analyst.agent import AnalystAgent
 from data_formulator.analyst.skills.base import SkillContext
 from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine
 from data_formulator.agents.agent_utils import attach_reasoning_content
+from data_formulator.error_handler import classify_and_wrap_llm_error
+from data_formulator.errors import ErrorCode
 from data_formulator.workflows.instances import WORKFLOW_STEP_SCHEMA, initial_steps, parse_workflow, resolve_setup
+
+logger = logging.getLogger(__name__)
 
 
 def tool(name: str, description: str, properties: dict, required: list[str]) -> dict:
@@ -171,6 +177,19 @@ def public_run(state: dict) -> dict:
 
 class WorkflowInterrupted(Exception):
     pass
+
+
+MODEL_RETRIES = 4
+MODEL_RETRY_BASE_SECONDS = 5.0
+_PERMANENT_MODEL_ERRORS = {ErrorCode.LLM_AUTH_FAILED, ErrorCode.LLM_CONTEXT_TOO_LONG, ErrorCode.LLM_MODEL_NOT_FOUND,
+                           ErrorCode.LLM_CONTENT_FILTERED, ErrorCode.ACCESS_DENIED}
+
+
+def model_retry_delay(exc: Exception, attempt: int) -> float | None:
+    """Backoff before re-sending a failed model request, or None when retrying cannot help."""
+    if attempt >= MODEL_RETRIES or classify_and_wrap_llm_error(exc).code in _PERMANENT_MODEL_ERRORS:
+        return None
+    return MODEL_RETRY_BASE_SECONDS * 2 ** attempt
 
 
 class WorkflowAgent(AnalystAgent):
@@ -713,6 +732,7 @@ class WorkflowAgent(AnalystAgent):
             applied.append(message["id"])
         if pending:
             self.checkpoint(self.state)
+        return bool(pending)
 
     def run_workflow(self):
         state = self.state
@@ -738,7 +758,8 @@ class WorkflowAgent(AnalystAgent):
         timed_step = state["step_id"]
         step_times = state.setdefault("step_elapsed_seconds", {})
         last_tick = started
-        checkpoint_failures = 0
+        self._reset_progress_reminder(trajectory)
+        reminder_step = state["step_id"]
 
         def record_step_time():
             nonlocal timed_step, step_times, last_tick
@@ -753,28 +774,53 @@ class WorkflowAgent(AnalystAgent):
                 if self.cancel.is_set():
                     state.update(status="paused", message="Paused by user.")
                     break
-                self._inject_messages()
+                steered = self._inject_messages()
                 trajectory[0] = {"role": "system", "content": self._build_system_prompt()}
                 state["calls"] += 1
-                checkpoint_due = self._progress_check_due(trajectory)
-                request_messages, tools = (self._progress_check_request(trajectory) if checkpoint_due
-                                           else (trajectory, self._current_tools()))
+                if steered or state["step_id"] != reminder_step:
+                    reminder_step = state["step_id"]
+                    self._reset_progress_reminder(trajectory)
+                elif self._remind_progress_if_due(trajectory, f"step '{state['step_id']}'", "call request_help or ask_user"):
+                    self._reasoning_log.log("progress_reminder", step_id=state["step_id"])
+                request_messages, tools = trajectory, self._current_tools()
                 stream = self._stream_llm(request_messages, tools)
-                while True:
+                response = None
+                for attempt in count():
+                    forwarded = False
                     try:
-                        event = next(stream)
-                        if self.cancel.is_set():
-                            stream.close()
+                        while True:
+                            try:
+                                event = next(stream)
+                            except StopIteration as finished:
+                                response = finished.value
+                                break
+                            if self.cancel.is_set():
+                                stream.close()
+                                state.update(status="paused", message="Paused by user.")
+                                break
+                            if event.get("type") == "reasoning":
+                                continue
+                            if (event.get("type") == "action" and event.get("action") == "write_report"
+                                    or event.get("type") == "text_delta" and event.get("channel") == "report"):
+                                forwarded = True
+                                yield event
+                        if response is not None and not response.choices:
+                            raise ValueError("The model returned an empty response.")
+                        break
+                    except Exception as exc:
+                        delay = model_retry_delay(exc, attempt)
+                        # Streamed report text cannot be retracted, so only retry before anything was forwarded.
+                        if forwarded or delay is None or self.cancel.is_set():
+                            raise
+                        logger.warning("Workflow model request failed (attempt %d/%d); retrying in %gs: %s",
+                                       attempt + 1, MODEL_RETRIES + 1, delay, exc)
+                        state["activity"] = f"Model request failed. Retrying in {delay:g}s ({attempt + 1}/{MODEL_RETRIES})."
+                        self.checkpoint(state)
+                        yield {"type": "workflow_state", "run": public_run(state)}
+                        if self.cancel.wait(delay) or self.cancel.is_set():
                             state.update(status="paused", message="Paused by user.")
                             break
-                        if event.get("type") == "reasoning":
-                            continue
-                        if (event.get("type") == "action" and event.get("action") == "write_report"
-                                or event.get("type") == "text_delta" and event.get("channel") == "report"):
-                            yield event
-                    except StopIteration as finished:
-                        response = finished.value
-                        break
+                        stream = self._stream_llm(request_messages, tools)
                 if self.cancel.is_set():
                     state.update(status="paused", message="Paused by user.")
                 if state["status"] != "running":
@@ -783,21 +829,7 @@ class WorkflowAgent(AnalystAgent):
                 message = choice.message
                 calls = list(message.tool_calls or [])
                 state["activity"] = message.content or (f"Running {calls[0].function.name.replace('_', ' ')}." if calls else "Working...")
-                if checkpoint_due:
-                    try:
-                        assessment = self._record_progress_check(trajectory, message)
-                    except ValueError:
-                        checkpoint_failures += 1
-                        if checkpoint_failures >= 3:
-                            raise
-                        state["activity"] = "Retrying the structured progress checkpoint."
-                    else:
-                        checkpoint_failures = 0
-                        state["activity"] = assessment["next_step"]
-                        self._reasoning_log.log("progress_check", **assessment)
-                        if assessment["decision"] == "report_and_pause":
-                            self._execute("request_help", {"question": self._progress_check_report(assessment)}, calls[0].id)
-                elif not calls:
+                if not calls:
                     trajectory.append({"role": "assistant", "content": message.content or ""})
                     trajectory.append({"role": "user", "content": "This run is not delivered. Continue verification and repair, call complete_workflow, or request_help with a blocker."})
                 else:

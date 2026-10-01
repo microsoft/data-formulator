@@ -133,6 +133,8 @@ def get_workspace(identity_id: str) -> Workspace:
     ws_id = get_active_workspace_id()
     if not ws_id:
         raise ValueError("No active workspace. X-Workspace-Id header is required.")
+    if ws_id.startswith(("shared-", "scheduled-private-")):
+        raise AppError(ErrorCode.ACCESS_DENIED, "This session is read-only. Fork it before making changes.")
 
     mgr = get_workspace_manager(identity_id)
 

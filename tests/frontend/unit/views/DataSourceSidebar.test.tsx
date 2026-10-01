@@ -157,12 +157,12 @@ describe('DataSourceSidebar', () => {
             const view = render(<DataSourceSidebar />);
             fireEvent.click(await screen.findByRole('checkbox', { name: 'Select Orders' }));
             fireEvent.click(screen.getByRole('checkbox', { name: 'Select Customers' }));
-            fireEvent.click(screen.getByRole('button', { name: 'Load 2 tables', exact: true }));
+            fireEvent.click(screen.getByRole('button', { name: 'Load 2 tables' }));
             expect(dispatch.mock.calls.some(([action]) => action.type === 'sidebar/setOpen' && action.payload === false)).toBe(!pinned);
             expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'load/start', payload: expect.objectContaining({
                 names: [], progress: { current: 1, total: 2, name: 'Orders' },
             }) }));
-            expect(screen.queryByRole('button', { name: 'Load 2 tables', exact: true })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Load 2 tables' })).not.toBeInTheDocument();
             if (!pinned) view.unmount();
             await act(async () => finishLoad());
             expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'load/start', payload: expect.objectContaining({
