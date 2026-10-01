@@ -68,7 +68,10 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
     const isBare = variant === 'bare';
     const draftKey = `connector-form:${messageId}`;
     const currentParams = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[draftKey]);
-    const draft = useSelector((state: DataFormulatorState) => state.textTurns.find(turn => turn.id === messageId)?.form?.draft);
+    const draft = useSelector((state: DataFormulatorState) => {
+        const form = state.textTurns.find(turn => turn.id === messageId)?.form;
+        return form?.kind === 'connector' ? form.draft : undefined;
+    });
 
     const [loaders, setLoaders] = useState<LoaderMeta[]>([]);
     const meta = loaders.find(loader => loader.type === sourceType) || null;

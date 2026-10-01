@@ -82,12 +82,11 @@ def test_workspace_owns_discovery_and_loading_without_an_extra_skill_gate() -> N
     assert "delegate" not in registry.metas["meta"].action_names
     meta = registry.metas["workspace"]
     assert meta.always_on is False
-    assert meta.action_names == ("propose_data_operation", "propose_connection", "update_connector_form")
+    assert meta.action_names == ("propose_data_operation",)
     assert set(meta.tool_names) == {
         "create_file", "edit_file", "create_data", "update_data", "list_workspace_items",
         "read_workspace_item", "search_workspace_items",
         "summarize_data_sources", "list_data", "find_data", "describe_data", "probe_data",
-        "list_connectors", "describe_connector", "read_connector_form",
     }
     assert registry.tools_for(["meta"]) == registry.tools_for(["meta", "workspace"])
     assert {
@@ -214,14 +213,13 @@ def test_meta_profile_expands_runtime_capabilities_without_expanding_loaded_name
 
     assert agent._loaded_skills == {"meta"}
     assert agent._legal_actions() == frozenset({
-        "visualize", "ask_user", "long_response",
-        "propose_data_operation", "propose_connection", "update_connector_form",
+        "visualize", "ask_user", "long_response", "propose_data_operation",
     })
     handlers = agent._loaded_skill_tool_map()
     assert isinstance(handlers["execute_python_script"], AnalysisSkill)
     assert isinstance(handlers["list_workspace_items"], WorkspaceSkill)
     assert handlers["find_data"] is handlers["list_workspace_items"]
-    assert handlers["read_connector_form"] is handlers["list_workspace_items"]
+    assert "read_connector_form" not in handlers
     prompt = agent._build_system_prompt()
     assert "[SKILL: meta] Always-on baseline" in prompt
     assert "# Analysis" in prompt

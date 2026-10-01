@@ -31,7 +31,6 @@ class WorkspaceSkill:
     ) -> ToolResult:
         if name in {
             "summarize_data_sources", "list_data", "find_data", "describe_data", "probe_data",
-            "list_connectors", "describe_connector", "read_connector_form",
         }:
             return self._data_loading.handle_tool(name, args, ctx)
         if name in {"create_data", "update_data"}:
@@ -310,28 +309,7 @@ class WorkspaceSkill:
         spec: dict[str, Any],
         ctx: SkillContext,
     ) -> Generator[Event, None, str | None]:
-        if action == "propose_workflow":
-            import yaml
-            from data_formulator.auth.identity import is_local_mode
-            from data_formulator.configuration import is_managed_mode
-            from data_formulator.workflows.instances import validate_workflow_definition
-
-            if not (is_local_mode() or is_managed_mode()):
-                return "Workflow authoring requires local or managed mode."
-            try:
-                definition = validate_workflow_definition(spec.get("definition"), authored=True)
-                content = yaml.safe_dump(definition, sort_keys=False, allow_unicode=True)
-                if len(content) > 48000:
-                    raise ValueError("Workflow exceeds 48,000 characters.")
-            except ValueError as exc:
-                return f"Invalid workflow definition: {exc}. Revise the complete proposal."
-            yield {"type": "completion", "status": "success", "content": {
-                "summary": spec.get("summary") or f"Proposed workflow: {definition['name']}",
-                "workflow_definition": {"content": content, "definition": definition},
-                "total_steps": ctx.payload.get("completed_step_count", 0),
-            }}
-            return None
-        if action in {"propose_data_operation", "propose_connection", "update_connector_form"}:
+        if action == "propose_data_operation":
             return (yield from self._data_loading.handle_action(action, spec, ctx))
         yield {"type": "error", "message": f"workspace has no action '{action}'."}
         return f"workspace has no action '{action}'."

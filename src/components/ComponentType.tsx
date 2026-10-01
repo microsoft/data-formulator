@@ -392,9 +392,17 @@ export interface ConnectorFormPrompt {
     tableCount?: number;                // optional: tables discovered on connect
 }
 
-export interface ConnectorFormArtifact {
-    kind: 'connector';
+/**
+ * Shared shape of agent-proposed setup forms (configure skill). Each form is a
+ * prefilled artifact the user reviews and submits through the same API as the
+ * matching manual dialog.
+ */
+interface SetupFormBase {
     title: string;
+}
+
+export interface ConnectorFormArtifact extends SetupFormBase {
+    kind: 'connector';
     connector: ConnectorFormPrompt;
     draft?: {
         revision: number;
@@ -404,8 +412,42 @@ export interface ConnectorFormArtifact {
     };
 }
 
-/** Canvas-owning form artifacts. Add future form kinds to this union. */
-export type FormArtifact = ConnectorFormArtifact;
+export interface ScheduleConfig {
+    name: string; workflow: string; model_id: string; time: string; timezone: string; weekdays: number[];
+    enabled: boolean; auto_approve: boolean; max_retries: number; catch_up: boolean; publish: boolean;
+    setup?: { parameters: Record<string, string | number | boolean>; instructions: string };
+}
+
+export interface ScheduleFormArtifact extends SetupFormBase {
+    kind: 'schedule';
+    schedule: {
+        /** Existing schedule being edited; absent when creating one. */
+        scheduleId?: string;
+        config: Partial<ScheduleConfig>;
+        workflowName?: string;
+        hosted?: boolean;
+        /** Values the agent could not verify; the user resolves them before saving. */
+        issues?: string[];
+        status?: 'pending' | 'saved';
+        savedId?: string;
+        nextAt?: string;
+    };
+}
+
+export interface SessionsFormArtifact extends SetupFormBase {
+    kind: 'sessions';
+    sessions: {
+        /** Sessions listed in the panel; each is renamed, opened, or deleted on its own. */
+        items: {
+            sessionId: string; currentName: string; suggestedName?: string; reason?: string;
+            current?: boolean; updatedAt?: string; tableCount?: number; chartCount?: number; deleted?: boolean;
+        }[];
+        open?: { sessionId: string; displayName: string };
+    };
+}
+
+/** Canvas-owning form artifacts. Add future setup form kinds to this union. */
+export type FormArtifact = ConnectorFormArtifact | ScheduleFormArtifact | SessionsFormArtifact;
 
 // Data source types for tracking where data originated
 export type DataSourceType = 'paste' | 'file' | 'url' | 'stream' | 'database' | 'example' | 'extract';

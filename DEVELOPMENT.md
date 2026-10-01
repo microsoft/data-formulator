@@ -100,6 +100,23 @@ down the backend, and a subsequent query starts a replacement without replaying
 the failed query. Worker processes are daemons and are terminated during normal
 backend shutdown; runs are not durable across server restarts.
 
+### Sessions in Multiple Tabs
+
+Each browser tab works on its own session, named in the URL (`/app?session=<id>`),
+so sessions can be compared side by side, reloaded, bookmarked, or opened from the
+Sessions list with **Open in new tab** (or Cmd/Ctrl/middle-click). The backend
+scopes every request by the signed-in or local identity plus the tab's
+`X-Workspace-Id`, so tabs share connectors, models, workflows, and schedules while
+agent runs, workflow runs, and scratch state stay per session.
+
+On start, a tab opens the URL's session from the backend rather than trusting
+browser-restored state, which other tabs share. One tab edits a session at a time
+(`src/app/sessionTabs.ts`): opening a session claims it over a `BroadcastChannel`;
+a tab already editing it saves and becomes view-only with an **Edit here** action
+before the claimer loads the latest state. This coordinates tabs in one browser;
+concurrent edits to one session from different browsers or devices remain
+last-writer-wins until session saves are versioned.
+
 ### Unified Workspace Loading
 
 Agent `propose_data_operation` uses the manual-import row/byte thresholds for
@@ -1287,8 +1304,34 @@ phase; newly authored definitions seed the run with their concrete steps.
 Each run stores an independent `definition` snapshot, mutable `plan.steps`, and
 execution state (progress, checks, evidence, outputs, and history). Adapting a run's
 plan never rewrites its definition or the saved YAML. Existing checkpoints are
-migrated when resumed. Workflow authoring belongs to the main analyst's workspace
+migrated when resumed. Workflow authoring belongs to the main analyst's `configure`
 skill; the execution agent cannot call `propose_workflow`.
+
+### Configuring Data Formulator in Chat
+
+The analyst's gated `configure` skill (`analyst/skills/configure/`) sets up the
+application for the user: connections, workflows, workflow schedules, and
+sessions. Read-only tools inspect the current setup (`list_connectors`,
+`describe_connector`, `read_connector_form`, `list_workflows`, `list_schedules`,
+`list_sessions`). Each committing action publishes one prefilled setup form artifact:
+`propose_connection` / `update_connector_form` (connector form),
+`propose_schedule` (schedule form), and `propose_session_changes` (a session panel
+whose cards each offer rename, open in a new tab, and delete; the agent only lists
+sessions and suggests names, and deletion is always the user's confirmed action). `propose_workflow` publishes the existing workflow proposal artifact.
+
+All forms share one `interact` event shape (`form.kind`, `title`, `response`,
+`auto_submit`, and a body keyed by the kind) and are submitted by the frontend
+through the same APIs as the corresponding dialogs, so credentials, permissions,
+and session state follow the manual path. Setup tools act for the identity the
+app resolves for the request (`get_identity_id`), which must own the active
+workspace. Review is the default. With `user_review_needed: false`, a schedule or
+session form submits itself once when the live agent stream creates it, only if it
+is complete and not elevated; schedules that auto-approve or publish always wait
+for review. The request is never persisted, so reloaded or imported sessions cannot
+replay it. Connections always wait for the user's Connect, because connecting
+opens a server-side network connection to agent-supplied hosts. Workflow runs keep
+`propose_connection` but cannot author workflows or manage schedules and sessions.
+See `design-docs/56-configure-skill.md`.
 
 ### Workflow Setup
 

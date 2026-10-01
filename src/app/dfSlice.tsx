@@ -290,7 +290,9 @@ export interface DataFormulatorState {
     // landing-page attachment). The UI stays on the landing page until the
     // workspace holds real work, at which point the flag is cleared for good.
     activeWorkspace: { id: string; displayName: string; readOnly?: boolean; provisional?: boolean;
-        scheduledRun?: import('./workspaceService').ScheduledRunProvenance } | null;
+        scheduledRun?: import('./workspaceService').ScheduledRunProvenance;
+        /** Another tab took over editing this session; this tab is view-only until it takes it back. */
+        openElsewhere?: boolean } | null;
 
     /** Backend-synchronized count of persisted non-table files in the active workspace. */
     workspaceFileCount: number;
@@ -952,6 +954,12 @@ const interruptTurnProgress = (turn: TextTurn): TextTurn => ({
     codeExecutions: turn.codeExecutions?.map(execution => execution.status === 'running' ? { ...execution, status: 'interrupted' } : execution),
 });
 
+/** The connector form owned by a text turn, if that turn holds one. */
+const connectorFormOf = (state: DataFormulatorState, turnId: string) => {
+    const form = state.textTurns.find(turn => turn.id === turnId)?.form;
+    return form?.kind === 'connector' ? form : undefined;
+};
+
 export const dataFormulatorSlice = createSlice({
     name: 'dataFormulatorSlice',
     initialState: initialState,
@@ -965,6 +973,14 @@ export const dataFormulatorSlice = createSlice({
         setActiveWorkspace: (state, action: PayloadAction<DataFormulatorState['activeWorkspace']>) => {
             state.activeWorkspace = action.payload;
             state.workspaceFileCount = 0;
+        },
+        markSessionOpenElsewhere: (state, action: PayloadAction<{ id: string }>) => {
+            if (state.activeWorkspace?.id !== action.payload.id) return;
+            state.activeWorkspace.readOnly = true;
+            state.activeWorkspace.openElsewhere = true;
+        },
+        renameActiveWorkspace: (state, action: PayloadAction<{ id: string; displayName: string }>) => {
+            if (state.activeWorkspace?.id === action.payload.id) state.activeWorkspace.displayName = action.payload.displayName;
         },
         setWorkspaceFileCount: (state, action: PayloadAction<number>) => {
             state.workspaceFileCount = Math.max(0, action.payload);
@@ -2045,8 +2061,8 @@ export const dataFormulatorSlice = createSlice({
             let dataLoaderType = action.payload.dataLoaderType;
             let params = action.payload.params;
             state.dataLoaderConnectParams[dataLoaderType] = params;
-            const form = state.textTurns.find(turn => `connector-form:${turn.id}` === dataLoaderType)?.form;
-            if (form?.draft) {
+            const form = connectorFormOf(state, dataLoaderType.replace(/^connector-form:/, ''));
+            if (form?.draft && dataLoaderType.startsWith('connector-form:')) {
                 form.draft.revision += 1;
                 form.draft.changedByAgent = [];
             }
@@ -2059,8 +2075,8 @@ export const dataFormulatorSlice = createSlice({
             let paramName = action.payload.paramName;
             let paramValue = action.payload.paramValue;
             state.dataLoaderConnectParams[dataLoaderType][paramName] = paramValue;
-            const form = state.textTurns.find(turn => `connector-form:${turn.id}` === dataLoaderType)?.form;
-            if (form?.draft) {
+            const form = connectorFormOf(state, dataLoaderType.replace(/^connector-form:/, ''));
+            if (form?.draft && dataLoaderType.startsWith('connector-form:')) {
                 form.draft.revision += 1;
                 form.draft.changedByAgent = form.draft.changedByAgent.filter(name => name !== paramName);
             }
@@ -2144,10 +2160,10 @@ export const dataFormulatorSlice = createSlice({
         },
         selectConnectorFormSource: (state, action: PayloadAction<{ id: string; sourceType: string; title: string; fields: string[]; revision?: number; prefilled?: Record<string, string> }>) => {
             const { id, sourceType, title, fields } = action.payload;
-            const turn = state.textTurns.find(item => item.id === id);
-            const connector = turn?.form?.connector;
-            if (turn?.form?.draft && action.payload.revision !== undefined && turn.form.draft.revision !== action.payload.revision) {
-                turn.form.draft.conflict = true;
+            const form = connectorFormOf(state, id);
+            const connector = form?.connector;
+            if (form?.draft && action.payload.revision !== undefined && form.draft.revision !== action.payload.revision) {
+                form.draft.conflict = true;
                 return;
             }
             if (!connector || connector.status === 'connected' || connector.sourceType === sourceType) return;
@@ -2156,24 +2172,24 @@ export const dataFormulatorSlice = createSlice({
             if (action.payload.prefilled) connector.prefilled = action.payload.prefilled;
             delete connector.connectorId;
             delete connector.connectionName;
-            if (turn?.form) {
-                turn.form.title = title;
-                turn.form.draft = {
-                    revision: (turn.form.draft?.revision ?? 0) + 1,
+            if (form) {
+                form.title = title;
+                form.draft = {
+                    revision: (form.draft?.revision ?? 0) + 1,
                     fields, changedByAgent: [], conflict: false,
                 };
                 delete state.dataLoaderConnectParams[`connector-form:${id}`];
             }
         },
         initializeConnectorDraft: (state, action: PayloadAction<{ id: string; fields: string[] }>) => {
-            const form = state.textTurns.find(turn => turn.id === action.payload.id)?.form;
+            const form = connectorFormOf(state, action.payload.id);
             if (!form || form.connector.status === 'connected') return;
             if (!form.draft) form.draft = { revision: 0, fields: [], changedByAgent: [], conflict: false };
             form.draft.fields = action.payload.fields;
         },
         patchConnectorDraft: (state, action: PayloadAction<{ id: string; revision: number; values: Record<string, string> }>) => {
             const { id, revision, values } = action.payload;
-            const form = state.textTurns.find(turn => turn.id === id)?.form;
+            const form = connectorFormOf(state, id);
             if (!form?.draft || form.connector.status === 'connected') return;
             if (form.draft.revision !== revision) {
                 form.draft.conflict = true;

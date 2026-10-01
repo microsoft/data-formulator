@@ -54,7 +54,7 @@ vi.mock('react-redux', () => ({
 
 vi.mock('../../../../src/app/dfSlice', () => ({
     dfActions: {
-        setActiveWorkspace: (payload: any) => ({ type: 'setActiveWorkspace', payload }),
+        renameActiveWorkspace: (payload: any) => ({ type: 'renameActiveWorkspace', payload }),
     },
     dfSelectors: {
         getAllModels: (state: any) => [...(state.globalModels ?? []), ...(state.models ?? [])],
@@ -120,7 +120,7 @@ describe('useWorkspaceAutoName', () => {
 
         await waitFor(() => {
             expect(mocks.dispatch).toHaveBeenCalledWith({
-                type: 'setActiveWorkspace',
+                type: 'renameActiveWorkspace',
                 payload: { id: 'ws-1', displayName: '销售分析' },
             });
         });

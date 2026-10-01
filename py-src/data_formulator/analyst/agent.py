@@ -109,6 +109,7 @@ _TOOL_PROGRESS_ARG_KEYS: dict[str, tuple[str, ...]] = {
     "describe_data": ("source_id", "table_key"),
     "probe_data": ("source_id", "table_key", "query"),
     "describe_connector": ("source_type",),
+    "list_sessions": ("query",),
     "inspect_chart": ("chart_id",),
     "search_data_tables": ("query",),
     "search_knowledge": ("query",),
@@ -311,9 +312,12 @@ class AnalystAgent:
         max_repair_attempts: int | None = None,
         identity_id: str | None = None,
         execution_config: AnalystExecutionConfig | None = None,
+        workspace_id: str | None = None,
     ):
         self.client = client
         self.workspace = workspace
+        self.identity_id = identity_id
+        self.workspace_id = workspace_id
         from data_formulator.configuration import terminal_mode
         self.registry = (skill_registry or build_registry()).with_terminal_policy(terminal_mode())
         self.agent_exploration_rules = agent_exploration_rules
@@ -392,9 +396,15 @@ class AnalystAgent:
     def _initial_loaded_skills(
         self,
         workspace_inputs: WorkspaceInputManifest,
+        connector_form: dict[str, Any] | None = None,
     ) -> set[str]:
-        """Return the skill gates that must be open before the first LLM call."""
-        return {_META_SKILL} | ({"terminal"} if self.registry.has("terminal") else set())
+        """Return the skill gates that must be open before the first LLM call.
+
+        A request made while a connector form owns the canvas preloads
+        ``configure`` so the agent can read and revise that form in place.
+        """
+        return ({_META_SKILL} | ({"terminal"} if self.registry.has("terminal") else set())
+                | ({"configure"} if connector_form and self.registry.has("configure") else set()))
 
     # ------------------------------------------------------------------
     # Public API
@@ -452,7 +462,7 @@ class AnalystAgent:
         # everything a dispatched skill handler needs to build its own context
         # (e.g. the report skill rebuilds [AVAILABLE CHARTS] + thread
         # context).
-        self._loaded_skills = self._initial_loaded_skills(workspace_inputs)
+        self._loaded_skills = self._initial_loaded_skills(workspace_inputs, connector_form)
         self._run_payload = {
             "input_tables": input_tables,
             "external_references": normalize_external_references(external_references),
@@ -460,6 +470,8 @@ class AnalystAgent:
             "scratch_files": self.workspace.list_scratch_files(),
             "charts": charts or [],
             "connector_form": connector_form,
+            "identity_id": self.identity_id,
+            "workspace_id": self.workspace_id,
             "focused_thread": focused_thread,
             "other_threads": other_threads,
             "primary_tables": primary_tables,

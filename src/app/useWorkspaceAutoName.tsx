@@ -85,7 +85,7 @@ export function useWorkspaceAutoName() {
                     }),
                 });
                 if (data.display_name) {
-                    dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: data.display_name }));
+                    dispatch(dfActions.renameActiveWorkspace({ id: wsId, displayName: data.display_name }));
                     updateWorkspaceMeta(wsId, data.display_name).catch(() => {});
                 }
             } catch (e) {

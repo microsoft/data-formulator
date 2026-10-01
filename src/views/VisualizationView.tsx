@@ -57,6 +57,7 @@ import { buildDictTableFromWorkspace } from '../app/tableThunks';
 import embed from 'vega-embed';
 import { Chart, DictTable, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, FormArtifact, TextTurn, computeInsightKey } from '../components/ComponentType';
 import { WorkflowProgress, WorkflowProposal } from './WorkflowPanel';
+import { ScheduleFormArtifactView, SessionsFormArtifactView } from './SetupFormArtifacts';
 import { ConnectorFormCard } from '../components/ConnectorFormCard';
 import { ConversationCanvas } from './ConversationCanvas';
 
@@ -316,8 +317,19 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
 
 const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, form }) => {
     const dispatch = useDispatch();
+    const setupCanvas = (content: React.ReactNode) => (
+        <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: 'auto', bgcolor: 'background.default' }}>
+            <Box sx={{ width: '100%', maxWidth: 624, mx: 'auto', px: { xs: 2, sm: 3, md: 4 }, pt: { xs: 2, md: 3 }, pb: { xs: 3, md: 4 }, boxSizing: 'border-box' }}>
+                {content}
+            </Box>
+        </Box>
+    );
 
     switch (form.kind) {
+        case 'schedule':
+            return setupCanvas(<ScheduleFormArtifactView key={turn.id} turn={turn} form={form} />);
+        case 'sessions':
+            return setupCanvas(<SessionsFormArtifactView key={turn.id} turn={turn} form={form} />);
         case 'connector':
             if (form.connector.sourceType === 'local_folder' && form.connector.status !== 'connected') {
                 return (

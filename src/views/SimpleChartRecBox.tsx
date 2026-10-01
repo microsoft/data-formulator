@@ -62,6 +62,7 @@ import { iconVar, textVar } from '../app/layout';
 import { formatAnalystToolProgress } from './analystToolProgress';
 import { TerminalAccessButton, TerminalApprovalDialog, TerminalProposal } from '../components/TerminalApprovalDialog';
 import { pauseWorkflowRun, selectChatWorkflow, sendWorkflowMessage, WorkflowProgress, WORKFLOW_AUTHORING_PROMPT } from './WorkflowPanel';
+import { formArtifactFromEvent, requestAutoSubmit } from '../app/setupForms';
 import { handleApiError } from '../app/errorHandler';
 
 // Approx footprint of the leading lightning-bolt IconButton (size small,
@@ -1070,7 +1071,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const formOwner = canvasTarget?.type === 'text'
             ? textTurns.find(turn => turn.id === canvasTarget.textId && turn.form)
             : undefined;
-        if (formOwner?.form?.draft) {
+        if (formOwner?.form?.kind === 'connector' && formOwner.form.draft) {
             const form = formOwner.form;
             const values = connectorParams[`connector-form:${formOwner.id}`] || {};
             requestBody.connector_form = {
@@ -1428,10 +1429,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 return;
             }
             if (result.type === "interact" && result.form) {
-                if (result.form.kind !== 'connector') {
-                    throw new Error(`Unsupported form artifact kind: ${String(result.form.kind)}`);
-                }
-                const existingFormId = result.form.form_id;
+                const existingFormId = result.form.kind === 'connector' ? result.form.form_id : undefined;
                 if (existingFormId && existingFormId !== requestBody.connector_form?.form_id) {
                     throw new Error('Connector update targets a form outside this request');
                 }
@@ -1462,21 +1460,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     ...(!runIsContinuationRef.current && firstEntry?.role === 'prompt'
                         ? { prompt: firstEntry.displayContent || firstEntry.content }
                         : {}),
-                    ...(existingFormId ? { sourceFormId: existingFormId } : { form: {
-                        kind: 'connector',
-                        draft: { revision: 0, fields: [], changedByAgent: [], conflict: false },
-                        title: String(result.form.title || `Connect to ${sourceType}`),
-                        connector: {
-                            sourceType,
-                            prefilled: result.form.connector?.prefilled || {},
-                            status: 'pending',
-                        },
-                    } }),
+                    ...(existingFormId ? { sourceFormId: existingFormId } : { form: formArtifactFromEvent(result.form) }),
                     parentNodeId: runLastNodeRef.current || askedFromTable || askedFromNode,
                     ...(runSourceChartIdRef.current ? { sourceChartId: runSourceChartIdRef.current } : {}),
                     actionId,
                     createdAt: Date.now(),
                 }));
+                if (!existingFormId && result.form.auto_submit === true) requestAutoSubmit(turnId);
                 runLastNodeRef.current = turnId;
                 dispatch(dfActions.setFocused({ type: 'text', textId: turnId }));
                 if (currentDraftId) {

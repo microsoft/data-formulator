@@ -36,6 +36,7 @@ import { ScrollFadeEdge, useScrollFade } from '../components/ScrollFade';
 import { loadTable } from '../app/tableThunks';
 import { AppDispatch } from '../app/store';
 import { WorkflowProgress } from './WorkflowPanel';
+import { formArtifactStatus } from '../app/setupForms';
 import { WorkflowGears } from '../components/FunComponents';
 import { createExternalTableReference, loadsAsConnectorReference, isSemanticConnectorTable, deleteWorkspaceFile, importConnectorFile, listWorkspaceFiles, onWorkspaceFilesChanged, type WorkspaceFile } from '../app/workspaceService';
 import dfLogo from '../assets/df-logo.svg';
@@ -1587,11 +1588,7 @@ let SingleThreadGroupView: FC<{
             dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }));
         };
         const rowHL = highlighted || isFocused || focusedNarrativeTurnIds.has(turn.id);
-        const formStatus = turn.form?.kind === 'connector'
-            ? (turn.form.connector.status === 'connected'
-                ? `Connected to ${turn.form.connector.connectionName || turn.form.connector.sourceType}`
-                : turn.form.title)
-            : undefined;
+        const formStatus = turn.form ? formArtifactStatus(turn.form) : undefined;
         const preview = (formStatus || turn.content || '')
             .replace(/[#*`>|]/g, ' ').replace(/\s+/g, ' ').trim();
         // Once answered, the turn is history: it drops its card chrome and reads

@@ -33,7 +33,9 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
 import { generateUUID } from '../app/identity';
-import { generateWorkspaceId, leaveSession } from '../app/sessionThunks';
+import { generateWorkspaceId, leaveSession, openSession, renameSession } from '../app/sessionThunks';
+import { openSessionInNewTab } from '../app/sessionTabs';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { VirtualizedCatalogTree } from '../components/VirtualizedCatalogTree';
 import { ScrollFadeContainer } from '../components/ScrollFade';
 
@@ -68,7 +70,7 @@ import { apiRequest } from '../app/apiClient';
 import { LoadableState, errorLoadable, loadingLoadable, successLoadable } from '../app/loadableState';
 import { getConnectorIcon, connectorSortOrder, RelationalDBIcon } from '../icons';
 import { loadTable } from '../app/tableThunks';
-import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, updateWorkspaceMeta, onWorkspaceListChanged, WorkspaceLoadSupersededError } from '../app/workspaceService';
+import { listWorkspaces, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import { borderColor, sidebarEdge, sidebarMenuSx, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarRowDangerActionSx, sidebarRowMetaSx, sidebarRowSx, sidebarRowTitleSx, sidebarToolbarSx } from '../app/tokens';
@@ -539,12 +541,9 @@ const DataSourceSidebarPanel: React.FC<{
         setSessions(prev =>
             prev.map(s => (s.id === id ? { ...s, display_name: next } : s)),
         );
-        if (activeWorkspace?.id === id) {
-            dispatch(dfActions.setActiveWorkspace({ id, displayName: next }));
-        }
         cancelRenameSession();
         try {
-            await updateWorkspaceMeta(id, next);
+            await dispatch(renameSession(id, next));
         } catch {
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(), type: 'error',
@@ -632,26 +631,7 @@ const DataSourceSidebarPanel: React.FC<{
     }, [t]);
 
     const handleOpenSession = useCallback(async (sessionId: string, metaDisplayName?: string) => {
-        dispatch(dfActions.setSessionLoading({ loading: true, label: t('sidebar.openingWorkspace') }));
-        try {
-            const result = await loadWorkspace(sessionId);
-            if (result) {
-                const displayName = metaDisplayName || result.displayName;
-                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { ...result.state.activeWorkspace, id: sessionId, displayName, readOnly: result.readOnly } }));
-            } else {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(), type: 'error', component: 'workspace',
-                    value: t('workspace.failedToOpenWorkspace'),
-                }));
-            }
-        } catch (error) {
-            if (error instanceof WorkspaceLoadSupersededError) return;
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(), type: 'error', component: 'workspace',
-                value: t('workspace.failedToOpenWorkspace'),
-            }));
-        }
-        dispatch(dfActions.setSessionLoading({ loading: false }));
+        await dispatch(openSession(sessionId, metaDisplayName));
     }, [dispatch]);
 
     const handleDeleteSession = useCallback(async (sessionId: string, e: React.MouseEvent) => {
@@ -2049,7 +2029,13 @@ const DataSourceSidebarPanel: React.FC<{
                             enterDelay={400}
                         >
                         <Box
-                            onClick={() => { if (!isRenaming && activeWorkspace?.id !== s.id) handleOpenSession(s.id, s.display_name); }}
+                            onClick={(e) => {
+                                if (isRenaming) return;
+                                // Cmd/Ctrl-click opens the session in its own tab, like a link.
+                                if (e.metaKey || e.ctrlKey) { openSessionInNewTab(s.id); return; }
+                                if (activeWorkspace?.id !== s.id) handleOpenSession(s.id, s.display_name);
+                            }}
+                            onAuxClick={(e) => { if (e.button === 1 && !isRenaming) { e.preventDefault(); openSessionInNewTab(s.id); } }}
                             sx={{ ...sidebarRowSx, cursor: isRenaming || activeWorkspace?.id === s.id ? 'default' : 'pointer' }}
                         >
                             {activeWorkspace?.id === s.id && (
@@ -2098,13 +2084,21 @@ const DataSourceSidebarPanel: React.FC<{
                                 const useCreated = sessionSort === 'created_desc' || sessionSort === 'created_asc';
                                 const stamp = formatCompactTime(useCreated ? s.created_at : (s.saved_at || s.created_at));
                                 const actionable = !s.read_only;
-                                if (!stamp && !actionable) return null;
+                                const newTab = activeWorkspace?.id !== s.id;
+                                if (!stamp && !actionable && !newTab) return null;
                                 return (
                                     <Box className="sidebar-row-trailing" sx={{ ml: 0.5 }}>
                                         {stamp && <Typography className={actionable ? 'sidebar-row-meta' : undefined} sx={sidebarRowMetaSx}>
                                             {stamp}
                                         </Typography>}
-                                        {actionable && <Box className="sidebar-row-actions">
+                                        {(actionable || newTab) && <Box className="sidebar-row-actions">
+                                            {newTab && <Tooltip title={t('sidebar.openInNewTab', { defaultValue: 'Open in new tab' })}>
+                                                <IconButton size="small" aria-label={t('sidebar.openInNewTab', { defaultValue: 'Open in new tab' })} sx={sidebarRowActionSx}
+                                                    onClick={(e) => { e.stopPropagation(); openSessionInNewTab(s.id); }}>
+                                                    <OpenInNewIcon />
+                                                </IconButton>
+                                            </Tooltip>}
+                                            {actionable && <>
                                             <Tooltip title={t('sidebar.rename', { defaultValue: 'Rename' })}>
                                                 <IconButton size="small" aria-label={t('sidebar.rename', { defaultValue: 'Rename' })} sx={sidebarRowActionSx}
                                                     onClick={(e) => { e.stopPropagation(); startRenameSession(s.id, s.display_name); }}>
@@ -2123,6 +2117,7 @@ const DataSourceSidebarPanel: React.FC<{
                                                     <DeleteIcon />
                                                 </IconButton>
                                             </Tooltip>
+                                            </>}
                                         </Box>}
                                     </Box>
                                 );

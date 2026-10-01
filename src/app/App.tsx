@@ -96,10 +96,10 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { getUrls } from './utils';
 import { apiRequest } from './apiClient';
-import { listWorkspaces, loadWorkspace, deleteWorkspace, saveWorkspaceState, onWorkspaceListChanged, WorkspaceLoadSupersededError } from './workspaceService';
-import { getSerializableState } from './useAutoSave';
-import { leaveSession } from './sessionThunks';
+import { listWorkspaces, deleteWorkspace, onWorkspaceListChanged } from './workspaceService';
+import { leaveSession, openSession } from './sessionThunks';
 import store, { persistor } from './store';
+import { useSessionTabs } from './useSessionTabs';
 import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
 import ChatIcon from '@mui/icons-material/Chat';
 import ArticleIcon from '@mui/icons-material/Article';
@@ -502,29 +502,14 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
 
     const handleOpen = async (wsId: string) => {
         if (activeWorkspace?.id === wsId) { onClose(); return; }
-        try { await saveWorkspaceState(getSerializableState(store.getState())); } catch { /* best effort */ }
         const wsEntry = workspaces.find(w => w.id === wsId);
         setLoading(true);
-        dispatch(dfActions.setSessionLoading({ loading: true, label: t('workspace.openingWorkspace') }));
         onClose();
-        try {
-            const result = await loadWorkspace(wsId);
-            if (result) {
-                const displayName = result.displayName || wsEntry?.display_name || wsId;
-                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: wsId, displayName, readOnly: result.readOnly } }));
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: t('workspace.openedSession', { name: displayName }) }));
-            } else {
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: t('workspace.failedToOpenWorkspace') }));
-            }
-        } catch (e) {
-            if (e instanceof WorkspaceLoadSupersededError) {
-                setLoading(false);
-                return;
-            }
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: t('workspace.failedToOpenWorkspace') }));
+        if (await dispatch(openSession(wsId, wsEntry?.display_name))) {
+            const displayName = store.getState().activeWorkspace?.displayName || wsId;
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: t('workspace.openedSession', { name: displayName }) }));
         }
         setLoading(false);
-        dispatch(dfActions.setSessionLoading({ loading: false }));
     };
 
     const handleCreate = () => {
@@ -1087,6 +1072,8 @@ const AppShell: FC = () => {
         setSearchParams(searchParams, { replace: true });
     }, []);
 
+    // Each tab owns the session named in its URL; tabs hand sessions off safely.
+    useSessionTabs();
     // Auto-persist session state to the active workspace (debounced)
     useAutoSave();
     // Auto-name workspace after first table + model are available

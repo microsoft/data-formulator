@@ -43,6 +43,9 @@ const toolLabelKeys: Record<string, string> = {
     load_data: 'dataLoading.toolLabels.loadingData',
     list_connectors: 'dataThread.listingConnectors',
     describe_connector: 'dataThread.readingConnector',
+    list_workflows: 'dataThread.listingWorkflows',
+    list_schedules: 'dataThread.listingSchedules',
+    list_sessions: 'dataThread.searchingSessions',
 };
 
 export const formatAnalystToolProgress = (
@@ -80,6 +83,9 @@ export const formatAnalystToolProgress = (
             break;
         case 'describe_connector':
             detail = values.source_type || '';
+            break;
+        case 'list_sessions':
+            detail = values.query ? `“${values.query}”` : '';
             break;
     }
 

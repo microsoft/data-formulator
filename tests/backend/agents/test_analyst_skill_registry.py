@@ -17,7 +17,7 @@ def test_builtin_meta_bundle_has_concrete_hidden_owners() -> None:
     assert registry.expanded_names(["meta"]) == [
         "meta", "analysis", "workspace", "visualization",
     ]
-    assert registry.gated_skill_names() == ["report", "terminal"]
+    assert registry.gated_skill_names() == ["configure", "report", "terminal"]
     assert registry.get_skill("meta") is not None
     assert not registry.has("interaction")
     assert registry.action_owner("visualize") == "visualization"
@@ -35,13 +35,11 @@ def test_builtin_meta_bundle_has_concrete_hidden_owners() -> None:
         "read_workspace_item",
         "search_workspace_items",
         "summarize_data_sources", "list_data", "find_data", "describe_data", "probe_data",
-        "list_connectors", "describe_connector", "read_connector_form",
     }
     assert {
         spec["function"]["name"] for spec in registry.action_tools_for(["meta"])
     } == {
-        "visualize", "ask_user", "long_response",
-        "propose_data_operation", "propose_connection", "update_connector_form", "propose_workflow",
+        "visualize", "ask_user", "long_response", "propose_data_operation",
     }
     assert registry.action_owner("long_response") == "meta"
 
@@ -52,9 +50,11 @@ def test_baseline_guides_progressive_visual_analysis() -> None:
     visualization = registry.load_body("visualization")
     assert baseline.count(visualization) == 1
     assert baseline.count("## Progressive Visual Analysis") == 1
-    assert baseline.count("## Define Workflows In Conversation") == 1
-    assert "## Define Workflows In Conversation" not in registry.load_body("workspace")
+    assert "## Workflows" not in baseline
+    assert "Load `configure`" in baseline
     assert "propose_workflow" in registry.action_names()
+    configure = registry.load_body("configure")
+    baseline = configure
     assert "use the latest relevant complete definition" in baseline
     assert "actual steps and instructions, not only the summary" in baseline
     assert "near-identical proposal as an update" in baseline
@@ -96,16 +96,26 @@ def test_long_response_emits_terminal_completion_and_rejects_empty_content() -> 
         assert "non-empty" in stopped.value.value
 
 
-def test_connector_actions_are_registered_as_actions_not_read_only_tools() -> None:
+def test_setup_actions_are_owned_by_the_gated_configure_skill() -> None:
     registry = build_registry()
-    action_names = {spec["function"]["name"] for spec in registry.action_tools_for(["workspace"])}
-    tool_names = {spec["function"]["name"] for spec in registry.tools_for(["workspace"])}
+    action_names = {spec["function"]["name"] for spec in registry.action_tools_for(["configure"])}
+    tool_names = {spec["function"]["name"] for spec in registry.tools_for(["configure"])}
 
-    assert action_names == {"propose_data_operation", "propose_connection", "update_connector_form", "propose_workflow"}
+    assert action_names == {
+        "propose_connection", "update_connector_form", "propose_workflow", "propose_schedule", "propose_session_changes",
+    }
     for action_name in action_names:
-        assert registry.action_owner(action_name) == "workspace"
+        assert registry.action_owner(action_name) == "configure"
         assert action_name not in tool_names
-    assert {"list_connectors", "describe_connector", "read_connector_form"} <= tool_names
+        assert not registry.is_active(["meta"], "configure")
+    assert tool_names == {
+        "list_connectors", "describe_connector", "read_connector_form", "list_workflows", "list_schedules", "list_sessions",
+    }
+    assert {spec["function"]["name"] for spec in registry.action_tools_for(["workspace"])} == {"propose_data_operation"}
+    configure = registry.load_body("configure")
+    for section in ("## Connections", "## Workflows", "## Schedules", "## Sessions"):
+        assert configure.count(section) == 1
+    assert "user_review_needed: false" in configure
 
 
 def test_meta_preserves_questions_and_options_beyond_three() -> None:

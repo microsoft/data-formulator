@@ -29,7 +29,6 @@ import {
     Link,
     Select,
     MenuItem,
-    TextField,
     Alert,
     Tabs,
     Tab,
@@ -68,13 +67,12 @@ import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import { useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
-import { listWorkspaceFiles, listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, updateWorkspaceMeta, WorkspaceLoadSupersededError } from '../app/workspaceService';
+import { listWorkspaceFiles, listWorkspaces, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, updateWorkspaceMeta } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import { AppDispatch, store } from '../app/store';
-import { generateWorkspaceId, ensureActiveWorkspace } from '../app/sessionThunks';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
+import { generateWorkspaceId, ensureActiveWorkspace, openSession } from '../app/sessionThunks';
+import { SessionCard, SessionCardAction, sessionCardGridSx } from '../components/SessionCard';
 import IconButton from '@mui/material/IconButton';
 import { ArtifactDeleteButton } from './DataThreadCards';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -188,26 +186,7 @@ export const DataFormulatorFC = ({ }) => {
     }, [fetchWorkspaces]);
 
     const handleOpenWorkspace = useCallback(async (name: string, metaDisplayName?: string) => {
-        dispatch(dfActions.setSessionLoading({ loading: true, label: t('workspace.openingWorkspace') }));
-        try {
-            const result = await loadWorkspace(name);
-            if (result) {
-                const displayName = metaDisplayName || result.displayName;
-                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { ...result.state.activeWorkspace, id: name, displayName, readOnly: result.readOnly } }));
-            } else {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(), type: 'error', component: 'workspace',
-                    value: t('workspace.failedToOpenWorkspace'),
-                }));
-            }
-        } catch (error) {
-            if (error instanceof WorkspaceLoadSupersededError) return;
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(), type: 'error', component: 'workspace',
-                value: t('workspace.failedToOpenWorkspace'),
-            }));
-        }
-        dispatch(dfActions.setSessionLoading({ loading: false }));
+        await dispatch(openSession(name, metaDisplayName));
     }, [dispatch]);
 
     const handleDeleteWorkspace = useCallback(async (name: string) => {
@@ -1017,81 +996,24 @@ export const DataFormulatorFC = ({ }) => {
                         </Box>
                 </Box>
                     <Box role="tabpanel" id="home-sessions-panel" aria-labelledby="home-sessions-tab" hidden={savedLibraryTab !== 'sessions'}>
-                <Box id="saved-session-grid" sx={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))',
-                    gap: 1.5,
-                }}>
-                    {(showAllWorkspaces ? sortedSavedWorkspaces : sortedSavedWorkspaces.slice(0, INITIAL_SESSION_COUNT)).map(w => {
-                        const isRenaming = renamingWs === w.id;
-                        return (
-                        <Card key={w.id} variant="outlined" onClick={isRenaming ? undefined : () => handleOpenWorkspace(w.id, w.display_name)} sx={{
-                            position: 'relative', textAlign: 'left',
-                            cursor: isRenaming ? 'default' : 'pointer',
-                            '&:hover': isRenaming ? {} : { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
-                            '&:hover .ws-actions, &:focus-within .ws-actions': { opacity: 1 },
-                            '@media (hover: none)': { '& .ws-actions': { opacity: 1 } },
-                        }}>
-                            <CardContent sx={{ py: 1.5, px: 2 }}>
-                                {isRenaming ? (
-                                    <TextField
-                                        autoFocus
-                                        fullWidth
-                                        variant="standard"
-                                        value={renameDraft}
-                                        onChange={(e) => setRenameDraft(e.target.value)}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onBlur={commitRenameWorkspace}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                                e.preventDefault();
-                                                commitRenameWorkspace();
-                                            } else if (e.key === 'Escape') {
-                                                e.preventDefault();
-                                                cancelRenameWorkspace();
-                                            }
-                                        }}
-                                        slotProps={{ input: { sx: { fontSize: textVar.lg, fontWeight: 500 } } }}
-                                    />
-                                ) : (
-                                    <Typography variant="body2" fontWeight={400} noWrap sx={{ color: 'text.primary', pr: 8 }}>
-                                        {w.display_name}
-                                    </Typography>
-                                )}
-                                {w.scheduled_run && !w.scheduled_run.forked && <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: textVar.xs, color: 'text.secondary', mt: 0.5 }}
+                <Box id="saved-session-grid" sx={sessionCardGridSx}>
+                    {(showAllWorkspaces ? sortedSavedWorkspaces : sortedSavedWorkspaces.slice(0, INITIAL_SESSION_COUNT)).map(w =>
+                        <SessionCard key={w.id} name={w.display_name} onOpen={() => handleOpenWorkspace(w.id, w.display_name)}
+                            rename={renamingWs === w.id ? { value: renameDraft, label: t('workspace.rename'), onChange: setRenameDraft,
+                                onCommit: commitRenameWorkspace, onCancel: cancelRenameWorkspace } : undefined}
+                            captions={[
+                                w.scheduled_run && !w.scheduled_run.forked && <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary', mt: 0.5 }}
                                     title={`${w.scheduled_run.scheduleName}: ${new Date(w.scheduled_run.scheduledFor).toLocaleString()}`}>
                                     <ScheduleOutlinedIcon sx={{ fontSize: iconVar.sm }} />Scheduled{w.shared ? ' · Shared' : ''}
-                                </Box>}
-                                {w.saved_at && (
-                                    <Typography variant="caption" color="text.disabled" sx={{ fontSize: textVar.xs }}>
-                                        {new Date(w.saved_at).toLocaleString()}
-                                    </Typography>
-                                )}
-                            </CardContent>
-                            <Box className="ws-actions" sx={{
-                                position: 'absolute', top: 2, right: 2,
-                                display: isRenaming || w.read_only ? 'none' : 'flex',
-                                alignItems: 'center',
-                                opacity: 0,
-                                transition: 'opacity 0.15s',
-                            }}>
-                                <Tooltip title={t('workspace.rename')}>
-                                    <IconButton size="small" aria-label={t('workspace.rename')} sx={{ p: 0.5, color: 'text.secondary' }}
-                                        onClick={(e) => { e.stopPropagation(); startRenameWorkspace(w.id, w.display_name); }}>
-                                        <EditOutlinedIcon sx={{ fontSize: iconVar.md }} />
-                                    </IconButton>
-                                </Tooltip>
-                                <Tooltip title={t('workspace.export')}>
-                                    <IconButton size="small" aria-label={t('workspace.export')} sx={{ p: 0.5, color: 'text.secondary' }}
-                                        onClick={(e) => { e.stopPropagation(); handleExportWorkspace(w.id); }}>
-                                        <DownloadIcon sx={{ fontSize: iconVar.md }} />
-                                    </IconButton>
-                                </Tooltip>
+                                </Box>,
+                                w.saved_at && new Date(w.saved_at).toLocaleString(),
+                            ]}
+                            actions={w.read_only ? undefined : <>
+                                <SessionCardAction label={t('workspace.rename')} icon={<EditOutlinedIcon />}
+                                    onClick={() => startRenameWorkspace(w.id, w.display_name)} />
+                                <SessionCardAction label={t('workspace.export')} icon={<DownloadIcon />} onClick={() => handleExportWorkspace(w.id)} />
                                 <ArtifactDeleteButton label={t('workspace.delete')} onClick={() => setConfirmDeleteWs(w.id)} />
-                            </Box>
-                        </Card>
-                        );
-                    })}
+                            </>} />)}
                 </Box>
                 {sortedSavedWorkspaces.length > INITIAL_SESSION_COUNT && (
                     <Button size="small" aria-expanded={showAllWorkspaces} aria-controls="saved-session-grid"
@@ -1136,7 +1058,12 @@ export const DataFormulatorFC = ({ }) => {
             <WorkflowRunObserver />
             {activeWorkspace?.readOnly && (
                 <Alert severity="warning" sx={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 1200, maxWidth: 720 }}>
-                    {activeWorkspace.id.startsWith('shared-') ? <>Shared scheduled session
+                    {activeWorkspace.openElsewhere ? <>
+                        {t('workspace.openElsewhere', 'This session is being edited in another tab. Changes here are not saved.')}
+                        <Button size="small" sx={{ ml: 1 }} onClick={() => void dispatch(openSession(activeWorkspace.id, activeWorkspace.displayName, { saveCurrent: false }))}>
+                            {t('workspace.editHere', 'Edit here')}
+                        </Button></>
+                    : activeWorkspace.id.startsWith('shared-') ? <>Shared scheduled session
                         <Button size="small" onClick={async () => {
                             try {
                                 const { apiRequest } = await import('../app/apiClient');

@@ -2,22 +2,6 @@
   {
     "type": "function",
     "function": {
-      "name": "propose_workflow",
-      "description": "Propose or revise an analysis workflow definition in the current conversation for user review, Save, or Run. Use this for workflow creation instead of creating a Markdown file. This action neither saves nor executes the workflow. Ground it in the user's conversation and available data; use ask_user for material unknowns.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "definition": { "$ref": "workflow-definition" },
-          "summary": { "type": "string", "description": "Concise description of the proposed definition or revision, without claiming execution or saving." }
-        },
-        "required": ["definition", "summary"],
-        "additionalProperties": false
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "create_data",
       "description": "Register newly acquired data as a reusable workspace input using acquisition metadata, or create an independently needed data deliverable. For chart-specific transformations, use visualize directly: it publishes both the derived table and chart. Rejects existing names. Provide rows OR sandboxed Python code producing a DataFrame; parsing and normalization can happen in this call. Declare actual data/file input_sources; use [] only for generated data without inputs and identify synthetic data. Returns the stable input ID, path, table name and content hash for immediate analysis and charting.",
       "parameters": {
@@ -298,48 +282,6 @@
         },
         "required": [
           "query"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "read_connector_form",
-      "description": "Read the currently targeted connector form artifact, its revision, schema and non-sensitive user-edited values. Credentials are never returned.",
-      "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "update_connector_form",
-      "description": "Patch the existing form artifact after reading it. Preserve unrelated fields; never connect, save credentials, or create a replacement form. Pause for user review.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "form_id": {
-            "type": "string"
-          },
-          "revision": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "values": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "form_id",
-          "revision",
-          "values"
         ]
       }
     }
@@ -642,58 +584,6 @@
           "source_id",
           "table_key"
         ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "list_connectors",
-      "description": "List connector types available in this deployment when you need to look up a type key or answer a question about supported sources. Not required to open the connection form: propose_connection can show the selector directly.",
-      "parameters": {
-        "type": "object",
-        "properties": {}
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "describe_connector",
-      "description": "Return setup fields and authentication choices for one source_type returned by list_connectors. After this, call propose_connection in the same turn; describing fields does not open the form.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "source_type": {
-            "type": "string",
-            "description": "Connector type key returned by list_connectors."
-          }
-        },
-        "required": [
-          "source_type"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "propose_connection",
-      "description": "Open the user-confirmed connection form with a connector selector. Call immediately when the user wants to connect a source, even if its type is unknown; omit source_type to let the user choose in the form. No prior discovery call is required. Provide a known source_type to preselect it. Never invent credentials or connect automatically.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "source_type": {
-            "type": "string",
-            "description": "Connector type key returned by list_connectors."
-          },
-          "prefilled": {
-            "type": "object",
-            "description": "Optional connector field values already supplied by the user. Values seed the live form and must not be repeated in prose.",
-            "additionalProperties": {}
-          }
-        },
-        "required": []
       }
     }
   },

@@ -38,7 +38,7 @@ def agent(tmp_path, instance, monkeypatch):
 def test_main_chat_proposes_workflow_without_saving_or_executing(tmp_path, instance, monkeypatch, mode):
     from data_formulator.analyst.agent import AnalystAgent
     from data_formulator.analyst.skills.base import SkillContext
-    from data_formulator.analyst.skills.workspace.skill import WorkspaceSkill
+    from data_formulator.analyst.skills.configure.skill import ConfigureSkill
 
     monkeypatch.setattr("data_formulator.auth.identity.is_local_mode", lambda: mode == "local")
     monkeypatch.setenv("DF_MANAGED", "true" if mode == "managed" else "false")
@@ -48,7 +48,7 @@ def test_main_chat_proposes_workflow_without_saving_or_executing(tmp_path, insta
     assert "propose_workflow" in analyst.registry.action_names()
     context = SkillContext(client=MagicMock(), workspace=workspace, trajectory=[], payload={})
     instance["steps"][0]["description"] = "Assess market changes with verified coverage."
-    events = list(WorkspaceSkill().handle_action("propose_workflow", {"definition": instance, "summary": "Ready for review"}, context))
+    events = list(ConfigureSkill().handle_action("propose_workflow", {"definition": instance, "summary": "Ready for review"}, context))
     assert events[0]["type"] == "completion"
     proposal = events[0]["content"]["workflow_definition"]
     assert proposal["definition"] == instance
@@ -59,12 +59,12 @@ def test_main_chat_proposes_workflow_without_saving_or_executing(tmp_path, insta
     assert state["plan"]["steps"] is not state["definition"]["steps"]
     assert workspace.list_workspace_files() == []
     assert workspace.list_tables() == []
-    invalid = WorkspaceSkill().handle_action("propose_workflow", {"definition": {"name": "invalid"}}, context)
+    invalid = ConfigureSkill().handle_action("propose_workflow", {"definition": {"name": "invalid"}}, context)
     with pytest.raises(StopIteration) as stopped:
         next(invalid)
     assert "Invalid workflow definition" in stopped.value.value
     guidance_only = {key: value for key, value in instance.items() if key != "steps"}
-    invalid = WorkspaceSkill().handle_action("propose_workflow", {"definition": guidance_only}, context)
+    invalid = ConfigureSkill().handle_action("propose_workflow", {"definition": guidance_only}, context)
     with pytest.raises(StopIteration) as stopped:
         next(invalid)
     assert "'steps' is a required property" in stopped.value.value
@@ -74,13 +74,13 @@ def test_main_chat_proposes_workflow_without_saving_or_executing(tmp_path, insta
 
 def test_workflow_authoring_rejects_unmanaged_hosted_mode(tmp_path, instance, monkeypatch):
     from data_formulator.analyst.skills.base import SkillContext
-    from data_formulator.analyst.skills.workspace.skill import WorkspaceSkill
+    from data_formulator.analyst.skills.configure.skill import ConfigureSkill
 
     monkeypatch.setattr("data_formulator.auth.identity.is_local_mode", lambda: False)
     monkeypatch.setenv("DF_MANAGED", "false")
     monkeypatch.setenv("DISABLE_DATABASE", "false")
     context = SkillContext(client=MagicMock(), workspace=Workspace("author", root_dir=tmp_path), trajectory=[], payload={})
-    proposal = WorkspaceSkill().handle_action("propose_workflow", {"definition": instance}, context)
+    proposal = ConfigureSkill().handle_action("propose_workflow", {"definition": instance}, context)
     with pytest.raises(StopIteration) as stopped:
         next(proposal)
     assert "requires local or managed mode" in stopped.value.value
@@ -92,7 +92,7 @@ def test_workflow_proposal_exposes_canonical_definition_schema():
     from jsonschema import Draft202012Validator
 
     Draft202012Validator.check_schema(WORKFLOW_DEFINITION_SCHEMA)
-    proposal = next(spec for spec in build_registry().tool_specs["workspace"]
+    proposal = next(spec for spec in build_registry().tool_specs["configure"]
                     if spec["function"]["name"] == "propose_workflow")
     contract = proposal["function"]["parameters"]
     assert contract["properties"]["definition"] == WORKFLOW_DEFINITION_SCHEMA

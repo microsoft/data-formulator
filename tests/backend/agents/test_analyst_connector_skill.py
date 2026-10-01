@@ -13,7 +13,7 @@ pytestmark = pytest.mark.backend
 
 
 def _skill():
-    skill = build_registry().get_skill("workspace")
+    skill = build_registry().get_skill("configure")
     assert skill is not None
     return skill
 
@@ -136,11 +136,11 @@ def test_propose_connection_emits_prefilled_canvas_form_without_echo() -> None:
 
     assert events == [{
         "type": "interact",
-        "thought": "",
         "form": {
             "kind": "connector",
             "title": "Connect to PostgreSQL",
             "response": "Choose a connector and review the connection details before connecting.",
+            "auto_submit": False,
             "connector": {
                 "source_type": "postgresql",
                 "prefilled": {"host": "db.example.com", "password": "secret"},
@@ -148,6 +148,18 @@ def test_propose_connection_emits_prefilled_canvas_form_without_echo() -> None:
         },
     }]
     assert "secret" not in json.dumps({key: value for key, value in events[0].items() if key != "form"})
+
+
+def test_propose_connection_always_waits_for_the_users_connect(monkeypatch) -> None:
+    skill = _skill()
+    monkeypatch.setattr("data_formulator.auth.identity.is_local_mode", lambda: True)
+    with patch.dict("data_formulator.data_loader.DATA_LOADERS", {"postgresql": _Loader}, clear=True):
+        form = list(skill.handle_action("propose_connection", {
+            "source_type": "postgresql", "prefilled": {"host": "db.example.com", "user": "reader"}, "user_review_needed": False,
+        }, _context()))[0]["form"]
+
+    assert form["auto_submit"] is False
+    assert "Choose a connector and review" in form["response"]
 
 
 def test_local_folder_is_available_when_registered() -> None:

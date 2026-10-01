@@ -18,6 +18,7 @@ import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
 import { ArtifactDeleteButton, ThreadArtifactCard } from './DataThreadCards';
+import { cardHoverSx, mutedChipBg, titleChipSx } from '../components/ItemCard';
 import { readingTypography, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarRowTitleSx, sidebarToolbarSx } from '../app/tokens';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import TerminalIcon from '@mui/icons-material/Terminal';
@@ -35,7 +36,7 @@ import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType, ge
 import { store } from '../app/store';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
 import { loadWorkspace, notifyWorkspaceFilesChanged, WorkspaceLoadSupersededError } from '../app/workspaceService';
-import { createConversationRootId, createDictTable, computeInsightKey, FieldItem, TextTurn, ClarificationResponse } from '../components/ComponentType';
+import { createConversationRootId, createDictTable, computeInsightKey, FieldItem, TextTurn, ClarificationResponse, ScheduleConfig } from '../components/ComponentType';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { textVar, iconVar } from '../app/layout';
 import { ListDetailDialog } from '../components/ListDetailDialog';
@@ -52,7 +53,7 @@ interface WorkflowParameter {
     required?: boolean; default?: string | number | boolean; options?: string[]; allow_custom?: boolean;
 }
 interface WorkflowSetup { parameters: Record<string, string | number | boolean>; instructions: string }
-interface Instance { path: string; name: string; overview?: string; error?: string; origin?: 'user' | 'demo' | 'server'; parameters?: WorkflowParameter[]; content?: string }
+export interface WorkflowLibraryItem { path: string; name: string; overview?: string; error?: string; origin?: 'user' | 'demo' | 'server'; parameters?: WorkflowParameter[]; content?: string }
 export interface Run {
     workflow_path?: string;
     external_references?: import('../components/ComponentType').ExternalTableReference[];
@@ -1028,7 +1029,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                     }
                 }} />
         </Box> : statusAction('Review import', <PlayArrowIcon sx={{ fontSize: 18 }} />, () => store.dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }))))}
-        {workflow.status === 'paused' && workflow.interactionId && turn.form && interactionOnly && <ConnectorFormCard
+        {workflow.status === 'paused' && workflow.interactionId && turn.form?.kind === 'connector' && interactionOnly && <ConnectorFormCard
             key={workflow.interactionId} messageId={turn.id} prompt={turn.form.connector} variant="bare" onResolved={resolution => {
                 void resume({ reply: `Connection created: ${resolution.connectionName} (connector ID: ${resolution.connectorId || ''}). Inspect this connector and continue the workflow.` });
             }} />}
@@ -1068,7 +1069,7 @@ const workflowSetupContentSx = {
     '& .MuiTypography-caption': { display: 'block', fontSize: textVar.xs, lineHeight: 1.6, mt: 0.5 },
 };
 
-const WorkflowSetupFields: React.FC<{ parameters: WorkflowParameter[]; values: WorkflowSetup['parameters'];
+export const WorkflowSetupFields: React.FC<{ parameters: WorkflowParameter[]; values: WorkflowSetup['parameters'];
     onChange: (values: WorkflowSetup['parameters']) => void; disabled: boolean }> = ({ parameters, values, onChange, disabled }) => <>
     {parameters.map(parameter => {
         const value = values[parameter.name] ?? '';
@@ -1264,23 +1265,102 @@ export const WorkflowProposal: React.FC<{ turn: TextTurn; canvas?: boolean }> = 
 
 export const WORKFLOW_AUTHORING_PROMPT = 'Help me create a workflow from our current conversation and data. Suggest a few useful directions for me to choose from before drafting it. Do not save or execute it yet.';
 
-interface ScheduleConfig {
-    name: string; workflow: string; model_id: string; time: string; timezone: string; weekdays: number[];
-    enabled: boolean; auto_approve: boolean; max_retries: number; catch_up: boolean; publish: boolean; setup?: WorkflowSetup;
-}
-interface WorkflowSchedule {
+export interface WorkflowSchedule {
     id: string; config: ScheduleConfig; next_at: string;
     history?: { id: string; scheduled_for: string; status: string; message: string; attempts: number }[];
 }
 
-const scheduleCadence = (config: ScheduleConfig) => {
+export const scheduleCadence = (config: ScheduleConfig) => {
     const days = [...config.weekdays].sort();
     const cadence = days.length === 7 ? 'Daily' : days.join() === '0,1,2,3,4' ? 'Weekdays'
         : days.map(day => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][day]).join(', ');
     return `${cadence} at ${config.time}`;
 };
 
-const WorkflowSchedules: React.FC<{ items: Instance[]; onClose: () => void; initialSchedule?: WorkflowSchedule; startNew?: boolean;
+export const defaultScheduleConfig = (models: { id: string }[], selectedModelId?: string): ScheduleConfig => ({
+    name: '', workflow: '', model_id: models.find(model => model.id === selectedModelId)?.id || models[0]?.id || '', time: '09:00',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, weekdays: [0, 1, 2, 3, 4, 5, 6], enabled: true,
+    auto_approve: false, max_retries: 2, catch_up: false, publish: false,
+});
+
+const schedulesChanged = new EventTarget();
+export const onSchedulesChanged = (listener: () => void) => {
+    schedulesChanged.addEventListener('change', listener);
+    return () => schedulesChanged.removeEventListener('change', listener);
+};
+
+/** Save a schedule through the same route as the Schedules dialog and notify schedule views. */
+export async function saveSchedule(config: ScheduleConfig, identifier?: string): Promise<WorkflowSchedule> {
+    const { data } = await apiRequest<{ schedule: WorkflowSchedule }>('/api/schedules', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...(identifier ? { id: identifier } : {}), config }) });
+    schedulesChanged.dispatchEvent(new Event('change'));
+    return data.schedule;
+}
+
+export const listWorkflowLibrary = async () => (await post<{ items: WorkflowLibraryItem[] }>('list')).items;
+
+/** Schedule fields shared by the Schedules dialog and agent-proposed schedule forms. */
+export const ScheduleConfigFields: React.FC<{ items: WorkflowLibraryItem[]; config: ScheduleConfig; onChange: (config: ScheduleConfig) => void;
+    hosted: boolean; disabled: boolean }> = ({ items, config, onChange, hosted, disabled }) => {
+    const models = useSelector((state: DataFormulatorState) => state.globalModels);
+    const [customDays, setCustomDays] = useState(false);
+    const workflow = items.find(item => item.path === config.workflow);
+    const repeat = customDays ? 'custom' : config.weekdays.length === 7 ? 'daily'
+        : config.weekdays.length === 5 && [0, 1, 2, 3, 4].every(day => config.weekdays.includes(day)) ? 'weekdays' : 'custom';
+    return <>
+        <TextField size="small" select required label="Workflow" value={config.workflow} disabled={disabled}
+            onChange={event => {
+                const selected = items.find(item => item.path === event.target.value);
+                onChange({ ...config, workflow: event.target.value, name: !config.name || config.name === workflow?.name ? selected?.name || '' : config.name,
+                    setup: { parameters: Object.fromEntries((selected?.parameters || []).flatMap(parameter => parameter.default === undefined ? [] : [[parameter.name, parameter.default]])), instructions: '' } });
+            }}>
+            {items.filter(item => !hosted || item.origin === 'demo' || item.origin === 'server').map(item => <MenuItem key={item.path} value={item.path}>{item.name}</MenuItem>)}
+        </TextField>
+        <TextField size="small" required label="Schedule name" value={config.name} disabled={disabled}
+            onChange={event => onChange({ ...config, name: event.target.value })} />
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 2 }}>
+            <TextField size="small" select label="Repeat" value={repeat} disabled={disabled} onChange={event => {
+                setCustomDays(event.target.value === 'custom');
+                if (event.target.value !== 'custom') onChange({ ...config,
+                    weekdays: event.target.value === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4] });
+            }}>
+                <MenuItem value="daily">Every day</MenuItem>
+                <MenuItem value="weekdays">Weekdays</MenuItem>
+                <MenuItem value="custom">Custom days</MenuItem>
+            </TextField>
+            <TextField size="small" required type="time" label="Time" value={config.time} disabled={disabled} helperText={config.timezone}
+                slotProps={{ inputLabel: { shrink: true } }} onChange={event => onChange({ ...config, time: event.target.value })} />
+        </Box>
+        {repeat === 'custom' && <Box role="group" aria-label="Weekdays" sx={{ display: 'flex', flexWrap: 'wrap', mt: -1 }}>
+            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, index) => <FormControlLabel key={label} sx={{ mr: 1 }} label={label}
+                control={<Checkbox size="small" checked={config.weekdays.includes(index)} disabled={disabled} onChange={event => onChange({ ...config,
+                    weekdays: event.target.checked ? [...config.weekdays, index].sort() : config.weekdays.filter(day => day !== index) })} />} />)}
+        </Box>}
+        {workflow && <>
+            <Divider><Typography variant="caption">Workflow inputs</Typography></Divider>
+            {!!workflow.parameters?.length && <WorkflowSetupFields parameters={workflow.parameters} values={config.setup?.parameters || {}} disabled={disabled}
+                onChange={parameters => onChange({ ...config, setup: { parameters, instructions: config.setup?.instructions || '' } })} />}
+            <TextField size="small" multiline minRows={2} label="Additional instructions" value={config.setup?.instructions || ''} disabled={disabled}
+                onChange={event => onChange({ ...config, setup: { parameters: config.setup?.parameters || {}, instructions: event.target.value } })} />
+        </>}
+        <Divider><Typography variant="caption">Run settings</Typography></Divider>
+        <TextField size="small" select required label="Server model connection" value={config.model_id} disabled={disabled}
+            error={!config.model_id} helperText={!config.model_id ? 'Server model connection required.' : undefined}
+            onChange={event => onChange({ ...config, model_id: event.target.value })}>
+            {models.map(model => <MenuItem key={model.id} value={model.id}>{model.model}</MenuItem>)}
+        </TextField>
+        <Box sx={{ display: 'flex', flexDirection: 'column', mt: -0.5,
+            '& .MuiFormControlLabel-root': { m: 0, gap: 0.5 }, '& .MuiCheckbox-root': { p: 0.5 } }}>
+            <FormControlLabel label="Run once after missed occurrences" control={<Checkbox size="small" checked={config.catch_up} disabled={disabled} onChange={event => onChange({ ...config, catch_up: event.target.checked })} />} />
+            <Tooltip describeChild title="Local terminal commands and single-option data loads only. Application policy still applies; questions and credentials pause the run.">
+                <FormControlLabel label="Auto-approve commands and data loads" control={<Checkbox size="small" checked={config.auto_approve} disabled={disabled} onChange={event => onChange({ ...config, auto_approve: event.target.checked })} />} />
+            </Tooltip>
+            {hosted && <FormControlLabel label="Publish final reports and all chart data for everyone to view" control={<Checkbox size="small" checked={config.publish} disabled={disabled} onChange={event => onChange({ ...config, publish: event.target.checked })} />} />}
+        </Box>
+    </>;
+};
+
+const WorkflowSchedules: React.FC<{ items: WorkflowLibraryItem[]; onClose: () => void; initialSchedule?: WorkflowSchedule; startNew?: boolean;
     onOpenSession?: (id: string) => void | Promise<void> }> = ({ items, onClose, initialSchedule, startNew, onOpenSession }) => {
     const models = useSelector((state: DataFormulatorState) => state.globalModels);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
@@ -1291,20 +1371,14 @@ const WorkflowSchedules: React.FC<{ items: Instance[]; onClose: () => void; init
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [identifier, setIdentifier] = useState(initialSchedule?.id || '');
-    const [customDays, setCustomDays] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
-    const emptyConfig = (): ScheduleConfig => ({ name: '', workflow: '', model_id: models.find(model => model.id === selectedModelId)?.id || models[0]?.id || '', time: '09:00',
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, weekdays: [0, 1, 2, 3, 4, 5, 6], enabled: true,
-        auto_approve: false, max_retries: 2, catch_up: false, publish: false });
+    const emptyConfig = (): ScheduleConfig => defaultScheduleConfig(models, selectedModelId);
     const [config, setConfig] = useState<ScheduleConfig>(() => initialSchedule ? { ...emptyConfig(), ...initialSchedule.config } : emptyConfig());
-    const workflow = items.find(item => item.path === config.workflow);
-    const repeat = customDays ? 'custom' : config.weekdays.length === 7 ? 'daily'
-        : config.weekdays.length === 5 && [0, 1, 2, 3, 4].every(day => config.weekdays.includes(day)) ? 'weekdays' : 'custom';
     const current = schedules.find(schedule => schedule.id === identifier);
     const currentRuns = current?.history?.filter(run => run.status !== 'skipped') ?? [];
     const select = (schedule?: WorkflowSchedule) => {
         setIdentifier(schedule?.id || ''); setConfig(schedule ? { ...emptyConfig(), ...schedule.config } : emptyConfig());
-        setCustomDays(false); setError('');
+        setError('');
     };
     const refresh = async () => {
         const { data } = await apiRequest<{ available: boolean; hosted?: boolean; schedules: WorkflowSchedule[] }>('/api/schedules');
@@ -1316,10 +1390,9 @@ const WorkflowSchedules: React.FC<{ items: Instance[]; onClose: () => void; init
             .catch(reason => setError(String(reason))).finally(() => setLoading(false));
     }, []);
     const persist = async (next: ScheduleConfig) => {
-        const { data } = await apiRequest<{ schedule: WorkflowSchedule }>('/api/schedules', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...(identifier ? { id: identifier } : {}), config: next }) });
+        const saved = await saveSchedule(next, identifier || undefined);
         const list = await refresh();
-        return list.find(schedule => schedule.id === data?.schedule?.id);
+        return list.find(schedule => schedule.id === saved.id);
     };
     const act = async (action: () => Promise<void>, failure: string) => {
         setSaving(true); setError('');
@@ -1358,55 +1431,7 @@ const WorkflowSchedules: React.FC<{ items: Instance[]; onClose: () => void; init
                         </Box>}
                         {error && <Alert severity="error">{error}</Alert>}
                         {loading ? <CircularProgress size={18} /> : !available ? <Alert severity="info">Scheduling is unavailable for this deployment or account.</Alert> : <>
-                    <TextField size="small" select required label="Workflow" value={config.workflow} disabled={saving}
-                        onChange={event => {
-                            const selected = items.find(item => item.path === event.target.value);
-                            setConfig({ ...config, workflow: event.target.value, name: !config.name || config.name === workflow?.name ? selected?.name || '' : config.name,
-                                setup: { parameters: Object.fromEntries((selected?.parameters || []).flatMap(parameter => parameter.default === undefined ? [] : [[parameter.name, parameter.default]])), instructions: '' } });
-                        }}>
-                        {items.filter(item => !hosted || item.origin === 'demo' || item.origin === 'server').map(item => <MenuItem key={item.path} value={item.path}>{item.name}</MenuItem>)}
-                    </TextField>
-                    <TextField size="small" required label="Schedule name" value={config.name} disabled={saving}
-                        onChange={event => setConfig({ ...config, name: event.target.value })} />
-                    <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 2 }}>
-                        <TextField size="small" select label="Repeat" value={repeat} disabled={saving} onChange={event => {
-                            setCustomDays(event.target.value === 'custom');
-                            if (event.target.value !== 'custom') setConfig({ ...config,
-                                weekdays: event.target.value === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4] });
-                        }}>
-                            <MenuItem value="daily">Every day</MenuItem>
-                            <MenuItem value="weekdays">Weekdays</MenuItem>
-                            <MenuItem value="custom">Custom days</MenuItem>
-                        </TextField>
-                        <TextField size="small" required type="time" label="Time" value={config.time} disabled={saving} helperText={config.timezone}
-                            slotProps={{ inputLabel: { shrink: true } }} onChange={event => setConfig({ ...config, time: event.target.value })} />
-                    </Box>
-                    {repeat === 'custom' && <Box role="group" aria-label="Weekdays" sx={{ display: 'flex', flexWrap: 'wrap', mt: -1 }}>
-                        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, index) => <FormControlLabel key={label} sx={{ mr: 1 }} label={label}
-                            control={<Checkbox size="small" checked={config.weekdays.includes(index)} disabled={saving} onChange={event => setConfig({ ...config,
-                                weekdays: event.target.checked ? [...config.weekdays, index].sort() : config.weekdays.filter(day => day !== index) })} />} />)}
-                    </Box>}
-                    {workflow && <>
-                        <Divider><Typography variant="caption">Workflow inputs</Typography></Divider>
-                        {!!workflow.parameters?.length && <WorkflowSetupFields parameters={workflow.parameters} values={config.setup?.parameters || {}} disabled={saving}
-                            onChange={parameters => setConfig({ ...config, setup: { parameters, instructions: config.setup?.instructions || '' } })} />}
-                        <TextField size="small" multiline minRows={2} label="Additional instructions" value={config.setup?.instructions || ''} disabled={saving}
-                            onChange={event => setConfig({ ...config, setup: { parameters: config.setup?.parameters || {}, instructions: event.target.value } })} />
-                    </>}
-                    <Divider><Typography variant="caption">Run settings</Typography></Divider>
-                    <TextField size="small" select required label="Server model connection" value={config.model_id} disabled={saving}
-                        error={!config.model_id} helperText={!config.model_id ? 'Server model connection required.' : undefined}
-                        onChange={event => setConfig({ ...config, model_id: event.target.value })}>
-                        {models.map(model => <MenuItem key={model.id} value={model.id}>{model.model}</MenuItem>)}
-                    </TextField>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', mt: -0.5,
-                        '& .MuiFormControlLabel-root': { m: 0, gap: 0.5 }, '& .MuiCheckbox-root': { p: 0.5 } }}>
-                        <FormControlLabel label="Run once after missed occurrences" control={<Checkbox size="small" checked={config.catch_up} disabled={saving} onChange={event => setConfig({ ...config, catch_up: event.target.checked })} />} />
-                        <Tooltip describeChild title="Local terminal commands and single-option data loads only. Application policy still applies; questions and credentials pause the run.">
-                            <FormControlLabel label="Auto-approve commands and data loads" control={<Checkbox size="small" checked={config.auto_approve} disabled={saving} onChange={event => setConfig({ ...config, auto_approve: event.target.checked })} />} />
-                        </Tooltip>
-                        {hosted && <FormControlLabel label="Publish final reports and all chart data for everyone to view" control={<Checkbox size="small" checked={config.publish} disabled={saving} onChange={event => setConfig({ ...config, publish: event.target.checked })} />} />}
-                    </Box>
+                    <ScheduleConfigFields key={identifier || 'new'} items={items} config={config} onChange={setConfig} hosted={hosted} disabled={saving} />
                 </>}
     </ListDetailDialog>
     <Dialog open={confirmDelete} onClose={() => !saving && setConfirmDelete(false)} maxWidth="xs" fullWidth>
@@ -1441,23 +1466,9 @@ const runStatusDisplay = (value: string) => ({
     ?? { label: value.replaceAll('_', ' '), color: 'text.secondary', icon: <HistoryOutlinedIcon /> };
 
 
-// Transform and shadow only, so hovering never reflows neighbouring cards.
-const cardHoverSx = {
-    transition: 'box-shadow 150ms ease, transform 150ms ease, border-color 150ms ease',
-    '&:hover': { borderColor: 'rgba(0, 0, 0, 0.18)', boxShadow: '0 2px 8px rgba(32, 33, 36, 0.08)', transform: 'translateY(-1px)' },
-    '@media (prefers-reduced-motion: reduce)': { transition: 'none', '&:hover': { transform: 'none' } },
-} as const;
-
-/** Filled background shared by run chips and the demo tag. */
-const mutedChipBg = 'rgba(0, 0, 0, 0.045)';
-
 /** The latest two runs, shown inside a card under its metadata; the panel lists the rest. */
 const CardRuns: React.FC<{ label: string; runs: RunEntry[]; next?: NextRun }> = ({ label, runs, next }) =>
     <RunList label={label} runs={runs.slice(0, 2)} next={next} />;
-
-/** Small filled chip that prefixes a card title (e.g. the schedule clock or the demo tag). */
-const titleChipSx = { display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle', mr: 0.75, px: 0.5, borderRadius: 0.5,
-    bgcolor: mutedChipBg, color: 'text.secondary', fontSize: textVar.xxs, fontWeight: 400, lineHeight: 1.6 } as const;
 
 /** A status icon plus run time, shown as a small filled chip that opens the run. */
 const RunLink: React.FC<{ status: string; time: string; label?: string; disabled?: boolean; onOpen: () => void }> = ({ status, time, label, disabled, onOpen }) => {
@@ -1511,7 +1522,7 @@ const RunList: React.FC<{ label: string; runs: RunEntry[]; limit?: number; capti
     </Box>;
 };
 
-const WorkflowScheduleSection: React.FC<{ items: Instance[]; busy: boolean; newScheduleOpen: boolean; onOpenSession?: (id: string) => void | Promise<void>;
+const WorkflowScheduleSection: React.FC<{ items: WorkflowLibraryItem[]; busy: boolean; newScheduleOpen: boolean; onOpenSession?: (id: string) => void | Promise<void>;
     onChange: (value: { schedules: WorkflowSchedule[]; hosted: boolean; available: boolean }) => void }> = ({ items, busy, newScheduleOpen, onOpenSession, onChange }) => {
     const [schedules, setSchedules] = useState<WorkflowSchedule[]>([]);
     const [available, setAvailable] = useState(false);
@@ -1540,6 +1551,7 @@ const WorkflowScheduleSection: React.FC<{ items: Instance[]; busy: boolean; newS
         return () => { cancelled = true; };
     }, [items, busy, open, newScheduleOpen, onChange, tick]);
     const anyOccurrenceActive = schedules.some(schedule => schedule.history?.some(run => run.status === 'running' || run.status === 'retry'));
+    useEffect(() => onSchedulesChanged(() => setTick(value => value + 1)), []);
     useEffect(() => {
         const onVisible = () => { if (document.visibilityState === 'visible') setTick(value => value + 1); };
         document.addEventListener('visibilitychange', onVisible);
@@ -1598,15 +1610,15 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
     const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
     const inSession = useSelector(dfSelectors.selectInSession);
     const readOnly = useSelector((state: DataFormulatorState) => state.activeWorkspace?.readOnly);
-    const [items, setItems] = useState<Instance[]>([]);
+    const [items, setItems] = useState<WorkflowLibraryItem[]>([]);
     const [runs, setRuns] = useState<Run[]>([]);
     const busy = useSelector((state: DataFormulatorState) => state.textTurns.some(turn => turn.workflow?.status === 'running'));
     const [loading, setLoading] = useState(false);
     const [editor, setEditor] = useState<{ path: string; content: string; content_hash?: string; creating?: boolean; source?: string } | null>(null);
     const [saving, setSaving] = useState(false);
-    const [deleteTarget, setDeleteTarget] = useState<Instance | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<WorkflowLibraryItem | null>(null);
     const [deletingInstance, setDeletingInstance] = useState(false);
-    const [runTarget, setRunTarget] = useState<Instance | null>(null);
+    const [runTarget, setRunTarget] = useState<WorkflowLibraryItem | null>(null);
     const [setupValues, setSetupValues] = useState<Record<string, string | number | boolean>>({});
     const [setupInstructions, setSetupInstructions] = useState('');
     const [starting, setStarting] = useState(false);
@@ -1617,7 +1629,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         const current = generation.current;
         if (!quiet) setLoading(true);
         try {
-            const result = await post<{ items: Instance[]; runs: Run[] }>('list');
+            const result = await post<{ items: WorkflowLibraryItem[]; runs: Run[] }>('list');
             if (current === generation.current) { setItems(result.items); setRuns(result.runs); }
         } catch (reason) { if (current === generation.current && !quiet) handleApiError(reason, 'Load workflows'); }
         finally { if (current === generation.current && !quiet) setLoading(false); }
@@ -1647,7 +1659,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         return () => { document.removeEventListener('visibilitychange', onVisible); window.clearInterval(timer); };
     }, [workspaceId, anyRunActive]);
 
-    const edit = async (item: Instance) => {
+    const edit = async (item: WorkflowLibraryItem) => {
         const current = generation.current;
         try {
             const result = await post<{ content: string; content_hash?: string }>('read', { path: item.path });
@@ -1680,7 +1692,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         }
     };
 
-    const startNewSession = async (item: Instance, setup: WorkflowSetup) => {
+    const startNewSession = async (item: WorkflowLibraryItem, setup: WorkflowSetup) => {
         setStarting(true);
         try {
             setPendingRun({ path: item.path, content: item.content, setup, previousWorkspaceId: workspaceId });
@@ -1727,7 +1739,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         setEditor({ path, content: '', creating: true });
     };
     const editorItem = editor && !editor.creating ? items.find(item => item.path === editor.source) : undefined;
-    const workflowRunsFor = (item: Instance, beforeOpen?: () => void): RunEntry[] => [
+    const workflowRunsFor = (item: WorkflowLibraryItem, beforeOpen?: () => void): RunEntry[] => [
         ...runs.filter(run => run.workflow_path === item.path || !run.workflow_path && run.name === item.name
             && items.filter(candidate => candidate.name === item.name).length === 1)
             .map(run => ({ key: run.id, status: run.status, time: run.started_at, disabled: busy, open: () => { beforeOpen?.(); void openRun(run); } })),

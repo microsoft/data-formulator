@@ -1,14 +1,16 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
-import { ensureActiveWorkspace, generateWorkspaceId, leaveSession } from '../../../../src/app/sessionThunks';
-import { deleteWorkspace, saveWorkspaceState } from '../../../../src/app/workspaceService';
+import { ensureActiveWorkspace, generateWorkspaceId, leaveSession, openSession, renameSession } from '../../../../src/app/sessionThunks';
+import { deleteWorkspace, loadWorkspace, saveWorkspaceState, updateWorkspaceMeta } from '../../../../src/app/workspaceService';
 import type { AppDispatch } from '../../../../src/app/store';
 
 vi.mock('../../../../src/app/workspaceService', async importOriginal => ({
     ...(await importOriginal<typeof import('../../../../src/app/workspaceService')>()),
     deleteWorkspace: vi.fn(() => Promise.resolve()),
     saveWorkspaceState: vi.fn(() => Promise.resolve()),
+    loadWorkspace: vi.fn(() => Promise.resolve({ state: {}, displayName: 'Movies', readOnly: false })),
+    updateWorkspaceMeta: vi.fn(() => Promise.resolve()),
 }));
 
 const makeStore = () => {
@@ -96,5 +98,35 @@ describe('session lifecycle', () => {
         expect(saveWorkspaceState).toHaveBeenCalledOnce();
         expect(deleteWorkspace).not.toHaveBeenCalled();
         expect(store.getState().activeWorkspace).toBeNull();
+    });
+
+    it('saves the current session before opening another', async () => {
+        const store = makeStore();
+        store.dispatch(dfActions.setActiveWorkspace({ id: 'ws', displayName: 'Sales' }));
+        store.dispatch(dfActions.setWorkspaceFileCount(1));
+        vi.mocked(saveWorkspaceState).mockImplementationOnce(async () => {
+            expect(loadWorkspace).not.toHaveBeenCalled();
+        });
+
+        expect(await store.dispatch(openSession('movies'))).toBe(true);
+
+        expect(saveWorkspaceState).toHaveBeenCalledOnce();
+        expect(loadWorkspace).toHaveBeenCalledWith('movies');
+        expect(store.getState().activeWorkspace).toMatchObject({ id: 'movies', displayName: 'Movies' });
+        expect(store.getState().sessionLoading).toBe(false);
+    });
+
+    it('renames the active session in place without resetting it', async () => {
+        const store = makeStore();
+        store.dispatch(dfActions.setActiveWorkspace({ id: 'ws', displayName: 'Sales', readOnly: false }));
+        store.dispatch(dfActions.setWorkspaceFileCount(2));
+
+        await store.dispatch(renameSession('ws', 'Regional sales'));
+        await store.dispatch(renameSession('other', 'Other'));
+
+        expect(updateWorkspaceMeta).toHaveBeenCalledWith('ws', 'Regional sales');
+        expect(updateWorkspaceMeta).toHaveBeenCalledWith('other', 'Other');
+        expect(store.getState().activeWorkspace).toMatchObject({ id: 'ws', displayName: 'Regional sales' });
+        expect(store.getState().workspaceFileCount).toBe(2);
     });
 });

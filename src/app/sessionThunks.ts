@@ -4,8 +4,10 @@
 import type { AppDispatch } from './store';
 import { DataFormulatorState, dfActions, dfSelectors } from './dfSlice';
 import { generateUUID } from './identity';
-import { deleteWorkspace, saveWorkspaceState } from './workspaceService';
+import { deleteWorkspace, loadWorkspace, saveWorkspaceState, updateWorkspaceMeta, WorkspaceLoadSupersededError } from './workspaceService';
 import { getSerializableState } from './useAutoSave';
+import i18n from '../i18n';
+import { claimSession } from './sessionTabs';
 
 type GetState = () => DataFormulatorState;
 
@@ -47,4 +49,57 @@ export const leaveSession = () => async (dispatch: AppDispatch, getState: GetSta
     if (getState().activeWorkspace?.id === workspace?.id) {
         dispatch(dfActions.resetState());
     }
+};
+
+/**
+ * Open a saved session, replacing the current one. Resolves true when it opened;
+ * failures are reported to the user and resolve false.
+ */
+export const openSession = (sessionId: string, displayName?: string, options: { saveCurrent?: boolean } = {}) =>
+    async (dispatch: AppDispatch, getState: GetState): Promise<boolean> => {
+    // Loading pauses autosave, so persist recent work in the session being left first.
+    // Startup skips this: state restored from browser storage may belong to another tab.
+    const state = getState();
+    const current = state.activeWorkspace;
+    if (options.saveCurrent !== false && current && current.id !== sessionId && !current.readOnly
+        && !dfSelectors.selectSessionEmpty(state)) {
+        try { await saveWorkspaceState(getSerializableState(state)); } catch { /* best effort */ }
+    }
+    dispatch(dfActions.setSessionLoading({ loading: true, label: i18n.t('sidebar.openingWorkspace') }));
+    // A tab editing this session saves and steps back before it loads here.
+    await claimSession(sessionId);
+    try {
+        const result = await loadWorkspace(sessionId);
+        if (result) {
+            dispatch(dfActions.loadState({ ...result.state, activeWorkspace: {
+                ...result.state.activeWorkspace, id: sessionId, displayName: displayName || result.displayName, readOnly: result.readOnly,
+            } }));
+            return true;
+        }
+        dispatch(dfActions.addMessages({
+            timestamp: Date.now(), type: 'error', component: 'workspace', value: i18n.t('workspace.failedToOpenWorkspace'),
+        }));
+        return false;
+    } catch (error) {
+        if (!(error instanceof WorkspaceLoadSupersededError)) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'error', component: 'workspace', value: i18n.t('workspace.failedToOpenWorkspace'),
+            }));
+        }
+        return false;
+    } finally {
+        dispatch(dfActions.setSessionLoading({ loading: false }));
+    }
+};
+
+/** Rename a session; the active session's name updates immediately so autosave keeps it. */
+export const renameSession = (sessionId: string, displayName: string) => async (dispatch: AppDispatch) => {
+    dispatch(dfActions.renameActiveWorkspace({ id: sessionId, displayName }));
+    await updateWorkspaceMeta(sessionId, displayName);
+};
+
+/** Delete a saved session other than the one that is open. */
+export const deleteSession = (sessionId: string) => async (_dispatch: AppDispatch, getState: GetState) => {
+    if (getState().activeWorkspace?.id === sessionId) throw new Error('Open another session before deleting this one.');
+    await deleteWorkspace(sessionId);
 };

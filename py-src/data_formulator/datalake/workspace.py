@@ -274,6 +274,11 @@ class Workspace:
         return _sanitize_identity_id(identity_id)
     
     @property
+    def identity_id(self) -> str:
+        """Identity that owns this workspace."""
+        return self._identity_id
+
+    @property
     def user_home(self) -> Path:
         """Per-user home directory (parent of workspaces, catalog_cache, etc.)."""
         return get_user_home(self._identity_id)

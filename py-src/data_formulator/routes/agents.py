@@ -28,7 +28,7 @@ from data_formulator.auth.identity import get_identity_id
 from data_formulator.security.code_signing import sign_result, verify_code, MAX_CODE_SIZE
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.datalake.workspace import Workspace, get_user_home
-from data_formulator.workspace_factory import get_workspace
+from data_formulator.workspace_factory import get_active_workspace_id, get_workspace
 from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 from data_formulator.agents.client_utils import Client, effective_api_base
@@ -590,7 +590,6 @@ def analyst_streaming():
 
     if terminal_response is not None:
         from data_formulator.analyst.skills.terminal.skill import require_local_terminal_request
-        from data_formulator.workspace_factory import get_active_workspace_id
 
         try:
             require_local_terminal_request()
@@ -608,6 +607,7 @@ def analyst_streaming():
             return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, str(exc)))
 
     workspace = get_workspace(identity_id)
+    active_workspace_id = get_active_workspace_id()
 
     if resume_trajectory is not None and not str(user_question or "").strip():
         return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "user_question is required to resume after interaction"))
@@ -776,6 +776,7 @@ def analyst_streaming():
                 language_instruction=language_instruction,
                 execution_config=execution_config,
                 identity_id=identity_id,
+                workspace_id=active_workspace_id,
             )
 
             trajectory = None
