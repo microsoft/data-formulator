@@ -214,3 +214,41 @@ class TestCatalogErrorCodes:
 
     def test_catalog_not_found(self):
         assert ErrorCode.CATALOG_NOT_FOUND == "CATALOG_NOT_FOUND"
+
+
+# ── _tables_to_catalog_tree normalisation ─────────────────────────────
+
+class TestTreeNormalizationBackfill:
+    """``_tables_to_catalog_tree`` is the shared exit for every tree builder.
+
+    Loaders that override ``list_tables_tree``/``search_catalog`` construct
+    nodes without routing through the base methods, so backfilling at the call
+    sites is not enough: the invariant has to hold inside the normalisation
+    step itself.
+    """
+
+    def test_backfills_key_when_record_has_none(self):
+        loader = _StubLoader(tables=_DEFAULT_TABLES)
+        tree = loader._tables_to_catalog_tree([dict(t) for t in _DEFAULT_TABLES])
+        nodes = _table_nodes(tree)
+        assert nodes
+        for node in nodes:
+            assert node["metadata"]["table_key"]
+
+    def test_explicit_key_is_not_overwritten(self):
+        loader = _StubLoader()
+        tree = loader._tables_to_catalog_tree([
+            {"name": "orders", "table_key": "explicit-key", "metadata": {}},
+        ])
+        assert _table_nodes(tree)[0]["metadata"]["table_key"] == "explicit-key"
+
+    def test_source_name_is_preferred_over_name(self):
+        loader = _StubLoader()
+        tree = loader._tables_to_catalog_tree([
+            {
+                "name": "short",
+                "path": ["db", "short"],
+                "metadata": {"_source_name": "db.short"},
+            },
+        ])
+        assert _table_nodes(tree)[0]["metadata"]["table_key"] == "db.short"
