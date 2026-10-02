@@ -36,6 +36,18 @@ def execution_identity(schedule: dict) -> str:
     return schedule["owner"] if schedule["owner"].startswith("local:") else "schedule:" + schedule["id"]
 
 
+def schedule_model_id(config: dict) -> str:
+    """The schedule's model, or the server's default model when that one was removed or disabled."""
+    from data_formulator.model_registry import model_registry
+    if model_registry.get_config(config["model_id"]) is not None:
+        return config["model_id"]
+    available = model_registry.list_public()
+    if not available:
+        raise ValueError("No server-configured model is available.")
+    logger.warning("Schedule model %s is unavailable; using %s", config["model_id"], available[0]["id"])
+    return available[0]["id"]
+
+
 def materialize_session(schedule: dict, occurrence: dict, state: dict, workspace, *, read_only: bool) -> dict:
     def rows(table_name: str) -> list:
         frame = workspace.read_data_as_df(table_name)
@@ -84,7 +96,6 @@ def run_finished(path, deadline: float) -> bool:
 def execute_occurrence(app, store: ScheduleStore, occurrence: dict):
     from data_formulator.datalake.workspace import get_user_home
     from data_formulator.errors import AppError
-    from data_formulator.model_registry import model_registry
     from data_formulator.routes.workflows import EXECUTOR_BUSY, _cancellations, _lock, run_instance, run_path, save_run
     from data_formulator.workflows.agent import new_run
     from data_formulator.workflows.instances import WorkflowStore, parse_definition
@@ -114,8 +125,7 @@ def execute_occurrence(app, store: ScheduleStore, occurrence: dict):
         try:
             if not scheduling_available() or not schedule["enabled"]:
                 raise ValueError("Scheduling is disabled.")
-            if model_registry.get_config(config["model_id"]) is None:
-                raise ValueError("The configured model is unavailable.")
+            model_id = schedule_model_id(config)
             manager = get_workspace_manager(identity)
             if not manager.workspace_exists(workspace_id):
                 manager.create_workspace(workspace_id)
@@ -132,7 +142,7 @@ def execute_occurrence(app, store: ScheduleStore, occurrence: dict):
             persist(read_only=True)
             response_body = {}
             while True:
-                body = {"run_id": occurrence["id"], "model": {"id": config["model_id"], "is_global": True}, **response_body}
+                body = {"run_id": occurrence["id"], "model": {"id": model_id, "is_global": True}, **response_body}
                 error = None
                 with app.test_request_context("/api/workflows/run", method="POST", json=body,
                         base_url="http://localhost", headers={"X-Workspace-Id": workspace_id, "Origin": "http://localhost"},

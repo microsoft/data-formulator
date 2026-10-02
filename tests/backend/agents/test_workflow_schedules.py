@@ -113,6 +113,18 @@ def test_publication_is_allowlisted_and_keeps_previous_success(tmp_path):
     assert store.publication(store.publications()[0]["id"]) == snapshot
 
 
+def test_schedule_uses_default_model_when_its_model_is_gone(monkeypatch):
+    from data_formulator.model_registry import model_registry
+    from data_formulator.workflows.scheduler import schedule_model_id
+    monkeypatch.setattr(model_registry, "get_config", lambda model_id, **kwargs: {"id": model_id} if model_id == "kept" else None)
+    monkeypatch.setattr(model_registry, "list_public", lambda **kwargs: [{"id": "default"}, {"id": "other"}])
+    assert schedule_model_id({"model_id": "kept"}) == "kept"
+    assert schedule_model_id({"model_id": "removed"}) == "default"
+    monkeypatch.setattr(model_registry, "list_public", lambda **kwargs: [])
+    with pytest.raises(ValueError, match="No server-configured model"):
+        schedule_model_id({"model_id": "removed"})
+
+
 def test_snapshot_keeps_live_thread_outputs_in_order(tmp_path):
     import pandas as pd
     from data_formulator.workflows.scheduler import materialize_session
