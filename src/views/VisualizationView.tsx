@@ -56,8 +56,8 @@ import { apiRequest } from '../app/apiClient';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
 import embed from 'vega-embed';
 import { Chart, DictTable, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, FormArtifact, TextTurn, computeInsightKey } from '../components/ComponentType';
-import { WorkflowProgress, WorkflowProposal } from './WorkflowPanel';
-import { ScheduleFormArtifactView, SessionsFormArtifactView } from './SetupFormArtifacts';
+import { WorkflowProgress } from './WorkflowPanel';
+import { ScheduleFormArtifactView, SessionsFormArtifactView, WorkflowFormArtifactView } from './SetupFormArtifacts';
 import { ConnectorFormCard } from '../components/ConnectorFormCard';
 import { ConversationCanvas } from './ConversationCanvas';
 
@@ -100,7 +100,6 @@ import { CodeExplanationCard, ConceptExplCards, extractConceptExplanations } fro
 import CodeIcon from '@mui/icons-material/Code';
 import type { DataOperation } from '../dataOperations/models';
 import { DataFrameTable } from './DataFrameTable';
-import { LocalFolderPanel } from './UnifiedDataUploadDialog';
 import { WorkspaceFileCanvas } from './WorkspaceFileCanvas';
 import { ExternalTableReferenceCanvas } from './ExternalTableReferenceCanvas';
 import { ExplanationCanvas } from './ExplanationCanvas';
@@ -326,43 +325,18 @@ const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, 
     );
 
     switch (form.kind) {
+        case 'workflow':
+            return <WorkflowFormArtifactView key={turn.id} turn={turn} form={form} canvas />;
         case 'schedule':
             return setupCanvas(<ScheduleFormArtifactView key={turn.id} turn={turn} form={form} />);
         case 'sessions':
             return setupCanvas(<SessionsFormArtifactView key={turn.id} turn={turn} form={form} />);
-        case 'connector':
-            if (form.connector.sourceType === 'local_folder' && form.connector.status !== 'connected') {
-                return (
-                    <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: 'auto', bgcolor: 'background.default' }}>
-                        <Box sx={{ width: '100%', maxWidth: 624, height: '100%', mx: 'auto', px: { xs: 2, sm: 3, md: 4 }, boxSizing: 'border-box' }}>
-                            <LocalFolderPanel
-                                onConnectorCreated={(connector) => {
-                                    dispatch(dfActions.updateTextTurn({
-                                        id: turn.id,
-                                        answered: true,
-                                        answer: `Connected to ${connector.display_name}`,
-                                        form: {
-                                            kind: 'connector',
-                                            title: form.title,
-                                            connector: {
-                                                sourceType: 'local_folder',
-                                                status: 'connected',
-                                                connectorId: connector.id,
-                                                connectionName: connector.display_name,
-                                            },
-                                        },
-                                    }));
-                                    dispatch(dfActions.requestConnectorRefresh());
-                                }}
-                            />
-                        </Box>
-                    </Box>
-                );
-            }
+        case 'connector': {
+            const connected = form.connector.status === 'connected';
             return (
-                <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: form.connector.status === 'connected' ? 'hidden' : 'auto', bgcolor: 'background.default' }}>
-                    <Box sx={{ width: '100%', maxWidth: form.connector.status === 'connected' ? 'none' : 624,
-                        height: form.connector.status === 'connected' ? '100%' : 'auto', mx: 'auto',
+                <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflow: connected ? 'hidden' : 'auto', bgcolor: 'background.default' }}>
+                    <Box sx={{ width: '100%', maxWidth: connected ? 'none' : 624,
+                        height: connected ? '100%' : 'auto', mx: 'auto',
                         px: { xs: 2, sm: 3, md: 4 }, pt: { xs: 2, md: 3 }, pb: { xs: 3, md: 4 }, boxSizing: 'border-box' }}>
                         <ConnectorFormCard
                             key={turn.id}
@@ -374,23 +348,14 @@ const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, 
                                     id: turn.id,
                                     answered: true,
                                     answer: `Connected to ${resolution.connectionName}`,
-                                    form: {
-                                        kind: 'connector',
-                                        title: form.title,
-                                        draft: form.draft,
-                                        connector: {
-                                            sourceType: form.connector.sourceType,
-                                            status: resolution.status,
-                                            connectorId: resolution.connectorId,
-                                            connectionName: resolution.connectionName,
-                                        },
-                                    },
+                                    form: { ...form, connector: { sourceType: form.connector.sourceType, ...resolution } },
                                 }));
                             }}
                         />
                     </Box>
                 </Box>
             );
+        }
     }
 };
 
@@ -1887,9 +1852,6 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     const focusedWorkflowTurn = focusedId?.type === 'text'
         ? textTurns.find(turn => turn.id === focusedId.textId && turn.workflow)
         : undefined;
-    const focusedWorkflowDefinition = focusedId?.type === 'text'
-        ? textTurns.find(turn => turn.id === focusedId.textId && turn.workflowDefinition)
-        : undefined;
     const focusedFormTurn = focusedId?.type === 'text'
         ? textTurns.find(turn => turn.id === focusedId.textId && turn.form)
         : undefined;
@@ -1927,9 +1889,6 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     }
     if (focusedId?.type === 'explanation') {
         return <ExplanationCanvas {...focusedId} />;
-    }
-    if (focusedWorkflowDefinition) {
-        return <WorkflowProposal key={focusedWorkflowDefinition.id} turn={focusedWorkflowDefinition} canvas />;
     }
     if (focusedWorkflowTurn) {
         if (focusedWorkflowTurn.workflow?.status === 'paused' && focusedWorkflowTurn.workflow.dataOperation) {

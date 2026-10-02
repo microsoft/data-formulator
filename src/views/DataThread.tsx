@@ -1619,7 +1619,7 @@ let SingleThreadGroupView: FC<{
         const gutterIcon = workflow
             ? <WorkflowGears running={workflow.status === 'running'} color={workflow.status === 'paused'
                 ? theme.palette.warning.main : rowHL ? theme.palette.primary.main : theme.palette.text.secondary} />
-            : turn.workflowDefinition
+            : turn.form?.kind === 'workflow'
             ? <WorkflowGears running={false} color={iconColor} />
             : turn.form
             ? <InsertDriveFileOutlinedIcon sx={{ width: 14, height: 14, color: iconColor }} />
@@ -1632,9 +1632,9 @@ let SingleThreadGroupView: FC<{
         const stepCodeExecutions = isExecutionTurn ? getStepCodeExecutions(turn.id, tables, textTurns) : [];
         const card = isExecutionTurn ? <ToolActivityRow nodeId={turn.id} label={preview} executions={stepExecutions} codeExecutions={stepCodeExecutions}
             onSelect={execution => openToolActivity(turn.id, execution)} />
-            : workflow ? <WorkflowProgress turn={workflowTurn!} selected={isFocused} /> : turn.workflowDefinition ? (
-            <ThreadArtifactCard artifactType="workflow" title={turn.workflowDefinition.definition.name}
-                notes="Workflow definition" selected={isFocused} onClick={openTurn}
+            : workflow ? <WorkflowProgress turn={workflowTurn!} selected={isFocused} /> : turn.form?.kind === 'workflow' ? (
+            <ThreadArtifactCard artifactType="workflow" title={turn.form.workflow.definition.name}
+                notes={turn.form.workflow.saved ? formStatus : 'Workflow definition'} selected={isFocused} onClick={openTurn}
                 actions={hasDependents ? undefined : <ArtifactDeleteButton label="Delete workflow definition"
                     onClick={() => dispatch(dfActions.removeTextTurn(turn.id))} />} />
         ) : (
@@ -1679,7 +1679,7 @@ let SingleThreadGroupView: FC<{
             && !isExecutionTurn
             && loadedTables.length > 0 && loadedTables.every(node => node.createdAt <= turn.createdAt);
         if (turn.prompt) {
-            const prompt = turn.prompt;
+            const prompt = turn.workflowMessage?.kind === 'steering' ? `(steering) ${turn.prompt}` : turn.prompt;
             parts.push({ startsTurn: true, keepVisible: false, render: () => pushInteractionEntries(
                 [{ from: 'user', to: 'data-agent', role: 'prompt', content: prompt, timestamp: turn.createdAt }],
                 keyNode, triggerType, turnHighlighted, `textturn-prompt-${turn.id}`,
@@ -1694,7 +1694,8 @@ let SingleThreadGroupView: FC<{
                 const completedExecutionStep = isExecutionTurn && !isTurnActive(turn)
                     && !textTurns.some(candidate => (candidate.executions?.length || candidate.codeExecutions?.length)
                         && candidate.actionId && candidate.actionId === turn.actionId && candidate.createdAt > turn.createdAt);
-                if ((!isExecutionTurn || completedExecutionStep) && (!turn.workflow || !textTurns.some(card => card.workflowCardFor === turn.id))
+                if ((!isExecutionTurn || completedExecutionStep) && !turn.workflowMessage
+                    && (!turn.workflow || !textTurns.some(card => card.workflowCardFor === turn.id))
                     && (turn.content || !(reportsByParentNode.get(turn.id) || []).length)) {
                     timelineItems.push(item);
                 }
@@ -1732,7 +1733,7 @@ let SingleThreadGroupView: FC<{
             && (draft.derive?.status === 'running' || draft.derive?.status === 'clarifying'));
     const keepTurnVisible = (turn: TextTurn, hasResult = false) => isTurnActive(turn, hasResult)
         || !!turn.workflowCardFor
-        || !!turn.workflowDefinition
+        || turn.form?.kind === 'workflow'
         || !!turn.workflowMessage
         || fileNodes.some(node => node.parentNodeId === turn.id)
         || (reportsByParentNode.get(turn.id) || []).length > 0
@@ -2095,7 +2096,7 @@ let SingleThreadGroupView: FC<{
                     && !item.key.startsWith(`textturn-prompt-${message.id}-`));
                 continue;
             }
-            if (!timelineItems.some(item => item.key === `textturn-${message.id}`)) {
+            if (!timelineItems.some(item => item.key === `textturn-${message.id}` || item.key.startsWith(`textturn-prompt-${message.id}-`))) {
                 for (const part of getTurnConversationParts(message, undefined, turn.id, false, 'trigger', false)) part.render();
             }
         }
@@ -3817,7 +3818,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         threadGroups.set(groupId, {
             entries: [entry],
             firstTurn,
-            summary: (firstTurn?.prompt || firstTurn?.workflowDefinition?.definition.name
+            summary: (firstTurn?.prompt || (firstTurn?.form?.kind === 'workflow' ? firstTurn.form.workflow.definition.name : '')
                 || triggers[0]?.interaction?.find(item => item.from === 'user' && item.role === 'prompt')?.content
                 || draftNodes.find(draft => draftHostOf(draft) === rootId)?.derive.trigger.interaction?.find(item => item.from === 'user' && item.role === 'prompt')?.content
                 || firstTurn?.content || firstTable?.displayId

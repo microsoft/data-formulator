@@ -28,26 +28,6 @@ describe('connector form persistence', () => {
         expect(dfSelectors.selectCanvasTarget(state)).toEqual({ type: 'text', textId: 'form-1' });
         expect(state.textTurns.filter(turn => turn.form)).toHaveLength(1);
     });
-    it('removes transient prefills from standalone chat messages', () => {
-        const entries = [{
-            id: 'entry-1',
-            connectorForm: {
-                sourceType: 'postgresql',
-                status: 'pending',
-                prefilled: { host: 'db.example.com', password: 'secret' },
-            },
-        }];
-
-        expect(stripConnectorPrefillFromEntries(entries)).toEqual([{
-            id: 'entry-1',
-            connectorForm: {
-                sourceType: 'postgresql',
-                status: 'pending',
-            },
-        }]);
-        expect(entries[0].connectorForm.prefilled.password).toBe('secret');
-    });
-
     it('removes transient prefills from generalized form artifacts', () => {
         const entries = [{
             id: 'turn-1',

@@ -859,7 +859,6 @@
   "sidebar": {
     "openDataSources": "डेटा स्रोत",
     "openUpload": "डेटा अपलोड करें",
-    "openDataLoadingChat": "एजेंट के साथ डेटा जोड़ें",
     "openDataConnectors": "डेटा कनेक्टर",
     "uploadData": "डेटा अपलोड करें",
     "dataConnectorsTitle": "डेटा कनेक्टर",

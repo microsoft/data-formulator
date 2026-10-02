@@ -23,6 +23,9 @@ vi.mock('react-i18next', () => ({
         'chartRec.customAnswerPlaceholder': 'Or type your own answer...',
         'chartRec.confirmAnswer': 'Confirm answer',
         'chartRec.freeTextClarificationHint': 'Type your answer in the chat box below.',
+        'chartRec.multiChoiceLabel': 'Select all that apply',
+        'chartRec.showMoreOptions': `+${params?.count} more`,
+        'chartRec.showFewerOptions': 'Show fewer',
         'dataLoading.operation.title': 'Data loading options',
         'dataLoading.operation.status.awaitingSelection': 'Awaiting selection',
         'dataLoading.operation.load': 'Load',
@@ -238,6 +241,55 @@ describe('ClarificationPanel', () => {
 
     expect(screen.getByRole('button', { name: /Recent orders/ })).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('toggles several multi-choice options and submits them together', () => {
+    const onSubmit = vi.fn();
+    render(
+      <ClarificationPanel
+        questions={[{ text: 'Which columns?', responseType: 'multi_choice',
+          options: [{ label: 'Price' }, { label: 'Region' }, { label: 'Date' }] }]}
+        onSubmit={onSubmit}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Select all that apply')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Date' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Price' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Region' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Region' }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Price' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Region' })).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'chartRec.submitClarification' }));
+    expect(onSubmit).toHaveBeenCalledWith([{
+      question_index: 0, answer: 'Price, Date', selections: ['Price', 'Date'], source: 'option',
+    }]);
+  });
+
+  it('collapses long option lists and keeps a picked hidden option visible', () => {
+    const options = Array.from({ length: 12 }, (_, index) => ({ label: `Workflow ${index + 1}` }));
+    render(
+      <ClarificationPanel
+        questions={[{ text: 'Which workflow?', responseType: 'single_choice', options }]}
+        onSelectAnswer={vi.fn()}
+        selectedAnswers={{ 0: { question_index: 0, answer: 'Workflow 11', source: 'option' } }}
+        onSubmit={vi.fn()}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Workflow 8' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Workflow 9' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Workflow 11' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '+3 more' }));
+    expect(screen.getByRole('button', { name: 'Workflow 12' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show fewer' }));
+    expect(screen.queryByRole('button', { name: 'Workflow 12' })).toBeNull();
   });
 
   it('submits a single-choice question immediately when an option is clicked', () => {

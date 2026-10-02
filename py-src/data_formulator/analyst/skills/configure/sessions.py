@@ -44,9 +44,8 @@ def session_summary(state: dict[str, Any] | None) -> dict[str, Any]:
         "prompts": _unique(prompts, 6),
         "reports": _unique((report.get("title") for report in state.get("generatedReports") or []
                             if isinstance(report, dict)), 6),
-        "workflows": _unique((((turn.get("workflowDefinition") or {}).get("definition") or {}).get("name")
-                              or (turn.get("workflow") or {}).get("overview") for turn in turns
-                              if turn.get("workflowDefinition") or turn.get("workflow")), 6),
+        "workflows": _unique(((((turn.get("form") or {}).get("workflow") or {}).get("definition") or {}).get("name")
+                              or (turn.get("workflow") or {}).get("overview") for turn in turns), 6),
         "chart_count": len(state.get("charts") or []),
     }
 

@@ -1,25 +1,22 @@
 import { ShimmerText, WorkflowGears } from '../components/FunComponents';
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useSelector } from 'react-redux';
-import { Alert, Autocomplete, Box, Button, ButtonBase, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, MenuItem,
-    IconButton, Tab, Tabs, TextField, Tooltip, Typography, useTheme } from '@mui/material';
+import { Alert, Box, Button, ButtonBase, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
+    IconButton, Popover, TextField, Tooltip, Typography, alpha, useTheme } from '@mui/material';
+import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
-import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
-import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
-import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import SaveIcon from '@mui/icons-material/Save';
 import AddIcon from '@mui/icons-material/Add';
-import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
+import AltRouteIcon from '@mui/icons-material/AltRoute';
 import { ArtifactDeleteButton, ThreadArtifactCard } from './DataThreadCards';
-import { cardHoverSx, mutedChipBg, titleChipSx } from '../components/ItemCard';
-import { readingTypography, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarRowTitleSx, sidebarToolbarSx } from '../app/tokens';
+import { cardHoverSx, ItemCard, MetadataCard, MetadataChips, ViewAllButton } from '../components/ItemCard';
+import { readingTypography, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarToolbarSx } from '../app/tokens';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import CodeIcon from '@mui/icons-material/Code';
@@ -36,7 +33,7 @@ import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType, ge
 import { store } from '../app/store';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
 import { loadWorkspace, notifyWorkspaceFilesChanged, WorkspaceLoadSupersededError } from '../app/workspaceService';
-import { createConversationRootId, createDictTable, computeInsightKey, FieldItem, TextTurn, ClarificationResponse, ScheduleConfig } from '../components/ComponentType';
+import { createConversationRootId, createDictTable, computeInsightKey, DictTable, FieldItem, TextTurn, ClarificationResponse } from '../components/ComponentType';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { textVar, iconVar } from '../app/layout';
 import { ListDetailDialog } from '../components/ListDetailDialog';
@@ -46,14 +43,9 @@ import { parseDataOperation } from '../dataOperations/models';
 import { ClarificationPanel, FailedDraftPanel } from './AgentPausePanel';
 import { formatClarificationResponses, normalizeClarifyEvent } from '../app/clarification';
 import ReactMarkdown from 'react-markdown';
-import { dump as dumpYaml, load as loadYaml } from 'js-yaml';
+import { CardRuns, RunEntry, RunList, useScheduleLibrary, workflowApi as post, WorkflowLibraryItem,
+    WorkflowSetup, WorkflowSetupFields, workflowSetupContentSx } from './WorkflowSchedules';
 
-interface WorkflowParameter {
-    name: string; label: string; type?: 'text' | 'number' | 'boolean' | 'select'; description?: string;
-    required?: boolean; default?: string | number | boolean; options?: string[]; allow_custom?: boolean;
-}
-interface WorkflowSetup { parameters: Record<string, string | number | boolean>; instructions: string }
-export interface WorkflowLibraryItem { path: string; name: string; overview?: string; error?: string; origin?: 'user' | 'demo' | 'server'; parameters?: WorkflowParameter[]; content?: string }
 export interface Run {
     workflow_path?: string;
     external_references?: import('../components/ComponentType').ExternalTableReference[];
@@ -83,13 +75,6 @@ export interface Run {
     } };
     visited?: string[];
     outputs?: { id: string; version?: string; type: string; step_id?: string; plan_revision?: number; tool?: string; stdout?: string; content?: any; input_sources?: { id: string; kind: 'data' | 'file'; display_name?: string }[] }[];
-}
-
-async function post<T>(route: string, body: object = {}, signal?: AbortSignal): Promise<T> {
-    const { data } = await apiRequest<T>(`/api/workflows/${route}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal,
-    });
-    return data;
 }
 
 function workflowOutputIds(run: Run): string[] {
@@ -248,6 +233,88 @@ export function workflowTextTurn(run: Run, existing?: TextTurn): TextTurn {
     };
 }
 
+type RunOutput = NonNullable<Run['outputs']>[number];
+
+/** The derived table, chart, and fields a visualization result adds to the thread, with the step's question as its trigger. */
+function workflowResultNodes(output: Pick<RunOutput, 'content' | 'input_sources'>, rows: any[], tables: DictTable[], fieldPrefix: string,
+    parentNodeId: string, fallbackSource: string, createdAt: number) {
+    const result = output.content.result;
+    const goal = result.refined_goal;
+    const tableId = result.content.virtual.table_name;
+    const table = createDictTable(tableId, rows, undefined);
+    table.displayId = goal.display_name || tableId;
+    table.parentNodeId = parentNodeId;
+    const inputSources = (output.input_sources || []).map(source => ({ id: source.id, kind: source.kind, displayName: source.display_name || source.id }));
+    const sourceNames = inputSources.filter(source => source.kind === 'data').map(source => source.displayName.replace(/\.[^/.]+$/, ''));
+    const sourceIds = tables.filter(item =>
+        sourceNames.includes(item.virtual?.tableId || item.id.replace(/\.[^/.]+$/, ''))).map(item => item.id);
+    const triggerChart = generateFreshChart(sourceIds[0] || fallbackSource, 'Auto');
+    triggerChart.source = 'trigger';
+    table.derive = { code: result.code, codeSignature: result.code_signature,
+        outputVariable: goal.output_variable, source: sourceIds,
+        inputSources, dialog: result.dialog || [], trigger: { tableId: sourceIds[0] || fallbackSource, resultTableId: tableId,
+            chart: triggerChart, interaction: [{ from: 'data-agent', to: 'datarec-agent',
+                role: 'instruction', content: output.content.question || goal.title, timestamp: createdAt }] } };
+    const concepts: FieldItem[] = table.names.map(name => ({ id: `${fieldPrefix}-${name}`, name, source: 'custom', tableRef: 'custom' }));
+    const chart = resolveRecommendedChart(goal, concepts, table);
+    chart.id = result.chart_id;
+    chart.title = goal.title;
+    chart.subtitle = goal.subtitle;
+    chart.titleKey = computeInsightKey(chart);
+    return { table, chart, concepts };
+}
+
+/** Expand a scheduled run's saved artifacts into the thread a live run of it builds. */
+export function materializeScheduledSnapshot(state: Record<string, any>): Record<string, any> {
+    if (!Array.isArray(state.scheduledArtifacts)) return state;
+    const snapshot: Record<string, any> = { ...state, derivedTables: [], charts: [], conceptShelfItems: [], generatedReports: [], loadedTableNodes: [] };
+    const summaryId: string = state.textTurns?.[0]?.id;
+    // Node ids match a live run's, so the workflow turn's outputs resolve to them.
+    const runId = String(summaryId || '').replace(/^scheduled-summary-/, '');
+    const createdAt = state.textTurns?.[0]?.createdAt || Date.now();
+    snapshot.textTurns = (state.textTurns || []).map((turn: any) => ({ ...turn, parentNodeId: createConversationRootId(turn.id) }));
+    const nodeIds: string[] = [];
+    const parentOf = (id: string) => {
+        if (!nodeIds.includes(id)) nodeIds.push(id);
+        return nodeIds[nodeIds.indexOf(id) - 1] || summaryId;
+    };
+    const charts = state.scheduledArtifacts.filter((item: any) => item.kind === 'chart');
+    for (const artifact of state.scheduledArtifacts) {
+        if (artifact.kind === 'data') {
+            const nodeId = `workflow-data-${runId}-${artifact.tableId}`;
+            const table = createDictTable(artifact.tableId, artifact.rows, undefined);
+            table.displayId = artifact.displayName || artifact.tableId;
+            snapshot.derivedTables = [...snapshot.derivedTables.filter((item: DictTable) => item.id !== table.id), table];
+            const parentNodeId = parentOf(nodeId);
+            if (!snapshot.loadedTableNodes.some((node: any) => node.id === nodeId)) {
+                snapshot.loadedTableNodes.push({ kind: 'loaded-table', id: nodeId, tableId: table.id, parentNodeId, createdAt });
+            }
+        } else if (artifact.kind === 'chart') {
+            const output = { input_sources: artifact.inputSources, content: { question: artifact.question, result: {
+                chart_id: artifact.id, code: artifact.code, refined_goal: artifact.goal,
+                content: { virtual: { table_name: artifact.tableId } } } } };
+            const { table, chart, concepts } = workflowResultNodes(output, artifact.rows, snapshot.derivedTables,
+                `scheduled-field-${artifact.id}`, parentOf(artifact.tableId), summaryId, createdAt);
+            snapshot.derivedTables.push(table);
+            snapshot.charts.push(chart);
+            snapshot.conceptShelfItems.push(...concepts);
+        } else if (artifact.kind === 'report') {
+            const id = `workflow-report-${runId}`;
+            snapshot.generatedReports = [...snapshot.generatedReports.filter((report: any) => report.id !== id), {
+                id, content: artifact.content, title: state.activeWorkspace?.displayName, status: 'completed',
+                parentNodeId: parentOf(id), createdAt, selectedChartIds: charts.map((item: any) => item.id) }];
+        }
+    }
+    delete snapshot.scheduledArtifacts;
+    if (snapshot.generatedReports[0]) {
+        snapshot.focusedId = { type: 'report', reportId: snapshot.generatedReports[0].id };
+        snapshot.viewMode = 'report';
+    } else if (snapshot.charts[0]) {
+        snapshot.focusedId = { type: 'chart', chartId: snapshot.charts[0].id };
+    }
+    return snapshot;
+}
+
 export async function publishWorkflowRun(run: Run, workspaceId: string, focus = true) {
     if (store.getState().activeWorkspace?.id !== workspaceId || deletedWorkflowRuns.has(`${workspaceId}/${run.id}`)) return;
     const turnId = `textTurn-workflow-${run.id}`;
@@ -272,6 +339,8 @@ export async function publishWorkflowRun(run: Run, workspaceId: string, focus = 
         store.dispatch(dfActions.upsertExternalTableReference(reference));
     }
     for (const output of run.outputs || []) {
+        // The server omits chart rows this client already published.
+        if (output.type === 'result' && output.content?.result?.content?.rows_omitted && outputVersions[output.id]) continue;
         const version = output.version || JSON.stringify(output);
         if (outputVersions[output.id] === version) continue;
         if (output.type === 'tool_result' && ['create_data', 'update_data'].includes(output.tool || '')) {
@@ -298,32 +367,12 @@ export async function publishWorkflowRun(run: Run, workspaceId: string, focus = 
                     || outputParent(`file-${path}`), createdAt }));
             notifyWorkspaceFilesChanged();
         } else if (output.type === 'result') {
-            const result = output.content.result;
-            const goal = result.refined_goal;
-            const tableId = result.content.virtual.table_name;
-            const table = createDictTable(tableId, result.content.rows, undefined);
-            table.displayId = goal.display_name || tableId;
-            const inputSources = (output.input_sources || []).map(source => ({ id: source.id, kind: source.kind, displayName: source.display_name || source.id }));
-            const sourceNames = inputSources.filter(source => source.kind === 'data').map(source => source.displayName.replace(/\.[^/.]+$/, ''));
-            const sourceIds = dfSelectors.getAllTables(store.getState()).filter(item =>
-                sourceNames.includes(item.virtual?.tableId || item.id.replace(/\.[^/.]+$/, ''))).map(item => item.id);
-            table.parentNodeId = dfSelectors.getAllTables(store.getState()).find(item => item.id === tableId)?.parentNodeId
+            const tableId = output.content.result.content.virtual.table_name;
+            const parentNodeId = dfSelectors.getAllTables(store.getState()).find(item => item.id === tableId)?.parentNodeId
                 || outputParent(tableId);
-            table.virtual = { tableId, rowCount: result.content.virtual.row_count };
-            const triggerChart = generateFreshChart(sourceIds[0] || turnId, 'Auto');
-            triggerChart.source = 'trigger';
-            table.derive = { code: result.code, codeSignature: result.code_signature,
-                outputVariable: goal.output_variable, source: sourceIds,
-                inputSources, dialog: result.dialog || [], trigger: { tableId: sourceIds[0] || turnId, resultTableId: tableId,
-                    chart: triggerChart, interaction: [{ from: 'data-agent', to: 'datarec-agent',
-                        role: 'instruction', content: output.content.question || goal.title, timestamp: createdAt }] } };
-            const concepts: FieldItem[] = table.names.map(name => ({ id: `workflow-field-${run.id}-${output.id}-${name}`,
-                name, source: 'custom', tableRef: 'custom' }));
-            const chart = resolveRecommendedChart(goal, concepts, table);
-            chart.id = result.chart_id;
-            chart.title = goal.title;
-            chart.subtitle = goal.subtitle;
-            chart.titleKey = computeInsightKey(chart);
+            const { table, chart, concepts } = workflowResultNodes(output, output.content.result.content.rows,
+                dfSelectors.getAllTables(store.getState()), `workflow-field-${run.id}-${output.id}`, parentNodeId, turnId, createdAt);
+            table.virtual = { tableId, rowCount: output.content.result.content.virtual.row_count };
             store.dispatch(dfActions.addConceptItems(concepts));
             store.dispatch(dfActions.insertDerivedTables(table));
             store.dispatch(fetchFieldSemanticType(table));
@@ -367,6 +416,10 @@ export async function publishWorkflowRun(run: Run, workspaceId: string, focus = 
 
 const executions = new Map<string, AbortController>();
 
+/** A run-state request naming the outputs already published, so their chart rows are not resent. */
+const runStateRequest = (runId: string) => ({ run_id: runId, known_outputs: Object.keys(store.getState().textTurns
+    .find(turn => turn.workflow?.runId === runId)?.workflow?.outputVersions || {}) });
+
 export function selectChatWorkflow(state: DataFormulatorState): TextTurn | undefined {
     const focus = state.focusedId;
     if (focus?.type !== 'text') return undefined;
@@ -383,24 +436,27 @@ function canAnswerWorkflowQuestion(turn: TextTurn) {
         && !workflow.terminalRequest && !workflow.dataOperation && !turn.form;
 }
 
-async function replyWorkflowQuestion(turn: TextTurn, text: string, onAccepted?: () => void) {
-    if (!canAnswerWorkflowQuestion(turn) || !text.trim()) throw new Error('This workflow is not waiting for a question reply.');
-    const workflow = turn.workflow!;
+async function replyWorkflowQuestion(turn: TextTurn, text: string, onAccepted?: () => void, messageId?: string) {
+    const workflow = turn.workflow;
+    if (workflow?.status !== 'paused' || workflow.terminalRequest || !text.trim()) throw new Error('This workflow is not waiting for a reply.');
     const afterOutputIds = [...(turn.outputIds || [])];
+    const replyId = workflow.interactionId || messageId || crypto.randomUUID();
     await executeWorkflow({ run_id: workflow.runId, reply: text.trim() }, () => {
-        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: `textTurn-workflow-reply-${workflow.runId}-${workflow.interactionId}`,
-            displayId: 'Workflow reply', textKind: 'explain', prompt: text.trim(), content: 'Answered workflow question.',
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: `textTurn-workflow-reply-${workflow.runId}-${replyId}`,
+            displayId: 'Workflow reply', textKind: 'explain', prompt: text.trim(),
+            content: workflow.interactionId ? 'Answered workflow question.' : 'Resumed with your message.',
             parentNodeId: turn.id, createdAt: Date.now(), workflowMessage: { runId: workflow.runId,
-                messageId: workflow.interactionId!, kind: 'reply', status: 'received', afterOutputIds } }));
+                messageId: replyId, kind: 'reply', status: 'received', afterOutputIds } }));
         onAccepted?.();
     });
 }
 
+/** Steer a running workflow with a queued message, or resume a paused one with it. */
 export async function sendWorkflowMessage(turn: TextTurn, text: string, messageId: string, onAccepted?: () => void) {
     const workspaceId = store.getState().activeWorkspace?.id;
     if (!workspaceId || !turn.workflow || !text.trim()) throw new Error('Select an active workflow and enter a message.');
     const current = store.getState().textTurns.find(item => item.id === turn.id) || turn;
-    if (canAnswerWorkflowQuestion(current)) return replyWorkflowQuestion(current, text, onAccepted);
+    if (current.workflow?.status === 'paused') return replyWorkflowQuestion(current, text, onAccepted, messageId);
     const afterOutputIds = [...(current.outputIds || [])];
     await post('message', { run_id: turn.workflow.runId, message_id: messageId, message: text.trim() });
     if (store.getState().activeWorkspace?.id !== workspaceId) return;
@@ -420,7 +476,7 @@ interface WorkflowRequest {
     interaction_response?: { operation_id: string; plan_id: string };
 }
 
-async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => void) {
+export async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => void) {
     const state = store.getState();
     const workspaceId = state.activeWorkspace?.id;
     const model = [...state.globalModels, ...state.models].find(item => item.id === state.selectedModelId);
@@ -449,7 +505,7 @@ async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => void) {
     const checkExecution = async () => {
         try {
             if (latest?.status === 'running') {
-                const { run } = await post<{ run: Run }>('run-state', { run_id: latest.id }, AbortSignal.timeout(10000));
+                const { run } = await post<{ run: Run }>('run-state', runStateRequest(latest.id), AbortSignal.timeout(10000));
                 if (!monitoring || latest.status !== 'running' || store.getState().activeWorkspace?.id !== workspaceId) return;
                 if (run.status !== 'running') {
                     latest = run;
@@ -523,7 +579,7 @@ async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => void) {
             if (latest && store.getState().activeWorkspace?.id === workspaceId) {
                 if (latest.status === 'running') {
                     try {
-                        const { run } = await post<{ run: Run }>('run-state', { run_id: latest.id }, AbortSignal.timeout(10000));
+                        const { run } = await post<{ run: Run }>('run-state', runStateRequest(latest.id), AbortSignal.timeout(10000));
                         latest = run;
                     } catch {
                         latest = { ...latest, activity: 'Reconnecting to workflow...' };
@@ -570,7 +626,7 @@ export const WorkflowRunObserver: React.FC = () => {
             try {
                 if (executions.has(workspaceId)) return;
                 for (const runId of runningIds.split(',')) {
-                    const { run } = await post<{ run: Run }>('run-state', { run_id: runId }, AbortSignal.timeout(10000));
+                    const { run } = await post<{ run: Run }>('run-state', runStateRequest(runId), AbortSignal.timeout(10000));
                     if (!active || store.getState().activeWorkspace?.id !== workspaceId || executions.has(workspaceId)) return;
                     if (!scheduledView) {
                         await publishWorkflowRun(run, workspaceId, false);
@@ -625,6 +681,10 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
     const [approvalOpen, setApprovalOpen] = useState(false);
     const [dismissedApproval, setDismissedApproval] = useState<string>();
     const [submitting, setSubmitting] = useState(false);
+    // A fixed position: thread updates can remount the button, which would strand an element anchor.
+    const [messageAnchor, setMessageAnchor] = useState<{ top: number; left: number } | null>(null);
+    const [messageDraft, setMessageDraft] = useState('');
+    const [sendingMessage, setSendingMessage] = useState(false);
     const submittingRef = useRef(false);
     const workflow = turn.workflow;
     const [liveElapsed, setLiveElapsed] = useState(0);
@@ -668,7 +728,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
         if (!workspaceId) return;
         let active = true;
         setLoadingLog(true);
-        void post<{ run: Run }>('run-state', { run_id: workflow.runId }).then(({ run }) => {
+        void post<{ run: Run }>('run-state', { run_id: workflow.runId, omit_rows: true }).then(({ run }) => {
             if (active && store.getState().activeWorkspace?.id === workspaceId) {
                 setLoadingLog(false);
                 setSavedPlan(run);
@@ -852,10 +912,19 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
         })}
         </Box>
     );
-    const statusAction = (label: string, icon: React.ReactNode, onClick: () => void, disabled = false) => canvas || interactionOnly
+    const statusAction = (label: string, icon: React.ReactNode, onClick: (event: React.MouseEvent<HTMLElement>) => void, disabled = false) => canvas || interactionOnly
         ? <Tooltip title={label}><span><IconButton size="small" color={workflow.status === 'paused' ? 'warning' : 'primary'} aria-label={label} disabled={disabled} onClick={onClick}>{icon}</IconButton></span></Tooltip>
         : <Button size="small" color={workflow.status === 'paused' ? 'warning' : 'primary'} startIcon={icon} disabled={disabled} onClick={onClick}>{label}</Button>;
     const pauseWorkflow = () => { void pauseWorkflowRun(workflow.runId); };
+    const canMessage = (workflow.status === 'running' || workflow.status === 'paused') && !workflow.terminalRequest;
+    const sendMessage = async () => {
+        const text = messageDraft.trim();
+        if (!text || sendingMessage) return;
+        setSendingMessage(true);
+        try { await sendWorkflowMessage(turn, text, crypto.randomUUID(), () => { setMessageAnchor(null); setMessageDraft(''); }); }
+        catch (reason) { handleApiError(reason, 'Workflow message'); }
+        finally { setSendingMessage(false); }
+    };
     const currentStepIndex = workflow.steps.findIndex(step => step.id === workflow.stepId);
     const currentStep = workflow.steps[currentStepIndex];
     const needsReview = !!(workflow.terminalRequest || workflow.dataOperation || turn.form || questions.length);
@@ -1056,546 +1125,48 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 () => store.dispatch(dfActions.setFocused({ type: 'text', textId: turn.id })))
         )}
         {!canvas && !interactionOnly && workflow.status === 'running' && statusAction('Pause', <PauseIcon sx={{ fontSize: 18 }} />, pauseWorkflow, workflow.pauseRequested)}
+        {!canvas && !interactionOnly && canMessage && statusAction('Steer', <AltRouteIcon sx={{ fontSize: 16 }} />, event => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            setMessageAnchor({ top: rect.bottom, left: rect.left });
+        })}
+        <Popover open={!!messageAnchor && canMessage} anchorReference="anchorPosition" anchorPosition={messageAnchor ?? undefined}
+            onClose={() => !sendingMessage && setMessageAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }} transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+            transitionDuration={{ enter: 180, exit: 120 }} onClick={event => event.stopPropagation()}
+            slotProps={{ paper: { sx: { mt: 0.75, width: 380, maxWidth: 'calc(100vw - 32px)', px: 1.25, pt: 1, pb: 0.5,
+                borderRadius: '12px', border: 1, borderColor: 'divider', overflow: 'visible',
+                boxShadow: '0 4px 18px rgba(32, 33, 36, 0.16), 0 1px 3px rgba(32, 33, 36, 0.08)',
+                transition: 'border-color 120ms ease, box-shadow 120ms ease',
+                '&:focus-within': { borderColor: 'primary.main',
+                    boxShadow: `0 0 0 3px ${alpha(theme.palette.primary.main, 0.14)}, 0 4px 18px rgba(32, 33, 36, 0.16)` } } } }}>
+            <Box component="form" aria-label="Steer workflow agent" onSubmit={event => { event.preventDefault(); void sendMessage(); }}>
+                <TextField variant="standard" autoFocus fullWidth multiline minRows={2} maxRows={8} value={messageDraft} disabled={sendingMessage}
+                    placeholder={workflow.status === 'paused' ? 'Tell the agent how to continue...' : 'Steer the agent, e.g. focus on diesel only'}
+                    onChange={event => setMessageDraft(event.target.value)}
+                    onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void sendMessage(); } }}
+                    slotProps={{ input: { disableUnderline: true, sx: { fontSize: textVar.md, lineHeight: 1.5 } },
+                        htmlInput: { 'aria-label': 'Message to workflow agent', maxLength: 4000 } }} />
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                    <Typography sx={{ flex: 1, fontSize: textVar.xs, color: 'text.secondary' }}>
+                        {workflow.status === 'paused' ? 'Sending resumes the workflow.' : 'Read before its next action.'}
+                    </Typography>
+                    <Tooltip title={workflow.status === 'paused' ? 'Send and resume' : 'Send'}><span>
+                        <IconButton type="submit" size="small" aria-label={workflow.status === 'paused' ? 'Send and resume' : 'Send'}
+                            disabled={sendingMessage || !messageDraft.trim()}
+                            sx={{ p: 0, width: 28, height: 28, transition: 'background-color 120ms ease, transform 120ms ease',
+                                bgcolor: 'primary.main', color: 'common.white', '&:hover': { bgcolor: 'primary.dark', transform: 'translateY(-1px)' },
+                                '&.Mui-disabled': { bgcolor: 'transparent', color: 'text.disabled' } }}>
+                            {sendingMessage ? <CircularProgress size={14} /> : <ArrowUpwardRoundedIcon sx={{ fontSize: iconVar.lg }} />}
+                        </IconButton>
+                    </span></Tooltip>
+                </Box>
+            </Box>
+        </Popover>
         </Box>}
-    </Box>;
-};
-
-const workflowSetupContentSx = {
-    display: 'flex', flexDirection: 'column', gap: 2.5, pb: 2.5,
-    '& .MuiInputBase-root': { fontSize: textVar.md, lineHeight: 1.5 },
-    '& .MuiInputLabel-root': { fontSize: textVar.md },
-    '& .MuiFormHelperText-root': { fontSize: textVar.xs, lineHeight: 1.6, mt: 0.75 },
-    '& .MuiFormControlLabel-label': { fontSize: textVar.md },
-    '& .MuiTypography-caption': { display: 'block', fontSize: textVar.xs, lineHeight: 1.6, mt: 0.5 },
-};
-
-export const WorkflowSetupFields: React.FC<{ parameters: WorkflowParameter[]; values: WorkflowSetup['parameters'];
-    onChange: (values: WorkflowSetup['parameters']) => void; disabled: boolean }> = ({ parameters, values, onChange, disabled }) => <>
-    {parameters.map(parameter => {
-        const value = values[parameter.name] ?? '';
-        const update = (value: string | boolean) => onChange({ ...values, [parameter.name]: value });
-        if (parameter.type === 'boolean') return <Box key={parameter.name}>
-            <FormControlLabel label={parameter.label} control={<Checkbox size="small" checked={value === true}
-                disabled={disabled} onChange={(_, checked) => update(checked)} />} />
-            {parameter.description && <Typography variant="caption" color="text.secondary">{parameter.description}</Typography>}
-        </Box>;
-        if (parameter.type === 'select' && parameter.allow_custom) return <Autocomplete key={parameter.name}
-            freeSolo forcePopupIcon openOnFocus options={parameter.options || []} value={String(value) || null} inputValue={String(value)} disabled={disabled}
-            onInputChange={(_, value) => update(value)} renderInput={params => <TextField {...params} size="small" label={parameter.label}
-                required={parameter.required} helperText={parameter.description} slotProps={{ htmlInput: { ...params.inputProps, maxLength: 4000 } }} />} />;
-        return <TextField key={parameter.name} size="small" fullWidth label={parameter.label} required={parameter.required}
-            disabled={disabled} helperText={parameter.description} value={value} onChange={event => update(event.target.value)}
-            select={parameter.type === 'select'} type={parameter.type === 'number' ? 'number' : 'text'} slotProps={{ htmlInput: { maxLength: 4000, step: 'any' } }}>
-            {parameter.type === 'select' && !parameter.required && <MenuItem value="">Not specified</MenuItem>}
-            {parameter.type === 'select' && parameter.options?.map(option => <MenuItem key={option} value={option}>{option}</MenuItem>)}
-        </TextField>;
-    })}
-</>;
-
-export const WorkflowProposal: React.FC<{ turn: TextTurn; canvas?: boolean }> = ({ turn, canvas = false }) => {
-    const proposal = turn.workflowDefinition!;
-    const { definition } = proposal;
-    const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
-    const readOnly = useSelector((state: DataFormulatorState) => state.activeWorkspace?.readOnly);
-    const hasModel = useSelector((state: DataFormulatorState) => [...state.globalModels, ...state.models].some(model => model.id === state.selectedModelId));
-    const busy = useSelector((state: DataFormulatorState) => state.textTurns.some(item => item.workflow?.status === 'running'));
-    const [filename, setFilename] = useState(() => proposal.saved?.path
-        || `${definition.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'workflow'}.workflow.yaml`);
-    const [saving, setSaving] = useState(false);
-    const [starting, setStarting] = useState(false);
-    const [saveOpen, setSaveOpen] = useState(false);
-    const [workflowName, setWorkflowName] = useState(definition.name);
-    const [saveError, setSaveError] = useState('');
-    const [setupOpen, setSetupOpen] = useState(false);
-    const [definitionView, setDefinitionView] = useState<'illustration' | 'yaml'>('illustration');
-    const [values, setValues] = useState<WorkflowSetup['parameters']>(() => Object.fromEntries((definition.parameters || [])
-        .map(parameter => [parameter.name, parameter.default ?? (parameter.type === 'boolean' ? false : '')])));
-    const [instructions, setInstructions] = useState('');
-    const [error, setError] = useState('');
-    const generation = useRef(0);
-    useEffect(() => { generation.current += 1; return () => { generation.current += 1; }; }, [workspaceId, turn.id]);
-    const proseStyle = { fontSize: 'inherit', lineHeight: 1.5, '& p': { my: 0 }, '& ul, & ol': { pl: 2.5, my: 0.5 },
-        '& h1, & h2, & h3, & h4': { fontSize: 'inherit', fontWeight: 600, mt: 1, mb: 0.5 },
-        '& pre': { overflowX: 'auto', whiteSpace: 'pre-wrap', bgcolor: 'action.hover', p: 1.5, borderRadius: 1 },
-        '& code': { fontFamily: 'var(--df-font-mono)', fontSize: '0.95em' }, '& a': { color: 'primary.main' } };
-    const renderInput = (value: unknown): React.ReactNode => {
-        if (Array.isArray(value) && value.every(item => item === null || typeof item !== 'object')) {
-            return <Typography sx={{ fontSize: 'inherit', lineHeight: 1.5 }}>{value.map(item => String(item ?? 'Not specified')).join(', ')}</Typography>;
-        }
-        if (Array.isArray(value)) return <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>{value.map((item, index) =>
-            <Box key={index} sx={{ ...(index > 0 && typeof item === 'object' ? { borderTop: 1, borderColor: 'divider', pt: 1 } : {}) }}>{renderInput(item)}</Box>)}</Box>;
-        if (value !== null && typeof value === 'object') return <Box component="dl" sx={{ m: 0 }}>
-            {Object.entries(value).map(([key, item]) => <Box key={key} sx={{ py: 0.25, display: 'grid', gridTemplateColumns: '112px minmax(0, 1fr)', columnGap: 1.5 }}>
-                <Typography component="dt" sx={{ fontSize: textVar.sm, color: 'text.secondary', textTransform: 'capitalize', lineHeight: 1.5 }}>{key.replace(/[_-]/g, ' ')}</Typography>
-                <Box component="dd" sx={{ m: 0, minWidth: 0 }}>{renderInput(item)}</Box>
-            </Box>)}
-        </Box>;
-        return <Box sx={proseStyle}><ReactMarkdown>{value == null ? 'Not specified' : String(value)}</ReactMarkdown></Box>;
-    };
-    const definitionSection = (label: string, children: React.ReactNode) => <Box component="section" sx={{ mt: 2 }}>
-        <Typography component="h2" sx={{ fontSize: 'inherit', fontWeight: 600, mb: 0.5 }}>{label}</Typography>
-        {children}
-    </Box>;
-    return <Box component="section" id={canvas ? 'vis-view-canvas' : undefined} aria-label="Workflow definition" sx={{
-        py: canvas ? 0 : 1, minWidth: 0, overflowWrap: 'anywhere', width: '100%', boxSizing: 'border-box',
-        fontFamily: theme => theme.typography.fontFamily, fontSize: 14, lineHeight: 1.5, letterSpacing: 0,
-        ...(canvas ? { height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', bgcolor: 'background.paper' } : {}),
-    }}>
-        <Box sx={{ px: canvas ? { xs: 2, sm: 3 } : 0, pt: canvas ? 2 : 0, flexShrink: 0 }}>
-            <Box sx={{ width: '100%', maxWidth: 900, mx: 'auto' }}>
-                <Typography component="h1" variant="h6" sx={{ fontWeight: 600, m: 0 }}>{definition.name}</Typography>
-                <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', mt: 0.25, mb: 0.5 }}>Workflow definition</Typography>
-                <Tabs value={definitionView} onChange={(_, value) => setDefinitionView(value)} aria-label="Workflow definition view"
-                    sx={{ minHeight: 36, borderBottom: 1, borderColor: 'divider', '& .MuiTab-root': { minHeight: 36, px: 1.5, fontSize: textVar.sm, textTransform: 'none' } }}>
-                    <Tab id={`workflow-illustration-${turn.id}`} aria-controls={`workflow-definition-view-${turn.id}`} value="illustration" label="Illustration" />
-                    <Tab id={`workflow-yaml-${turn.id}`} aria-controls={`workflow-definition-view-${turn.id}`} value="yaml" label="YAML" />
-                </Tabs>
-            </Box>
-        </Box>
-        <Box data-workflow-definition-content role="tabpanel" id={`workflow-definition-view-${turn.id}`} aria-labelledby={`workflow-${definitionView}-${turn.id}`}
-            sx={canvas ? { flex: 1, minHeight: 0, overflowY: 'auto', px: { xs: 2, sm: 3 }, pt: 2, pb: 2 } : { pt: 2 }}>
-            <Box sx={{ width: '100%', maxWidth: 900, mx: 'auto', ...(definitionView === 'yaml' ? { height: canvas ? '100%' : 480, minHeight: 160 } : {}) }}>
-                {definitionView === 'yaml' ? <MarkdownEditor fileName="definition.workflow.yaml" value={proposal.content} onChange={() => {}} readOnly showToolbar={false} lineWrap /> : <>
-                <Box sx={{ ...proseStyle, color: 'text.secondary' }}><ReactMarkdown>{definition.overview}</ReactMarkdown></Box>
-                {definition.prompt && definitionSection(definition.steps?.length ? 'Guidelines and rules' : 'Goal and method', <Box sx={proseStyle}><ReactMarkdown>{definition.prompt}</ReactMarkdown></Box>)}
-                {definition.source != null && definitionSection('Inputs', renderInput(definition.source))}
-                {!!definition.parameters?.length && definitionSection('Parameters',
-                    <Box component="dl" sx={{ m: 0 }}>{definition.parameters.map(parameter => <Box key={parameter.name} sx={{ py: 0.75,
-                        display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(130px, 1fr) minmax(0, 2fr)' }, columnGap: 2, rowGap: 0.25 }}>
-                        <Typography component="dt" sx={{ fontSize: 'inherit', fontWeight: 500 }}>{parameter.label}
-                            {parameter.required && <Box component="span" sx={{ ml: 0.75, fontSize: textVar.sm, color: 'text.secondary' }}>(required)</Box>}
-                        </Typography>
-                        <Box component="dd" sx={{ m: 0 }}>
-                            {parameter.description && <Box sx={proseStyle}><ReactMarkdown>{parameter.description}</ReactMarkdown></Box>}
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 2, color: 'text.secondary' }}>
-                                {parameter.default !== undefined && <Typography sx={{ fontSize: textVar.sm }}>Default: {String(parameter.default)}</Typography>}
-                                {!!parameter.options?.length && <Typography sx={{ fontSize: textVar.sm }}>Options: {parameter.options.join(', ')}</Typography>}
-                            </Box>
-                        </Box>
-                    </Box>)}</Box>
-                )}
-                {!!definition.steps?.length && definitionSection('Execution steps', <Box component="ol" sx={{ my: 0, pl: 2.5 }}>
-                    {definition.steps.map(step => <Box component="li" key={step.id} sx={{ mb: 1 }}>
-                        <Typography sx={{ fontSize: 'inherit', fontWeight: 500 }}>{step.description || step.id}</Typography>
-                        <Box sx={proseStyle}><ReactMarkdown>{step.instructions}</ReactMarkdown></Box>
-                        {!!step.checkers?.length && <Box component="ul" sx={{ my: 0.5, pl: 2.5, color: 'text.secondary' }}>
-                            {step.checkers.map(check => <Box component="li" key={check.id} sx={proseStyle}>
-                                <ReactMarkdown>{`${check.when === 'before' ? 'Before' : check.when === 'during' ? 'During' : 'After'}: ${check.condition}${check.on_fail ? ` (on failure: ${check.on_fail})` : ''}`}</ReactMarkdown>
-                            </Box>)}
-                        </Box>}
-                        {step.next && <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary' }}>Next: {step.next}</Typography>}
-                    </Box>)}
-                </Box>)}
-                {definitionSection('Deliverables', <Box component="ul" sx={{ my: 0, pl: 2.5 }}>{definition.deliverables.map((item, index) =>
-                    <Box component="li" key={index} sx={proseStyle}><ReactMarkdown>{item}</ReactMarkdown></Box>)}</Box>)}
-                </>}
-                {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
-            </Box>
-        </Box>
-        <Box role="group" aria-label="Workflow actions" sx={{ display: 'flex', justifyContent: 'center', flexShrink: 0, px: 2, pt: 1.5, pb: canvas ? 3 : 1, bgcolor: 'background.paper' }}>
-            <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 0.5,
-                px: 1, py: 0.5, borderRadius: '8px', border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}>
-                <Button size="small" variant="text" startIcon={<SaveIcon />} disabled={saving}
-                    sx={{ textTransform: 'none', flexShrink: 0, color: 'primary.main' }}
-                    onClick={() => { setWorkflowName(definition.name); setSaveError(''); setSaveOpen(true); }}>Save workflow</Button>
-                <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.75 }} />
-                <Button size="small" variant="text" startIcon={<PlayArrowIcon />} disabled={busy || starting || readOnly || !workspaceId || !hasModel}
-                    sx={{ textTransform: 'none', flexShrink: 0, color: 'text.secondary' }} onClick={() => setSetupOpen(true)}>Run workflow</Button>
-            </Box>
-        </Box>
-        <Dialog open={saveOpen} onClose={() => !saving && setSaveOpen(false)} fullWidth maxWidth="sm" aria-labelledby={`workflow-save-${turn.id}`}>
-            <Box component="form" onSubmit={async event => {
-                    event.preventDefault();
-                    if (saving || !filename.trim() || !workflowName.trim()) return;
-                    const current = generation.current;
-                    setSaving(true); setSaveError('');
-                    try {
-                        const name = workflowName.trim();
-                        const content = name === definition.name ? proposal.content
-                            : dumpYaml({ ...(loadYaml(proposal.content) as Record<string, unknown>), name }, { lineWidth: -1 });
-                        const path = filename.trim();
-                        const saved = await post<{ path: string; content_hash: string }>('save', { path, content,
-                            ...(proposal.saved?.path === path ? { content_hash: proposal.saved.content_hash } : {}) });
-                        if (current !== generation.current) return;
-                        store.dispatch(dfActions.updateTextTurn({ id: turn.id, workflowDefinition: { ...proposal, content, definition: { ...definition, name }, saved } }));
-                        setSaveOpen(false);
-                        notifyWorkspaceFilesChanged();
-                    } catch (reason) { if (current === generation.current) setSaveError(reason instanceof Error ? reason.message : 'Unable to save workflow.'); }
-                    finally { if (current === generation.current) setSaving(false); }
-            }}>
-                <DialogTitle id={`workflow-save-${turn.id}`}>Save workflow</DialogTitle>
-                <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
-                    {saveError && <Alert severity="error">{saveError}</Alert>}
-                    <TextField autoFocus required label="Workflow name" size="small" value={workflowName} disabled={saving}
-                        onChange={event => setWorkflowName(event.target.value)} slotProps={{ htmlInput: { maxLength: 200 } }} />
-                    <TextField required label="Workflow filename" size="small" value={filename} disabled={saving}
-                        onChange={event => setFilename(event.target.value)} slotProps={{ htmlInput: { pattern: '[^/\\\\]+\\.workflow\\.ya?ml' } }} />
-                </DialogContent>
-                <DialogActions><Button disabled={saving} onClick={() => setSaveOpen(false)}>Cancel</Button>
-                    <Button type="submit" startIcon={<SaveIcon />} disabled={saving || !filename.trim() || !workflowName.trim()}>Save</Button></DialogActions>
-            </Box>
-        </Dialog>
-        <Dialog open={setupOpen} onClose={() => !starting && setSetupOpen(false)} fullWidth maxWidth="sm" aria-labelledby={`workflow-setup-${turn.id}`}>
-            <Box component="form" onSubmit={async event => {
-                event.preventDefault();
-                if (starting || busy || readOnly || !hasModel) return;
-                const current = generation.current;
-                const parameters = Object.fromEntries((definition.parameters || []).map(parameter => [parameter.name,
-                    parameter.type === 'number' && values[parameter.name] !== '' ? Number(values[parameter.name]) : values[parameter.name]]));
-                setStarting(true); setError('');
-                try { await executeWorkflow({ content: proposal.content, setup: { parameters, instructions: instructions.trim() } }, () => setSetupOpen(false)); }
-                catch (reason) { if (current === generation.current) { setError(reason instanceof Error ? reason.message : 'Unable to run workflow.'); setSetupOpen(false); } }
-                finally { if (current === generation.current) setStarting(false); }
-            }}>
-                <DialogTitle id={`workflow-setup-${turn.id}`} sx={{ fontSize: textVar.xl, lineHeight: 1.5, fontWeight: 400, overflowWrap: 'anywhere', pb: 2 }}>
-                    <Box component="span" sx={{ color: 'text.primary' }}>Run workflow:</Box>{' '}
-                    <Box component="span" sx={{ color: 'primary.main' }}>{definition.name}</Box>
-                </DialogTitle>
-                <DialogContent sx={workflowSetupContentSx}>
-                    <WorkflowSetupFields parameters={definition.parameters || []} values={values} onChange={setValues} disabled={starting} />
-                    <TextField label="Additional instructions" size="small" multiline minRows={3} value={instructions} disabled={starting}
-                        onChange={event => setInstructions(event.target.value)} slotProps={{ htmlInput: { maxLength: 8000 } }} />
-                </DialogContent>
-                <DialogActions sx={{ px: 3, py: 1.5, borderTop: 1, borderColor: 'divider' }}><Button disabled={starting} onClick={() => setSetupOpen(false)}>Cancel</Button>
-                    <Button type="submit" startIcon={<PlayArrowIcon />} disabled={starting || busy || readOnly || !hasModel}>Run workflow</Button></DialogActions>
-            </Box>
-        </Dialog>
     </Box>;
 };
 
 export const WORKFLOW_AUTHORING_PROMPT = 'Help me create a workflow from our current conversation and data. Suggest a few useful directions for me to choose from before drafting it. Do not save or execute it yet.';
-
-export interface WorkflowSchedule {
-    id: string; config: ScheduleConfig; next_at: string;
-    history?: { id: string; scheduled_for: string; status: string; message: string; attempts: number }[];
-}
-
-export const scheduleCadence = (config: ScheduleConfig) => {
-    const days = [...config.weekdays].sort();
-    const cadence = days.length === 7 ? 'Daily' : days.join() === '0,1,2,3,4' ? 'Weekdays'
-        : days.map(day => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][day]).join(', ');
-    return `${cadence} at ${config.time}`;
-};
-
-export const defaultScheduleConfig = (models: { id: string }[], selectedModelId?: string): ScheduleConfig => ({
-    name: '', workflow: '', model_id: models.find(model => model.id === selectedModelId)?.id || models[0]?.id || '', time: '09:00',
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, weekdays: [0, 1, 2, 3, 4, 5, 6], enabled: true,
-    auto_approve: false, max_retries: 2, catch_up: false, publish: false,
-});
-
-const schedulesChanged = new EventTarget();
-export const onSchedulesChanged = (listener: () => void) => {
-    schedulesChanged.addEventListener('change', listener);
-    return () => schedulesChanged.removeEventListener('change', listener);
-};
-
-/** Save a schedule through the same route as the Schedules dialog and notify schedule views. */
-export async function saveSchedule(config: ScheduleConfig, identifier?: string): Promise<WorkflowSchedule> {
-    const { data } = await apiRequest<{ schedule: WorkflowSchedule }>('/api/schedules', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...(identifier ? { id: identifier } : {}), config }) });
-    schedulesChanged.dispatchEvent(new Event('change'));
-    return data.schedule;
-}
-
-export const listWorkflowLibrary = async () => (await post<{ items: WorkflowLibraryItem[] }>('list')).items;
-
-/** Schedule fields shared by the Schedules dialog and agent-proposed schedule forms. */
-export const ScheduleConfigFields: React.FC<{ items: WorkflowLibraryItem[]; config: ScheduleConfig; onChange: (config: ScheduleConfig) => void;
-    hosted: boolean; disabled: boolean }> = ({ items, config, onChange, hosted, disabled }) => {
-    const models = useSelector((state: DataFormulatorState) => state.globalModels);
-    const [customDays, setCustomDays] = useState(false);
-    const workflow = items.find(item => item.path === config.workflow);
-    const repeat = customDays ? 'custom' : config.weekdays.length === 7 ? 'daily'
-        : config.weekdays.length === 5 && [0, 1, 2, 3, 4].every(day => config.weekdays.includes(day)) ? 'weekdays' : 'custom';
-    return <>
-        <TextField size="small" select required label="Workflow" value={config.workflow} disabled={disabled}
-            onChange={event => {
-                const selected = items.find(item => item.path === event.target.value);
-                onChange({ ...config, workflow: event.target.value, name: !config.name || config.name === workflow?.name ? selected?.name || '' : config.name,
-                    setup: { parameters: Object.fromEntries((selected?.parameters || []).flatMap(parameter => parameter.default === undefined ? [] : [[parameter.name, parameter.default]])), instructions: '' } });
-            }}>
-            {items.filter(item => !hosted || item.origin === 'demo' || item.origin === 'server').map(item => <MenuItem key={item.path} value={item.path}>{item.name}</MenuItem>)}
-        </TextField>
-        <TextField size="small" required label="Schedule name" value={config.name} disabled={disabled}
-            onChange={event => onChange({ ...config, name: event.target.value })} />
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 2 }}>
-            <TextField size="small" select label="Repeat" value={repeat} disabled={disabled} onChange={event => {
-                setCustomDays(event.target.value === 'custom');
-                if (event.target.value !== 'custom') onChange({ ...config,
-                    weekdays: event.target.value === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4] });
-            }}>
-                <MenuItem value="daily">Every day</MenuItem>
-                <MenuItem value="weekdays">Weekdays</MenuItem>
-                <MenuItem value="custom">Custom days</MenuItem>
-            </TextField>
-            <TextField size="small" required type="time" label="Time" value={config.time} disabled={disabled} helperText={config.timezone}
-                slotProps={{ inputLabel: { shrink: true } }} onChange={event => onChange({ ...config, time: event.target.value })} />
-        </Box>
-        {repeat === 'custom' && <Box role="group" aria-label="Weekdays" sx={{ display: 'flex', flexWrap: 'wrap', mt: -1 }}>
-            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, index) => <FormControlLabel key={label} sx={{ mr: 1 }} label={label}
-                control={<Checkbox size="small" checked={config.weekdays.includes(index)} disabled={disabled} onChange={event => onChange({ ...config,
-                    weekdays: event.target.checked ? [...config.weekdays, index].sort() : config.weekdays.filter(day => day !== index) })} />} />)}
-        </Box>}
-        {workflow && <>
-            <Divider><Typography variant="caption">Workflow inputs</Typography></Divider>
-            {!!workflow.parameters?.length && <WorkflowSetupFields parameters={workflow.parameters} values={config.setup?.parameters || {}} disabled={disabled}
-                onChange={parameters => onChange({ ...config, setup: { parameters, instructions: config.setup?.instructions || '' } })} />}
-            <TextField size="small" multiline minRows={2} label="Additional instructions" value={config.setup?.instructions || ''} disabled={disabled}
-                onChange={event => onChange({ ...config, setup: { parameters: config.setup?.parameters || {}, instructions: event.target.value } })} />
-        </>}
-        <Divider><Typography variant="caption">Run settings</Typography></Divider>
-        <TextField size="small" select required label="Server model connection" value={config.model_id} disabled={disabled}
-            error={!config.model_id} helperText={!config.model_id ? 'Server model connection required.' : undefined}
-            onChange={event => onChange({ ...config, model_id: event.target.value })}>
-            {models.map(model => <MenuItem key={model.id} value={model.id}>{model.model}</MenuItem>)}
-        </TextField>
-        <Box sx={{ display: 'flex', flexDirection: 'column', mt: -0.5,
-            '& .MuiFormControlLabel-root': { m: 0, gap: 0.5 }, '& .MuiCheckbox-root': { p: 0.5 } }}>
-            <FormControlLabel label="Run once after missed occurrences" control={<Checkbox size="small" checked={config.catch_up} disabled={disabled} onChange={event => onChange({ ...config, catch_up: event.target.checked })} />} />
-            <Tooltip describeChild title="Local terminal commands and single-option data loads only. Application policy still applies; questions and credentials pause the run.">
-                <FormControlLabel label="Auto-approve commands and data loads" control={<Checkbox size="small" checked={config.auto_approve} disabled={disabled} onChange={event => onChange({ ...config, auto_approve: event.target.checked })} />} />
-            </Tooltip>
-            {hosted && <FormControlLabel label="Publish final reports and all chart data for everyone to view" control={<Checkbox size="small" checked={config.publish} disabled={disabled} onChange={event => onChange({ ...config, publish: event.target.checked })} />} />}
-        </Box>
-    </>;
-};
-
-const WorkflowSchedules: React.FC<{ items: WorkflowLibraryItem[]; onClose: () => void; initialSchedule?: WorkflowSchedule; startNew?: boolean;
-    onOpenSession?: (id: string) => void | Promise<void> }> = ({ items, onClose, initialSchedule, startNew, onOpenSession }) => {
-    const models = useSelector((state: DataFormulatorState) => state.globalModels);
-    const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
-    const [schedules, setSchedules] = useState<WorkflowSchedule[]>([]);
-    const [available, setAvailable] = useState(false);
-    const [hosted, setHosted] = useState(false);
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState('');
-    const [identifier, setIdentifier] = useState(initialSchedule?.id || '');
-    const [confirmDelete, setConfirmDelete] = useState(false);
-    const emptyConfig = (): ScheduleConfig => defaultScheduleConfig(models, selectedModelId);
-    const [config, setConfig] = useState<ScheduleConfig>(() => initialSchedule ? { ...emptyConfig(), ...initialSchedule.config } : emptyConfig());
-    const current = schedules.find(schedule => schedule.id === identifier);
-    const currentRuns = current?.history?.filter(run => run.status !== 'skipped') ?? [];
-    const select = (schedule?: WorkflowSchedule) => {
-        setIdentifier(schedule?.id || ''); setConfig(schedule ? { ...emptyConfig(), ...schedule.config } : emptyConfig());
-        setError('');
-    };
-    const refresh = async () => {
-        const { data } = await apiRequest<{ available: boolean; hosted?: boolean; schedules: WorkflowSchedule[] }>('/api/schedules');
-        setAvailable(data.available); setHosted(!!data.hosted); setSchedules(data.schedules);
-        return data.schedules;
-    };
-    useEffect(() => {
-        void refresh().then(list => { if (!initialSchedule && !startNew && list[0]) select(list[0]); })
-            .catch(reason => setError(String(reason))).finally(() => setLoading(false));
-    }, []);
-    const persist = async (next: ScheduleConfig) => {
-        const saved = await saveSchedule(next, identifier || undefined);
-        const list = await refresh();
-        return list.find(schedule => schedule.id === saved.id);
-    };
-    const act = async (action: () => Promise<void>, failure: string) => {
-        setSaving(true); setError('');
-        try { await action(); } catch (reason) { setError(reason instanceof Error ? reason.message : failure); }
-        finally { setSaving(false); }
-    };
-    return <><ListDetailDialog title="Schedules" listLabel="Schedule list" createLabel="New schedule" busy={saving} onClose={onClose} width={780} contentMaxWidth={460}
-        selectedKey={identifier || null} onSelect={key => select(schedules.find(schedule => schedule.id === key))}
-        items={schedules.map(schedule => ({ key: schedule.id, primary: schedule.config.name, secondary: scheduleCadence(schedule.config),
-            muted: !schedule.config.enabled }))}
-        onSubmit={event => {
-            event.preventDefault();
-            void act(async () => select(await persist(config)), 'Unable to save schedule.');
-        }}
-        footer={available && <>
-            {current && <Button color="error" disabled={saving} sx={{ mr: 'auto' }} onClick={() => setConfirmDelete(true)}>Delete</Button>}
-            {current && hosted && current.config.publish && <Button color="error" disabled={saving} onClick={() => void act(async () => {
-                await apiRequest(`/api/schedules/${identifier}/publication`, { method: 'DELETE' });
-                await refresh(); setConfig(previous => ({ ...previous, enabled: false, publish: false }));
-            }, 'Unable to withdraw publication.')}>Unpublish</Button>}
-            {current && <Button variant="outlined" disabled={saving} onClick={() => void act(async () => {
-                const enabled = !current.config.enabled;
-                await persist({ ...current.config, enabled });
-                setConfig(previous => ({ ...previous, enabled }));
-            }, 'Unable to update schedule.')}>{current.config.enabled ? 'Pause' : 'Resume'}</Button>}
-            <Button type="submit" variant="contained" disableElevation
-                disabled={saving || !config.weekdays.length || !config.model_id || !config.workflow || hosted && !config.publish}>Save schedule</Button>
-        </>}>
-                        {current && <Box>
-                            <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
-                                {current.config.enabled ? `Next run ${shortRunTime(current.next_at)}` : 'Paused'}</Typography>
-                            {currentRuns.length > 0 && <RunList caption="Previous runs:" label={`Runs of ${current.config.name}`} limit={6} runs={currentRuns.map(run => ({
-                                key: run.id, status: run.status, time: run.scheduled_for, disabled: !onOpenSession,
-                                open: () => { void onOpenSession?.(`${hosted ? 'scheduled-private-' : 'scheduled-'}${run.id}`); onClose(); },
-                            }))} />}
-                        </Box>}
-                        {error && <Alert severity="error">{error}</Alert>}
-                        {loading ? <CircularProgress size={18} /> : !available ? <Alert severity="info">Scheduling is unavailable for this deployment or account.</Alert> : <>
-                    <ScheduleConfigFields key={identifier || 'new'} items={items} config={config} onChange={setConfig} hosted={hosted} disabled={saving} />
-                </>}
-    </ListDetailDialog>
-    <Dialog open={confirmDelete} onClose={() => !saving && setConfirmDelete(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Delete schedule?</DialogTitle>
-        <DialogContent>
-            <Typography sx={{ overflowWrap: 'anywhere', mb: 1 }}>{current?.config.name}</Typography>
-            <Typography variant="body2" color="text.secondary">Future runs stop. Sessions from past runs are kept.</Typography>
-        </DialogContent>
-        <DialogActions>
-            <Button disabled={saving} onClick={() => setConfirmDelete(false)}>Cancel</Button>
-            <Button color="error" variant="contained" disableElevation disabled={saving} onClick={() => void act(async () => {
-                await apiRequest(`/api/schedules/${identifier}`, { method: 'DELETE' });
-                const list = await refresh();
-                setConfirmDelete(false);
-                select(list[0]);
-            }, 'Unable to delete schedule.')}>Delete</Button>
-        </DialogActions>
-    </Dialog>
-    </>;
-};
-
-const shortRunTime = (value: string) => new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-
-const runStatusDisplay = (value: string) => ({
-    completed: { label: 'Completed', color: 'success.main', icon: <CheckCircleOutlineIcon /> },
-    needs_attention: { label: 'Needs attention', color: 'warning.main', icon: <WarningAmberOutlinedIcon /> },
-    paused: { label: 'Paused', color: 'warning.main', icon: <PauseIcon /> },
-    failed: { label: 'Failed', color: 'error.main', icon: <ErrorOutlineIcon /> },
-    retry: { label: 'Retrying', color: 'text.secondary', icon: <HistoryOutlinedIcon /> },
-    running: { label: 'Running', color: 'primary.main', icon: <CircularProgress size={11} color="inherit" /> },
-} as Record<string, { label: string; color: string; icon: React.ReactNode }>)[value]
-    ?? { label: value.replaceAll('_', ' '), color: 'text.secondary', icon: <HistoryOutlinedIcon /> };
-
-
-/** The latest two runs, shown inside a card under its metadata; the panel lists the rest. */
-const CardRuns: React.FC<{ label: string; runs: RunEntry[]; next?: NextRun }> = ({ label, runs, next }) =>
-    <RunList label={label} runs={runs.slice(0, 2)} next={next} />;
-
-/** A status icon plus run time, shown as a small filled chip that opens the run. */
-const RunLink: React.FC<{ status: string; time: string; label?: string; disabled?: boolean; onOpen: () => void }> = ({ status, time, label, disabled, onOpen }) => {
-    const display = runStatusDisplay(status);
-    return <Tooltip title={display.label}>
-        <ButtonBase disabled={disabled} aria-label={label ?? `${display.label}, ${shortRunTime(time)}`}
-            onClick={event => { event.stopPropagation(); onOpen(); }}
-            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0, px: 0.625,
-                borderRadius: 0.5, bgcolor: mutedChipBg,
-                fontSize: textVar.xs, lineHeight: 1.7, color: 'text.secondary',
-                '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.09)', color: 'text.primary' },
-                '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
-            <Box component="span" role="img" aria-label={display.label}
-                sx={{ display: 'inline-flex', color: display.color, '& .MuiSvgIcon-root': { fontSize: 13 } }}>{display.icon}</Box>
-            <span>{shortRunTime(time)}</span>
-        </ButtonBase>
-    </Tooltip>;
-};
-
-/** The upcoming run (or paused state): same chip shape as a run, but dashed and inert; the cadence lives in its tooltip. */
-const NextRunChip: React.FC<NextRun> = ({ time, cadence }) => {
-    const state = time ? 'Next run' : 'Paused';
-    return <Tooltip title={<>{state}<br />{cadence}</>}>
-        <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0, px: 0.5,
-            boxSizing: 'border-box', height: '1.7em', fontFamily: theme => theme.typography.fontFamily,
-            borderRadius: 0.5, border: '1px dashed', borderColor: 'divider', fontSize: textVar.xs, lineHeight: 1, color: 'text.secondary' }}>
-            <Box component="span" role="img" aria-label={`${state}, ${cadence}`} sx={{ display: 'inline-flex', '& .MuiSvgIcon-root': { fontSize: 13 } }}>
-                {time ? <ScheduleOutlinedIcon /> : <PauseIcon />}</Box>
-            <span>{time ? shortRunTime(time) : 'Paused'}</span>
-        </Box>
-    </Tooltip>;
-};
-
-type NextRun = { time?: string; cadence: string };
-
-type RunEntry = { key: string; status: string; time: string; label?: string; disabled?: boolean; open: () => void };
-
-/** Newest-first run chips; `(more)` reveals the rest in a scrollable area. */
-const RunList: React.FC<{ label: string; runs: RunEntry[]; limit?: number; caption?: string; next?: NextRun }> = ({ label, runs, limit = 3, caption, next }) => {
-    const [showAll, setShowAll] = useState(false);
-    return <Box role="group" aria-label={label} sx={{ mt: 0.5,
-        display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5, ...(showAll ? { maxHeight: 160, overflowY: 'auto' } : {}) }}>
-        {caption && <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary', mr: 0.25 }}>{caption}</Typography>}
-        {next && <NextRunChip {...next} />}
-        {(showAll ? runs : runs.slice(0, limit)).map(run => <RunLink key={run.key} status={run.status} time={run.time}
-            label={run.label} disabled={run.disabled} onOpen={run.open} />)}
-        {runs.length > limit && <ButtonBase onClick={event => { event.stopPropagation(); setShowAll(previous => !previous); }}
-            sx={{ fontSize: textVar.xs, lineHeight: 1.7, color: 'text.secondary', borderRadius: 0.5, '&:hover': { color: 'text.primary', textDecoration: 'underline' } }}>
-            {showAll ? '(less)' : '(more)'}
-        </ButtonBase>}
-    </Box>;
-};
-
-const WorkflowScheduleSection: React.FC<{ items: WorkflowLibraryItem[]; busy: boolean; newScheduleOpen: boolean; onOpenSession?: (id: string) => void | Promise<void>;
-    onChange: (value: { schedules: WorkflowSchedule[]; hosted: boolean; available: boolean }) => void }> = ({ items, busy, newScheduleOpen, onOpenSession, onChange }) => {
-    const [schedules, setSchedules] = useState<WorkflowSchedule[]>([]);
-    const [available, setAvailable] = useState(false);
-    const [hosted, setHosted] = useState(false);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-    const [open, setOpen] = useState(false);
-    const [tick, setTick] = useState(0);
-    const [selected, setSelected] = useState<WorkflowSchedule>();
-    const openRun = (id: string) => void onOpenSession?.(`${hosted ? 'scheduled-private-' : 'scheduled-'}${id}`);
-    useEffect(() => {
-        let cancelled = false;
-        setLoading(true);
-        setError('');
-        void apiRequest<{ available: boolean; hosted?: boolean; schedules: WorkflowSchedule[] }>('/api/schedules').then(({ data }) => {
-            if (!cancelled) {
-                setAvailable(data.available); setSchedules(data.schedules || []); setHosted(!!data.hosted);
-                onChange({ schedules: data.schedules || [], hosted: !!data.hosted, available: data.available });
-            }
-        }).catch(reason => {
-            if (!cancelled) {
-                setError(reason instanceof Error ? reason.message : 'Unable to load schedules.');
-                onChange({ schedules: [], hosted: false, available: false });
-            }
-        }).finally(() => { if (!cancelled) setLoading(false); });
-        return () => { cancelled = true; };
-    }, [items, busy, open, newScheduleOpen, onChange, tick]);
-    const anyOccurrenceActive = schedules.some(schedule => schedule.history?.some(run => run.status === 'running' || run.status === 'retry'));
-    useEffect(() => onSchedulesChanged(() => setTick(value => value + 1)), []);
-    useEffect(() => {
-        const onVisible = () => { if (document.visibilityState === 'visible') setTick(value => value + 1); };
-        document.addEventListener('visibilitychange', onVisible);
-        const timer = anyOccurrenceActive ? window.setInterval(() => setTick(value => value + 1), 10000) : undefined;
-        return () => { document.removeEventListener('visibilitychange', onVisible); window.clearInterval(timer); };
-    }, [anyOccurrenceActive]);
-    return <Box component="section" aria-label="Schedules" sx={{ pb: 0.5 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, pt: 1, pb: 0.5, gap: 0.5 }}>
-            <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, color: 'text.secondary', flex: 1 }}>Schedules</Typography>
-            {loading && !schedules.length && <CircularProgress size={12} />}
-        </Box>
-        <Box sx={{ mx: 0.75, display: 'grid', gap: 0.75 }}>
-            {error ? <Alert severity="error" sx={{ fontSize: textVar.xs }}>{error}</Alert> : !loading && !schedules.length &&
-                <Typography sx={{ px: 1, py: 0.75, fontSize: textVar.xs, color: 'text.secondary' }}>{available ? 'No schedules yet' : 'Scheduling unavailable'}</Typography>}
-            {schedules.map(schedule => {
-                const runs = schedule.history?.filter(run => run.status !== 'skipped') ?? [];
-                const name = schedule.config.name;
-                // The whole card opens the editor; the Edit button remains the keyboard-accessible target.
-                return <React.Fragment key={schedule.id}><Box component="article" onClick={() => { setSelected(schedule); setOpen(true); }}
-                    sx={{ px: 1, py: 0.75, border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper', cursor: 'pointer',
-                        minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0.25, ...cardHoverSx }}>
-                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                            <Typography sx={{ ...sidebarRowTitleSx, overflowWrap: 'anywhere',
-                                color: schedule.config.enabled ? 'text.primary' : 'text.disabled' }}>
-                                <Box component="span" sx={{ ...titleChipSx, py: 0.25 }}><ScheduleOutlinedIcon sx={{ fontSize: 12 }} /></Box>{name}</Typography>
-                        </Box>
-                        <Tooltip title="Edit schedule"><IconButton size="small" aria-label={`Edit schedule ${name}`} sx={sidebarRowActionSx}
-                            onClick={event => { event.stopPropagation(); setSelected(schedule); setOpen(true); }}>
-                            <EditIcon />
-                        </IconButton></Tooltip>
-                    </Box>
-                    <CardRuns label={`Runs of schedule ${name}`}
-                        next={{ time: schedule.config.enabled ? schedule.next_at : undefined, cadence: scheduleCadence(schedule.config) }} runs={runs.map((run, index) => ({
-                        key: run.id, status: run.status, time: run.scheduled_for, disabled: !onOpenSession, open: () => openRun(run.id),
-                        label: index === 0 ? `Open latest run for schedule ${name}` : `Open run ${shortRunTime(run.scheduled_for)} for schedule ${name}`,
-                    }))} />
-                </Box>
-                </React.Fragment>;
-            })}
-        </Box>
-        {open && <WorkflowSchedules items={items} initialSchedule={selected} onOpenSession={onOpenSession} onClose={() => setOpen(false)} />}
-    </Box>;
-};
 
 export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; onOpenSession?: (id: string) => void | Promise<void>; headerActions?: React.ReactNode;
     presentation?: 'sidebar' | 'landing';
@@ -1603,8 +1174,6 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
 }> = ({ onCreateSession, onOpenSession, headerActions, presentation = 'sidebar', renderLanding }) => {
     const landing = presentation === 'landing';
     const canSchedule = useSelector((state: DataFormulatorState) => state.serverConfig?.IS_LOCAL_MODE || state.serverConfig?.CAN_CONFIGURE);
-    const [schedulesOpen, setSchedulesOpen] = useState<false | 'new' | 'browse'>(false);
-    const [scheduleLibrary, setScheduleLibrary] = useState<{ schedules: WorkflowSchedule[]; hosted: boolean; available: boolean }>({ schedules: [], hosted: false, available: false });
     const model = useSelector((state: DataFormulatorState) => [...state.globalModels, ...state.models]
         .find(item => item.id === state.selectedModelId));
     const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
@@ -1623,6 +1192,8 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
     const [setupInstructions, setSetupInstructions] = useState('');
     const [starting, setStarting] = useState(false);
     const [pendingRun, setPendingRun] = useState<{ path: string; content?: string; setup: WorkflowSetup; previousWorkspaceId?: string } | null>(null);
+    // Scheduled runs also appear among each workflow's previous runs.
+    const scheduleLibrary = useScheduleLibrary(!landing && !!canSchedule, busy);
     const generation = useRef(0);
 
     const refresh = async (quiet = false) => {
@@ -1718,7 +1289,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
 
     const openRun = async (item: Run) => {
         try {
-            const { run } = await post<{ run: Run }>('run-state', { run_id: item.id });
+            const { run } = await post<{ run: Run }>('run-state', runStateRequest(item.id));
             if (workspaceId) {
                 deletedWorkflowRuns.delete(`${workspaceId}/${run.id}`);
                 await publishWorkflowRun(run, workspaceId);
@@ -1755,14 +1326,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                 onClick={createWorkflow}>
                 New workflow
             </Button>
-            {!landing && canSchedule && <Button variant="outlined" size="small" startIcon={<AddIcon />}
-                disabled={!scheduleLibrary.available} sx={sidebarPrimaryActionSx} onClick={() => setSchedulesOpen('new')}>
-                New schedule
-            </Button>}
             {!landing && <Box sx={{ flex: 1 }} />}
-            {landing && canSchedule && <Tooltip title="Workflow schedules"><IconButton aria-label="Workflow schedules" size="small" onClick={() => setSchedulesOpen('browse')}>
-                <ScheduleOutlinedIcon sx={{ fontSize: iconVar.md }} />
-            </IconButton></Tooltip>}
             <Tooltip title="Refresh workflows"><span><IconButton aria-label="Refresh workflows" size="small" disabled={loading} onClick={() => void refresh()}
                 sx={{ width: 24, height: 24, p: 0, color: 'text.secondary', '&:hover': { color: 'text.primary', bgcolor: 'action.hover' } }}>
                 {loading ? <CircularProgress size={16} /> : <RefreshIcon sx={{ fontSize: iconVar.md }} />}
@@ -1777,15 +1341,14 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
             return <Box component="section" aria-label={label} key={groupId} sx={landing ? {
                 minWidth: 0, pt: groupId === 'server' || (!renderLanding && groupId === 'user') ? 1.5 : 0,
             } : {}}>
-            {(!landing || groupId === 'server' || (!renderLanding && groupId === 'user')) && (
-            <Box sx={landing ? { display: 'flex', alignItems: 'center', gap: 1, minHeight: 32, mb: 1 } : {}}>
-            <Typography sx={landing ? { flex: 1, fontSize: textVar.sm, color: 'text.secondary', textAlign: 'left' }
-                : { px: 1.5, pt: groupId === 'user' ? 1 : 1.5, pb: 0.5, fontSize: textVar.xs, fontWeight: 600, color: 'text.secondary' }}>{label}</Typography>
-            {landing && groupId === 'user' && toolbar}
+            {landing && (groupId === 'server' || (!renderLanding && groupId === 'user')) && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minHeight: 32, mb: 1 }}>
+            <Typography sx={{ flex: 1, fontSize: textVar.sm, color: 'text.secondary', textAlign: 'left' }}>{label}</Typography>
+            {groupId === 'user' && toolbar}
             </Box>
             )}
             {landing && groupId === 'demo' && !model && <Alert severity="info" sx={{ mb: 1 }}>Select a model to run a workflow.</Alert>}
-            <Box id={`workflow-${presentation}-group-${groupId}`} sx={{ mx: landing ? 0 : 0.75, display: 'grid', gap: landing ? 1 : 0.75,
+            <Box id={`workflow-${presentation}-group-${groupId}`} sx={{ mx: landing ? 0 : 0.75, mt: landing ? 0 : 1, display: 'grid', gap: landing ? 1 : 0.75,
                 ...(landing ? { gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))' } : {}) }}>
         {!group.length && <Typography sx={{ px: 1, py: 0.75, fontSize: textVar.xs, color: 'text.secondary' }}>
             {loading ? 'Loading workflows...' : 'No saved workflows'}
@@ -1793,58 +1356,48 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         {group.map(item => {
             const origin = item.origin || 'user';
             const runDisabled = busy || starting || readOnly || !!item.error;
-            const cardRuns = landing ? [] : workflowRunsFor(item);
             const openSetup = () => {
                 setSetupValues(Object.fromEntries((item.parameters || []).map(parameter => [parameter.name,
                     parameter.default ?? (parameter.type === 'boolean' ? false : '')])));
                 setSetupInstructions('');
                 setRunTarget(item);
             };
-            return <React.Fragment key={item.path}><Box component="article" sx={{ px: 1, py: 0.75, border: 1, borderColor: 'divider', bgcolor: 'background.paper', borderRadius: 1, minWidth: 0, ...cardHoverSx,
-                ...(landing ? { p: 0, display: 'flex', position: 'relative', border: '1px solid rgba(0, 0, 0, 0.18)', borderRadius: 1, bgcolor: 'background.paper',
-                    boxShadow: '0 1px 3px rgba(32, 33, 36, 0.06)' } : {}),
+            if (!landing) {
+                const cardRuns = workflowRunsFor(item);
+                return <ItemCard key={item.path} compact title={item.name} openLabel={`Open ${item.name}`} onOpen={() => void edit(item)}
+                    badges={origin === 'demo' && <Box component="span" sx={{ flexShrink: 0, fontSize: textVar.xxs, color: 'text.disabled' }}>demo</Box>}
+                    tooltip={item.error ? undefined : <MetadataCard title={item.name} description={item.overview}>
+                        {!!item.parameters?.length && <MetadataChips items={item.parameters.map(parameter => ({ name: parameter.label || parameter.name }))} />}
+                    </MetadataCard>}
+                    captions={item.error ? [<Box key="error" component="span" sx={{ color: 'error.main' }}>{item.error}</Box>] : []}
+                    persistentActions
+                    actions={<Tooltip title="Run workflow"><span><IconButton aria-label={`Run ${item.name}`} size="small" disabled={runDisabled}
+                        sx={sidebarRowActionSx} onClick={openSetup}><PlayArrowIcon /></IconButton></span></Tooltip>}
+                    meta={cardRuns.length > 0 && <CardRuns label={`Previous runs of ${item.name}`} runs={cardRuns} />} />;
+            }
+            return <Box component="article" key={item.path} sx={{ minWidth: 0, ...cardHoverSx, display: 'flex', position: 'relative',
+                border: '1px solid rgba(0, 0, 0, 0.18)', borderRadius: 1, bgcolor: 'background.paper', boxShadow: '0 1px 3px rgba(32, 33, 36, 0.06)',
                 '& .workflow-secondary-action': { opacity: 0 },
                 '&:hover .workflow-secondary-action, &:focus-within .workflow-secondary-action': { opacity: 1 },
                 '@media (hover: none)': { '& .workflow-secondary-action': { opacity: 1 } } }}>
-            <Box sx={{ display: landing ? 'contents' : 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'start', columnGap: 0.5 }}>
-            <Tooltip title={!landing && !item.error ? item.overview || '' : ''} placement="right" enterDelay={600}>
-            <ButtonBase aria-label={`${landing ? 'Run' : 'Open'} ${item.name}`}
-                    disabled={landing && runDisabled}
-                    onClick={landing ? openSetup : () => void edit(item)}
-                    sx={{ display: 'block', width: '100%', minWidth: 0, textAlign: 'left', py: 0.25,
-                        ...(landing ? { p: 1.25, flex: 1, borderRadius: 'inherit', '&.Mui-disabled': { opacity: 0.6 } } : { gridColumn: '1 / -1', gridRow: 1 }),
-                        '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pr: landing ? (origin === 'user' ? 2.5 : 0) : 3 }}>
-                    {landing && <WorkflowGears running={false} size={16} color="text.secondary" showTooltip={false} />}
-                    <Typography sx={{ fontSize: landing ? textVar.md : textVar.sm, fontWeight: landing ? 400 : 500, lineHeight: 1.4, minWidth: 0, overflowWrap: 'anywhere' }}>
-                        {!landing && origin === 'demo' && <Box component="span" sx={titleChipSx}>demo</Box>}
-                        {item.name}
-                    </Typography>
-                    {landing && <PlayArrowIcon sx={{ ml: 'auto', flexShrink: 0, fontSize: iconVar.md, color: runDisabled ? 'action.disabled' : 'primary.main' }} />}
+            <ButtonBase aria-label={`Run ${item.name}`} disabled={runDisabled} onClick={openSetup}
+                sx={{ display: 'block', width: '100%', minWidth: 0, textAlign: 'left', p: 1.25, flex: 1, borderRadius: 'inherit',
+                    '&.Mui-disabled': { opacity: 0.6 }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pr: origin === 'user' ? 2.5 : 0 }}>
+                    <WorkflowGears running={false} size={16} color="text.secondary" showTooltip={false} />
+                    <Typography sx={{ fontSize: textVar.md, fontWeight: 400, lineHeight: 1.4, minWidth: 0, overflowWrap: 'anywhere' }}>{item.name}</Typography>
+                    <PlayArrowIcon sx={{ ml: 'auto', flexShrink: 0, fontSize: iconVar.md, color: runDisabled ? 'action.disabled' : 'primary.main' }} />
                 </Box>
-                {(item.error || (landing && item.overview)) && <Typography sx={{ mt: 0.25, fontSize: textVar.xs, lineHeight: 1.5,
+                {(item.error || item.overview) && <Typography sx={{ mt: 0.25, fontSize: textVar.xs, lineHeight: 1.5,
                     color: item.error ? 'error.main' : 'text.secondary', overflowWrap: 'anywhere',
-                    ...(!item.error ? {
-                        ...(landing ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' } : { whiteSpace: 'nowrap', textOverflow: 'ellipsis' }),
-                        overflow: 'hidden',
-                    } : {}) }}>{item.error || item.overview}</Typography>}
+                    ...(!item.error ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : {}) }}>
+                    {item.error || item.overview}</Typography>}
             </ButtonBase>
-            </Tooltip>
-            {!landing && <>
-            <Box component="span" sx={{ gridColumn: 2, gridRow: 1, position: 'relative', zIndex: 1, display: 'flex' }}>
-                <Tooltip title="Run workflow"><span><IconButton aria-label={`Run ${item.name}`} size="small" disabled={runDisabled}
-                    sx={sidebarRowActionSx}
-                    onClick={openSetup}><PlayArrowIcon /></IconButton></span></Tooltip>
-            </Box>
-            {cardRuns.length > 0 && <Box sx={{ gridColumn: '1 / -1' }}><CardRuns label={`Previous runs of ${item.name}`} runs={cardRuns} /></Box>}
-            </>}
-            </Box>
-            {landing && origin === 'user' && <Box className="workflow-secondary-action" sx={{ position: 'absolute', top: 4, right: 4 }}>
+            {origin === 'user' && <Box className="workflow-secondary-action" sx={{ position: 'absolute', top: 4, right: 4 }}>
                 <ArtifactDeleteButton label={`Delete ${item.path}`} disabled={busy || deletingInstance}
                     onClick={() => setDeleteTarget(item)} />
             </Box>}
-        </Box>
-        </React.Fragment>;
+        </Box>;
         })}</Box></Box>;
         });
     return <Box sx={{ display: landing ? 'contents' : 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, flex: '0 1 auto', overflow: landing ? 'visible' : 'hidden' }}>
@@ -1852,18 +1405,21 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', px: 1.5, height: 40, minHeight: 40, boxSizing: 'border-box',
             flexShrink: 0, borderBottom: '1px solid rgba(0, 0, 0, 0.16)', bgcolor: 'rgba(255, 255, 255, 0.76)',
             ...(landing ? { px: 0, borderBottom: 0, bgcolor: 'transparent' } : {}) }}>
-            <Typography component={landing ? 'h2' : 'div'} sx={{ fontSize: landing ? textVar.xl : textVar.md, fontWeight: landing ? 400 : 600, flex: 1, textAlign: 'left' }}>{landing ? 'Example workflows' : 'Workflows'}</Typography>
+            <Typography component={landing ? 'h2' : 'div'} sx={{ fontSize: landing ? textVar.xl : textVar.md, fontWeight: landing ? 400 : 600, textAlign: 'left' }}>{landing ? 'Example workflows' : 'Workflows'}</Typography>
+            {!landing && <ViewAllButton label="View all workflows" onClick={() => {
+                const first = items.find(item => (item.origin || 'user') === 'user') ?? items[0];
+                if (first) void edit(first); else createWorkflow();
+            }} />}
+            <Box sx={{ flex: 1 }} />
             {headerActions}
         </Box>
         {!landing && toolbar}
         <Box sx={{ overflowY: landing ? 'visible' : 'auto', minHeight: 0, pb: 1 }}>
-        {!landing && canSchedule && <WorkflowScheduleSection items={items} busy={busy} newScheduleOpen={!!schedulesOpen} onChange={setScheduleLibrary} onOpenSession={openRunSession} />}
         {!landing && !model && <Alert severity="info" sx={{ mx: 1, mb: 1 }}>Select a model to run a workflow.</Alert>}
         {renderGroups(landing ? ['demo', 'user', 'server'] : ['all'])}
         </Box>
         </>}
 
-        {schedulesOpen && <WorkflowSchedules items={items} startNew={schedulesOpen === 'new'} onOpenSession={openRunSession} onClose={() => setSchedulesOpen(false)} />}
         <Dialog open={!!runTarget} onClose={() => !starting && setRunTarget(null)} maxWidth="sm" fullWidth aria-labelledby="workflow-setup-title">
             <Box component="form" onSubmit={event => {
                 event.preventDefault();

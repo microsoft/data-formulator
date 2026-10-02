@@ -11,9 +11,13 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import i18n from '../i18n';
 import {
     Box,
+    Dialog,
+    DialogContent,
+    DialogTitle,
     Typography,
     IconButton,
     Tooltip,
@@ -34,6 +38,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
 import { generateUUID } from '../app/identity';
 import { generateWorkspaceId, leaveSession, openSession, renameSession } from '../app/sessionThunks';
+import { defaultSessionName } from '../app/useWorkspaceAutoName';
 import { openSessionInNewTab } from '../app/sessionTabs';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { VirtualizedCatalogTree } from '../components/VirtualizedCatalogTree';
@@ -48,11 +53,9 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import NorthEastIcon from '@mui/icons-material/NorthEast';
 import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
 import LinkOffOutlinedIcon from '@mui/icons-material/LinkOffOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
-import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
@@ -60,8 +63,10 @@ import PushPinIcon from '@mui/icons-material/PushPin';
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 import SortIcon from '@mui/icons-material/Sort';
 import CheckIcon from '@mui/icons-material/Check';
+import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 
 import { WorkflowPanel } from './WorkflowPanel';
+import { SchedulesPanel } from './WorkflowSchedules';
 
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
@@ -73,7 +78,8 @@ import { loadTable } from '../app/tableThunks';
 import { listWorkspaces, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
-import { borderColor, sidebarEdge, sidebarMenuSx, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarRowDangerActionSx, sidebarRowMetaSx, sidebarRowSx, sidebarRowTitleSx, sidebarToolbarSx } from '../app/tokens';
+import { borderColor, sidebarEdge, sidebarMenuSx, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarToolbarSx } from '../app/tokens';
+import { ItemCard, ItemCardAction, itemCardGridSx, MetadataCard, MetadataChips, ViewAllButton } from '../components/ItemCard';
 
 import type { ConnectorInstance, DictTable } from '../components/ComponentType';
 import {
@@ -87,6 +93,8 @@ import { REFERENCE, iconVar, sidebarFitsExpanded, textVar } from '../app/layout'
 import { useLayout } from '../app/LayoutProvider';
 import { formatBytes } from './ViewUtils';
 import { importConnectorFile, loadsAsConnectorReference, isSemanticConnectorTable, createExternalTableReference } from '../app/workspaceService';
+
+type SidebarTab = DataFormulatorState['dataSourceSidebarTab'];
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -124,6 +132,72 @@ function formatCompactTime(iso: string | null | undefined): string {
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+type SessionDateGroup = 'today' | 'yesterday' | 'week' | 'month' | 'older';
+
+function sessionDateGroup(iso: string | null | undefined): SessionDateGroup {
+    const ts = iso ? new Date(iso).getTime() : NaN;
+    if (Number.isNaN(ts)) return 'older';
+    const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+    const days = Math.floor((startOfToday.getTime() - ts) / 86400000) + 1;
+    return days <= 0 ? 'today' : days === 1 ? 'yesterday' : days < 7 ? 'week' : days < 30 ? 'month' : 'older';
+}
+
+const sessionGroupLabelsFor = (t: TFunction): Record<SessionDateGroup, string> => ({
+    today: t('sidebar.groupToday', { defaultValue: 'Today' }),
+    yesterday: t('sidebar.groupYesterday', { defaultValue: 'Yesterday' }),
+    week: t('sidebar.groupWeek', { defaultValue: 'Previous 7 days' }),
+    month: t('sidebar.groupMonth', { defaultValue: 'Previous 30 days' }),
+    older: t('sidebar.groupOlder', { defaultValue: 'Older' }),
+});
+
+const sessionGroupHeaderSx = { m: 0, pb: 0.5, fontSize: textVar.xxs, fontWeight: 600, letterSpacing: '0.04em',
+    textTransform: 'uppercase', color: 'text.disabled' } as const;
+
+/**
+ * All sessions in a searchable dialog. With `groupTime`, sessions (already sorted by that time)
+ * fall under day ranges; without it (name order) they render as one grid.
+ */
+export const SessionsDialog: React.FC<{ open: boolean; onClose: () => void; title: string; sessions: WorkspaceSummary[];
+    groupTime?: (session: WorkspaceSummary) => string | null | undefined; renderCard: (session: WorkspaceSummary) => React.ReactNode }>
+    = ({ open, onClose, title, sessions, groupTime, renderCard }) => {
+    const { t } = useTranslation();
+    const [query, setQuery] = useState('');
+    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const matches = sessions.filter(s => terms.every(term => `${s.display_name} ${s.scheduled_run?.scheduleName ?? ''}`.toLowerCase().includes(term)));
+    const labels = sessionGroupLabelsFor(t);
+    const groups = matches.reduce<{ group: SessionDateGroup | null; sessions: WorkspaceSummary[] }[]>((all, s) => {
+        const group = groupTime ? sessionDateGroup(groupTime(s)) : null;
+        const last = all[all.length - 1];
+        if (last && last.group === group) last.sessions.push(s);
+        else all.push({ group, sessions: [s] });
+        return all;
+    }, []);
+    return <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth aria-labelledby="all-sessions-title"
+        slotProps={{ paper: { sx: { height: 'min(720px, 85vh)' } }, transition: { onExited: () => setQuery('') } }}>
+        <DialogTitle id="all-sessions-title" sx={{ display: 'flex', alignItems: 'center', gap: 1.5, fontSize: textVar.lg, fontWeight: 600 }}>
+            <Box component="span" sx={{ flex: 1 }}>{title}</Box>
+            <TextField size="small" value={query} onChange={event => setQuery(event.target.value)}
+                placeholder={t('sidebar.searchSessions', { defaultValue: 'Search sessions' })}
+                slotProps={{ htmlInput: { 'aria-label': t('sidebar.searchSessions', { defaultValue: 'Search sessions' }) },
+                    input: { startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: iconVar.md, color: 'text.disabled' }} /></InputAdornment> } }}
+                sx={{ width: 260, '& .MuiInputBase-root': { fontSize: textVar.sm } }} />
+            <IconButton size="small" aria-label={t('common.close', { defaultValue: 'Close' })} onClick={onClose}>
+                <CloseIcon sx={{ fontSize: iconVar.md }} />
+            </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+            {matches.length === 0
+                ? <Typography sx={{ py: 4, textAlign: 'center', fontSize: textVar.sm, color: 'text.disabled' }}>
+                    {t('sidebar.noMatchingSessions', { defaultValue: 'No matching sessions' })}</Typography>
+                : groups.map(({ group, sessions: groupSessions }, groupIndex) => <Box component="section" key={group ?? 'all'}
+                    aria-label={group ? labels[group] : undefined} sx={{ mt: groupIndex === 0 ? 0 : 2.5 }}>
+                    {group && <Typography component="h3" sx={sessionGroupHeaderSx}>{labels[group]}</Typography>}
+                    <Box sx={itemCardGridSx}>{groupSessions.map(renderCard)}</Box>
+                </Box>)}
+        </DialogContent>
+    </Dialog>;
+};
 
 interface CatalogCache {
     tree: CatalogTreeNode[];
@@ -169,8 +243,9 @@ export const DataSourceSidebar: React.FC<{
     // Stored in Redux so the active tab survives a session refresh.
     // Fall back to 'sources' for older persisted state that predates this field.
     const initialTab = useSelector((state: DataFormulatorState) => state.dataSourceSidebarTab ?? 'sources');
+    const canSchedule = useSelector((state: DataFormulatorState) => !!(state.serverConfig?.IS_LOCAL_MODE || state.serverConfig?.CAN_CONFIGURE));
     const setInitialTab = useCallback(
-        (tab: 'sources' | 'sessions' | 'knowledge') => dispatch(dfActions.setDataSourceSidebarTab(tab)),
+        (tab: SidebarTab) => dispatch(dfActions.setDataSourceSidebarTab(tab)),
         [dispatch],
     );
 
@@ -179,7 +254,7 @@ export const DataSourceSidebar: React.FC<{
     useEffect(() => {
         const handler = (e: Event) => {
             const detail = (e as CustomEvent).detail || {};
-            const tab = detail.tab as 'sources' | 'sessions' | 'knowledge' | undefined;
+            const tab = detail.tab as SidebarTab | undefined;
             setInitialTab(tab ?? 'knowledge');
             dispatch(dfActions.setDataSourceSidebarOpen(true));
         };
@@ -327,6 +402,16 @@ export const DataSourceSidebar: React.FC<{
                         <WorkflowGears running={false} size={20} showTooltip={false} />
                     </IconButton>
                 </Tooltip>
+                {canSchedule && <Tooltip title={t('sidebar.schedules', { defaultValue: 'Schedules' })} placement="right">
+                    <IconButton size="small" aria-label={t('sidebar.schedules', { defaultValue: 'Schedules' })}
+                        onClick={() => { setInitialTab('schedules'); if (!isOpen) toggle(); else if (initialTab !== 'schedules') setInitialTab('schedules'); else toggle(); }} sx={{
+                        color: isOpen && initialTab === 'schedules' ? 'primary.main' : 'text.secondary',
+                        bgcolor: isOpen && initialTab === 'schedules' ? 'action.selected' : 'transparent',
+                        borderRadius: 1,
+                    }}>
+                        <ScheduleOutlinedIcon fontSize="small" />
+                    </IconButton>
+                </Tooltip>}
             </Box>
 
             {/* The expanded panel overlays the workspace instead of changing
@@ -468,7 +553,7 @@ const DataSourceSidebarPanel: React.FC<{
     // Fall back to 'sources' for older persisted state that predates this field.
     const activeTab = useSelector((state: DataFormulatorState) => state.dataSourceSidebarTab ?? 'sources');
     const setActiveTab = useCallback(
-        (tab: 'sources' | 'sessions' | 'knowledge') => dispatch(dfActions.setDataSourceSidebarTab(tab)),
+        (tab: SidebarTab) => dispatch(dfActions.setDataSourceSidebarTab(tab)),
         [dispatch],
     );
 
@@ -481,6 +566,9 @@ const DataSourceSidebarPanel: React.FC<{
     type SessionSortKey = 'created_desc' | 'created_asc' | 'updated_desc' | 'name_asc';
     const [sessionSort, setSessionSort] = useState<SessionSortKey>('created_desc');
     const [sessionSortAnchor, setSessionSortAnchor] = useState<HTMLElement | null>(null);
+    const [sessionMenu, setSessionMenu] = useState<{ anchor: HTMLElement; session: WorkspaceSummary } | null>(null);
+    const sessionMenuAction = useRef<(() => void) | null>(null);
+    const [sessionsDialogOpen, setSessionsDialogOpen] = useState(false);
 
     const sortedSessions = useMemo(() => {
         const cmpDate = (a: string | null | undefined, b: string | null | undefined): number => {
@@ -615,27 +703,24 @@ const DataSourceSidebarPanel: React.FC<{
         return () => document.removeEventListener('visibilitychange', refresh);
     }, [activeTab, refreshSessions]);
 
-    const buildSessionTooltip = useCallback((s: WorkspaceSummary): string => {
-        const parts: string[] = [];
-        if (s.scheduled_run) parts.push(`${s.scheduled_run.scheduleName}: ${new Date(s.scheduled_run.scheduledFor).toLocaleString()}`);
-        if (s.table_count != null) {
-            parts.push(t('sidebar.tableCount', { count: s.table_count }));
-        }
-        if (s.chart_count != null && s.chart_count > 0) {
-            parts.push(t('sidebar.chartCount', { count: s.chart_count }));
-        }
-        if (s.saved_at) {
-            parts.push(new Date(s.saved_at).toLocaleDateString());
-        }
-        return parts.length > 0 ? parts.join(' · ') : t('sidebar.clickToOpen');
+    const buildSessionTooltip = useCallback((s: WorkspaceSummary, isCurrent: boolean) => {
+        const counts = [
+            s.table_count != null ? t('sidebar.tableCount', { count: s.table_count }) : '',
+            s.chart_count ? t('sidebar.chartCount', { count: s.chart_count }) : '',
+        ].filter(Boolean).join(' · ');
+        const details = [
+            isCurrent ? t('sidebar.currentSession') : '',
+            s.scheduled_run ? `${s.scheduled_run.scheduleName}: ${new Date(s.scheduled_run.scheduledFor).toLocaleString()}` : '',
+            s.saved_at ? new Date(s.saved_at).toLocaleString() : '',
+        ].filter(Boolean).join('\n');
+        return <MetadataCard title={s.display_name} summary={counts || undefined} description={details || undefined} />;
     }, [t]);
 
     const handleOpenSession = useCallback(async (sessionId: string, metaDisplayName?: string) => {
         await dispatch(openSession(sessionId, metaDisplayName));
     }, [dispatch]);
 
-    const handleDeleteSession = useCallback(async (sessionId: string, e: React.MouseEvent) => {
-        e.stopPropagation();
+    const handleDeleteSession = useCallback(async (sessionId: string) => {
         try {
             await deleteWorkspace(sessionId);
             setSessions(prev => {
@@ -1049,48 +1134,15 @@ const DataSourceSidebarPanel: React.FC<{
             dimensions: cols.filter(c => c?.role !== 'measure').length,
         }) : null;
         return (
-            <Box sx={{ p: 1.25, maxWidth: 300 }}>
-                <Typography sx={{ fontSize: textVar.sm, fontWeight: 600, color: 'text.primary', wordBreak: 'break-word' }}>
-                    {node.name}
-                </Typography>
-                {(semanticCounts || rowCount != null || cols.length > 0 || sizeLabel) && (
-                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', mt: 0.5 }}>
-                        {semanticCounts ?? [
-                            rowCount != null ? t('sidebar.hoverRowCount', { count: Number(rowCount).toLocaleString(), defaultValue: `${Number(rowCount).toLocaleString()} rows` }) : null,
-                            cols.length > 0 ? t('sidebar.hoverColumns', { count: columnCount, defaultValue: `${columnCount} columns` }) : null,
-                            sizeLabel || null,
-                        ].filter(Boolean).join(' · ')}
-                    </Typography>
-                )}
-                {desc && (
-                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', mt: 0.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                        {desc}
-                    </Typography>
-                )}
-                {cols.length > 0 && (
-                    <Box sx={{ mt: 0.75, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {chips.slice(0, 24).map((c: any, i: number) => (
-                            <Box
-                                key={c?.name ?? i}
-                                component="span"
-                                sx={{
-                                    fontSize: textVar.xxs, lineHeight: 1.5, px: 0.5, borderRadius: 0.5,
-                                    bgcolor: 'action.hover', color: 'text.secondary',
-                                    maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                }}
-                            >
-                                {c?.name}
-                                {(semantic ? c?.role === 'measure' && c?.aggregation : c?.type) && <Box component="span" sx={{ color: 'text.disabled', ml: 0.5 }}>{String(semantic ? c.aggregation : c.type)}</Box>}
-                            </Box>
-                        ))}
-                        {columnCount > 24 && (
-                            <Box component="span" sx={{ fontSize: textVar.xxs, lineHeight: 1.5, px: 0.5, color: 'text.disabled' }}>
-                                +{columnCount - 24}
-                            </Box>
-                        )}
-                    </Box>
-                )}
-            </Box>
+            <MetadataCard title={node.name} description={desc || undefined}
+                summary={(semanticCounts || rowCount != null || cols.length > 0 || sizeLabel) ? semanticCounts ?? [
+                    rowCount != null ? t('sidebar.hoverRowCount', { count: Number(rowCount).toLocaleString(), defaultValue: `${Number(rowCount).toLocaleString()} rows` }) : null,
+                    cols.length > 0 ? t('sidebar.hoverColumns', { count: columnCount, defaultValue: `${columnCount} columns` }) : null,
+                    sizeLabel || null,
+                ].filter(Boolean).join(' · ') : undefined}>
+                {cols.length > 0 && <MetadataChips total={columnCount} items={chips.map((c: any) => ({ name: String(c?.name ?? ''),
+                    detail: (semantic ? c?.role === 'measure' && c?.aggregation : c?.type) ? String(semantic ? c.aggregation : c.type) : undefined }))} />}
+            </MetadataCard>
         );
     }, [t]);
 
@@ -1201,7 +1253,7 @@ const DataSourceSidebarPanel: React.FC<{
         if (tables.length === 0 || importing) return;
 
         if (opts?.newSession || !activeWorkspace) {
-            createNewSession(t('sidebar.batchSessionName', { count: tables.length, defaultValue: `${tables.length} tables` }));
+            createNewSession(defaultSessionName());
         }
 
         const loadId = `batch-${generateUUID()}`;
@@ -1430,6 +1482,42 @@ const DataSourceSidebarPanel: React.FC<{
         </Tooltip>
     );
 
+    const panelHeaderActions = <>
+        {pinAction}
+        <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
+            <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
+                <ChevronLeftIcon sx={{ fontSize: iconVar.md }} />
+            </IconButton>
+        </Tooltip>
+    </>;
+    const openRunSession = async (id: string) => {
+        await handleOpenSession(id);
+        dispatch(dfActions.setDataSourceSidebarOpen(false));
+    };
+    const sessionBadges = (s: WorkspaceSummary) => <>
+        {s.scheduled_run && !s.scheduled_run.forked && <Box component="span" role="img" aria-label="Scheduled"
+            sx={{ display: 'inline-flex', verticalAlign: 'middle', color: 'text.disabled', flexShrink: 0, ml: 0.5 }}>
+            <ScheduleOutlinedIcon sx={{ fontSize: 13 }} />
+        </Box>}
+        {s.shared && <Typography component="span" sx={{ fontSize: textVar.xxs, color: 'text.secondary', ml: 0.5 }}>Shared</Typography>}
+    </>;
+    const sessionActions = (s: WorkspaceSummary, isCurrent: boolean) => (!s.read_only || !isCurrent) ? <>
+        {!isCurrent && <ItemCardAction label={t('sidebar.openInNewTab', { defaultValue: 'Open in new tab' })}
+            icon={<OpenInNewIcon />} onClick={() => openSessionInNewTab(s.id)} />}
+        {!s.read_only && <ItemCardAction menu
+            label={t('sidebar.sessionActions', { defaultValue: 'More actions' })} icon={<MoreHorizIcon />}
+            onClick={anchor => setSessionMenu({ anchor, session: s })} />}
+    </> : undefined;
+    // Time sorts group sessions under day ranges; name order keeps a per-row stamp instead.
+    const sessionsGrouped = sessionSort !== 'name_asc';
+    const sessionTime = (s: WorkspaceSummary) =>
+        sessionSort === 'created_desc' || sessionSort === 'created_asc' ? s.created_at : (s.saved_at || s.created_at);
+    const sessionGroupLabels = sessionGroupLabelsFor(t);
+    const sessionCounts = (s: WorkspaceSummary) => [
+        s.table_count != null ? t('sidebar.tableCount', { count: s.table_count }) : '',
+        s.chart_count ? t('sidebar.chartCount', { count: s.chart_count }) : '',
+    ].filter(Boolean).join(' · ');
+
     return (
         <Box sx={{
             flex: 1,
@@ -1448,9 +1536,15 @@ const DataSourceSidebarPanel: React.FC<{
                 <Box
                     sx={panelHeaderSx}
                 >
-                    <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary', flex: 1 }}>
+                    <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary' }}>
                         {t('sidebar.dataConnectorsTitle', { defaultValue: 'Data Connectors' })}
                     </Typography>
+                    {onOpenUploadDialog && <ViewAllButton label={t('sidebar.browseInDataView', { defaultValue: 'Browse in data view' })}
+                        onClick={() => {
+                            const target = expandedConnectorId || sortedConnectors.find(item => item.connected)?.id || sortedConnectors[0]?.id;
+                            onOpenUploadDialog(target ? `connector:${target}` : 'database');
+                        }} />}
+                    <Box sx={{ flex: 1 }} />
                     {pinAction}
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
                         <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
@@ -1695,23 +1789,6 @@ const DataSourceSidebarPanel: React.FC<{
                                         </IconButton>
                                     </Tooltip>
                                 )}
-                                {onOpenUploadDialog && (
-                                    <Tooltip title={t('sidebar.connectorSettings', { defaultValue: 'Connector settings' })}>
-                                        <IconButton
-                                            size="small"
-                                            aria-label={t('sidebar.connectorSettings', { defaultValue: 'Connector settings' })}
-                                            className="connector-row-action"
-                                            color="primary"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                onOpenUploadDialog(`connector:${connector.id}`);
-                                            }}
-                                            sx={{ p: 0.25 }}
-                                        >
-                                            <SettingsOutlinedIcon sx={{ fontSize: iconVar.sm }} />
-                                        </IconButton>
-                                    </Tooltip>
-                                )}
                                 </Box>
                             </Box>
 
@@ -1730,15 +1807,6 @@ const DataSourceSidebarPanel: React.FC<{
                             {connector.connected && (
                             <Collapse in={isExpanded} timeout={100}>
                                 <Box sx={{ pl: '6px', pr: 0.5, pb: 1 }}>
-                                    {onOpenUploadDialog && !activeSearchMode && (
-                                        <Button size="small" onClick={() => onOpenUploadDialog(`connector:${connector.id}`)}
-                                            sx={{ ml: '10px', mt: 0.25, px: 1, py: 0.25, minWidth: 0, textTransform: 'none',
-                                                fontSize: textVar.xs, fontWeight: 500, borderRadius: 1,
-                                                bgcolor: 'grey.100', color: 'text.secondary',
-                                                '&:hover': { bgcolor: 'grey.200', color: 'text.primary' } }}>
-                                            {t('sidebar.browseInDataView', { defaultValue: 'Browse in data view' })}
-                                        </Button>
-                                    )}
                                     {catalogError && !isLoading && <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5, py: 1 }}>
                                         <Typography role="alert" sx={{ fontSize: textVar.xs, color: 'error.main', minWidth: 0, overflowWrap: 'anywhere' }}>
                                             {t('sidebar.discoveryIncomplete', { defaultValue: 'Connected; catalog discovery incomplete.' })} {catalogError}
@@ -1800,19 +1868,6 @@ const DataSourceSidebarPanel: React.FC<{
                                                 const sourceName = node.metadata?._source_name;
                                                 const isLoaded = loadedTablesMap[node.name] || loadedTablesMap[pathKey] || (sourceName && loadedTablesMap[sourceName]);
                                                 return (<>
-                                                    {onOpenUploadDialog && (
-                                                        <Tooltip title={t('sidebar.openInDataView', { defaultValue: 'Open in data view' })}>
-                                                            <IconButton
-                                                                size="small"
-                                                                className="catalog-hover-action"
-                                                                aria-label={t('sidebar.openInDataView', { defaultValue: 'Open in data view' })}
-                                                                onClick={(e) => { e.stopPropagation(); onOpenUploadDialog(`connector:${connector.id}`, node.path); }}
-                                                                sx={sidebarRowActionSx}
-                                                            >
-                                                                <NorthEastIcon />
-                                                            </IconButton>
-                                                        </Tooltip>
-                                                    )}
                                                     {isLoaded && (
                                                     <Tooltip title={t('sidebar.refresh', { defaultValue: 'Refresh data' })}>
                                                         <IconButton
@@ -1921,9 +1976,12 @@ const DataSourceSidebarPanel: React.FC<{
                 <Box
                     sx={{ ...panelHeaderSx, borderBottomColor: sidebarEdge.border }}
                 >
-                    <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary', flex: 1 }}>
+                    <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary' }}>
                         {t('sidebar.sessions', { defaultValue: 'Sessions' })}
                     </Typography>
+                    <ViewAllButton label={t('sidebar.viewAllSessions', { defaultValue: 'View all sessions' })}
+                        onClick={() => { cancelRenameSession(); setSessionsDialogOpen(true); }} />
+                    <Box sx={{ flex: 1 }} />
                     {pinAction}
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
                         <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
@@ -2014,135 +2072,106 @@ const DataSourceSidebarPanel: React.FC<{
                         </Typography>
                     </Box>
                 ) : (
-                    sortedSessions.map((s) => {
+                    (() => {
+                    let previousGroup: SessionDateGroup | null = null;
+                    return sortedSessions.map((s, index) => {
                         const isRenaming = renamingSession === s.id;
+                        const isCurrent = activeWorkspace?.id === s.id;
+                        const date = s.saved_at ? new Date(s.saved_at).toLocaleDateString() : '';
+                        const time = sessionTime(s);
+                        const group = sessionsGrouped ? sessionDateGroup(time) : null;
+                        const header = group && group !== previousGroup ? group : null;
+                        previousGroup = group;
+                        const stamp = sessionsGrouped ? '' : formatCompactTime(time);
                         return (
-                        <Tooltip
-                            key={s.id}
-                            title={isRenaming ? '' : (() => {
-                                const date = s.saved_at ? new Date(s.saved_at).toLocaleDateString() : '';
-                                if (activeWorkspace?.id === s.id) return date ? t('sidebar.currentSessionWithDate', { date }) : t('sidebar.currentSession');
-                                const base = buildSessionTooltip(s);
-                                return date ? `${base} · ${date}` : base;
-                            })()}
-                            placement="right"
-                            enterDelay={400}
-                        >
-                        <Box
-                            onClick={(e) => {
-                                if (isRenaming) return;
-                                // Cmd/Ctrl-click opens the session in its own tab, like a link.
-                                if (e.metaKey || e.ctrlKey) { openSessionInNewTab(s.id); return; }
-                                if (activeWorkspace?.id !== s.id) handleOpenSession(s.id, s.display_name);
-                            }}
-                            onAuxClick={(e) => { if (e.button === 1 && !isRenaming) { e.preventDefault(); openSessionInNewTab(s.id); } }}
-                            sx={{ ...sidebarRowSx, cursor: isRenaming || activeWorkspace?.id === s.id ? 'default' : 'pointer' }}
-                        >
-                            {activeWorkspace?.id === s.id && (
-                                <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: 'primary.main', flexShrink: 0 }} />
-                            )}
-                            {isRenaming ? (
-                                <TextField
-                                    autoFocus
-                                    value={renameSessionDraft}
-                                    onChange={(e) => setRenameSessionDraft(e.target.value)}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onBlur={commitRenameSession}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            commitRenameSession();
-                                        } else if (e.key === 'Escape') {
-                                            e.preventDefault();
-                                            cancelRenameSession();
-                                        }
-                                    }}
-                                    variant="standard"
-                                    sx={{ flex: 1 }}
-                                    slotProps={{
-                                        input: {
-                                            sx: { fontSize: textVar.sm, fontWeight: 500, py: 0 },
-                                        },
-                                    }}
-                                />
-                            ) : (
-                                <Typography noWrap sx={{ ...sidebarRowTitleSx,
-                                    color: activeWorkspace?.id === s.id ? 'primary.main' : 'text.primary',
-                                }}>
-                                    {s.display_name}
-                                </Typography>
-                            )}
-                            {s.scheduled_run && !s.scheduled_run.forked && <Box component="span" role="img" aria-label="Scheduled"
-                                sx={{ display: 'inline-flex', color: 'text.secondary', flexShrink: 0 }}>
-                                <ScheduleOutlinedIcon sx={{ fontSize: iconVar.sm }} />
-                            </Box>}
-                            {s.shared && <Typography component="span" sx={{ fontSize: textVar.xxs, color: 'text.secondary', ml: 0.5 }}>Shared</Typography>}
-                            {!isRenaming && (() => {
-                                // Show the timestamp that matches the active sort so the
-                                // visual order is self-explanatory: created time when
-                                // sorted by creation, last-saved otherwise.
-                                const useCreated = sessionSort === 'created_desc' || sessionSort === 'created_asc';
-                                const stamp = formatCompactTime(useCreated ? s.created_at : (s.saved_at || s.created_at));
-                                const actionable = !s.read_only;
-                                const newTab = activeWorkspace?.id !== s.id;
-                                if (!stamp && !actionable && !newTab) return null;
-                                return (
-                                    <Box className="sidebar-row-trailing" sx={{ ml: 0.5 }}>
-                                        {stamp && <Typography className={actionable ? 'sidebar-row-meta' : undefined} sx={sidebarRowMetaSx}>
-                                            {stamp}
-                                        </Typography>}
-                                        {(actionable || newTab) && <Box className="sidebar-row-actions">
-                                            {newTab && <Tooltip title={t('sidebar.openInNewTab', { defaultValue: 'Open in new tab' })}>
-                                                <IconButton size="small" aria-label={t('sidebar.openInNewTab', { defaultValue: 'Open in new tab' })} sx={sidebarRowActionSx}
-                                                    onClick={(e) => { e.stopPropagation(); openSessionInNewTab(s.id); }}>
-                                                    <OpenInNewIcon />
-                                                </IconButton>
-                                            </Tooltip>}
-                                            {actionable && <>
-                                            <Tooltip title={t('sidebar.rename', { defaultValue: 'Rename' })}>
-                                                <IconButton size="small" aria-label={t('sidebar.rename', { defaultValue: 'Rename' })} sx={sidebarRowActionSx}
-                                                    onClick={(e) => { e.stopPropagation(); startRenameSession(s.id, s.display_name); }}>
-                                                    <EditIcon />
-                                                </IconButton>
-                                            </Tooltip>
-                                            <Tooltip title={t('sidebar.exportSession', { defaultValue: 'Export' })}>
-                                                <IconButton size="small" aria-label={t('sidebar.exportSession', { defaultValue: 'Export' })} sx={sidebarRowActionSx}
-                                                    onClick={(e) => { e.stopPropagation(); handleExportSession(s.id, s.display_name); }}>
-                                                    <DownloadIcon />
-                                                </IconButton>
-                                            </Tooltip>
-                                            <Tooltip title={t('workspace.deleteSession')}>
-                                                <IconButton size="small" aria-label={t('workspace.deleteSession')} sx={sidebarRowDangerActionSx}
-                                                    onClick={(e) => handleDeleteSession(s.id, e)}>
-                                                    <DeleteIcon />
-                                                </IconButton>
-                                            </Tooltip>
-                                            </>}
-                                        </Box>}
-                                    </Box>
-                                );
-                            })()}
-                        </Box>
-                        </Tooltip>
+                        <React.Fragment key={s.id}>
+                        {header && <Typography component="h3" sx={{ ...sessionGroupHeaderSx, px: 1.25, pt: index === 0 ? 0.75 : 1.5,
+                            mt: index === 0 ? 0 : 0.5, borderTop: index === 0 ? 0 : 1, borderColor: 'divider' }}>{sessionGroupLabels[header]}</Typography>}
+                        <ItemCard
+                            mini
+                            active={sessionMenu?.session.id === s.id}
+                            title={s.display_name}
+                            current={isCurrent}
+                            tooltip={buildSessionTooltip(s, isCurrent)}
+                            onOpen={() => handleOpenSession(s.id, s.display_name)}
+                            onOpenInNewTab={() => openSessionInNewTab(s.id)}
+                            rename={isRenaming && !sessionsDialogOpen ? { value: renameSessionDraft, label: t('sidebar.rename', { defaultValue: 'Rename' }),
+                                onChange: setRenameSessionDraft, onCommit: commitRenameSession, onCancel: cancelRenameSession } : undefined}
+                            badges={sessionBadges(s)}
+                            captions={[stamp]}
+                            actions={sessionActions(s, isCurrent)}
+                        />
+                        </React.Fragment>
                         );
-                    })
+                    });
+                    })()
                 )}
             </ScrollFadeContainer>
+            <Menu anchorEl={sessionMenu?.anchor} open={!!sessionMenu} onClose={() => setSessionMenu(null)} disableRestoreFocus
+                transitionDuration={{ enter: 120, exit: 0 }}
+                // Rename starts once the menu has closed; its focus trap would otherwise blur (and commit) the new field.
+                slotProps={{ transition: { onExited: () => { const action = sessionMenuAction.current; sessionMenuAction.current = null; action?.(); } } }}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }} sx={sidebarMenuSx}>
+                {sessionMenu && (() => {
+                    const s = sessionMenu.session;
+                    const run = (action: () => void, afterClose = false) => () => {
+                        if (afterClose) sessionMenuAction.current = action;
+                        setSessionMenu(null);
+                        if (!afterClose) action();
+                    };
+                    return [
+                        <MenuItem key="rename" onClick={run(() => startRenameSession(s.id, s.display_name), true)}>
+                            <ListItemIcon><EditIcon /></ListItemIcon><ListItemText primary={t('sidebar.rename', { defaultValue: 'Rename' })} />
+                        </MenuItem>,
+                        <MenuItem key="export" onClick={run(() => handleExportSession(s.id, s.display_name))}>
+                            <ListItemIcon><DownloadIcon /></ListItemIcon><ListItemText primary={t('sidebar.exportSession', { defaultValue: 'Export' })} />
+                        </MenuItem>,
+                        <MenuItem key="delete" onClick={run(() => handleDeleteSession(s.id))} sx={{ color: 'error.main' }}>
+                            <ListItemIcon sx={{ color: 'inherit' }}><DeleteIcon /></ListItemIcon><ListItemText primary={t('workspace.deleteSession')} />
+                        </MenuItem>,
+                    ];
+                })()}
+            </Menu>
+            <SessionsDialog open={sessionsDialogOpen} onClose={() => { cancelRenameSession(); setSessionsDialogOpen(false); }}
+                title={t('sidebar.sessions', { defaultValue: 'Sessions' })} sessions={sortedSessions}
+                groupTime={sessionsGrouped ? sessionTime : undefined}
+                renderCard={s => {
+                                const isCurrent = activeWorkspace?.id === s.id;
+                                return <ItemCard key={s.id}
+                                    title={s.display_name}
+                                    current={isCurrent}
+                                    onOpen={() => { setSessionsDialogOpen(false); void handleOpenSession(s.id, s.display_name); }}
+                                    onOpenInNewTab={() => openSessionInNewTab(s.id)}
+                                    rename={renamingSession === s.id ? { value: renameSessionDraft, label: t('sidebar.rename', { defaultValue: 'Rename' }),
+                                        onChange: setRenameSessionDraft, onCommit: commitRenameSession, onCancel: cancelRenameSession } : undefined}
+                                    badges={sessionBadges(s)}
+                                    captions={[isCurrent ? t('sidebar.currentSession') : '', sessionCounts(s),
+                                        sessionsGrouped ? '' : formatCompactTime(sessionTime(s))]}
+                                    actions={(!s.read_only || !isCurrent) ? <>
+                                        {!isCurrent && <ItemCardAction label={t('sidebar.openInNewTab', { defaultValue: 'Open in new tab' })}
+                                            icon={<OpenInNewIcon />} onClick={() => openSessionInNewTab(s.id)} />}
+                                        {!s.read_only && <>
+                                            <ItemCardAction label={t('sidebar.rename', { defaultValue: 'Rename' })} icon={<EditIcon />}
+                                                onClick={() => startRenameSession(s.id, s.display_name)} />
+                                            <ItemCardAction label={t('sidebar.exportSession', { defaultValue: 'Export' })} icon={<DownloadIcon />}
+                                                onClick={() => handleExportSession(s.id, s.display_name)} />
+                                            <ItemCardAction danger label={t('workspace.deleteSession')} icon={<DeleteIcon />}
+                                                onClick={() => handleDeleteSession(s.id)} />
+                                        </>}
+                                    </> : undefined} />;
+                            }} />
             </Box>
             )}
 
             {/* ── Knowledge tab ── */}
             {activeTab === 'knowledge' && (
             <Box sx={{ flex: '0 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <WorkflowPanel onCreateSession={createNewSession} onOpenSession={handleOpenSession} headerActions={<>
-                    {pinAction}
-                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
-                        <IconButton size="small" onClick={onCollapse} sx={panelHeaderActionSx}>
-                            <ChevronLeftIcon sx={{ fontSize: iconVar.md }} />
-                        </IconButton>
-                    </Tooltip>
-                </>} />
+                <WorkflowPanel onCreateSession={createNewSession} onOpenSession={handleOpenSession} headerActions={panelHeaderActions} />
             </Box>
+            )}
+
+            {activeTab === 'schedules' && (
+                <SchedulesPanel onOpenSession={openRunSession} headerActions={panelHeaderActions} />
             )}
 
         </Box>

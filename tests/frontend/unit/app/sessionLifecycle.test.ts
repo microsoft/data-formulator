@@ -38,7 +38,8 @@ describe('session lifecycle', () => {
         const first = store.getState().activeWorkspace;
         store.dispatch(ensureActiveWorkspace());
 
-        expect(first).toMatchObject({ displayName: 'Untitled Session', provisional: true });
+        expect(first).toMatchObject({ displayName: expect.stringMatching(/^Analysis Session · /), provisional: true });
+        expect(first?.autoName).toEqual({ name: first?.displayName, sources: [] });
         expect(store.getState().activeWorkspace?.id).toBe(first?.id);
         expect(dfSelectors.selectInSession(store.getState())).toBe(false);
     });

@@ -113,6 +113,30 @@ def test_publication_is_allowlisted_and_keeps_previous_success(tmp_path):
     assert store.publication(store.publications()[0]["id"]) == snapshot
 
 
+def test_snapshot_keeps_live_thread_outputs_in_order(tmp_path):
+    import pandas as pd
+    from data_formulator.workflows.scheduler import materialize_session
+    store = ScheduleStore(tmp_path)
+    saved = store.save("admin", CONFIG, now=NOW)
+    occurrence, = store.claim_due(NOW + timedelta(hours=1))
+    frames = {"prices": pd.DataFrame({"week": [1], "price": [3.1]}), "swings": pd.DataFrame({"fuel": ["diesel"], "swing": [0.4]})}
+    workspace = type("Workspace", (), {"read_data_as_df": staticmethod(frames.__getitem__)})
+    result = {"chart_id": "chart-1", "code": "swings = prices", "code_signature": "sig",
+              "content": {"virtual": {"table_name": "swings"}}, "refined_goal": {"title": "Swings", "output_variable": "swings"}}
+    state = {"status": "completed", "outputs": [
+        {"type": "tool_result", "tool": "create_data", "stdout": json.dumps({"table_name": "prices", "display_name": "Weekly prices"})},
+        {"type": "result", "input_sources": [{"id": "prices", "kind": "data"}],
+         "content": {"question": "How did swings compare?", "result": result}},
+        {"type": "report", "content": "Brief"}]}
+    artifacts = materialize_session(saved, occurrence, state, workspace, read_only=False)["scheduledArtifacts"]
+    assert [item["kind"] for item in artifacts] == ["data", "chart", "report"]
+    assert artifacts[0] == {"kind": "data", "tableId": "prices", "displayName": "Weekly prices", "rows": [{"week": 1, "price": 3.1}]}
+    assert artifacts[1]["question"] == "How did swings compare?"
+    assert artifacts[1]["inputSources"] == [{"id": "prices", "kind": "data"}]
+    assert artifacts[1]["goal"]["output_variable"] == "swings"
+    assert "sig" not in json.dumps(artifacts)
+
+
 def test_scheduled_identity_cannot_be_supplied_by_header(monkeypatch):
     from flask import Flask
     from data_formulator.auth import identity

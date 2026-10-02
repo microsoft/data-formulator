@@ -21,8 +21,6 @@ import {
     MenuList,
     MenuItem,
     ClickAwayListener,
-    ToggleButton,
-    ToggleButtonGroup,
 } from '@mui/material';
 
 import { useDispatch, useSelector, useStore } from 'react-redux';
@@ -46,7 +44,6 @@ import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import BoltIcon from '@mui/icons-material/Bolt';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import StopIcon from '@mui/icons-material/Stop';
-import KeyboardReturnIcon from '@mui/icons-material/KeyboardReturn';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
 
@@ -61,7 +58,7 @@ import { CARD_WIDTH } from './threadLayout';
 import { iconVar, textVar } from '../app/layout';
 import { formatAnalystToolProgress } from './analystToolProgress';
 import { TerminalAccessButton, TerminalApprovalDialog, TerminalProposal } from '../components/TerminalApprovalDialog';
-import { pauseWorkflowRun, selectChatWorkflow, sendWorkflowMessage, WorkflowProgress, WORKFLOW_AUTHORING_PROMPT } from './WorkflowPanel';
+import { selectChatWorkflow, WorkflowProgress, WORKFLOW_AUTHORING_PROMPT } from './WorkflowPanel';
 import { formArtifactFromEvent, requestAutoSubmit } from '../app/setupForms';
 import { handleApiError } from '../app/errorHandler';
 
@@ -227,19 +224,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // Text turns (clarify / explain / delegate) — design-docs/41. The focused
     // one (if any) drives the overlay panel above the chat.
     const textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
-    const selectedWorkflow = useSelector(selectChatWorkflow);
-    const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
-    const availableWorkflow = selectedWorkflow;
-    const [workflowMessageChoice, setWorkflowMessageChoice] = useState<{
-        workspaceId?: string; runId: string; enabled: boolean;
-    }>();
-    const chatWorkflow = workflowMessageChoice?.workspaceId === workspaceId
-        && workflowMessageChoice?.runId === availableWorkflow?.workflow?.runId
-        ? (workflowMessageChoice?.enabled ? availableWorkflow : undefined) : selectedWorkflow;
+    // A focused running or paused workflow shows its pending interaction above the input.
+    const chatWorkflow = useSelector(selectChatWorkflow);
     const currentStore = useStore();
-    const [sendingWorkflowMessage, setSendingWorkflowMessage] = useState(false);
-    const [pausingWorkflow, setPausingWorkflow] = useState(false);
-    const workflowMessageRef = useRef<{ runId: string; text: string; id: string; sending: boolean }>();
     const connectorParams = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams);
 
     const theme = useTheme();
@@ -693,7 +680,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 chart_type: chartType,
                 encodings,
                 agent_summary: closingTurn?.content || '',
-                workflow_definition: closingTurn?.workflowDefinition?.content,
+                workflow_definition: closingTurn?.form?.kind === 'workflow' ? closingTurn.form.workflow.content : undefined,
             };
 
             focusedSteps.unshift(step);
@@ -712,7 +699,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 conversationSteps.unshift({
                     user_question: workflowTurn?.prompt || walkTurn.prompt || '',
                     agent_response: walkTurn.content || '',
-                    workflow_definition: walkTurn.workflowDefinition?.content,
+                    workflow_definition: walkTurn.form?.kind === 'workflow' ? walkTurn.form.workflow.content : undefined,
                     user_answer: walkTurn.answer || '',
                     workflow: workflow ? {
                         run_id: workflow.runId, status: workflow.status, step_id: workflow.stepId,
@@ -802,38 +789,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         return { focusedThread, otherThreads };
     }, [tables, charts, conceptShelfItems, textTurns, generatedReports]);
 
-    const routeWorkflowPrompt = useCallback((prompt: string, files?: { scratchPath: string }[]) => {
-        const state = currentStore.getState() as DataFormulatorState;
-        const selected = selectChatWorkflow(state);
-        const available = selected;
-        const workflow = workflowMessageChoice?.workspaceId === state.activeWorkspace?.id
-            && workflowMessageChoice?.runId === available?.workflow?.runId
-            ? (workflowMessageChoice?.enabled ? available : undefined) : selected;
-        if (!workflow?.workflow) return false;
-        const attachments = (files ?? [...attachedFiles, ...attachedImages]).map(item => item.scratchPath);
-        const text = [prompt.trim(), attachments.length ? `Attached workspace scratch files:\n${attachments.join('\n')}` : ''].filter(Boolean).join('\n\n');
-        if (!text || workflowMessageRef.current?.sending) return true;
-        const runId = workflow.workflow.runId;
-        const pending = workflowMessageRef.current;
-        const message = pending?.runId === runId && pending.text === text ? pending
-            : { runId, text, id: crypto.randomUUID(), sending: false };
-        message.sending = true;
-        workflowMessageRef.current = message;
-        setSendingWorkflowMessage(true);
-        const accepted = () => {
-            setChatPrompt(current => current === prompt ? '' : current);
-            setAttachedFiles(current => current.filter(item => !attachments.includes(item.scratchPath)));
-            setAttachedImages(current => current.filter(item => !attachments.includes(item.scratchPath)));
-            workflowMessageRef.current = undefined;
-            setSendingWorkflowMessage(false);
-        };
-        void sendWorkflowMessage(workflow, text, message.id, accepted).catch(reason => handleApiError(reason, 'Workflow message')).finally(() => {
-            message.sending = false;
-            if (!workflowMessageRef.current || workflowMessageRef.current === message) setSendingWorkflowMessage(false);
-        });
-        return true;
-    }, [currentStore, attachedFiles, attachedImages, workflowMessageChoice]);
-
     const exploreFromChat = useCallback((prompt: string, clarificationContext?: {
         authorWorkflow?: boolean;
         trajectory?: any[];
@@ -853,7 +808,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         images: string[];
         files: { name: string; scratchPath: string }[];
     }) => {
-        if (!clarificationContext?.authorWorkflow && routeWorkflowPrompt(prompt, explicitAttachments?.files)) return;
         if (attachmentUploads > 0) return;
         const images = explicitAttachments?.images ?? attachedImages.map(image => image.url);
         const files = explicitAttachments?.files ?? attachedFiles;
@@ -1326,9 +1280,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 displayId: turnId,
                 textKind: 'explain',
                 content: summary,
-                ...(result.content?.workflow_definition ? { workflowDefinition: result.content.workflow_definition } : {}),
+                ...(result.content?.form ? { form: formArtifactFromEvent(result.content.form) }
+                    : formOwner && !lastCreatedTableId && !reportId ? { sourceFormId: formOwner.id } : {}),
                 ...(result.content?.presentation === 'long_response' ? { presentation: 'long_response' as const } : {}),
-                ...(formOwner && !lastCreatedTableId && !reportId ? { sourceFormId: formOwner.id } : {}),
                 ...(foldPrompt ? { prompt: firstEntry.displayContent || firstEntry.content } : {}),
                 parentNodeId: runLastNodeRef.current || askedFromTable || askedFromNode,
                 ...(!lastCreatedTableId && runSourceChartIdRef.current
@@ -2209,7 +2163,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 notifyWorkspaceFilesChanged();
             }
         })();
-    }, [routeWorkflowPrompt, focusedId, focusedTableId, hasFocusedExternalReference, tables, inputTables, currentTable, primaryTableIds, draftNodes, activeModel, config, conceptShelfItems, charts, generatedReports, focusedReference, loadedTableNodes, fileNodes, dispatch, t, attachedImages, attachedFiles, attachmentUploads, canvasTarget, textTurns, connectorParams]);
+    }, [focusedId, focusedTableId, hasFocusedExternalReference, tables, inputTables, currentTable, primaryTableIds, draftNodes, activeModel, config, conceptShelfItems, charts, generatedReports, focusedReference, loadedTableNodes, fileNodes, dispatch, t, attachedImages, attachedFiles, attachmentUploads, canvasTarget, textTurns, connectorParams]);
 
     // Honor cross-component handoff requests targeting the Report Gen
     // agent (e.g. Data Agent's `delegate` card with target='report_gen').
@@ -2229,7 +2183,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
     // ── Unified submit handler ───────────────────────────────────────
     const submitChat = useCallback((prompt: string, clarificationCtx?: any, displayPrompt?: string, explicitAttachments?: Parameters<typeof exploreFromChat>[3]) => {
-        if (routeWorkflowPrompt(prompt, explicitAttachments?.files)) return;
         if (clarificationCtx) {
             // Build the structured response payload. The backend assembles
             // the final LLM-facing text ("Selected answers: 1. xxx; 2. yyy\n
@@ -2307,7 +2260,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             return;
         }
         exploreFromChat(prompt, undefined, displayPrompt, explicitAttachments);
-    }, [routeWorkflowPrompt, exploreFromChat, clarificationQuestions, clarifyAnswers, focusedId, focusedTableId, tables, textTurns, focusedReference, dispatch, focusCanvasAfterReply]);
+    }, [exploreFromChat, clarificationQuestions, clarifyAnswers, focusedId, focusedTableId, tables, textTurns, focusedReference, dispatch, focusCanvasAfterReply]);
 
     // Replay a workflow: the KnowledgePanel fires `df-replay-workflow`
     // with a prompt describing the captured workflow; we hand it straight to
@@ -2417,9 +2370,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // click the remaining options (which auto-submits) or type something.
     const canSend = React.useMemo(() => {
         if (workspaceReadOnly || attachmentUploads > 0) return false;
-        if (chatWorkflow) return !sendingWorkflowMessage && (chatPrompt.trim().length > 0 || attachedImages.length > 0 || attachedFiles.length > 0);
         return chatPrompt.trim().length > 0 || attachedImages.length > 0 || attachedFiles.length > 0;
-    }, [chatWorkflow, sendingWorkflowMessage, chatPrompt, workspaceReadOnly, attachmentUploads, attachedImages.length, attachedFiles.length]);
+    }, [chatPrompt, workspaceReadOnly, attachmentUploads, attachedImages.length, attachedFiles.length]);
 
     // A prompt seeded from the landing box: send it once the chat is idle.
     // The ref makes this one-shot even if the effect is double-invoked before
@@ -2685,24 +2637,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
     const inputBox = (
         <>
-        {availableWorkflow && <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, mx: 1, mt: 0.5, mb: 0.25 }}>
-            <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>Message to:</Typography>
-            <ToggleButtonGroup size="small" exclusive value={chatWorkflow ? 'workflow' : 'request'} aria-label="Message target"
-                disabled={isChatFormulating || sendingWorkflowMessage}
-                onChange={(_, target) => {
-                    if (target) setWorkflowMessageChoice({ workspaceId,
-                        runId: availableWorkflow.workflow!.runId, enabled: target === 'workflow' });
-                }}
-                sx={{ maxWidth: '100%', '& .MuiToggleButton-root': { textTransform: 'none', fontSize: textVar.xs,
-                    lineHeight: 1.4, px: 0.75, py: 0.25, gap: 0.5, fontWeight: 400, minWidth: 0, minHeight: 24,
-                    color: 'text.secondary', borderColor: 'divider',
-                    '&.Mui-selected': { color: 'text.secondary', bgcolor: 'action.hover',
-                        '&:hover': { bgcolor: 'action.selected' } } } }}>
-                <ToggleButton value="request">New request</ToggleButton>
-                <ToggleButton value="workflow" aria-label="Message workflow agent">Workflow agent</ToggleButton>
-            </ToggleButtonGroup>
-        </Box>}
-        <Card ref={inputCardRef} variant="outlined" data-chat-mode={chatWorkflow ? 'workflow' : 'analyst'} sx={{
+        <Card ref={inputCardRef} variant="outlined" sx={{
             display: 'flex', flexDirection: 'column',
             mx: 1, mb: 1, mt: 0.5,
             px: 1.25, pt: 1, pb: 0.5,
@@ -2715,7 +2650,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             overflow: isChatFormulating ? 'hidden' : 'visible',
             flexShrink: 0,
             transition: transition.fast,
-            borderColor: chatInputFocused ? theme.palette.primary.main : chatWorkflow ? alpha(theme.palette.primary.main, 0.45) : borderColor.divider,
+            borderColor: chatInputFocused ? theme.palette.primary.main : borderColor.divider,
             backgroundColor: theme.palette.background.paper,
             // Neutral elevation shadow recipe shared with AgentChatInput;
             // hover lifts the card a touch without shifting any colors.
@@ -3012,8 +2947,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 value={chatPrompt}
                 disabled={workspaceReadOnly}
                 placeholder={
-                    chatWorkflow ? 'Message workflow...'
-                    : pendingClarification
+                    pendingClarification
                         ? t('chartRec.replyPlaceholder')
                         : inputTables.length === 0 && !hasFocusedExternalReference
                             ? t('chartRec.emptyAnalysisInputsPlaceholder')
@@ -3037,7 +2971,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     <Tooltip title="Attach file">
                         <span>
                             <IconButton size="small" aria-label="Attach file"
-                                disabled={workspaceReadOnly || isChatFormulating || attachmentUploads > 0 || sendingWorkflowMessage}
+                                disabled={workspaceReadOnly || isChatFormulating || attachmentUploads > 0}
                                 onClick={() => fileInputRef.current?.click()}>
                                 {attachmentUploads > 0 ? <CircularProgress size={16} /> : <AttachFileIcon sx={{ fontSize: iconVar.lg }} />}
                             </IconButton>
@@ -3058,7 +2992,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                     aria-label={t('chartRec.quickActions')}
                                     aria-haspopup="menu"
                                     aria-expanded={!!quickActionAnchor}
-                                    disabled={workspaceReadOnly || !!chatWorkflow || isChatFormulating || !!pendingClarification || attachmentUploads > 0}
+                                    disabled={workspaceReadOnly || isChatFormulating || !!pendingClarification || attachmentUploads > 0}
                                     onClick={event => setQuickActionAnchor(event.currentTarget)}
                                 >
                                     <EditOutlinedIcon sx={{ fontSize: iconVar.lg }} />
@@ -3085,31 +3019,18 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                     size="small"
                                     sx={{ p: 0.5, color: theme.palette.primary.main }}
                                     aria-label={t('chartRec.getIdeaSuggestions')}
-                                    disabled={workspaceReadOnly || !!chatWorkflow || (!focusedTableId && !hasFocusedExternalReference) || isChatFormulating || !!pendingClarification}
+                                    disabled={workspaceReadOnly || (!focusedTableId && !hasFocusedExternalReference) || isChatFormulating || !!pendingClarification}
                                     onClick={() => submitChat(t('chartRec.exploreIdeasPrompt'), undefined, t('chartRec.askedForRecommendations'))}
                                 >
                                     <TipsAndUpdatesIcon sx={{ fontSize: iconVar.lg }} />
                                 </IconButton>
                             </span>
                         </Tooltip>
-                        {chatWorkflow?.workflow?.status === 'running' && <Tooltip title="Pause workflow">
-                            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
-                            <IconButton size="small" aria-label="Pause workflow" disabled={pausingWorkflow || workspaceReadOnly}
-                                onClick={async () => {
-                                    setPausingWorkflow(true);
-                                    try { await pauseWorkflowRun(chatWorkflow.workflow!.runId); }
-                                    finally { setPausingWorkflow(false); }
-                                }}
-                                sx={{ p: 0, width: 28, height: 28, color: 'text.secondary' }}>
-                                <StopIcon sx={{ fontSize: 14 }} />
-                            </IconButton></Box>
-                        </Tooltip>}
-                        {(chatWorkflow?.workflow?.status !== 'running' || chatPrompt.trim() || attachedImages.length > 0 || attachedFiles.length > 0) &&
-                        <Tooltip title={chatWorkflow ? 'Send to workflow' : t('chartRec.explore')}>
+                        <Tooltip title={t('chartRec.explore')}>
                             <span>
                                 <IconButton
                                     size="small"
-                                    aria-label={chatWorkflow ? 'Send to workflow' : t('chartRec.explore')}
+                                    aria-label={t('chartRec.explore')}
                                     disabled={!canSend}
                                     onClick={() => {
                                         if (pendingClarification) {
@@ -3137,10 +3058,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                         },
                                     }}
                                 >
-                                    {chatWorkflow ? <KeyboardReturnIcon sx={{ fontSize: iconVar.lg }} /> : <ArrowUpwardRoundedIcon sx={{ fontSize: iconVar.lg }} />}
+                                    <ArrowUpwardRoundedIcon sx={{ fontSize: iconVar.lg }} />
                                 </IconButton>
                             </span>
-                        </Tooltip>}
+                        </Tooltip>
                     </>
                 )}
                 </Box>

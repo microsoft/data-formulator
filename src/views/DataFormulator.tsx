@@ -59,10 +59,11 @@ import { ModelSelectionButton } from './ModelSelectionDialog';
 import { UnifiedDataUploadDialog, UploadTabType, ConnectorInstance } from './UnifiedDataUploadDialog';
 import { LandingDataEntry } from './LandingDataEntry';
 import { ReportView } from './ReportView';
-import { DataSourceSidebar } from './DataSourceSidebar';
+import { DataSourceSidebar, SessionsDialog } from './DataSourceSidebar';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions } from './ExampleSessions';
 import { WorkflowPanel, WorkflowRunObserver } from './WorkflowPanel';
+import { listWorkflowLibrary, SchedulesPanel, useScheduleLibrary } from './WorkflowSchedules';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import { useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
@@ -72,7 +73,7 @@ import type { WorkspaceSummary } from '../app/workspaceService';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import { AppDispatch, store } from '../app/store';
 import { generateWorkspaceId, ensureActiveWorkspace, openSession } from '../app/sessionThunks';
-import { SessionCard, SessionCardAction, sessionCardGridSx } from '../components/SessionCard';
+import { ItemCard, ItemCardAction, itemCardGridSx } from '../components/ItemCard';
 import IconButton from '@mui/material/IconButton';
 import { ArtifactDeleteButton } from './DataThreadCards';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -89,6 +90,38 @@ import DialogActions from '@mui/material/DialogActions';
 const CANVAS_TRANSITION_MS = 140;
 const INITIAL_SESSION_COUNT = 12;
 
+type LibraryTab = 'sessions' | 'workflows' | 'schedules';
+
+/** The landing page's saved-item tabs. Tab state lives here so switching re-renders only this section. */
+const LandingLibrary: React.FC<{ canSchedule: boolean; sessionsToolbar: React.ReactNode; sessions: React.ReactNode;
+    workflowsToolbar: React.ReactNode; workflows: React.ReactNode; onOpenSession: (id: string) => void }>
+    = ({ canSchedule, sessionsToolbar, sessions, workflowsToolbar, workflows, onOpenSession }) => {
+    const { t } = useTranslation();
+    const [tab, setTab] = useState<LibraryTab>('sessions');
+    const [scheduleToolbar, setScheduleToolbar] = useState<HTMLElement | null>(null);
+    return <>
+        <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 2, rowGap: 1, mt: 3, mb: 1.5, borderBottom: 1, borderColor: 'divider' }}>
+            <Tabs value={tab} onChange={(_, value) => setTab(value)} aria-label="Saved items"
+                slotProps={{ indicator: { sx: { transition: 'left 120ms ease, width 120ms ease' } } }}
+                sx={{ minHeight: 40, '& .MuiTab-root': { minHeight: 40, px: 1, fontSize: textVar.sm, fontWeight: 400, textTransform: 'none' },
+                    '& .MuiTouchRipple-root': { display: 'none' } }}>
+                <Tab id="home-sessions-tab" value="sessions" label={t('workspace.yourSessions')} aria-controls="home-sessions-panel" />
+                <Tab id="home-workflows-tab" value="workflows" label={t('workspace.yourWorkflows', { defaultValue: 'Your workflows' })} aria-controls="home-workflows-panel" />
+                {canSchedule && <Tab id="home-schedules-tab" value="schedules" label={t('workspace.yourSchedules', { defaultValue: 'Your schedules' })} aria-controls="home-schedules-panel" />}
+            </Tabs>
+            <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1, py: 0.5 }}>
+                {tab === 'schedules' ? <Box ref={setScheduleToolbar} sx={{ display: 'flex', alignItems: 'center', gap: 1 }} />
+                    : tab === 'workflows' ? workflowsToolbar : sessionsToolbar}
+            </Box>
+        </Box>
+        <Box role="tabpanel" id="home-sessions-panel" aria-labelledby="home-sessions-tab" hidden={tab !== 'sessions'}>{sessions}</Box>
+        <Box role="tabpanel" id="home-workflows-panel" aria-labelledby="home-workflows-tab" hidden={tab !== 'workflows'}>{workflows}</Box>
+        {canSchedule && <Box role="tabpanel" id="home-schedules-panel" aria-labelledby="home-schedules-tab" hidden={tab !== 'schedules'}>
+            <SchedulesPanel presentation="landing" toolbarContainer={scheduleToolbar} onOpenSession={onOpenSession} />
+        </Box>}
+    </>;
+};
+
 export const DataFormulatorFC = ({ }) => {
 
     const derivedTables = useSelector(dfSelectors.getDerivedTables);
@@ -101,6 +134,7 @@ export const DataFormulatorFC = ({ }) => {
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+    const canSchedule = !!(serverConfig?.IS_LOCAL_MODE || serverConfig?.CAN_CONFIGURE);
     const appName = getToolName(serverConfig.APP_NAME);
     const headingSize = Math.max(32, Math.min(76, 76 * Math.sqrt(15 / appName.length)));
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
@@ -139,6 +173,15 @@ export const DataFormulatorFC = ({ }) => {
         refreshPageConnectors();
     }, [refreshPageConnectors, identityKey]);
 
+    // What the user already has, so landing quick actions can suggest the next step.
+    const landingSchedules = useScheduleLibrary(canSchedule && !inSession);
+    const [hasUserWorkflows, setHasUserWorkflows] = useState(false);
+    useEffect(() => {
+        if (inSession) return;
+        listWorkflowLibrary().then(items => setHasUserWorkflows(items.some(item => (item.origin || 'user') === 'user')))
+            .catch(() => setHasUserWorkflows(false));
+    }, [inSession, identityKey]);
+
     // ── Demo sessions (loaded from manifest, fallback to hardcoded) ─────
     const [demoSessions, setDemoSessions] = useState<ExampleSession[]>(exampleSessions);
     useEffect(() => {
@@ -149,8 +192,7 @@ export const DataFormulatorFC = ({ }) => {
 
     // ── Workspace list (shown on landing page) ────────────────────
     const [savedWorkspaces, setSavedWorkspaces] = useState<WorkspaceSummary[]>([]);
-    const [showAllWorkspaces, setShowAllWorkspaces] = useState(false);
-    const [savedLibraryTab, setSavedLibraryTab] = useState<'sessions' | 'workflows'>('sessions');
+    const [allSessionsOpen, setAllSessionsOpen] = useState(false);
     const [confirmDeleteWs, setConfirmDeleteWs] = useState<string | null>(null);
 
     // Inline rename: which card's title is currently being edited, and
@@ -306,6 +348,24 @@ export const DataFormulatorFC = ({ }) => {
                 return copy;
         }
     }, [savedWorkspaces, wsSort]);
+
+    const workspaceCard = (w: WorkspaceSummary, onOpened?: () => void) =>
+        <ItemCard key={w.id} title={w.display_name} onOpen={() => { onOpened?.(); void handleOpenWorkspace(w.id, w.display_name); }}
+            rename={renamingWs === w.id ? { value: renameDraft, label: t('workspace.rename'), onChange: setRenameDraft,
+                onCommit: commitRenameWorkspace, onCancel: cancelRenameWorkspace } : undefined}
+            captions={[
+                w.scheduled_run && !w.scheduled_run.forked && <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary', mt: 0.5 }}
+                    title={`${w.scheduled_run.scheduleName}: ${new Date(w.scheduled_run.scheduledFor).toLocaleString()}`}>
+                    <ScheduleOutlinedIcon sx={{ fontSize: iconVar.sm }} />Scheduled run{w.shared ? ' · Shared' : ''}
+                </Box>,
+                w.saved_at && new Date(w.saved_at).toLocaleString(),
+            ]}
+            actions={w.read_only ? undefined : <>
+                <ItemCardAction label={t('workspace.rename')} icon={<EditOutlinedIcon />}
+                    onClick={() => startRenameWorkspace(w.id, w.display_name)} />
+                <ItemCardAction label={t('workspace.export')} icon={<DownloadIcon />} onClick={() => handleExportWorkspace(w.id)} />
+                <ArtifactDeleteButton label={t('workspace.delete')} onClick={() => setConfirmDeleteWs(w.id)} />
+            </>} />;
     
     // Set up automatic refresh of derived tables when source data changes
     useDerivedTableRefresh();
@@ -910,6 +970,13 @@ export const DataFormulatorFC = ({ }) => {
                         }
                     }}
                     connectors={pageConnectors}
+                    quickActionContext={{
+                        hasUserSources: pageConnectors.some(conn => (conn.connected || conn.sso_auto_connect) && conn.id !== 'sample_datasets'),
+                        hasSessions: savedWorkspaces.some(w => !w.scheduled_run),
+                        hasWorkflows: hasUserWorkflows,
+                        canSchedule,
+                        hasSchedules: landingSchedules.schedules.length > 0,
+                    }}
                 />
             </Box>
             </Box>
@@ -945,14 +1012,9 @@ export const DataFormulatorFC = ({ }) => {
             </Box>
 
             {/* ── Saved workspaces section ──────────────────────────── */}
-                <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 2, rowGap: 1, mt: 3, mb: 1.5, borderBottom: 1, borderColor: 'divider' }}>
-                    <Tabs value={savedLibraryTab} onChange={(_, value) => setSavedLibraryTab(value)} aria-label="Saved items"
-                        sx={{ minHeight: 40, '& .MuiTab-root': { minHeight: 40, px: 1, fontSize: textVar.sm, fontWeight: 400, textTransform: 'none' } }}>
-                        <Tab id="home-sessions-tab" value="sessions" label={t('workspace.yourSessions')} aria-controls="home-sessions-panel" />
-                        <Tab id="home-workflows-tab" value="workflows" label={t('workspace.yourWorkflows', { defaultValue: 'Your workflows' })} aria-controls="home-workflows-panel" />
-                    </Tabs>
-                    <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1, py: 0.5 }}>
-                    {savedLibraryTab === 'workflows' ? toolbar : <>
+            <LandingLibrary canSchedule={canSchedule} workflowsToolbar={toolbar} workflows={saved}
+                onOpenSession={id => void handleOpenWorkspace(id)}
+                sessionsToolbar={<>
                     <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
                     <Select
                         size="small"
@@ -992,44 +1054,25 @@ export const DataFormulatorFC = ({ }) => {
                         sx={{ fontSize: textVar.xs, textTransform: 'none', whiteSpace: 'nowrap' }}>
                         {t('workspace.importSession', { defaultValue: 'Import session' })}
                     </Button>
-                        </>}
-                        </Box>
-                </Box>
-                    <Box role="tabpanel" id="home-sessions-panel" aria-labelledby="home-sessions-tab" hidden={savedLibraryTab !== 'sessions'}>
-                <Box id="saved-session-grid" sx={sessionCardGridSx}>
-                    {(showAllWorkspaces ? sortedSavedWorkspaces : sortedSavedWorkspaces.slice(0, INITIAL_SESSION_COUNT)).map(w =>
-                        <SessionCard key={w.id} name={w.display_name} onOpen={() => handleOpenWorkspace(w.id, w.display_name)}
-                            rename={renamingWs === w.id ? { value: renameDraft, label: t('workspace.rename'), onChange: setRenameDraft,
-                                onCommit: commitRenameWorkspace, onCancel: cancelRenameWorkspace } : undefined}
-                            captions={[
-                                w.scheduled_run && !w.scheduled_run.forked && <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary', mt: 0.5 }}
-                                    title={`${w.scheduled_run.scheduleName}: ${new Date(w.scheduled_run.scheduledFor).toLocaleString()}`}>
-                                    <ScheduleOutlinedIcon sx={{ fontSize: iconVar.sm }} />Scheduled{w.shared ? ' · Shared' : ''}
-                                </Box>,
-                                w.saved_at && new Date(w.saved_at).toLocaleString(),
-                            ]}
-                            actions={w.read_only ? undefined : <>
-                                <SessionCardAction label={t('workspace.rename')} icon={<EditOutlinedIcon />}
-                                    onClick={() => startRenameWorkspace(w.id, w.display_name)} />
-                                <SessionCardAction label={t('workspace.export')} icon={<DownloadIcon />} onClick={() => handleExportWorkspace(w.id)} />
-                                <ArtifactDeleteButton label={t('workspace.delete')} onClick={() => setConfirmDeleteWs(w.id)} />
-                            </>} />)}
+                </>}
+                sessions={<>
+                <Box id="saved-session-grid" sx={itemCardGridSx}>
+                    {sortedSavedWorkspaces.slice(0, INITIAL_SESSION_COUNT).map(w => workspaceCard(w))}
                 </Box>
                 {sortedSavedWorkspaces.length > INITIAL_SESSION_COUNT && (
-                    <Button size="small" aria-expanded={showAllWorkspaces} aria-controls="saved-session-grid"
-                        onClick={() => setShowAllWorkspaces(previous => !previous)}
-                        endIcon={<ExpandMoreIcon sx={{ transform: showAllWorkspaces ? 'rotate(180deg)' : 'none' }} />}
+                    <Button size="small" aria-haspopup="dialog" onClick={() => setAllSessionsOpen(true)}
                         sx={{ mt: 1, textTransform: 'none', fontSize: textVar.sm, fontWeight: 400 }}>
-                        {showAllWorkspaces
-                            ? t('workspace.showFewerSessions', { defaultValue: 'Show less' })
-                            : t('workspace.showAllSessions', { defaultValue: 'Show all ({{count}})', count: sortedSavedWorkspaces.length })}
+                        {t('workspace.showAllSessions', { defaultValue: 'Show all ({{count}})', count: sortedSavedWorkspaces.length })}
                     </Button>
                 )}
-            </Box>
-            <Box role="tabpanel" id="home-workflows-panel" aria-labelledby="home-workflows-tab" hidden={savedLibraryTab !== 'workflows'}>
-                {saved}
-            </Box>
+                </>} />
             </Box>} />
+            {/* ── All sessions ────────────────────── */}
+            <SessionsDialog open={allSessionsOpen} onClose={() => { cancelRenameWorkspace(); setAllSessionsOpen(false); }}
+                title={t('workspace.yourSessions')} sessions={sortedSavedWorkspaces}
+                groupTime={wsSort === 'name_asc' ? undefined
+                    : wsSort === 'updated_desc' ? (w => w.saved_at || w.created_at) : (w => w.created_at)}
+                renderCard={w => workspaceCard(w, () => setAllSessionsOpen(false))} />
             {/* ── Delete workspace confirmation ────────────────────── */}
             <Dialog open={confirmDeleteWs !== null} onClose={() => setConfirmDeleteWs(null)}>
                 <DialogTitle>{t('workspace.deleteTitle')}</DialogTitle>

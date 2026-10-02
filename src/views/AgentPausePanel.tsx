@@ -201,6 +201,9 @@ export const ResponseOptionButton: FC<ResponseOptionButtonProps> = ({
 // ClarificationPanel (also handles `variant="explain"`)
 // ---------------------------------------------------------------------------
 
+/** Options shown before a long list collapses behind "+N more". */
+const OPTION_PREVIEW_COUNT = 8;
+
 interface ClarificationPanelProps {
     questions: ClarificationQuestion[];
     dataOperation?: DataOperation;
@@ -256,6 +259,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     const [freeTexts, setFreeTexts] = useState<Record<number, string>>({});
     const [localAnswers, setLocalAnswers] = useState<Record<number, ClarificationResponse>>({});
     const [hasUsedSkip, setHasUsedSkip] = useState(false);
+    const [expandedOptions, setExpandedOptions] = useState<Record<number, boolean>>({});
     const selectedAnswers = controlledAnswers ?? localAnswers;
 
     useEffect(() => {
@@ -263,6 +267,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
         setFreeTexts({});
         setLocalAnswers({});
         setHasUsedSkip(false);
+        setExpandedOptions({});
     }, [questions]);
 
     const setFreeText = (key: number, value: string) =>
@@ -304,12 +309,13 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     // A clarify panel auto-submits (on the click that completes it) only when
     // EVERY answer is a clicked option — a pure "click your way through" flow.
     // The moment any text answer is in play (a free_text question, or the user
-    // typed into a single_choice's "type your own" field), we show an explicit
+    // typed into a single_choice's "type your own" field), or a multi_choice
+    // question needs an explicit "done", we show an explicit
     // shared submit button instead, so a stray option click can never sweep up
     // an unfinished typed answer. The button belongs to the panel, not a row.
-    const hasFreeTextQuestion = !isExplain && questions.some(q => q.responseType === 'free_text');
+    const needsExplicitSubmit = !isExplain && questions.some(q => q.responseType === 'free_text' || q.responseType === 'multi_choice');
     const anyTextTyped = questions.some((_q, idx) => (freeTexts[idx] || '').trim().length > 0);
-    const showPanelSubmit = !isExplain && (hasFreeTextQuestion || anyTextTyped || hasUsedSkip);
+    const showPanelSubmit = !isExplain && (needsExplicitSubmit || anyTextTyped || hasUsedSkip);
 
     // Gather the reply: each question's clicked option, else its typed
     // free-text; plus (explain only) the optional panel-level custom override.
@@ -527,6 +533,28 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
         submitResponses([response]);
     };
 
+    // multi_choice: each click toggles one option; the answer lists the picks in option order.
+    const toggleMultiOption = (idx: number, label: string) => {
+        const current = selectedAnswers?.[idx];
+        const picked = new Set(current?.source === 'option' ? current.selections ?? [] : []);
+        if (picked.has(label)) picked.delete(label);
+        else picked.add(label);
+        const selections = (questions[idx]?.options || []).map(option => option.label).filter(item => picked.has(item));
+        if ((freeTexts[idx] || '').length > 0) setFreeText(idx, '');
+        if (selections.length === 0) {
+            setLocalAnswers(previous => {
+                const next = { ...previous };
+                delete next[idx];
+                return next;
+            });
+            onClearAnswer?.(idx);
+            return;
+        }
+        const response: ClarificationResponse = { question_index: idx, answer: selections.join(', '), selections, source: 'option' };
+        setLocalAnswers(previous => ({ ...previous, [idx]: response }));
+        onSelectAnswer?.(idx, response, false);
+    };
+
     const title = t(isExplain ? 'chartRec.explanationTitle' : 'chartRec.clarificationTitle');
     const selectedOperationResponse = dataOperation ? selectedAnswers?.[0] : undefined;
     const selectedPlanId = dataOperation?.plans.some(
@@ -635,44 +663,67 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                             renderQuestionField(questionIndex, t('chartRec.freeTextClarificationPlaceholder'), fieldTrailing)
                         ) : (
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                {showChips && (question.options || []).length > 0 && (
-                                    <>
-                                        {isExplain && (
+                                {showChips && (question.options || []).length > 0 && (() => {
+                                    const options = question.options || [];
+                                    const isMulti = !isExplain && question.responseType === 'multi_choice';
+                                    const selected = selectedAnswers?.[questionIndex];
+                                    const isOptionSelected = (option: typeof options[number]) => selected?.source === 'option'
+                                        && (isMulti ? !!selected.selections?.includes(option.label)
+                                            : option.value ? selected.value === option.value : selected.answer === option.label);
+                                    // Collapse only when it hides at least two options; picks stay visible.
+                                    const collapsible = options.length > OPTION_PREVIEW_COUNT + 1;
+                                    const expanded = !collapsible || !!expandedOptions[questionIndex];
+                                    const visible = expanded ? options
+                                        : options.filter((option, index) => index < OPTION_PREVIEW_COUNT || isOptionSelected(option));
+                                    return <>
+                                        {(isExplain || isMulti) && (
                                             <Typography sx={{
                                                 fontSize: textVar.xxs,
                                                 color: theme.palette.text.disabled,
                                                 fontStyle: 'italic',
                                                 mt: '2px',
                                             }}>
-                                                {t('chartRec.explanationFollowupsLabel')}
+                                                {isExplain ? t('chartRec.explanationFollowupsLabel')
+                                                    : t('chartRec.multiChoiceLabel', { defaultValue: 'Select all that apply' })}
                                             </Typography>
                                         )}
-                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                            {(question.options || []).map((option, optionIndex) => {
-                                                const selected = selectedAnswers?.[questionIndex];
-                                                const isSelected = selected?.source === 'option'
-                                                    && (option.value
-                                                        ? selected.value === option.value
-                                                        : selected.answer === option.label);
-                                                return (
-                                                    <ResponseOptionButton
-                                                        key={optionIndex}
-                                                        accentColor={accentColor}
-                                                        selected={isSelected}
-                                                        onClick={() => handleAnswer({
-                                                                question_index: questionIndex,
-                                                                answer: option.label,
-                                                                ...(option.value ? { value: option.value } : {}),
-                                                                source: 'option',
-                                                            })}
-                                                    >
-                                                            {renderFieldHighlights(option.label, accentColor)}
-                                                    </ResponseOptionButton>
-                                                );
-                                            })}
+                                        <Box role={isMulti ? 'group' : undefined} aria-label={isMulti ? question.text : undefined}
+                                            sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                            {visible.map(option => (
+                                                <ResponseOptionButton
+                                                    key={`${options.indexOf(option)}-${option.label}`}
+                                                    accentColor={accentColor}
+                                                    selected={isOptionSelected(option)}
+                                                    onClick={() => isMulti
+                                                        ? toggleMultiOption(questionIndex, option.label)
+                                                        : handleAnswer({
+                                                            question_index: questionIndex,
+                                                            answer: option.label,
+                                                            ...(option.value ? { value: option.value } : {}),
+                                                            source: 'option',
+                                                        })}
+                                                >
+                                                    {isMulti && isOptionSelected(option) && <CheckRoundedIcon sx={{ fontSize: iconVar.xs }} />}
+                                                    {renderFieldHighlights(option.label, accentColor)}
+                                                </ResponseOptionButton>
+                                            ))}
+                                            {collapsible && (
+                                                <ButtonBase
+                                                    aria-expanded={expanded}
+                                                    onClick={() => setExpandedOptions(previous => ({ ...previous, [questionIndex]: !expanded }))}
+                                                    sx={{
+                                                        px: '8px', py: '4px', borderRadius: '6px', fontSize: textVar.xs, lineHeight: 1.4,
+                                                        color: theme.palette.text.secondary, fontFamily: theme.typography.fontFamily,
+                                                        '&:hover': { color: theme.palette.text.primary, textDecoration: 'underline' },
+                                                    }}
+                                                >
+                                                    {expanded ? t('chartRec.showFewerOptions', { defaultValue: 'Show fewer' })
+                                                        : t('chartRec.showMoreOptions', { defaultValue: '+{{count}} more', count: options.length - visible.length })}
+                                                </ButtonBase>
+                                            )}
                                         </Box>
-                                    </>
-                                )}
+                                    </>;
+                                })()}
                                 {/* single_choice questions also accept a typed
                                     answer (chips are shortcuts, not the only
                                     option). explain has no per-question freeform. */}

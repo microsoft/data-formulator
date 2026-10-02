@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { DataSourceSidebar } from '../../../../src/views/DataSourceSidebar';
 import { apiRequest } from '../../../../src/app/apiClient';
@@ -61,6 +61,8 @@ vi.mock('../../../../src/app/dfSlice', () => ({
 vi.mock('../../../../src/app/sessionThunks', () => ({
     generateWorkspaceId: () => 'session_test',
     leaveSession: () => ({ type: 'session/leave' }),
+    renameSession: (id: string, name: string) => ({ type: 'session/rename', payload: { id, name } }),
+    openSession: (id: string, name: string) => ({ type: 'session/open', payload: { id, name } }),
 }));
 
 vi.mock('../../../../src/app/utils', async importOriginal => ({
@@ -223,8 +225,7 @@ describe('DataSourceSidebar', () => {
         expect(apiRequest).not.toHaveBeenCalledWith('/api/connectors/preview-data', expect.anything());
         fireEvent.click(row);
         expect(row).toHaveAttribute('aria-pressed', 'false');
-        fireEvent.click(screen.getByRole('button', { name: 'Open in data view' }));
-        expect(onOpenUploadDialog).toHaveBeenCalledWith('connector:test-source', ['games.parquet']);
+        expect(screen.queryByRole('button', { name: 'Open in data view' })).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: 'Browse in data view' }));
         expect(onOpenUploadDialog).toHaveBeenLastCalledWith('connector:test-source');
     });
@@ -337,7 +338,7 @@ describe('DataSourceSidebar', () => {
         expect(onOpenUploadDialog).toHaveBeenCalledWith('connector:mysql-main');
         expect(screen.queryByLabelText('Delete connector', { selector: 'button' })).toBeNull();
         onOpenUploadDialog.mockClear();
-        fireEvent.click(screen.getByLabelText('Connector settings', { selector: 'button' }));
+        fireEvent.click(screen.getByLabelText('Browse in data view', { selector: 'button' }));
         expect(onOpenUploadDialog).toHaveBeenCalledWith('connector:mysql-main');
     });
 
@@ -379,7 +380,7 @@ describe('DataSourceSidebar', () => {
 
         render(<DataSourceSidebar onOpenUploadDialog={onOpenUploadDialog} />);
 
-        fireEvent.click(await screen.findByLabelText('Connector settings', { selector: 'button' }));
+        fireEvent.click(await screen.findByLabelText('Browse in data view', { selector: 'button' }));
         expect(onOpenUploadDialog).toHaveBeenCalledWith('connector:mysql-main');
         expect(apiRequest).not.toHaveBeenCalledWith('/api/connectors/disconnect', expect.anything());
         fireEvent.click(screen.getByLabelText('Disconnect', { selector: 'button' }));
@@ -444,6 +445,44 @@ describe('DataSourceSidebar', () => {
         expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'workspace/reset' }));
     });
 
+    it('opens all sessions in a searchable dialog and opens one from there', async () => {
+        mockState.dataSourceSidebarTab = 'sessions';
+        vi.mocked(listWorkspaces).mockResolvedValue([
+            { id: 'gas', display_name: 'Gas prices', created_at: null, saved_at: null },
+            { id: 'movies', display_name: 'Movies', created_at: null, saved_at: null },
+        ]);
+        render(<DataSourceSidebar />);
+
+        await screen.findByText('Gas prices');
+        fireEvent.click(screen.getByRole('button', { name: 'View all sessions' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Sessions' });
+        fireEvent.change(within(dialog).getByRole('textbox', { name: 'Search sessions' }), { target: { value: 'mov' } });
+        expect(within(dialog).queryByText('Gas prices')).toBeNull();
+        fireEvent.click(within(dialog).getByText('Movies'));
+
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Sessions' })).toBeNull());
+        expect(dispatch).toHaveBeenCalledWith({ type: 'session/open', payload: { id: 'movies', name: 'Movies' } });
+    });
+
+    it('renames a session from the More menu and keeps the field focused', async () => {
+        mockState.dataSourceSidebarTab = 'sessions';
+        vi.mocked(listWorkspaces).mockResolvedValue([
+            { id: 'gas', display_name: 'Gas prices', created_at: null, saved_at: null },
+        ]);
+        render(<DataSourceSidebar />);
+
+        await screen.findByText('Gas prices');
+        fireEvent.click(screen.getByRole('button', { name: 'More actions', hidden: true }));
+        fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }));
+        const field = await screen.findByRole('textbox', { name: 'Rename' });
+        await waitFor(() => expect(field).toHaveFocus());
+        fireEvent.change(field, { target: { value: 'Regional gas prices' } });
+        fireEvent.keyDown(field, { key: 'Enter' });
+
+        await waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: 'session/rename', payload: { id: 'gas', name: 'Regional gas prices' } }));
+        expect(screen.getByText('Regional gas prices')).toBeInTheDocument();
+    });
+
     it('returns to the landing page after deleting the last active session', async () => {
         mockState.dataSourceSidebarTab = 'sessions';
         (mockState as any).activeWorkspace = { id: 'only', displayName: 'Only' };
@@ -453,8 +492,9 @@ describe('DataSourceSidebar', () => {
         render(<DataSourceSidebar />);
 
         await screen.findByText('Only');
-        // Row actions are revealed on hover (display: none until then).
-        fireEvent.click(screen.getByRole('button', { name: 'workspace.deleteSession', hidden: true }));
+        // Row actions live in the hover-revealed More menu.
+        fireEvent.click(screen.getByRole('button', { name: 'More actions', hidden: true }));
+        fireEvent.click(await screen.findByRole('menuitem', { name: 'workspace.deleteSession' }));
 
         await waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: 'state/reset' }));
         expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'state/load' }));

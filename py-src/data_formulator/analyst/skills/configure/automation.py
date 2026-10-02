@@ -7,7 +7,7 @@ from typing import Any, Generator
 
 from data_formulator.analyst.skills.base import Event, SkillContext
 
-from .forms import form_event, identity_of, review_requested
+from .forms import form_event, form_payload, identity_of, review_requested
 
 WEEKDAY_NAMES = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _SCHEDULE_OPTIONS = ("enabled", "catch_up", "auto_approve", "publish")
@@ -55,9 +55,17 @@ def propose_workflow(spec: dict[str, Any], ctx: SkillContext) -> Generator[Event
             raise ValueError("Workflow exceeds 48,000 characters.")
     except ValueError as exc:
         return f"Invalid workflow definition: {exc}. Revise the complete proposal."
+    body: dict[str, Any] = {"content": content, "definition": definition}
+    if spec.get("replaces"):
+        saved = next((item for item in _workflow_store(ctx).list_all()
+                      if item["path"] == spec["replaces"] and item.get("origin") == "user"), None)
+        if saved is None:
+            return (f"Workflow {spec['replaces']!r} is not one of the user's saved workflows. "
+                    "Call list_workflows, or omit replaces to propose a new workflow.")
+        body["target"] = {"id": saved["path"], "name": saved.get("name") or saved["path"]}
     yield {"type": "completion", "status": "success", "content": {
         "summary": spec.get("summary") or f"Proposed workflow: {definition['name']}",
-        "workflow_definition": {"content": content, "definition": definition},
+        "form": form_payload("workflow", title=definition["name"], body=body),
         "total_steps": ctx.payload.get("completed_step_count", 0),
     }}
     return None
@@ -189,47 +197,55 @@ def propose_schedule(spec: dict[str, Any], ctx: SkillContext) -> Generator[Event
 
     schedule_id = spec.get("schedule_id")
     config: dict[str, Any] = {}
+    target = None
     if schedule_id:
         existing = next((item for item in schedule_store().list(owner) if item["id"] == schedule_id), None)
         if existing is None:
             return f"Schedule {schedule_id!r} was not found. Call list_schedules for current IDs."
         config = dict(existing["config"])
+        target = {"id": schedule_id, "name": existing["config"].get("name") or schedule_id}
     config.update(patch)
 
     store = _workflow_store(ctx)
     workflows = {item["path"]: item for item in store.list_all() if "error" not in item}
-    workflow = workflows.get(config.get("workflow", ""))
-    if workflow is None:
-        return ("Unknown workflow path. Schedules run saved workflows: call list_workflows, or propose and "
-                "save a workflow before scheduling it.")
-    if hosted and not config["workflow"].startswith(("demo/", "server/")):
-        return "Hosted schedules require a built-in or server workflow."
-    config.setdefault("name", workflow["name"])
+    workflow = None
+    if config.get("workflow"):
+        workflow = workflows.get(config["workflow"])
+        if workflow is None:
+            return ("Unknown workflow path. Schedules run saved workflows: call list_workflows, or propose and "
+                    "save a workflow before scheduling it.")
+        if hosted and not config["workflow"].startswith(("demo/", "server/")):
+            return "Hosted schedules require a built-in or server workflow."
+        config.setdefault("name", workflow["name"])
+        try:
+            resolve_setup(parse_definition(store.read(config["workflow"])), config.get("setup"))
+        except ValueError as exc:
+            issues.append(str(exc))
+    else:
+        # The form lists saved workflows; the user picks one there.
+        issues.append("Choose the saved workflow to run.")
     if hosted:
         config["publish"] = True
-    try:
-        resolve_setup(parse_definition(store.read(config["workflow"])), config.get("setup"))
-    except ValueError as exc:
-        issues.append(str(exc))
     # Unspecified timing falls back to the form's defaults, which the user confirms.
     complete = all(key in config for key in ("time", "weekdays"))
     elevated = bool(config.get("auto_approve") or config.get("publish"))
     auto_submit = not review and complete and not elevated and not issues
     body = {
-        **({"schedule_id": schedule_id} if schedule_id else {}),
+        **({"target": target} if target else {}),
         "config": config,
-        "workflow_name": workflow["name"],
+        **({"workflow_name": workflow["name"]} if workflow else {}),
         "hosted": hosted,
         "issues": issues,
     }
     verb = "Update" if schedule_id else "Schedule"
+    subject = workflow["name"] if workflow else "a workflow"
     yield form_event(
         "schedule", ctx,
-        title=f"{verb} {config['name']}",
+        title=f"{verb} {config.get('name') or subject}",
         body=body,
         default_response=(
-            f"Saving the schedule for {workflow['name']}." if auto_submit
-            else f"Review the schedule for {workflow['name']} and save it to start unattended runs."
+            f"Saving the schedule for {subject}." if auto_submit
+            else f"Review the schedule for {subject} and save it to start unattended runs."
         ),
         auto_submit=auto_submit,
     )

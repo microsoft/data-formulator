@@ -1,11 +1,15 @@
 """Setup-form artifacts shared by every configure action.
 
 Each configure action ends in the same artifact: a typed, prefilled form the
-user can review and submit in the canvas (``interact`` event with ``form``).
+user can review and submit in the canvas. Setup forms pause the turn as an
+``interact`` event; a workflow proposal closes the turn as a ``completion``
+whose content carries the same ``form`` payload.
 The frontend owns submission through the application's existing APIs, so
 credentials, session state, and permissions follow the same path as manual
 setup. A form may ask to be submitted automatically when the agent is certain;
 the frontend still validates it and leaves it open for review on failure.
+A form revising an existing item names it as ``target`` ({id, name}); the user
+chooses to update that item or save a new one.
 """
 
 from __future__ import annotations
@@ -14,7 +18,7 @@ from typing import Any
 
 from data_formulator.analyst.skills.base import Event, SkillContext
 
-FORM_KINDS = ("connector", "schedule", "sessions")
+FORM_KINDS = ("connector", "schedule", "sessions", "workflow")
 
 
 def identity_of(ctx: SkillContext) -> str:
@@ -52,6 +56,12 @@ def review_requested(spec: dict[str, Any]) -> bool:
     return value
 
 
+def form_payload(kind: str, *, title: str, body: dict[str, Any], **extra: Any) -> dict[str, Any]:
+    if kind not in FORM_KINDS:
+        raise ValueError(f"Unknown setup form kind: {kind}")
+    return {"kind": kind, **extra, "title": title, kind: body}
+
+
 def form_event(
     kind: str,
     ctx: SkillContext,
@@ -63,18 +73,13 @@ def form_event(
     thought: str = "",
     **extra: Any,
 ) -> Event:
-    if kind not in FORM_KINDS:
-        raise ValueError(f"Unknown setup form kind: {kind}")
     response = str(ctx.payload.get("action_narration") or "").strip()
     return {
         "type": "interact",
         **({"thought": thought} if thought else {}),
         "form": {
-            "kind": kind,
-            **extra,
-            "title": title,
+            **form_payload(kind, title=title, body=body, **extra),
             "response": response or default_response,
             "auto_submit": auto_submit,
-            kind: body,
         },
     }

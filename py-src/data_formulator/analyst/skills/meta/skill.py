@@ -101,7 +101,8 @@ class MetaSkill:
                 continue
             options = cls._sanitize_clarification_options(raw_question.get("options"))
             response_type = raw_question.get("responseType") or raw_question.get("response_type")
-            if response_type not in ("single_choice", "free_text"):
+            if response_type not in ("single_choice", "multi_choice", "free_text") or (
+                    response_type == "multi_choice" and not options):
                 response_type = "single_choice" if options else "free_text"
             question: dict[str, Any] = {
                 "responseType": response_type,

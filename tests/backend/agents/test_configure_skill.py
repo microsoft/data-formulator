@@ -145,6 +145,22 @@ def test_schedule_proposal_validates_workflow_and_gates_direct_saves(scheduling)
     events, observation = _action("propose_schedule", {"workflow": "demo/gas-price-review.yaml", "time": "9am"})
     assert events == [] and "HH:MM" in observation
 
+    events, _ = _action("propose_schedule", {"time": "10:30", "weekdays": [0, 1, 2, 3, 4, 5, 6], "user_review_needed": False})
+    form = events[0]["form"]
+    assert form["title"] == "Schedule a workflow" and form["auto_submit"] is False
+    assert "workflow" not in form["schedule"]["config"] and "workflow_name" not in form["schedule"]
+    assert form["schedule"]["issues"] == ["Choose the saved workflow to run."]
+
+
+def test_ask_user_keeps_multi_choice_only_with_options() -> None:
+    from data_formulator.analyst.skills.meta.skill import MetaSkill
+
+    questions = MetaSkill._normalize_interact_action({"questions": [
+        {"text": "Which columns?", "responseType": "multi_choice", "options": ["Price", "Region"]},
+        {"text": "Anything else?", "responseType": "multi_choice"},
+    ]})["questions"]
+    assert [question["responseType"] for question in questions] == ["multi_choice", "free_text"]
+
 
 def test_schedule_edits_merge_existing_config(scheduling) -> None:
     saved = scheduling.save(IDENTITY, {"name": "Fuel", "workflow": "demo/gas-price-review.yaml", "model_id": "server-model",
@@ -156,9 +172,29 @@ def test_schedule_edits_merge_existing_config(scheduling) -> None:
     events, _ = _action("propose_schedule", {"schedule_id": saved["id"], "enabled": False})
     form = events[0]["form"]
     assert form["title"] == "Update Fuel"
-    assert form["schedule"]["schedule_id"] == saved["id"]
+    assert form["schedule"]["target"] == {"id": saved["id"], "name": "Fuel"}
     assert form["schedule"]["config"] | {"enabled": False} == form["schedule"]["config"]
     assert form["schedule"]["config"]["time"] == "08:00"
+
+
+def test_workflow_revision_targets_only_saved_user_workflows(scheduling) -> None:
+    import yaml
+    from data_formulator.datalake.workspace import get_user_home
+    from data_formulator.workflows.instances import WorkflowStore
+
+    definition = {"version": 1, "name": "Fuel", "overview": "Weekly fuel review", "deliverables": ["Report"],
+                  "steps": [{"id": "work", "description": "Review prices.", "instructions": "Compare prices."}]}
+    WorkflowStore(get_user_home(IDENTITY)).save("fuel.workflow.yaml", yaml.safe_dump(definition))
+
+    events, _ = _action("propose_workflow", {"definition": definition, "summary": "Revised", "replaces": "fuel.workflow.yaml"})
+    form = events[0]["content"]["form"]
+    assert events[0]["type"] == "completion" and form["kind"] == "workflow" and form["title"] == "Fuel"
+    assert form["workflow"]["definition"] == definition
+    assert form["workflow"]["target"] == {"id": "fuel.workflow.yaml", "name": "Fuel"}
+
+    events, observation = _action("propose_workflow", {"definition": definition, "summary": "Revised",
+                                                        "replaces": "demo/gas-price-review.yaml"})
+    assert events == [] and "not one of the user's saved workflows" in observation
 
 
 def test_scheduling_unavailable_is_reported_without_a_form(monkeypatch) -> None:

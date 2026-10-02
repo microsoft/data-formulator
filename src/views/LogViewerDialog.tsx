@@ -242,12 +242,6 @@ const SAVED_STATE_AUTO_FOLD_PATHS = [
     ['textTurns', '*', 'form'],
     ['textTurns', '*', 'dataOperation'],
     ['textTurns', '*', 'resume', 'trajectory'],
-    // Embedded loading results: keep message role, content, and timestamp visible.
-    ['dataLoadingChatMessages', '*', 'codeBlocks'],
-    ['dataLoadingChatMessages', '*', 'tables'],
-    ['dataLoadingChatMessages', '*', 'loadPlan'],
-    ['dataLoadingChatMessages', '*', 'dataOperation'],
-    ['dataLoadingChatMessages', '*', 'connectorForm'],
 ];
 
 interface LogTailResponse {

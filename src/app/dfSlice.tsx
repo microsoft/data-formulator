@@ -291,6 +291,8 @@ export interface DataFormulatorState {
     // workspace holds real work, at which point the flag is cleared for good.
     activeWorkspace: { id: string; displayName: string; readOnly?: boolean; provisional?: boolean;
         scheduledRun?: import('./workspaceService').ScheduledRunProvenance;
+        /** The name auto-naming last set and the sources it covered; a different displayName means the user renamed it. */
+        autoName?: { name: string; sources: string[] };
         /** Another tab took over editing this session; this tab is view-only until it takes it back. */
         openElsewhere?: boolean } | null;
 
@@ -301,7 +303,7 @@ export interface DataFormulatorState {
     dataSourceSidebarOpen: boolean;
 
     /** Which data source sidebar tab is active. Persisted so it survives session refresh. */
-    dataSourceSidebarTab: 'sources' | 'sessions' | 'knowledge';
+    dataSourceSidebarTab: 'sources' | 'sessions' | 'knowledge' | 'schedules';
 
     /**
      * One-shot signal asking the sidebar to focus a specific connector
@@ -982,6 +984,12 @@ export const dataFormulatorSlice = createSlice({
         renameActiveWorkspace: (state, action: PayloadAction<{ id: string; displayName: string }>) => {
             if (state.activeWorkspace?.id === action.payload.id) state.activeWorkspace.displayName = action.payload.displayName;
         },
+        setAutoWorkspaceName: (state, action: PayloadAction<{ id: string; displayName: string; sources: string[] }>) => {
+            const { id, displayName, sources } = action.payload;
+            if (state.activeWorkspace?.id !== id) return;
+            state.activeWorkspace.displayName = displayName;
+            state.activeWorkspace.autoName = { name: displayName, sources };
+        },
         setWorkspaceFileCount: (state, action: PayloadAction<number>) => {
             state.workspaceFileCount = Math.max(0, action.payload);
         },
@@ -1030,12 +1038,13 @@ export const dataFormulatorSlice = createSlice({
             delete state.starterQuestionsStatus[action.payload];
             if (state.focusedId?.type === 'external-table' && state.focusedId.referenceId === action.payload) state.focusedId = undefined;
         },
+        // The given name is a starting point; auto-naming refines it as sources arrive.
         resetForNewWorkspace: (state, action: PayloadAction<{ id: string; displayName: string }>) =>
-            freshSessionState(state, action.payload),
+            freshSessionState(state, { ...action.payload, autoName: { name: action.payload.displayName, sources: [] } }),
         setDataSourceSidebarOpen: (state, action: PayloadAction<boolean>) => {
             state.dataSourceSidebarOpen = action.payload;
         },
-        setDataSourceSidebarTab: (state, action: PayloadAction<'sources' | 'sessions' | 'knowledge'>) => {
+        setDataSourceSidebarTab: (state, action: PayloadAction<DataFormulatorState['dataSourceSidebarTab']>) => {
             state.dataSourceSidebarTab = action.payload;
         },
         /**
@@ -2848,7 +2857,7 @@ export const dfSelectors = {
             if (art.workflowCardFor && textTurns.some(turn => turn.id === art.workflowCardFor && turn.workflow)) {
                 return { type: 'text', textId: art.workflowCardFor };
             }
-            if (art.dataOperation || art.form || art.workflow || art.workflowDefinition) return { type: 'text', textId: art.id };
+            if (art.dataOperation || art.form || art.workflow) return { type: 'text', textId: art.id };
             if (art.textKind === 'explain' && art.presentation === 'long_response') {
                 return { type: 'text', textId: art.id };
             }

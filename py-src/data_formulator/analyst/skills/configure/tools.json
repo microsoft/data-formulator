@@ -161,6 +161,10 @@
           "summary": {
             "type": "string",
             "description": "Concise description of the proposed definition or revision, without claiming execution or saving."
+          },
+          "replaces": {
+            "type": "string",
+            "description": "Path of the user's saved workflow (origin user, from list_workflows) that this proposal revises. The form then lets the user update that workflow or save a new one. Omit for a new workflow."
           }
         },
         "required": [
@@ -181,7 +185,7 @@
         "properties": {
           "schedule_id": {
             "type": "string",
-            "description": "Existing schedule ID from list_schedules to edit. Omit to create."
+            "description": "Existing schedule ID from list_schedules to revise. The form then lets the user update it or save a new schedule. Omit to create."
           },
           "name": {
             "type": "string",
@@ -189,7 +193,7 @@
           },
           "workflow": {
             "type": "string",
-            "description": "Saved workflow path from list_workflows."
+            "description": "Saved workflow path from list_workflows. Omit when the user has not chosen; the form lists saved workflows to pick from."
           },
           "time": {
             "type": "string",

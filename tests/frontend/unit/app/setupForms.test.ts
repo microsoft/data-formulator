@@ -14,14 +14,21 @@ describe('setup form artifacts', () => {
         });
         expect(formArtifactFromEvent({
             kind: 'schedule', title: 'Schedule Fuel', schedule: {
-                schedule_id: 'abc', config: { workflow: 'demo/gas.yaml', time: '09:00', weekdays: [0] },
+                target: { id: 'abc', name: 'Fuel' }, config: { workflow: 'demo/gas.yaml', time: '09:00', weekdays: [0] },
                 workflow_name: 'Fuel', hosted: false, issues: ['Choose a server-configured model connection.'],
             },
         })).toEqual({
             kind: 'schedule', title: 'Schedule Fuel', schedule: {
-                scheduleId: 'abc', config: { workflow: 'demo/gas.yaml', time: '09:00', weekdays: [0] }, workflowName: 'Fuel',
+                target: { id: 'abc', name: 'Fuel' }, config: { workflow: 'demo/gas.yaml', time: '09:00', weekdays: [0] }, workflowName: 'Fuel',
                 hosted: false, issues: ['Choose a server-configured model connection.'], status: 'pending',
             },
+        });
+        const definition = { name: 'Fuel', overview: 'Review', deliverables: ['Report'] };
+        expect(formArtifactFromEvent({
+            kind: 'workflow', title: 'Fuel', workflow: { content: 'name: Fuel', definition, target: { id: 'fuel.workflow.yaml', name: 'Fuel' } },
+        })).toEqual({
+            kind: 'workflow', title: 'Fuel',
+            workflow: { content: 'name: Fuel', definition, target: { id: 'fuel.workflow.yaml', name: 'Fuel' } },
         });
         expect(formArtifactFromEvent({
             kind: 'sessions', title: 'Empty sessions', auto_submit: true, sessions: {
@@ -44,8 +51,19 @@ describe('setup form artifacts', () => {
             .toBe('Schedule Fuel');
         expect(formArtifactStatus({ kind: 'schedule', title: 'Schedule Fuel', schedule: { config: { name: 'Fuel daily' }, status: 'saved' } }))
             .toBe('Saved schedule: Fuel daily');
+        expect(formArtifactStatus({ kind: 'schedule', title: 'Update Fuel', schedule: { target: { id: 'abc', name: 'Fuel' },
+            config: { name: 'Fuel daily' }, status: 'saved', savedId: 'abc' } })).toBe('Updated schedule: Fuel daily');
         expect(formArtifactStatus({ kind: 'sessions', title: 'Empty sessions', sessions: { items: [] } }))
             .toBe('Empty sessions');
+        expect(formArtifactStatus({ kind: 'sessions', title: 'Empty sessions', sessions: { items: [
+            { sessionId: 'a', currentName: 'A', renamed: true }, { sessionId: 'b', currentName: 'B', deleted: true },
+            { sessionId: 'c', currentName: 'C', deleted: true }] } })).toBe('Empty sessions: renamed 1, deleted 2 of 3 sessions');
+        const workflow = { content: '', definition: { name: 'Fuel', overview: '', deliverables: [] }, target: { id: 'fuel.yaml', name: 'Fuel' } };
+        expect(formArtifactStatus({ kind: 'workflow', title: 'Fuel', workflow })).toBe('Fuel');
+        expect(formArtifactStatus({ kind: 'workflow', title: 'Fuel', workflow: { ...workflow, saved: { path: 'fuel.yaml', content_hash: 'h' } } }))
+            .toBe('Updated workflow: Fuel');
+        expect(formArtifactStatus({ kind: 'workflow', title: 'Fuel', workflow: { ...workflow, saved: { path: 'fuel-2.yaml', content_hash: 'h' } } }))
+            .toBe('Saved workflow: Fuel');
     });
 
     it('honors a live direct-apply request exactly once and never from persisted state', () => {

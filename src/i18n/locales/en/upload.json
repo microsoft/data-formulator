@@ -55,7 +55,9 @@
     "addSourceLabel": "Add data:",
     "agentChatQuickAction": {
       "connect": "Guide me to connect a data source",
-      "askConnected": "List tables from my connected sources"
+      "askConnected": "List tables from my connected sources",
+      "workflowFromSession": "Turn my last analysis into a workflow",
+      "scheduleWorkflow": "Schedule a workflow to run daily"
     },
     "agentChatSuggestion": {
       "askConnected": "What datasets do we have from connected sources?",

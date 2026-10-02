@@ -8,7 +8,7 @@ import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import { useTranslation } from 'react-i18next';
 import { AgentChatInput } from './AgentChatInput';
 import { TerminalAccessButton } from '../components/TerminalApprovalDialog';
-import { buildDataLoadingQuickActions, buildDataLoadingSuggestions } from './dataLoadingSuggestions';
+import { buildDataLoadingQuickActions, buildDataLoadingSuggestions, QuickActionContext } from './dataLoadingSuggestions';
 import { ConnectorInstance } from '../components/ComponentType';
 import { apiRequest } from '../app/apiClient';
 import { getUrls } from '../app/utils';
@@ -23,10 +23,11 @@ interface LandingDataEntryProps {
     onSelectConnector: (connector: ConnectorInstance) => void;
     connectors: ConnectorInstance[];
     readOnly?: boolean;
+    quickActionContext?: QuickActionContext;
 }
 
 export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
-    onStartChat, ensureActiveWorkspace, onUpload, onConnect, onLinkFolder, onSelectConnector, connectors, readOnly = false,
+    onStartChat, ensureActiveWorkspace, onUpload, onConnect, onLinkFolder, onSelectConnector, connectors, readOnly = false, quickActionContext,
 }) => {
     const { t } = useTranslation();
     const [input, setInput] = useState('');
@@ -34,6 +35,8 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
     const [attachments, setAttachments] = useState<string[]>([]);
     const [uploadCount, setUploadCount] = useState(0);
     const [error, setError] = useState('');
+    // One pick per visit, so the second quick action doesn't change while the user reads it.
+    const [quickActionSeed] = useState(() => Math.random());
     const disabled = readOnly || uploadCount > 0;
     const submit = (text: string, imageValues: string[], attachmentValues: string[]) => {
         if (disabled || (!text.trim() && !imageValues.length && !attachmentValues.length)) return;
@@ -59,7 +62,7 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
         color: (theme: Theme) => alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 } as const;
     return <Box sx={{ width: '100%', maxWidth: 800, mx: 'auto', textAlign: 'left' }}>
         <Box sx={{ mb: 1.75, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75 }}>
-            {buildDataLoadingQuickActions(suggestionArgs).map(action => <Chip key={action.kind}
+            {buildDataLoadingQuickActions(suggestionArgs, quickActionContext, quickActionSeed).map(action => <Chip key={action.kind}
                 icon={<BoltOutlinedIcon />} label={action.label} onClick={action.onClick} disabled={disabled}
                 variant="outlined" size="small" sx={{ fontSize: textVar.md, minHeight: 30, height: { xs: 'auto', sm: 30 }, maxWidth: '100%', borderRadius: 2,
                     color: 'text.secondary', borderColor: theme => alpha(theme.palette.text.primary, 0.12),

@@ -37,20 +37,30 @@ def execution_identity(schedule: dict) -> str:
 
 
 def materialize_session(schedule: dict, occurrence: dict, state: dict, workspace, *, read_only: bool) -> dict:
+    def rows(table_name: str) -> list:
+        frame = workspace.read_data_as_df(table_name)
+        if len(frame) > 100000:
+            raise ValueError("Scheduled snapshots support at most 100,000 rows per table.")
+        return json.loads(frame.to_json(orient="records", date_format="iso"))
+
+    # Mirrors the outputs a live run adds to the thread, with rows inline so shared copies need no workspace.
     artifacts = []
     for output in state.get("outputs", []):
         if output["type"] == "report":
             artifacts.append({"kind": "report", "content": output["content"]})
+        elif output["type"] == "tool_result" and output.get("tool") in ("create_data", "update_data"):
+            metadata = json.loads(output.get("stdout") or "{}")
+            if metadata.get("table_name"):
+                artifacts.append({"kind": "data", "tableId": metadata["table_name"], "rows": rows(metadata["table_name"]),
+                                  "displayName": metadata.get("display_name") or metadata["table_name"]})
         elif output["type"] == "result":
             result = output["content"]["result"]
             table_name = result["content"]["virtual"]["table_name"]
-            frame = workspace.read_data_as_df(table_name)
-            if len(frame) > 100000:
-                raise ValueError("Scheduled snapshots support at most 100,000 rows per chart.")
             goal = result["refined_goal"]
-            artifacts.append({"kind": "chart", "id": result["chart_id"], "tableId": table_name,
-                              "rows": json.loads(frame.to_json(orient="records", date_format="iso")),
-                              "goal": {key: goal[key] for key in ("chart", "title", "subtitle", "display_name") if key in goal}})
+            artifacts.append({"kind": "chart", "id": result["chart_id"], "tableId": table_name, "rows": rows(table_name),
+                              "question": output["content"].get("question"), "inputSources": output.get("input_sources", []),
+                              "code": result.get("code"),
+                              "goal": {key: goal[key] for key in ("chart", "title", "subtitle", "display_name", "output_variable") if key in goal}})
     provenance = {"scheduleId": schedule["id"], "scheduleName": schedule["config"]["name"],
                   "scheduledFor": occurrence["scheduled_for"]}
     local = datetime.fromisoformat(occurrence["scheduled_for"]).astimezone(ZoneInfo(schedule["config"]["timezone"]))

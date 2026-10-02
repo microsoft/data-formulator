@@ -22,7 +22,7 @@ vi.mock('../../../../src/app/stateMigrations', () => ({
 
 import { ApiRequestError } from '../../../../src/app/apiClient';
 import { workspaceDB } from '../../../../src/app/workspaceDB';
-import { listWorkspaceFiles, listWorkspaces, loadWorkspace, saveWorkspaceState, WorkspaceLoadSupersededError, isLargeConnectorTable, loadsAsConnectorReference, createExternalTableReference, materializeScheduledSnapshot } from '../../../../src/app/workspaceService';
+import { listWorkspaceFiles, listWorkspaces, loadWorkspace, saveWorkspaceState, WorkspaceLoadSupersededError, isLargeConnectorTable, loadsAsConnectorReference, createExternalTableReference } from '../../../../src/app/workspaceService';
 import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
 import { getInputTablePreview } from '../../../../src/app/inputTablePreviewCache';
 
@@ -36,24 +36,32 @@ describe('scheduled snapshots', () => {
     const snapshot = {
         activeWorkspace: { id: 'shared-test', displayName: 'Daily report', readOnly: true,
             scheduledRun: { scheduleId: 'test', scheduleName: 'Daily report', scheduledFor: '2026-09-30T09:00:00Z' } },
-        textTurns: [{ id: 'summary', kind: 'text', content: 'Completed', createdAt: 1 }],
+        textTurns: [{ id: 'scheduled-summary-run-1', kind: 'text', content: 'Completed', createdAt: 1 }],
         scheduledArtifacts: [
+            { kind: 'data', tableId: 'prices', displayName: 'Weekly prices', rows: [{ category: 'A', value: 1 }] },
             { kind: 'chart', id: 'chart-test', tableId: 'summary_data', rows: [{ category: 'A', value: 3 }],
+                question: 'How did values compare?', inputSources: [{ id: 'prices', kind: 'data', display_name: 'prices' }],
                 goal: { title: 'Values', chart: { chart_type: 'Bar Chart', encodings: { x: { field: 'category' }, y: { field: 'value' } } } } },
             { kind: 'report', content: 'Final findings' },
         ],
     };
 
-    it('loads complete chart rows without private workspace fetches', () => {
+    it('rebuilds the live thread: data, the question-triggered chart, then the report', async () => {
+        const { materializeScheduledSnapshot } = await import('../../../../src/views/WorkflowPanel');
         const materialized = materializeScheduledSnapshot(snapshot);
         const state = dataFormulatorReducer(undefined, dfActions.loadState(materialized));
+        expect(state.loadedTableNodes).toEqual([expect.objectContaining({ id: 'workflow-data-run-1-prices', tableId: 'prices',
+            parentNodeId: 'scheduled-summary-run-1' })]);
+        const chartTable = state.derivedTables.find(table => table.id === 'summary_data')!;
+        expect(chartTable.rows).toEqual([{ category: 'A', value: 3 }]);
+        expect(chartTable.virtual).toBeUndefined();
+        expect(chartTable.parentNodeId).toBe('workflow-data-run-1-prices');
+        expect(chartTable.derive?.source).toEqual(['prices']);
+        expect(chartTable.derive?.trigger.interaction?.[0].content).toBe('How did values compare?');
         expect(state.charts[0].id).toBe('chart-test');
         expect(state.conceptShelfItems).toHaveLength(2);
-        expect(state.derivedTables[0].rows).toEqual([{ category: 'A', value: 3 }]);
-        expect(state.derivedTables[0].virtual).toBeUndefined();
-        expect(state.generatedReports[0].content).toBe('Final findings');
-        expect(state.loadedTableNodes[0].tableId).toBe('summary_data');
-        expect(state.focusedId).toEqual({ type: 'report', reportId: state.generatedReports[0].id });
+        expect(state.generatedReports[0]).toMatchObject({ id: 'workflow-report-run-1', content: 'Final findings', parentNodeId: 'summary_data' });
+        expect(state.focusedId).toEqual({ type: 'report', reportId: 'workflow-report-run-1' });
         expect(state.activeWorkspace?.scheduledRun).toEqual(snapshot.activeWorkspace.scheduledRun);
         expect(snapshot).toHaveProperty('scheduledArtifacts');
         expect(materialized).not.toHaveProperty('scheduledArtifacts');
@@ -84,7 +92,8 @@ describe('scheduled snapshots', () => {
         expect(result?.state.textTurns[0].workflow).toMatchObject({ runId: 'run', status: 'paused',
             steps: [expect.objectContaining({ id: 'inspect' })], log: [expect.objectContaining({ text: 'Source unavailable' })] });
         expect(result?.state.focusedId).toEqual({ type: 'text', textId: 'textTurn-workflow-run' });
-        expect(result?.state.generatedReports[0].parentNodeId).toBe('textTurn-workflow-run');
+        expect(result?.state.loadedTableNodes[0].parentNodeId).toBe('textTurn-workflow-run');
+        expect(result?.state.generatedReports[0].parentNodeId).toBe('summary_data');
     });
 });
 

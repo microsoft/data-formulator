@@ -8,6 +8,7 @@ import { deleteWorkspace, loadWorkspace, saveWorkspaceState, updateWorkspaceMeta
 import { getSerializableState } from './useAutoSave';
 import i18n from '../i18n';
 import { claimSession } from './sessionTabs';
+import { defaultSessionName } from './useWorkspaceAutoName';
 
 type GetState = () => DataFormulatorState;
 
@@ -28,7 +29,8 @@ export function generateWorkspaceId(): string {
  */
 export const ensureActiveWorkspace = () => (dispatch: AppDispatch, getState: GetState) => {
     if (getState().activeWorkspace) return;
-    dispatch(dfActions.setActiveWorkspace({ id: generateWorkspaceId(), displayName: 'Untitled Session', provisional: true }));
+    const displayName = defaultSessionName();
+    dispatch(dfActions.setActiveWorkspace({ id: generateWorkspaceId(), displayName, provisional: true, autoName: { name: displayName, sources: [] } }));
 };
 
 /**

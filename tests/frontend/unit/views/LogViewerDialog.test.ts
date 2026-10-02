@@ -129,15 +129,6 @@ describe('saved-state auto folding', () => {
                 dataOperation: { candidates: ['movies'] },
                 resume: { trajectory: [{ step: 2 }], completedStepCount: 2 },
             }],
-            dataLoadingChatMessages: [{
-                role: 'assistant',
-                content: 'Found data',
-                codeBlocks: [{ code: 'load()' }],
-                tables: [{ name: 'Movies' }],
-                loadPlan: { steps: [{ action: 'load' }] },
-                dataOperation: { candidates: ['movies'] },
-                connectorForm: { sourceType: 'postgresql' },
-            }],
             snapshot: { keep: 'open' },
         }, null, 2);
         const state = EditorState.create({ doc, extensions: [json()] });
@@ -145,16 +136,14 @@ describe('saved-state auto folding', () => {
         const foldedContents = getSavedStateAutoFoldRanges(state)
             .map(range => state.doc.sliceString(range.from, range.to));
 
-        expect(foldedContents).toHaveLength(20);
+        expect(foldedContents).toHaveLength(15);
         expect(foldedContents.some(content => content.includes('"columns"'))).toBe(true);
         expect(foldedContents.some(content => content.includes('"title": "Movie"'))).toBe(true);
         expect(foldedContents.some(content => content.includes('"role": "user"'))).toBe(true);
         expect(foldedContents.some(content => content.includes('"concepts"'))).toBe(true);
         expect(foldedContents.some(content => content.includes('"vlSpec"'))).toBe(true);
         expect(foldedContents.some(content => content.includes('"Inspect chart"'))).toBe(true);
-        expect(foldedContents.some(content => content.includes('"sourceType": "postgresql"'))).toBe(true);
         expect(foldedContents.some(content => content.includes('"keep": "open"'))).toBe(false);
-        expect(foldedContents.some(content => content.includes('"content": "Found data"'))).toBe(false);
     });
 
     it('uses a minimal search panel without browser suggestions', () => {

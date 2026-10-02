@@ -2,16 +2,16 @@
 // Licensed under the MIT License.
 
 /**
- * ConnectorFormCard — inline connection form rendered inside the data-loading
- * chat (design 38). The agent proposes a connection via the `propose_connection`
- * tool; the resulting `connectorForm` prompt on a chat message is rendered here.
+ * ConnectorFormCard — the agent-proposed connection form (configure skill's
+ * `propose_connection`), shown on the canvas or inside a paused workflow run.
  *
  * One card === one new connection. The card fetches the connector's parameter /
  * auth schema itself (from /api/data-loaders), seeds any prefilled values the
  * agent was given (non-sensitive into redux, credentials the user shared into
  * the form's transient state only), and — on connect — creates the connector
- * (create-on-connect via `onBeforeConnect`), marks the prompt connected, and
- * asks the app to refresh the data-source sidebar so the new source appears.
+ * (create-on-connect via `onBeforeConnect`, or the folder picker for local
+ * folders), marks the prompt connected, and asks the app to refresh the
+ * data-source sidebar so the new source appears.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -30,6 +30,7 @@ import { AppDispatch } from '../app/store';
 import { iconVar, textVar } from '../app/layout';
 import { getConnectorIcon } from '../icons';
 import { DataLoaderForm } from '../views/DBTableManager';
+import { LocalFolderPanel } from '../views/UnifiedDataUploadDialog';
 import { ConnectedSourceOverview } from './ConnectedSourceOverview';
 import type { ConnectorFormPrompt, ConnectorInstance, ConnectorAuthPath } from './ComponentType';
 
@@ -287,6 +288,13 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
         </Box>
     ) : metaError ? (
         <Typography sx={{ fontSize: textVar.sm, color: 'error.main' }}>{metaError}</Typography>
+    ) : sourceType === 'local_folder' ? (
+        // The folder picker creates the connector itself; resolve through the same path as a form connect.
+        <LocalFolderPanel onConnectorCreated={connector => {
+            createdIdRef.current = connector.id;
+            generatedNameRef.current = connector.display_name;
+            void handleConnected();
+        }} />
     ) : meta ? (
         <Box>
         {draft?.conflict && <Typography role="alert" sx={{ fontSize: textVar.sm, color: 'warning.main', mb: 1 }}>

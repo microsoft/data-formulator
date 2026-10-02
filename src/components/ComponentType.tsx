@@ -70,7 +70,7 @@ export interface ClarificationOption {
 
 export interface ClarificationQuestion {
     text: string;
-    responseType?: 'single_choice' | 'free_text';
+    responseType?: 'single_choice' | 'multi_choice' | 'free_text';
     options?: ClarificationOption[];
 }
 
@@ -82,6 +82,8 @@ export interface ClarificationResponse {
     answer: string;
     /** Opaque selected option value; never rendered as the user's answer. */
     value?: string;
+    /** multi_choice: the selected option labels, in option order. */
+    selections?: string[];
     source: 'option' | 'free_text' | 'freeform' | 'skip';
 }
 
@@ -252,17 +254,16 @@ export interface CodeExecution {
     error?: string;
 }
 
+export interface WorkflowDefinition {
+    name: string; overview: string; prompt?: string; source?: unknown; deliverables: string[];
+    parameters?: { name: string; label: string; type?: 'text' | 'number' | 'boolean' | 'select'; description?: string;
+        required?: boolean; default?: string | number | boolean; options?: string[]; allow_custom?: boolean }[];
+    steps?: { id: string; instructions: string; description?: string; next?: string;
+        checkers?: { id: string; condition: string; when?: 'before' | 'during' | 'after'; on_fail?: string }[] }[];
+}
+
 export interface TextTurn {
     progressSteps?: ProgressStep[];
-    workflowDefinition?: {
-        content: string;
-        definition: { name: string; overview: string; prompt?: string; source?: unknown; deliverables: string[];
-            parameters?: { name: string; label: string; type?: 'text' | 'number' | 'boolean' | 'select'; description?: string;
-                required?: boolean; default?: string | number | boolean; options?: string[]; allow_custom?: boolean }[];
-            steps?: { id: string; instructions: string; description?: string; next?: string;
-                checkers?: { id: string; condition: string; when?: 'before' | 'during' | 'after'; on_fail?: string }[] }[] };
-        saved?: { path: string; content_hash: string };
-    };
     externalReferenceId?: string;
     workflowCardFor?: string;
     workflowMessage?: { runId: string; messageId: string; status: 'queued' | 'received'; kind?: 'steering' | 'reply'; afterOutputIds?: string[] };
@@ -401,6 +402,12 @@ interface SetupFormBase {
     title: string;
 }
 
+/** An existing item the agent proposed to revise; the user may update it or save a new one. */
+export interface SetupFormTarget {
+    id: string;
+    name: string;
+}
+
 export interface ConnectorFormArtifact extends SetupFormBase {
     kind: 'connector';
     connector: ConnectorFormPrompt;
@@ -422,7 +429,7 @@ export interface ScheduleFormArtifact extends SetupFormBase {
     kind: 'schedule';
     schedule: {
         /** Existing schedule being edited; absent when creating one. */
-        scheduleId?: string;
+        target?: SetupFormTarget;
         config: Partial<ScheduleConfig>;
         workflowName?: string;
         hosted?: boolean;
@@ -440,14 +447,25 @@ export interface SessionsFormArtifact extends SetupFormBase {
         /** Sessions listed in the panel; each is renamed, opened, or deleted on its own. */
         items: {
             sessionId: string; currentName: string; suggestedName?: string; reason?: string;
-            current?: boolean; updatedAt?: string; tableCount?: number; chartCount?: number; deleted?: boolean;
+            current?: boolean; updatedAt?: string; tableCount?: number; chartCount?: number; deleted?: boolean; renamed?: boolean;
         }[];
         open?: { sessionId: string; displayName: string };
     };
 }
 
+export interface WorkflowFormArtifact extends SetupFormBase {
+    kind: 'workflow';
+    workflow: {
+        content: string;
+        definition: WorkflowDefinition;
+        /** Saved user workflow (by path) this proposal revises. */
+        target?: SetupFormTarget;
+        saved?: { path: string; content_hash: string };
+    };
+}
+
 /** Canvas-owning form artifacts. Add future setup form kinds to this union. */
-export type FormArtifact = ConnectorFormArtifact | ScheduleFormArtifact | SessionsFormArtifact;
+export type FormArtifact = ConnectorFormArtifact | ScheduleFormArtifact | SessionsFormArtifact | WorkflowFormArtifact;
 
 // Data source types for tracking where data originated
 export type DataSourceType = 'paste' | 'file' | 'url' | 'stream' | 'database' | 'example' | 'extract';

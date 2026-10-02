@@ -1598,6 +1598,16 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     },
                 },
             },
+            // Autocomplete popups are portaled outside the dialog, so they need the menu sizing explicitly.
+            MuiAutocomplete: {
+                styleOverrides: {
+                    paper: { fontSize: 'var(--df-menu-font-size, max(0.875rem, var(--df-text-md, 13px)))' },
+                    listbox: { paddingTop: 4, paddingBottom: 4,
+                        '& .MuiAutocomplete-option': { fontSize: 'inherit', lineHeight: 1.4, minHeight: `max(${buttonVar.heightMedium}, 2em)`, padding: '0.4em 0.85em' } },
+                    noOptions: { fontSize: 'inherit', padding: '0.4em 0.85em' },
+                    loading: { fontSize: 'inherit', padding: '0.4em 0.85em' },
+                },
+            },
             MuiDialogTitle: {
                 styleOverrides: { root: { fontSize: '1.2em', lineHeight: 1.4, padding: '16px 20px 12px' } },
             },

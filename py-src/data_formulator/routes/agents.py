@@ -1000,7 +1000,7 @@ def refresh_derived_data():
 def workspace_name():
     """Generate a short display name for the current workspace.
 
-    Called after the first agent interaction to auto-name the workspace.
+    Called when a session's data sources change, until the user renames it.
     Expects: { model: <model_config>, context: { tables: [...], userQuery: "..." } }
     Returns: { status: "success", data: { display_name: "short name" } }
     """

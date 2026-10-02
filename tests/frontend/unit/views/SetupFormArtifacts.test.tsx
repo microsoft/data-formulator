@@ -150,3 +150,32 @@ it('never auto-saves a schedule that auto-approves commands', async () => {
     expect(await screen.findByRole('button', { name: 'Save schedule' })).toBeTruthy();
     expect(vi.mocked(apiRequest).mock.calls.some(([url, options]) => url === '/api/schedules' && options?.method === 'POST')).toBe(false);
 });
+
+it.each([['update', 'Update schedule', 'sched-1'], ['new', 'Save schedule', undefined]] as const)(
+    'saves a revised schedule as %s when chosen', async (mode, button, id) => {
+    mockScheduleApi({ id: id ?? 'sched-2', next_at: '2026-10-01T16:00:00+00:00' });
+    const store = makeStore({ kind: 'schedule', title: 'Update Fuel', schedule: { target: { id: 'sched-1', name: 'Fuel' },
+        status: 'pending', issues: [], config: { name: 'Fuel', workflow: 'demo/gas.yaml', time: '08:30', weekdays: [0] } } });
+    render(<Provider store={store}><Harness /></Provider>);
+
+    expect(await screen.findByRole('radio', { name: 'Update Fuel' })).toBeChecked();
+    if (mode === 'new') fireEvent.click(screen.getByRole('radio', { name: 'Save as new schedule' }));
+    fireEvent.click(await screen.findByRole('button', { name: button }));
+    await waitFor(() => expect(store.getState().textTurns[0].form).toMatchObject({ schedule: { status: 'saved' } }));
+    const post = vi.mocked(apiRequest).mock.calls.find(([url, options]) => url === '/api/schedules' && options?.method === 'POST');
+    expect(JSON.parse(String(post![1]!.body)).id).toBe(id);
+});
+
+it('records every direct rename in the stored panel', async () => {
+    const store = makeStore({ kind: 'sessions', title: 'Name sessions', sessions: { items: [
+        { sessionId: 'session_gas', currentName: 'Untitled', suggestedName: 'Gas prices' },
+        { sessionId: 'session_movies', currentName: 'Untitled 2', suggestedName: 'Movies' },
+    ] } });
+    requestAutoSubmit('turn-1');
+    render(<Provider store={store}><Harness /></Provider>);
+
+    await waitFor(() => expect(renameSession).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(store.getState().textTurns[0].form).toMatchObject({ sessions: { items: [
+        { currentName: 'Gas prices', renamed: true }, { currentName: 'Movies', renamed: true },
+    ] } }));
+});

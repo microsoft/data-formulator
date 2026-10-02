@@ -24,6 +24,8 @@ _AGENT_ID = "simple"
 _WORKSPACE_NAME_SYSTEM_PROMPT = (
     "You name data analysis workspaces for display in the product UI. "
     "Generate a very short workspace/session display name based on the context below. "
+    "Describe the subject of the data sources (tables, files); use the user's first request, if any, to sharpen the focus. "
+    "Do not mention counts or generic words such as 'table', 'data', or 'session'. "
     "The name is user-visible, so it must follow the user's interface language. "
     "Keep it concise: 3-5 words for English, or a similarly short phrase for other languages. "
     "Return ONLY the name, no quotes, no explanation, no trailing punctuation."
@@ -50,7 +52,7 @@ class SimpleAgents:
         """
         prompt_parts = []
         if table_names:
-            prompt_parts.append(f"Data tables: {', '.join(table_names)}")
+            prompt_parts.append(f"Data sources: {', '.join(table_names)}")
         if user_query:
             prompt_parts.append(f"User's first request: {user_query}")
 

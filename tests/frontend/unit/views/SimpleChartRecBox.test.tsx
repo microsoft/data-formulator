@@ -74,8 +74,9 @@ describe('Analyst landing attachment handoff', () => {
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'textTurn-workflow-card-run', displayId: 'Workflow',
             textKind: 'explain', content: '', parentNodeId: 'paused-run', createdAt: 2, workflowCardFor: 'paused-run' }));
         const proposal = { content: 'name: New workflow', definition: { name: 'New workflow' } };
+        const form = { kind: 'workflow', title: 'New workflow', workflow: proposal };
         vi.mocked(streamRequest).mockImplementationOnce(async function* () {
-            yield { type: 'completion', status: 'success', content: { summary: 'A new proposal.', workflow_definition: proposal } };
+            yield { type: 'completion', status: 'success', content: { summary: 'A new proposal.', form } };
         });
         store.dispatch(dfActions.setFocused({ type: 'text', textId: 'paused-run' }));
         store.dispatch(dfActions.queueAnalystTask({ text: 'I want to create a workflow from this analysis.',
@@ -88,48 +89,25 @@ describe('Analyst landing attachment handoff', () => {
             workflow: expect.objectContaining({ run_id: 'run' }),
         })]));
         expect(apiRequest).not.toHaveBeenCalledWith('/api/workflows/message', expect.anything());
-        await waitFor(() => expect(store.getState().textTurns.find(turn => turn.workflowDefinition)).toBeDefined());
-        expect(store.getState().textTurns.find(turn => turn.workflowDefinition)).toMatchObject({
+        await waitFor(() => expect(store.getState().textTurns.find(turn => turn.form?.kind === 'workflow')).toBeDefined());
+        expect(store.getState().textTurns.find(turn => turn.form?.kind === 'workflow')).toMatchObject({
             parentNodeId: 'textTurn-workflow-card-run', prompt: 'I want to create a workflow from this analysis.',
-            workflowDefinition: proposal,
+            form,
         });
         expect(store.getState().textTurns.find(turn => turn.id === 'paused-run')?.workflow?.status).toBe('paused');
     });
 
-    it.each(['running', 'paused'] as const)('allows general chat while a %s workflow is selected', async status => {
+    it.each(['running', 'paused'] as const)('sends chat to the analyst while a %s workflow is focused', async status => {
         const store = configureStore({ reducer: dataFormulatorReducer });
         const workflow = { runId: 'run', status, stepId: 'inspect', calls: 1, steps: [], outputVersions: {} };
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'active-run', displayId: 'Active run', textKind: 'explain',
             content: 'Inspecting data', parentNodeId: 'conversation-root:run', createdAt: 1, workflow }));
         store.dispatch(dfActions.setFocused({ type: 'text', textId: 'active-run' }));
         render(<Provider store={store}><SimpleChartRecBox /></Provider>);
+        expect(screen.queryByRole('button', { name: 'Message workflow agent' })).not.toBeInTheDocument();
+        expect(screen.queryByText('Message to:')).not.toBeInTheDocument();
         const input = screen.getByRole('textbox');
         fireEvent.change(input, { target: { value: 'Create a new workflow organized around analytical goals.' } });
-        const targetSwitch = screen.getByRole('button', { name: 'Message workflow agent' });
-        expect(targetSwitch).toHaveAttribute('aria-pressed', 'true');
-        expect(targetSwitch.closest('[data-chat-mode]')).toBeNull();
-        const newRequest = screen.getByRole('button', { name: 'New request' });
-        fireEvent.click(newRequest);
-        expect(newRequest).toHaveAttribute('aria-pressed', 'true');
-        expect(targetSwitch).toHaveAttribute('aria-pressed', 'false');
-        expect(input).toHaveValue('Create a new workflow organized around analytical goals.');
-        expect(input.closest('[data-chat-mode]')).toHaveAttribute('data-chat-mode', 'analyst');
-        fireEvent.click(targetSwitch);
-        expect(targetSwitch).toHaveAttribute('aria-pressed', 'true');
-        expect(input.closest('[data-chat-mode]')).toHaveAttribute('data-chat-mode', 'workflow');
-        fireEvent.click(newRequest);
-        act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: 'active-run' })));
-        expect(newRequest).toHaveAttribute('aria-pressed', 'true');
-        fireEvent.click(targetSwitch);
-        expect(targetSwitch).toHaveAttribute('aria-pressed', 'true');
-        act(() => {
-            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'workflow-result', displayId: 'Workflow result',
-                textKind: 'explain', content: 'Hourly comparison', parentNodeId: 'active-run', createdAt: 2 }));
-            store.dispatch(dfActions.setFocused({ type: 'text', textId: 'workflow-result' }));
-        });
-        expect(screen.queryByRole('button', { name: 'Message workflow agent' })).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'New request' })).not.toBeInTheDocument();
-        expect(input).toHaveValue('Create a new workflow organized around analytical goals.');
         if (status === 'running') fireEvent.keyDown(input, { key: 'Enter' });
         else fireEvent.click(screen.getByRole('button', { name: 'Explore' }));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
@@ -141,23 +119,6 @@ describe('Analyst landing attachment handoff', () => {
         expect(apiRequest).not.toHaveBeenCalledWith('/api/workflows/message', expect.anything());
         expect(store.getState().textTurns.find(turn => turn.id === 'active-run')).toMatchObject({ workflow });
         expect(store.getState().textTurns.find(turn => turn.id === 'active-run')?.answered).not.toBe(true);
-    });
-
-    it('keeps the recipient switch compact and hides legacy internal workflow names', () => {
-        const store = configureStore({ reducer: dataFormulatorReducer });
-        const id = 'textTurn-workflow-internal-run';
-        store.dispatch(dfActions.addTextTurn({ kind: 'text', id, displayId: id, textKind: 'explain',
-            content: 'Inspecting data', parentNodeId: 'conversation-root:run', createdAt: 1,
-            workflow: { runId: 'run', status: 'running', stepId: '', calls: 1, steps: [], outputVersions: {} } }));
-        store.dispatch(dfActions.setFocused({ type: 'text', textId: id }));
-        render(<Provider store={store}><SimpleChartRecBox /></Provider>);
-        const workflowButton = screen.getByRole('button', { name: 'Message workflow agent' });
-        expect(workflowButton).toHaveTextContent(/^Workflow agent$/);
-        expect(workflowButton).toHaveStyle({ minHeight: '24px', fontWeight: '400' });
-        expect(screen.queryByText('Send to')).toBeNull();
-        expect(screen.queryByText(new RegExp(id))).toBeNull();
-        expect(screen.getByText('Message to:')).toBeVisible();
-        expect(screen.queryByText(/^(Running|Paused)$/)).not.toBeInTheDocument();
     });
 
     it('keeps unrelated chat with the analyst while another workflow is running', async () => {
@@ -182,30 +143,32 @@ describe('Analyst landing attachment handoff', () => {
         const proposal = { content: 'version: 1\nname: Daily trip review\noverview: Compare the previous day\ndeliverables: [Hourly chart]',
             definition: { name: 'Daily trip review', overview: 'Compare the previous day', deliverables: ['Hourly chart'] } };
         vi.mocked(apiRequest).mockResolvedValue({ data: { result: [], statistics: {} } } as any);
+        const workflowForm = (workflow: typeof proposal) => ({ kind: 'workflow', title: workflow.definition.name, workflow });
+        const workflowOf = (turn: any) => turn.form?.kind === 'workflow' ? turn.form.workflow : undefined;
         vi.mocked(streamRequest).mockImplementationOnce(async function* () {
-            yield { type: 'completion', status: 'success', content: { summary: 'Review the proposed workflow.', workflow_definition: proposal } };
+            yield { type: 'completion', status: 'success', content: { summary: 'Review the proposed workflow.', form: workflowForm(proposal) } };
         });
         const { store } = mountTask({ text: 'Create a daily trip workflow from this analysis', images: [], attachments: [] });
-        await waitFor(() => expect(store.getState().textTurns.find(turn => turn.workflowDefinition)).toBeDefined());
-        const turn = store.getState().textTurns.find(turn => turn.workflowDefinition)!;
-        expect(turn.workflowDefinition).toEqual(proposal);
+        await waitFor(() => expect(store.getState().textTurns.find(workflowOf)).toBeDefined());
+        const turn = store.getState().textTurns.find(workflowOf)!;
+        expect(turn.form).toEqual(workflowForm(proposal));
         expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'text', textId: turn.id });
         expect(screen.queryByRole('region', { name: 'Workflow definition' })).toBeNull();
         expect(store.getState().fileNodes).toHaveLength(0);
         const revised = { content: `${proposal.content}\nparameters:\n  - name: target_date\n    type: text\n    required: true`,
             definition: { ...proposal.definition, parameters: [{ name: 'target_date', type: 'text', required: true }] } };
         vi.mocked(streamRequest).mockImplementationOnce(async function* () {
-            yield { type: 'completion', status: 'success', content: { summary: 'Added the target date parameter.', workflow_definition: revised } };
+            yield { type: 'completion', status: 'success', content: { summary: 'Added the target date parameter.', form: workflowForm(revised) } };
         });
         act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Parameterize the target date', images: [], attachments: [] })));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(2));
         expect(requestBody(1).focused_thread).toEqual(expect.arrayContaining([expect.objectContaining({
             workflow_definition: proposal.content, agent_response: 'Review the proposed workflow.',
         })]));
-        await waitFor(() => expect(store.getState().textTurns.filter(turn => turn.workflowDefinition)).toHaveLength(2));
-        const revisionTurn = store.getState().textTurns.find(turn => turn.workflowDefinition?.content === revised.content)!;
+        await waitFor(() => expect(store.getState().textTurns.filter(workflowOf)).toHaveLength(2));
+        const revisionTurn = store.getState().textTurns.find(item => workflowOf(item)?.content === revised.content)!;
         expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'text', textId: revisionTurn.id });
-        expect(store.getState().textTurns.find(item => item.id === turn.id)?.workflowDefinition).toEqual(proposal);
+        expect(workflowOf(store.getState().textTurns.find(item => item.id === turn.id))).toEqual(proposal);
         act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Now add explicit source loading', images: [], attachments: [] })));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(3));
         expect(requestBody(2).focused_thread.filter((step: any) => step.workflow_definition)

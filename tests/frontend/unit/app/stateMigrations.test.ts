@@ -66,8 +66,8 @@ describe('state migrations', () => {
             draftNodes: [{ id: 'draft', anchored: true }],
         });
 
-        expect(DF_STATE_VERSION).toBe(8);
-        expect(migrated.__stateVersion).toBe(8);
+        expect(DF_STATE_VERSION).toBe(9);
+        expect(migrated.__stateVersion).toBe(9);
         expect(migrated).not.toHaveProperty('tables');
         expect(migrated.inputTables).toEqual([
             expect.objectContaining({ id: 'source', source: { kind: 'workspace', tableId: 'source_workspace' } }),
@@ -107,7 +107,7 @@ describe('state migrations', () => {
         expect(migrated.derivedTables).toEqual([{ ...derived, parentNodeId: 'conversation-root:derived' }]);
         expect(migrated.tableSemantics).toEqual([semantics]);
         expect(migrated).not.toHaveProperty('tables');
-        expect(migrated.__stateVersion).toBe(8);
+        expect(migrated.__stateVersion).toBe(9);
     });
 
     it('upgrades an already split pre-release state to the current version', () => {
@@ -118,7 +118,7 @@ describe('state migrations', () => {
             tableSemantics: [],
         });
 
-        expect(migrated.__stateVersion).toBe(8);
+        expect(migrated.__stateVersion).toBe(9);
         expect(migrated.inputTables).toEqual([{ kind: 'input-table', id: 'source' }]);
         expect(migrated.loadedTableNodes).toEqual([]);
     });
@@ -171,7 +171,7 @@ describe('state migrations', () => {
         expect(migrated.derivedTables[0]).not.toHaveProperty('threadParentId');
         expect(migrated.draftNodes[0].parentNodeId).toBe('source');
         expect(migrated.generatedReports[0].parentNodeId).toBe('result');
-        expect(migrated.__stateVersion).toBe(8);
+        expect(migrated.__stateVersion).toBe(9);
     });
 
     it('preserves table labels when upgrading past the removed display-name migration', () => {
@@ -194,6 +194,18 @@ describe('state migrations', () => {
             { tableId: 'movies', displayName: 'Movies', fields: { year: { semanticType: 'Year' } } },
             { tableId: 'renamed', displayName: 'Suggested movies', fields: {} },
         ]);
-        expect(migrated.__stateVersion).toBe(8);
+        expect(migrated.__stateVersion).toBe(9);
+    });
+
+    it('turns legacy workflow proposals into workflow form artifacts', () => {
+        const workflowDefinition = { content: 'name: Fuel', definition: { name: 'Fuel', overview: '', deliverables: [] },
+            saved: { path: 'fuel.workflow.yaml', content_hash: 'h' } };
+        const migrated = migrateState({ __stateVersion: 8, textTurns: [{ id: 'proposal', workflowDefinition }, { id: 'plain' }] });
+
+        expect(migrated.textTurns).toEqual([
+            { id: 'proposal', form: { kind: 'workflow', title: 'Fuel', workflow: workflowDefinition } },
+            { id: 'plain' },
+        ]);
+        expect(migrated.__stateVersion).toBe(9);
     });
 });

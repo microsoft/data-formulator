@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors } from './dfSlice';
 import { getUrls } from './utils';
@@ -9,89 +9,95 @@ import { apiRequest } from './apiClient';
 import { updateWorkspaceMeta } from './workspaceService';
 import { AppDispatch } from './store';
 
-export function isUntitledWorkspaceName(displayName: string | undefined): boolean {
-    return displayName === 'Untitled Session';
+/** Wait for a burst of sources (e.g. a batch import) to settle before naming. */
+const SETTLE_MS = 2000;
+const FILE_ITEM_PREFIX = 'workspace-file-';
+
+/** The name a session starts with, until its sources give it a better one. */
+export function defaultSessionName(date = new Date()): string {
+    return `Analysis Session · ${date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`;
+}
+
+/** Whether auto-naming still owns the name, i.e. the user never renamed the session. */
+export function isAutoNamed(workspace: NonNullable<DataFormulatorState['activeWorkspace']>): boolean {
+    return workspace.displayName === 'Untitled Session' || workspace.displayName === workspace.autoName?.name;
+}
+
+/** Newline-joined names of the session's sources: loaded tables, connector references, and files. */
+export function selectSessionSourceKey(state: DataFormulatorState): string {
+    return [
+        ...(state.inputTables ?? []).map(table => table.displayId || table.id),
+        ...(state.externalTableReferences ?? []).map(reference => reference.displayName),
+        ...(state.workspaceItemOrder ?? []).filter(key => key.startsWith(FILE_ITEM_PREFIX))
+            .map(key => key.slice(FILE_ITEM_PREFIX.length)).filter(name => !name.startsWith('scratch/')),
+    ].join('\n');
 }
 
 /**
- * Auto-names a workspace once it holds something worth naming — a loaded
- * table or a first exchange with the agent — if it still has its placeholder
- * name.
- *
- * Calls the LLM to generate a short display name based on
- * table names and the first user query (if any).
+ * Names the session after its sources with the LLM, and renames it as new
+ * sources arrive, until the user renames it themselves.
  */
 export function useWorkspaceAutoName() {
     const dispatch = useDispatch<AppDispatch>();
-    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
-    const tables = useSelector(dfSelectors.getAllTables);
+    const workspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const sourceKey = useSelector(selectSessionSourceKey);
     const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
     const textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
     const models = useSelector(dfSelectors.getAllModels);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
-    const calledRef = useRef(false);
-    const lastWsIdRef = useRef<string | null>(null);
+    const latest = useRef(workspace);
+    latest.current = workspace;
+    const inFlight = useRef(false);
+    const failedAttempt = useRef('');
+    const [settled, setSettled] = useState(0);
 
     useEffect(() => {
-        // Reset when workspace changes
-        if (activeWorkspace?.id !== lastWsIdRef.current) {
-            calledRef.current = false;
-            lastWsIdRef.current = activeWorkspace?.id ?? null;
-        }
-
-        // Only auto-name once per workspace
-        if (calledRef.current) return;
-
-        // Need: an active workspace, a model, and enough substance to name.
-        // A session can be conversation-only, so a first exchange counts too.
-        if (!activeWorkspace) return;
-        if (tables.length === 0 && textTurns.length === 0) return;
-        if (!selectedModelId) return;
-
-        // Only auto-name if the display name is still the placeholder
-        if (!isUntitledWorkspaceName(activeWorkspace.displayName)) return;
-
+        if (!workspace || workspace.readOnly || inFlight.current || !isAutoNamed(workspace)) return;
+        const sources = sourceKey ? sourceKey.split('\n') : [];
+        const named = new Set(workspace.autoName?.sources ?? []);
+        if (!sources.some(name => !named.has(name))) return;
+        const attempt = `${workspace.id}\n${sourceKey}`;
+        if (failedAttempt.current === attempt) return;
         const model = models.find(m => m.id === selectedModelId);
         if (!model) return;
 
-        calledRef.current = true;
-
-        // Gather context
-        const tableNames = tables.map(t => t.displayId || t.id);
-        // The first user prompt, preferring turns: a draft is deleted when its
-        // run completes, so its interaction log may already be gone.
-        const firstTurnPrompt = [...textTurns]
-            .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
-            .map(turn => turn.prompt)
-            .find(prompt => !!prompt);
-        const firstInteraction = draftNodes
-            .flatMap(n => n.derive?.trigger?.interaction || [])
-            .find(entry => entry.from === 'user' && (entry.role === 'prompt' || entry.role === 'instruction'));
-        const firstQuery = firstTurnPrompt || firstInteraction?.content || '';
-
-        const wsId = activeWorkspace.id;
-
-        (async () => {
+        const timer = window.setTimeout(async () => {
+            inFlight.current = true;
+            const { id, displayName } = workspace;
+            // The first user prompt, preferring turns: a draft is deleted when its
+            // run completes, so its interaction log may already be gone.
+            const firstTurnPrompt = [...textTurns]
+                .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+                .map(turn => turn.prompt)
+                .find(prompt => !!prompt);
+            const firstInteraction = draftNodes
+                .flatMap(n => n.derive?.trigger?.interaction || [])
+                .find(entry => entry.from === 'user' && (entry.role === 'prompt' || entry.role === 'instruction'));
             try {
                 const { data } = await apiRequest<{ display_name: string }>(getUrls().WORKSPACE_NAME, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        model: model,
-                        context: {
-                            tables: tableNames,
-                            userQuery: firstQuery,
-                        },
+                        model,
+                        context: { tables: sources, userQuery: firstTurnPrompt || firstInteraction?.content || '' },
                     }),
                 });
-                if (data.display_name) {
-                    dispatch(dfActions.renameActiveWorkspace({ id: wsId, displayName: data.display_name }));
-                    updateWorkspaceMeta(wsId, data.display_name).catch(() => {});
+                const name = data.display_name?.trim();
+                if (!name) throw new Error('Empty session name');
+                // Skip if the user renamed or left the session meanwhile.
+                if (latest.current?.id === id && latest.current.displayName === displayName) {
+                    dispatch(dfActions.setAutoWorkspaceName({ id, displayName: name, sources }));
+                    updateWorkspaceMeta(id, name).catch(() => {});
                 }
             } catch (e) {
-                // Best-effort: keep the timestamp name if auto-naming fails
+                failedAttempt.current = attempt;
                 console.warn('[auto-name] failed:', e);
+            } finally {
+                inFlight.current = false;
+                // Sources that arrived during the request still need a name.
+                setSettled(value => value + 1);
             }
-        })();
-    }, [activeWorkspace, tables.length, selectedModelId, draftNodes.length, textTurns.length]);
+        }, SETTLE_MS);
+        return () => window.clearTimeout(timer);
+    }, [workspace, sourceKey, selectedModelId, settled]);
 }

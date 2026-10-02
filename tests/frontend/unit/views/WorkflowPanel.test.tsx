@@ -13,6 +13,7 @@ import { dfActions, dfSelectors, fetchGlobalModelList } from '../../../../src/ap
 import { apiRequest, streamRequest } from '../../../../src/app/apiClient';
 import { getUrls } from '../../../../src/app/utils';
 import { pauseWorkflowRun, publishWorkflowRun, sendWorkflowMessage, WorkflowProgress, WorkflowPanel, WorkflowRunObserver, Run, selectChatWorkflow } from '../../../../src/views/WorkflowPanel';
+import { SchedulesPanel } from '../../../../src/views/WorkflowSchedules';
 import { SimpleChartRecBox } from '../../../../src/views/SimpleChartRecBox';
 import { FreeDataViewFC } from '../../../../src/views/DataView';
 import { DataThread } from '../../../../src/views/DataThread';
@@ -95,12 +96,13 @@ describe('Workflow session publication', () => {
                     ? { items: [item], runs: [] } : { available: true, hosted: false, schedules: savedSchedules } } as any;
             });
             const openSession = vi.fn();
-            rendered = render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} onOpenSession={openSession} /></Provider>);
+            rendered = render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} onOpenSession={openSession} />
+                <SchedulesPanel onOpenSession={openSession} /></Provider>);
             await screen.findByRole('button', { name: 'Open Review values' });
             await waitFor(() => expect(screen.getByRole('button', { name: 'New schedule' })).toBeEnabled());
-            expect(screen.getByRole('button', { name: 'New workflow' }).parentElement)
-                .toContainElement(screen.getByRole('button', { name: 'New schedule' }));
             expect(screen.getByRole('region', { name: 'Schedules' }))
+                .toContainElement(screen.getByRole('button', { name: 'New schedule' }));
+            expect(screen.getByRole('button', { name: 'New workflow' }).parentElement)
                 .not.toContainElement(screen.getByRole('button', { name: 'New schedule' }));
             expect(screen.getByRole('region', { name: 'Schedules' })).toHaveTextContent('No schedules yet');
             fireEvent.click(screen.getByRole('button', { name: 'New schedule' }));
@@ -227,7 +229,7 @@ describe('Workflow session publication', () => {
         fireEvent.click(workflowRuns[0]);
         await waitFor(() => expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'textTurn-workflow-newest' }));
         const request = vi.mocked(apiRequest).mock.calls.find(([url]) => url === '/api/workflows/run-state');
-        expect(JSON.parse(request![1]!.body as string)).toEqual({ run_id: 'newest' });
+        expect(JSON.parse(request![1]!.body as string)).toEqual({ run_id: 'newest', known_outputs: [] });
         expect(streamRequest).not.toHaveBeenCalled();
     });
 
@@ -241,7 +243,8 @@ describe('Workflow session publication', () => {
                 ? { items: [{ path: 'server/review.yaml', name: 'Shared review', origin: 'server' }], runs: [] }
                 : { available: true, hosted: true, schedules: [{ id: 'schedule', config: { name: 'Daily review', workflow: 'server/review.yaml', enabled: true, weekdays: [0, 1, 2, 3, 4, 5, 6], time: '09:00' },
                     next_at: '2026-10-01T09:00:00Z', history: [{ id: 'hosted-run', status: 'completed', scheduled_for: '2026-09-30T09:00:00Z' }] }] } }) as any);
-            rendered = render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} onOpenSession={openSession} /></Provider>);
+            rendered = render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} onOpenSession={openSession} />
+                <SchedulesPanel onOpenSession={openSession} /></Provider>);
             fireEvent.click(await screen.findByRole('button', { name: 'Open Shared review' }));
             fireEvent.click(within(await screen.findByRole('group', { name: 'Runs of Shared review' })).getAllByRole('button')[0]);
             expect(openSession).toHaveBeenLastCalledWith('scheduled-private-hosted-run');
@@ -458,46 +461,36 @@ describe('Workflow session publication', () => {
         expect(prompt.compareDocumentPosition(output) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
-    it.each([true, false])('sends composer messages to the workflow without pausing or starting an analyst (focused: %s)', async focused => {
+    it('steers a running workflow from its card without pausing it or starting an analyst', async () => {
         const snapshot = run();
         snapshot.outputs = [];
         await publishWorkflowRun(snapshot, 'session');
         const turn = store.getState().textTurns[0];
         renderThread();
-        act(() => {
-            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'other-chat', displayId: 'Other chat',
-                textKind: 'explain', content: 'An unrelated analyst answer', parentNodeId: 'conversation-root:other', createdAt: 1 }));
-            store.dispatch(dfActions.setFocused({ type: 'text', textId: 'other-chat' }));
-        });
-        expect(selectChatWorkflow(store.getState())).toBeUndefined();
         expect(screen.queryByPlaceholderText('Message workflow...')).toBeNull();
-        if (focused) act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: turn.id })));
-        else act(() => store.dispatch(dfActions.setFocused({ type: 'text',
-            textId: store.getState().textTurns.find(item => item.workflowCardFor === turn.id)!.id })));
-        const input = screen.getByPlaceholderText('Message workflow...');
-        fireEvent.change(input, { target: { value: 'Compare weekly returns instead.' } });
-        fireEvent.click(screen.getByRole('button', { name: 'Send to workflow' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Steer' }));
+        const composer = await screen.findByRole('form', { name: 'Steer workflow agent' });
+        fireEvent.change(within(composer).getByRole('textbox', { name: 'Message to workflow agent' }), { target: { value: 'Compare weekly returns instead.' } });
+        fireEvent.click(within(composer).getByRole('button', { name: 'Send' }));
         await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/workflows/message', expect.anything()));
         const request = vi.mocked(apiRequest).mock.calls.find(([url]) => url === '/api/workflows/message')!;
         expect(JSON.parse(request[1]!.body as string)).toEqual({ run_id: 'native', message: 'Compare weekly returns instead.', message_id: expect.any(String) });
-        await waitFor(() => expect(input).toHaveValue(''));
-        expect(screen.getByText('Queued for workflow.')).toBeTruthy();
-        expect(screen.getByText('Compare weekly returns instead.')).toBeTruthy();
+        await waitFor(() => expect(screen.queryByRole('form', { name: 'Steer workflow agent' })).toBeNull());
+        expect(screen.getByText('(steering) Compare weekly returns instead.')).toBeTruthy();
+        expect(screen.queryByText('Queued for workflow.')).toBeNull();
         expect(store.getState().textTurns.find(item => item.id === turn.id)!.workflow).toEqual(turn.workflow);
         expect(store.getState().textTurns.some(item => item.prompt === 'Compare weekly returns instead.' && item.parentNodeId === turn.id)).toBe(true);
         expect(streamRequest).not.toHaveBeenCalled();
         expect(store.getState().draftNodes).toHaveLength(0);
-        expect(store.getState().textTurns.find(item => item.id === 'other-chat')?.answered).not.toBe(true);
         const sentMessage = store.getState().textTurns.find(item => item.workflowMessage)!;
         await act(async () => { await publishWorkflowRun({ ...snapshot, applied_message_ids: [sentMessage.workflowMessage!.messageId] }, 'session'); });
-        expect(screen.getByText('Received by workflow.')).toBeTruthy();
-        expect(screen.queryByText('Queued for workflow.')).toBeNull();
+        expect(store.getState().textTurns.find(item => item.workflowMessage)!.workflowMessage!.status).toBe('received');
+        expect(screen.queryByText('Received by workflow.')).toBeNull();
         await act(async () => { await publishWorkflowRun({ ...snapshot, status: 'completed' }, 'session'); });
-        expect(screen.queryByRole('button', { name: 'Pause workflow' })).toBeNull();
-        expect(screen.queryByRole('button', { name: 'Send to workflow' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Steer' })).toBeNull();
     });
 
-    it('answers a pending workflow question from the chat instead of queueing steering', async () => {
+    it('resumes a paused workflow with the message sent from its card', async () => {
         store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
         store.dispatch(dfActions.selectModel('test-model'));
         const snapshot = { ...run(), status: 'paused', outputs: [], interaction: { call_id: 'question-1',
@@ -508,17 +501,16 @@ describe('Workflow session publication', () => {
             yield { type: 'workflow_state', run: { ...snapshot, status: 'paused', interaction: undefined } } as any;
         });
         renderThread();
-        const input = screen.getByPlaceholderText('Message workflow...');
-        fireEvent.change(input, { target: { value: 'Use the latest full month.' } });
-        fireEvent.click(screen.getByRole('button', { name: 'Send to workflow' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Steer' }));
+        const composer = await screen.findByRole('form', { name: 'Steer workflow agent' });
+        fireEvent.change(within(composer).getByRole('textbox', { name: 'Message to workflow agent' }), { target: { value: 'Use the latest full month.' } });
+        fireEvent.keyDown(within(composer).getByRole('textbox', { name: 'Message to workflow agent' }), { key: 'Enter' });
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
         const request = JSON.parse(vi.mocked(streamRequest).mock.calls[0][1]!.body as string);
         expect(request).toMatchObject({ run_id: 'native', reply: 'Use the latest full month.' });
         expect(vi.mocked(apiRequest).mock.calls.some(([url]) => url === '/api/workflows/message')).toBe(false);
-        await waitFor(() => expect(input).toHaveValue(''));
-        expect(store.getState().textTurns.filter(turn => turn.workflowMessage?.kind === 'reply')).toHaveLength(1);
+        await waitFor(() => expect(store.getState().textTurns.filter(turn => turn.workflowMessage?.kind === 'reply')).toHaveLength(1));
         expect(screen.queryByText('Queued for workflow.')).toBeNull();
-        expect(screen.queryByText('Which period should be reviewed?')).toBeNull();
     });
 
     it.each([0, 3, 8])('renders a workflow reply and acknowledgment once across split output segments after %s outputs', async afterOutputs => {
@@ -538,11 +530,11 @@ describe('Workflow session publication', () => {
                 kind: 'reply', status: 'received', afterOutputIds: turn.outputIds!.slice(0, afterOutputs) } }));
         renderThread(true);
         expect(screen.getAllByText('should be fine')).toHaveLength(1);
-        expect(screen.getAllByText('Answered workflow question.')).toHaveLength(1);
+        expect(screen.queryByText('Answered workflow question.')).toBeNull();
     });
 
     it('places steering after existing outputs and before outputs created later', async () => {
-        const snapshot = { ...run(), status: 'paused' };
+        const snapshot = run();
         await publishWorkflowRun(snapshot, 'session');
         const turn = store.getState().textTurns[0];
         await sendWorkflowMessage(turn, 'Compare next month.', 'steering-1');
@@ -556,7 +548,7 @@ describe('Workflow session publication', () => {
             }),
         }] }, 'session'); });
         expect(container.textContent!.indexOf('Compare next month.')).toBeLessThan(container.textContent!.indexOf('later-note.txt'));
-        expect(screen.getAllByText('Compare next month.')).toHaveLength(1);
+        expect(screen.getAllByText('(steering) Compare next month.')).toHaveLength(1);
     });
 
     it('separates earlier plan history from reused step IDs and reviews progress before working', async () => {
@@ -636,12 +628,12 @@ describe('Workflow session publication', () => {
         vi.mocked(streamRequest).mockImplementation(async function* () {
             await pending;
             yield { type: 'completion', status: 'success', content: {
-                summary: 'A separate workflow proposal.', workflow_definition: proposal,
+                summary: 'A separate workflow proposal.', form: { kind: 'workflow', title: 'Follow-up review', workflow: proposal },
             } } as any;
         });
         const { container } = renderThread();
-        if (fromWorkflow) fireEvent.click(screen.getByRole('button', { name: 'New request' }));
-        else expect(screen.queryByRole('button', { name: 'Message workflow agent' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'New request' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Steer workflow agent' })).toBeNull();
         const prompt = 'Create a new workflow based on this artifact';
         fireEvent.change(screen.getByRole('textbox'), { target: { value: prompt } });
         fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
@@ -658,9 +650,9 @@ describe('Workflow session publication', () => {
         };
         expectPromptAfterArtifact();
         await act(async () => { finish(); });
-        await waitFor(() => expect(store.getState().textTurns.find(turn => turn.workflowDefinition)).toBeDefined());
-        const proposalTurn = store.getState().textTurns.find(turn => turn.workflowDefinition)!;
-        expect(proposalTurn).toMatchObject({ parentNodeId: parentId, prompt, workflowDefinition: proposal });
+        await waitFor(() => expect(store.getState().textTurns.find(turn => turn.form?.kind === 'workflow')).toBeDefined());
+        const proposalTurn = store.getState().textTurns.find(turn => turn.form?.kind === 'workflow')!;
+        expect(proposalTurn).toMatchObject({ parentNodeId: parentId, prompt, form: { kind: 'workflow', workflow: proposal } });
         expectPromptAfterArtifact();
         expect(store.getState().textTurns.find(turn => turn.id === workflowTurn.id)?.workflow).toEqual(workflowTurn.workflow);
         expect(vi.mocked(apiRequest).mock.calls.some(([url]) => String(url).includes('/workflows/message'))).toBe(false);
@@ -689,6 +681,17 @@ describe('Workflow session publication', () => {
         expect(vi.mocked(apiRequest).mock.calls.filter(([url]) => url === getUrls().LIST_TABLES)).toHaveLength(1);
         expect(vi.mocked(apiRequest).mock.calls.filter(([url]) => url === getUrls().SERVER_PROCESS_DATA_ON_LOAD)).toHaveLength(2);
         expect(apiRequest).toHaveBeenCalledTimes(3);
+    });
+
+    it('keeps published chart rows when a later update omits them', async () => {
+        const snapshot = run();
+        await publishWorkflowRun(snapshot, 'session');
+        const rows = store.getState().derivedTables[0].rows;
+        const slim = structuredClone(snapshot);
+        slim.outputs![2].content.result.content = { ...slim.outputs![2].content.result.content, rows: [], rows_omitted: true };
+        await publishWorkflowRun(slim, 'session');
+        expect(rows.length).toBeGreaterThan(0);
+        expect(store.getState().derivedTables[0].rows).toEqual(rows);
     });
 
     it.each([false, true])('keeps workflow thread order as outputs arrive (older outputs already exist: %s)', async olderHasOutputs => {
@@ -957,9 +960,9 @@ describe('Workflow session publication', () => {
         store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'trips', displayId: 'Trips', names: [], rows: [], metadata: {}, description: '', virtual: { tableId: 'trips', rowCount: 0 } }));
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'definition', displayId: 'Definition', textKind: 'explain',
             prompt: 'Create a daily workflow', content: 'Proposed a daily trip workflow.', parentNodeId: 'trips', createdAt: 1,
-            workflowDefinition: { content: 'version: 1', definition: {
+            form: { kind: 'workflow', title: 'Daily Trip Trend Comparison', workflow: { content: 'version: 1', definition: {
                 name: 'Daily Trip Trend Comparison', overview: 'Compare daily trips', deliverables: ['Hourly chart'],
-            } } }));
+            } } } }));
         store.dispatch(dfActions.upsertFileNode({ kind: 'file', id: 'old-notes', path: 'files/notes.md', displayName: 'Notes', contentHash: 'notes-hash', parentNodeId: 'definition', createdAt: 2 }));
         renderThread();
         const artifact = screen.getByRole('button', { name: 'Daily Trip Trend Comparison Workflow definition' });
@@ -980,7 +983,7 @@ describe('Workflow session publication', () => {
         const proposal = { definition,
             content: 'version: 1\nname: Quarterly review\noverview: Review current sales\ndeliverables: [Sales report]' };
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'proposal', displayId: 'Proposal', textKind: 'explain',
-            prompt: 'Review sales', content: 'Ready to review.', workflowDefinition: proposal,
+            prompt: 'Review sales', content: 'Ready to review.', form: { kind: 'workflow', title: definition.name, workflow: proposal },
             parentNodeId: 'conversation-root:authoring', createdAt: 1 }));
         vi.mocked(apiRequest).mockImplementation(async (url, options) => {
             if (url === '/api/workflows/save') return { data: { path: JSON.parse(options!.body as string).path, content_hash: 'saved-hash' } } as any;
@@ -1032,7 +1035,7 @@ describe('Workflow session publication', () => {
                 steps: [{ id: 'compare', description: 'Aggregate hourly pickups', instructions: 'Aggregate trips by **hour**.',
                     checkers: [{ id: 'coverage', condition: 'Both days contain all 24 hours.', on_fail: 'compare' }] }] } };
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'formatted-definition', displayId: 'Definition', textKind: 'explain',
-            content: 'Ready', workflowDefinition: proposal, parentNodeId: 'conversation-root:authoring', createdAt: 1 }));
+            content: 'Ready', form: { kind: 'workflow', title: 'Daily trips', workflow: proposal }, parentNodeId: 'conversation-root:authoring', createdAt: 1 }));
         store.dispatch(dfActions.setFocused({ type: 'text', textId: 'formatted-definition' }));
         vi.mocked(apiRequest).mockResolvedValue({ data: { path: 'my-trips.workflow.yaml', content_hash: 'new-hash' } } as any);
         render(<Provider store={store}><VisualizationViewFC /></Provider>);
@@ -1070,10 +1073,43 @@ describe('Workflow session publication', () => {
         expect(saved.content).toContain('name: My daily trips');
         expect(saved.content).toContain('fixed_date:');
         expect(screen.getByRole('heading', { name: 'My daily trips' })).toBeInTheDocument();
-        expect(store.getState().textTurns.find(turn => turn.id === 'formatted-definition')?.workflowDefinition).toMatchObject({
+        expect(store.getState().textTurns.find(turn => turn.id === 'formatted-definition')?.form).toMatchObject({ title: 'My daily trips', workflow: {
             content: saved.content, definition: { name: 'My daily trips' }, saved: { content_hash: 'new-hash' },
-        });
+        } });
         expect(streamRequest).not.toHaveBeenCalled();
+    });
+
+    it('lets a revision update its target workflow or save a new copy', async () => {
+        const proposal = { content: 'version: 1\nname: Fuel', definition: { name: 'Fuel', overview: 'Review', deliverables: ['Report'] },
+            target: { id: 'fuel.workflow.yaml', name: 'Fuel' } };
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'revision', displayId: 'Revision', textKind: 'explain', content: 'Revised.',
+            form: { kind: 'workflow', title: 'Fuel', workflow: proposal }, parentNodeId: 'conversation-root:authoring', createdAt: 1 }));
+        vi.mocked(apiRequest).mockImplementation(async (url, options) => {
+            if (url === '/api/workflows/read') return { data: { content: '', content_hash: 'target-hash' } } as any;
+            if (url === '/api/workflows/save') return { data: { path: JSON.parse(options!.body as string).path, content_hash: 'new-hash' } } as any;
+            return { data: {} } as any;
+        });
+        const saves = () => vi.mocked(apiRequest).mock.calls.filter(([url]) => url === '/api/workflows/save')
+            .map(([, options]) => JSON.parse(options!.body as string));
+        store.dispatch(dfActions.setFocused({ type: 'text', textId: 'revision' }));
+        render(<Provider store={store}><VisualizationViewFC /></Provider>);
+        expect(screen.getByText('Workflow definition · revises Fuel')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Save workflow' }));
+        await act(async () => {});
+        expect(screen.getByRole('radio', { name: 'Update Fuel' })).toBeChecked();
+        expect(screen.queryByLabelText('Workflow filename', { exact: false })).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+        await waitFor(() => expect(saves()).toHaveLength(1));
+        expect(saves()[0]).toEqual({ path: 'fuel.workflow.yaml', content: proposal.content, content_hash: 'target-hash' });
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        fireEvent.click(screen.getByRole('button', { name: 'Save workflow' }));
+        fireEvent.click(screen.getByRole('radio', { name: 'Save as new workflow' }));
+        expect(screen.getByLabelText('Workflow filename', { exact: false })).toHaveValue('fuel-2.workflow.yaml');
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+        await waitFor(() => expect(saves()).toHaveLength(2));
+        expect(saves()[1]).toEqual({ path: 'fuel-2.workflow.yaml', content: proposal.content });
+        await waitFor(() => expect(store.getState().textTurns.find(turn => turn.id === 'revision')?.form)
+            .toMatchObject({ workflow: { saved: { path: 'fuel-2.workflow.yaml' } } }));
     });
 
     it('offers agent authoring from the create dialog without changing conversation focus', async () => {
@@ -1158,8 +1194,8 @@ describe('Workflow session publication', () => {
         const cards = within(workflows).getAllByRole('article');
         expect(cards).toHaveLength(3);
         expect(cards[0]).toHaveTextContent(user.name);
-        expect(screen.getByRole('button', { name: `Open ${demo.name}` })).toHaveTextContent(/^demo/);
-        expect(screen.getByRole('button', { name: `Open ${user.name}` })).not.toHaveTextContent(/^demo/);
+        expect(screen.getByRole('button', { name: `Open ${demo.name}` })).toHaveTextContent(/demo$/);
+        expect(screen.getByRole('button', { name: `Open ${user.name}` })).not.toHaveTextContent(/demo$/);
         expect(screen.queryByText('Workspace workflows')).not.toBeInTheDocument();
         expect(screen.queryByText('Demo workflows')).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Workflows' })).toBeNull();
@@ -1773,25 +1809,23 @@ describe('Workflow session publication', () => {
         expect(apiRequest).not.toHaveBeenCalled();
     });
 
-    it('keeps running chat quiet with pause and send controls and uses the shared interruption panel', async () => {
+    it('keeps the chat for the analyst, with pause on the card and the shared interruption panel', async () => {
         const snapshot = run();
         snapshot.outputs = [];
         await publishWorkflowRun(snapshot, 'session');
-        const { container } = renderThread();
-        const input = screen.getByPlaceholderText('Message workflow...');
-        const chat = input.closest('[data-chat-mode]')!;
+        renderThread();
+        const input = screen.getByRole('textbox');
+        const chat = input.closest('.MuiCard-root')!;
         expect(chat).not.toHaveTextContent('Step 2 of 2');
-        expect(screen.getByRole('button', { name: 'Pause workflow' })).toBeEnabled();
+        expect(screen.queryByPlaceholderText('Message workflow...')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Pause workflow' })).toBeNull();
         expect(screen.queryByRole('button', { name: 'Send to workflow' })).toBeNull();
         snapshot.activity = 'I am comparing the latest prices with the same month last year.';
         await act(async () => { await publishWorkflowRun(snapshot, 'session'); });
         expect(chat).not.toHaveTextContent(snapshot.activity);
         expect(store.getState().textTurns[0].workflow?.activity).toBe(snapshot.activity);
-        fireEvent.change(input, { target: { value: 'Use weekly prices.' } });
-        expect(screen.getByRole('button', { name: 'Send to workflow' })).toBeEnabled();
-        fireEvent.click(screen.getByRole('button', { name: 'Pause workflow' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
         await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/workflows/pause', expect.anything()));
-        expect(input).toHaveValue('Use weekly prices.');
         await act(async () => { await publishWorkflowRun({ ...snapshot, status: 'paused',
             message: 'The source is unavailable. Please load the example dataset to continue.' }, 'session'); });
         expect(chat).toHaveTextContent('Interrupted');

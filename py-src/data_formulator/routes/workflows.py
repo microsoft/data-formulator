@@ -77,6 +77,18 @@ def read_messages(path: Path) -> list[dict]:
     return json.loads(inbox.read_text()) if inbox.exists() else []
 
 
+def omit_known_rows(run: dict, known: set[str]) -> dict:
+    """Drop chart rows the client already holds; runs carry every chart's rows and are resent on each update."""
+    outputs = []
+    for output in run.get("outputs", []):
+        if output.get("type") == "result" and output.get("id") in known:
+            result = output["content"]["result"]
+            output = {**output, "content": {**output["content"], "result": {
+                **result, "content": {**result["content"], "rows": [], "rows_omitted": True}}}}
+        outputs.append(output)
+    return {**run, "outputs": outputs}
+
+
 @workflow_bp.route("/message", methods=["POST"])
 def steer_run():
     _, _, workspace = context()
@@ -185,7 +197,8 @@ def delete_instance():
 @workflow_bp.route("/run-state", methods=["POST"])
 def get_run():
     _, _, workspace = context()
-    path = run_path(workspace, (request.get_json() or {}).get("run_id"))
+    body = request.get_json() or {}
+    path = run_path(workspace, body.get("run_id"))
     if not path.exists():
         raise AppError(ErrorCode.INVALID_REQUEST, "Workflow run not found in this session.")
     state = json.loads(path.read_text())
@@ -203,7 +216,11 @@ def get_run():
                     save_run(path, state)
             finally:
                 execution_lock.release()
-    return json_ok({"run": public_run(state)})
+    known = body.get("known_outputs")
+    run = public_run(state)
+    if body.get("omit_rows"):
+        known = [output.get("id") for output in run.get("outputs", [])]
+    return json_ok({"run": omit_known_rows(run, set(known)) if isinstance(known, list) else run})
 
 
 @workflow_bp.route("/pause", methods=["POST"])
@@ -360,8 +377,15 @@ def run_instance():
             save_run(path, current)
 
     def generate():
+        sent: set[str] = set()
+
+        def state_event(run: dict) -> str:
+            slim = omit_known_rows(run, sent)
+            sent.update(output["id"] for output in run.get("outputs", []) if output.get("type") == "result")
+            return json.dumps({"type": "workflow_state", "run": slim}, ensure_ascii=False) + "\n"
+
         try:
-            yield json.dumps({"type": "workflow_state", "run": public_run(state)}) + "\n"
+            yield state_event(public_run(state))
             agent = WorkflowAgent(client, workspace, state, checkpoint, cancellation, identity)
             agent.read_messages = lambda: read_messages(path)
             if terminal_proposal is not None:
@@ -400,12 +424,15 @@ def run_instance():
                 agent.resolve_pending(resolved_interaction)
                 checkpoint(state)
             for event in agent.run_workflow():
+                if event.get("type") == "workflow_state" and isinstance(event.get("run"), dict):
+                    yield state_event(event["run"])
+                    continue
                 yield json.dumps(event, ensure_ascii=False) + "\n"
         except Exception as exc:
             error = classify_and_wrap_llm_error(exc)
             state.update(status="paused", message=error.message, execution_error=error.to_dict())
             save_run(path, state)
-            yield json.dumps({"type": "workflow_state", "run": public_run(state)}) + "\n"
+            yield state_event(public_run(state))
             yield stream_error_event(error)
         finally:
             with _lock:

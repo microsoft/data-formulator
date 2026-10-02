@@ -26,7 +26,7 @@
  */
 
 /** Current persisted-state schema version. Bump when adding a migration. */
-export const DF_STATE_VERSION = 8;
+export const DF_STATE_VERSION = 9;
 
 type SavedState = Record<string, any>;
 
@@ -433,6 +433,20 @@ const MIGRATIONS: Migration[] = [
             }
             return migrated;
         },
+    },
+    {
+        // Workflow proposals became a setup form kind (`form.kind === 'workflow'`).
+        to: 9,
+        migrate: (state) => ({
+            ...state,
+            textTurns: Array.isArray(state.textTurns) ? state.textTurns.map((turn: any) => {
+                if (!turn?.workflowDefinition) return turn;
+                const { workflowDefinition, ...rest } = turn;
+                return rest.form || !workflowDefinition.definition ? rest : { ...rest, form: {
+                    kind: 'workflow', title: workflowDefinition.definition.name, workflow: workflowDefinition } };
+            }) : state.textTurns,
+            __stateVersion: 9,
+        }),
     },
 ];
 

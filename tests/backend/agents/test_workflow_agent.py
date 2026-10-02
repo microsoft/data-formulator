@@ -50,10 +50,11 @@ def test_main_chat_proposes_workflow_without_saving_or_executing(tmp_path, insta
     instance["steps"][0]["description"] = "Assess market changes with verified coverage."
     events = list(ConfigureSkill().handle_action("propose_workflow", {"definition": instance, "summary": "Ready for review"}, context))
     assert events[0]["type"] == "completion"
-    proposal = events[0]["content"]["workflow_definition"]
+    proposal = events[0]["content"]["form"]["workflow"]
+    assert events[0]["content"]["form"]["kind"] == "workflow" and "target" not in proposal
     assert proposal["definition"] == instance
     assert parse_workflow(proposal["content"]) == instance
-    state = new_run(events[0]["content"]["workflow_definition"]["definition"], "authored")
+    state = new_run(proposal["definition"], "authored")
     assert state["plan"]["steps"] == instance["steps"]
     assert state["step_id"] == "work"
     assert state["plan"]["steps"] is not state["definition"]["steps"]
@@ -1493,6 +1494,42 @@ def test_steering_arriving_during_call_reaches_next_call(agent, monkeypatch):
     assert not any("Compare weekly returns." in content for content in observed[0])
     assert observed[1][-1] == "Workflow steering from the user:\nCompare weekly returns."
     assert agent.state["applied_message_ids"] == ["during-call"]
+
+
+def test_omit_known_rows_resends_only_new_chart_rows():
+    from data_formulator.routes.workflows import omit_known_rows
+    chart = lambda identifier: {"id": identifier, "type": "result", "content": {"question": "Q", "result": {
+        "chart_id": identifier, "content": {"rows": [{"x": 1}], "virtual": {"table_name": identifier}}}}}
+    run = {"status": "running", "outputs": [chart("old"), chart("new"), {"id": "report", "type": "report", "content": "R"}]}
+    slim = omit_known_rows(run, {"old", "report"})
+    old, new, report = slim["outputs"]
+    assert old["content"]["result"]["content"] == {"rows": [], "rows_omitted": True, "virtual": {"table_name": "old"}}
+    assert new["content"]["result"]["content"]["rows"] == [{"x": 1}]
+    assert report == run["outputs"][2]
+    assert run["outputs"][0]["content"]["result"]["content"]["rows"] == [{"x": 1}]
+
+
+def test_repeated_replies_without_actions_pause_the_run(agent, monkeypatch):
+    from data_formulator.workflows.agent import IDLE_REPLY_LIMIT
+    requests = []
+
+    def stream(trajectory, tools):
+        requests.append(len(trajectory))
+        if False:
+            yield
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=[], content=None))])
+
+    monkeypatch.setattr(agent, "_stream_llm", stream)
+    list(agent.run_workflow())
+    assert len(requests) == IDLE_REPLY_LIMIT
+    assert agent.state["status"] == "paused"
+    assert "without taking an action (empty responses)" in agent.state["message"]
+    from data_formulator.workflows.agent import NUDGES
+    trajectory = agent.state["trajectory"]
+    assert sum(message.get("content") in NUDGES for message in trajectory) == 1
+    assert not any(message["role"] == "assistant" and not message.get("tool_calls") and not message.get("content") for message in trajectory)
+    list(agent.run_workflow())
+    assert not any(message.get("content") in NUDGES for message in agent.state["trajectory"][:-1])
 
 
 def test_library_without_workspace_and_invalid_run(workflow_client):

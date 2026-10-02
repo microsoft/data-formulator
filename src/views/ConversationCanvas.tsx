@@ -11,7 +11,7 @@ import { getCachedChart } from '../app/chartCache';
 import { TerminalMessageContent } from '../components/TerminalApprovalDialog';
 import { CompactMarkdown } from './InteractionEntryCard';
 import { DataFrameTable } from './DataFrameTable';
-import { WorkflowProposal } from './WorkflowPanel';
+import { WorkflowFormArtifactView } from './SetupFormArtifacts';
 
 interface ConversationNode {
     id: string;
@@ -180,10 +180,10 @@ export const ConversationCanvas = ({ textTurnId, entryIndex, nodeIds }: { textTu
                         }}>
                             {agentMessage(<>
                             <TerminalMessageContent content={explanationContent(turn.content)} executions={turn.executions} variant="document" />
-                            {turn.workflowDefinition && <WorkflowProposal turn={turn} />}
+                            {turn.form?.kind === 'workflow' && <WorkflowFormArtifactView turn={turn} form={turn.form} />}
                             {tables.filter(table => !nodeIds && !pathIds.has(table.id) && (table.parentNodeId === turn.id
                                 || loadedNodes.some(node => node.tableId === table.id && node.parentNodeId === turn.id))).map(table => tableArtifacts(table.id))}
-                            {(turn.form || turn.dataOperation || (turn.textKind === 'clarify' && !turn.answered)) && <Button startIcon={<OpenInNewIcon />} sx={artifactButtonSx}
+                            {((turn.form && turn.form.kind !== 'workflow') || turn.dataOperation || (turn.textKind === 'clarify' && !turn.answered)) && <Button startIcon={<OpenInNewIcon />} sx={artifactButtonSx}
                                 onClick={() => dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }))}>
                                 {turn.form?.title || t('conversation.openInteraction', { defaultValue: 'Open interaction' })}
                             </Button>}

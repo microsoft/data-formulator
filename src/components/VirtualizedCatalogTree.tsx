@@ -32,6 +32,7 @@ import { iconVar, textVar } from '../app/layout';
 import { useLayout } from '../app/LayoutProvider';
 import type { CatalogTreeNode } from './CatalogTree';
 import { CountBadge } from './CatalogTree';
+import { metadataTooltipSlotProps } from './ItemCard';
 
 // ─── Flattened row representation ────────────────────────────────────────────
 
@@ -264,23 +265,11 @@ function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSS
         <div style={style} {...dragProps}>
             <Tooltip
                 title={hoverCard ?? ''}
-                placement="right"
-                enterDelay={hoverCard ? 450 : 400}
-                slotProps={hoverCard ? {
-                    tooltip: {
-                        sx: {
-                            maxWidth: 'none', p: 0,
-                            maxHeight: 'calc(100vh - 32px)',
-                            overflowY: 'auto',
-                            overscrollBehavior: 'contain',
-                            bgcolor: 'background.paper',
-                            color: 'text.primary',
-                            border: '1px solid',
-                            borderColor: 'divider',
-                            boxShadow: 4,
-                        },
-                    },
-                } : undefined}
+                placement={hoverCard ? 'right-start' : 'right'}
+                arrow={!!hoverCard}
+                enterDelay={hoverCard ? 300 : 400}
+                enterNextDelay={hoverCard ? 100 : undefined}
+                slotProps={hoverCard ? metadataTooltipSlotProps : undefined}
             >
                 <Box
                     data-catalog-item-id={itemId}
