@@ -8,9 +8,12 @@ so user scripts access files via e.g. ``pd.read_csv("sample.csv")``.
 """
 
 import atexit
+from contextvars import ContextVar
 import logging
 import os
+import signal
 import threading
+import time
 import warnings
 from multiprocessing import Pipe, Process
 from sys import addaudithook
@@ -20,6 +23,7 @@ import pandas as pd
 from .base import Sandbox
 
 logger = logging.getLogger(__name__)
+execution_cancellation = ContextVar("sandbox_execution_cancellation", default=None)
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +221,12 @@ def _warm_worker_loop(conn):
             # server-originated code is executed. Additional audit hooks above block
             # file writes, network access, subprocess spawning, and dangerous imports.
             exec(code, namespace)  # nosec  # codeql[py/code-injection]
+        except KeyboardInterrupt:
+            captured = namespace.get("_captured")
+            conn.send({"status": "interrupted", "error_message": "Python execution interrupted by user.",
+                       "stdout": captured.getvalue()[-8000:] if hasattr(captured, "getvalue") else ""})
+            conn.close()
+            return
         except Exception as err:
             conn.send({"status": "error", "error_message": f"Error: {type(err).__name__} - {err}"})
             _allowed_workspace[0] = None
@@ -575,14 +585,39 @@ class LocalSandbox(Sandbox):
     @staticmethod
     def _run_in_warm_subprocess(code, allowed_objects, workspace_path=None):
         """Send code to a warm worker from the pool, return the result."""
+        cancel = execution_cancellation.get()
+        if cancel is not None and cancel.is_set():
+            return {"status": "interrupted", "error_message": "Interrupted before Python execution.", "stdout": ""}
         proc, conn = _worker_pool.acquire()
         try:
             conn.send((code, {**allowed_objects}, workspace_path))
-            # Enforce a wall-clock timeout to prevent runaway code
-            if conn.poll(timeout=LocalSandbox.EXECUTION_TIMEOUT):
-                result = conn.recv()
+            deadline = time.monotonic() + LocalSandbox.EXECUTION_TIMEOUT
+            while not conn.poll(timeout=0.05):
+                if cancel is not None and cancel.is_set():
+                    result = {"status": "interrupted", "error_message": "Python execution interrupted by user.", "stdout": ""}
+                    try:
+                        if os.name != "nt":
+                            os.kill(proc.pid, signal.SIGINT)
+                            if conn.poll(timeout=0.75):
+                                result.update(conn.recv())
+                                result["status"] = "interrupted"
+                    except (OSError, EOFError):
+                        pass
+                    finally:
+                        _worker_pool.discard(proc, conn)
+                        proc.join(timeout=0.5)
+                        if proc.is_alive():
+                            proc.kill()
+                            proc.join()
+                        conn.close()
+                    return result
+                if time.monotonic() >= deadline:
+                    break
             else:
-                # Timed out — kill and discard the worker
+                result = conn.recv()
+                _worker_pool.release(proc, conn)
+                return result
+            if time.monotonic() >= deadline:
                 _worker_pool.discard(proc, conn)
                 return {
                     "status": "error",
@@ -591,8 +626,6 @@ class LocalSandbox(Sandbox):
                         f"{LocalSandbox.EXECUTION_TIMEOUT}s"
                     ),
                 }
-            _worker_pool.release(proc, conn)
-            return result
         except Exception as e:
             exit_code = proc.exitcode
             _worker_pool.discard(proc, conn)

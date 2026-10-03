@@ -67,6 +67,26 @@ def _sample(client, table: str, **kwargs):
 class TestSampleTablePagination:
     """Offset-based pagination for the sample-table endpoint."""
 
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("size", "1; SELECT * FROM read_text('/etc/passwd')"),
+            ("offset", "1; SELECT 1"),
+        ],
+    )
+    def test_rejects_non_integer_pagination_before_workspace_access(
+        self, client, field, value
+    ):
+        with patch("data_formulator.routes.tables._get_workspace") as get_workspace:
+            response = client.post(
+                "/api/tables/sample-table",
+                json={"table": "test_data", field: value},
+            )
+
+        assert response.status_code == 200
+        assert response.get_json()["error"]["code"] == "INVALID_REQUEST"
+        get_workspace.assert_not_called()
+
     def test_no_offset_returns_first_page(self, client, seeded_table):
         result = _sample(client, seeded_table, size=10, method="head",
                          order_by_fields=["value"])

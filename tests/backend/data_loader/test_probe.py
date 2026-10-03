@@ -6,8 +6,10 @@ Covers the pure ``compile_probe_sql`` compiler and the base-class
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import Mock, patch
 
 import pyarrow as pa
+import duckdb
 import pytest
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader
@@ -18,6 +20,97 @@ from data_formulator.data_loader.probe_utils import (
 )
 
 pytestmark = [pytest.mark.backend]
+
+
+@pytest.mark.parametrize("extension,content,expected", [
+    ("csv", '\ufeffcode,text,score\r\n001,"line one\nline two, ""quoted""",2\r\n002,,\r\n',
+     [{"code": "001", "text": 'line one\nline two, "quoted"', "score": 2},
+      {"code": "002", "text": None, "score": None}]),
+    ("tsv", "code\tvalue\n001\tfirst\n002\tsecond\n",
+     [{"code": "001", "value": "first"}, {"code": "002", "value": "second"}]),
+    ("json", '[{"key":"first"},{"key":"second","nested":{"value":2}}]',
+     [{"key": "first", "nested": None}, {"key": "second", "nested": {"value": 2}}]),
+    ("json", '\ufeff {\n "key": "single",\n "value": null\n}', [{"key": "single", "value": None}]),
+    ("jsonl", '{"key":"first"}\n{"key":"second","value":2}\n',
+     [{"key": "first", "value": None}, {"key": "second", "value": 2}]),
+])
+def test_native_text_reader_compatibility(tmp_path, extension, content, expected):
+    path = tmp_path / f"[literal]*.{extension}"
+    path.write_text(content, encoding="utf-8")
+    with duckdb.connect() as connection:
+        probe_utils.register_file_scan(connection, str(path))
+        assert connection.execute("SELECT * FROM t").fetch_arrow_table().to_pylist() == expected
+
+
+@pytest.mark.parametrize("content", ['[1, 2]', '[{"value": 1}, 2]', '{"value": invalid}'])
+def test_native_json_rejects_invalid_records(tmp_path, content):
+    path = tmp_path / "invalid.json"
+    path.write_text(content)
+    with duckdb.connect() as connection, pytest.raises(duckdb.Error):
+        probe_utils.register_file_scan(connection, str(path))
+        connection.execute("SELECT * FROM t").fetchall()
+
+
+@pytest.mark.parametrize("purpose,expected_rows,value_limit", [("ui", 50, 1000), ("agent", 5, 200)])
+def test_native_preview_bounds_columns_rows_and_values(tmp_path, purpose, expected_rows, value_limit):
+    import pyarrow.parquet as pq
+
+    path = tmp_path / "wide.parquet"
+    pq.write_table(pa.table({f"field_{index}": ["x" * 2000] * 100 for index in range(30)}), path)
+    result = probe_utils.preview_file(probe_utils.register_file_scan, str(path), {"size": 100}, purpose=purpose)
+    assert len(result["rows"]) == expected_rows
+    assert len(result["columns"]) == 20
+    assert result["rows"][0]["field_0"] == "x" * value_limit + "..."
+    assert result["inspection"]["columns_omitted"] == 10
+    assert result["inspection"]["values_truncated"] is True
+    assert result["inspection"]["schema_source"] == "footer"
+    assert result["total_row_count"] is None
+    selected = probe_utils.preview_file(probe_utils.register_file_scan, str(path), {"columns": ["field_29"]})
+    assert [column["name"] for column in selected["columns"]] == ["field_29"]
+
+
+def test_preview_preserves_nested_structure_with_a_cell_budget():
+    table = pa.Table.from_pylist([{"record": {"items": ["x" * 100] * 30, "extra": "y" * 1000}}])
+    preview = ExternalDataLoader.format_preview(table, {"size": 5}, purpose="agent")
+    assert isinstance(preview["rows"][0]["record"], dict)
+    assert len(str(preview["rows"][0]["record"])) < 250
+    assert preview["inspection"]["values_truncated"] is True
+
+
+def test_native_preview_projects_before_execution():
+    with patch("duckdb.connect") as connect:
+        connection = connect.return_value.__enter__.return_value
+        connection.execute.return_value.fetch_arrow_table.return_value = pa.table({"field_0": [1]})
+        register = Mock()
+        register.return_value.columns = [f"field_{index}" for index in range(30)]
+        probe_utils.preview_file(register, "data.parquet", {"size": 5})
+    register.assert_called_once_with(connection, "data.parquet", preview=True)
+    connection.table.assert_not_called()
+    statement = connection.execute.call_args.args[0]
+    assert '"field_19"' in statement
+    assert '"field_20"' not in statement
+    assert statement.endswith("LIMIT 5")
+
+
+def test_athena_import_pushes_filters_projection_and_sort_before_limit():
+    from data_formulator.data_loader.athena_data_loader import AthenaDataLoader
+
+    loader = object.__new__(AthenaDataLoader)
+    loader._execute_query = Mock(return_value="s3://fixture/results.csv")
+    loader.s3_fs = Mock()
+    loader.s3_fs.open_input_file.return_value.__enter__ = Mock()
+    loader.s3_fs.open_input_file.return_value.__exit__ = Mock()
+    expected = pa.table({"score": [9]})
+    with patch("data_formulator.data_loader.athena_data_loader.pa_csv.read_csv", return_value=expected):
+        assert loader.fetch_data_as_arrow("db.reviews", {
+            "size": 1, "columns": ["score"], "sort_columns": ["score"], "sort_order": "desc",
+            "source_filters": [{"column": "group", "operator": "EQ", "value": "target"}],
+        }) is expected
+    sql = loader._execute_query.call_args.args[0]
+    assert 'SELECT "score" FROM db.reviews' in sql
+    assert 'WHERE "group" = \'target\'' in sql
+    assert 'ORDER BY "score" DESC' in sql
+    assert sql.endswith("LIMIT 1")
 
 
 # ------------------------------------------------------------------
@@ -132,6 +225,45 @@ def _sample_table() -> pa.Table:
 # ------------------------------------------------------------------
 
 class TestCompileProbeSql:
+    @pytest.mark.parametrize("values", [["West", "East"], ["West", "West"], ["O'Brien", "East"],
+                                        ["West", None], []])
+    @pytest.mark.parametrize("operator", ["IN", "NOT_IN"])
+    def test_duckdb_string_membership_preserves_results(self, values, operator):
+        query = {"filters": [{"column": "region", "op": operator, "value": values}],
+                 "order_by": [{"column": "id", "dir": "desc"}]}
+        with duckdb.connect() as connection:
+            connection.register("t", pa.table({"id": [1, 2, 3, 4, 5],
+                                               "region": ["West", "East", "O'Brien", "North", None]}))
+            baseline = compile_probe_sql(query, 3, dialect=probe_utils.DUCKDB)
+            optimized = compile_probe_sql(query, 3, dialect=probe_utils.DUCKDB, string_columns=("region",))
+            assert connection.execute(optimized).fetchall() == connection.execute(baseline).fetchall()
+
+    def test_membership_optimization_requires_duckdb_and_verified_string_column(self):
+        query = {"filters": [{"column": "date", "op": "IN", "value": ["2024-01-01", "2024-01-02"]}]}
+        assert "list_contains" not in compile_probe_sql(query, 10, dialect=probe_utils.DUCKDB)
+        assert "list_contains" not in compile_probe_sql(query, 10, dialect=probe_utils.POSTGRES,
+                                                       string_columns=("date",))
+        with duckdb.connect() as connection:
+            connection.execute("CREATE TABLE t AS SELECT DATE '2024-01-01' AS date")
+            assert len(connection.execute(compile_probe_sql(query, 10, dialect=probe_utils.DUCKDB)).fetchall()) == 1
+
+    def test_string_membership_is_exact_inside_parquet_scan(self, tmp_path):
+        import pyarrow.parquet as pq
+
+        path = tmp_path / "reviews.parquet"
+        pq.write_table(pa.table({"title": ["first", "other", "second", None],
+                                "quote": ["first review", "unneeded review", "second review", None]}), path)
+        query = {"filters": [{"column": "title", "op": "IN", "value": ["first", "second"]}]}
+        sql = compile_probe_sql(query, 10, dialect=probe_utils.DUCKDB, string_columns=("title",))
+        assert '"title" IN' in sql
+        with duckdb.connect() as connection:
+            probe_utils.register_file_scan(connection, str(path))
+            plan = connection.execute("EXPLAIN " + sql).fetchone()[1]
+            scan_plan = plan.split("PARQUET_SCAN", 1)[1]
+            assert "list_contains" in scan_plan
+            assert "Filters:" in scan_plan
+            assert connection.execute(sql).fetchall() == [("first", "first review"), ("second", "second review")]
+
     def test_sample_projection(self):
         sql = compile_probe_sql({"columns": ["region"]}, out_limit=10)
         assert sql == 'SELECT "region" FROM t LIMIT 10'

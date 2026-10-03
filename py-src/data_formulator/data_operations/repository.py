@@ -147,8 +147,9 @@ class DataOperationRepository:
         operation_id: str,
         result_table_ids: tuple[str, ...],
         failed_steps: tuple[FailedOperationStep, ...],
+        result_references: tuple[dict[str, Any], ...] = (),
     ) -> DataOperation:
-        if failed_steps and result_table_ids:
+        if failed_steps and (result_table_ids or result_references):
             status = DataOperationStatus.PARTIALLY_LOADED
             error = None
         elif failed_steps:
@@ -166,6 +167,7 @@ class DataOperationRepository:
             result_table_ids=result_table_ids,
             error=error,
             failed_steps=failed_steps,
+            result_references=result_references,
         )
 
     def _record_execution(
@@ -176,6 +178,7 @@ class DataOperationRepository:
         result_table_ids: tuple[str, ...] = (),
         error: OperationError | None = None,
         failed_steps: tuple[FailedOperationStep, ...] = (),
+        result_references: tuple[dict[str, Any], ...] = (),
     ) -> DataOperation:
         with WorkspaceLock(self._workspace_path):
             records = self._read_unlocked()
@@ -187,6 +190,7 @@ class DataOperationRepository:
                     if (
                         operation.status == status
                         and operation.result_table_ids == result_table_ids
+                        and operation.result_references == result_references
                         and operation.error == error
                         and operation.failed_steps == failed_steps
                     ):
@@ -200,6 +204,7 @@ class DataOperationRepository:
                             operation,
                             status=status,
                             result_table_ids=result_table_ids,
+                            result_references=result_references,
                             error=error,
                             failed_steps=failed_steps,
                         )

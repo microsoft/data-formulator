@@ -23,7 +23,6 @@ export function getUrls() {
         TEST_MODEL: `/api/agent/test-model`,
 
         SORT_DATA_URL: `/api/agent/sort-data`,
-        DATA_LOADING_CHAT_URL: `/api/agent/data-loading-chat`,
         SCRATCH_UPLOAD_URL: `/api/agent/workspace/scratch/upload`,
         SCRATCH_BASE_URL: `/api/agent/workspace/scratch`,
         
@@ -47,22 +46,14 @@ export function getUrls() {
         SYNC_TABLE_DATA: `/api/tables/sync-table-data`,
         EXPORT_TABLE_CSV: `/api/tables/export-table-csv`,
 
-        GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
-
         // Starter exploration questions (generated on data load)
         DERIVE_STARTER_QUESTIONS: `/api/agent/derive-starter-questions`,
 
         // Workspace display name (auto-naming)
         WORKSPACE_NAME: `/api/agent/workspace-name`,
 
-        // NL-to-filter
-        NL_TO_FILTER: `/api/agent/nl-to-filter`,
-
         // Chart style refinement (restyle agent)
         CHART_RESTYLE: `/api/agent/chart-restyle`,
-
-        // Intent classifier — routes a chart prompt to restyle vs. data agent
-        CLASSIFY_CHART_INTENT: `/api/agent/classify-chart-intent`,
 
         // Refresh data endpoint
         REFRESH_DERIVED_DATA: `/api/agent/refresh-derived-data`,
@@ -114,11 +105,64 @@ export const CONNECTOR_ACTION_URLS = {
     SYNC_CATALOG_METADATA: '/api/connectors/sync-catalog-metadata',
     GET_CACHED_CATALOG_TREE: '/api/connectors/get-cached-catalog-tree',
     IMPORT_DATA: '/api/connectors/import-data',
+    IMPORT_FILE: '/api/connectors/import-file',
     REFRESH_DATA: '/api/connectors/refresh-data',
     PREVIEW_DATA: '/api/connectors/preview-data',
     IMPORT_GROUP: '/api/connectors/import-group',
     COLUMN_VALUES: '/api/connectors/column-values',
 } as const;
+
+export async function fetchConnectorCatalog<T = any>(
+    connectorId: string,
+    options: { signal?: AbortSignal; onProgress?: (message: string) => void; refresh?: boolean } = {},
+): Promise<{ data: T }> {
+    const { apiRequest } = await import('./apiClient');
+    const deadline = Date.now() + 5 * 60_000;
+    let poll = false;
+    let failures = 0;
+    while (!options.signal?.aborted && Date.now() < deadline) {
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        options.signal?.addEventListener('abort', abort, { once: true });
+        const timeout = setTimeout(abort, 10_000);
+        try {
+            const result = await apiRequest<any>(CONNECTOR_ACTION_URLS.GET_CATALOG_TREE, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connectorId, background: true, poll, retry: !poll, refresh: !poll && options.refresh }),
+                signal: controller.signal,
+            });
+            failures = 0;
+            const discovery = result.data.discovery;
+            if (!discovery || discovery.status === 'complete') return result;
+            if (discovery.status !== 'running') {
+                throw new Error(discovery.message || 'Discovery incomplete. The connection is preserved; retry discovery.');
+            }
+            options.onProgress?.(discovery.message || 'Discovering tables and files...');
+        } catch (error: any) {
+            if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+            const transient = error?.name === 'AbortError' || error instanceof TypeError
+                || [408, 429, 502, 503, 504].includes(error?.httpStatus);
+            if (!transient || ++failures > 3) throw error;
+            options.onProgress?.('Discovery is continuing. Reconnecting to check progress...');
+        } finally {
+            clearTimeout(timeout);
+            options.signal?.removeEventListener('abort', abort);
+        }
+        poll = true;
+        await new Promise<void>((resolve) => {
+            const finish = () => {
+                clearTimeout(timer);
+                options.signal?.removeEventListener('abort', finish);
+                resolve();
+            };
+            const timer = setTimeout(finish, 1000 * 2 ** failures);
+            options.signal?.addEventListener('abort', finish, { once: true });
+            if (options.signal?.aborted) finish();
+        });
+    }
+    if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+    throw new Error('Discovery is taking longer than expected. The connection is preserved; retry to check progress.');
+}
 
 /** Global connector management URLs. */
 export const CONNECTOR_URLS = {
@@ -470,6 +514,14 @@ export function extractFieldsFromEncodingMap(encodingMap: EncodingMap, allFields
         }
     }
 
+    // Flint orders categories by an unmapped sortBy field; aggregation would drop that column.
+    if (aggregateFields.length === 0) {
+        for (const { sortBy } of Object.values(encodingMap)) {
+            if (sortBy && !['x', 'y', 'color'].includes(sortBy) && !groupByFields.includes(sortBy)
+                && allFields.some(field => field.name === sortBy)) groupByFields.push(sortBy);
+        }
+    }
+
     return { aggregateFields, groupByFields };
 }
 
@@ -560,6 +612,22 @@ export const assembleVegaChart = (
             sortBy: encoding.sortBy,
             scheme: encoding.scheme,
         };
+    }
+
+    // Flint rejects sort references it cannot resolve; an unusable sort hint must not block the chart.
+    const columns = new Set(Object.keys(workingTable[0] ?? {}));
+    for (const encoding of Object.values(encodings)) {
+        const sortBy = encoding.sortBy;
+        if (sortBy === undefined) continue;
+        if (sortBy === 'x' || sortBy === 'y' || sortBy === 'color') {
+            if (!encodings[sortBy]?.field && encodings[sortBy]?.aggregate !== 'count') encoding.sortBy = undefined;
+        } else if (!columns.has(sortBy)) {
+            let values: unknown;
+            try { values = JSON.parse(sortBy); } catch { values = undefined; }
+            const valid = Array.isArray(values) ? values.filter(value => typeof value === 'string'
+                || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))) : [];
+            encoding.sortBy = valid.length > 0 ? JSON.stringify(valid) : undefined;
+        }
     }
 
     const semanticTypes: Record<string, string | any> = {};

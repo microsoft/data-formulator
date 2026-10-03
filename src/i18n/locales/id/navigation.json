@@ -1,0 +1,18 @@
+{
+  "navigation": {
+    "startExploration": "Mulai Eksplorasi",
+    "installLocally": "Instal Secara Lokal",
+    "tryOnlineDemo": "Coba Demo Daring",
+    "video": "Video",
+    "github": "GitHub",
+    "contactUs": "Hubungi Kami",
+    "termsOfUse": "Syarat Penggunaan",
+    "about": "Tentang",
+    "home": "Beranda",
+    "data": "Data",
+    "visualization": "Visualisasi",
+    "report": "Laporan",
+    "chat": "Obrolan",
+    "agentRules": "Aturan Agen"
+  }
+}

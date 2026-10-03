@@ -77,7 +77,24 @@ def attach_reasoning_content(msg: dict, choice_message) -> dict:
     rc = getattr(choice_message, "reasoning_content", None)
     if rc is not None:
         msg["reasoning_content"] = rc
+    items = accumulate_reasoning_items([], choice_message)
+    if items:
+        msg["reasoning_items"] = items
     return msg
+
+
+def accumulate_reasoning_items(accumulated: list[dict], delta) -> list[dict]:
+    """Retain complete opaque reasoning items for replay, replacing repeated snapshots by ID."""
+    items = list(accumulated)
+    for incoming in getattr(delta, "reasoning_items", None) or []:
+        item = incoming.model_dump(exclude_none=True) if hasattr(incoming, "model_dump") else dict(incoming)
+        existing = next((index for index, previous in enumerate(items)
+                         if item.get("id") and previous.get("id") == item["id"]), None)
+        if existing is None:
+            items.append(item)
+        else:
+            items[existing] = item
+    return items
 
 
 def accumulate_reasoning_content(
@@ -552,7 +569,10 @@ def _format_import_options(opts: dict | None) -> str:
     parts: list[str] = []
     sf = opts.get("source_filters")
     if sf and isinstance(sf, list) and len(sf) > 0:
-        parts.append(f"{len(sf)} filter(s)")
+        parts.append("filters " + json.dumps(sf, ensure_ascii=False, default=str))
+    columns = opts.get("columns")
+    if isinstance(columns, list) and columns:
+        parts.append("selected columns " + json.dumps(columns, ensure_ascii=False, default=str))
     sc = opts.get("sort_columns")
     so = opts.get("sort_order", "asc")
     if sc and isinstance(sc, list) and len(sc) > 0:
@@ -583,8 +603,8 @@ def generate_data_summary(
     Use WorkspaceWithTempData context manager to mount temp tables to workspace.
 
     When ``primary_tables`` is provided, the output is structured into tiered sections:
-    - **[PRIMARY TABLE]** / **[PRIMARY TABLES]**: Full detail for the tables the user is focused on.
-    - **[OTHER AVAILABLE TABLES]**: Full detail for the remaining tables.
+    - **[PRIMARY ANALYSIS INPUTS]**: Full detail for the input tables the user is focused on.
+    - **[OTHER ANALYSIS INPUTS]**: Full detail for the remaining input tables.
     Sections are omitted when empty.
 
     Args:
@@ -629,7 +649,8 @@ def generate_data_summary(
         workspace,
     )
     col_meta_cache: dict[str, dict[str, dict]] = {}
-    table_desc_cache.update(catalog_table_descs)
+    for table_name, description in catalog_table_descs.items():
+        table_desc_cache.setdefault(table_name, description)
     for tname, col_descs in catalog_col_descs.items():
         col_desc_cache.setdefault(tname, {}).update(col_descs)
     table_extra_cache.update(catalog_extras)
@@ -737,10 +758,9 @@ def generate_data_summary(
 
         sections = []
         if primary_parts:
-            header = "[PRIMARY TABLE]" if len(primary_parts) == 1 else "[PRIMARY TABLES]"
-            sections.append(header + "\n\n" + separator.join(primary_parts))
+            sections.append("[PRIMARY ANALYSIS INPUTS]\n\n" + separator.join(primary_parts))
         if other_parts:
-            sections.append("[OTHER AVAILABLE TABLES]\n\n" + separator.join(other_parts))
+            sections.append("[OTHER ANALYSIS INPUTS]\n\n" + separator.join(other_parts))
         return "\n\n".join(sections)
 
     # Join with visual separators (no tiering)

@@ -23,12 +23,17 @@ class AuthResult:
     ``raw_token`` carries the original access_token so that downstream
     code (e.g. SSO pass-through to external BI systems) can reuse it
     without a second authentication round-trip.
+
+    ``login_name`` is a provider-authenticated sign-in address usable for
+    administrator authorization. Never populate it from a display name or
+    an unverified contact email. Currently supplied only by Azure EasyAuth.
     """
 
     user_id: str
     display_name: Optional[str] = None
     email: Optional[str] = None
     raw_token: Optional[str] = None
+    login_name: Optional[str] = None
 
 
 class AuthProvider(ABC):

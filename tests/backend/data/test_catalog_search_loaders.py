@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pyarrow as pa
 import pytest
 
+from data_formulator.data_loader.clickhouse_data_loader import ClickHouseDataLoader
 from data_formulator.data_loader.mysql_data_loader import MySQLDataLoader
 from data_formulator.data_loader.postgresql_data_loader import PostgreSQLDataLoader
 from data_formulator.data_loader.superset_data_loader import SupersetLoader
@@ -92,3 +93,77 @@ def test_superset_search_catalog_returns_dataset_and_dashboard_matches(monkeypat
     dashboard = result["tree"][1]
     assert dashboard["node_type"] == "table_group"
     assert dashboard["metadata"]["dashboard_id"] == 3
+
+
+# ── table_key on the search path ──────────────────────────────────────
+
+class TestSearchCatalogTableKey:
+    """Every ``search_catalog`` override must emit ``metadata.table_key``.
+
+    PostgreSQL, MySQL and ClickHouse route through
+    ``_tables_to_catalog_tree``.  Superset builds its tree by hand, so the key
+    has to be applied on that path separately.
+    """
+
+    def test_postgresql(self, monkeypatch):
+        loader = PostgreSQLDataLoader.__new__(PostgreSQLDataLoader)
+        loader.params = {"database": "analytics"}
+        loader.database = "analytics"
+        monkeypatch.setattr(loader, "_read_sql_on", lambda query, dbname=None: pa.table({
+            "table_schema": ["public"],
+            "table_name": ["orders"],
+        }))
+
+        table = loader.search_catalog("ord", limit=10)["tree"][0]["children"][0]
+
+        assert table["metadata"]["table_key"] == "analytics.public.orders"
+
+    def test_mysql(self, monkeypatch):
+        loader = MySQLDataLoader.__new__(MySQLDataLoader)
+        loader.params = {"database": ""}
+        loader.database = ""
+        loader._lock = threading.Lock()
+        monkeypatch.setattr(loader, "_read_sql", lambda query: pa.table({
+            "TABLE_SCHEMA": ["analytics"],
+            "TABLE_NAME": ["orders"],
+        }))
+
+        table = loader.search_catalog("ord", limit=10)["tree"][0]["children"][0]
+
+        assert table["metadata"]["table_key"] == "analytics.orders"
+
+    def test_clickhouse(self, monkeypatch):
+        loader = ClickHouseDataLoader.__new__(ClickHouseDataLoader)
+        loader.params = {}
+        monkeypatch.setattr(loader, "effective_hierarchy", lambda: [
+            {"key": "database", "label": "Database"},
+            {"key": "table", "label": "Table"},
+        ])
+        monkeypatch.setattr(loader, "list_tables", lambda table_filter=None: [
+            {"name": "events", "path": ["default", "events"], "metadata": {}},
+        ])
+
+        table = loader.search_catalog("eve", limit=10)["tree"][0]["children"][0]
+
+        assert table["metadata"]["table_key"] == "events"
+
+    def test_superset(self, monkeypatch):
+        loader = SupersetLoader.__new__(SupersetLoader)
+        monkeypatch.setattr(loader, "_ensure_token", lambda: "token")
+        monkeypatch.setattr(loader, "_fetch_all_datasets", lambda token: [
+            {
+                "id": 7,
+                "table_name": "sales_orders",
+                "uuid": "uuid-7",
+                "row_count": 42,
+                "schema": "public",
+                "database": {"database_name": "warehouse"},
+            },
+        ])
+        loader._client = SimpleNamespace(
+            list_dashboards=lambda token, page=0, page_size=500: {"result": []},
+        )
+
+        table = loader.search_catalog("sales", limit=10)["tree"][0]["children"][0]
+
+        assert table["metadata"]["table_key"] == "uuid-7"

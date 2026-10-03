@@ -8,6 +8,7 @@ can construct tiered context (primary/other tables, focused thread,
 peripheral threads) from the same code.
 """
 
+import json
 import logging
 from typing import Any
 
@@ -68,6 +69,11 @@ def build_focused_thread_context(focused_thread: list[dict[str, Any]]) -> str:
             lines.append(f"  Analyst: {step['agent_response']}")
         if step.get("user_answer"):
             lines.append(f"  User reply: {step['user_answer']}")
+        if step.get("workflow"):
+            lines.append("  Workflow status and outputs: " + json.dumps(step["workflow"], ensure_ascii=False))
+        definition = step.get("workflow_definition")
+        if isinstance(definition, str) and definition:
+            lines.append("  Proposed workflow definition (conversation context, not execution state):\n" + definition[:48000])
         operation = step.get("data_operation")
         if operation:
             options = ", ".join(operation.get("options") or [])
@@ -82,6 +88,9 @@ def build_focused_thread_context(focused_thread: list[dict[str, Any]]) -> str:
                     "  Loaded workspace tables: "
                     + ", ".join(operation["result_tables"])
                 )
+            if operation.get("result_references"):
+                lines.append("  Virtual workspace sources (not compute-ready; rows remain remote): "
+                             + json.dumps(operation["result_references"], ensure_ascii=False))
         if step.get("agent_thinking"):
             lines.append(f"  Agent thinking: {step['agent_thinking']}")
         if step.get("display_instruction"):
@@ -159,7 +168,7 @@ def build_lightweight_table_context(
     """Build compact table context with schema, metadata, value samples, and rows.
 
     When ``primary_tables`` is provided, tables are grouped into
-    [PRIMARY TABLE(S)] and [OTHER AVAILABLE TABLES] sections.
+    [PRIMARY ANALYSIS INPUTS] and [OTHER ANALYSIS INPUTS] sections.
     """
     table_desc_cache, col_desc_cache, import_opts_cache = _get_workspace_metadata_lookups(workspace)
     table_extra_cache: dict[str, list[str]] = {}
@@ -263,7 +272,7 @@ def build_lightweight_table_context(
             return _client_schema_section(table, label)
 
     load_hint = (
-        "\nThe tables above are the data already loaded into this workspace, and the "
+        "\nThe analysis input tables above are already materialized and are the "
         "only data you can read directly. Anything not listed here has not been loaded "
         "yet: find it in a connected source and propose loading it before relying on it.\n"
         "To load a table in code: pd.read_parquet('file.parquet') or "
@@ -278,12 +287,11 @@ def build_lightweight_table_context(
 
         sections = []
         if primary_tables_list:
-            header = "[PRIMARY TABLE]" if len(primary_tables_list) == 1 else "[PRIMARY TABLES]"
             primary_parts = [_table_section(t) for t in primary_tables_list]
-            sections.append(header + "\n\n" + "\n\n".join(primary_parts))
+            sections.append("[PRIMARY ANALYSIS INPUTS]\n\n" + "\n\n".join(primary_parts))
         if other_tables_list:
             other_parts = [_table_section(t) for t in other_tables_list]
-            sections.append("[OTHER AVAILABLE TABLES]\n\n" + "\n\n".join(other_parts))
+            sections.append("[OTHER ANALYSIS INPUTS]\n\n" + "\n\n".join(other_parts))
         return "\n\n".join(sections) + "\n" + load_hint
 
     sections = [_table_section(table) for table in input_tables]
@@ -359,6 +367,11 @@ def handle_read_catalog_metadata(
     source_id: str,
     table_key: str,
     workspace: Any = None,
+    *,
+    column_offset: int = 0,
+    column_query: str | None = None,
+    role: str | None = None,
+    relationship_offset: int | None = None,
 ) -> str:
     """Handle a read_catalog_metadata tool call.
 
@@ -374,6 +387,10 @@ def handle_read_catalog_metadata(
     user_home = getattr(workspace, "user_home", None) if workspace else None
     if not user_home:
         return "Cannot read catalog metadata: user home not available."
+
+    from data_formulator.datalake.connector_preferences import connector_is_enabled
+    if not connector_is_enabled(user_home, source_id):
+        return f"Source '{source_id}' is disconnected."
 
     # Surface zero-config admin connectors (e.g. sample_datasets) on first use.
     ensure_no_auth_catalogs_cached(user_home)
@@ -425,34 +442,112 @@ def handle_read_catalog_metadata(
 
     for field in ("schema", "database", "row_count"):
         val = meta.get(field)
-        if val:
+        if val is not None:
             lines.append(f"{field}: {val}")
+
+    inspection = meta.get("inspection") or {}
+    if inspection:
+        details = {key: inspection[key] for key in (
+            "schema_source", "schema_complete", "row_count_status", "sample_status",
+            "sample_method", "filtered", "row_limit", "columns_omitted", "values_truncated",
+        ) if key in inspection}
+        lines.append("Inspection: " + json.dumps(details))
+        if inspection.get("row_count_status") == "unknown":
+            lines.append("Row count not collected; no full count scan was requested.")
+        if inspection.get("schema_source") == "inferred":
+            lines.append("Schema inferred from a bounded sample; later records may differ.")
+
+    sample = meta.get("sample_rows")
+    if sample is not None:
+        sample_text = json.dumps(sample[:TABLE_SAMPLE_MAX_ROWS], default=str, ensure_ascii=False)
+        sample_limit = min(TABLE_SAMPLE_CHAR_LIMIT, 500)
+        shortened = len(sample_text) > sample_limit
+        lines.append("Sample rows (not necessarily representative): " + sample_text[:sample_limit]
+                     + ("... [sample text truncated]" if shortened else ""))
 
     table_desc = meta.get("description", "") or meta.get("source_description", "")
     if table_desc:
         lines.append(f"\nDescription: {table_desc}")
 
-    columns = meta.get("columns", [])
-    if columns:
-        lines.append(f"\nColumns ({len(columns)}):")
-        for col in columns[:50]:
-            cname = col.get("name", "?")
-            ctype = col.get("type", "")
-            cdesc = col.get("description", "") or col.get("source_description", "")
-            vname = col.get("verbose_name", "")
-            expr = col.get("expression", "")
-            line = f"  - {cname}"
-            if vname:
-                line += f" [{vname}]"
-            if ctype:
-                line += f" ({ctype})"
-            if cdesc:
-                line += f": {cdesc}"
-            if expr:
-                line += f"  [calc: {expr}]"
-            lines.append(line)
-        if len(columns) > 50:
-            lines.append(f"  ... and {len(columns) - 50} more columns")
+    header = "\n".join(lines)
+    lines = [header if len(header) <= 1200 else header[:1200] + "\n[Summary truncated]"]
+    columns = meta.get("columns") or []
+    relationships = meta.get("relationships") or []
+    if meta.get("query_model") == "semantic":
+        roles = [col.get("role") for col in columns]
+        lines.append(
+            f"\nSemantic model: {len(columns)} fields: {roles.count('measure')} measures, "
+            f"{roles.count('dimension')} dimensions, {roles.count('time_dimension')} time dimensions."
+            " Select dimensions and measures in query.columns; the model groups by the selected dimensions."
+        )
 
-    text = "\n".join(lines)
-    return text[:4000] + "\n..." if len(text) > 4000 else text
+    if relationship_offset is not None:
+        start = max(0, int(relationship_offset))
+        matching = relationships
+        label, cursor, filtered = "Relationships", "relationship_offset", ""
+        lines.append("For fields, omit relationship_offset.")
+    else:
+        needle = (column_query or "").casefold().strip()
+        matching = [
+            col for col in columns
+            if (not role or col.get("role") == role)
+            and (not needle or needle in f"{col.get('name', '')} {col.get('description', '')}".casefold())
+        ]
+        start = max(0, int(column_offset or 0))
+        filtered = " matching the filter" if needle or role else ""
+        label, cursor = "Columns", "column_offset"
+        if relationships and not column_offset:
+            lines.append(f"Relationships: {len(relationships)} available; request relationship_offset=0.")
+
+    if start >= len(matching):
+        lines.append(f"\nNo {label.lower()}{filtered} at {cursor}={start}; {len(matching)} available.")
+    else:
+        budget = _CATALOG_METADATA_CHAR_LIMIT - len("\n".join(lines)) - 256
+        page: list[str] = []
+        for item in matching[start:start + _CATALOG_COLUMNS_PER_PAGE]:
+            line = ("  - " + json.dumps(item, ensure_ascii=False) if relationship_offset is not None
+                    else _format_catalog_column(item))
+            if len(line) + 1 > budget:
+                if page:
+                    break
+                marker = "... [metadata truncated]"
+                line = line[:budget - len(marker) - 1] + marker
+            page.append(line)
+            budget -= len(line) + 1
+        end = start + len(page)
+        lines.append(f"\n{label} {start + 1}-{end} of {len(matching)}{filtered}:")
+        lines.extend(page)
+        if end < len(matching):
+            lines.append(f"  Next: {cursor}={end}. Keep the same source, table, and filters.")
+
+    return "\n".join(lines)
+
+
+_CATALOG_METADATA_CHAR_LIMIT = 4000
+_CATALOG_COLUMNS_PER_PAGE = 50
+
+
+def _format_catalog_column(col: dict[str, Any]) -> str:
+    details = [str(col[key]) for key in ("type", "role") if col.get(key)]
+    if col.get("entity"):
+        details.append(f"entity={col['entity']}")
+    if col.get("aggregation"):
+        details.append(f"aggregation={col['aggregation']}")
+    if col.get("granularities"):
+        details.append("granularities=" + "/".join(map(str, col["granularities"])))
+    if col.get("ref"):
+        details.append(f"ref={col['ref']}")
+    if col.get("format"):
+        details.append(f"format={col['format']}")
+    line = f"  - {col.get('name', '?')}"
+    if col.get("verbose_name"):
+        line += f" [{col['verbose_name']}]"
+    if details:
+        line += f" ({', '.join(details)})"
+    description = col.get("description", "") or col.get("source_description", "")
+    if description:
+        line += f": {description[:300]}" + ("... [description truncated]" if len(description) > 300 else "")
+    if col.get("expression"):
+        expression = str(col["expression"])
+        line += f"  [calc: {expression[:300]}" + ("... [expression truncated]" if len(expression) > 300 else "") + "]"
+    return line
