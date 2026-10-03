@@ -1196,6 +1196,12 @@ class ExternalDataLoader(ABC):
 
     def _tables_to_catalog_tree(self, tables: list[dict[str, Any]]) -> list[dict]:
         """Build a nested catalog tree from ``list_tables``-style entries."""
+        # Every tree builder funnels through here, including the loader
+        # overrides of ``list_tables_tree``/``search_catalog`` that never call
+        # the base implementations.  Enforcing the ``table_key`` contract in
+        # the normalisation step keeps it true for all of them at once.
+        self.ensure_table_keys(tables)
+
         eff = self.effective_hierarchy()
         num_ns = len(eff) - 1  # namespace levels before the leaf
 
@@ -1291,7 +1297,8 @@ class ExternalDataLoader(ABC):
         directly to place the table in the tree.  Otherwise the ``name``
         is split on ``"."`` as a fallback.
         """
-        tree = self._tables_to_catalog_tree(self.list_tables(table_filter=table_filter))
+        tables = self.list_tables(table_filter=table_filter)
+        tree = self._tables_to_catalog_tree(tables)
 
         return {
             "hierarchy": self.catalog_hierarchy(),
