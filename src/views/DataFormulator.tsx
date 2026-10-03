@@ -61,13 +61,14 @@ import { LandingDataEntry } from './LandingDataEntry';
 import { ReportView } from './ReportView';
 import { DataSourceSidebar, SessionsDialog } from './DataSourceSidebar';
 import GitHubIcon from '@mui/icons-material/GitHub';
-import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions } from './ExampleSessions';
+import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions, publishExampleSession, usePublishedExamples } from './ExampleSessions';
 import { WorkflowPanel, WorkflowRunObserver } from './WorkflowPanel';
 import { listWorkflowLibrary, SchedulesPanel, useScheduleLibrary } from './WorkflowSchedules';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import { useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
+import { handleApiError } from '../app/errorHandler';
 import { listWorkspaceFiles, listWorkspaces, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, updateWorkspaceMeta } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
@@ -77,6 +78,7 @@ import { ItemCard, ItemCardAction, itemCardGridSx } from '../components/ItemCard
 import IconButton from '@mui/material/IconButton';
 import { ArtifactDeleteButton } from './DataThreadCards';
 import DownloadIcon from '@mui/icons-material/Download';
+import PublishOutlinedIcon from '@mui/icons-material/PublishOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -93,9 +95,9 @@ const INITIAL_SESSION_COUNT = 12;
 type LibraryTab = 'sessions' | 'workflows' | 'schedules';
 
 /** The landing page's saved-item tabs. Tab state lives here so switching re-renders only this section. */
-const LandingLibrary: React.FC<{ canSchedule: boolean; sessionsToolbar: React.ReactNode; sessions: React.ReactNode;
+const LandingLibrary: React.FC<{ sessionsToolbar: React.ReactNode; sessions: React.ReactNode;
     workflowsToolbar: React.ReactNode; workflows: React.ReactNode; onOpenSession: (id: string) => void }>
-    = ({ canSchedule, sessionsToolbar, sessions, workflowsToolbar, workflows, onOpenSession }) => {
+    = ({ sessionsToolbar, sessions, workflowsToolbar, workflows, onOpenSession }) => {
     const { t } = useTranslation();
     const [tab, setTab] = useState<LibraryTab>('sessions');
     const [scheduleToolbar, setScheduleToolbar] = useState<HTMLElement | null>(null);
@@ -107,7 +109,7 @@ const LandingLibrary: React.FC<{ canSchedule: boolean; sessionsToolbar: React.Re
                     '& .MuiTouchRipple-root': { display: 'none' } }}>
                 <Tab id="home-sessions-tab" value="sessions" label={t('workspace.yourSessions')} aria-controls="home-sessions-panel" />
                 <Tab id="home-workflows-tab" value="workflows" label={t('workspace.yourWorkflows', { defaultValue: 'Your workflows' })} aria-controls="home-workflows-panel" />
-                {canSchedule && <Tab id="home-schedules-tab" value="schedules" label={t('workspace.yourSchedules', { defaultValue: 'Your schedules' })} aria-controls="home-schedules-panel" />}
+                <Tab id="home-schedules-tab" value="schedules" label={t('workspace.yourSchedules', { defaultValue: 'Your schedules' })} aria-controls="home-schedules-panel" />
             </Tabs>
             <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1, py: 0.5 }}>
                 {tab === 'schedules' ? <Box ref={setScheduleToolbar} sx={{ display: 'flex', alignItems: 'center', gap: 1 }} />
@@ -116,9 +118,9 @@ const LandingLibrary: React.FC<{ canSchedule: boolean; sessionsToolbar: React.Re
         </Box>
         <Box role="tabpanel" id="home-sessions-panel" aria-labelledby="home-sessions-tab" hidden={tab !== 'sessions'}>{sessions}</Box>
         <Box role="tabpanel" id="home-workflows-panel" aria-labelledby="home-workflows-tab" hidden={tab !== 'workflows'}>{workflows}</Box>
-        {canSchedule && <Box role="tabpanel" id="home-schedules-panel" aria-labelledby="home-schedules-tab" hidden={tab !== 'schedules'}>
+        <Box role="tabpanel" id="home-schedules-panel" aria-labelledby="home-schedules-tab" hidden={tab !== 'schedules'}>
             <SchedulesPanel presentation="landing" toolbarContainer={scheduleToolbar} onOpenSession={onOpenSession} />
-        </Box>}
+        </Box>
     </>;
 };
 
@@ -134,7 +136,7 @@ export const DataFormulatorFC = ({ }) => {
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
-    const canSchedule = !!(serverConfig?.IS_LOCAL_MODE || serverConfig?.CAN_CONFIGURE);
+    const canSchedule = !!serverConfig?.IS_LOCAL_MODE;
     const appName = getToolName(serverConfig.APP_NAME);
     const headingSize = Math.max(32, Math.min(76, 76 * Math.sqrt(15 / appName.length)));
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
@@ -230,6 +232,17 @@ export const DataFormulatorFC = ({ }) => {
     const handleOpenWorkspace = useCallback(async (name: string, metaDisplayName?: string) => {
         await dispatch(openSession(name, metaDisplayName));
     }, [dispatch]);
+
+    /** Administrators add a session to everyone's Example sessions; opening it imports a copy. */
+    const handlePublishExample = useCallback(async (id: string, title: string) => {
+        try {
+            await publishExampleSession(id, title);
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), type: 'success', component: 'workspace',
+                value: t('workspace.publishedExample', { defaultValue: 'Published "{{title}}" as an example session.', title }) }));
+        } catch (error) {
+            handleApiError(error, 'Publish example session');
+        }
+    }, [dispatch, t]);
 
     const handleDeleteWorkspace = useCallback(async (name: string) => {
         try {
@@ -348,6 +361,7 @@ export const DataFormulatorFC = ({ }) => {
                 return copy;
         }
     }, [savedWorkspaces, wsSort]);
+    const publishedExamples = usePublishedExamples(!inSession);
 
     const workspaceCard = (w: WorkspaceSummary, onOpened?: () => void) =>
         <ItemCard key={w.id} title={w.display_name} onOpen={() => { onOpened?.(); void handleOpenWorkspace(w.id, w.display_name); }}
@@ -356,7 +370,7 @@ export const DataFormulatorFC = ({ }) => {
             captions={[
                 w.scheduled_run && !w.scheduled_run.forked && <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary', mt: 0.5 }}
                     title={`${w.scheduled_run.scheduleName}: ${new Date(w.scheduled_run.scheduledFor).toLocaleString()}`}>
-                    <ScheduleOutlinedIcon sx={{ fontSize: iconVar.sm }} />Scheduled run{w.shared ? ' · Shared' : ''}
+                    <ScheduleOutlinedIcon sx={{ fontSize: iconVar.sm }} />Scheduled run
                 </Box>,
                 w.saved_at && new Date(w.saved_at).toLocaleString(),
             ]}
@@ -364,6 +378,8 @@ export const DataFormulatorFC = ({ }) => {
                 <ItemCardAction label={t('workspace.rename')} icon={<EditOutlinedIcon />}
                     onClick={() => startRenameWorkspace(w.id, w.display_name)} />
                 <ItemCardAction label={t('workspace.export')} icon={<DownloadIcon />} onClick={() => handleExportWorkspace(w.id)} />
+                {serverConfig?.CAN_CONFIGURE && <ItemCardAction label={t('workspace.publishExample', { defaultValue: 'Publish as example' })}
+                    icon={<PublishOutlinedIcon />} onClick={() => void handlePublishExample(w.id, w.display_name)} />}
                 <ArtifactDeleteButton label={t('workspace.delete')} onClick={() => setConfirmDeleteWs(w.id)} />
             </>} />;
     
@@ -432,7 +448,7 @@ export const DataFormulatorFC = ({ }) => {
 
         try {
             // Fetch the workspace zip
-            const res = await fetch(session.workspace);
+            const res = await fetchWithIdentity(session.workspace);
             if (!res.ok) throw new Error(`Failed to fetch ${session.workspace}`);
             const blob = await res.blob();
             const file = new File([blob], `${session.id}.zip`, { type: 'application/zip' });
@@ -994,6 +1010,8 @@ export const DataFormulatorFC = ({ }) => {
                     gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))',
                     gap: 1.5,
                 }}>
+                    {publishedExamples.map(session => <ExampleSessionCard key={session.id} session={session}
+                        onClick={() => void handleLoadExampleSession(session)} />)}
                     {demoSessions.map((session) => (
                         <ExampleSessionCard
                             key={session.id}
@@ -1012,7 +1030,7 @@ export const DataFormulatorFC = ({ }) => {
             </Box>
 
             {/* ── Saved workspaces section ──────────────────────────── */}
-            <LandingLibrary canSchedule={canSchedule} workflowsToolbar={toolbar} workflows={saved}
+            <LandingLibrary workflowsToolbar={toolbar} workflows={saved}
                 onOpenSession={id => void handleOpenWorkspace(id)}
                 sessionsToolbar={<>
                     <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
@@ -1106,19 +1124,7 @@ export const DataFormulatorFC = ({ }) => {
                         <Button size="small" sx={{ ml: 1 }} onClick={() => void dispatch(openSession(activeWorkspace.id, activeWorkspace.displayName, { saveCurrent: false }))}>
                             {t('workspace.editHere', 'Edit here')}
                         </Button></>
-                    : activeWorkspace.id.startsWith('shared-') ? <>Shared scheduled session
-                        <Button size="small" onClick={async () => {
-                            try {
-                                const { apiRequest } = await import('../app/apiClient');
-                                const { data } = await apiRequest<{ id: string }>('/api/sessions/fork', {
-                                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: activeWorkspace.id }),
-                                });
-                                await handleOpenWorkspace(data.id);
-                            } catch (error) {
-                                const { handleApiError } = await import('../app/errorHandler');
-                                handleApiError(error, 'Fork shared session');
-                            }
-                        }}>Fork session</Button></> : activeWorkspace.scheduledRun ? 'Scheduled run snapshot (read-only)'
+                    : activeWorkspace.scheduledRun ? 'Scheduled run snapshot (read-only)'
                         : t('workspace.expiredReadOnly', 'This temporary session has expired on the server. You are viewing a read-only browser snapshot.')}
                 </Alert>
             )}

@@ -421,7 +421,7 @@ export interface ConnectorFormArtifact extends SetupFormBase {
 
 export interface ScheduleConfig {
     name: string; workflow: string; model_id: string; time: string; timezone: string; weekdays: number[];
-    enabled: boolean; auto_approve: boolean; max_retries: number; catch_up: boolean; publish: boolean;
+    enabled: boolean; auto_approve: boolean; max_retries: number; catch_up: boolean;
     setup?: { parameters: Record<string, string | number | boolean>; instructions: string };
 }
 
@@ -432,7 +432,6 @@ export interface ScheduleFormArtifact extends SetupFormBase {
         target?: SetupFormTarget;
         config: Partial<ScheduleConfig>;
         workflowName?: string;
-        hosted?: boolean;
         /** Values the agent could not verify; the user resolves them before saving. */
         issues?: string[];
         status?: 'pending' | 'saved';

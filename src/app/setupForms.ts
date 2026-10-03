@@ -52,7 +52,6 @@ export function formArtifactFromEvent(form: FormEvent): FormArtifact {
                     ...targetOf(schedule.target),
                     config: schedule.config || {},
                     workflowName: schedule.workflow_name,
-                    hosted: !!schedule.hosted,
                     issues: Array.isArray(schedule.issues) ? schedule.issues.map(String) : [],
                     status: 'pending',
                 },

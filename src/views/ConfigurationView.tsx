@@ -18,6 +18,7 @@ import { ArtifactDeleteButton } from './DataThreadCards';
 import { iconVar, textVar } from '../app/layout';
 import { getConnectorIcon } from '../icons';
 import { MarkdownEditor } from '../components/MarkdownEditor';
+import { PublishedExamplesPanel } from './ExampleSessions';
 
 type Entry = { enabled?: boolean; display_name?: string; description?: string; content?: string; file?: string };
 type ConnectionSettings = { credential_ref: string; endpoint?: string; model?: string; api_base?: string; api_version?: string;
@@ -472,6 +473,13 @@ export const ConfigurationView = () => {
                 })}
                 {addAction}
                 </Box>
+                {tab === 'workflows' && <Box component="section" aria-labelledby="configuration-examples-heading" sx={{ mt: 2.5 }}>
+                    <Typography id="configuration-examples-heading" component="h3" sx={{ fontSize: textVar.md, fontWeight: 600, mb: 0.5 }}>Example sessions</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.25, lineHeight: 1.5 }}>
+                        Publish one of your sessions from its menu to add it to everyone's Example sessions. Opening one gives the user their own copy.
+                    </Typography>
+                    <PublishedExamplesPanel />
+                </Box>}
                 {tab === 'connectors' && !cardRows.length && <Typography variant="body2" color="text.secondary">No configured data sources.</Typography>}
                 {tab === 'limits' && Object.entries(saved.limits).map(([name, setting]) => {
                     const divisor = name.endsWith('_bytes') ? 1048576 : 1;

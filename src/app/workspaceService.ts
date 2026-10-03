@@ -54,7 +54,6 @@ export interface WorkspaceSummary {
     chart_count?: number | null;
     source_ids?: string[];
     read_only?: boolean;
-    shared?: boolean;
     scheduled_run?: ScheduledRunProvenance;
 }
 
@@ -208,8 +207,8 @@ export async function listWorkspaces(): Promise<WorkspaceSummary[]> {
         .sort((left, right) => (right.saved_at || '').localeCompare(left.saved_at || ''));
 }
 
-/** Load a workspace's saved state. Returns null if not found. */
-export async function loadWorkspace(id: string): Promise<{ state: Record<string, any>; displayName: string; readOnly: boolean } | null> {
+/** Load a workspace's saved state. Returns null if not found. A scheduled run's checkpoint comes back as `workflowRun`. */
+export async function loadWorkspace(id: string): Promise<{ state: Record<string, any>; displayName: string; readOnly: boolean; workflowRun?: any } | null> {
     const generation = ++workspaceLoadGeneration;
     const ephemeral = await isEphemeralBackend();
     assertCurrentWorkspaceLoad(generation);
@@ -220,20 +219,13 @@ export async function loadWorkspace(id: string): Promise<{ state: Record<string,
             body: JSON.stringify({ id }),
         });
         if (!data.state) return null;
-        const scheduled = Array.isArray(data.state.scheduledArtifacts);
-        const workflowPanel = scheduled || data.workflow_run ? await import('../views/WorkflowPanel') : undefined;
-        const state = migrateState(scheduled ? workflowPanel!.materializeScheduledSnapshot(data.state) : data.state);
-        if (data.workflow_run && !id.startsWith('shared-')) {
+        const state = migrateState(data.state);
+        if (data.workflow_run) {
+            const workflowPanel = await import('../views/WorkflowPanel');
             const run = data.workflow_run;
-            const turn = workflowPanel!.workflowTextTurn(run, state.textTurns?.find((item: any) => item.workflow?.runId === run.id));
+            const turn = workflowPanel.workflowTextTurn(run, state.textTurns?.find((item: any) => item.workflow?.runId === run.id));
             const summaryId = `scheduled-summary-${run.id}`;
             state.textTurns = [...(state.textTurns || []).filter((item: any) => item.id !== summaryId && item.id !== turn.id), turn];
-            for (const nodes of [state.derivedTables, state.loadedTableNodes, state.generatedReports]) {
-                for (const node of nodes || []) {
-                    if (node.parentNodeId === summaryId) node.parentNodeId = turn.id;
-                    if (node.derive?.trigger?.tableId === summaryId) node.derive.trigger.tableId = turn.id;
-                }
-            }
             if (run.status !== 'completed' || !state.focusedId) {
                 state.focusedId = { type: 'text', textId: turn.id };
                 state.viewMode = 'editor';
@@ -247,7 +239,8 @@ export async function loadWorkspace(id: string): Promise<{ state: Record<string,
         if (ephemeral) {
             await workspaceDB.save(id, displayName, createRecoveryState(state), createTableIndex(state));
         }
-        return { state, displayName, readOnly: data.read_only === true || state.activeWorkspace?.readOnly === true };
+        return { state, displayName, readOnly: data.read_only === true || state.activeWorkspace?.readOnly === true,
+            ...(data.workflow_run ? { workflowRun: data.workflow_run } : {}) };
     } catch (error) {
         if (error instanceof WorkspaceLoadSupersededError) throw error;
         assertCurrentWorkspaceLoad(generation);

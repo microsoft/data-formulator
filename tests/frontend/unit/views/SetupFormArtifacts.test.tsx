@@ -120,7 +120,7 @@ it('auto-saves a complete directly applied schedule with the user defaults', asy
     const body = JSON.parse(String(post![1]!.body));
     expect(body).not.toHaveProperty('id');
     expect(body.config).toMatchObject({ workflow: 'demo/gas.yaml', time: '08:30', weekdays: [0, 1, 2, 3, 4],
-        model_id: 'server-model', auto_approve: false, publish: false, enabled: true });
+        model_id: 'server-model', auto_approve: false, enabled: true });
     expect(body.config.timezone).toBeTruthy();
     expect(await screen.findByLabelText('Next run')).toBeTruthy();
 });

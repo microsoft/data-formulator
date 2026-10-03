@@ -10,7 +10,7 @@ from data_formulator.analyst.skills.base import Event, SkillContext
 from .forms import form_event, form_payload, identity_of, review_requested
 
 WEEKDAY_NAMES = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-_SCHEDULE_OPTIONS = ("enabled", "catch_up", "auto_approve", "publish")
+_SCHEDULE_OPTIONS = ("enabled", "catch_up", "auto_approve")
 
 
 def workflows_unavailable() -> str | None:
@@ -71,20 +71,13 @@ def propose_workflow(spec: dict[str, Any], ctx: SkillContext) -> Generator[Event
     return None
 
 
-def _schedule_scope(ctx: SkillContext) -> tuple[str | None, bool, str | None]:
-    """Return ``(owner, hosted, error)`` using the schedule routes' access policy."""
-    from data_formulator.auth.identity import is_local_mode
-    from data_formulator.workflows.scheduler import scheduling_available
+def _schedule_owner(ctx: SkillContext) -> tuple[str | None, str | None]:
+    """Return ``(owner, error)``; schedules belong to the local app's user."""
+    from data_formulator.workflows.scheduler import SCHEDULING_LOCAL_ONLY, scheduling_available
 
     if not scheduling_available():
-        return None, False, ("Scheduling is unavailable: it requires persistent storage, "
-                             "and hosted scheduling must be enabled by the operator.")
-    if is_local_mode():
-        return identity_of(ctx), False, None
-    from data_formulator.routes.configurations import can_configure
-    if not can_configure():
-        return None, True, "Only administrators can manage hosted schedules."
-    return "admin", True, None
+        return None, SCHEDULING_LOCAL_ONLY
+    return identity_of(ctx), None
 
 
 def cadence(config: dict[str, Any]) -> str:
@@ -104,7 +97,7 @@ def _server_models() -> list[dict[str, Any]]:
 def list_schedules(ctx: SkillContext) -> dict[str, Any]:
     from data_formulator.workflows.scheduler import schedule_store
 
-    owner, hosted, error = _schedule_scope(ctx)
+    owner, error = _schedule_owner(ctx)
     if error:
         return {"available": False, "error": error}
     store = schedule_store()
@@ -122,11 +115,10 @@ def list_schedules(ctx: SkillContext) -> dict[str, Any]:
                             for run in runs],
         })
     return {
-        "available": True, "hosted": hosted, "schedules": schedules,
+        "available": True, "schedules": schedules,
         "server_models": _server_models(),
         "weekdays": "0=Mon … 6=Sun",
-        "note": ("Hosted schedules must use built-in or server workflows and publish results."
-                 if hosted else "Schedules run saved workflows unattended in new sessions."),
+        "note": "Schedules run saved workflows unattended in new sessions.",
     }
 
 
@@ -186,7 +178,7 @@ def propose_schedule(spec: dict[str, Any], ctx: SkillContext) -> Generator[Event
     from data_formulator.workflows.instances import parse_definition, resolve_setup
     from data_formulator.workflows.scheduler import schedule_store
 
-    owner, hosted, error = _schedule_scope(ctx)
+    owner, error = _schedule_owner(ctx)
     if error:
         return error
     try:
@@ -214,8 +206,6 @@ def propose_schedule(spec: dict[str, Any], ctx: SkillContext) -> Generator[Event
         if workflow is None:
             return ("Unknown workflow path. Schedules run saved workflows: call list_workflows, or propose and "
                     "save a workflow before scheduling it.")
-        if hosted and not config["workflow"].startswith(("demo/", "server/")):
-            return "Hosted schedules require a built-in or server workflow."
         config.setdefault("name", workflow["name"])
         try:
             resolve_setup(parse_definition(store.read(config["workflow"])), config.get("setup"))
@@ -224,17 +214,14 @@ def propose_schedule(spec: dict[str, Any], ctx: SkillContext) -> Generator[Event
     else:
         # The form lists saved workflows; the user picks one there.
         issues.append("Choose the saved workflow to run.")
-    if hosted:
-        config["publish"] = True
     # Unspecified timing falls back to the form's defaults, which the user confirms.
     complete = all(key in config for key in ("time", "weekdays"))
-    elevated = bool(config.get("auto_approve") or config.get("publish"))
+    elevated = bool(config.get("auto_approve"))
     auto_submit = not review and complete and not elevated and not issues
     body = {
         **({"target": target} if target else {}),
         "config": config,
         **({"workflow_name": workflow["name"]} if workflow else {}),
-        "hosted": hosted,
         "issues": issues,
     }
     verb = "Update" if schedule_id else "Schedule"

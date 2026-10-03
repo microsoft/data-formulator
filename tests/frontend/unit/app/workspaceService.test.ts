@@ -32,68 +32,38 @@ beforeEach(() => {
     mockState.activeWorkspace = { id: 'workspace-1', displayName: 'Temporary session' };
 });
 
-describe('scheduled snapshots', () => {
-    const snapshot = {
-        activeWorkspace: { id: 'shared-test', displayName: 'Daily report', readOnly: true,
+describe('scheduled run sessions', () => {
+    const session = {
+        activeWorkspace: { id: 'scheduled-run', displayName: 'Daily report', readOnly: true,
             scheduledRun: { scheduleId: 'test', scheduleName: 'Daily report', scheduledFor: '2026-09-30T09:00:00Z' } },
-        textTurns: [{ id: 'scheduled-summary-run-1', kind: 'text', content: 'Completed', createdAt: 1 }],
-        scheduledArtifacts: [
-            { kind: 'data', tableId: 'prices', displayName: 'Weekly prices', rows: [{ category: 'A', value: 1 }] },
-            { kind: 'chart', id: 'chart-test', tableId: 'summary_data', rows: [{ category: 'A', value: 3 }],
-                question: 'How did values compare?', inputSources: [{ id: 'prices', kind: 'data', display_name: 'prices' }],
-                goal: { title: 'Values', chart: { chart_type: 'Bar Chart', encodings: { x: { field: 'category' }, y: { field: 'value' } } } } },
-            { kind: 'report', content: 'Final findings' },
-        ],
+        textTurns: [{ id: 'scheduled-summary-run', kind: 'text', content: 'Completed', createdAt: 1 }],
     };
-
-    it('rebuilds the live thread: data, the question-triggered chart, then the report', async () => {
-        const { materializeScheduledSnapshot } = await import('../../../../src/views/WorkflowPanel');
-        const materialized = materializeScheduledSnapshot(snapshot);
-        const state = dataFormulatorReducer(undefined, dfActions.loadState(materialized));
-        expect(state.loadedTableNodes).toEqual([expect.objectContaining({ id: 'workflow-data-run-1-prices', tableId: 'prices',
-            parentNodeId: 'scheduled-summary-run-1' })]);
-        const chartTable = state.derivedTables.find(table => table.id === 'summary_data')!;
-        expect(chartTable.rows).toEqual([{ category: 'A', value: 3 }]);
-        expect(chartTable.virtual).toBeUndefined();
-        expect(chartTable.parentNodeId).toBe('workflow-data-run-1-prices');
-        expect(chartTable.derive?.source).toEqual(['prices']);
-        expect(chartTable.derive?.trigger.interaction?.[0].content).toBe('How did values compare?');
-        expect(state.charts[0].id).toBe('chart-test');
-        expect(state.conceptShelfItems).toHaveLength(2);
-        expect(state.generatedReports[0]).toMatchObject({ id: 'workflow-report-run-1', content: 'Final findings', parentNodeId: 'summary_data' });
-        expect(state.focusedId).toEqual({ type: 'report', reportId: 'workflow-report-run-1' });
-        expect(state.activeWorkspace?.scheduledRun).toEqual(snapshot.activeWorkspace.scheduledRun);
-        expect(snapshot).toHaveProperty('scheduledArtifacts');
-        expect(materialized).not.toHaveProperty('scheduledArtifacts');
-    });
+    const run = { id: 'run', status: 'paused', step_id: 'inspect', message: 'Execution failed.', started_at: '2026-09-30T09:00:00Z',
+        instance: { name: 'Daily report', steps: [{ id: 'inspect', instructions: 'Inspect source' }] },
+        evidence: { failed: { tool: 'inspect_data', text: 'Source unavailable', step_id: 'inspect' } },
+        outputs: [{ id: 'chart-output', type: 'result', content: { result: { chart_id: 'chart-test', content: { virtual: { table_name: 'summary_data' } } } } }] };
 
     it('honors the server read-only flag without saving a browser recovery copy', async () => {
         mockState.serverConfig.WORKSPACE_BACKEND = 'local';
         const requestSpy = vi.spyOn(await import('../../../../src/app/apiClient'), 'apiRequest')
-            .mockResolvedValue({ data: { state: snapshot, read_only: true } });
-        const result = await loadWorkspace('shared-test');
+            .mockResolvedValue({ data: { state: session, read_only: true } });
+        const result = await loadWorkspace('scheduled-run');
         expect(result?.readOnly).toBe(true);
-        expect(result?.state.charts[0].id).toBe('chart-test');
+        expect(result?.workflowRun).toBeUndefined();
         expect(requestSpy).toHaveBeenCalledOnce();
     });
 
-    it('restores private scheduled workflow controls and focuses the failed checkpoint', async () => {
+    it('restores the workflow turn and returns the checkpoint so its outputs publish from the workspace', async () => {
         mockState.serverConfig.WORKSPACE_BACKEND = 'local';
         vi.spyOn(await import('../../../../src/app/apiClient'), 'apiRequest').mockResolvedValue({ data: {
-            state: { ...snapshot, activeWorkspace: { ...snapshot.activeWorkspace, id: 'scheduled-run', readOnly: false },
-                textTurns: [{ id: 'scheduled-summary-run', content: 'Execution failed.', createdAt: 1 }] },
-            workflow_run: { id: 'run', status: 'paused', step_id: 'inspect', message: 'Execution failed.', started_at: '2026-09-30T09:00:00Z',
-                instance: { name: 'Daily report', steps: [{ id: 'inspect', instructions: 'Inspect source' }] },
-                evidence: { failed: { tool: 'inspect_data', text: 'Source unavailable', step_id: 'inspect' } } },
-        } });
+            state: { ...session, activeWorkspace: { ...session.activeWorkspace, readOnly: false } }, workflow_run: run } });
         const result = await loadWorkspace('scheduled-run');
         expect(result?.readOnly).toBe(false);
+        expect(result?.workflowRun).toBe(run);
         expect(result?.state.textTurns).toHaveLength(1);
         expect(result?.state.textTurns[0].workflow).toMatchObject({ runId: 'run', status: 'paused',
             steps: [expect.objectContaining({ id: 'inspect' })], log: [expect.objectContaining({ text: 'Source unavailable' })] });
         expect(result?.state.focusedId).toEqual({ type: 'text', textId: 'textTurn-workflow-run' });
-        expect(result?.state.loadedTableNodes[0].parentNodeId).toBe('textTurn-workflow-run');
-        expect(result?.state.generatedReports[0].parentNodeId).toBe('summary_data');
     });
 });
 

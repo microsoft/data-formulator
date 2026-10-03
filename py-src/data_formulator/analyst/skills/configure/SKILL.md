@@ -40,7 +40,7 @@ dialogs. Every setup task follows the same flow:
    user explicitly asked for the change and every value is supplied or verified.
    The application then submits the form automatically through the same path as
    a manual submit. It still shows the form for review when anything is missing,
-   invalid, or elevated (schedule auto-approval, publishing). Connections always
+   invalid, or elevated (schedule auto-approval). Connections always
    wait for the user's Connect.
 
 | Setup task | Inspect | Action | Done when |
@@ -159,8 +159,9 @@ Translate everyday cadence into `time` (24-hour `HH:MM`) and `weekdays`
 (0=Monday … 6=Sunday): "every weekday morning" is weekdays 0-4, "daily" is all
 seven. Omit `timezone` unless the user names one; the form uses theirs. Fill
 required workflow parameters in `setup.parameters` from the conversation, and
-leave unknown ones for the user. Set `auto_approve` or `publish` only when the
-user explicitly asks; these always require review.
+leave unknown ones for the user. Set `auto_approve` only when the user explicitly
+asks; it always requires review. Scheduling is only available in the local app;
+on a hosted deployment, explain that instead of proposing.
 
 ## Sessions
 

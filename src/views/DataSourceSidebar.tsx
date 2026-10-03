@@ -36,6 +36,8 @@ import {
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
+import PublishOutlinedIcon from '@mui/icons-material/PublishOutlined';
+import { publishExampleSession } from './ExampleSessions';
 import { generateUUID } from '../app/identity';
 import { generateWorkspaceId, leaveSession, openSession, renameSession } from '../app/sessionThunks';
 import { defaultSessionName } from '../app/useWorkspaceAutoName';
@@ -243,7 +245,6 @@ export const DataSourceSidebar: React.FC<{
     // Stored in Redux so the active tab survives a session refresh.
     // Fall back to 'sources' for older persisted state that predates this field.
     const initialTab = useSelector((state: DataFormulatorState) => state.dataSourceSidebarTab ?? 'sources');
-    const canSchedule = useSelector((state: DataFormulatorState) => !!(state.serverConfig?.IS_LOCAL_MODE || state.serverConfig?.CAN_CONFIGURE));
     const setInitialTab = useCallback(
         (tab: SidebarTab) => dispatch(dfActions.setDataSourceSidebarTab(tab)),
         [dispatch],
@@ -402,7 +403,7 @@ export const DataSourceSidebar: React.FC<{
                         <WorkflowGears running={false} size={20} showTooltip={false} />
                     </IconButton>
                 </Tooltip>
-                {canSchedule && <Tooltip title={t('sidebar.schedules', { defaultValue: 'Schedules' })} placement="right">
+                <Tooltip title={t('sidebar.schedules', { defaultValue: 'Schedules' })} placement="right">
                     <IconButton size="small" aria-label={t('sidebar.schedules', { defaultValue: 'Schedules' })}
                         onClick={() => { setInitialTab('schedules'); if (!isOpen) toggle(); else if (initialTab !== 'schedules') setInitialTab('schedules'); else toggle(); }} sx={{
                         color: isOpen && initialTab === 'schedules' ? 'primary.main' : 'text.secondary',
@@ -411,7 +412,7 @@ export const DataSourceSidebar: React.FC<{
                     }}>
                         <ScheduleOutlinedIcon fontSize="small" />
                     </IconButton>
-                </Tooltip>}
+                </Tooltip>
             </Box>
 
             {/* The expanded panel overlays the workspace instead of changing
@@ -567,6 +568,16 @@ const DataSourceSidebarPanel: React.FC<{
     const [sessionSort, setSessionSort] = useState<SessionSortKey>('created_desc');
     const [sessionSortAnchor, setSessionSortAnchor] = useState<HTMLElement | null>(null);
     const [sessionMenu, setSessionMenu] = useState<{ anchor: HTMLElement; session: WorkspaceSummary } | null>(null);
+    const handlePublishExample = async (id: string, title: string) => {
+        try {
+            await publishExampleSession(id, title);
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), type: 'success', component: 'workspace',
+                value: t('workspace.publishedExample', { defaultValue: 'Published "{{title}}" as an example session.', title }) }));
+        } catch (error) {
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), type: 'error', component: 'workspace',
+                value: error instanceof Error ? error.message : 'Unable to publish example session.' }));
+        }
+    };
     const sessionMenuAction = useRef<(() => void) | null>(null);
     const [sessionsDialogOpen, setSessionsDialogOpen] = useState(false);
 
@@ -1499,7 +1510,6 @@ const DataSourceSidebarPanel: React.FC<{
             sx={{ display: 'inline-flex', verticalAlign: 'middle', color: 'text.disabled', flexShrink: 0, ml: 0.5 }}>
             <ScheduleOutlinedIcon sx={{ fontSize: 13 }} />
         </Box>}
-        {s.shared && <Typography component="span" sx={{ fontSize: textVar.xxs, color: 'text.secondary', ml: 0.5 }}>Shared</Typography>}
     </>;
     const sessionActions = (s: WorkspaceSummary, isCurrent: boolean) => (!s.read_only || !isCurrent) ? <>
         {!isCurrent && <ItemCardAction label={t('sidebar.openInNewTab', { defaultValue: 'Open in new tab' })}
@@ -2126,6 +2136,10 @@ const DataSourceSidebarPanel: React.FC<{
                         <MenuItem key="export" onClick={run(() => handleExportSession(s.id, s.display_name))}>
                             <ListItemIcon><DownloadIcon /></ListItemIcon><ListItemText primary={t('sidebar.exportSession', { defaultValue: 'Export' })} />
                         </MenuItem>,
+                        ...(serverConfig?.CAN_CONFIGURE ? [<MenuItem key="publish" onClick={run(() => void handlePublishExample(s.id, s.display_name))}>
+                            <ListItemIcon><PublishOutlinedIcon /></ListItemIcon>
+                            <ListItemText primary={t('workspace.publishExample', { defaultValue: 'Publish as example' })} />
+                        </MenuItem>] : []),
                         <MenuItem key="delete" onClick={run(() => handleDeleteSession(s.id))} sx={{ color: 'error.main' }}>
                             <ListItemIcon sx={{ color: 'inherit' }}><DeleteIcon /></ListItemIcon><ListItemText primary={t('workspace.deleteSession')} />
                         </MenuItem>,

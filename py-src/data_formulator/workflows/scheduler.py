@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -13,19 +12,20 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from filelock import FileLock, Timeout
 
 from data_formulator.auth.identity import _scheduled_identity, is_local_mode
-from data_formulator.configuration import configuration_path, is_managed_mode
+from data_formulator.configuration import configuration_path
 from data_formulator.workflows.scheduling import ScheduleStore
 
 logger = logging.getLogger(__name__)
 _startup_lock = threading.Lock()
 RUN_TIME_LIMIT = timedelta(hours=2)
 PAUSE_GRACE_SECONDS = 60
+SCHEDULING_LOCAL_ONLY = ("Scheduling runs workflows unattended on your own machine, "
+                         "so it is only available in the local Data Formulator app.")
 
 
 def scheduling_available() -> bool:
     from data_formulator.workspace_factory import _get_backend
-    return (_get_backend() != "ephemeral" and (is_local_mode() or
-            is_managed_mode() and os.environ.get("DF_SCHEDULER_ENABLED") == "1"))
+    return _get_backend() != "ephemeral" and is_local_mode()
 
 
 def schedule_store() -> ScheduleStore:
@@ -48,38 +48,14 @@ def schedule_model_id(config: dict) -> str:
     return available[0]["id"]
 
 
-def materialize_session(schedule: dict, occurrence: dict, state: dict, workspace, *, read_only: bool) -> dict:
-    def rows(table_name: str) -> list:
-        frame = workspace.read_data_as_df(table_name)
-        if len(frame) > 100000:
-            raise ValueError("Scheduled snapshots support at most 100,000 rows per table.")
-        return json.loads(frame.to_json(orient="records", date_format="iso"))
-
-    # Mirrors the outputs a live run adds to the thread, with rows inline so shared copies need no workspace.
-    artifacts = []
-    for output in state.get("outputs", []):
-        if output["type"] == "report":
-            artifacts.append({"kind": "report", "content": output["content"]})
-        elif output["type"] == "tool_result" and output.get("tool") in ("create_data", "update_data"):
-            metadata = json.loads(output.get("stdout") or "{}")
-            if metadata.get("table_name"):
-                artifacts.append({"kind": "data", "tableId": metadata["table_name"], "rows": rows(metadata["table_name"]),
-                                  "displayName": metadata.get("display_name") or metadata["table_name"]})
-        elif output["type"] == "result":
-            result = output["content"]["result"]
-            table_name = result["content"]["virtual"]["table_name"]
-            goal = result["refined_goal"]
-            artifacts.append({"kind": "chart", "id": result["chart_id"], "tableId": table_name, "rows": rows(table_name),
-                              "question": output["content"].get("question"), "inputSources": output.get("input_sources", []),
-                              "code": result.get("code"),
-                              "goal": {key: goal[key] for key in ("chart", "title", "subtitle", "display_name", "output_variable") if key in goal}})
+def run_session_state(schedule: dict, occurrence: dict, state: dict, *, read_only: bool) -> dict:
+    """The session a scheduled run saves; opening it rebuilds the run's outputs from its checkpoint, like a live run."""
     provenance = {"scheduleId": schedule["id"], "scheduleName": schedule["config"]["name"],
                   "scheduledFor": occurrence["scheduled_for"]}
     local = datetime.fromisoformat(occurrence["scheduled_for"]).astimezone(ZoneInfo(schedule["config"]["timezone"]))
     title = f"{schedule['config']['name']} ({local:%b} {local.day}, {local:%H:%M})"
     return {"activeWorkspace": {"id": "scheduled-" + occurrence["id"], "displayName": title,
                                 "scheduledRun": provenance, "readOnly": read_only},
-            "scheduledArtifacts": artifacts,
             "textTurns": [{"id": "scheduled-summary-" + occurrence["id"], "kind": "text", "textKind": "explain",
                            "displayId": schedule["config"]["name"], "content": state.get("message") or "Scheduled run: " + state["status"],
                            "createdAt": int(datetime.fromisoformat(occurrence["scheduled_for"]).timestamp() * 1000)}]}
@@ -112,7 +88,7 @@ def execute_occurrence(app, store: ScheduleStore, occurrence: dict):
 
         def persist(read_only: bool):
             nonlocal snapshot
-            snapshot = materialize_session(schedule, occurrence, state, workspace, read_only=read_only)
+            snapshot = run_session_state(schedule, occurrence, state, read_only=read_only)
             manager.save_session_state(workspace_id, snapshot)
 
         def retry_later(message: str, delay_seconds: float) -> bool:
@@ -180,11 +156,6 @@ def execute_occurrence(app, store: ScheduleStore, occurrence: dict):
                 state = json.loads(path.read_text())
                 if state["status"] == "completed":
                     persist(read_only=False)
-                    if config.get("publish"):
-                        shared = json.loads(json.dumps(snapshot))
-                        shared["activeWorkspace"].update(id="shared-" + schedule["id"], readOnly=True, displayName=config["name"])
-                        shared["textTurns"][0]["content"] = "Scheduled run: completed"
-                        store.publish(schedule["id"], shared)
                     store.finish(occurrence, "completed")
                     return
                 if error:

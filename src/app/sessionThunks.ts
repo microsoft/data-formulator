@@ -76,6 +76,12 @@ export const openSession = (sessionId: string, displayName?: string, options: { 
             dispatch(dfActions.loadState({ ...result.state, activeWorkspace: {
                 ...result.state.activeWorkspace, id: sessionId, displayName: displayName || result.displayName, readOnly: result.readOnly,
             } }));
+            if (result.workflowRun) {
+                // A scheduled run's outputs come from its checkpoint and workspace tables, as for a live run.
+                const { publishWorkflowRun } = await import('../views/WorkflowPanel');
+                try { await publishWorkflowRun(result.workflowRun, sessionId); }
+                catch (error) { console.warn('Failed to restore scheduled run outputs:', error); }
+            }
             return true;
         }
         dispatch(dfActions.addMessages({

@@ -98,19 +98,18 @@ def test_auto_approval_preserves_questions_and_choices(monkeypatch):
     assert automatic_response(interaction, {}) == {}
 
 
-def test_publication_is_allowlisted_and_keeps_previous_success(tmp_path):
-    from data_formulator.workflows.scheduler import materialize_session
-    store = ScheduleStore(tmp_path)
-    saved = store.save("admin", {**CONFIG, "publish": True}, now=NOW)
-    occurrence, = store.claim_due(NOW + timedelta(hours=1))
-    state = {"status": "completed", "trajectory": [{"content": "secret"}], "evidence": {"secret": "tool log"},
-             "external_references": [{"connectorId": "private"}], "outputs": [{"type": "report", "content": "Final report"}]}
-    snapshot = materialize_session(saved, occurrence, state, None, read_only=False)
-    assert "secret" not in str(snapshot)
-    assert "connectorId" not in str(snapshot)
-    store.publish(saved["id"], snapshot)
-    store.finish(occurrence, "failed")
-    assert store.publication(store.publications()[0]["id"]) == snapshot
+def test_run_session_holds_only_provenance_and_summary():
+    from data_formulator.workflows.scheduler import run_session_state
+    schedule = {"id": "schedule", "config": CONFIG}
+    occurrence = {"id": "run", "scheduled_for": "2026-09-30T13:00:00+00:00"}
+    state = {"status": "completed", "message": "Done", "trajectory": [{"content": "secret"}],
+             "outputs": [{"type": "report", "content": "Final report"}]}
+    session = run_session_state(schedule, occurrence, state, read_only=False)
+    assert set(session) == {"activeWorkspace", "textTurns"}
+    assert session["activeWorkspace"] == {"id": "scheduled-run", "displayName": "Daily report (Sep 30, 09:00)", "readOnly": False,
+        "scheduledRun": {"scheduleId": "schedule", "scheduleName": "Daily report", "scheduledFor": occurrence["scheduled_for"]}}
+    assert session["textTurns"][0]["content"] == "Done"
+    assert "secret" not in str(session) and "Final report" not in str(session)
 
 
 def test_schedule_uses_default_model_when_its_model_is_gone(monkeypatch):
@@ -123,30 +122,6 @@ def test_schedule_uses_default_model_when_its_model_is_gone(monkeypatch):
     monkeypatch.setattr(model_registry, "list_public", lambda **kwargs: [])
     with pytest.raises(ValueError, match="No server-configured model"):
         schedule_model_id({"model_id": "removed"})
-
-
-def test_snapshot_keeps_live_thread_outputs_in_order(tmp_path):
-    import pandas as pd
-    from data_formulator.workflows.scheduler import materialize_session
-    store = ScheduleStore(tmp_path)
-    saved = store.save("admin", CONFIG, now=NOW)
-    occurrence, = store.claim_due(NOW + timedelta(hours=1))
-    frames = {"prices": pd.DataFrame({"week": [1], "price": [3.1]}), "swings": pd.DataFrame({"fuel": ["diesel"], "swing": [0.4]})}
-    workspace = type("Workspace", (), {"read_data_as_df": staticmethod(frames.__getitem__)})
-    result = {"chart_id": "chart-1", "code": "swings = prices", "code_signature": "sig",
-              "content": {"virtual": {"table_name": "swings"}}, "refined_goal": {"title": "Swings", "output_variable": "swings"}}
-    state = {"status": "completed", "outputs": [
-        {"type": "tool_result", "tool": "create_data", "stdout": json.dumps({"table_name": "prices", "display_name": "Weekly prices"})},
-        {"type": "result", "input_sources": [{"id": "prices", "kind": "data"}],
-         "content": {"question": "How did swings compare?", "result": result}},
-        {"type": "report", "content": "Brief"}]}
-    artifacts = materialize_session(saved, occurrence, state, workspace, read_only=False)["scheduledArtifacts"]
-    assert [item["kind"] for item in artifacts] == ["data", "chart", "report"]
-    assert artifacts[0] == {"kind": "data", "tableId": "prices", "displayName": "Weekly prices", "rows": [{"week": 1, "price": 3.1}]}
-    assert artifacts[1]["question"] == "How did swings compare?"
-    assert artifacts[1]["inputSources"] == [{"id": "prices", "kind": "data"}]
-    assert artifacts[1]["goal"]["output_variable"] == "swings"
-    assert "sig" not in json.dumps(artifacts)
 
 
 def test_scheduled_identity_cannot_be_supplied_by_header(monkeypatch):
@@ -198,12 +173,12 @@ steps:
     instructions: Report the result
 """)
     store = ScheduleStore(tmp_path)
-    schedule = store.save("local:test", {**CONFIG, "publish": True}, now=NOW)
+    schedule = store.save("local:test", CONFIG, now=NOW)
     occurrence, = store.claim_due(NOW + timedelta(hours=1))
     return app, store, schedule, occurrence
 
 
-def test_runner_creates_session_and_shared_snapshot(execution_context, monkeypatch):
+def test_runner_creates_private_session(execution_context, monkeypatch):
     from data_formulator.workflows.scheduler import execute_occurrence
     from data_formulator.workflows.agent import WorkflowAgent
     from data_formulator.workspace_factory import get_workspace_manager
@@ -224,32 +199,12 @@ def test_runner_creates_session_and_shared_snapshot(execution_context, monkeypat
         assert saved["activeWorkspace"]["scheduledRun"]["scheduleId"] == schedule["id"]
         assert saved["activeWorkspace"]["displayName"] == "Daily report (Sep 30, 09:00)"
         assert manager.list_workspaces()[0]["scheduled_run"]["scheduledFor"] == occurrence["scheduled_for"]
-    publication = store.publications()[0]
-    assert publication["display_name"] == CONFIG["name"]
-    assert publication["scheduled_run"]["scheduleId"] == schedule["id"]
-    assert "state" not in publication
-    published = store.publication(publication["id"])
-    assert "PRIVATE REASONING" not in json.dumps(published)
-    assert published["activeWorkspace"]["readOnly"] is True
     client = app.test_client()
-    listed = client.get("/api/sessions/list").get_json()["data"]["sessions"]
-    assert {"id": publication["id"], "shared": True}.items() <= next(item for item in listed if item["id"] == publication["id"]).items()
     assert saved["activeWorkspace"]["readOnly"] is False
-    loaded = client.post("/api/sessions/load", json={"id": publication["id"]}).get_json()["data"]
-    assert loaded["read_only"] is True
-    assert "workflow_run" not in loaded
-    assert loaded["state"]["scheduledArtifacts"][0]["content"] == "Final findings"
     private = client.post("/api/sessions/load", json={"id": "scheduled-" + occurrence["id"]}).get_json()["data"]
     assert private["workflow_run"]["id"] == occurrence["id"]
     assert private["workflow_run"]["workflow_path"] == CONFIG["workflow"]
     assert "trajectory" not in private["workflow_run"]
-    for endpoint in ("save", "delete", "update-meta"):
-        response = client.post("/api/sessions/" + endpoint, json={"id": publication["id"], "state": {}})
-        assert response.get_json()["error"]["code"] == "ACCESS_DENIED"
-    fork = client.post("/api/sessions/fork", json={"id": publication["id"]}).get_json()["data"]
-    fork_state = client.post("/api/sessions/load", json={"id": fork["id"]}).get_json()["data"]["state"]
-    assert fork_state["activeWorkspace"]["scheduledRun"]["forked"] is True
-    assert fork_state["activeWorkspace"]["readOnly"] is False
 
 
 def test_schedule_list_reflects_run_completed_after_resume(execution_context, monkeypatch):
@@ -258,7 +213,6 @@ def test_schedule_list_reflects_run_completed_after_resume(execution_context, mo
     from data_formulator.workflows.scheduler import execute_occurrence
     from data_formulator.workspace_factory import get_workspace_manager
     app, store, schedule, occurrence = execution_context
-    monkeypatch.setattr("data_formulator.routes.schedules.is_local_mode", lambda: True)
 
     def pause(agent):
         agent.state.update(status="paused", message="Needs a decision")
@@ -298,7 +252,6 @@ def test_runner_retries_same_checkpoint_and_does_not_publish_failure(execution_c
     execute_occurrence(app, store, occurrence)
     history = store.history(schedule["id"])
     assert history[0]["status"] == "retry"
-    assert store.publications() == []
     with app.app_context():
         pending = get_workspace_manager("local:test").load_session_state("scheduled-" + occurrence["id"])
     assert pending["activeWorkspace"]["readOnly"] is True
@@ -389,17 +342,15 @@ def test_runner_waits_for_run_when_update_stream_ends_early(execution_context, m
     assert store.history(schedule["id"])[0]["status"] == "completed"
 
 
-def test_hosted_api_denies_nonadmins(execution_context, monkeypatch):
+def test_hosted_deployment_has_no_schedules(execution_context, monkeypatch):
     from data_formulator.auth import identity
-    app, store, schedule, occurrence = execution_context
+    app, _, _, _ = execution_context
     monkeypatch.setattr(identity, "_localhost_identity", None)
-    monkeypatch.setenv("DF_SCHEDULER_ENABLED", "1")
-    monkeypatch.setattr("data_formulator.routes.schedules.can_configure", lambda: False)
-    monkeypatch.setattr("data_formulator.routes.configurations.can_configure", lambda: False)
     client = app.test_client()
-    response = client.post("/api/schedules", json={"config": CONFIG}, headers={"X-Identity-Id": "browser:viewer"})
-    assert response.get_json()["error"]["code"] == "ACCESS_DENIED"
-    response = client.post("/api/sessions/load", json={"id": "scheduled-private-" + occurrence["id"]}, headers={"X-Identity-Id": "browser:viewer"})
+    viewer = {"X-Identity-Id": "browser:viewer"}
+    listed = client.get("/api/schedules", headers=viewer).get_json()["data"]
+    assert listed["available"] is False and "only available in the local" in listed["reason"]
+    response = client.post("/api/schedules", json={"config": CONFIG}, headers=viewer)
     assert response.get_json()["error"]["code"] == "ACCESS_DENIED"
 
 
@@ -420,19 +371,6 @@ def test_clock_adjustment_does_not_reclaim_completed_occurrence(tmp_path):
     assert store.history(saved["id"])[0]["status"] == "completed"
 
 
-def test_withdrawal_blocks_late_publication(tmp_path):
-    store = ScheduleStore(tmp_path)
-    saved = store.save("admin", {**CONFIG, "publish": True}, now=NOW)
-    store.publish(saved["id"], {"report": "first"})
-    with pytest.raises(ValueError):
-        store.withdraw("browser:viewer", saved["id"])
-    assert len(store.publications()) == 1
-    store.withdraw("admin", saved["id"])
-    store.publish(saved["id"], {"report": "late completion"})
-    assert store.publications() == []
-    assert store.get(saved["id"])["enabled"] is False
-
-
 def test_missing_retry_checkpoint_never_starts_fresh(execution_context, monkeypatch):
     from data_formulator.workflows.scheduler import execute_occurrence
     from data_formulator.workflows.agent import WorkflowAgent
@@ -444,35 +382,29 @@ def test_missing_retry_checkpoint_never_starts_fresh(execution_context, monkeypa
     monkeypatch.setattr(WorkflowAgent, "run_workflow", unexpected_run)
     execute_occurrence(app, store, {**occurrence, "attempts": 1})
     assert store.history(schedule["id"])[0]["status"] == "needs_attention"
-    assert store.publications() == []
 
 
-def test_hosted_execution_uses_isolated_service_identity(execution_context, monkeypatch):
-    from data_formulator.auth import identity
-    from data_formulator.datalake.workspace import get_user_home
-    from data_formulator.workflows.scheduler import execute_occurrence, execution_identity
-    from data_formulator.workflows.instances import WorkflowStore
-    from data_formulator.workflows.agent import WorkflowAgent
+def test_admin_publishes_example_sessions_for_everyone_to_import(execution_context, monkeypatch):
+    import io
+    import zipfile
     from data_formulator.workspace_factory import get_workspace_manager
-    app, store, _, _ = execution_context
+    app, _, _, _ = execution_context
     with app.app_context():
-        content = WorkflowStore(get_user_home("local:test")).read("report.yaml")
-    monkeypatch.setattr(WorkflowStore, "read", lambda *args: content)
-    monkeypatch.setattr(identity, "_localhost_identity", None)
-    monkeypatch.setenv("DF_SCHEDULER_ENABLED", "1")
-    schedule = store.save("admin", {**CONFIG, "workflow": "server/report.yaml", "publish": True}, now=NOW)
-    occurrence, = store.claim_due(NOW + timedelta(hours=1))
+        manager = get_workspace_manager("local:test")
+        manager.create_workspace("session_demo")
+        manager.save_session_state("session_demo", {"activeWorkspace": {"id": "session_demo", "displayName": "Price review"}, "textTurns": []})
+    client = app.test_client()
+    published = client.post("/api/sessions/examples", json={"workspace_id": "session_demo"}).get_json()["data"]["example"]
+    assert published["title"] == "Price review"
+    assert client.get("/api/sessions/examples").get_json()["data"]["examples"] == [published]
+    archive = client.get(f"/api/sessions/examples/{published['id']}")
+    assert archive.status_code == 200 and zipfile.is_zipfile(io.BytesIO(archive.data))
+    assert client.get("/api/sessions/examples/../index").status_code == 404
 
-    def complete(agent):
-        assert identity.get_identity_id() == execution_identity(schedule)
-        agent.state.update(status="completed", outputs=[{"id": "report", "type": "report", "content": "Shared results"}])
-        agent.checkpoint(agent.state)
-        yield {"type": "workflow_state", "run": {"status": "completed"}}
-
-    monkeypatch.setattr(WorkflowAgent, "run_workflow", complete)
-    execute_occurrence(app, store, occurrence)
-    assert store.history(schedule["id"])[0]["status"] == "completed"
-    assert len(store.publications()) == 1
-    with app.app_context():
-        assert get_workspace_manager("local:test").list_workspaces() == []
-        assert len(get_workspace_manager(execution_identity(schedule)).list_workspaces()) == 1
+    monkeypatch.setattr("data_formulator.routes.configurations.can_configure", lambda: False)
+    assert client.post("/api/sessions/examples", json={"workspace_id": "session_demo"}).get_json()["error"]["code"] == "ACCESS_DENIED"
+    assert client.delete(f"/api/sessions/examples/{published['id']}").get_json()["error"]["code"] == "ACCESS_DENIED"
+    monkeypatch.setattr("data_formulator.routes.configurations.can_configure", lambda: True)
+    client.delete(f"/api/sessions/examples/{published['id']}")
+    assert client.get("/api/sessions/examples").get_json()["data"]["examples"] == []
+    assert client.get(f"/api/sessions/examples/{published['id']}").get_json()["error"]["code"] == "TABLE_NOT_FOUND"

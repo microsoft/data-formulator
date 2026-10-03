@@ -241,10 +241,6 @@
             "type": "boolean",
             "description": "Auto-approve terminal commands and single-option data loads during runs. Only when the user asks; always requires review."
           },
-          "publish": {
-            "type": "boolean",
-            "description": "Hosted only: publish reports and chart data to all users. Always requires review."
-          },
           "user_review_needed": {
             "type": "boolean",
             "description": "Default true: open the form for the user to review and submit. Set false only when the user's request is explicit and every value is supplied or verified; the application then submits the form automatically and leaves it open if anything is missing, invalid, or requires elevated permissions."

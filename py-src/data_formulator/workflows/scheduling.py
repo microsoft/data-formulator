@@ -28,7 +28,6 @@ SCHEDULE_SCHEMA = {
         "auto_approve": {"type": "boolean"},
         "max_retries": {"type": "integer", "minimum": 0, "maximum": 3},
         "catch_up": {"type": "boolean"},
-        "publish": {"type": "boolean"},
     },
 }
 
@@ -73,9 +72,6 @@ class ScheduleStore:
                     status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
                     retry_at TEXT, message TEXT NOT NULL DEFAULT '',
                     UNIQUE(schedule_id, scheduled_for)
-                );
-                CREATE TABLE IF NOT EXISTS publications (
-                    schedule_id TEXT PRIMARY KEY, state TEXT NOT NULL, published_at TEXT NOT NULL
                 );
             """)
 
@@ -175,47 +171,10 @@ class ScheduleStore:
             connection.execute("DELETE FROM occurrences WHERE id=? AND status NOT IN ('running', 'retry')", (identifier,))
 
     def delete(self, owner: str, identifier: str):
-        """Remove a schedule, its run history, and any publication; run sessions themselves are kept."""
+        """Remove a schedule and its run history; run sessions themselves are kept."""
         with self.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             if connection.execute("SELECT 1 FROM schedules WHERE id=? AND owner=?", (identifier, owner)).fetchone() is None:
                 raise ValueError("Schedule not found.")
-            connection.execute("DELETE FROM publications WHERE schedule_id=?", (identifier,))
             connection.execute("DELETE FROM occurrences WHERE schedule_id=?", (identifier,))
             connection.execute("DELETE FROM schedules WHERE id=?", (identifier,))
-
-    def publish(self, schedule_id: str, state: dict):
-        with self.connection() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute("SELECT config, enabled FROM schedules WHERE id=?", (schedule_id,)).fetchone()
-            if row is None or not row["enabled"] or not json.loads(row["config"]).get("publish"):
-                return
-            connection.execute("INSERT OR REPLACE INTO publications VALUES (?, ?, ?)",
-                               (schedule_id, json.dumps(state, allow_nan=False), datetime.now(timezone.utc).isoformat()))
-
-    def withdraw(self, owner: str, identifier: str):
-        with self.connection() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute("SELECT config FROM schedules WHERE id=? AND owner=?", (identifier, owner)).fetchone()
-            if row is None:
-                raise ValueError("Schedule not found.")
-            config = {**json.loads(row["config"]), "enabled": False, "publish": False}
-            connection.execute("UPDATE schedules SET config=?, enabled=0 WHERE id=?", (json.dumps(config), identifier))
-            connection.execute("DELETE FROM publications WHERE schedule_id=?", (identifier,))
-
-    def publications(self) -> list[dict]:
-        with self.connection() as connection:
-            return [{"id": "shared-" + row["schedule_id"], "published_at": row["published_at"],
-                     "display_name": row["display_name"],
-                     "scheduled_run": json.loads(row["scheduled_run"]) if row["scheduled_run"] else None}
-                    for row in connection.execute("""SELECT schedule_id, published_at,
-                        json_extract(state, '$.activeWorkspace.displayName') AS display_name,
-                        json_extract(state, '$.activeWorkspace.scheduledRun') AS scheduled_run FROM publications""")]
-
-    def publication(self, workspace_id: str) -> dict | None:
-        if not workspace_id.startswith("shared-"):
-            return None
-        with self.connection() as connection:
-            row = connection.execute("SELECT state FROM publications WHERE schedule_id=?",
-                                     (workspace_id.removeprefix("shared-"),)).fetchone()
-        return json.loads(row["state"]) if row else None

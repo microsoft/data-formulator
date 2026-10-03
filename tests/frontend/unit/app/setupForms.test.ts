@@ -15,12 +15,12 @@ describe('setup form artifacts', () => {
         expect(formArtifactFromEvent({
             kind: 'schedule', title: 'Schedule Fuel', schedule: {
                 target: { id: 'abc', name: 'Fuel' }, config: { workflow: 'demo/gas.yaml', time: '09:00', weekdays: [0] },
-                workflow_name: 'Fuel', hosted: false, issues: ['Choose a server-configured model connection.'],
+                workflow_name: 'Fuel', issues: ['Choose a server-configured model connection.'],
             },
         })).toEqual({
             kind: 'schedule', title: 'Schedule Fuel', schedule: {
                 target: { id: 'abc', name: 'Fuel' }, config: { workflow: 'demo/gas.yaml', time: '09:00', weekdays: [0] }, workflowName: 'Fuel',
-                hosted: false, issues: ['Choose a server-configured model connection.'], status: 'pending',
+                issues: ['Choose a server-configured model connection.'], status: 'pending',
             },
         });
         const definition = { name: 'Fuel', overview: 'Review', deliverables: ['Report'] };

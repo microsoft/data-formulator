@@ -11,7 +11,9 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSelector } from 'react-redux';
 import { Alert, Autocomplete, Box, Button, ButtonBase, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider,
-    FormControlLabel, IconButton, MenuItem, TextField, Tooltip, Typography } from '@mui/material';
+    FormControlLabel, IconButton, MenuItem, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
+import { dump as dumpYaml, load as loadYaml } from 'js-yaml';
+import { MarkdownEditor } from '../components/MarkdownEditor';
 import PauseIcon from '@mui/icons-material/Pause';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
@@ -92,8 +94,10 @@ export const scheduleCadence = (config: ScheduleConfig) => {
 export const defaultScheduleConfig = (models: { id: string }[], selectedModelId?: string): ScheduleConfig => ({
     name: '', workflow: '', model_id: models.find(model => model.id === selectedModelId)?.id || models[0]?.id || '', time: '09:00',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, weekdays: [0, 1, 2, 3, 4, 5, 6], enabled: true,
-    auto_approve: false, max_retries: 2, catch_up: false, publish: false,
+    auto_approve: false, max_retries: 2, catch_up: false,
 });
+
+export const SCHEDULING_LOCAL_ONLY = 'Scheduling runs workflows unattended on your own machine, so it is only available in the local Data Formulator app.';
 
 const schedulesChanged = new EventTarget();
 export const onSchedulesChanged = (listener: () => void) => {
@@ -109,11 +113,23 @@ export async function saveSchedule(config: ScheduleConfig, identifier?: string):
     return data.schedule;
 }
 
+const scheduleTimes = Array.from({ length: 48 }, (_, index) => `${String(index >> 1).padStart(2, '0')}:${index % 2 ? '30' : '00'}`);
+const parseScheduleTime = (text: string) => {
+    const match = text.trim().match(/^(\d{1,2}):?(\d{2})$/);
+    return match && +match[1] < 24 && +match[2] < 60 ? `${match[1].padStart(2, '0')}:${match[2]}` : null;
+};
+
 /** Schedule fields shared by the Schedules dialog and agent-proposed schedule forms. */
 export const ScheduleConfigFields: React.FC<{ items: WorkflowLibraryItem[]; config: ScheduleConfig; onChange: (config: ScheduleConfig) => void;
-    hosted: boolean; disabled: boolean }> = ({ items, config, onChange, hosted, disabled }) => {
+    disabled: boolean; hideName?: boolean }> = ({ items, config, onChange, disabled, hideName = false }) => {
     const models = useSelector((state: DataFormulatorState) => state.globalModels);
     const [customDays, setCustomDays] = useState(false);
+    const [timeText, setTimeText] = useState<string | null>(null);
+    const commitTime = (text: string) => {
+        const time = parseScheduleTime(text);
+        if (time) onChange({ ...config, time });
+        setTimeText(null);
+    };
     const workflow = items.find(item => item.path === config.workflow);
     const repeat = customDays ? 'custom' : config.weekdays.length === 7 ? 'daily'
         : config.weekdays.length === 5 && [0, 1, 2, 3, 4].every(day => config.weekdays.includes(day)) ? 'weekdays' : 'custom';
@@ -124,10 +140,10 @@ export const ScheduleConfigFields: React.FC<{ items: WorkflowLibraryItem[]; conf
                 onChange({ ...config, workflow: event.target.value, name: !config.name || config.name === workflow?.name ? selected?.name || '' : config.name,
                     setup: { parameters: Object.fromEntries((selected?.parameters || []).flatMap(parameter => parameter.default === undefined ? [] : [[parameter.name, parameter.default]])), instructions: '' } });
             }}>
-            {items.filter(item => !hosted || item.origin === 'demo' || item.origin === 'server').map(item => <MenuItem key={item.path} value={item.path}>{item.name}</MenuItem>)}
+            {items.map(item => <MenuItem key={item.path} value={item.path}>{item.name}</MenuItem>)}
         </TextField>
-        <TextField size="small" required label="Schedule name" value={config.name} disabled={disabled}
-            onChange={event => onChange({ ...config, name: event.target.value })} />
+        {!hideName && <TextField size="small" required label="Schedule name" value={config.name} disabled={disabled}
+            onChange={event => onChange({ ...config, name: event.target.value })} />}
         <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 2 }}>
             <TextField size="small" select label="Repeat" value={repeat} disabled={disabled} onChange={event => {
                 setCustomDays(event.target.value === 'custom');
@@ -138,8 +154,13 @@ export const ScheduleConfigFields: React.FC<{ items: WorkflowLibraryItem[]; conf
                 <MenuItem value="weekdays">Weekdays</MenuItem>
                 <MenuItem value="custom">Custom days</MenuItem>
             </TextField>
-            <TextField size="small" required type="time" label="Time" value={config.time} disabled={disabled} helperText={config.timezone}
-                slotProps={{ inputLabel: { shrink: true } }} onChange={event => onChange({ ...config, time: event.target.value })} />
+            <Autocomplete freeSolo disableClearable forcePopupIcon openOnFocus size="small" options={scheduleTimes} disabled={disabled}
+                value={config.time} inputValue={timeText ?? config.time}
+                onInputChange={(_, text, reason) => { if (reason === 'input') setTimeText(text); }}
+                onChange={(_, text) => commitTime(text)} onBlur={() => timeText !== null && commitTime(timeText)}
+                slotProps={{ listbox: { sx: { maxHeight: 220 } } }}
+                renderInput={params => <TextField {...params} required label="Time" helperText={config.timezone}
+                    slotProps={{ htmlInput: { ...params.inputProps, inputMode: 'numeric' } }} />} />
         </Box>
         {repeat === 'custom' && <Box role="group" aria-label="Weekdays" sx={{ display: 'flex', flexWrap: 'wrap', mt: -1 }}>
             {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, index) => <FormControlLabel key={label} sx={{ mr: 1 }} label={label}
@@ -165,7 +186,6 @@ export const ScheduleConfigFields: React.FC<{ items: WorkflowLibraryItem[]; conf
             <Tooltip describeChild title="Local terminal commands and single-option data loads only. Application policy still applies; questions and credentials pause the run.">
                 <FormControlLabel label="Auto-approve commands and data loads" control={<Checkbox size="small" checked={config.auto_approve} disabled={disabled} onChange={event => onChange({ ...config, auto_approve: event.target.checked })} />} />
             </Tooltip>
-            {hosted && <FormControlLabel label="Publish final reports and all chart data for everyone to view" control={<Checkbox size="small" checked={config.publish} disabled={disabled} onChange={event => onChange({ ...config, publish: event.target.checked })} />} />}
         </Box>
     </>;
 };
@@ -176,7 +196,6 @@ export const WorkflowSchedules: React.FC<{ items: WorkflowLibraryItem[]; onClose
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const [schedules, setSchedules] = useState<WorkflowSchedule[]>([]);
     const [available, setAvailable] = useState(false);
-    const [hosted, setHosted] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
@@ -186,13 +205,34 @@ export const WorkflowSchedules: React.FC<{ items: WorkflowLibraryItem[]; onClose
     const [config, setConfig] = useState<ScheduleConfig>(() => initialSchedule ? { ...emptyConfig(), ...initialSchedule.config } : emptyConfig());
     const current = schedules.find(schedule => schedule.id === identifier);
     const currentRuns = current?.history?.filter(run => run.status !== 'skipped') ?? [];
+    const [view, setView] = useState<'form' | 'yaml'>('form');
+    const [yamlDraft, setYamlDraft] = useState('');
+    const [yamlError, setYamlError] = useState('');
+    const toYaml = (value: ScheduleConfig) => {
+        const { name, workflow, time, timezone, weekdays, model_id, setup, ...flags } = value;
+        const block = (fields: object) => dumpYaml(fields, { lineWidth: 100, noRefs: true });
+        // Weekdays read best as one flow list; js-yaml can only set flow style by depth.
+        return block({ name, workflow, time, timezone }) + `weekdays: [${weekdays.join(', ')}]  # 0 = Monday\n`
+            + block({ model_id, ...(setup ? { setup } : {}), ...flags });
+    };
+    const editYaml = (text: string) => {
+        setYamlDraft(text);
+        try {
+            const parsed = loadYaml(text);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Expected schedule fields, e.g. name: Daily report');
+            setConfig({ ...emptyConfig(), ...(parsed as Partial<ScheduleConfig>) });
+            setYamlError('');
+        } catch (reason) { setYamlError(reason instanceof Error ? reason.message : 'Invalid YAML.'); }
+    };
     const select = (schedule?: WorkflowSchedule) => {
-        setIdentifier(schedule?.id || ''); setConfig(schedule ? { ...emptyConfig(), ...schedule.config } : emptyConfig());
+        const next = schedule ? { ...emptyConfig(), ...schedule.config } : emptyConfig();
+        setIdentifier(schedule?.id || ''); setConfig(next);
+        setYamlDraft(toYaml(next)); setYamlError('');
         setError('');
     };
     const refresh = async () => {
-        const { data } = await apiRequest<{ available: boolean; hosted?: boolean; schedules: WorkflowSchedule[] }>('/api/schedules');
-        setAvailable(data.available); setHosted(!!data.hosted); setSchedules(data.schedules);
+        const { data } = await apiRequest<{ available: boolean; schedules: WorkflowSchedule[] }>('/api/schedules');
+        setAvailable(data.available); setSchedules(data.schedules);
         return data.schedules;
     };
     useEffect(() => {
@@ -210,6 +250,7 @@ export const WorkflowSchedules: React.FC<{ items: WorkflowLibraryItem[]; onClose
         finally { setSaving(false); }
     };
     return <><ListDetailDialog title="Schedules" listLabel="Schedule list" createLabel="New schedule" busy={saving} onClose={onClose} width={780} contentMaxWidth={460}
+        fillHeight={view === 'yaml'}
         selectedKey={identifier || null} onSelect={key => select(schedules.find(schedule => schedule.id === key))}
         items={schedules.map(schedule => ({ key: schedule.id, primary: schedule.config.name, secondary: scheduleCadence(schedule.config),
             muted: !schedule.config.enabled }))}
@@ -219,29 +260,50 @@ export const WorkflowSchedules: React.FC<{ items: WorkflowLibraryItem[]; onClose
         }}
         footer={available && <>
             {current && <Button color="error" disabled={saving} sx={{ mr: 'auto' }} onClick={() => setConfirmDelete(true)}>Delete</Button>}
-            {current && hosted && current.config.publish && <Button color="error" disabled={saving} onClick={() => void act(async () => {
-                await apiRequest(`/api/schedules/${identifier}/publication`, { method: 'DELETE' });
-                await refresh(); setConfig(previous => ({ ...previous, enabled: false, publish: false }));
-            }, 'Unable to withdraw publication.')}>Unpublish</Button>}
             {current && <Button variant="outlined" disabled={saving} onClick={() => void act(async () => {
                 const enabled = !current.config.enabled;
                 await persist({ ...current.config, enabled });
                 setConfig(previous => ({ ...previous, enabled }));
             }, 'Unable to update schedule.')}>{current.config.enabled ? 'Pause' : 'Resume'}</Button>}
             <Button type="submit" variant="contained" disableElevation
-                disabled={saving || !config.weekdays.length || !config.model_id || !config.workflow || hosted && !config.publish}>Save schedule</Button>
+                disabled={saving || !!yamlError || !config.weekdays.length || !config.model_id || !config.workflow}>Save schedule</Button>
         </>}>
-                        {current && <Box>
+                        {available && !loading && <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                            <TextField size="small" required label="Schedule name" value={config.name} disabled={saving} sx={{ flex: 1, minWidth: 0 }}
+                                onChange={event => {
+                                    const next = { ...config, name: event.target.value };
+                                    setConfig(next);
+                                    if (view === 'yaml') setYamlDraft(toYaml(next));
+                                }} />
+                            <ToggleButtonGroup size="small" exclusive value={view} aria-label="Schedule view"
+                                onChange={(_, next: 'form' | 'yaml' | null) => {
+                                    if (!next) return;
+                                    if (next === 'yaml') { setYamlDraft(toYaml(config)); setYamlError(''); }
+                                    setView(next);
+                                }}
+                                sx={{ flexShrink: 0, '& .MuiToggleButton-root': { py: 0.125, px: 0.875, fontSize: textVar.xs, lineHeight: 1.5,
+                                    textTransform: 'none', color: 'text.secondary', '&.Mui-selected': { color: 'text.primary' } } }}>
+                                <ToggleButton value="form">Form</ToggleButton>
+                                <ToggleButton value="yaml">YAML</ToggleButton>
+                            </ToggleButtonGroup>
+                        </Box>}
+                        {current && <Box sx={{ mt: -0.75 }}>
                             <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
                                 {current.config.enabled ? `Next run ${shortRunTime(current.next_at)}` : 'Paused'}</Typography>
                             {currentRuns.length > 0 && <RunList caption="Previous runs:" label={`Runs of ${current.config.name}`} limit={6} runs={currentRuns.map(run => ({
                                 key: run.id, status: run.status, time: run.scheduled_for, disabled: !onOpenSession,
-                                open: () => { void onOpenSession?.(`${hosted ? 'scheduled-private-' : 'scheduled-'}${run.id}`); onClose(); },
+                                open: () => { void onOpenSession?.(`scheduled-${run.id}`); onClose(); },
                             }))} />}
                         </Box>}
                         {error && <Alert severity="error">{error}</Alert>}
-                        {loading ? <CircularProgress size={18} /> : !available ? <Alert severity="info">Scheduling is unavailable for this deployment or account.</Alert> : <>
-                    <ScheduleConfigFields key={identifier || 'new'} items={items} config={config} onChange={setConfig} hosted={hosted} disabled={saving} />
+                        {loading ? <CircularProgress size={18} /> : !available ? <Alert severity="info">{SCHEDULING_LOCAL_ONLY}</Alert> : <>
+                    {view === 'yaml' ? <>
+                        <Box sx={{ flex: 1, minHeight: 240, border: 1, borderColor: yamlError ? 'error.main' : 'divider', borderRadius: 1, overflow: 'hidden',
+                            '& .cm-editor': { fontSize: textVar.sm } }}>
+                            <MarkdownEditor fileName="schedule.yaml" value={yamlDraft} onChange={editYaml} readOnly={saving} showToolbar={false} lineWrap />
+                        </Box>
+                        {yamlError && <Typography role="alert" sx={{ mt: -1, fontSize: textVar.xs, color: 'error.main' }}>{yamlError}</Typography>}
+                    </> : <ScheduleConfigFields key={identifier || 'new'} items={items} config={config} onChange={setConfig} disabled={saving} hideName />}
                 </>}
     </ListDetailDialog>
     <Dialog open={confirmDelete} onClose={() => !saving && setConfirmDelete(false)} maxWidth="xs" fullWidth>
@@ -330,20 +392,20 @@ export const RunList: React.FC<{ label: string; runs: RunEntry[]; limit?: number
     </Box>;
 };
 
-export interface ScheduleLibrary { schedules: WorkflowSchedule[]; hosted: boolean; available: boolean; loading: boolean; error: string }
+export interface ScheduleLibrary { schedules: WorkflowSchedule[]; available: boolean; loading: boolean; error: string }
 
 /** Load schedules; refreshes on saves, tab return, `refreshKey` changes, and every 10s while a run is active. */
 export function useScheduleLibrary(enabled: boolean, refreshKey?: unknown): ScheduleLibrary & { refresh: () => void } {
-    const [library, setLibrary] = useState<ScheduleLibrary>({ schedules: [], hosted: false, available: false, loading: enabled, error: '' });
+    const [library, setLibrary] = useState<ScheduleLibrary>({ schedules: [], available: false, loading: enabled, error: '' });
     const [tick, setTick] = useState(0);
     useEffect(() => {
         if (!enabled) return;
         let cancelled = false;
         setLibrary(previous => ({ ...previous, loading: true, error: '' }));
-        void apiRequest<{ available: boolean; hosted?: boolean; schedules: WorkflowSchedule[] }>('/api/schedules').then(({ data }) => {
-            if (!cancelled) setLibrary({ schedules: data.schedules || [], hosted: !!data.hosted, available: data.available, loading: false, error: '' });
+        void apiRequest<{ available: boolean; schedules: WorkflowSchedule[] }>('/api/schedules').then(({ data }) => {
+            if (!cancelled) setLibrary({ schedules: data.schedules || [], available: data.available, loading: false, error: '' });
         }).catch(reason => {
-            if (!cancelled) setLibrary({ schedules: [], hosted: false, available: false, loading: false,
+            if (!cancelled) setLibrary({ schedules: [], available: false, loading: false,
                 error: reason instanceof Error ? reason.message : 'Unable to load schedules.' });
         });
         return () => { cancelled = true; };
@@ -367,9 +429,9 @@ export const SchedulesPanel: React.FC<{ onOpenSession?: (id: string) => void | P
     const [items, setItems] = useState<WorkflowLibraryItem[]>([]);
     const [editing, setEditing] = useState<{ schedule?: WorkflowSchedule; browse?: boolean } | null>(null);
     const library = useScheduleLibrary(true);
-    const { schedules, hosted, available, loading, error } = library;
+    const { schedules, available, loading, error } = library;
     useEffect(() => { void listWorkflowLibrary().then(setItems).catch(() => setItems([])); }, []);
-    const openRun = (id: string) => void onOpenSession?.(`${hosted ? 'scheduled-private-' : 'scheduled-'}${id}`);
+    const openRun = (id: string) => void onOpenSession?.(`scheduled-${id}`);
     const newButton = <Button variant="outlined" size="small" startIcon={<AddIcon />} disabled={!available} sx={sidebarPrimaryActionSx}
         onClick={() => setEditing({})}>
         New schedule
@@ -395,8 +457,9 @@ export const SchedulesPanel: React.FC<{ onOpenSession?: (id: string) => void | P
         </>}
         {landing && toolbarContainer && createPortal(newButton, toolbarContainer)}
         <Box sx={landing ? itemCardGridSx : { overflowY: 'auto', minHeight: 0, py: 1, px: 0.75, display: 'grid', gap: 0.75, alignContent: 'start' }}>
-            {error ? <Alert severity="error" sx={{ fontSize: textVar.xs }}>{error}</Alert> : !loading && !schedules.length &&
-                <Typography sx={{ px: landing ? 0 : 1, py: 0.75, fontSize: textVar.xs, color: 'text.secondary' }}>{available ? 'No schedules yet' : 'Scheduling unavailable'}</Typography>}
+            {error ? <Alert severity="error" sx={{ fontSize: textVar.xs }}>{error}</Alert> : !loading && !available
+                ? <Alert severity="info" sx={{ fontSize: textVar.xs }}>{SCHEDULING_LOCAL_ONLY}</Alert> : !loading && !schedules.length &&
+                <Typography sx={{ px: landing ? 0 : 1, py: 0.75, fontSize: textVar.xs, color: 'text.secondary' }}>No schedules yet</Typography>}
             {schedules.map(schedule => {
                 const runs = schedule.history?.filter(run => run.status !== 'skipped') ?? [];
                 const name = schedule.config.name;

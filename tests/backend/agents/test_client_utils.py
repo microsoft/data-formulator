@@ -160,6 +160,19 @@ class TestModelNamePrefixing:
         assert attach_reasoning_content({"role": "assistant"}, message)["reasoning_items"] == [reasoning]
         assert responses.call_args.kwargs["stream"] is True
 
+    def test_failed_responses_stream_is_an_error_not_an_empty_reply(self, monkeypatch):
+        import json
+        from unittest.mock import Mock
+
+        events = [{"type": "response.created", "response": {"id": "resp_failed", "status": "in_progress", "output": []}},
+                  {"type": "response.failed", "response": {"id": "resp_failed", "status": "failed", "output": [],
+                   "error": {"code": "rate_limit_exceeded", "message": "Rate limit reached."}}}]
+        monkeypatch.setattr(client_utils.litellm, "responses", Mock(side_effect=lambda **kwargs: iter(json.dumps(event) for event in events)))
+        client = Client("openai", "test-model", api_key="test-key", api_type="responses")
+        tools = [{"type": "function", "function": {"name": "query", "parameters": {"type": "object"}}}]
+        with pytest.raises(Exception, match="rate_limit_exceeded"):
+            list(client.get_completion_with_tools([{"role": "user", "content": "Query"}], tools, stream=True))
+
     def test_responses_failure_does_not_fall_back_to_chat(self, monkeypatch):
         from unittest.mock import Mock
 

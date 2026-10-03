@@ -1,35 +1,28 @@
 from flask import Blueprint, request
 from urllib.parse import urlsplit
 
-from data_formulator.auth.identity import get_identity_id, is_local_mode
+from data_formulator.auth.identity import get_identity_id
 from data_formulator.error_handler import json_ok
 from data_formulator.errors import AppError, ErrorCode
-from data_formulator.routes.configurations import can_configure
-from data_formulator.workflows.scheduler import schedule_store, scheduling_available
+from data_formulator.workflows.scheduler import SCHEDULING_LOCAL_ONLY, schedule_store, scheduling_available
 
 schedule_bp = Blueprint("schedules", __name__, url_prefix="/api/schedules")
 
 
 def schedule_owner():
     if not scheduling_available():
-        raise AppError(ErrorCode.ACCESS_DENIED, "Scheduling requires persistent storage; hosted scheduling must be enabled by the operator.")
-    if is_local_mode():
-        return get_identity_id()
-    if not can_configure():
-        raise AppError(ErrorCode.ACCESS_DENIED, "Only administrators can manage hosted schedules.")
-    return "admin"
+        raise AppError(ErrorCode.ACCESS_DENIED, SCHEDULING_LOCAL_ONLY)
+    return get_identity_id()
 
 
 @schedule_bp.route("", methods=["GET"])
 def list_schedules():
-    allowed = scheduling_available() and (is_local_mode() or can_configure())
-    if not allowed:
-        return json_ok({"available": False, "schedules": []})
+    if not scheduling_available():
+        return json_ok({"available": False, "reason": SCHEDULING_LOCAL_ONLY, "schedules": []})
     store = schedule_store()
     schedules = [{**schedule, "history": store.history(schedule["id"])} for schedule in store.list(schedule_owner())]
-    if is_local_mode():
-        reconcile_resumed_runs(store, schedules)
-    return json_ok({"available": True, "hosted": not is_local_mode(), "schedules": schedules})
+    reconcile_resumed_runs(store, schedules)
+    return json_ok({"available": True, "schedules": schedules})
 
 
 def reconcile_resumed_runs(store, schedules: list[dict]):
@@ -71,14 +64,12 @@ def save_schedule():
         raise AppError(ErrorCode.INVALID_REQUEST, "Provide a schedule object.")
     origin = request.headers.get("Origin")
     if request.headers.get("Sec-Fetch-Site") == "cross-site" or (
-        is_local_mode() and origin and urlsplit(origin).hostname not in {"localhost", "127.0.0.1", "::1"}
+        origin and urlsplit(origin).hostname not in {"localhost", "127.0.0.1", "::1"}
     ):
         raise AppError(ErrorCode.ACCESS_DENIED, "Schedules must be managed from the application.")
     config = body.get("config")
     try:
         schedule_trigger(config)
-        if owner == "admin" and not config["workflow"].startswith(("demo/", "server/")):
-            raise ValueError("Hosted schedules require an installation workflow.")
         if config.get("enabled", True):
             if model_registry.get_config(config["model_id"]) is None:
                 raise ValueError("Choose a server-configured model connection.")
@@ -97,18 +88,6 @@ def delete_schedule(identifier: str):
         raise AppError(ErrorCode.ACCESS_DENIED, "Schedules must be managed from the application.")
     try:
         schedule_store().delete(owner, identifier)
-    except ValueError as exc:
-        raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
-    return json_ok({"id": identifier})
-
-
-@schedule_bp.route("/<identifier>/publication", methods=["DELETE"])
-def withdraw_publication(identifier: str):
-    owner = schedule_owner()
-    if request.headers.get("Sec-Fetch-Site") == "cross-site":
-        raise AppError(ErrorCode.ACCESS_DENIED, "Schedules must be managed from the application.")
-    try:
-        schedule_store().withdraw(owner, identifier)
     except ValueError as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
     return json_ok({"id": identifier})

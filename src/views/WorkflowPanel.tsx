@@ -264,57 +264,6 @@ function workflowResultNodes(output: Pick<RunOutput, 'content' | 'input_sources'
     return { table, chart, concepts };
 }
 
-/** Expand a scheduled run's saved artifacts into the thread a live run of it builds. */
-export function materializeScheduledSnapshot(state: Record<string, any>): Record<string, any> {
-    if (!Array.isArray(state.scheduledArtifacts)) return state;
-    const snapshot: Record<string, any> = { ...state, derivedTables: [], charts: [], conceptShelfItems: [], generatedReports: [], loadedTableNodes: [] };
-    const summaryId: string = state.textTurns?.[0]?.id;
-    // Node ids match a live run's, so the workflow turn's outputs resolve to them.
-    const runId = String(summaryId || '').replace(/^scheduled-summary-/, '');
-    const createdAt = state.textTurns?.[0]?.createdAt || Date.now();
-    snapshot.textTurns = (state.textTurns || []).map((turn: any) => ({ ...turn, parentNodeId: createConversationRootId(turn.id) }));
-    const nodeIds: string[] = [];
-    const parentOf = (id: string) => {
-        if (!nodeIds.includes(id)) nodeIds.push(id);
-        return nodeIds[nodeIds.indexOf(id) - 1] || summaryId;
-    };
-    const charts = state.scheduledArtifacts.filter((item: any) => item.kind === 'chart');
-    for (const artifact of state.scheduledArtifacts) {
-        if (artifact.kind === 'data') {
-            const nodeId = `workflow-data-${runId}-${artifact.tableId}`;
-            const table = createDictTable(artifact.tableId, artifact.rows, undefined);
-            table.displayId = artifact.displayName || artifact.tableId;
-            snapshot.derivedTables = [...snapshot.derivedTables.filter((item: DictTable) => item.id !== table.id), table];
-            const parentNodeId = parentOf(nodeId);
-            if (!snapshot.loadedTableNodes.some((node: any) => node.id === nodeId)) {
-                snapshot.loadedTableNodes.push({ kind: 'loaded-table', id: nodeId, tableId: table.id, parentNodeId, createdAt });
-            }
-        } else if (artifact.kind === 'chart') {
-            const output = { input_sources: artifact.inputSources, content: { question: artifact.question, result: {
-                chart_id: artifact.id, code: artifact.code, refined_goal: artifact.goal,
-                content: { virtual: { table_name: artifact.tableId } } } } };
-            const { table, chart, concepts } = workflowResultNodes(output, artifact.rows, snapshot.derivedTables,
-                `scheduled-field-${artifact.id}`, parentOf(artifact.tableId), summaryId, createdAt);
-            snapshot.derivedTables.push(table);
-            snapshot.charts.push(chart);
-            snapshot.conceptShelfItems.push(...concepts);
-        } else if (artifact.kind === 'report') {
-            const id = `workflow-report-${runId}`;
-            snapshot.generatedReports = [...snapshot.generatedReports.filter((report: any) => report.id !== id), {
-                id, content: artifact.content, title: state.activeWorkspace?.displayName, status: 'completed',
-                parentNodeId: parentOf(id), createdAt, selectedChartIds: charts.map((item: any) => item.id) }];
-        }
-    }
-    delete snapshot.scheduledArtifacts;
-    if (snapshot.generatedReports[0]) {
-        snapshot.focusedId = { type: 'report', reportId: snapshot.generatedReports[0].id };
-        snapshot.viewMode = 'report';
-    } else if (snapshot.charts[0]) {
-        snapshot.focusedId = { type: 'chart', chartId: snapshot.charts[0].id };
-    }
-    return snapshot;
-}
-
 export async function publishWorkflowRun(run: Run, workspaceId: string, focus = true) {
     if (store.getState().activeWorkspace?.id !== workspaceId || deletedWorkflowRuns.has(`${workspaceId}/${run.id}`)) return;
     const turnId = `textTurn-workflow-${run.id}`;
@@ -616,8 +565,7 @@ export const WorkflowRunObserver: React.FC = () => {
     const runningIds = useSelector((state: DataFormulatorState) => state.textTurns
         .flatMap(turn => turn.workflow?.status === 'running' ? [turn.workflow.runId] : []).join(','));
     useEffect(() => {
-        // Hosted private runs execute in a service workspace this browser cannot address.
-        if (!workspaceId || !runningIds || (readOnly && !scheduledView) || workspaceId.startsWith('scheduled-private-')) return;
+        if (!workspaceId || !runningIds || (readOnly && !scheduledView)) return;
         let active = true;
         let timer: ReturnType<typeof setTimeout> | undefined;
         let snapshotReloads = 0;
@@ -628,21 +576,17 @@ export const WorkflowRunObserver: React.FC = () => {
                 for (const runId of runningIds.split(',')) {
                     const { run } = await post<{ run: Run }>('run-state', runStateRequest(runId), AbortSignal.timeout(10000));
                     if (!active || store.getState().activeWorkspace?.id !== workspaceId || executions.has(workspaceId)) return;
-                    if (!scheduledView) {
+                    if (!scheduledView || run.status === 'running') {
                         await publishWorkflowRun(run, workspaceId, false);
-                    } else if (run.status === 'running') {
-                        const existing = store.getState().textTurns.find(turn => turn.workflow?.runId === run.id);
-                        const turn = workflowTextTurn(run, existing);
-                        store.dispatch(dfActions.addTextTurn({ ...turn, outputIds: existing?.outputIds,
-                            workflow: { ...turn.workflow!, artifacts: existing?.workflow?.artifacts } }));
                     } else {
                         if (store.getState().sessionLoading) return;
                         const result = await loadWorkspace(workspaceId);
                         if (!active || store.getState().activeWorkspace?.id !== workspaceId) return;
-                        // The scheduler saves the final snapshot just after the run releases its lock.
+                        // The scheduler marks the session editable just after the run releases its lock.
                         if (!result || (result.readOnly && ++snapshotReloads < 5)) return;
                         store.dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { ...result.state.activeWorkspace,
                             id: workspaceId, displayName: result.displayName, readOnly: result.readOnly } }));
+                        if (result.workflowRun) await publishWorkflowRun(result.workflowRun, workspaceId);
                         return;
                     }
                 }
@@ -1173,7 +1117,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
     renderLanding?: (content: { examples: React.ReactNode; saved: React.ReactNode; toolbar: React.ReactNode }) => React.ReactNode;
 }> = ({ onCreateSession, onOpenSession, headerActions, presentation = 'sidebar', renderLanding }) => {
     const landing = presentation === 'landing';
-    const canSchedule = useSelector((state: DataFormulatorState) => state.serverConfig?.IS_LOCAL_MODE || state.serverConfig?.CAN_CONFIGURE);
+    const canSchedule = useSelector((state: DataFormulatorState) => state.serverConfig?.IS_LOCAL_MODE);
     const model = useSelector((state: DataFormulatorState) => [...state.globalModels, ...state.models]
         .find(item => item.id === state.selectedModelId));
     const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
@@ -1317,7 +1261,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         ...(openRunSession ? scheduleLibrary.schedules.filter(schedule => schedule.config.workflow === item.path)
             .flatMap(schedule => (schedule.history || []).filter(run => run.status !== 'skipped'))
             .map(run => ({ key: `scheduled-${run.id}`, status: run.status, time: run.scheduled_for,
-                open: () => { beforeOpen?.(); void openRunSession(`${scheduleLibrary.hosted ? 'scheduled-private-' : 'scheduled-'}${run.id}`); } })) : []),
+                open: () => { beforeOpen?.(); void openRunSession(`scheduled-${run.id}`); } })) : []),
     ].sort((left, right) => Date.parse(right.time) - Date.parse(left.time));
     const editorRuns = editorItem ? workflowRunsFor(editorItem, () => setEditor(null)) : [];
 

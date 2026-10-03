@@ -3,6 +3,7 @@ import litellm
 import os
 from types import SimpleNamespace
 from litellm.responses.utils import ResponsesAPIRequestUtils
+from litellm.completion_extras.litellm_responses_transformation.transformation import OpenAiResponsesToChatCompletionStreamIterator
 
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
@@ -21,6 +22,28 @@ GATEWAY_DEFAULT_API_BASES = {
 def effective_api_base(endpoint, api_base):
     """Return the base URL a request will target, or ``None`` for a first-party provider default."""
     return api_base or GATEWAY_DEFAULT_API_BASES.get(endpoint) or None
+
+
+_translate_responses_chunk = OpenAiResponsesToChatCompletionStreamIterator.translate_responses_chunk_to_openai_stream
+
+
+def _translate_responses_chunk_or_raise(chunk):
+    """Raise on failed, incomplete and error stream events.
+
+    LiteLLM's Responses bridge turns them into empty chunks and then adds
+    ``finish_reason='stop'``, so a rate-limited or truncated request would look
+    like a model that chose to reply with nothing.
+    """
+    kind = chunk.get("type") if isinstance(chunk, dict) else None
+    kind = getattr(kind, "value", kind)
+    if kind in ("response.failed", "response.incomplete", "error"):
+        response = chunk.get("response") or {}
+        detail = response.get("error") or response.get("incomplete_details") or chunk.get("error") or chunk
+        raise ValueError(f"Model response {kind.removeprefix('response.')}: {json.dumps(detail, default=str)[:500]}")
+    return _translate_responses_chunk(chunk)
+
+
+OpenAiResponsesToChatCompletionStreamIterator.translate_responses_chunk_to_openai_stream = staticmethod(_translate_responses_chunk_or_raise)
 
 
 def _synthesize_stream(response):

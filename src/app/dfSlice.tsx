@@ -1114,8 +1114,7 @@ export const dataFormulatorSlice = createSlice({
                     return {
                         ...rest,
                         description: typeof rest.description === 'string' ? rest.description : '',
-                        virtual: saved.activeWorkspace?.readOnly && saved.activeWorkspace?.scheduledRun
-                            ? undefined : rest.virtual || { tableId: rest.id, rowCount: rest.rows?.length || 0 },
+                        virtual: rest.virtual || { tableId: rest.id, rowCount: rest.rows?.length || 0 },
                     };
                 }),
                 loadedTableNodes: saved.loadedTableNodes || [],

@@ -36,7 +36,7 @@ import { takeAutoSubmit } from '../app/setupForms';
 import { openSessionInNewTab } from '../app/sessionTabs';
 import { notifyWorkspaceFilesChanged } from '../app/workspaceService';
 import type { ScheduleConfig, ScheduleFormArtifact, SessionsFormArtifact, SetupFormTarget, TextTurn, WorkflowFormArtifact } from '../components/ComponentType';
-import { defaultScheduleConfig, listWorkflowLibrary, saveSchedule, ScheduleConfigFields, scheduleCadence, workflowApi, WorkflowLibraryItem,
+import { defaultScheduleConfig, listWorkflowLibrary, saveSchedule, ScheduleConfigFields, scheduleCadence, SCHEDULING_LOCAL_ONLY, workflowApi, WorkflowLibraryItem,
     WorkflowSetup, WorkflowSetupFields, workflowSetupContentSx } from './WorkflowSchedules';
 import { executeWorkflow } from './WorkflowPanel';
 
@@ -86,10 +86,9 @@ export const ScheduleFormArtifactView: React.FC<{ turn: TextTurn; form: Schedule
     const { schedule } = form;
     const saved = schedule.status === 'saved';
     const updating = !!schedule.target && mode === 'update';
-    const hosted = !!schedule.hosted;
     const config: ScheduleConfig = useMemo(() => ({
-        ...defaultScheduleConfig(models, selectedModelId), ...(hosted ? { publish: true } : {}), ...schedule.config,
-    }), [models, selectedModelId, hosted, schedule.config]);
+        ...defaultScheduleConfig(models, selectedModelId), ...schedule.config,
+    }), [models, selectedModelId, schedule.config]);
     const update = (patch: Partial<ScheduleFormArtifact['schedule']>, extra: Partial<TextTurn> = {}) =>
         dispatch(dfActions.updateTextTurn({ id: turn.id, ...extra, form: { ...form, schedule: { ...schedule, ...patch } } }));
 
@@ -106,7 +105,6 @@ export const ScheduleFormArtifactView: React.FC<{ turn: TextTurn; form: Schedule
         !config.name.trim() ? t('setupForm.nameSchedule', { defaultValue: 'Name the schedule.' }) : '',
         !config.weekdays.length ? t('setupForm.chooseDays', { defaultValue: 'Choose at least one day.' }) : '',
         !config.model_id ? t('setupForm.chooseModel', { defaultValue: 'Choose a server model connection.' }) : '',
-        hosted && !config.publish ? t('setupForm.hostedPublish', { defaultValue: 'Hosted schedules must publish their results.' }) : '',
     ].filter(Boolean);
 
     const submit = async () => {
@@ -127,7 +125,7 @@ export const ScheduleFormArtifactView: React.FC<{ turn: TextTurn; form: Schedule
     useEffect(() => {
         if (items === null || available === null || saved || !takeAutoSubmit(turn.id)) return;
         // Elevated options always need the user's own Save, even if the agent asked to apply directly.
-        if (!problems.length && !schedule.issues?.length && available && !config.auto_approve && !config.publish) void submit();
+        if (!problems.length && !schedule.issues?.length && available && !config.auto_approve) void submit();
     }, [items, available]);
 
     if (saved) {
@@ -153,8 +151,8 @@ export const ScheduleFormArtifactView: React.FC<{ turn: TextTurn; form: Schedule
         {!!schedule.issues?.length && <Alert severity="warning">{schedule.issues.map(issue => <Box key={issue}>{issue}</Box>)}</Alert>}
         {error && <Alert severity="error">{error}</Alert>}
         {items === null ? <CircularProgress size={18} /> : available === false
-            ? <Alert severity="info">{t('setupForm.schedulingUnavailable', { defaultValue: 'Scheduling is unavailable for this deployment or account.' })}</Alert>
-            : <ScheduleConfigFields items={items} config={config} hosted={hosted} disabled={saving}
+            ? <Alert severity="info">{t('setupForm.schedulingLocalOnly', { defaultValue: SCHEDULING_LOCAL_ONLY })}</Alert>
+            : <ScheduleConfigFields items={items} config={config} disabled={saving}
                 onChange={next => update({ config: next, issues: [] })} />}
     </SetupFormFrame>;
 };

@@ -14,20 +14,15 @@ timezone. Browser-only model credentials cannot support unattended runs. Each
 occurrence creates a separate session tagged **Scheduled**, with its schedule name
 and intended execution time. Background runs do not change the open session.
 
-Local schedules execute while the backend is running. In hosted managed mode,
-only administrators can manage schedules; execution uses isolated service
-workspaces and installation workflows, models, and connectors, not the admin's
-personal session or browser credentials. Set `DF_SCHEDULER_ENABLED=1` to enable
-hosted dispatch. Ephemeral deployments cannot schedule runs.
+Schedules execute in the local app while its backend is running. Hosted and
+ephemeral deployments do not schedule runs; the Schedules views explain that
+scheduling is only available locally. On a hosted deployment, administrators
+publish workflows and example sessions instead: **Publish as example** on a
+session adds it to everyone's Example sessions, and opening one imports a copy
+into the viewer's own sessions, like the built-in demos.
 
-The scheduler stores definitions, occurrence records, and published snapshots in
-`<data-dir>/scheduling/schedules.sqlite3`. Keep this directory on durable storage.
-Deploy **one scheduling host** per installation; same-host workers share a file
-lease and transactional occurrence claims. Independent replicas must not each
-enable their own dispatcher or use separate copies of this database. A clustered
-distributed scheduler is not supported. Azure-backed workspace data is supported,
-but does not make the scheduler database durable automatically. WSGI workers
-initialize scheduling on their first request; the CLI initializes it at startup.
+The scheduler stores definitions and occurrence records in
+`<data-dir>/scheduling/schedules.sqlite3`.
 
 Retries apply only to classified transient model errors, at 30/60/120-second
 backoff, with at most three retries and the same session/checkpoint. When all
@@ -49,18 +44,7 @@ Auto-approval is opt-in. It covers permitted local terminal requests and loading
 proposals with a single option; sandbox and connector authorization still apply.
 Questions, credentials, alternatives, and interrupted commands need attention.
 Use the **Open latest run** control on a workflow or schedule card to visit its
-latest available run. Hosted private run
-snapshots and their status remain admin-only.
-
-Hosted publication requires explicit approval to expose final reports and all
-chart data. Only successful runs replace the shared snapshot; a failed refresh
-keeps the previous success. Shared sessions are read-only and can be forked into
-the viewer's own workspace. Forks retain provenance but do not carry the active
-Scheduled tag. Publication excludes checkpoints, source references, tool logs,
-execution code, and reasoning. Final report text and chart values themselves are
-published, so administrators must choose workflows whose deliverables are safe
-for every viewer. Snapshots currently support reports and chart data up to 100,000
-rows per chart; arbitrary workspace files are not published.
+latest available run.
 
 ## Try It
 

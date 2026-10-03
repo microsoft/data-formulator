@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Typography,
     Box,
@@ -9,6 +9,9 @@ import {
 } from '@mui/material';
 import { StreamIcon } from '../icons';
 import { textVar } from '../app/layout';
+import { apiRequest } from '../app/apiClient';
+import { ItemCard, itemCardGridSx } from '../components/ItemCard';
+import { ArtifactDeleteButton } from './DataThreadCards';
 
 // Example session data for pre-built sessions
 export interface ExampleSession {
@@ -125,6 +128,65 @@ export const exampleSessions: ExampleSession[] = [
     }
 ];
 
+// ── Published example sessions ─────────────────────────────────────────────
+// Administrators publish one of their sessions; opening it imports a copy, like the built-in demos.
+
+type PublishedExample = { id: string; title: string; description?: string; published_at: string };
+const publishedChanged = new EventTarget();
+
+const publishedDate = (value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
+export async function fetchPublishedExamples(): Promise<ExampleSession[]> {
+    const { data } = await apiRequest<{ examples: PublishedExample[] }>('/api/sessions/examples');
+    return (data.examples || []).map(example => ({
+        id: example.id, title: example.title, previewImage: '', live: false,
+        description: example.description || `Published ${publishedDate(example.published_at)}`,
+        workspace: `/api/sessions/examples/${example.id}`,
+    }));
+}
+
+export async function publishExampleSession(workspaceId: string, title: string): Promise<void> {
+    await apiRequest('/api/sessions/examples', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace_id: workspaceId, title }) });
+    publishedChanged.dispatchEvent(new Event('change'));
+}
+
+export function usePublishedExamples(enabled = true): ExampleSession[] {
+    const [examples, setExamples] = useState<ExampleSession[]>([]);
+    const [tick, setTick] = useState(0);
+    useEffect(() => {
+        const refresh = () => setTick(value => value + 1);
+        publishedChanged.addEventListener('change', refresh);
+        return () => publishedChanged.removeEventListener('change', refresh);
+    }, []);
+    useEffect(() => {
+        if (!enabled) return;
+        let cancelled = false;
+        fetchPublishedExamples().then(list => { if (!cancelled) setExamples(list); }).catch(() => { if (!cancelled) setExamples([]); });
+        return () => { cancelled = true; };
+    }, [enabled, tick]);
+    return examples;
+}
+
+/** Administration list of published example sessions, each removable. */
+export const PublishedExamplesPanel: React.FC = () => {
+    const examples = usePublishedExamples();
+    const [error, setError] = useState('');
+    const remove = async (id: string) => {
+        setError('');
+        try {
+            await apiRequest(`/api/sessions/examples/${id}`, { method: 'DELETE' });
+            publishedChanged.dispatchEvent(new Event('change'));
+        } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to remove example session.'); }
+    };
+    return <Box sx={itemCardGridSx}>
+        {error && <Typography role="alert" sx={{ fontSize: textVar.xs, color: 'error.main' }}>{error}</Typography>}
+        {!examples.length && <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>No published example sessions yet.</Typography>}
+        {examples.map(example => <ItemCard key={example.id} title={example.title} captions={[example.description]}
+            actions={<ArtifactDeleteButton label={`Remove ${example.title}`} onClick={() => void remove(example.id)} />} />)}
+    </Box>;
+};
+
 // Session card component for displaying example sessions
 export const ExampleSessionCard: React.FC<{
     session: ExampleSession;
@@ -152,7 +214,7 @@ export const ExampleSessionCard: React.FC<{
             }}
             onClick={disabled ? undefined : onClick}
         >
-            <Box
+            {session.previewImage && <Box
                 sx={{
                     height: 56,
                     alignSelf: 'center',
@@ -172,7 +234,7 @@ export const ExampleSessionCard: React.FC<{
                         display: 'block',
                     }}
                 />
-            </Box>
+            </Box>}
 
             <Box sx={{ flex: 1, minWidth: 0, p: 1.5 }}>
                 <Typography variant="body2" fontWeight={400} noWrap sx={{ color: 'text.primary' }}>

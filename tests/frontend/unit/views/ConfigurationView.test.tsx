@@ -6,6 +6,7 @@ import { apiRequest } from '../../../../src/app/apiClient';
 
 vi.mock('../../../../src/app/apiClient', () => ({ apiRequest: vi.fn() }));
 vi.mock('../../../../src/app/store', () => ({ store: { dispatch: vi.fn() } }));
+vi.mock('../../../../src/views/ExampleSessions', () => ({ PublishedExamplesPanel: () => <div data-testid="published-examples" /> }));
 vi.mock('../../../../src/app/dfSlice', () => ({ dfActions: { setServerConfig: vi.fn() }, fetchGlobalModelList: vi.fn() }));
 vi.mock('react-router-dom', () => ({ useBlocker: () => ({ state: 'unblocked' }),
     Link: React.forwardRef<HTMLAnchorElement, React.ComponentProps<'a'> & { to: string }>(({ to, ...props }, ref) => <a ref={ref} href={to} {...props} />) }));

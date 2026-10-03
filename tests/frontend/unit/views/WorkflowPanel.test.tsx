@@ -93,7 +93,7 @@ describe('Workflow session publication', () => {
                             { id: 'older-run', status: 'completed', scheduled_for: '2026-09-28T16:00:00Z' }] }];
                 }
                 return { data: url === '/api/workflows/list'
-                    ? { items: [item], runs: [] } : { available: true, hosted: false, schedules: savedSchedules } } as any;
+                    ? { items: [item], runs: [] } : { available: true, schedules: savedSchedules } } as any;
             });
             const openSession = vi.fn();
             rendered = render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} onOpenSession={openSession} />
@@ -233,28 +233,13 @@ describe('Workflow session publication', () => {
         expect(streamRequest).not.toHaveBeenCalled();
     });
 
-    it('opens hosted scheduled runs using the admin-only session ID', async () => {
-        const previous = store.getState().serverConfig;
-        store.dispatch(dfActions.setServerConfig({ ...previous, CAN_CONFIGURE: true }));
-        const openSession = vi.fn();
-        let rendered: ReturnType<typeof render> | undefined;
-        try {
-            vi.mocked(apiRequest).mockImplementation(async url => ({ data: url === '/api/workflows/list'
-                ? { items: [{ path: 'server/review.yaml', name: 'Shared review', origin: 'server' }], runs: [] }
-                : { available: true, hosted: true, schedules: [{ id: 'schedule', config: { name: 'Daily review', workflow: 'server/review.yaml', enabled: true, weekdays: [0, 1, 2, 3, 4, 5, 6], time: '09:00' },
-                    next_at: '2026-10-01T09:00:00Z', history: [{ id: 'hosted-run', status: 'completed', scheduled_for: '2026-09-30T09:00:00Z' }] }] } }) as any);
-            rendered = render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} onOpenSession={openSession} />
-                <SchedulesPanel onOpenSession={openSession} /></Provider>);
-            fireEvent.click(await screen.findByRole('button', { name: 'Open Shared review' }));
-            fireEvent.click(within(await screen.findByRole('group', { name: 'Runs of Shared review' })).getAllByRole('button')[0]);
-            expect(openSession).toHaveBeenLastCalledWith('scheduled-private-hosted-run');
-            fireEvent.click(screen.getByRole('button', { name: 'Open latest run for schedule Daily review' }));
-            expect(openSession).toHaveBeenLastCalledWith('scheduled-private-hosted-run');
-            expect(streamRequest).not.toHaveBeenCalled();
-        } finally {
-            rendered?.unmount();
-            store.dispatch(dfActions.setServerConfig(previous));
-        }
+    it('explains that scheduling is local-only when the server has none', async () => {
+        vi.mocked(apiRequest).mockImplementation(async url => ({ data: url === '/api/workflows/list'
+            ? { items: [], runs: [] } : { available: false, schedules: [] } }) as any);
+        const rendered = render(<Provider store={store}><SchedulesPanel /></Provider>);
+        expect(await screen.findByText(/only available in the local Data Formulator app/)).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'New schedule' })).toHaveProperty('disabled', true);
+        rendered.unmount();
     });
 
     it('shows private read-only workflow details without resume controls', async () => {

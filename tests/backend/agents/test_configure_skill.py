@@ -203,7 +203,7 @@ def test_scheduling_unavailable_is_reported_without_a_form(monkeypatch) -> None:
     events, observation = _action("propose_schedule", {"workflow": "demo/gas-price-review.yaml"})
 
     assert listed["available"] is False
-    assert events == [] and "Scheduling is unavailable" in observation
+    assert events == [] and "only available in the local Data Formulator app" in observation
 
 
 def test_analyst_gates_setup_actions_until_configure_loads_and_streams_the_form(tmp_path, sessions) -> None:
