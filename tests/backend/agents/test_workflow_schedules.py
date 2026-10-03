@@ -207,6 +207,26 @@ def test_runner_creates_private_session(execution_context, monkeypatch):
     assert "trajectory" not in private["workflow_run"]
 
 
+def test_scheduled_run_writes_in_the_schedule_language(execution_context, monkeypatch):
+    from data_formulator.workflows.scheduler import execute_occurrence
+    from data_formulator.workflows.agent import WorkflowAgent
+    app, store, schedule, occurrence = execution_context
+    store.save("local:test", {**CONFIG, "language": "ja"}, identifier=schedule["id"], now=NOW)
+    seen = {}
+
+    def complete(agent):
+        seen.update(language=agent.state["language"], prompt=agent._build_system_prompt())
+        agent.state.update(status="completed")
+        agent.checkpoint(agent.state)
+        yield {"type": "workflow_state", "run": {"status": "completed"}}
+
+    monkeypatch.setattr(WorkflowAgent, "run_workflow", complete)
+    execute_occurrence(app, store, occurrence)
+    assert seen["language"] == "ja" and "[LANGUAGE INSTRUCTION]" in seen["prompt"]
+    with pytest.raises(ValueError):
+        store.save("local:test", {**CONFIG, "language": "Japanese"}, now=NOW)
+
+
 def test_schedule_list_reflects_run_completed_after_resume(execution_context, monkeypatch):
     from data_formulator.routes.workflows import run_path
     from data_formulator.workflows.agent import WorkflowAgent
@@ -237,7 +257,7 @@ def test_schedule_list_reflects_run_completed_after_resume(execution_context, mo
     assert store.history(schedule["id"]) == []
 
 
-def test_runner_retries_same_checkpoint_and_does_not_publish_failure(execution_context, monkeypatch):
+def test_runner_retries_same_checkpoint(execution_context, monkeypatch):
     from data_formulator.workflows.scheduler import execute_occurrence
     from data_formulator.workflows.agent import WorkflowAgent
     from data_formulator.workspace_factory import get_workspace_manager
@@ -270,8 +290,9 @@ def test_runner_retries_same_checkpoint_and_does_not_publish_failure(execution_c
 
     monkeypatch.setattr(WorkflowAgent, "run_workflow", complete)
     execute_occurrence(app, store, retry)
-    assert store.history(schedule["id"])[0]["status"] == "completed"
-    assert store.history(schedule["id"])[0]["attempts"] == 2
+    # The real-clock retry time also passes later occurrences, which are recorded as missed.
+    retried = next(item for item in store.history(schedule["id"]) if item["id"] == occurrence["id"])
+    assert (retried["status"], retried["attempts"]) == ("completed", 2)
     with app.app_context():
         manager = get_workspace_manager("local:test")
         assert len(manager.list_workspaces()) == 1

@@ -140,7 +140,7 @@ def test_kusto_cluster_discovery_rejects_invalid_subscription(connection_api, mo
     monkeypatch.setattr(model_endpoints, "_azure_catalog_cli", cli)
     response = client.post("/api/model-endpoints/azure/kusto-clusters",
                            json={"subscription_id": "not-a-subscription"}, headers={"X-Model-Connection": "1"})
-    assert response.status_code == 400
+    assert response.get_json()["error"]["code"] == "INVALID_REQUEST"
     cli.assert_not_called()
 
 
@@ -151,7 +151,7 @@ def test_kusto_cluster_discovery_rejects_external_pagination(connection_api, mon
     response = client.post("/api/model-endpoints/azure/kusto-clusters",
                            json={"subscription_id": "00000000-0000-0000-0000-000000000001"},
                            headers={"X-Model-Connection": "1"})
-    assert response.status_code >= 400
+    assert response.get_json()["error"]["code"] == "SERVICE_UNAVAILABLE"
     assert cli.call_count == 1
 
 

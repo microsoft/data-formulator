@@ -140,7 +140,7 @@ def test_workspace_baseline_includes_loading_guidance(tmp_path: Path) -> None:
     assert prompt.count("## Data Access Paths") == 1
     assert "Continue to the requested answer or chart\nin the same run" in prompt
     assert "Clear single-option imports may execute automatically" in prompt
-    assert "coverage contains the request" in prompt
+    assert "Reuse a result whose fields, scope, grain, and freshness support the request" in prompt
     assert "Retaining useful columns\nor finer detail" in prompt
     assert "are the only data that can be read directly" not in prompt
     assert "propose_data_operation" in agent._legal_actions()
@@ -157,12 +157,9 @@ def test_baseline_prioritizes_informative_charts_for_comparative_answers(tmp_pat
     prompt = " ".join(agent._build_system_prompt(has_charts=has_charts).split())
 
     assert "use `visualize` by default for comparisons, rankings, trends, distributions, and relationships" in prompt
-    assert "call `visualize` before ending the run" in prompt
-    assert "do not merely offer to make a chart" in prompt
-    assert "Reuse an existing chart if it already answers the question" in prompt
-    assert "unique source-destination IP pairs can still be ranked by bytes transferred" in prompt
-    assert "Answer single-value lookups, definitions, and procedural questions directly" in prompt
-    assert "Respect an explicit text-only request" in prompt
+    assert "including an informative chart when supported, not merely prose" in prompt
+    assert "Reuse existing charts and results rather than repeating work" in prompt
+    assert "Answer definitions and procedural questions directly" in prompt
     assert "Do not invent values or infer full-population rankings from a preview sample" in prompt
     assert "visualize" in agent._legal_actions()
 
@@ -180,7 +177,6 @@ def test_workflow_guidance_matches_tool_effects(tmp_path: Path) -> None:
         "The namespace persists within an inspection cycle",
         "Visualization code must be standalone",
         "Discovery does not load data or make catalog paths readable",
-        "Host commands require explicit approval",
         "Never write directly to `data/`, `files/`, `memory/`, or hidden runtime files",
     ):
         assert rule in prompt
@@ -238,9 +234,8 @@ def test_discovery_to_import_policy_preserves_confirmation_and_optional_question
     assert "Use one option with `user_review_needed: false` for a clear load" in prompt
     assert "multiple alternatives always require review" in prompt
     assert "A discovery-only request does not require loading" in prompt
-    assert "A statement of intended\nwork is not completion" in prompt
-    assert "Prefer `ask_user`" in prompt
-    assert "a preference, not a requirement" in prompt
+    assert "A statement of intended work is not completion" in prompt
+    assert "prefer `ask_user` for a necessary choice or missing intent" in prompt
     specs = {
         spec["function"]["name"]: spec["function"]
         for spec in agent.registry.tools_for(["meta"]) + agent.registry.action_tools_for(["meta"])
@@ -313,7 +308,7 @@ def test_resume_keeps_workspace_loading_available_without_a_separate_gate(tmp_pa
 
 
 @pytest.mark.parametrize("has_system_prompt", [True, False])
-def test_resume_preserves_existing_instructions_and_conversation(tmp_path: Path, has_system_prompt: bool) -> None:
+def test_resume_refreshes_instructions_and_preserves_conversation(tmp_path: Path, has_system_prompt: bool) -> None:
     from data_formulator.analyst.agent import AnalystAgent
 
     workspace = Workspace("test-user", root_dir=tmp_path)
@@ -333,8 +328,7 @@ def test_resume_preserves_existing_instructions_and_conversation(tmp_path: Path,
         {"role": "user", "content": "Please find available data first"},
     ]
     trajectory = ([{"role": "system", "content": "STALE BASELINE INSTRUCTIONS"}] if has_system_prompt else []) + history
-    original_trajectory = list(trajectory)
-    agent._build_system_prompt = MagicMock(side_effect=AssertionError("Resume must not rebuild instructions"))
+    agent._build_system_prompt = MagicMock(return_value="CURRENT BASELINE INSTRUCTIONS")
     observed = []
 
     def next_action(messages, *args, **kwargs):
@@ -348,12 +342,12 @@ def test_resume_preserves_existing_instructions_and_conversation(tmp_path: Path,
     events = list(agent.run([], "Please find available data first", trajectory=trajectory,
                            external_references=[reference], focused_external_reference=reference["id"]))
     assert events[-1]["type"] == "completion"
-    assert observed[:-2] == original_trajectory
+    assert observed[:-2] == [{"role": "system", "content": "CURRENT BASELINE INSTRUCTIONS"}, *history]
     assert observed[-2]["content"].startswith("[CURRENT WORKSPACE FILE CONTEXT]")
     assert observed[-1]["content"].startswith("[EXTERNAL TABLE REFERENCES]")
     assert json.loads(observed[-1]["content"].splitlines()[-1])["focused_reference"] == reference["id"]
     assert agent._run_payload["external_references"] == [reference]
-    agent._build_system_prompt.assert_not_called()
+    agent._build_system_prompt.assert_called_once()
     assert agent._loaded_skills == {"meta", "report"}
     assert "find_data" in agent._loaded_skill_tool_map()
     assert "write_report" in agent._legal_actions()

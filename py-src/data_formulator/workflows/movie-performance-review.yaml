@@ -157,3 +157,76 @@ steps:
       - id: movie_final_delivery
         condition: Three distinct native charts and a report exist, all references and headline calculations agree with final outputs and supporting evidence, and limitations are explicit.
         on_fail: brief
+i18n:
+  zh:
+    name: 电影预算、票房与评分
+    overview: 通过预算对比、类型分布以及影评人与观众评分对比，研究电影经济与观众口碑。
+    parameters:
+      release_years:
+        label: 上映年份
+        description: 历史样本中的某一年或年份范围。
+        default: 所有可用年份
+      focus:
+        label: 报告重点
+        options: [均衡概览, 预算与票房, 影评人与观众评分]
+        default: 均衡概览
+    steps:
+      prepare: 建立有效的电影分组，并记录缺失或含糊的记录。
+      economics: 比较预算与票房，不把收入误当作利润。
+      genres: 比较各类型的分布，而不是对少数大片的平均值排名。
+      reception: 考察该样本中影评人与观众在哪些方面一致或分歧。
+      brief: 总结站得住脚的结论，并说明该电影样本无法证明的内容。
+  ja:
+    name: 映画の予算・興行収入・評価
+    overview: 予算の比較、ジャンル別の分布、批評家と観客の評価を通じて、映画の経済性と観客の反応を調べます。
+    parameters:
+      release_years:
+        label: 公開年
+        description: 過去のサンプル内の年または年の範囲。
+        default: 利用可能なすべての年
+      focus:
+        label: レポートの焦点
+        options: [バランスの取れた概要, 予算と興行収入, 批評家と観客の評価]
+        default: バランスの取れた概要
+    steps:
+      prepare: 有効な映画のグループを定め、欠損や曖昧なレコードを記録します。
+      economics: 収益を利益と取り違えずに、予算と興行収入を比較します。
+      genres: 少数の大ヒット作の平均を並べるのではなく、ジャンルごとの分布を比較します。
+      reception: このサンプルで批評家と観客の評価が一致する点、分かれる点を調べます。
+      brief: 根拠のある結果と、この映画サンプルでは示せないことをまとめます。
+  id:
+    name: Anggaran, Pendapatan, dan Rating Film
+    overview: Telusuri ekonomi film dan sambutan penonton melalui perbandingan anggaran, distribusi genre, dan rating kritikus versus penonton.
+    parameters:
+      release_years:
+        label: Tahun rilis
+        description: Satu tahun atau rentang tahun dalam sampel historis.
+        default: Semua tahun yang tersedia
+      focus:
+        label: Fokus laporan
+        options: [Ikhtisar seimbang, Anggaran dan pendapatan box office, Rating kritikus dan penonton]
+        default: Ikhtisar seimbang
+    steps:
+      prepare: Tetapkan kelompok film yang valid dan catat data yang hilang atau ambigu.
+      economics: Bandingkan anggaran dan box office tanpa menganggap pendapatan sebagai laba.
+      genres: Bandingkan distribusi genre alih-alih memeringkat rata-rata beberapa film laris.
+      reception: Telaah di mana kritikus dan penonton sepakat atau berbeda dalam sampel ini.
+      brief: Rangkum temuan yang dapat dipertanggungjawabkan dan apa yang tidak dapat dibuktikan oleh sampel film ini.
+  hi:
+    name: फ़िल्म बजट, राजस्व और रेटिंग
+    overview: बजट तुलना, शैली वितरण और समीक्षक बनाम दर्शक रेटिंग के माध्यम से फ़िल्मों के अर्थशास्त्र और दर्शकों की प्रतिक्रिया की जांच करें।
+    parameters:
+      release_years:
+        label: रिलीज़ वर्ष
+        description: ऐतिहासिक नमूने के भीतर एक वर्ष या वर्षों की सीमा।
+        default: सभी उपलब्ध वर्ष
+      focus:
+        label: रिपोर्ट का फ़ोकस
+        options: [संतुलित अवलोकन, बजट और बॉक्स ऑफ़िस, समीक्षक और दर्शक रेटिंग]
+        default: संतुलित अवलोकन
+    steps:
+      prepare: मान्य फ़िल्म समूह तय करें और गायब या अस्पष्ट रिकॉर्ड दर्ज करें।
+      economics: राजस्व को लाभ समझे बिना बजट और बॉक्स ऑफ़िस की तुलना करें।
+      genres: कुछ ब्लॉकबस्टर औसतों को रैंक करने के बजाय शैली वितरण की तुलना करें।
+      reception: जांचें कि इस नमूने में समीक्षक और दर्शक कहां सहमत या असहमत हैं।
+      brief: ठोस निष्कर्षों और इस फ़िल्म नमूने से क्या स्थापित नहीं किया जा सकता, इसका सारांश दें।

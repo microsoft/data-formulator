@@ -698,6 +698,42 @@ def test_enhanced_demo_workflows_are_discoverable_and_use_available_samples(tmp_
     assert "historical" in workflow["prompt"]
 
 
+@pytest.mark.parametrize("language", ["zh", "ja", "id", "hi"])
+def test_demo_workflows_list_and_run_with_display_translations(tmp_path, language):
+    store = WorkflowStore(tmp_path)
+    demos = [item for item in store.list_all(language) if item["origin"] == "demo"]
+    english = {item["path"]: item for item in store.list_all() if item["origin"] == "demo"}
+    assert demos and all("error" not in item for item in demos)
+    for item in demos:
+        assert item["name"] != english[item["path"]]["name"]
+        workflow = parse_definition(store.read(item["path"]))
+        state = new_run(workflow, "localized", language=language)
+        assert state["language"] == language and "i18n" not in state["definition"]
+        assert state["definition"]["prompt"] == workflow["prompt"]
+        assert state["plan"]["steps"][0]["instructions"] == workflow["steps"][0]["instructions"]
+        assert state["plan"]["steps"][0]["description"] == workflow["i18n"][language]["steps"][workflow["steps"][0]["id"]]
+
+
+def test_workflow_translations_cannot_change_fixed_values_or_enter_authoring(instance):
+    instance["parameters"] = [{"name": "year", "label": "Year", "type": "select", "options": ["2020", "2021"]}]
+    parse_workflow(yaml.safe_dump({**instance, "i18n": {"zh": {"parameters": {"year": {"label": "年份"}}}}}))
+    with pytest.raises(ValueError, match="custom inputs"):
+        parse_workflow(yaml.safe_dump({**instance, "i18n": {"zh": {"parameters": {"year": {"options": ["甲", "乙"]}}}}}))
+    with pytest.raises(ValueError, match="unknown step"):
+        parse_workflow(yaml.safe_dump({**instance, "i18n": {"zh": {"steps": {"missing": "缺失"}}}}))
+    from data_formulator.workflows.instances import validate_workflow_definition
+    with pytest.raises(ValueError):
+        validate_workflow_definition({**instance, "i18n": {}}, authored=True)
+
+
+def test_workflow_agent_writes_in_the_run_language(tmp_path, instance):
+    workspace = Workspace("workflow-language", root_dir=tmp_path)
+    english = WorkflowAgent(MagicMock(), workspace, new_run(instance, "en"), lambda value: None, Event(), "")
+    chinese = WorkflowAgent(MagicMock(), workspace, new_run(instance, "zh", language="zh"), lambda value: None, Event(), "")
+    assert "[LANGUAGE INSTRUCTION]" not in english._build_system_prompt()
+    assert "[LANGUAGE INSTRUCTION]" in chinese._build_system_prompt()
+
+
 def test_formal_sources_are_agent_guidance(instance, agent):
     instance["source"] = [{"id": "guide", "type": "instruction", "instruction": "Read the methodology."},
         {"id": "prices", "type": "retrieval", "request": {"method": "POST", "url": "https://example.com/prices",

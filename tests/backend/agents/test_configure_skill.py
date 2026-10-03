@@ -49,7 +49,7 @@ def sessions(tmp_path, monkeypatch):
 @pytest.fixture
 def scheduling(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_FORMULATOR_HOME", str(tmp_path / "home"))
-    monkeypatch.setattr("data_formulator.auth.identity.is_local_mode", lambda: True)
+    monkeypatch.setattr("data_formulator.auth.identity._localhost_identity", "local:test")
     monkeypatch.setattr("data_formulator.workflows.scheduler.scheduling_available", lambda: True)
     store = ScheduleStore(tmp_path / "home")
     monkeypatch.setattr("data_formulator.workflows.scheduler.schedule_store", lambda: store)

@@ -142,3 +142,64 @@ steps:
       - id: fuel_final_delivery
         condition: Three distinct native charts and their supporting data exist, and the published report's references and numerical claims agree with final outputs and supporting evidence.
         on_fail: brief
+i18n:
+  zh:
+    name: 燃油价格趋势
+    overview: 通过三张经过验证的图表，探索历史燃油价格波动、高标号汽油溢价以及周期性的季节规律。
+    parameters:
+      time_range:
+        label: 时间范围
+        description: 样本中的历史日期，并非实时价格。
+        options: [最近五个完整年份, 最近三个完整年份, 所有可用年份]
+        default: 最近五个完整年份
+    steps:
+      prepare: 选择可比较的燃油序列和覆盖充分的历史时间窗口。
+      trends: 比较燃油价格波动，不混用相互重叠的类别。
+      premium: 衡量在相同日期上高标号汽油贵多少。
+      seasonality: 寻找周期性季节规律，同时剔除年度价格水平的影响。
+      brief: 交付一份结论可复现的简短燃油价格简报。
+  ja:
+    name: 燃料価格の推移
+    overview: 検証済みの 3 つのグラフで、燃料価格の歴史的な変動、プレミアムガソリンの上乗せ幅、繰り返される季節パターンを探ります。
+    parameters:
+      time_range:
+        label: 期間
+        description: サンプル内の過去の日付で、リアルタイムの価格ではありません。
+        options: [直近 5 年（完全な年）, 直近 3 年（完全な年）, 利用可能なすべての年]
+        default: 直近 5 年（完全な年）
+    steps:
+      prepare: 比較可能な燃料系列と、十分なデータがある期間を選びます。
+      trends: 重複するカテゴリを混ぜずに燃料価格の変動を比較します。
+      premium: 同じ日付でプレミアムガソリンがどれだけ高いかを測ります。
+      seasonality: 年ごとの価格水準を切り分けながら、繰り返される季節パターンを探します。
+      brief: 再現可能な結果を含む短い燃料価格レポートを届けます。
+  id:
+    name: Tren Harga BBM
+    overview: Jelajahi fluktuasi historis harga BBM, selisih harga bensin premium, dan pola musiman berulang dengan tiga grafik terverifikasi.
+    parameters:
+      time_range:
+        label: Rentang waktu
+        description: Tanggal historis dalam sampel, bukan harga terkini.
+        options: [Lima tahun penuh terakhir, Tiga tahun penuh terakhir, Semua tahun yang tersedia]
+        default: Lima tahun penuh terakhir
+    steps:
+      prepare: Pilih seri BBM yang sebanding dan rentang historis dengan cakupan yang baik.
+      trends: Bandingkan fluktuasi harga BBM tanpa mencampur kategori yang tumpang tindih.
+      premium: Ukur seberapa mahal bensin premium pada tanggal yang sama.
+      seasonality: Cari pola musiman berulang sambil memisahkan tingkat harga tahunan.
+      brief: Sampaikan ringkasan harga BBM singkat dengan temuan yang dapat direproduksi.
+  hi:
+    name: ईंधन मूल्य रुझान
+    overview: तीन सत्यापित चार्ट के साथ ईंधन कीमतों के ऐतिहासिक उतार-चढ़ाव, प्रीमियम पेट्रोल के अतिरिक्त शुल्क और आवर्ती मौसमी पैटर्न का अन्वेषण करें।
+    parameters:
+      time_range:
+        label: समय सीमा
+        description: नमूने के भीतर ऐतिहासिक तिथियां, लाइव कीमतें नहीं।
+        options: [पिछले पांच पूर्ण वर्ष, पिछले तीन पूर्ण वर्ष, सभी उपलब्ध वर्ष]
+        default: पिछले पांच पूर्ण वर्ष
+    steps:
+      prepare: तुलनीय ईंधन श्रृंखला और अच्छी कवरेज वाली ऐतिहासिक अवधि चुनें।
+      trends: ओवरलैपिंग श्रेणियों को मिलाए बिना ईंधन मूल्य उतार-चढ़ाव की तुलना करें।
+      premium: समान तिथियों पर प्रीमियम पेट्रोल कितना महंगा है, इसे मापें।
+      seasonality: वार्षिक मूल्य स्तरों को अलग करते हुए आवर्ती मौसमी पैटर्न खोजें।
+      brief: पुनरुत्पादनीय निष्कर्षों के साथ एक संक्षिप्त ईंधन मूल्य ब्रीफ़िंग प्रस्तुत करें।

@@ -4,22 +4,23 @@ from urllib.parse import urlsplit
 from data_formulator.auth.identity import get_identity_id
 from data_formulator.error_handler import json_ok
 from data_formulator.errors import AppError, ErrorCode
-from data_formulator.workflows.scheduler import SCHEDULING_LOCAL_ONLY, schedule_store, scheduling_available
+from data_formulator.workflows import scheduler
+from data_formulator.workflows.scheduler import SCHEDULING_LOCAL_ONLY
 
 schedule_bp = Blueprint("schedules", __name__, url_prefix="/api/schedules")
 
 
 def schedule_owner():
-    if not scheduling_available():
+    if not scheduler.scheduling_available():
         raise AppError(ErrorCode.ACCESS_DENIED, SCHEDULING_LOCAL_ONLY)
     return get_identity_id()
 
 
 @schedule_bp.route("", methods=["GET"])
 def list_schedules():
-    if not scheduling_available():
+    if not scheduler.scheduling_available():
         return json_ok({"available": False, "reason": SCHEDULING_LOCAL_ONLY, "schedules": []})
-    store = schedule_store()
+    store = scheduler.schedule_store()
     schedules = [{**schedule, "history": store.history(schedule["id"])} for schedule in store.list(schedule_owner())]
     reconcile_resumed_runs(store, schedules)
     return json_ok({"available": True, "schedules": schedules})
@@ -75,7 +76,7 @@ def save_schedule():
                 raise ValueError("Choose a server-configured model connection.")
             workflow = parse_definition(WorkflowStore(get_user_home(get_identity_id())).read(config["workflow"]))
             resolve_setup(workflow, config.get("setup"))
-        saved = schedule_store().save(owner, config, identifier=body.get("id"))
+        saved = scheduler.schedule_store().save(owner, config, identifier=body.get("id"))
     except (ValueError, TypeError, FileNotFoundError) as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
     return json_ok({"schedule": saved})
@@ -87,7 +88,7 @@ def delete_schedule(identifier: str):
     if request.headers.get("Sec-Fetch-Site") == "cross-site":
         raise AppError(ErrorCode.ACCESS_DENIED, "Schedules must be managed from the application.")
     try:
-        schedule_store().delete(owner, identifier)
+        scheduler.schedule_store().delete(owner, identifier)
     except ValueError as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
     return json_ok({"id": identifier})

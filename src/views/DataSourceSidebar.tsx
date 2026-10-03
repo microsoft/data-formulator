@@ -575,7 +575,7 @@ const DataSourceSidebarPanel: React.FC<{
                 value: t('workspace.publishedExample', { defaultValue: 'Published "{{title}}" as an example session.', title }) }));
         } catch (error) {
             dispatch(dfActions.addMessages({ timestamp: Date.now(), type: 'error', component: 'workspace',
-                value: error instanceof Error ? error.message : 'Unable to publish example session.' }));
+                value: error instanceof Error ? error.message : t('workspace.publishExampleFailed') }));
         }
     };
     const sessionMenuAction = useRef<(() => void) | null>(null);

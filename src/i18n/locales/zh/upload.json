@@ -55,7 +55,9 @@
     "addSourceLabel": "添加数据：",
     "agentChatQuickAction": {
       "connect": "引导我连接数据源",
-      "askConnected": "列出已连接数据源中的表"
+      "askConnected": "列出已连接数据源中的表",
+      "workflowFromSession": "把我上次的分析变成工作流",
+      "scheduleWorkflow": "安排工作流每天运行"
     },
     "agentChatSuggestion": {
       "askConnected": "已连接的数据源里有哪些数据集？",

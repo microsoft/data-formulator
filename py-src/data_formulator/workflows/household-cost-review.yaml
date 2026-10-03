@@ -134,3 +134,76 @@ steps:
       - id: final_delivery
         condition: Three distinct native charts exist with monthly component costs and totals in the basket chart's derived table, the report embeds the correct chart IDs, and all stated dates and headline numbers agree with final outputs and supporting evidence.
         on_fail: brief
+i18n:
+  zh:
+    name: 食品杂货价格变化
+    overview: 基于示例数据重建月度生活成本简报，逐张图表揭示价格趋势、变动最大的商品以及一篮子食品杂货的成本。
+    parameters:
+      time_range:
+        label: 价格趋势周期
+        description: 相对于样本中的最新月份。
+        options: [最近 24 个月, 最近 12 个月, 最近 36 个月]
+        default: 最近 24 个月
+      basket:
+        label: 食品篮偏好
+        description: 可选的商品或数量；只能使用数据中已有的商品。
+    steps:
+      prepare: 准备价格数据和家庭购物篮，以便进行一致的成本比较。
+      trends: 查看所选食品杂货价格在过去两年中的分化情况。
+      movers: 找出过去一年变化最大的消费品价格。
+      basket: 追踪一个固定食品篮的月度成本变化。
+      brief: 将结论汇总成一份经过验证的家庭成本回顾。
+  ja:
+    name: 食料品価格の変化
+    overview: サンプルデータから月次の生活費レポートを再構成し、価格の推移、変動の大きい品目、食料品バスケットをグラフごとに示します。
+    parameters:
+      time_range:
+        label: 価格推移の期間
+        description: サンプル内の最新月を基準とします。
+        options: [直近 24 か月, 直近 12 か月, 直近 36 か月]
+        default: 直近 24 か月
+      basket:
+        label: 食料品バスケットの希望
+        description: 任意の品目や数量。データにある品目のみ使用できます。
+    steps:
+      prepare: 一貫したコスト比較のために価格データと家計のバスケットを準備します。
+      trends: 選択した食料品価格が過去 2 年間でどのように開いたかを確認します。
+      movers: 過去 1 年で最も変化した消費者物価を特定します。
+      basket: 固定の食料品バスケットの月額コストの変化を追跡します。
+      brief: 結果をまとめ、検証済みの家計コストレビューにします。
+  id:
+    name: Perubahan Harga Bahan Pokok
+    overview: Bangun ulang ringkasan biaya bulanan dari data contoh, menampilkan tren harga, item dengan perubahan terbesar, dan keranjang belanja satu grafik demi satu grafik.
+    parameters:
+      time_range:
+        label: Periode tren harga
+        description: Relatif terhadap bulan terakhir dalam sampel.
+        options: [24 bulan terakhir, 12 bulan terakhir, 36 bulan terakhir]
+        default: 24 bulan terakhir
+      basket:
+        label: Preferensi keranjang belanja
+        description: Item atau jumlah opsional; hanya item yang tersedia dalam data yang dapat digunakan.
+    steps:
+      prepare: Siapkan data harga dan keranjang rumah tangga untuk perbandingan biaya yang konsisten.
+      trends: Lihat bagaimana harga bahan pokok terpilih menyimpang selama dua tahun terakhir.
+      movers: Identifikasi harga konsumen yang paling berubah selama setahun terakhir.
+      basket: Lacak perubahan biaya bulanan dari keranjang belanja tetap.
+      brief: Satukan temuan dalam tinjauan biaya rumah tangga yang terverifikasi.
+  hi:
+    name: किराना कीमतों में बदलाव
+    overview: उदाहरण डेटा से मासिक लागत ब्रीफ़िंग फिर से बनाएं, जिसमें एक-एक चार्ट के साथ मूल्य रुझान, सबसे बड़े बदलाव और किराना टोकरी दिखाई जाए।
+    parameters:
+      time_range:
+        label: मूल्य रुझान अवधि
+        description: नमूने के नवीनतम महीने के सापेक्ष।
+        options: [पिछले 24 महीने, पिछले 12 महीने, पिछले 36 महीने]
+        default: पिछले 24 महीने
+      basket:
+        label: किराना टोकरी प्राथमिकताएं
+        description: वैकल्पिक वस्तुएं या मात्राएं; केवल डेटा में उपलब्ध वस्तुओं का उपयोग किया जा सकता है।
+    steps:
+      prepare: सुसंगत लागत तुलना के लिए मूल्य डेटा और घरेलू टोकरी तैयार करें।
+      trends: देखें कि पिछले दो वर्षों में चुनी गई किराना कीमतें कैसे अलग-अलग हुई हैं।
+      movers: पहचानें कि पिछले वर्ष में किन उपभोक्ता कीमतों में सबसे अधिक बदलाव हुआ।
+      basket: एक निश्चित किराना टोकरी की मासिक लागत में बदलाव को ट्रैक करें।
+      brief: निष्कर्षों को एक सत्यापित घरेलू लागत समीक्षा में एक साथ लाएं।

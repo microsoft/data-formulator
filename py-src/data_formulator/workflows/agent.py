@@ -16,10 +16,11 @@ from threading import Event, Thread
 from data_formulator.analyst.agent import AnalystAgent
 from data_formulator.analyst.skills.base import SkillContext
 from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine
+from data_formulator.agents.agent_language import build_language_instruction
 from data_formulator.agents.agent_utils import attach_reasoning_content
 from data_formulator.error_handler import classify_and_wrap_llm_error
 from data_formulator.errors import ErrorCode
-from data_formulator.workflows.instances import WORKFLOW_STEP_SCHEMA, initial_steps, parse_workflow, resolve_setup
+from data_formulator.workflows.instances import WORKFLOW_STEP_SCHEMA, initial_steps, localize_definition, parse_workflow, resolve_setup
 
 logger = logging.getLogger(__name__)
 
@@ -146,9 +147,10 @@ Do not ask 'shall I continue'. Be concise. Make one tool call at a time.
 """
 
 
-def new_run(instance: dict, run_id: str, setup: dict | None = None) -> dict:
+def new_run(instance: dict, run_id: str, setup: dict | None = None, language: str = "en") -> dict:
+    instance = localize_definition(instance, language)
     steps = deepcopy(instance.get("steps") or initial_steps())
-    return {"id": run_id, "definition": deepcopy(instance), "instance": deepcopy(instance),
+    return {"id": run_id, "definition": deepcopy(instance), "instance": deepcopy(instance), "language": language,
             "plan": {"steps": steps}, "setup": resolve_setup(instance, setup),
             "status": "running", "started_at": datetime.now(timezone.utc).isoformat(),
             "step_id": steps[0]["id"], "trajectory": [], "checks": {}, "evidence": {},
@@ -205,7 +207,8 @@ def model_retry_delay(exc: Exception, attempt: int) -> float | None:
 
 class WorkflowAgent(AnalystAgent):
     def __init__(self, client, workspace, state: dict, checkpoint, cancel: Event, identity_id: str):
-        super().__init__(client, workspace, identity_id=identity_id)
+        super().__init__(client, workspace, identity_id=identity_id,
+                         language_instruction=build_language_instruction(state.get("language", "en")))
         self.state = state
         state.setdefault("definition", deepcopy(state.get("original_instance", state["instance"])))
         state.setdefault("plan", {"steps": deepcopy(state["instance"].get("steps") or initial_steps())})
@@ -377,7 +380,8 @@ class WorkflowAgent(AnalystAgent):
         current_plan = {"revision": self.state.get("plan_revision", 0), "steps": self.state["plan"]["steps"],
                 "step_id": self.state["step_id"], "review_required": self.state.get("plan_review_pending", False),
             "progress": self.state.get("step_progress", {}), "current_checks": self.state["checks"]}
-        return capabilities + "\n\n" + planning + "\n\n## Workflow execution contract\n" + INSTRUCTIONS + "\n\nCurrent run plan:\n" + json.dumps(current_plan)
+        return (capabilities + "\n\n" + planning + "\n\n## Workflow execution contract\n" + INSTRUCTIONS + "\n\nCurrent run plan:\n" + json.dumps(current_plan)
+                + ("\n\n" + self.language_instruction if self.language_instruction else ""))
 
     def _build_skill_body_message(self, name: str):
         if name in {"meta", "analysis", "report"}:

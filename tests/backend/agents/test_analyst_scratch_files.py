@@ -48,9 +48,12 @@ class TestScratchFileInjection:
         events = list(agent.run([], "visualize this data", trajectory=trajectory, focused_file="scratch/sample.csv"))
         assert events[-1]["type"] == "completion"
         assert events[-1]["status"] == "success"
-        assert '"selected_file": {"path": "scratch/sample.csv"' in observed[-1]["content"]
-        assert '"scratch_files": ["scratch/sample.csv"]' in observed[-1]["content"]
-        assert "promotion or another upload is not required" in observed[-1]["content"]
+        # The external-reference inventory follows the file context as the last message.
+        file_context = observed[-2]["content"]
+        assert file_context.startswith("[CURRENT WORKSPACE FILE CONTEXT]")
+        assert '"selected_file": {"path": "scratch/sample.csv"' in file_context
+        assert '"scratch_files": ["scratch/sample.csv"]' in file_context
+        assert "promotion or another upload is not required" in file_context
 
     def test_file_context_includes_prior_scratch_and_current_selection(self, tmp_path):
         agent = _agent()

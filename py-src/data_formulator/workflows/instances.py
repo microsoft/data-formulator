@@ -63,6 +63,60 @@ WORKFLOW_DEFINITION_SCHEMA = {
         "steps": {"type": "array", "minItems": 1, "maxItems": 30, "items": WORKFLOW_STEP_SCHEMA},
     },
 }
+# Display text by language code. Kept out of the authoring schema: agents read and write the base language.
+WORKFLOW_TRANSLATIONS_SCHEMA = {
+    "type": "object", "propertyNames": {"pattern": r"^[a-z]{2,3}$"},
+    "additionalProperties": {
+        "type": "object", "additionalProperties": False,
+        "properties": {
+            "name": _TEXT_SCHEMA,
+            "overview": _TEXT_SCHEMA,
+            "parameters": {"type": "object", "additionalProperties": {
+                "type": "object", "additionalProperties": False,
+                "properties": {"label": _TEXT_SCHEMA, "description": {"type": "string"}, "default": {"type": "string"},
+                               "options": {"type": "array", "minItems": 1, "items": _TEXT_SCHEMA}},
+            }},
+            "steps": {"type": "object", "additionalProperties": _TEXT_SCHEMA},
+        },
+    },
+}
+
+
+def _validate_translations(workflow: dict, translations: Any) -> None:
+    error = next(Draft202012Validator(WORKFLOW_TRANSLATIONS_SCHEMA).iter_errors(translations), None)
+    if error:
+        location = ".".join(str(part) for part in error.absolute_path)
+        raise ValueError(f"Invalid workflow i18n{'.' + location if location else ''}: {error.message}")
+    parameters = {parameter["name"]: parameter for parameter in workflow.get("parameters", [])}
+    step_ids = {step["id"] for step in workflow.get("steps", [])}
+    for language, overlay in translations.items():
+        if set(overlay.get("steps", {})) - step_ids:
+            raise ValueError(f"Workflow i18n.{language} translates an unknown step.")
+        for name, translated in overlay.get("parameters", {}).items():
+            parameter = parameters.get(name)
+            if parameter is None:
+                raise ValueError(f"Workflow i18n.{language} translates an unknown parameter.")
+            # Translated values reach the run, so only free-text inputs may translate them.
+            free_text = parameter.get("type", "text") == "text" or parameter.get("allow_custom")
+            if {"options", "default"} & set(translated) and not free_text:
+                raise ValueError(f"Workflow i18n.{language}.parameters.{name} can only translate values of custom inputs.")
+            if "options" in translated and len(translated["options"]) != len(parameter.get("options", [])):
+                raise ValueError(f"Workflow i18n.{language}.parameters.{name} must translate every option.")
+
+
+def localize_definition(workflow: dict, language: str = "en") -> dict:
+    """Apply the display translations for *language* and drop the translation table."""
+    localized = {key: deepcopy(value) for key, value in workflow.items() if key != "i18n"}
+    overlay = (workflow.get("i18n") or {}).get(language)
+    if not overlay:
+        return localized
+    localized.update({key: overlay[key] for key in ("name", "overview") if key in overlay})
+    for parameter in localized.get("parameters", []):
+        parameter.update(deepcopy(overlay.get("parameters", {}).get(parameter["name"], {})))
+    for step in localized.get("steps", []):
+        if step["id"] in overlay.get("steps", {}):
+            step["description"] = overlay["steps"][step["id"]]
+    return localized
 
 
 def validate_workflow_definition(workflow: Any, *, authored: bool = False) -> dict[str, Any]:
@@ -73,7 +127,9 @@ def validate_workflow_definition(workflow: Any, *, authored: bool = False) -> di
     schema = deepcopy(WORKFLOW_DEFINITION_SCHEMA)
     if not authored:
         schema["properties"]["steps"]["items"]["required"].remove("description")
-    error = next(Draft202012Validator(schema).iter_errors(workflow), None)
+    translations = workflow.get("i18n") if isinstance(workflow, dict) and not authored else None
+    base = {key: value for key, value in workflow.items() if key != "i18n"} if translations is not None else workflow
+    error = next(Draft202012Validator(schema).iter_errors(base), None)
     if error:
         location = ".".join(str(part) for part in error.absolute_path) or "definition"
         raise ValueError(f"Invalid workflow {location}: {error.message}")
@@ -88,6 +144,8 @@ def validate_workflow_definition(workflow: Any, *, authored: bool = False) -> di
         targets = [step.get("next")] + [check.get("on_fail") for check in step.get("checkers", [])]
         if any(target is not None and target not in step_ids for target in targets):
             raise ValueError("Transition targets must refer to existing step IDs.")
+    if translations is not None:
+        _validate_translations(workflow, translations)
     return workflow
 
 
@@ -196,7 +254,7 @@ class WorkflowStore:
             raise ValueError("Workflow files cannot be symlinks.")
         self.files.unlink(name)
 
-    def list_all(self) -> list[dict]:
+    def list_all(self, language: str = "en") -> list[dict]:
         items = []
         sources = [(path, path.name, "user") for pattern in ("*.yaml", "*.yml") for path in sorted(self.files.rglob(pattern))]
         sources.extend((path, f"demo/{path.name}", "demo") for path in sorted(Path(__file__).parent.glob("*.yaml")))
@@ -208,7 +266,7 @@ class WorkflowStore:
             if origin != 'user' and not configured.get(name, {}).get('enabled', True):
                 continue
             try:
-                workflow = parse_definition(self.read(name))
+                workflow = localize_definition(parse_definition(self.read(name)), language)
                 items.append({"path": name, "name": workflow["name"], "overview": workflow["overview"], "origin": origin,
                               "parameters": workflow.get("parameters", [])})
             except (ValueError, OSError) as exc:

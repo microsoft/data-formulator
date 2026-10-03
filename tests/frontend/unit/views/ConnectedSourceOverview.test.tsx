@@ -164,8 +164,8 @@ it('keeps the landing chat, quick actions, and source links separate from the lo
     const onConnect = vi.fn();
     const onSelectConnector = vi.fn();
     const connector = { id: 'examples', display_name: 'Example Datasets', connected: true } as any;
-    render(<LandingDataEntry onStartChat={onStartChat} ensureActiveWorkspace={vi.fn()}
-        onUpload={onUpload} onConnect={onConnect} onSelectConnector={onSelectConnector} connectors={[connector]} />);
+    render(<Provider store={configureStore({ reducer: dataFormulatorReducer })}><LandingDataEntry onStartChat={onStartChat} ensureActiveWorkspace={vi.fn()}
+        onUpload={onUpload} onConnect={onConnect} onSelectConnector={onSelectConnector} connectors={[connector]} /></Provider>);
     expect(screen.queryByRole('button', { name: 'Browse data sources' })).toBeNull();
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: 'Compare weekly sales' } });
@@ -189,8 +189,8 @@ it('uploads landing attachments into a session and submits the server filename',
     vi.mocked(apiRequest).mockResolvedValue({ data: { path: 'scratch/sales-123.csv' } } as any);
     const ensureActiveWorkspace = vi.fn();
     const onStartChat = vi.fn();
-    const { container } = render(<LandingDataEntry onStartChat={onStartChat} ensureActiveWorkspace={ensureActiveWorkspace}
-        onUpload={vi.fn()} onConnect={vi.fn()} onSelectConnector={vi.fn()} connectors={[]} />);
+    const { container } = render(<Provider store={configureStore({ reducer: dataFormulatorReducer })}><LandingDataEntry onStartChat={onStartChat} ensureActiveWorkspace={ensureActiveWorkspace}
+        onUpload={vi.fn()} onConnect={vi.fn()} onSelectConnector={vi.fn()} connectors={[]} /></Provider>);
     fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['sales\n12'], 'sales.csv', { type: 'text/csv' })] } });
     expect(ensureActiveWorkspace).toHaveBeenCalledOnce();
     await screen.findByText('sales-123.csv');
@@ -199,8 +199,8 @@ it('uploads landing attachments into a session and submits the server filename',
 });
 
 it('disables the landing composer and quick actions in read-only sessions', () => {
-    render(<LandingDataEntry onStartChat={vi.fn()} ensureActiveWorkspace={vi.fn()} onUpload={vi.fn()}
-        onConnect={vi.fn()} onSelectConnector={vi.fn()} connectors={[]} readOnly />);
+    render(<Provider store={configureStore({ reducer: dataFormulatorReducer })}><LandingDataEntry onStartChat={vi.fn()} ensureActiveWorkspace={vi.fn()} onUpload={vi.fn()}
+        onConnect={vi.fn()} onSelectConnector={vi.fn()} connectors={[]} readOnly /></Provider>);
     expect(screen.getByRole('textbox')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Guide me to connect a data source' })).toHaveAttribute('aria-disabled', 'true');
 });

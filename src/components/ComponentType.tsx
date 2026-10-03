@@ -422,6 +422,8 @@ export interface ConnectorFormArtifact extends SetupFormBase {
 export interface ScheduleConfig {
     name: string; workflow: string; model_id: string; time: string; timezone: string; weekdays: number[];
     enabled: boolean; auto_approve: boolean; max_retries: number; catch_up: boolean;
+    /** Language for the run's reports and messages; unattended runs cannot read the app language. */
+    language?: string;
     setup?: { parameters: Record<string, string | number | boolean>; instructions: string };
 }
 

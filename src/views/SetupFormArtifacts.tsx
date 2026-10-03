@@ -12,6 +12,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
+import i18n from '../i18n';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel,
     Radio, RadioGroup, Tab, Tabs, TextField, Typography } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
@@ -36,7 +37,7 @@ import { takeAutoSubmit } from '../app/setupForms';
 import { openSessionInNewTab } from '../app/sessionTabs';
 import { notifyWorkspaceFilesChanged } from '../app/workspaceService';
 import type { ScheduleConfig, ScheduleFormArtifact, SessionsFormArtifact, SetupFormTarget, TextTurn, WorkflowFormArtifact } from '../components/ComponentType';
-import { defaultScheduleConfig, listWorkflowLibrary, saveSchedule, ScheduleConfigFields, scheduleCadence, SCHEDULING_LOCAL_ONLY, workflowApi, WorkflowLibraryItem,
+import { defaultScheduleConfig, listWorkflowLibrary, saveSchedule, ScheduleConfigFields, scheduleCadence, workflowApi, WorkflowLibraryItem,
     WorkflowSetup, WorkflowSetupFields, workflowSetupContentSx } from './WorkflowSchedules';
 import { executeWorkflow } from './WorkflowPanel';
 
@@ -96,7 +97,7 @@ export const ScheduleFormArtifactView: React.FC<{ turn: TextTurn; form: Schedule
         let cancelled = false;
         Promise.all([listWorkflowLibrary(), apiRequest<{ available: boolean }>('/api/schedules')])
             .then(([library, { data }]) => { if (!cancelled) { setItems(library); setAvailable(data.available); } })
-            .catch(reason => { if (!cancelled) { setItems([]); setAvailable(false); setError(errorMessage(reason, 'Unable to load workflows.')); } });
+            .catch(reason => { if (!cancelled) { setItems([]); setAvailable(false); setError(errorMessage(reason, t('workflow.loadFailed'))); } });
         return () => { cancelled = true; };
     }, []);
 
@@ -115,7 +116,7 @@ export const ScheduleFormArtifactView: React.FC<{ turn: TextTurn; form: Schedule
             update({ config, status: 'saved', savedId: result.id, nextAt: result.next_at, issues: [] },
                 { answered: true, answer: `Saved schedule ${config.name}` });
         } catch (reason) {
-            setError(errorMessage(reason, 'Unable to save schedule.'));
+            setError(errorMessage(reason, t('schedule.saveFailed')));
         } finally {
             setSaving(false);
         }
@@ -151,7 +152,7 @@ export const ScheduleFormArtifactView: React.FC<{ turn: TextTurn; form: Schedule
         {!!schedule.issues?.length && <Alert severity="warning">{schedule.issues.map(issue => <Box key={issue}>{issue}</Box>)}</Alert>}
         {error && <Alert severity="error">{error}</Alert>}
         {items === null ? <CircularProgress size={18} /> : available === false
-            ? <Alert severity="info">{t('setupForm.schedulingLocalOnly', { defaultValue: SCHEDULING_LOCAL_ONLY })}</Alert>
+            ? <Alert severity="info">{t('schedule.localOnly')}</Alert>
             : <ScheduleConfigFields items={items} config={config} disabled={saving}
                 onChange={next => update({ config: next, issues: [] })} />}
     </SetupFormFrame>;
@@ -161,8 +162,8 @@ type SessionItem = SessionsFormArtifact['sessions']['items'][number];
 
 const sessionSubtitle = (item: SessionItem) => [
     item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '',
-    item.tableCount != null ? `${item.tableCount} table${item.tableCount === 1 ? '' : 's'}` : '',
-    item.chartCount != null ? `${item.chartCount} chart${item.chartCount === 1 ? '' : 's'}` : '',
+    item.tableCount != null ? i18n.t('setupForm.tableCount', { count: item.tableCount }) : '',
+    item.chartCount != null ? i18n.t('setupForm.chartCount', { count: item.chartCount }) : '',
 ].filter(Boolean).join(' · ');
 
 /** A session panel: each card is renamed, opened in a new tab, or deleted on its own. */
@@ -266,7 +267,7 @@ export const SessionsFormArtifactView: React.FC<{ turn: TextTurn; form: Sessions
                 </Typography>
             </DialogContent>
             <DialogActions>
-                <Button onClick={() => setPendingDelete(null)}>{t('common.cancel', { defaultValue: 'Cancel' })}</Button>
+                <Button onClick={() => setPendingDelete(null)}>{t('app.cancel')}</Button>
                 <Button color="error" variant="contained" disableElevation onClick={() => pendingDelete && void remove(pendingDelete)}>
                     {t('setupForm.delete', { defaultValue: 'Delete' })}
                 </Button>
@@ -279,6 +280,7 @@ const workflowFilename = (name: string) => `${name.toLowerCase().replace(/[^a-z0
 
 /** A proposed workflow definition: Illustration/YAML views with Save and Run. Inline (non-canvas) inside conversation history. */
 export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: WorkflowFormArtifact; canvas?: boolean }> = ({ turn, form, canvas = false }) => {
+    const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const proposal = form.workflow;
     const { definition, target } = proposal;
@@ -319,7 +321,7 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
         '& code': { fontFamily: 'var(--df-font-mono)', fontSize: '0.95em' }, '& a': { color: 'primary.main' } };
     const renderInput = (value: unknown): React.ReactNode => {
         if (Array.isArray(value) && value.every(item => item === null || typeof item !== 'object')) {
-            return <Typography sx={{ fontSize: 'inherit', lineHeight: 1.5 }}>{value.map(item => String(item ?? 'Not specified')).join(', ')}</Typography>;
+            return <Typography sx={{ fontSize: 'inherit', lineHeight: 1.5 }}>{value.map(item => String(item ?? t('workflow.notSpecified'))).join(', ')}</Typography>;
         }
         if (Array.isArray(value)) return <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>{value.map((item, index) =>
             <Box key={index} sx={{ ...(index > 0 && typeof item === 'object' ? { borderTop: 1, borderColor: 'divider', pt: 1 } : {}) }}>{renderInput(item)}</Box>)}</Box>;
@@ -329,13 +331,13 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
                 <Box component="dd" sx={{ m: 0, minWidth: 0 }}>{renderInput(item)}</Box>
             </Box>)}
         </Box>;
-        return <Box sx={proseStyle}><ReactMarkdown>{value == null ? 'Not specified' : String(value)}</ReactMarkdown></Box>;
+        return <Box sx={proseStyle}><ReactMarkdown>{value == null ? t('workflow.notSpecified') : String(value)}</ReactMarkdown></Box>;
     };
     const definitionSection = (label: string, children: React.ReactNode) => <Box component="section" sx={{ mt: 2 }}>
         <Typography component="h2" sx={{ fontSize: 'inherit', fontWeight: 600, mb: 0.5 }}>{label}</Typography>
         {children}
     </Box>;
-    return <Box component="section" id={canvas ? 'vis-view-canvas' : undefined} aria-label="Workflow definition" sx={{
+    return <Box component="section" id={canvas ? 'vis-view-canvas' : undefined} aria-label={t('workflow.definition')} sx={{
         py: canvas ? 0 : 1, minWidth: 0, overflowWrap: 'anywhere', width: '100%', boxSizing: 'border-box',
         fontFamily: theme => theme.typography.fontFamily, fontSize: 14, lineHeight: 1.5, letterSpacing: 0,
         ...(canvas ? { height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', bgcolor: 'background.paper' } : {}),
@@ -344,10 +346,10 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
             <Box sx={{ width: '100%', maxWidth: 900, mx: 'auto' }}>
                 <Typography component="h1" variant="h6" sx={{ fontWeight: 600, m: 0 }}>{definition.name}</Typography>
                 <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', mt: 0.25, mb: 0.5 }}>
-                    {target ? `Workflow definition · revises ${target.name}` : 'Workflow definition'}</Typography>
-                <Tabs value={definitionView} onChange={(_, value) => setDefinitionView(value)} aria-label="Workflow definition view"
+                    {target ? t('workflow.definitionRevises', { name: target.name }) : t('workflow.definition')}</Typography>
+                <Tabs value={definitionView} onChange={(_, value) => setDefinitionView(value)} aria-label={t('workflow.definitionView')}
                     sx={{ minHeight: 36, borderBottom: 1, borderColor: 'divider', '& .MuiTab-root': { minHeight: 36, px: 1.5, fontSize: textVar.sm, textTransform: 'none' } }}>
-                    <Tab id={`workflow-illustration-${turn.id}`} aria-controls={`workflow-definition-view-${turn.id}`} value="illustration" label="Illustration" />
+                    <Tab id={`workflow-illustration-${turn.id}`} aria-controls={`workflow-definition-view-${turn.id}`} value="illustration" label={t('workflow.illustration')} />
                     <Tab id={`workflow-yaml-${turn.id}`} aria-controls={`workflow-definition-view-${turn.id}`} value="yaml" label="YAML" />
                 </Tabs>
             </Box>
@@ -357,49 +359,50 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
             <Box sx={{ width: '100%', maxWidth: 900, mx: 'auto', ...(definitionView === 'yaml' ? { height: canvas ? '100%' : 480, minHeight: 160 } : {}) }}>
                 {definitionView === 'yaml' ? <MarkdownEditor fileName="definition.workflow.yaml" value={proposal.content} onChange={() => {}} readOnly showToolbar={false} lineWrap /> : <>
                 <Box sx={{ ...proseStyle, color: 'text.secondary' }}><ReactMarkdown>{definition.overview}</ReactMarkdown></Box>
-                {definition.prompt && definitionSection(definition.steps?.length ? 'Guidelines and rules' : 'Goal and method', <Box sx={proseStyle}><ReactMarkdown>{definition.prompt}</ReactMarkdown></Box>)}
-                {definition.source != null && definitionSection('Inputs', renderInput(definition.source))}
-                {!!definition.parameters?.length && definitionSection('Parameters',
+                {definition.prompt && definitionSection(definition.steps?.length ? t('workflow.guidelines') : t('workflow.goalAndMethod'), <Box sx={proseStyle}><ReactMarkdown>{definition.prompt}</ReactMarkdown></Box>)}
+                {definition.source != null && definitionSection(t('workflow.inputs'), renderInput(definition.source))}
+                {!!definition.parameters?.length && definitionSection(t('workflow.parameters'),
                     <Box component="dl" sx={{ m: 0 }}>{definition.parameters.map(parameter => <Box key={parameter.name} sx={{ py: 0.75,
                         display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(130px, 1fr) minmax(0, 2fr)' }, columnGap: 2, rowGap: 0.25 }}>
                         <Typography component="dt" sx={{ fontSize: 'inherit', fontWeight: 500 }}>{parameter.label}
-                            {parameter.required && <Box component="span" sx={{ ml: 0.75, fontSize: textVar.sm, color: 'text.secondary' }}>(required)</Box>}
+                            {parameter.required && <Box component="span" sx={{ ml: 0.75, fontSize: textVar.sm, color: 'text.secondary' }}>{t('workflow.required')}</Box>}
                         </Typography>
                         <Box component="dd" sx={{ m: 0 }}>
                             {parameter.description && <Box sx={proseStyle}><ReactMarkdown>{parameter.description}</ReactMarkdown></Box>}
                             <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 2, color: 'text.secondary' }}>
-                                {parameter.default !== undefined && <Typography sx={{ fontSize: textVar.sm }}>Default: {String(parameter.default)}</Typography>}
-                                {!!parameter.options?.length && <Typography sx={{ fontSize: textVar.sm }}>Options: {parameter.options.join(', ')}</Typography>}
+                                {parameter.default !== undefined && <Typography sx={{ fontSize: textVar.sm }}>{t('workflow.defaultValue', { value: String(parameter.default) })}</Typography>}
+                                {!!parameter.options?.length && <Typography sx={{ fontSize: textVar.sm }}>{t('workflow.options', { options: parameter.options.join(', ') })}</Typography>}
                             </Box>
                         </Box>
                     </Box>)}</Box>
                 )}
-                {!!definition.steps?.length && definitionSection('Execution steps', <Box component="ol" sx={{ my: 0, pl: 2.5 }}>
+                {!!definition.steps?.length && definitionSection(t('workflow.executionSteps'), <Box component="ol" sx={{ my: 0, pl: 2.5 }}>
                     {definition.steps.map(step => <Box component="li" key={step.id} sx={{ mb: 1 }}>
                         <Typography sx={{ fontSize: 'inherit', fontWeight: 500 }}>{step.description || step.id}</Typography>
                         <Box sx={proseStyle}><ReactMarkdown>{step.instructions}</ReactMarkdown></Box>
                         {!!step.checkers?.length && <Box component="ul" sx={{ my: 0.5, pl: 2.5, color: 'text.secondary' }}>
                             {step.checkers.map(check => <Box component="li" key={check.id} sx={proseStyle}>
-                                <ReactMarkdown>{`${check.when === 'before' ? 'Before' : check.when === 'during' ? 'During' : 'After'}: ${check.condition}${check.on_fail ? ` (on failure: ${check.on_fail})` : ''}`}</ReactMarkdown>
+                                <ReactMarkdown>{t('workflow.checkerLine', { when: t(`workflow.checkWhen.${check.when || 'after'}`), condition: check.condition })
+                                    + (check.on_fail ? ` ${t('workflow.onFailureParenthetical', { action: check.on_fail })}` : '')}</ReactMarkdown>
                             </Box>)}
                         </Box>}
-                        {step.next && <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary' }}>Next: {step.next}</Typography>}
+                        {step.next && <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary' }}>{t('workflow.nextStep', { step: step.next })}</Typography>}
                     </Box>)}
                 </Box>)}
-                {definitionSection('Deliverables', <Box component="ul" sx={{ my: 0, pl: 2.5 }}>{definition.deliverables.map((item, index) =>
+                {definitionSection(t('workflow.deliverables'), <Box component="ul" sx={{ my: 0, pl: 2.5 }}>{definition.deliverables.map((item, index) =>
                     <Box component="li" key={index} sx={proseStyle}><ReactMarkdown>{item}</ReactMarkdown></Box>)}</Box>)}
                 </>}
                 {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
             </Box>
         </Box>
-        <Box role="group" aria-label="Workflow actions" sx={{ display: 'flex', justifyContent: 'center', flexShrink: 0, px: 2, pt: 1.5, pb: canvas ? 3 : 1, bgcolor: 'background.paper' }}>
+        <Box role="group" aria-label={t('workflow.actions')} sx={{ display: 'flex', justifyContent: 'center', flexShrink: 0, px: 2, pt: 1.5, pb: canvas ? 3 : 1, bgcolor: 'background.paper' }}>
             <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 0.5,
                 px: 1, py: 0.5, borderRadius: '8px', border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}>
                 <Button size="small" variant="text" startIcon={<SaveIcon />} disabled={saving}
-                    sx={{ textTransform: 'none', flexShrink: 0, color: 'primary.main' }} onClick={openSave}>Save workflow</Button>
+                    sx={{ textTransform: 'none', flexShrink: 0, color: 'primary.main' }} onClick={openSave}>{t('workflow.saveWorkflow')}</Button>
                 <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.75 }} />
                 <Button size="small" variant="text" startIcon={<PlayArrowIcon />} disabled={busy || starting || readOnly || !workspaceId || !hasModel}
-                    sx={{ textTransform: 'none', flexShrink: 0, color: 'text.secondary' }} onClick={() => setSetupOpen(true)}>Run workflow</Button>
+                    sx={{ textTransform: 'none', flexShrink: 0, color: 'text.secondary' }} onClick={() => setSetupOpen(true)}>{t('workflow.runWorkflow')}</Button>
             </Box>
         </Box>
         <Dialog open={saveOpen} onClose={() => !saving && setSaveOpen(false)} fullWidth maxWidth="sm" aria-labelledby={`workflow-save-${turn.id}`}>
@@ -421,21 +424,21 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
                             workflow: { ...proposal, content, definition: { ...definition, name }, saved } } }));
                         setSaveOpen(false);
                         notifyWorkspaceFilesChanged();
-                    } catch (reason) { if (current === generation.current) setSaveError(errorMessage(reason, 'Unable to save workflow.')); }
+                    } catch (reason) { if (current === generation.current) setSaveError(errorMessage(reason, t('workflow.saveFailed'))); }
                     finally { if (current === generation.current) setSaving(false); }
             }}>
-                <DialogTitle id={`workflow-save-${turn.id}`}>Save workflow</DialogTitle>
+                <DialogTitle id={`workflow-save-${turn.id}`}>{t('workflow.saveWorkflow')}</DialogTitle>
                 <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
                     {saveError && <Alert severity="error">{saveError}</Alert>}
-                    {target && <TargetChoice target={target} noun="workflow" value={mode} onChange={setMode} disabled={saving} />}
-                    <TextField autoFocus required label="Workflow name" size="small" value={workflowName} disabled={saving}
+                    {target && <TargetChoice target={target} noun={t('setupForm.workflowNoun')} value={mode} onChange={setMode} disabled={saving} />}
+                    <TextField autoFocus required label={t('workflow.workflowName')} size="small" value={workflowName} disabled={saving}
                         onChange={event => setWorkflowName(event.target.value)} slotProps={{ htmlInput: { maxLength: 200 } }} />
-                    {!updating && <TextField required label="Workflow filename" size="small" value={filename} disabled={saving}
+                    {!updating && <TextField required label={t('workflow.filename')} size="small" value={filename} disabled={saving}
                         onChange={event => setFilename(event.target.value)} slotProps={{ htmlInput: { pattern: '[^/\\\\]+\\.workflow\\.ya?ml' } }} />}
                 </DialogContent>
-                <DialogActions><Button disabled={saving} onClick={() => setSaveOpen(false)}>Cancel</Button>
+                <DialogActions><Button disabled={saving} onClick={() => setSaveOpen(false)}>{t('app.cancel')}</Button>
                     <Button type="submit" startIcon={<SaveIcon />} disabled={saving || (!updating && !filename.trim()) || !workflowName.trim()}>
-                        {updating ? 'Update' : 'Save'}</Button></DialogActions>
+                        {updating ? t('workflow.update') : t('app.save')}</Button></DialogActions>
             </Box>
         </Dialog>
         <Dialog open={setupOpen} onClose={() => !starting && setSetupOpen(false)} fullWidth maxWidth="sm" aria-labelledby={`workflow-setup-${turn.id}`}>
@@ -447,20 +450,20 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
                     parameter.type === 'number' && values[parameter.name] !== '' ? Number(values[parameter.name]) : values[parameter.name]]));
                 setStarting(true); setError('');
                 try { await executeWorkflow({ content: proposal.content, setup: { parameters, instructions: instructions.trim() } }, () => setSetupOpen(false)); }
-                catch (reason) { if (current === generation.current) { setError(errorMessage(reason, 'Unable to run workflow.')); setSetupOpen(false); } }
+                catch (reason) { if (current === generation.current) { setError(errorMessage(reason, t('workflow.runFailed'))); setSetupOpen(false); } }
                 finally { if (current === generation.current) setStarting(false); }
             }}>
                 <DialogTitle id={`workflow-setup-${turn.id}`} sx={{ fontSize: textVar.xl, lineHeight: 1.5, fontWeight: 400, overflowWrap: 'anywhere', pb: 2 }}>
-                    <Box component="span" sx={{ color: 'text.primary' }}>Run workflow:</Box>{' '}
+                    <Box component="span" sx={{ color: 'text.primary' }}>{t('workflow.runWorkflowPrefix')}</Box>{' '}
                     <Box component="span" sx={{ color: 'primary.main' }}>{definition.name}</Box>
                 </DialogTitle>
                 <DialogContent sx={workflowSetupContentSx}>
                     <WorkflowSetupFields parameters={definition.parameters || []} values={values} onChange={setValues} disabled={starting} />
-                    <TextField label="Additional instructions" size="small" multiline minRows={3} value={instructions} disabled={starting}
+                    <TextField label={t('workflow.additionalInstructions')} size="small" multiline minRows={3} value={instructions} disabled={starting}
                         onChange={event => setInstructions(event.target.value)} slotProps={{ htmlInput: { maxLength: 8000 } }} />
                 </DialogContent>
-                <DialogActions sx={{ px: 3, py: 1.5, borderTop: 1, borderColor: 'divider' }}><Button disabled={starting} onClick={() => setSetupOpen(false)}>Cancel</Button>
-                    <Button type="submit" startIcon={<PlayArrowIcon />} disabled={starting || busy || readOnly || !hasModel}>Run workflow</Button></DialogActions>
+                <DialogActions sx={{ px: 3, py: 1.5, borderTop: 1, borderColor: 'divider' }}><Button disabled={starting} onClick={() => setSetupOpen(false)}>{t('app.cancel')}</Button>
+                    <Button type="submit" startIcon={<PlayArrowIcon />} disabled={starting || busy || readOnly || !hasModel}>{t('workflow.runWorkflow')}</Button></DialogActions>
             </Box>
         </Dialog>
     </Box>;

@@ -294,7 +294,7 @@ it('uses file display names with filename bylines and legacy fallback', () => {
     expect(screen.getByText(file.filename)).toBeTruthy();
     fireEvent.click(label);
     expect(store.getState().focusedId).toEqual({ type: 'file', fileName: file.name });
-    expect(screen.getByRole('button', { name: `Actions for ${file.name}` })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Actions for UNESCO Education' })).toBeTruthy();
     rerender(shelf());
     expect(screen.getByText(file.filename)).toBeTruthy();
     expect(screen.queryByText('UNESCO Education')).toBeNull();
@@ -314,7 +314,7 @@ it('keeps temporary-file Delete available through refresh and deletes the select
     try {
         const { rerender } = render(shelf());
         expect(screen.queryByText('Temporary')).toBeNull();
-        fireEvent.click(screen.getByRole('button', { name: `Actions for ${file.name}` }));
+        fireEvent.click(screen.getByRole('button', { name: `Actions for ${file.filename}` }));
         expect(screen.getByRole('menuitem', { name: 'Delete file' })).toBeTruthy();
         expect(screen.queryByRole('menuitem', { name: 'Preview file' })).toBeNull();
         rerender(shelf());
@@ -361,8 +361,14 @@ it.each(['conversation', 'long_response'] as const)('normalizes mixed legacy com
     store.dispatch(dfActions.setFocused(surface === 'conversation'
         ? { type: 'conversation', tableId: 'legacy', nodeIds: ['legacy'] } : { type: 'text', textId: 'legacy' }));
     const { container } = render(React.createElement(Provider, { store, children: React.createElement(VisualizationViewFC) }));
-    expect(screen.getAllByRole('button', { name: /az account show Completed/ })).toHaveLength(1);
     expect(container.querySelector('pre')).toBeNull();
+    if (surface === 'long_response') {
+        // Long-response documents show only the prose; command cards stay in the thread.
+        expect(screen.getByText('Inspect.')).toBeTruthy();
+        expect(screen.queryByRole('button', { name: /az account show/ })).toBeNull();
+        return;
+    }
+    expect(screen.getAllByRole('button', { name: /az account show Completed/ })).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: /az account show Completed/ }));
     expect(screen.getByText('Account result')).toBeTruthy();
     expect(container.querySelector('details pre')?.textContent).toBe(JSON.stringify(execution.argv, null, 2));

@@ -55,7 +55,9 @@
     "addSourceLabel": "Tambah data:",
     "agentChatQuickAction": {
       "connect": "Pandu saya menghubungkan sumber data",
-      "askConnected": "Cantumkan tabel dari sumber saya yang terhubung"
+      "askConnected": "Cantumkan tabel dari sumber saya yang terhubung",
+      "workflowFromSession": "Jadikan analisis terakhir saya sebagai alur kerja",
+      "scheduleWorkflow": "Jadwalkan alur kerja untuk berjalan setiap hari"
     },
     "agentChatSuggestion": {
       "askConnected": "Kumpulan data apa yang kita miliki dari sumber yang terhubung?",

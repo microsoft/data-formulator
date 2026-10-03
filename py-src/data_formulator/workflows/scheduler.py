@@ -111,7 +111,7 @@ def execute_occurrence(app, store: ScheduleStore, occurrence: dict):
                 if occurrence["attempts"]:
                     raise ValueError("Retry checkpoint is unavailable; inspect prior effects before restarting.")
                 workflow = parse_definition(WorkflowStore(get_user_home(identity)).read(config["workflow"]))
-                state = new_run(workflow, occurrence["id"], config.get("setup"))
+                state = new_run(workflow, occurrence["id"], config.get("setup"), config.get("language", "en"))
                 state["workflow_path"] = config["workflow"]
                 save_run(path, state)
             state = json.loads(path.read_text())
@@ -230,9 +230,10 @@ def stop_scheduler(app):
     with _lock:
         for cancellation in _cancellations.values():
             cancellation.set()
-    service = app.extensions.get("workflow_scheduler")
+    service = app.extensions.pop("workflow_scheduler", None)
     if service is None:
         return
-    scheduler, _, executor = service
+    scheduler, lease, executor = service
     scheduler.shutdown(wait=False)
     executor.shutdown(wait=False, cancel_futures=True)
+    lease.release()

@@ -55,7 +55,9 @@
     "addSourceLabel": "データを追加します:",
     "agentChatQuickAction": {
       "connect": "データソースへの接続を案内してもらいます",
-      "askConnected": "接続済みソースのテーブルを一覧表示します"
+      "askConnected": "接続済みソースのテーブルを一覧表示します",
+      "workflowFromSession": "直前の分析をワークフローにします",
+      "scheduleWorkflow": "ワークフローを毎日実行するようスケジュールします"
     },
     "agentChatSuggestion": {
       "askConnected": "接続済みソースにはどんなデータセットがありますか？",

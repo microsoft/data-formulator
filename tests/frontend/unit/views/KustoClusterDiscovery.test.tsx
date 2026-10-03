@@ -35,6 +35,8 @@ it('only discovers the selected subscription and ignores stale results when swit
                 status_url: '/api/local/azure-status', login_url: '/api/local/azure-login' } }]}
         onImport={() => {}} onFinish={() => {}} /></Provider>);
     const subscriptionInput = await screen.findByRole('combobox', { name: 'Subscription' });
+    // Real typing focuses the input; unfocused Autocompletes reset typed text on re-render.
+    act(() => subscriptionInput.focus());
     fireEvent.mouseDown(subscriptionInput);
     await screen.findByRole('option', { name: 'research' });
     expect(screen.getByRole('option', { name: 'empty' })).toBeTruthy();

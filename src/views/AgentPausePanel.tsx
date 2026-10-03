@@ -795,7 +795,8 @@ const StepToolCall: FC<{ execution: TerminalExecution | CodeExecution }> = ({ ex
     const purpose = execution.purpose || t(isCode ? 'tool.pythonCode' : 'terminal.command', {
         defaultValue: isCode ? 'Python code' : 'Command',
     });
-    return <Box sx={{ minWidth: 0, pb: 1 }}>
+    // Expanded code and output read at the panel's body size, like an explanation.
+    return <Box sx={{ minWidth: 0, pb: 1, '& pre': { fontSize: textVar.sm } }}>
         <Typography sx={{ fontSize: textVar.sm, lineHeight: 1.6, overflowWrap: 'anywhere' }}>{purpose}</Typography>
         <Typography sx={{ fontSize: textVar.xs, lineHeight: 1.5, color: execution.status === 'failed' ? 'error.main' : 'text.secondary' }}>
             {t(`terminal.status.${execution.status}`, { defaultValue: execution.status })}

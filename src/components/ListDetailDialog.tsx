@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Box, ButtonBase, Dialog, DialogActions, DialogTitle, IconButton, Typography } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
@@ -104,6 +105,7 @@ export const ListDetailDialog: React.FC<{
     children: React.ReactNode;
 }> = ({ title, listLabel, items, selectedKey, onSelect, createLabel, busy, onClose, footer, onSubmit, onInvalidCapture, contentMaxWidth, width = 920, fillHeight, children }) => {
     const titleId = React.useId();
+    const { t } = useTranslation();
     return <Dialog open onClose={() => !busy && onClose()} maxWidth={false} aria-labelledby={titleId}
         sx={{ '& .MuiDialog-paper': { m: 2, width: dialogWidth(width), maxWidth: 'none', height: dialogHeight(640), maxHeight: 'none',
             display: 'flex', flexDirection: 'column' } }}>
@@ -111,7 +113,7 @@ export const ListDetailDialog: React.FC<{
             sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden', fontFamily: theme => theme.typography.fontFamily }}>
             <DialogTitle id={titleId} sx={{ display: 'flex', alignItems: 'center', px: 2.5, pt: 1.75, pb: 1, fontSize: textVar.lg, fontWeight: 600 }}>
                 <Box component="span" sx={{ flex: 1 }}>{title}</Box>
-                <IconButton aria-label="Close" size="small" disabled={busy} onClick={onClose}><CloseRoundedIcon sx={{ fontSize: iconVar.md }} /></IconButton>
+                <IconButton aria-label={t('app.close')} size="small" disabled={busy} onClick={onClose}><CloseRoundedIcon sx={{ fontSize: iconVar.md }} /></IconButton>
             </DialogTitle>
             <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, flex: 1, minHeight: 0 }}>
                 <ListDetailNav listLabel={listLabel} items={items} selectedKey={selectedKey} onSelect={onSelect} createLabel={createLabel} busy={busy} />

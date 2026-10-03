@@ -28,6 +28,7 @@ SCHEDULE_SCHEMA = {
         "auto_approve": {"type": "boolean"},
         "max_retries": {"type": "integer", "minimum": 0, "maximum": 3},
         "catch_up": {"type": "boolean"},
+        "language": {"type": "string", "pattern": r"^[a-z]{2,3}$"},
     },
 }
 

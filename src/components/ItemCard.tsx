@@ -10,6 +10,7 @@
  */
 
 import React, { createContext, useContext } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Box, ButtonBase, IconButton, TextField, Tooltip, TooltipProps, Typography } from '@mui/material';
 import { iconVar, textVar } from '../app/layout';
 import { sidebarRowActionSx, sidebarRowDangerActionSx, sidebarRowMetaSx, sidebarRowSx, sidebarRowTitleSx } from '../app/tokens';
@@ -77,13 +78,15 @@ export const MetadataChips: React.FC<{ items: { name: string; detail?: string }[
     </Box>;
 
 /** Text link beside a panel title that opens the panel's full view; text avoids clashing with the collapse chevron. */
-export const ViewAllButton: React.FC<{ label: string; onClick: () => void; disabled?: boolean }> = ({ label, onClick, disabled }) =>
-    <ButtonBase aria-label={label} title={label} disabled={disabled} onClick={onClick}
+export const ViewAllButton: React.FC<{ label: string; onClick: () => void; disabled?: boolean }> = ({ label, onClick, disabled }) => {
+    const { t } = useTranslation();
+    return <ButtonBase aria-label={label} title={label} disabled={disabled} onClick={onClick}
         sx={{ ml: 0.75, px: 0.5, borderRadius: 0.5, fontFamily: theme => theme.typography.fontFamily, fontSize: textVar.xs, lineHeight: 1.6,
             color: 'text.secondary', '&:hover': { color: 'primary.main', bgcolor: 'action.hover' },
             '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' }, '&.Mui-disabled': { color: 'text.disabled' } }}>
-        View all
+        {t('app.viewAll')}
     </ButtonBase>;
+};
 
 /** Grid for item cards: as many ~220px columns as fit. */
 export const itemCardGridSx = {

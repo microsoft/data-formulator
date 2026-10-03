@@ -142,7 +142,7 @@ def list_instances():
                             | ({"workflow_path": state["workflow_path"]} if "workflow_path" in state else {}))
             except (ValueError, KeyError):
                 continue
-    items = store.list_all()
+    items = store.list_all(str((request.get_json(silent=True) or {}).get("language") or "en"))
     return json_ok({"items": items, "runs": runs})
 
 
@@ -339,8 +339,9 @@ def run_instance():
         else:
             if body.get("terminal_response") is not None or body.get("interaction_response") is not None:
                 raise ValueError("An interaction response requires an existing workflow run.")
+            from data_formulator.routes.agents import _get_ui_lang
             content = body.get("content") if "content" in body else read_definition(store, body.get("path"))[0]
-            state = new_run(parse_definition(content), UUID(identifier).hex, body.get("setup"))
+            state = new_run(parse_definition(content), UUID(identifier).hex, body.get("setup"), _get_ui_lang())
             if isinstance(body.get("path"), str):
                 state["workflow_path"] = body["path"]
         if "external_references" in body:

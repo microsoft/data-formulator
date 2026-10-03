@@ -524,7 +524,7 @@ class TestFormatImportOptions:
             "source_filters": [{"column": "x", "operator": "EQ", "value": 1}],
             "size": 50000,
         })
-        assert "1 filter(s)" in result
+        assert 'filters [{"column": "x", "operator": "EQ", "value": 1}]' in result
         assert "row limit 50,000" in result
 
     def test_full_options(self):
@@ -536,7 +536,7 @@ class TestFormatImportOptions:
             "size": 10000,
         })
         assert result.startswith("Data subset:")
-        assert "1 filter(s)" in result
+        assert '"column": "a"' in result
         assert "sorted by created asc" in result
         assert "row limit" in result
 

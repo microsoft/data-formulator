@@ -125,3 +125,52 @@ steps:
       - id: historical_final_delivery
         condition: Three native charts and supporting data exist, and the published report's claims and chart references agree with final outputs and supporting evidence.
         on_fail: brief
+i18n:
+  zh:
+    name: 预期寿命与家庭规模
+    overview: 比较各国预期寿命的历史增长，以及生育率与寿命之间的关系。
+    parameters:
+      start_year: {label: 起始年份}
+      end_year: {label: 结束年份}
+    steps:
+      prepare: 核实历史样本，并选定一组一致的国家。
+      trends: 追踪同一组国家的预期寿命随时间的变化。
+      gains: 比较所选年份之间的最大改善幅度。
+      relationship: 考察同一历史年份的生育率与预期寿命。
+      brief: 交付可复现的对比结论，并说明局限。
+  ja:
+    name: 平均寿命と家族の規模
+    overview: 国ごとの平均寿命の歴史的な伸びと、出生率と寿命の関係を比較します。
+    parameters:
+      start_year: {label: 開始年}
+      end_year: {label: 終了年}
+    steps:
+      prepare: 歴史サンプルを確認し、一貫した国の集合を選びます。
+      trends: 同じ国々の平均寿命を時系列で追跡します。
+      gains: 選択した年の間で最も大きな改善を比較します。
+      relationship: 同じ歴史年における出生率と平均寿命を調べます。
+      brief: 再現可能な結果と明確な限界を添えて比較を届けます。
+  id:
+    name: Angka Harapan Hidup dan Ukuran Keluarga
+    overview: Bandingkan kenaikan historis angka harapan hidup serta hubungan antara fertilitas dan umur panjang antarnegara.
+    parameters:
+      start_year: {label: Tahun awal}
+      end_year: {label: Tahun akhir}
+    steps:
+      prepare: Verifikasi sampel historis dan pilih kumpulan negara yang konsisten.
+      trends: Lacak angka harapan hidup untuk negara yang sama dari waktu ke waktu.
+      gains: Bandingkan peningkatan terbesar di antara tahun yang dipilih.
+      relationship: Telaah fertilitas dan angka harapan hidup pada tahun historis yang sama.
+      brief: Sampaikan perbandingan dengan temuan yang dapat direproduksi dan batasan yang jelas.
+  hi:
+    name: जीवन प्रत्याशा और परिवार का आकार
+    overview: देशों में जीवन प्रत्याशा में ऐतिहासिक वृद्धि और प्रजनन दर व दीर्घायु के बीच संबंध की तुलना करें।
+    parameters:
+      start_year: {label: प्रारंभिक वर्ष}
+      end_year: {label: अंतिम वर्ष}
+    steps:
+      prepare: ऐतिहासिक नमूने की पुष्टि करें और देशों का एक सुसंगत समूह चुनें।
+      trends: समान देशों के लिए समय के साथ जीवन प्रत्याशा को ट्रैक करें।
+      gains: चुने गए वर्षों के बीच सबसे बड़े सुधारों की तुलना करें।
+      relationship: एक ही ऐतिहासिक वर्ष में प्रजनन दर और जीवन प्रत्याशा की जांच करें।
+      brief: पुनरुत्पादनीय निष्कर्षों और स्पष्ट सीमाओं के साथ तुलना प्रस्तुत करें।

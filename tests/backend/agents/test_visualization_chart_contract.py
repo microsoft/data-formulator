@@ -36,7 +36,8 @@ def test_visualize_schema_requires_generalized_input_sources():
     loading_query = load["function"]["parameters"]["properties"]["options"]["items"]["properties"]["tables"]["items"]["properties"]["query"]
     assert loading_query["properties"]["native"]["properties"]["language"]["enum"] == ["kql", "cube_json", "dax"]
     assert loading_query["properties"]["native"]["additionalProperties"] is False
-    assert "local Python" in loading_query["description"]
+    assert "Omit for automatic local/virtual selection" in loading_query["description"]
+    assert "no virtual fallback" in loading_query["description"]
 
     assert "title" in parameters["required"]
     assert "display_name" in parameters["required"]
