@@ -118,6 +118,8 @@ export interface ModelConfig {
     endpoint: string;
     model: string;
     small_model?: string;
+    /** Thinking level for analysis and workflow agents; unset uses each agent's default. */
+    reasoning_effort?: 'low' | 'medium' | 'high';
     api_key?: string;
     api_base?: string;
     api_version?: string;

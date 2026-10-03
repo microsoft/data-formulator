@@ -266,6 +266,7 @@ class Client(object):
         
         self.endpoint = endpoint
         self.model = model
+        self.reasoning_effort: str | None = None
         self.params = {}
         if api_type not in (None, "chat_completions", "responses"):
             raise ValueError("Unsupported model API type")

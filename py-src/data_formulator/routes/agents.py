@@ -38,7 +38,7 @@ from data_formulator.data_operations import DataOperationExecutor, DataOperation
 from data_formulator.datalake.parquet_utils import make_json_safe
 
 from data_formulator.analyst.agent import AnalystAgent
-from data_formulator.agent_config import ANALYST_EXECUTION_DEFAULTS
+from data_formulator.agent_config import ANALYST_EXECUTION_DEFAULTS, MODEL_REASONING_LEVELS
 from data_formulator.agents.agent_language import build_language_instruction
 from data_formulator.security.sanitize import classify_llm_error, sanitize_error_message
 from data_formulator.error_handler import json_ok, stream_preflight_error, classify_and_wrap_llm_error
@@ -252,6 +252,9 @@ def get_client(model_config, trusted=False, *, use_small_model=False):
     small_model = model_config.get('small_model')
     if small_model is not None and not isinstance(small_model, str):
         raise AppError(ErrorCode.INVALID_REQUEST, 'Small Model must be a model name on the same endpoint.')
+    reasoning_effort = model_config.get('reasoning_effort') or None
+    if reasoning_effort is not None and reasoning_effort not in MODEL_REASONING_LEVELS:
+        raise AppError(ErrorCode.INVALID_REQUEST, 'Thinking must be low, medium, or high.')
     if use_small_model and small_model:
         model_config['model'] = small_model
 
@@ -283,6 +286,7 @@ def get_client(model_config, trusted=False, *, use_small_model=False):
           **({'managed_identity': True, 'managed_identity_client_id': model_config.get('managed_identity_client_id')}
               if model_config.get('auth_mode') == 'managed_identity' else {}),
     )
+    client.reasoning_effort = reasoning_effort
 
     return client
 

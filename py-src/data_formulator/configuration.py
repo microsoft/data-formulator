@@ -153,13 +153,15 @@ def validate_overrides(overrides: dict) -> None:
         for identifier, entry in entries.items():
             if not isinstance(identifier, str) or not identifier or len(identifier) > 256:
                 raise ValueError('Invalid resource ID.')
-            allowed = {'enabled', 'display_name', 'description'} if section == 'connectors' else {'enabled', 'display_name'}
+            allowed = {'enabled', 'display_name', 'description'} if section == 'connectors' else {'enabled', 'display_name', 'reasoning_effort'}
             if section == 'workflows':
                 allowed = {'enabled', 'content', 'file'}
             if not isinstance(entry, dict) or set(entry) - allowed:
                 raise ValueError(f'Unknown {section} fields; credentials are not accepted.')
             if 'enabled' in entry and type(entry['enabled']) is not bool:
                 raise ValueError('Enabled must be a boolean.')
+            if section == 'models' and entry.get('reasoning_effort', 'low') not in ('', 'low', 'medium', 'high'):
+                raise ValueError('Thinking must be low, medium, or high.')
             for field in ('display_name', 'description'):
                 if field in entry and (not isinstance(entry[field], str) or len(entry[field]) > 1000):
                     raise ValueError(f'Invalid {field}.')

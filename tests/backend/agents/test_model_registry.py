@@ -88,6 +88,13 @@ class TestModelDiscovery:
         registry = ModelRegistry()
         assert registry.list_public() == []
 
+    @patch.dict(os.environ, {
+        "AZURE_API_BASE": "https://df.cognitiveservices.azure.com/", "AZURE_MODELS": "gpt-5",
+        "APPSETTING_AZURE_API_BASE": "https://df.cognitiveservices.azure.com/", "APPSETTING_AZURE_MODELS": "gpt-5",
+    }, clear=True)
+    def test_ignores_app_service_setting_mirrors(self):
+        assert [(m["id"], m["endpoint"]) for m in ModelRegistry().list_public()] == [("global-azure-gpt-5", "azure")]
+
     @patch.dict(os.environ, {"OPENAI_API_KEY": "sk-x"}, clear=True)
     def test_skips_provider_without_models(self):
         """OPENAI_MODELS not set → no models registered."""

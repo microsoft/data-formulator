@@ -20,7 +20,7 @@ import { getConnectorIcon } from '../icons';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { PublishedExamplesPanel } from './ExampleSessions';
 
-type Entry = { enabled?: boolean; display_name?: string; description?: string; content?: string; file?: string };
+type Entry = { enabled?: boolean; display_name?: string; description?: string; content?: string; file?: string; reasoning_effort?: string };
 type ConnectionSettings = { credential_ref: string; endpoint?: string; model?: string; api_base?: string; api_version?: string;
     auth_mode?: string; managed_identity_client_id?: string; type?: string; display_name?: string; params?: Record<string, string> };
 type Overrides = { models?: Record<string, Entry>; connectors?: Record<string, Entry>; workflows?: Record<string, Entry>;
@@ -71,6 +71,7 @@ export const ConfigurationView = () => {
     const [editing, setEditing] = useState<CatalogItem>();
     const [propertyName, setPropertyName] = useState('');
     const [propertyDescription, setPropertyDescription] = useState('');
+    const [propertyReasoning, setPropertyReasoning] = useState('');
     const environmentManaged = !!editing && tab !== 'workflows' && !editing.id.startsWith('installation-');
     const modelsDisabled = saved?.user_models?.locked ? saved.user_models.disabled : draft.disable_user_models ?? saved?.user_models?.disabled ?? false;
     const endpointsRestricted = saved?.allowed_api_bases?.locked ? !!saved.allowed_api_bases.value?.length : draft.allowed_api_bases !== undefined;
@@ -93,7 +94,7 @@ export const ConfigurationView = () => {
                     [section]: { ...overrides.connections?.[section], [data.id]: connection } } } : {}),
                 ...(editing ? { [section]: { ...overrides[section], [data.id]: { ...overrides[section]?.[data.id],
                     display_name: section === 'connectors' ? definition.display_name : propertyName,
-                    ...(section === 'connectors' ? { description: propertyDescription } : {}) } } } : {}) },
+                    ...(section === 'connectors' ? { description: propertyDescription } : { reasoning_effort: propertyReasoning || undefined }) } } } : {}) },
                 [...saved.catalogs.models, ...staged.filter(item => !!item.model), ...(section === 'models' ? [data] : [])]);
             const { data: updated } = await apiRequest<Snapshot>('/api/configurations', {
                 method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-DF-Configuration': '1' },
@@ -229,6 +230,12 @@ export const ConfigurationView = () => {
                 {environmentManaged && <Alert severity="info" sx={{ mb: 2 }}>{t('administration.environmentManaged')}</Alert>}
                 {editing && tab === 'models' && <Box sx={{ display: 'grid', gap: 1.5, mb: 1.5 }}>
                     <TextField size="small" label={t('administration.displayName')} value={propertyName} onChange={event => setPropertyName(event.target.value)} />
+                    <TextField size="small" select label={t('model.thinking')} value={propertyReasoning || 'low'} helperText={t('model.thinkingHint')}
+                        onChange={event => setPropertyReasoning(event.target.value === 'low' ? '' : event.target.value)}>
+                        <MenuItem value="low">{t('model.thinkingLow')}</MenuItem>
+                        <MenuItem value="medium">{t('model.thinkingMedium')}</MenuItem>
+                        <MenuItem value="high">{t('model.thinkingHigh')}</MenuItem>
+                    </TextField>
                 </Box>}
                 {adding && (tab === 'models' || tab === 'connectors') && <Box sx={tab === 'connectors' ? { flex: 1, minHeight: 0, display: 'flex' } : { mb: 2 }}>
                     {adding && tab === 'models' && <Box component="fieldset" disabled={environmentManaged} sx={{ border: 0, p: 0, m: 0, minWidth: 0 }}>
@@ -446,6 +453,7 @@ export const ConfigurationView = () => {
                             setTab(section); setEditing(item); setError('');
                             setPropertyName(options.display_name ?? item.display_name ?? item.model ?? '');
                             setPropertyDescription(options.description ?? item.description ?? '');
+                            setPropertyReasoning(options.reasoning_effort ?? '');
                             setConnectorType(item.type || '');
                             setWorkflowContent(options.content ?? item.content ?? '');
                             setAdding(true);

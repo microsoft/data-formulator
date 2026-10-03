@@ -2099,7 +2099,7 @@ class AnalystAgent:
             try:
                 return self.client.get_completion_with_tools(
                     messages, tools=tools, stream=True,
-                    reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model),
+                    reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model, getattr(self.client, "reasoning_effort", None)),
                     parallel_tool_calls=False,
                 )
             except Exception as e:

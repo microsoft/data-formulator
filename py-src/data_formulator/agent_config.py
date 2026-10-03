@@ -37,6 +37,8 @@ from math import isfinite
 from typing import Literal
 
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high"]
+# Thinking levels a model setup may choose; unset means the per-agent defaults below.
+MODEL_REASONING_LEVELS: tuple[str, ...] = ("low", "medium", "high")
 
 
 @dataclass(frozen=True)
@@ -167,9 +169,10 @@ def _supports_none(model: str | None) -> bool:
     return "codex" in m or "-pro" in m or "/pro" in m
 
 
-def reasoning_effort_for(agent_id: str | None, model: str | None) -> ReasoningEffort:
+def reasoning_effort_for(agent_id: str | None, model: str | None, preference: str | None = None) -> ReasoningEffort:
     """Resolve the reasoning_effort to actually send to LiteLLM.
 
+    - A model setup's thinking level (*preference*) wins when the caller passes it.
     - Reads the configured tier via :func:`get_reasoning_effort`.
     - For configured ``"minimal"``:
         * keep ``"minimal"`` on GPT-5 base / mini / nano / 5.x;
@@ -180,6 +183,8 @@ def reasoning_effort_for(agent_id: str | None, model: str | None) -> ReasoningEf
       ``"low"``.
     """
     effort = get_reasoning_effort(agent_id)
+    if preference in MODEL_REASONING_LEVELS:
+        return preference  # type: ignore[return-value]
     if effort == "minimal":
         if _supports_minimal(model):
             return "minimal"

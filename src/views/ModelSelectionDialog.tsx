@@ -233,6 +233,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     const accountConnectionUrl = `/api/model-endpoints/connections/${accountProvider}`;
     const [newModel, setNewModel] = useState<string>(initialDefinition?.model || "");
     const [newSmallModel, setNewSmallModel] = useState(initialDefinition?.small_model || '');
+    const [newReasoningEffort, setNewReasoningEffort] = useState<'' | 'low' | 'medium' | 'high'>('');
     const [newApiKey, setNewApiKey] = useState<string>("");
     const [newApiBase, setNewApiBase] = useState<string>(initialDefinition?.api_base || "");
     const [newApiVersion, setNewApiVersion] = useState<string>(initialDefinition?.api_version || "");
@@ -623,7 +624,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
 
     let modelExists = allModels.some(m => m.id !== detailModelId &&
         m.endpoint == newEndpoint && m.model == newModel.trim()
-        && (m.small_model || m.model) === (newSmallModel.trim() || newModel.trim()) && (isAccountProvider
+        && (m.small_model || m.model) === (newSmallModel.trim() || newModel.trim()) && (m.reasoning_effort || '') === newReasoningEffort && (isAccountProvider
             ? m.connection_id === accountProvider
             : m.api_base == newApiBase && (m.api_key || '') == newApiKey && (m.api_version || '') == newApiVersion));
 
@@ -666,6 +667,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         setNewEndpoint("");
         setNewModel("");
         setNewSmallModel('');
+        setNewReasoningEffort('');
         setNewApiKey("");
         setNewApiBase("");
         setNewApiVersion("");
@@ -699,11 +701,12 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         const updatingUserModel = detailModelId && !detailIsGlobal;
         const id = updatingUserModel
             ? detailModelId
-            : simpleHash(`${newEndpoint}-${newModel}-${newSmallModel.trim()}-${newApiKey}-${newApiBase}-${newApiVersion}${isAccountProvider ? '-account' : ''}`);
+            : simpleHash(`${newEndpoint}-${newModel}-${newSmallModel.trim()}-${newApiKey}-${newApiBase}-${newApiVersion}${isAccountProvider ? '-account' : ''}${newReasoningEffort ? `-${newReasoningEffort}` : ''}`);
         const model: ModelConfig = {
             endpoint: newEndpoint,
             model: newModel.trim(),
             small_model: newSmallModel.trim() || undefined,
+            reasoning_effort: newReasoningEffort || undefined,
             api_key: isAccountProvider ? undefined : newApiKey,
             api_base: isAccountProvider ? undefined : newApiBase.trim(),
             api_version: isAccountProvider ? undefined : newApiVersion.trim(),
@@ -754,6 +757,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         setNewEndpoint(model.endpoint);
         setNewModel(model.model);
         setNewSmallModel(model.small_model || '');
+        setNewReasoningEffort(model.reasoning_effort || '');
         setNewApiBase(model.api_base || '');
         setNewApiVersion(model.api_version || '');
         setNewApiKey(model.is_global ? '' : model.api_key || '');
@@ -1195,6 +1199,16 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                 autoComplete="off"
             />)}
 
+            {newEndpoint && !onStageConnection && <TextField
+                select fullWidth size="small" disabled={!isEditingDetails}
+                label={t('model.thinking')} value={newReasoningEffort || 'low'}
+                onChange={event => setNewReasoningEffort(event.target.value === 'low' ? '' : event.target.value as typeof newReasoningEffort)}
+                helperText={t('model.thinkingHint')}>
+                <MenuItem value="low">{t('model.thinkingLow')}</MenuItem>
+                <MenuItem value="medium">{t('model.thinkingMedium')}</MenuItem>
+                <MenuItem value="high">{t('model.thinkingHigh')}</MenuItem>
+            </TextField>}
+
             {newEndpoint && newEndpoint !== 'ollama' && !isAccountProvider
                 && (newEndpoint !== 'azure' || azureAuthMethod === 'api_key') && apiKeyField}
 
@@ -1310,6 +1324,9 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                 <Typography component="dd" variant="body2">{newModel}</Typography>
                 <Typography component="dt" variant="body2">{t('model.smallModel')}</Typography>
                 <Typography component="dd" variant="body2">{newSmallModel || t('model.sameAsModel')}</Typography>
+                <Typography component="dt" variant="body2">{t('model.thinking')}</Typography>
+                <Typography component="dd" variant="body2">{t(newReasoningEffort === 'high' ? 'model.thinkingHigh'
+                    : newReasoningEffort === 'medium' ? 'model.thinkingMedium' : 'model.thinkingLow')}</Typography>
                 <Typography component="dt" variant="body2">{t(detailUsesAccount ? 'model.account' : 'model.authentication')}</Typography>
                 <Box component="dd">
                     {!detailUsesAccount && <Typography variant="body2">

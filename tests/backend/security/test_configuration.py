@@ -289,6 +289,32 @@ def test_saved_user_model_policy_allows_configured_models_and_can_be_reset(monke
         assert user_models_disabled()
 
 
+def test_model_thinking_level_applies_to_the_analysis_agent_only(monkeypatch):
+    from flask import Flask
+    from data_formulator.agent_config import reasoning_effort_for
+    from data_formulator.errors import AppError
+    from data_formulator.model_registry import ModelRegistry
+    from data_formulator.routes import agents
+    monkeypatch.setenv('AZURE_API_BASE', 'https://example.openai.azure.com')
+    monkeypatch.setenv('AZURE_MODELS', 'gpt-5')
+    registry = ModelRegistry()
+    monkeypatch.setattr(agents, 'model_registry', registry)
+    app = Flask(__name__)
+    with app.app_context():
+        with pytest.raises(ValueError, match='Thinking'):
+            save_configuration({'models': {'global-azure-gpt-5': {'reasoning_effort': 'extreme'}}}, 0)
+        save_configuration({'models': {'global-azure-gpt-5': {'reasoning_effort': 'medium'}}}, 0)
+        assert registry.list_public()[0]['reasoning_effort'] == 'medium'
+        server = agents.get_client({'id': 'global-azure-gpt-5', 'is_global': True})
+        personal = agents.get_client({'endpoint': 'openai', 'model': 'gpt-5', 'api_key': 'key', 'reasoning_effort': 'high'})
+        with pytest.raises(AppError):
+            agents.get_client({'endpoint': 'openai', 'model': 'gpt-5', 'api_key': 'key', 'reasoning_effort': 'extreme'})
+    assert (server.reasoning_effort, personal.reasoning_effort) == ('medium', 'high')
+    assert reasoning_effort_for('analyst', 'gpt-5', server.reasoning_effort) == 'medium'
+    assert reasoning_effort_for('analyst', 'gpt-5', None) == 'low'
+    assert reasoning_effort_for('chart_insight', 'gpt-5') == 'minimal'
+
+
 @pytest.mark.parametrize('from_flag', [False, True])
 def test_configured_sources_remain_registered_and_targets_are_fixed(monkeypatch, from_flag):
     from flask import Flask

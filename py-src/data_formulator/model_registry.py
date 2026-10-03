@@ -43,6 +43,9 @@ class ModelRegistry:
         """
         providers: List[str] = []
         for key, val in os.environ.items():
+            # Azure App Service mirrors every app setting as APPSETTING_<name>.
+            if key.upper().startswith("APPSETTING_"):
+                continue
             if key.upper().endswith("_MODELS") and val.strip():
                 prefix = key[: -len("_MODELS")].lower()
                 if prefix:
@@ -93,8 +96,14 @@ class ModelRegistry:
         if isinstance(model_id, str) and model_id.startswith('installation-'):
             from data_formulator.configuration import connection_definitions
             definition = connection_definitions('models').get(model_id)
-            return {**definition, 'id': model_id} if definition else None
-        return self._models.get(model_id)
+            config = {**definition, 'id': model_id} if definition else None
+        else:
+            config = self._models.get(model_id)
+        if config is None or not configured:
+            return config
+        from data_formulator.configuration import read_configuration
+        reasoning = read_configuration()['overrides'].get('models', {}).get(model_id, {}).get('reasoning_effort')
+        return {**config, 'reasoning_effort': reasoning} if reasoning else config
 
     def list_public(self, configured: bool = True) -> list:
         """
@@ -128,7 +137,9 @@ class ModelRegistry:
         overrides = read_configuration()['overrides']
         options = overrides.get('models', {})
         models = [{**model, **({'display_name': options[model['id']]['display_name']}
-                   if options.get(model['id'], {}).get('display_name') else {})}
+                   if options.get(model['id'], {}).get('display_name') else {}),
+                   **({'reasoning_effort': options[model['id']]['reasoning_effort']}
+                   if options.get(model['id'], {}).get('reasoning_effort') else {})}
                   for model in models if options.get(model['id'], {}).get('enabled', True)]
         default = overrides.get('default_model')
         return sorted(models, key=lambda model: model['id'] != default)
