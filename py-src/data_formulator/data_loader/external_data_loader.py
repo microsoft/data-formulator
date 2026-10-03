@@ -1297,8 +1297,7 @@ class ExternalDataLoader(ABC):
         directly to place the table in the tree.  Otherwise the ``name``
         is split on ``"."`` as a fallback.
         """
-        tables = self.list_tables(table_filter=table_filter)
-        tree = self._tables_to_catalog_tree(tables)
+        tree = self._tables_to_catalog_tree(self.list_tables(table_filter=table_filter))
 
         return {
             "hierarchy": self.catalog_hierarchy(),
