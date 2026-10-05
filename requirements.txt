@@ -6,9 +6,8 @@ flask-limiter
 apscheduler>=3.11,<4
 openai
 python-dotenv
-# litellm 1.92 switched to native Rust/maturin packaging. Keep the last
-# universal pure-Python release line pending dedicated compatibility coverage.
-litellm>=1.91.5,<1.92
+# litellm >=1.92 is a native build; 1.99+ ships macOS, Windows and Linux wheels.
+litellm>=1.99
 duckdb
 numpy
 vl-convert-python

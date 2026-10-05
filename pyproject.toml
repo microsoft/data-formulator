@@ -27,11 +27,9 @@ dependencies = [
     "flask-limiter",
     "openai",
     "python-dotenv",
-    # litellm 1.92 switched to a native Rust/maturin build and initially shipped
-    # Linux-only wheels. Newer releases restored native macOS/Windows wheels,
-    # but stay on the last universal pure-Python line until the new runtime and
-    # cross-platform packaging have dedicated compatibility coverage.
-    "litellm>=1.91.5,<1.92",
+    # litellm >=1.92 is a native Rust/maturin build; 1.99+ ships wheels for
+    # macOS x64/arm64, Windows x64 and manylinux/musllinux.
+    "litellm>=1.99",
     "aiohttp>=3.14.3",
     "duckdb",
     "numpy",

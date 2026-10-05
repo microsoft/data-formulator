@@ -54,6 +54,17 @@ def test_legacy_action_override_does_not_mutate_config():
     assert AnalystAgent(client=None, workspace=workspace, execution_config=config).max_iterations == 7
 
 
+def test_each_workspace_session_gets_a_stable_prompt_cache_key():
+    from data_formulator.agents.client_utils import Client
+
+    workspace = SimpleNamespace(user_home=None)
+    keys = [AnalystAgent(client=Client("openai", "gpt-5", api_key="k"), workspace=workspace,
+                         identity_id="user", workspace_id=session).client.prompt_cache_key
+            for session in ("session-a", "session-a", "session-b")]
+    assert keys[0] == keys[1] != keys[2]
+    assert "session-a" not in keys[0] and "user" not in keys[0]
+
+
 def test_effective_execution_config_is_logged(tmp_path):
     config = AnalystExecutionConfig(max_actions=7, max_tool_rounds_per_action=4)
     agent = AnalystAgent(client=SimpleNamespace(model="test"),
@@ -87,11 +98,11 @@ def test_stream_open_retry_budget_and_backoff(retries):
 
 def test_stream_open_retries_recover_without_retrying_permanent_errors():
     client = MagicMock(model="test")
-    stream = iter([])
-    client.get_completion_with_tools.side_effect = [TimeoutError("timed out"), stream]
+    chunks = [SimpleNamespace(choices=[])]
+    client.get_completion_with_tools.side_effect = [TimeoutError("timed out"), iter(chunks)]
     agent = AnalystAgent(client=client, workspace=SimpleNamespace(user_home=None))
     with patch("data_formulator.analyst.agent.time.sleep") as sleep:
-        assert agent._open_stream([], []) is stream
+        assert list(agent._open_stream([], [])) == chunks
     sleep.assert_called_once_with(1.0)
     client.get_completion_with_tools.reset_mock(side_effect=True)
     client.get_completion_with_tools.side_effect = ValueError("invalid model")

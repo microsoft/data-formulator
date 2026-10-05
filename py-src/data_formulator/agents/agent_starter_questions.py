@@ -3,7 +3,7 @@
 
 import json
 from data_formulator.agent_config import reasoning_effort_for
-from data_formulator.agents.agent_utils import extract_json_objects
+from data_formulator.agents.agent_utils import extract_json_objects, json_response_format
 from data_formulator.agents.agent_language import inject_language_instruction
 from data_formulator.analyst.workspace_inputs import normalize_external_references
 
@@ -12,6 +12,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 _AGENT_ID = "starter_questions"
+_RESPONSE_FORMAT = json_response_format("starter_questions", {
+    "type": "object", "additionalProperties": False, "required": ["questions"],
+    "properties": {"questions": {"type": "array", "items": {"type": "string"}}},
+})
 
 
 SYSTEM_PROMPT = '''You are a data analyst helping a user get started exploring available data.
@@ -101,6 +105,7 @@ class StarterQuestionsAgent(object):
         response = self.client.get_completion(
             messages=messages,
             reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model),
+            response_format=_RESPONSE_FORMAT,
         )
 
         for choice in response.choices:

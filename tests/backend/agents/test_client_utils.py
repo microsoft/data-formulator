@@ -212,6 +212,187 @@ class TestModelNamePrefixing:
         assert completion.call_args.kwargs["_skip_responses_api_bridge"] is True
         assert completion.call_args.kwargs["model"] == "test-model"
 
+    @pytest.mark.parametrize("responses_fails", [False, True])
+    def test_tools_with_reasoning_move_to_responses_when_chat_rejects_them(self, monkeypatch, responses_fails):
+        from unittest.mock import Mock
+
+        monkeypatch.setattr(client_utils, "_RESPONSES_FOR_TOOLS", set())
+        rejection = Exception("Error code: 400 - Function tools with reasoning_effort are not supported for gpt-6.1-sol "
+                              "in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'.")
+
+        def completion(**kwargs):
+            if kwargs["model"].startswith("responses/"):
+                if responses_fails:
+                    raise RuntimeError("responses unavailable")
+                return "responses-reply"
+            raise rejection
+
+        completion = Mock(side_effect=completion)
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        tools = [{"type": "function", "function": {"name": "query", "parameters": {"type": "object"}}}]
+        messages = [{"role": "user", "content": "hi"}]
+        client = Client("azure", "gpt-6.1-sol", api_key="k", api_base="https://apim.example.test")
+        if responses_fails:
+            with pytest.raises(RuntimeError, match="responses unavailable"):
+                client.get_completion_with_tools(messages, tools, reasoning_effort="low")
+            assert client.api_type is None and not client_utils._RESPONSES_FOR_TOOLS
+            return
+        assert client.get_completion_with_tools(messages, tools, reasoning_effort="low") == "responses-reply"
+        assert completion.call_args.kwargs["custom_llm_provider"] == "azure"
+        completion.reset_mock()
+        fresh = Client("azure", "gpt-6.1-sol", api_key="k", api_base="https://apim.example.test")
+        assert fresh.get_completion_with_tools(messages, tools) == "responses-reply"
+        assert completion.call_count == 1
+
+    @pytest.mark.parametrize("endpoint,api_base,api_type,expected", [
+        ("openai", None, None, "responses"),
+        ("openai", "https://api.openai.com/v1", None, "responses"),
+        ("openai", "http://localhost:8000/v1", None, None),
+        ("azure", "https://df.openai.azure.com", None, "responses"),
+        ("azure", "https://df.cognitiveservices.azure.com", None, "responses"),
+        ("azure", "https://apim.example.test", None, None),
+        ("azure", "https://df.openai.azure.com", "chat_completions", "chat_completions"),
+        ("openrouter", None, None, None),
+        ("anthropic", None, None, None),
+    ])
+    def test_first_party_openai_hosts_default_to_responses(self, endpoint, api_base, api_type, expected):
+        assert Client(endpoint, "gpt-5", api_key="k", api_base=api_base, api_type=api_type).api_type == expected
+
+    def test_default_responses_falls_back_to_chat_for_old_azure_api_versions(self, monkeypatch):
+        from unittest.mock import Mock
+
+        monkeypatch.setattr(client_utils, "_CHAT_ONLY", set())
+
+        def completion(**kwargs):
+            if kwargs["model"].startswith("responses/"):
+                raise Exception('AzureException - {"error":{"code":"BadRequest","message":"Azure OpenAI Responses API '
+                                'is enabled only for api-version 2025-03-01-preview and later"}}')
+            return "chat-reply"
+
+        completion = Mock(side_effect=completion)
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        config = dict(api_key="k", api_base="https://df.openai.azure.com", api_version="2025-01-01-preview")
+        assert Client("azure", "gpt-4.1", **config).get_completion([{"role": "user", "content": "hi"}]) == "chat-reply"
+        completion.reset_mock()
+        fresh = Client("azure", "gpt-4.1", **config)
+        assert fresh.api_type is None
+        assert fresh.get_completion([{"role": "user", "content": "hi"}]) == "chat-reply"
+        assert completion.call_count == 1
+
+    def test_explicit_responses_route_does_not_fall_back(self, monkeypatch):
+        from unittest.mock import Mock
+
+        completion = Mock(side_effect=Exception("Resource not found"))
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        client = Client("azure", "gpt-4.1", api_key="k", api_base="https://apim.example.test", api_type="responses")
+        with pytest.raises(Exception, match="Resource not found"):
+            client.get_completion([{"role": "user", "content": "hi"}])
+        assert completion.call_count == 1
+
+    def test_ping_accepts_reasoning_that_exhausts_the_tiny_budget(self, monkeypatch):
+        from unittest.mock import Mock
+
+        monkeypatch.setattr(client_utils.litellm, "completion", Mock(side_effect=Exception(
+            "APIConnectionError - gpt-5-mini unable to complete request: max_output_tokens")))
+        Client("azure", "gpt-5-mini", api_key="k", api_base="https://df.openai.azure.com").ping()
+
+    @pytest.mark.parametrize("model,api_base,sent,forced", [
+        ("gpt-6.1-sol", "https://df.openai.azure.com", True, False),
+        ("gpt-4.1", "https://df.openai.azure.com", False, False),
+        ("my-reasoning-deployment", "https://df.openai.azure.com", True, True),
+        ("my-reasoning-deployment", "https://apim.example.test", True, False),
+    ])
+    def test_thinking_level_reaches_only_models_that_can_use_it(self, monkeypatch, model, api_base, sent, forced):
+        from unittest.mock import Mock
+
+        completion = Mock(return_value="reply")
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        Client("azure", model, api_key="k", api_base=api_base).get_completion([{"role": "user", "content": "hi"}],
+                                                                              reasoning_effort="high")
+        kwargs = completion.call_args.kwargs
+        assert ("reasoning_effort" in kwargs) is sent
+        assert ("allowed_openai_params" in kwargs) is forced
+
+    @pytest.mark.parametrize("endpoint,api_base,sent", [
+        ("azure", "https://df.openai.azure.com", True), ("openai", None, True), ("anthropic", None, False)])
+    def test_json_schema_is_sent_only_to_verified_endpoints(self, monkeypatch, endpoint, api_base, sent):
+        from unittest.mock import Mock
+
+        completion = Mock(return_value="reply")
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        response_format = {"type": "json_schema", "json_schema": {"name": "x", "schema": {"type": "object"}}}
+        Client(endpoint, "gpt-5", api_key="k", api_base=api_base).get_completion(
+            [{"role": "user", "content": "hi"}], response_format=response_format)
+        assert ("response_format" in completion.call_args.kwargs) is sent
+
+    def test_rejected_json_schema_falls_back_to_plain_text(self, monkeypatch):
+        from unittest.mock import Mock
+
+        def completion(**kwargs):
+            if "response_format" in kwargs:
+                raise Exception("Invalid parameter: 'response_format' of type 'json_schema' is not supported with this model.")
+            return "reply"
+
+        completion = Mock(side_effect=completion)
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        client = Client("azure", "gpt-4", api_key="k", api_base="https://df.openai.azure.com")
+        assert client.get_completion([{"role": "user", "content": "hi"}], response_format={"type": "json_schema"}) == "reply"
+        assert completion.call_count == 2
+
+    @pytest.mark.parametrize("api_base,sent", [("https://df.openai.azure.com", True), ("https://apim.example.test", False)])
+    def test_prompt_cache_key_goes_only_to_first_party_endpoints(self, monkeypatch, api_base, sent):
+        from unittest.mock import Mock
+
+        completion = Mock(return_value="reply")
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        client = Client("azure", "gpt-5", api_key="k", api_base=api_base)
+        client.prompt_cache_key = "session-key"
+        client.get_completion([{"role": "user", "content": "hi"}])
+        assert (completion.call_args.kwargs.get("prompt_cache_key") == "session-key") is sent
+
+    def test_deployment_that_rejects_thinking_is_remembered(self, monkeypatch):
+        from unittest.mock import Mock
+
+        monkeypatch.setattr(client_utils, "_NO_REASONING", set())
+
+        def completion(**kwargs):
+            if "reasoning_effort" in kwargs:
+                raise Exception('{"error": {"message": "Unsupported parameter: \'reasoning.effort\' is not supported '
+                                'with this model.", "param": "reasoning.effort"}}')
+            return "reply"
+
+        completion = Mock(side_effect=completion)
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        config = dict(api_key="k", api_base="https://df.openai.azure.com")
+        assert Client("azure", "my-gpt4o", **config).get_completion([{"role": "user", "content": "hi"}]) == "reply"
+        completion.reset_mock()
+        assert Client("azure", "my-gpt4o", **config).get_completion([{"role": "user", "content": "hi"}]) == "reply"
+        assert completion.call_count == 1
+
+    def test_claude_requests_mark_the_system_prompt_and_latest_turn_for_caching(self, monkeypatch):
+        import json
+        import httpx
+
+        bodies = []
+
+        def send(client, request, *args, **kwargs):
+            bodies.append(json.loads(request.content))
+            return httpx.Response(200, request=request, json={
+                "id": "msg_test", "type": "message", "role": "assistant", "model": "claude-sonnet-4-5",
+                "content": [{"type": "text", "text": "ok"}], "stop_reason": "end_turn",
+                "usage": {"input_tokens": 1, "output_tokens": 1}})
+
+        monkeypatch.setattr(httpx.Client, "send", send)
+        messages = [{"role": "system", "content": "Analyst instructions"}, {"role": "user", "content": "Load data"},
+                    {"role": "assistant", "content": "Loaded."}, {"role": "user", "content": "Chart it"}]
+        Client("anthropic", "claude-sonnet-4-5", api_key="k").get_completion(messages)
+        body = bodies[0]
+        assert body["system"][-1]["cache_control"] == {"type": "ephemeral"}
+        assert body["messages"][-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+        assert all("cache_control" not in block for message in body["messages"][:-1]
+                   for block in (message["content"] if isinstance(message["content"], list) else []))
+        assert "enable_prompt_caching" not in body
+
     @pytest.mark.parametrize("endpoint", ["openai", "azure", "github_copilot"])
     def test_responses_transport_preserves_client_identity_and_contract(self, monkeypatch, endpoint):
         from unittest.mock import Mock
@@ -251,7 +432,7 @@ class TestModelNamePrefixing:
         assert client.params == original_params
 
         client.ping()
-        assert responses.call_args.kwargs["max_output_tokens"] == 3
+        assert responses.call_args.kwargs["max_output_tokens"] == 16
 
     def test_copilot_uses_explicit_credentials_without_shared_authenticator(self, monkeypatch):
         from unittest.mock import Mock

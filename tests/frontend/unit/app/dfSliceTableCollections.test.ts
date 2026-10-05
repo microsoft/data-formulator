@@ -44,15 +44,23 @@ describe("split table collections", () => {
     let state = dataFormulatorReducer(undefined, dfActions.upsertExternalTableReference(reference));
     state = dataFormulatorReducer(state, dfActions.addTableToStore(derivedTable as any));
     state = dataFormulatorReducer(state, dfActions.appendWorkspaceItems(['before', reference.id, 'after']));
-    state = dataFormulatorReducer(state, dfActions.setFocused({ type: 'external-table', referenceId: reference.id }));
+    state = dataFormulatorReducer(state, dfActions.addLoadedTableNode({ kind: 'loaded-table', id: 'loaded-reference-1',
+      tableId: reference.id, external: true, parentNodeId: 'turn-1', createdAt: 1 }));
+    expect(state.focusedId).toEqual({ type: 'external-table', referenceId: reference.id });
     state = dataFormulatorReducer(state, dfActions.replaceExternalTableReference({ referenceId: reference.id, table: sourceTable as any }));
     expect(state.externalTableReferences).toEqual([]);
+    expect(state.loadedTableNodes).toEqual([{ kind: 'loaded-table', id: 'loaded-reference-1', tableId: 'orders', parentNodeId: 'turn-1', createdAt: 1 }]);
     expect(state.inputTables[0].displayId).toBe('Original orders');
     expect(state.workspaceItemOrder).toEqual(['before', 'shelf-card-orders', 'after']);
     expect(state.focusedId).toEqual({ type: 'table', tableId: 'orders' });
     expect(state.derivedTables[0].derive).toMatchObject(derivedTable.derive);
     const deleted = dataFormulatorReducer(undefined, dfActions.replaceExternalTableReference({ referenceId: reference.id, table: sourceTable as any }));
     expect(deleted.inputTables).toEqual([]);
+    let removed = dataFormulatorReducer(undefined, dfActions.upsertExternalTableReference(reference));
+    removed = dataFormulatorReducer(removed, dfActions.addLoadedTableNode({ kind: 'loaded-table', id: 'loaded-reference-1',
+      tableId: reference.id, external: true, parentNodeId: 'turn-1', createdAt: 1 }));
+    removed = dataFormulatorReducer(removed, dfActions.removeExternalTableReference(reference.id));
+    expect(removed.loadedTableNodes).toEqual([]);
   });
 
   it.each(['add', 'insert'])('keeps one derived owner across %s publication, refresh, and restore', publication => {

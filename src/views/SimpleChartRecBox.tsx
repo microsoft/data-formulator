@@ -29,7 +29,7 @@ import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from '../app/utils';
 import { streamRequest, apiRequest } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
-import { Chart, ClarificationResponse, ComputationInputSource, DictTable, FieldItem, createDictTable, InteractionEntry, computeInsightKey, TextTurn, TableSemanticsInfo, createConversationRootId, ProgressStep } from "../components/ComponentType";
+import { Chart, ClarificationResponse, ComputationInputSource, DictTable, DraftNode, FieldItem, createDictTable, InteractionEntry, computeInsightKey, TextTurn, TableSemanticsInfo, createConversationRootId, ProgressStep } from "../components/ComponentType";
 import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clarification';
 import { parseDataOperation } from '../dataOperations/models';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
@@ -1457,8 +1457,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     }));
                 }
                 if (operation.status === 'loaded' || operation.status === 'partially_loaded') {
+                    const operationTurnId = proposalTurn?.id || currentDraftId || runLastNodeRef.current || askedFromNode;
                     for (const reference of operation.resultReferences || []) {
                         dispatch(dfActions.upsertExternalTableReference(reference));
+                        const stored = (currentStore.getState() as DataFormulatorState).externalTableReferences.find(item =>
+                            item.connectorId === reference.connectorId && item.tableKey === reference.tableKey);
+                        if (operationTurnId && stored) {
+                            dispatch(dfActions.addLoadedTableNode({
+                                kind: 'loaded-table', id: `loaded-reference-${actionId}-${stored.id}`, tableId: stored.id,
+                                external: true, parentNodeId: operationTurnId, createdAt: Date.now(),
+                            }));
+                        }
                     }
                     if (!operation.resultTableIds.length && operation.resultReferences?.length) {
                         dispatch(dfActions.setFocused({ type: 'external-table', referenceId: operation.resultReferences[0].id }));
@@ -1468,7 +1477,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     const publishedIds = new Set(operation.resultTableIds);
                     const publishedTables = (data.tables || [])
                         .filter((table: any) => publishedIds.has(table.name));
-                    const operationTurnId = proposalTurn?.id || currentDraftId || runLastNodeRef.current || askedFromNode;
                     for (const workspaceTable of publishedTables) {
                         const existing = tables.find(table => table.id === workspaceTable.name);
                         const table = existing || buildDictTableFromWorkspace(workspaceTable, undefined);
@@ -2509,11 +2517,30 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         ? draftNodes.find(draft => draft.id === focusedId.draftId
             && (draft.derive?.status === 'error' || draft.derive?.status === 'interrupted'))
         : undefined;
-    const focusedDraftPrompt = focusedDraft
-        ? focusedDraft.derive.trigger.interaction?.find(entry => entry.from === 'user' && entry.role === 'prompt')?.content
-            || textTurns.find(turn => turn.id === focusedDraft.parentNodeId)?.answer
-            || ''
-        : '';
+    const userPromptOf = (interaction?: InteractionEntry[]) =>
+        interaction?.find(entry => entry.from === 'user' && entry.role === 'prompt')?.content;
+    // A run's later steps hang off its own outputs, so the request that started it
+    // may sit on an ancestor: a table's trigger, a turn's prompt, or the reply to a turn.
+    const runPromptOf = (draft: DraftNode): string => {
+        const own = userPromptOf(draft.derive.trigger.interaction);
+        if (own) return own;
+        const seen = new Set<string>();
+        for (let nodeId: string | undefined = draft.parentNodeId; nodeId && !seen.has(nodeId);) {
+            seen.add(nodeId);
+            const turn = textTurns.find(item => item.id === nodeId);
+            if (turn) {
+                if (turn.answer || turn.prompt) return turn.answer || turn.prompt || '';
+                nodeId = turn.parentNodeId;
+                continue;
+            }
+            const table = tables.find(item => item.id === nodeId);
+            const prompt = userPromptOf(table?.derive?.trigger.interaction);
+            if (prompt) return prompt;
+            nodeId = table?.parentNodeId;
+        }
+        return '';
+    };
+    const focusedDraftPrompt = focusedDraft ? runPromptOf(focusedDraft) : '';
     const focusedDraftError = focusedDraft
         ? [...(focusedDraft.derive.trigger.interaction || [])].reverse().find(entry => entry.role === 'error')?.content
             || (focusedDraft.derive.status === 'interrupted'

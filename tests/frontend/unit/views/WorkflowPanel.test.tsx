@@ -339,6 +339,27 @@ describe('Workflow session publication', () => {
         expect(screen.getByText('Incidents by Flight Phase')).toBeInTheDocument();
     });
 
+    it('shows a virtual source the agent added under the turn that added it', () => {
+        const reference = { kind: 'external-table-reference' as const, id: 'external:blob:reviews', connectorId: 'blob',
+            tableKey: 'reviews', sourceTable: { id: 'reviews', name: 'az://account/data/games_reviews.parquet' },
+            displayName: 'az://account/data/games_reviews.parquet', capturedAt: '', summary: { columns: [] } };
+        store.dispatch(dfActions.upsertExternalTableReference(reference));
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'added-reference', displayId: 'Added',
+            textKind: 'explain', prompt: 'games_reviews.parquet', content: 'Added games_reviews.parquet as a workspace reference.',
+            parentNodeId: 'conversation-root:reviews', createdAt: 2 }));
+        store.dispatch(dfActions.addLoadedTableNode({ kind: 'loaded-table', id: 'loaded-reviews', tableId: reference.id,
+            external: true, parentNodeId: 'added-reference', createdAt: 1 }));
+        act(() => store.dispatch(dfActions.setFocused(undefined)));
+        const { container } = renderThread();
+        const output = container.querySelector<HTMLElement>('[data-thread-item="loaded-reviews"]')!;
+        expect(output).toBeInTheDocument();
+        expect(within(output).getByText('games_reviews.parquet')).toBeInTheDocument();
+        expect(within(output).getByText('(virtual)')).toBeInTheDocument();
+        fireEvent.click(within(output).getByRole('button'));
+        expect(store.getState().focusedId).toEqual({ type: 'external-table', referenceId: reference.id });
+        expect(output.querySelector('.selected-artifact-card')).toBeInTheDocument();
+    });
+
     it('uses a compact selected conversation button and transparent timeline icon backgrounds', () => {
         store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'loaded-data', displayId: 'Loaded Data',
             names: [], rows: [], metadata: {}, description: '', virtual: { tableId: 'loaded-data', rowCount: 0 } }));

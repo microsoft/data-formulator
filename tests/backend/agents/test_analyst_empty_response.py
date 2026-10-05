@@ -85,6 +85,39 @@ def test_repeated_empty_streams_surface_an_llm_error():
     assert messages == []
 
 
+def _failing(error):
+    raise error
+    yield  # pragma: no cover
+
+
+def test_stream_errors_on_the_first_chunk_are_retried(monkeypatch):
+    monkeypatch.setattr(agent_module.time, "sleep", lambda seconds: None)
+    client, actions, _ = _run([_failing(RuntimeError("Rate limit exceeded")), [_chunk("Done."), _chunk(finish_reason="stop")]])
+    assert client.calls == 2
+    assert actions[-1]["final_text"] == "Done."
+
+
+def test_context_overflow_shortens_older_tool_output_and_retries():
+    overflow = RuntimeError("AzureException BadRequestError - Your input exceeds the context window of this model.")
+    history = [{"role": "tool", "tool_call_id": f"call-{index}", "content": f"result {index} " + "x" * 5000}
+               for index in range(4)]
+    client, actions, messages = _run([_failing(overflow), _failing(overflow),
+                                      [_chunk("Done."), _chunk(finish_reason="stop")]], messages=list(history))
+    assert client.calls == 3
+    assert actions[-1]["final_text"] == "Done."
+    tools = [message for message in messages if message["role"] == "tool"]
+    assert [message["tool_call_id"] for message in tools] == ["call-0", "call-1", "call-2", "call-3"]
+    assert all(len(message["content"]) < 500 and "context window" in message["content"] for message in tools)
+    assert tools[0]["content"].startswith("result 0")
+
+
+def test_context_overflow_with_nothing_left_to_shorten_is_reported():
+    overflow = RuntimeError("Input tokens exceed the configured limit of 272000 tokens.")
+    client, actions, _ = _run([_failing(overflow)])
+    assert client.calls == 1
+    assert actions[-1]["reason"] == "llm_error" and "Input too long" in actions[-1]["error_message"]
+
+
 @pytest.mark.parametrize("retries", [0, 1])
 def test_empty_stream_at_retry_limit_surfaces_error_without_unused_backoff(monkeypatch, retries):
     delays = []

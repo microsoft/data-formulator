@@ -128,7 +128,9 @@ export type DeriveStatus = 'running' | 'clarifying' | 'completed' | 'error' | 'i
 export interface LoadedTableNode {
     kind: 'loaded-table';
     id: string;
+    /** With `external`, the id of an ExternalTableReference instead of a workspace table. */
     tableId: string;
+    external?: boolean;
     parentNodeId: string;
     createdAt: number;
 }

@@ -1,6 +1,6 @@
 import { createConversationRootId, isConversationRootId, type DictTable, type TextTurn, type Trigger, type LoadedTableNode, type FileNode, type ComputationInputSource, type TerminalExecution, type CodeExecution } from '../components/ComponentType';
 
-function getStepExecutionTurns(nodeId: string, tables: DictTable[], turns: TextTurn[]): TextTurn[] {
+export function getStepExecutionTurns(nodeId: string, tables: DictTable[], turns: TextTurn[]): TextTurn[] {
     const turn = turns.find(candidate => candidate.id === nodeId);
     if (turn?.actionId) {
         return turns.filter(candidate => candidate.actionId === turn.actionId && candidate.createdAt <= turn.createdAt)

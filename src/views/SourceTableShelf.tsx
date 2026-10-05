@@ -54,6 +54,7 @@ import { InlineLoadingStatus } from '../components/FunComponents';
 import {
     deleteWorkspace,
     deleteWorkspaceFile,
+    externalReferenceTitle,
     type WorkspaceFile,
 } from '../app/workspaceService';
 import { useDataRefresh } from '../app/useDataRefresh';
@@ -803,11 +804,7 @@ export const SourceTableShelf: FC<{
             removeLabel: t('dataThread.deleteFile', { defaultValue: 'Delete file' }),
         };
     }), ...(externalReferences || []).map(reference => {
-        let title = reference.displayName || reference.sourceTable.name;
-        if (title === reference.sourceTable.name) {
-            try { title = new URL(title).pathname || title; } catch {}
-            title = title.split(/[\\/]/).filter(Boolean).pop() || reference.sourceTable.name;
-        }
+        const title = externalReferenceTitle(reference);
         return {
             key: reference.id,
             artifactType: 'table' as const,

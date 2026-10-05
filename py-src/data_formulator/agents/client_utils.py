@@ -1,13 +1,28 @@
 import json
 import litellm
+import logging
 import os
 from types import SimpleNamespace
+from urllib.parse import urlparse
 from litellm.responses.utils import ResponsesAPIRequestUtils
 from litellm.completion_extras.litellm_responses_transformation.transformation import OpenAiResponsesToChatCompletionStreamIterator
 
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
 from data_formulator.auth.azure_cli import get_desktop_azure_token_provider
+
+logger = logging.getLogger(__name__)
+
+# Routes keyed by (endpoint, api_base, api_version, model).
+# Third-party hosts whose models only accept function tools with reasoning on the Responses API.
+_RESPONSES_FOR_TOOLS: set[tuple[str, str, str, str]] = set()
+# First-party deployments that rejected the default Responses route (e.g. an old pinned Azure api-version).
+_CHAT_ONLY: set[tuple[str, str, str, str]] = set()
+# Routes whose model rejected reasoning_effort as an unsupported parameter.
+_NO_REASONING: set[tuple[str, str, str, str]] = set()
+_RESPONSES_HOSTS = {"openai": ("api.openai.com",), "azure": (".openai.azure.com", ".cognitiveservices.azure.com")}
+# Endpoints verified to honour a json_schema response_format on both API routes.
+_STRUCTURED_OUTPUT_ENDPOINTS = {"openai", "azure"}
 
 # Third-party gateways whose base URL is filled in when the caller leaves it
 # blank. Unlike first-party provider defaults, these must still pass the
@@ -27,7 +42,7 @@ def effective_api_base(endpoint, api_base):
 _translate_responses_chunk = OpenAiResponsesToChatCompletionStreamIterator.translate_responses_chunk_to_openai_stream
 
 
-def _translate_responses_chunk_or_raise(chunk):
+def _translate_responses_chunk_or_raise(chunk, *args, **kwargs):
     """Raise on failed, incomplete and error stream events.
 
     LiteLLM's Responses bridge turns them into empty chunks and then adds
@@ -40,7 +55,7 @@ def _translate_responses_chunk_or_raise(chunk):
         response = chunk.get("response") or {}
         detail = response.get("error") or response.get("incomplete_details") or chunk.get("error") or chunk
         raise ValueError(f"Model response {kind.removeprefix('response.')}: {json.dumps(detail, default=str)[:500]}")
-    return _translate_responses_chunk(chunk)
+    return _translate_responses_chunk(chunk, *args, **kwargs)
 
 
 OpenAiResponsesToChatCompletionStreamIterator.translate_responses_chunk_to_openai_stream = staticmethod(_translate_responses_chunk_or_raise)
@@ -267,6 +282,8 @@ class Client(object):
         self.endpoint = endpoint
         self.model = model
         self.reasoning_effort: str | None = None
+        # Groups requests that share a long prefix so OpenAI/Azure route them to the same cache.
+        self.prompt_cache_key: str | None = None
         self.params = {}
         if api_type not in (None, "chat_completions", "responses"):
             raise ValueError("Unsupported model API type")
@@ -363,6 +380,25 @@ class Client(object):
             self.params["api_base"] = effective_api_base(endpoint, api_base).rstrip("/")
             self.params["custom_llm_provider"] = "openai"
 
+        host = (urlparse(self.params.get("api_base") or "https://api.openai.com").hostname or "").lower()
+        self._first_party = any(host == suffix or host.endswith(suffix) for suffix in _RESPONSES_HOSTS.get(self.endpoint, ()))
+        self._auto_responses = self.api_type is None and self._first_party and self._route_key() not in _CHAT_ONLY
+        if self._auto_responses:
+            self.api_type = "responses"
+
+    def _route_key(self) -> tuple[str, str, str, str]:
+        return (self.endpoint, self.params.get("api_base", ""), self.params.get("api_version", ""), self.model)
+
+    def _supports_reasoning(self) -> bool | None:
+        """Whether this model accepts a thinking level; None when LiteLLM doesn't know the model."""
+        if self._route_key() in _NO_REASONING:
+            return False
+        try:
+            info = litellm.get_model_info(model=self.model, custom_llm_provider=self.params.get("custom_llm_provider"))
+        except Exception:
+            return None
+        return bool(info.get("supports_reasoning"))
+
     def _strip_image_blocks(self, content):
         """Remove image_url blocks from multimodal content arrays."""
         if isinstance(content, list):
@@ -417,6 +453,31 @@ class Client(object):
             )
         )
 
+    @staticmethod
+    def _responses_unavailable(error_text: str) -> bool:
+        """Old Azure api-versions answer the Responses route with 404 or an api-version error."""
+        lowered = error_text.lower()
+        return ("resource not found" in lowered or "responses api is enabled only" in lowered
+                or ("responses" in lowered and "not supported" in lowered))
+
+    def _requires_responses_for_tools(self, error_text: str) -> bool:
+        """Newer reasoning models reject function tools with reasoning on Chat Completions
+        and ask callers to use the Responses API instead."""
+        lowered = error_text.lower()
+        return (self.endpoint in ("openai", "azure") and self.api_type is None
+                and "/v1/responses" in lowered and "tools" in lowered)
+
+    def _dispatch_tools_via_responses(self, messages, stream, params, tools, extra):
+        """Retry on the Responses API and remember the route; these models have no chat fallback for tools."""
+        self.api_type = "responses"
+        try:
+            response = self._dispatch(messages=messages, stream=stream, params=params, tools=tools, extra=extra)
+        except Exception:
+            self.api_type = None
+            raise
+        _RESPONSES_FOR_TOOLS.add(self._route_key())
+        return response
+
     def _is_reasoning_effort_error(self, error_text: str) -> bool:
         """Detect provider errors caused by an unsupported ``reasoning_effort``
         value (e.g. ``"minimal"`` on a model that only accepts
@@ -428,7 +489,13 @@ class Client(object):
         it with ``"<model> does not support thinking"``. Retrying without
         ``reasoning_effort`` (which drops ``think``) lets these models run."""
         lowered = error_text.lower()
-        return "reasoning_effort" in lowered or "does not support thinking" in lowered
+        return ("reasoning_effort" in lowered or "reasoning.effort" in lowered
+                or "does not support thinking" in lowered)
+
+    def _drop_reasoning_after(self, error_text: str, params: dict) -> None:
+        params.pop("reasoning_effort", None)
+        if "unsupported parameter" in error_text.lower():
+            _NO_REASONING.add(self._route_key())
 
     @classmethod
     def from_config(cls, model_config: dict[str, str]):
@@ -464,7 +531,14 @@ class Client(object):
         messages = [{"role": "user", "content": "Reply only 'ok'."}]
         params = self.params.copy()
         params["timeout"] = timeout
-        self._dispatch(messages=messages, stream=False, params=params, extra={"max_tokens": 3})
+        # The Responses API rejects max_output_tokens below 16.
+        try:
+            self._dispatch(messages=messages, stream=False, params=params,
+                           extra={"max_tokens": 16 if self.api_type == "responses" else 3})
+        except Exception as e:
+            # Reasoning models can spend the tiny budget thinking; the model still answered.
+            if "unable to complete request: max_output_tokens" not in str(e):
+                raise
 
     def _dispatch_responses(self, call_kwargs):
         """Adapt the chat contract through LiteLLM's Responses bridge without storing server-side history."""
@@ -498,6 +572,8 @@ class Client(object):
         for Ollama we always call non-streaming and, when the caller asked for a
         stream, replay the buffered response as streaming chunks via
         ``_synthesize_stream``. All other providers stream natively."""
+        if tools and self.api_type is None and self._route_key() in _RESPONSES_FOR_TOOLS:
+            self.api_type = "responses"
         if self.endpoint == "azure":
             messages = list(messages)
             for index, message in enumerate(messages):
@@ -530,8 +606,30 @@ class Client(object):
                            **params, **(extra or {}))
         if tools is not None:
             call_kwargs["tools"] = tools
-        resp = (self._dispatch_responses(call_kwargs) if self.api_type == "responses"
-            else self._dispatch_chat_completions(call_kwargs))
+        if self.endpoint == "anthropic":
+            # Claude only caches when asked: mark the system prompt and the latest turn.
+            call_kwargs["enable_prompt_caching"] = True
+        if self.prompt_cache_key and self._first_party:
+            call_kwargs["prompt_cache_key"] = self.prompt_cache_key
+        if call_kwargs.get("reasoning_effort") is not None and self.endpoint in ("openai", "azure"):
+            supported = self._supports_reasoning()
+            if supported is False:
+                call_kwargs.pop("reasoning_effort")
+            elif supported is None and self._first_party:
+                # LiteLLM silently drops it for models it doesn't know, e.g. custom Azure deployment names.
+                call_kwargs["allowed_openai_params"] = ["reasoning_effort"]
+        if self.api_type == "responses":
+            try:
+                resp = self._dispatch_responses(call_kwargs)
+            except Exception as e:
+                if not (self._auto_responses and self._responses_unavailable(str(e))):
+                    raise
+                logger.warning("Responses API unavailable for %s; using Chat Completions", self.model)
+                _CHAT_ONLY.add(self._route_key())
+                self.api_type, self._auto_responses = None, False
+                resp = self._dispatch_chat_completions(call_kwargs)
+        else:
+            resp = self._dispatch_chat_completions(call_kwargs)
         if is_ollama and tools:
             resp = _salvage_tool_calls_from_content(resp, tools)
         if is_ollama and stream:
@@ -550,12 +648,17 @@ class Client(object):
         params = self.params.copy()
         params["reasoning_effort"] = reasoning_effort
         params.update(kwargs)
+        if self.endpoint not in _STRUCTURED_OUTPUT_ENDPOINTS:
+            params.pop("response_format", None)
         try:
             return self._dispatch(messages=messages, stream=stream, params=params)
         except Exception as e:
             err = str(e)
+            if params.get("response_format") and any(key in err.lower() for key in ("response_format", "json_schema", "text.format")):
+                params.pop("response_format")
+                return self._dispatch(messages=messages, stream=stream, params=params)
             if self._is_reasoning_effort_error(err):
-                params.pop("reasoning_effort", None)
+                self._drop_reasoning_after(err, params)
                 return self._dispatch(messages=messages, stream=stream, params=params)
             if self._is_image_deserialize_error(err, self._messages_contain_images(messages)):
                 sanitized = self._strip_images_from_messages(messages)
@@ -576,8 +679,10 @@ class Client(object):
                                   params=params, tools=tools, extra=kwargs)
         except Exception as e:
             err = str(e)
+            if self._requires_responses_for_tools(err):
+                return self._dispatch_tools_via_responses(messages, stream, params, tools, kwargs)
             if self._is_reasoning_effort_error(err):
-                params.pop("reasoning_effort", None)
+                self._drop_reasoning_after(err, params)
                 return self._dispatch(messages=messages, stream=stream,
                                       params=params, tools=tools, extra=kwargs)
             if self._is_image_deserialize_error(err, self._messages_contain_images(messages)):

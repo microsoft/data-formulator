@@ -25,7 +25,8 @@ vi.mock('../../../../src/views/AgentPausePanel', () => ({
             data-code-calls={'code' in execution ? execution.id : ''}>
             {JSON.stringify(execution)}<button onClick={onClose}>Close tool activity</button>
         </div>,
-    FailedDraftPanel: () => null,
+    FailedDraftPanel: ({ prompt, onRetry, retryDisabled }: { prompt?: string; onRetry: () => void; retryDisabled?: boolean }) =>
+        <div>{prompt}<button disabled={retryDisabled} onClick={onRetry}>Retry</button></div>,
 }));
 
 describe('Analyst landing attachment handoff', () => {
@@ -46,6 +47,32 @@ describe('Analyst landing attachment handoff', () => {
     const requestBody = (index = 0) => JSON.parse(
         vi.mocked(streamRequest).mock.calls[index][1].body as string,
     );
+
+    it('retries an interrupted later step with the request that started its run', async () => {
+        const { store } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'life', displayId: 'Life', names: [],
+                metadata: {}, rows: [], virtual: { tableId: 'life', rowCount: 0 } } as any));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'loaded', displayId: 'Loaded', textKind: 'explain',
+                content: 'Added three datasets.', parentNodeId: 'conversation-root:test', createdAt: 1,
+                answered: true, answer: 'Explain them together' }));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'step-1', displayId: 'Step', textKind: 'explain',
+                content: 'Compare the datasets', parentNodeId: 'loaded', actionId: 'run', createdAt: 2,
+                codeExecutions: [{ id: 'step-1', tool: 'execute_python_script', code: 'print(1)', purpose: 'Compare', status: 'completed' }] }));
+            store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'chart-data', displayId: 'Chart data', names: [],
+                metadata: {}, rows: [], parentNodeId: 'step-1', derive: { source: ['life'], code: '', dialog: [],
+                    trigger: { tableId: 'life', resultTableId: 'chart-data', interaction: [
+                        { from: 'data-agent', to: 'datarec-agent', role: 'instruction', content: 'Exploration step 1' }] } } } as any));
+            store.dispatch(dfActions.createDraftNode({ id: 'next-step', displayId: 'Next', parentNodeId: 'chart-data',
+                parentTableId: 'chart-data', source: ['life'], interaction: [], actionId: 'run' }));
+            store.dispatch(dfActions.updateDeriveStatus({ nodeId: 'next-step', status: 'interrupted' }));
+            store.dispatch(dfActions.setFocused({ type: 'draft', draftId: 'next-step' }));
+        });
+        expect(screen.getByText('Explain them together')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        expect(requestBody().user_question).toBe('Explain them together');
+    });
 
     it.each(['Write a report', 'Create a workflow'])('starts %s as a visible user prompt requesting suggestions', async label => {
         const { dispatchSpy } = mountTask();
@@ -277,10 +304,14 @@ describe('Analyst landing attachment handoff', () => {
                 plans: [{ id: 'plan', hash: 'a'.repeat(64), label: 'Add orders', summary: '',
                     steps: [{ kind: 'connector_query', display_name: 'Orders' }] }], result_references: [reference],
             } };
+            yield { type: 'completion', status: 'success', content: { summary: 'Added orders as a workspace reference.' } };
         });
         const { store } = mountTask({ text: 'Add orders', images: [], attachments: [] });
         await waitFor(() => expect(store.getState().externalTableReferences).toEqual([reference]));
         expect(store.getState().inputTables).toEqual([]);
+        await waitFor(() => expect(store.getState().textTurns).toHaveLength(1));
+        expect(store.getState().loadedTableNodes).toEqual([expect.objectContaining({ tableId: reference.id, external: true,
+            parentNodeId: store.getState().textTurns[0].id })]);
         expect(vi.mocked(apiRequest).mock.calls.some(([url]) => String(url).includes('list-tables'))).toBe(false);
         expect(store.getState().pendingTableLoads).toEqual([]);
     });

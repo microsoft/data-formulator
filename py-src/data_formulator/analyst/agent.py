@@ -30,13 +30,14 @@ routes the chosen action to the owning skill's ``handle_action(...)``, feeds the
 returned observation back, and forwards the channel-tagged events.
 """
 
+import hashlib
 import json
 import logging
 import re
 import time
 import uuid
 from dataclasses import asdict, replace
-from itertools import count
+from itertools import chain, count
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Generator
@@ -80,6 +81,24 @@ from data_formulator.analyst.workspace_inputs import (
 logger = logging.getLogger(__name__)
 
 _AGENT_ID = "analyst"
+_COMPACTED_NOTE = "[Earlier output shortened to fit the model's context window.]"
+
+
+class _PrimedStream:
+    """A provider stream whose first chunk is read up front; closing still closes the provider stream."""
+
+    def __init__(self, source):
+        self._source = source
+        self._chunks = iter(source)
+        self._head = [chunk for chunk in [next(self._chunks, None)] if chunk is not None]
+
+    def __iter__(self):
+        return chain(self._head, self._chunks)
+
+    def close(self):
+        close = getattr(self._source, "close", None)
+        if close:
+            close()
 
 _PROGRESS_REMINDER_INTERVAL = 16
 _PROGRESS_REMINDER = (
@@ -331,6 +350,9 @@ class AnalystAgent:
             ReasoningLogger, _NullReasoningLogger,
         )
         self._session_id = uuid.uuid4().hex[:12]
+        if client is not None and getattr(client, "prompt_cache_key", "") is None:
+            client.prompt_cache_key = hashlib.sha256(
+                f"{identity_id}:{workspace_id or self._session_id}".encode()).hexdigest()[:32]
         if identity_id:
             try:
                 self._reasoning_log = ReasoningLogger(
@@ -580,10 +602,11 @@ class AnalystAgent:
                     # is fatal.
                     if action_reason == "llm_error":
                         final_status = "llm_error"
+                        # The classified provider error is user-safe; the generic code would hide it.
                         yield self._error_event(
                             iteration,
                             action_error or "LLM API error",
-                            message_code="agent.llmApiError",
+                            message_code="" if action_error else "agent.llmApiError",
                         )
                         self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
                         return
@@ -2090,26 +2113,31 @@ class AnalystAgent:
         (``drop_params=True``); the first-wins cardinality guard remains as a
         belt-and-suspenders net.
         """
-        last_exc: Exception | None = None
         max_attempts = self.execution_config.stream_open_retries + 1
         cancel = getattr(self, "cancel", None)
-        for attempt in range(max_attempts):
+        attempt = 0
+        while True:
             if cancel is not None and cancel.is_set():
                 raise InterruptedError("Model request interrupted.")
             try:
-                return self.client.get_completion_with_tools(
+                source = self.client.get_completion_with_tools(
                     messages, tools=tools, stream=True,
                     reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model, getattr(self.client, "reasoning_effort", None)),
                     parallel_tool_calls=False,
                 )
+                # Responses streams send the request lazily, so request errors surface on the first chunk.
+                return _PrimedStream(source)
             except Exception as e:
-                last_exc = e
-                if self._is_transient_error(e) and attempt < max_attempts - 1:
-                    wait = self.execution_config.stream_open_backoff_seconds * 2 ** attempt
+                if self._is_context_window_error(e) and self._compact_tool_results(messages):
+                    logger.warning("[AnalystAgent] Context window exceeded; retrying with older tool output shortened")
+                    continue
+                attempt += 1
+                if self._is_transient_error(e) and attempt < max_attempts:
+                    wait = self.execution_config.stream_open_backoff_seconds * 2 ** (attempt - 1)
                     logger.warning(
                         "[AnalystAgent] Transient LLM error (attempt %d/%d), "
                         "retrying in %gs: %s",
-                        attempt + 1, max_attempts, wait, e,
+                        attempt, max_attempts, wait, e,
                     )
                     if cancel is not None:
                         cancel.wait(wait)
@@ -2117,7 +2145,28 @@ class AnalystAgent:
                         time.sleep(wait)
                     continue
                 raise
-        raise last_exc  # pragma: no cover
+
+    @staticmethod
+    def _is_context_window_error(exc: Exception) -> bool:
+        from data_formulator.error_handler import classify_and_wrap_llm_error
+        from data_formulator.errors import ErrorCode
+        return classify_and_wrap_llm_error(exc).code == ErrorCode.LLM_CONTEXT_TOO_LONG
+
+    @staticmethod
+    def _compact_tool_results(messages: list[dict]) -> bool:
+        """Shorten older tool results in place, keeping the latest two before
+        touching them; False when nothing is left to shorten."""
+        tool_indexes = [index for index, message in enumerate(messages) if message.get("role") == "tool"]
+        for keep in (2, 0):
+            changed = False
+            for index in tool_indexes[:len(tool_indexes) - keep]:
+                content = messages[index].get("content")
+                if isinstance(content, str) and len(content) > 600 and not content.endswith(_COMPACTED_NOTE):
+                    messages[index] = {**messages[index], "content": f"{content[:300]}\n...\n{_COMPACTED_NOTE}"}
+                    changed = True
+            if changed:
+                return True
+        return False
 
     def _stream_llm(
         self, messages: list[dict], tools: list[dict],

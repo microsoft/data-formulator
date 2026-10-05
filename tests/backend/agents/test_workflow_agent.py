@@ -1214,7 +1214,6 @@ def test_pause_during_model_open_discards_late_response(agent):
         release.set()
         assert closed.wait(1)
         assert agent.state["trajectory"] == trajectory
-        source.__iter__.assert_not_called()
     finally:
         release.set()
         worker.join(3)

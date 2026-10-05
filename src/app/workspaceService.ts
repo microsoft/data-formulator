@@ -28,6 +28,15 @@ export function createExternalTableReference(reference: Omit<ExternalTableRefere
     return { ...reference, id: `external:${encodeURIComponent(reference.connectorId)}:${encodeURIComponent(reference.tableKey)}` };
 }
 
+export function externalReferenceTitle(reference: ExternalTableReference): string {
+    let title = reference.displayName || reference.sourceTable.name;
+    if (title === reference.sourceTable.name) {
+        try { title = new URL(title).pathname || title; } catch {}
+        title = title.split(/[\\/]/).filter(Boolean).pop() || reference.sourceTable.name;
+    }
+    return title;
+}
+
 export function isLargeConnectorTable(metadata?: Record<string, any> | null,
     config?: Pick<ServerConfig, 'EXTERNAL_TABLE_MAX_ROWS' | 'EXTERNAL_TABLE_MAX_BYTES'>): boolean {
     return Number(metadata?.row_count) > (config?.EXTERNAL_TABLE_MAX_ROWS ?? 1_000_000)

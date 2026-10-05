@@ -4,7 +4,7 @@
 import json
 
 from data_formulator.agent_config import reasoning_effort_for
-from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
+from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, json_response_format
 from data_formulator.agents.agent_diagnostics import AgentDiagnostics
 from data_formulator.agents.agent_language import inject_language_instruction
 from data_formulator.agents.semantic_types import (
@@ -16,6 +16,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 _AGENT_ID = "data_load"
+# Open-ended: `fields` is keyed by the table's column names.
+_RESPONSE_FORMAT = json_response_format("data_types", {
+    "type": "object", "required": ["suggested_table_name", "fields", "data_summary"],
+    "properties": {"suggested_table_name": {"type": "string"}, "data_summary": {"type": "string"},
+                   "fields": {"type": "object", "additionalProperties": {"type": "object"}}},
+}, strict=False)
 
 
 SYSTEM_PROMPT = '''You are a data scientist to help user infer data types based off the table provided by the user.
@@ -203,7 +209,8 @@ class DataLoadAgent(object):
         messages = [{"role":"system", "content": self.system_prompt},
                     {"role":"user","content": user_query}]
         
-        response = self.client.get_completion(messages = messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
+        response = self.client.get_completion(messages = messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model),
+                                              response_format=_RESPONSE_FORMAT)
 
         candidates = []
         for choice in response.choices:

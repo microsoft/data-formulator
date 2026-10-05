@@ -682,6 +682,7 @@ it('opens terminal and Python calls from their chart step with aligned tool icon
       children: React.createElement(LayoutProvider, { children: React.createElement(DataThread) }) }) }));
     const step = screen.getByText('Compare storage accounts').closest('[data-thread-item]')! as HTMLElement;
     const activity = screen.getByText('Tool activity').closest('button')!;
+    expect(document.querySelectorAll('[data-tool-activity-row]')).toHaveLength(1);
     expect(within(step).queryByTestId('CodeIcon')).toBeNull();
     const group = activity.closest('[data-secondary-activity]')! as HTMLElement;
     expect(group.querySelector('[data-activity-gutter] svg')).toBeNull();

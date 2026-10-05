@@ -38,7 +38,7 @@ import { AppDispatch } from '../app/store';
 import { WorkflowProgress } from './WorkflowPanel';
 import { formArtifactStatus } from '../app/setupForms';
 import { WorkflowGears } from '../components/FunComponents';
-import { createExternalTableReference, loadsAsConnectorReference, isSemanticConnectorTable, deleteWorkspaceFile, importConnectorFile, listWorkspaceFiles, onWorkspaceFilesChanged, type WorkspaceFile } from '../app/workspaceService';
+import { createExternalTableReference, externalReferenceTitle, loadsAsConnectorReference, isSemanticConnectorTable, deleteWorkspaceFile, importConnectorFile, listWorkspaceFiles, onWorkspaceFilesChanged, type WorkspaceFile } from '../app/workspaceService';
 import dfLogo from '../assets/df-logo.svg';
 
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -57,7 +57,7 @@ import 'prismjs/components/prism-typescript' // Language
 import 'prismjs/themes/prism.css'; //Example style, you can use another
 
 import { checkChartAvailability, generateChartSkeleton, getDataTable } from './ChartUtils';
-import { getConversationInputContext, getConversationSourceKey, getThreadLeadUpTurns, getThreadConversationIds, getThreadTriggers, isThreadLeafTable, resolveThreadParentTableId, orderThreadOutputs, resolveArtifactParentNodeId, getStepTerminalExecutions, getStepCodeExecutions } from './threadProvenance';
+import { getConversationInputContext, getConversationSourceKey, getThreadLeadUpTurns, getThreadConversationIds, getThreadTriggers, isThreadLeafTable, resolveThreadParentTableId, orderThreadOutputs, resolveArtifactParentNodeId, getStepTerminalExecutions, getStepCodeExecutions, getStepExecutionTurns } from './threadProvenance';
 
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import AddIcon from '@mui/icons-material/Add';
@@ -739,6 +739,7 @@ let SingleThreadGroupView: FC<{
     const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
     let textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
     const loadedTableNodes = useSelector((state: DataFormulatorState) => state.loadedTableNodes);
+    const externalReferences = useSelector((state: DataFormulatorState) => state.externalTableReferences);
     const fileNodes = useSelector((state: DataFormulatorState) => state.fileNodes);
     const generatedReports = useSelector(dfSelectors.getThreadReports);
 
@@ -1668,7 +1669,8 @@ let SingleThreadGroupView: FC<{
 
     type ConversationPart = { startsTurn: boolean; keepVisible: boolean; render: () => void };
     const getTurnConversationParts = (turn: TextTurn, previousTurn: TextTurn | undefined,
-        keyNode: string, highlighted: boolean, triggerType: 'trigger' | 'leaf-trigger', hasResult: boolean): ConversationPart[] => {
+        keyNode: string, highlighted: boolean, triggerType: 'trigger' | 'leaf-trigger', hasResult: boolean,
+        activityShownByStep = false): ConversationPart[] => {
         const parts: ConversationPart[] = [];
         const isExecutionTurn = !!(turn.executions?.length || turn.codeExecutions?.length);
         const turnHighlighted = highlighted
@@ -1694,7 +1696,7 @@ let SingleThreadGroupView: FC<{
                 const completedExecutionStep = isExecutionTurn && !isTurnActive(turn)
                     && !textTurns.some(candidate => (candidate.executions?.length || candidate.codeExecutions?.length)
                         && candidate.actionId && candidate.actionId === turn.actionId && candidate.createdAt > turn.createdAt);
-                if ((!isExecutionTurn || completedExecutionStep) && !turn.workflowMessage
+                if ((!isExecutionTurn || (completedExecutionStep && !activityShownByStep)) && !turn.workflowMessage
                     && (!turn.workflow || !textTurns.some(card => card.workflowCardFor === turn.id))
                     && (turn.content || !(reportsByParentNode.get(turn.id) || []).length)) {
                     timelineItems.push(item);
@@ -1859,6 +1861,30 @@ let SingleThreadGroupView: FC<{
 
     const pushLoadedTables = (turnId: string, triggerType: 'trigger' | 'leaf-trigger', includeFollowups = true) => {
         for (const node of loadedTablesByTurn.get(turnId) || []) {
+            if (node.external) {
+                const reference = externalReferences.find(item => item.id === node.tableId);
+                if (!reference) continue;
+                const title = externalReferenceTitle(reference);
+                timelineItems.push({
+                    key: node.id,
+                    outputNodeId: node.id,
+                    type: 'table',
+                    highlighted: false,
+                    element: <Box data-external-reference-id={reference.id} className="data-thread-card-wrapper">
+                        <ThreadArtifactCard artifactType="table" title={title}
+                            selected={focusedId?.type === 'external-table' && focusedId.referenceId === reference.id}
+                            onClick={() => dispatch(dfActions.setFocused({ type: 'external-table', referenceId: reference.id }))}>
+                            <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                                <Typography component="span" sx={{ minWidth: 0, fontSize: textVar.sm, fontWeight: 500,
+                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</Typography>
+                                <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary', opacity: 0.75, flexShrink: 0 }}>
+                                    {t('externalReference.virtualNote', { defaultValue: '(virtual)' })}</Typography>
+                            </Box>
+                        </ThreadArtifactCard>
+                    </Box>,
+                });
+                continue;
+            }
             const table = tableById.get(node.tableId);
             if (!table) continue;
             const isHL = highlightedTableIds.includes(table.id);
@@ -1911,8 +1937,12 @@ let SingleThreadGroupView: FC<{
         for (const turn of leadUp) {
             renderedLeadUpTurnIds.add(turn.id);
         }
+        // The step's instruction lists these calls under its own activity group.
+        const stepActivityTurnIds = trigger?.interaction?.some(entry => entry.role === 'instruction'
+            && !entry.executions?.length && !entry.codeExecutions?.length)
+            ? new Set(getStepExecutionTurns(tableId, tables, textTurns).map(turn => turn.id)) : undefined;
         const parts = leadUp.flatMap((turn, index) => getTurnConversationParts(
-            turn, leadUp[index - 1], tableId, highlighted, triggerType, true,
+            turn, leadUp[index - 1], tableId, highlighted, triggerType, true, stepActivityTurnIds?.has(turn.id),
         ));
         let afterEntries: InteractionEntry[] = [];
         if (trigger) {

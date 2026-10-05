@@ -1018,6 +1018,9 @@ export const dataFormulatorSlice = createSlice({
             if (!reference) return;
             replaceStoredTable(state, { ...table, displayId: reference.displayName });
             state.externalTableReferences = state.externalTableReferences.filter(item => item.id !== referenceId);
+            state.loadedTableNodes = state.loadedTableNodes.map(node => node.external && node.tableId === referenceId
+                ? { kind: node.kind, id: node.id, tableId: table.id, parentNodeId: node.parentNodeId, createdAt: node.createdAt }
+                : node);
             state.workspaceItemOrder = state.workspaceItemOrder.map(key => key === referenceId ? `shelf-card-${table.id}` : key);
             delete state.starterQuestions[referenceId];
             delete state.starterQuestionsStatus[referenceId];
@@ -1035,6 +1038,7 @@ export const dataFormulatorSlice = createSlice({
         removeExternalTableReference: (state, action: PayloadAction<string>) => {
             if (state.activeWorkspace?.readOnly) return;
             state.externalTableReferences = state.externalTableReferences.filter(item => item.id !== action.payload);
+            state.loadedTableNodes = state.loadedTableNodes.filter(node => !(node.external && node.tableId === action.payload));
             state.workspaceItemOrder = state.workspaceItemOrder.filter(key => key !== action.payload);
             delete state.starterQuestions[action.payload];
             delete state.starterQuestionsStatus[action.payload];
@@ -1266,7 +1270,9 @@ export const dataFormulatorSlice = createSlice({
             const existingIdx = state.loadedTableNodes.findIndex(item => item.id === node.id);
             if (existingIdx >= 0) state.loadedTableNodes[existingIdx] = node;
             else state.loadedTableNodes.push(node);
-            state.focusedId = { type: 'reference', referenceId: node.id };
+            state.focusedId = node.external
+                ? { type: 'external-table', referenceId: node.tableId }
+                : { type: 'reference', referenceId: node.id };
         },
         upsertFileNode: (state, action: PayloadAction<FileNode>) => {
             const node = action.payload;

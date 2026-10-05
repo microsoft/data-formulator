@@ -402,6 +402,11 @@ def _lenient_json_loads(json_str: str):
         return json.loads(cleaned)
 
 
+def json_response_format(name: str, schema: dict, strict: bool = True) -> dict:
+    """Ask for JSON matching ``schema``; use ``strict=False`` for open-ended shapes (strict needs fixed keys)."""
+    return {"type": "json_schema", "json_schema": {"name": name, "schema": schema, "strict": strict}}
+
+
 def extract_json_objects(text):  
     """Extracts JSON objects and arrays from a text string.  
     Returns a list of parsed JSON objects and arrays.  
