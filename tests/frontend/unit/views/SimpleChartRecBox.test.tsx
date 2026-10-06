@@ -659,6 +659,32 @@ describe('Analyst landing attachment handoff', () => {
         }
     });
 
+    it('adds and opens an HTML app when the agent writes one', async () => {
+        const refreshed = vi.fn();
+        window.addEventListener('df:workspace-files-changed', refreshed);
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'action', action: 'write_html_app', file: {
+                name: 'sales_app.html', path: 'files/sales_app.html', display_name: 'Sales explorer',
+                content_hash: 'app-hash', url: '/api/workspace/files/sales_app.html',
+            } };
+            yield { type: 'completion', status: 'success', content: { summary: 'The app compares revenue by region.' } };
+        });
+        try {
+            const { store } = mountTask({ text: 'Build an interactive sales dashboard', images: [], attachments: [] });
+            await waitFor(() => expect(store.getState().fileNodes).toHaveLength(1));
+            expect(refreshed).toHaveBeenCalled();
+            expect(store.getState().fileNodes[0]).toMatchObject({
+                path: 'sales_app.html', displayName: 'Sales explorer', contentHash: 'app-hash',
+            });
+            await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+            await waitFor(() => expect(dfSelectors.selectCanvasTarget(store.getState()))
+                .toEqual({ type: 'file', fileName: 'sales_app.html' }));
+            expect(store.getState().inputTables).toHaveLength(0);
+        } finally {
+            window.removeEventListener('df:workspace-files-changed', refreshed);
+        }
+    });
+
     it.each(['create_file', 'edit_file'])('refreshes artifacts immediately after %s without adding a durable table', async tool => {
         const refreshed = vi.fn();
         let finishRun!: () => void;

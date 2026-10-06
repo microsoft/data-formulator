@@ -1,0 +1,32 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "write_html_app",
+      "description": "Create an interactive HTML app as a new workspace file and open it on the canvas. The app runs in a sandbox without network access and reads the declared workspace tables live through the DF runtime. Revise an existing app with edit_file instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "New visible filename ending in .html, without directories, for example sales_explorer.html."
+          },
+          "title": {
+            "type": "string",
+            "description": "Short single-line title shown to the user (at most 80 characters)."
+          },
+          "tables": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Workspace table names the app reads with DF.query or DF.table. Only these tables are available to the app."
+          },
+          "html": {
+            "type": "string",
+            "description": "The complete HTML document, with inline CSS and JavaScript only. Do not load external scripts, stylesheets, fonts, or images."
+          }
+        },
+        "required": ["filename", "title", "tables", "html"]
+      }
+    }
+  }
+]

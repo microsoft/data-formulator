@@ -209,7 +209,6 @@
     "backToEditor": "Back to editor",
     "editReport": "Edit report",
     "doneEditing": "Done editing",
-    "createChartifactReport": "Create Chartifact report",
     "shareReportAsImage": "Share report as image",
     "couldNotFindContent": "Could not find report content to capture",
     "failedToGenerateImage": "Failed to generate image",
@@ -247,7 +246,6 @@
     "aiDisclaimer": "AI generated the post from the selected charts, and it could be inaccurate!",
     "showAllReports": "show all reports",
     "reports": "reports",
-    "createChartifact": "Create Chartifact",
     "copied": "Copied!",
     "copyContent": "Copy content",
     "contentCopied": "Report content copied to clipboard.",
@@ -1425,5 +1423,14 @@
     "confirmDeleteOne": "Delete session?",
     "confirmDeleteBody": "Its data, charts, and files are removed. This cannot be undone.",
     "delete": "Delete"
+  },
+  "htmlApp": {
+    "reload": "Reload app",
+    "appError": "App error",
+    "navigationBlocked": "The app tried to navigate away and was stopped. Reload it to try again.",
+    "tooManyQueries": "Too many pending data requests.",
+    "frameTitle": "{{title}} (sandboxed app)",
+    "previewApp": "Preview app",
+    "created": "Created app: {{title}}"
   }
 }

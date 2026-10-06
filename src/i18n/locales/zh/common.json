@@ -209,7 +209,6 @@
     "backToEditor": "返回编辑器",
     "editReport": "编辑报告",
     "doneEditing": "完成编辑",
-    "createChartifactReport": "创建 Chartifact 报告",
     "shareReportAsImage": "以图片分享报告",
     "couldNotFindContent": "无法找到要截取的报告内容",
     "failedToGenerateImage": "生成图片失败",
@@ -247,7 +246,6 @@
     "aiDisclaimer": "AI 根据所选图表生成了此报告，内容可能不准确！",
     "showAllReports": "显示所有报告",
     "reports": "报告",
-    "createChartifact": "创建 Chartifact",
     "copied": "已复制！",
     "copyContent": "复制内容",
     "contentCopied": "报告内容已复制到剪贴板。",
@@ -1425,5 +1423,14 @@
     "confirmDeleteOne": "删除会话？",
     "confirmDeleteBody": "其数据、图表和文件将被删除。此操作无法撤销。",
     "delete": "删除"
+  },
+  "htmlApp": {
+    "reload": "重新加载应用",
+    "appError": "应用错误",
+    "navigationBlocked": "应用尝试跳转到其他页面，已被阻止。请重新加载后重试。",
+    "tooManyQueries": "待处理的数据请求过多。",
+    "frameTitle": "{{title}}（沙盒应用）",
+    "previewApp": "预览应用",
+    "created": "已创建应用：{{title}}"
   }
 }

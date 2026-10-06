@@ -209,7 +209,6 @@
     "backToEditor": "संपादक पर वापस जाएं",
     "editReport": "रिपोर्ट संपादित करें",
     "doneEditing": "संपादन पूर्ण",
-    "createChartifactReport": "Chartifact रिपोर्ट बनाएं",
     "shareReportAsImage": "रिपोर्ट को छवि के रूप में साझा करें",
     "couldNotFindContent": "कैप्चर करने के लिए रिपोर्ट सामग्री नहीं मिली",
     "failedToGenerateImage": "छवि बनाने में विफल",
@@ -247,7 +246,6 @@
     "aiDisclaimer": "AI ने चयनित चार्ट्स से पोस्ट बनाई है, और यह गलत हो सकती है!",
     "showAllReports": "सभी रिपोर्ट दिखाएं",
     "reports": "रिपोर्ट",
-    "createChartifact": "Chartifact बनाएं",
     "copied": "कॉपी किया गया!",
     "copyContent": "सामग्री कॉपी करें",
     "contentCopied": "रिपोर्ट सामग्री क्लिपबोर्ड पर कॉपी हुई।",
@@ -1425,5 +1423,14 @@
     "confirmDeleteOne": "सत्र हटाएं?",
     "confirmDeleteBody": "इसका डेटा, चार्ट और फ़ाइलें हटा दी जाएंगी। इसे पूर्ववत नहीं किया जा सकता।",
     "delete": "हटाएं"
+  },
+  "htmlApp": {
+    "reload": "ऐप फिर से लोड करें",
+    "appError": "ऐप त्रुटि",
+    "navigationBlocked": "ऐप ने किसी दूसरे पेज पर जाने की कोशिश की और उसे रोक दिया गया। फिर से प्रयास करने के लिए इसे फिर से लोड करें।",
+    "tooManyQueries": "बहुत सारे डेटा अनुरोध लंबित हैं।",
+    "frameTitle": "{{title}} (सैंडबॉक्स ऐप)",
+    "previewApp": "ऐप का पूर्वावलोकन करें",
+    "created": "ऐप बनाया गया: {{title}}"
   }
 }

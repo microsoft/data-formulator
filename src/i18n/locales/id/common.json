@@ -209,7 +209,6 @@
     "backToEditor": "Kembali ke editor",
     "editReport": "Ubah laporan",
     "doneEditing": "Selesai menyunting",
-    "createChartifactReport": "Buat laporan Chartifact",
     "shareReportAsImage": "Bagikan laporan sebagai gambar",
     "couldNotFindContent": "Tidak dapat menemukan konten laporan untuk ditangkap",
     "failedToGenerateImage": "Gagal menghasilkan gambar",
@@ -247,7 +246,6 @@
     "aiDisclaimer": "AI menghasilkan kiriman dari bagan yang dipilih, dan bisa tidak akurat!",
     "showAllReports": "tampilkan semua laporan",
     "reports": "laporan",
-    "createChartifact": "Buat Chartifact",
     "copied": "Tersalin!",
     "copyContent": "Salin konten",
     "contentCopied": "Konten laporan disalin ke papan klip.",
@@ -1425,5 +1423,14 @@
     "confirmDeleteOne": "Hapus sesi?",
     "confirmDeleteBody": "Data, grafik, dan file-nya akan dihapus. Tindakan ini tidak dapat dibatalkan.",
     "delete": "Hapus"
+  },
+  "htmlApp": {
+    "reload": "Muat ulang aplikasi",
+    "appError": "Kesalahan aplikasi",
+    "navigationBlocked": "Aplikasi mencoba berpindah ke halaman lain dan dihentikan. Muat ulang untuk mencoba lagi.",
+    "tooManyQueries": "Terlalu banyak permintaan data yang tertunda.",
+    "frameTitle": "{{title}} (aplikasi sandbox)",
+    "previewApp": "Pratinjau aplikasi",
+    "created": "Aplikasi dibuat: {{title}}"
   }
 }

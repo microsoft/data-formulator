@@ -20,6 +20,11 @@ declare module "*.css" {
 
 declare module "prettier";
 
+declare module "*?raw" {
+    const content: string;
+    export default content;
+}
+
 declare module "prettier/parser-babel";
 
 declare module "vm-browserify";

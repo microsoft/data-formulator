@@ -209,7 +209,6 @@
     "backToEditor": "エディターに戻ります",
     "editReport": "レポートを編集します",
     "doneEditing": "編集を終了しました",
-    "createChartifactReport": "Chartifactレポートを作成します",
     "shareReportAsImage": "レポートを画像として共有します",
     "couldNotFindContent": "キャプチャするレポートコンテンツが見つかりませんでした",
     "failedToGenerateImage": "画像の生成に失敗しました",
@@ -247,7 +246,6 @@
     "aiDisclaimer": "AIが選択チャートから投稿を生成しました。不正確な場合があります！",
     "showAllReports": "すべてのレポートを表示します",
     "reports": "レポート",
-    "createChartifact": "Chartifactを作成します",
     "copied": "コピーしました！",
     "copyContent": "コンテンツをコピーします",
     "contentCopied": "レポートコンテンツをクリップボードにコピーしました。",
@@ -1425,5 +1423,14 @@
     "confirmDeleteOne": "セッションを削除しますか？",
     "confirmDeleteBody": "データ、グラフ、ファイルが削除されます。この操作は元に戻せません。",
     "delete": "削除します"
+  },
+  "htmlApp": {
+    "reload": "アプリを再読み込み",
+    "appError": "アプリのエラー",
+    "navigationBlocked": "アプリが別のページへ移動しようとしたため停止しました。再読み込みしてもう一度お試しください。",
+    "tooManyQueries": "保留中のデータ要求が多すぎます。",
+    "frameTitle": "{{title}}（サンドボックス アプリ）",
+    "previewApp": "アプリをプレビュー",
+    "created": "アプリを作成しました: {{title}}"
   }
 }

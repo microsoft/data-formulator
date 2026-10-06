@@ -2,6 +2,7 @@ import React, { FC, Suspense, useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, IconButton, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import WrapTextIcon from '@mui/icons-material/WrapText';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { useDispatch, useSelector } from 'react-redux';
 import { CompactMarkdown } from './InteractionEntryCard';
 import { MarkdownEditor } from '../components/MarkdownEditor';
@@ -32,6 +33,8 @@ const WorkspaceWorkbookPreview = React.lazy(() => import('./WorkspaceWorkbookPre
 const WorkspacePdfPreview = React.lazy(() => import('./WorkspacePdfPreview').then(module => ({
     default: module.WorkspacePdfPreview,
 })));
+
+const HtmlAppPreview = React.lazy(() => import('./HtmlAppPreview'));
 
 const textDrafts = new Map<string, { content: string; savedContent: string; hash: string }>();
 
@@ -75,6 +78,9 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
     const invalidName = !trimmedName || /[\\/]/.test(trimmedName) || Array.from(trimmedName).some(character => character.charCodeAt(0) < 32) || trimmedName === '.' || trimmedName === '..';
     const [saveError, setSaveError] = useState('');
     const isMarkdown = /\.(md|markdown)$/i.test(fileName);
+    const isHtml = /\.html?$/i.test(fileName);
+    const hasPreview = isMarkdown || isHtml;
+    const [appReloadKey, setAppReloadKey] = useState(0);
     const dirty = textFile !== null && textFile.content !== textFile.savedContent;
     const [preview, setPreview] = useState<WorkspaceFilePreview | null>(null);
     const [pdfFile, setPdfFile] = useState<Blob | null>(null);
@@ -132,7 +138,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 const file = await readWorkspaceTextFile(fileName);
                 if (!cancelled) {
                     setTextFile(textDrafts.get(draftKey) || { content: file.content, savedContent: file.content, hash: file.content_hash });
-                    setMode(isMarkdown && file.content.length > 0 && !textDrafts.has(draftKey) ? 'preview' : 'edit');
+                    setMode(hasPreview && file.content.length > 0 && !textDrafts.has(draftKey) ? 'preview' : 'edit');
                 }
                 return null;
             } catch {
@@ -155,7 +161,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
             cancelled = true;
             if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
-    }, [fileName, isPdf, isMarkdown, draftKey, t, fileRevision, temporary, sourceFile]);
+    }, [fileName, isPdf, isMarkdown, hasPreview, draftKey, t, fileRevision, temporary, sourceFile]);
 
     const save = async () => {
         if (!textFile || readOnly || saving || discardOpen || renameOpen || renaming) return;
@@ -244,13 +250,16 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                     <Box sx={{ flex: 1 }} />
                     {textFile && <>
                         <Box role="group" aria-label="View controls" sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
-                            {isMarkdown && <ToggleButtonGroup exclusive value={mode} size="small" aria-label="File view"
+                            {hasPreview && <ToggleButtonGroup exclusive value={mode} size="small" aria-label="File view"
                                 onChange={(_, value) => { if (value) setMode(value); }}
                                 sx={{ flexShrink: 0, '& .MuiToggleButton-root': { minHeight: 28, px: 1, py: 0.25, fontSize: textVar.md, textTransform: 'none', lineHeight: 1.4, border: 0, borderRadius: '4px !important' } }}>
                                 <ToggleButton value="edit" aria-label={readOnly ? 'View source' : 'Edit source'}>{readOnly ? 'Source' : 'Edit'}</ToggleButton>
-                                <ToggleButton value="preview" aria-label="Preview Markdown">Preview</ToggleButton>
+                                <ToggleButton value="preview" aria-label={isHtml ? t('htmlApp.previewApp') : 'Preview Markdown'}>Preview</ToggleButton>
                             </ToggleButtonGroup>}
-                            {(!isMarkdown || mode === 'edit') && <Tooltip title="Wrap lines">
+                            {isHtml && mode === 'preview' && <Tooltip title={t('htmlApp.reload')}>
+                                <IconButton aria-label={t('htmlApp.reload')} onClick={() => setAppReloadKey(value => value + 1)}><RefreshIcon /></IconButton>
+                            </Tooltip>}
+                            {(!hasPreview || mode === 'edit') && <Tooltip title="Wrap lines">
                                 <IconButton aria-label="Wrap lines" aria-pressed={lineWrap} onClick={() => setLineWrap(value => !value)} color={lineWrap ? 'primary' : 'default'}><WrapTextIcon /></IconButton>
                             </Tooltip>}
                         </Box>
@@ -333,7 +342,11 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 </Suspense>}
                 {!loading && imageUrl && <Box component="img" src={imageUrl} alt={fileName}
                     sx={{ display: 'block', maxWidth: '100%', maxHeight: '100%', mx: 'auto', objectFit: 'contain' }} />}
-                {!loading && textFile && (isMarkdown && mode === 'preview'
+                {!loading && textFile && (isHtml && mode === 'preview'
+                    ? <Suspense fallback={<LoadingStatus label={t('dataThread.loadingFilePreview', { defaultValue: 'Loading file preview...' })} sx={{ height: '100%', p: 2 }} />}>
+                        <HtmlAppPreview html={textFile.content} title={fileName} reloadKey={appReloadKey} />
+                    </Suspense>
+                    : isMarkdown && mode === 'preview'
                     ? <Box sx={{ height: '100%', overflow: 'auto', px: 3, py: 2, boxSizing: 'border-box', fontSize: textVar.md, overflowWrap: 'anywhere', '& img': { maxWidth: '100%' }, '& pre': { overflow: 'auto' } }}>
                         <CompactMarkdown content={textFile.content} color="text.primary" variant="document" />
                     </Box>

@@ -1551,6 +1551,33 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 return;
             }
 
+            // write_html_app → add the saved app to the thread and open it.
+            if (result.type === "action" && result.action === "write_html_app") {
+                const file = result.file;
+                if (file && typeof file.path === 'string' && file.path.startsWith('files/')
+                    && typeof file.content_hash === 'string') {
+                    const fileName = file.path.slice('files/'.length);
+                    notifyWorkspaceFilesChanged();
+                    dispatch(dfActions.upsertFileNode({
+                        kind: 'file', id: `file-${fileName}`, path: fileName,
+                        displayName: file.display_name || fileName,
+                        contentHash: file.content_hash,
+                        parentNodeId: currentDraftId || runLastNodeRef.current || askedFromTable || askedFromNode,
+                        createdAt: Date.now(),
+                    }));
+                    dispatch(dfActions.setFocused({ type: 'file', fileName }));
+                    if (pendingThought) {
+                        addProgressStep(pendingThought, 'thought');
+                        pendingThought = '';
+                    }
+                    addProgressStep(t('htmlApp.created', { title: file.display_name || fileName }), 'info');
+                    if (currentDraftId) {
+                        publishProgress();
+                    }
+                }
+                return;
+            }
+
             // ── context_info: show injected rules/knowledge at the top ──
             if (result.type === "context_info") {
                 const rules: string[] = result.rules_injected || [];
