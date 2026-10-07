@@ -314,7 +314,8 @@ def _configured_max_fetch_bytes() -> int:
     try:
         from flask import current_app, has_app_context
         if has_app_context():
-            return int(current_app.config.get('CLI_ARGS', {}).get('scratch_max_file_bytes', DEFAULT_MAX_FETCH_BYTES))
+            from data_formulator.configuration import effective_limit
+            return effective_limit('scratch_max_file_bytes')
     except Exception:
         pass
     return DEFAULT_MAX_FETCH_BYTES

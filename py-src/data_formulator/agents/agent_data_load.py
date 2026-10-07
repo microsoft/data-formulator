@@ -4,7 +4,7 @@
 import json
 
 from data_formulator.agent_config import reasoning_effort_for
-from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
+from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, json_response_format
 from data_formulator.agents.agent_diagnostics import AgentDiagnostics
 from data_formulator.agents.agent_language import inject_language_instruction
 from data_formulator.agents.semantic_types import (
@@ -16,6 +16,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 _AGENT_ID = "data_load"
+# Open-ended: `fields` is keyed by the table's column names.
+_RESPONSE_FORMAT = json_response_format("data_types", {
+    "type": "object", "required": ["suggested_table_name", "fields", "data_summary"],
+    "properties": {"suggested_table_name": {"type": "string"}, "data_summary": {"type": "string"},
+                   "fields": {"type": "object", "additionalProperties": {"type": "object"}}},
+}, strict=False)
 
 
 SYSTEM_PROMPT = '''You are a data scientist to help user infer data types based off the table provided by the user.
@@ -27,8 +33,10 @@ Given a dataset provided by the user,
     - good names: "Monthly Sales", "Stock Prices", "Survey Responses", "US GDP Quarterly"
     - bad names: "data", "result", "table1", "d_weekly_fuel_prices", "raw-data-filtered"
     - aim for 2-4 words, no more than 24 characters. Be smart with abbreviations but keep it readable.
+    - preserve the subject and scope of imported subsets from their name, description, and import filters. Do not rename distinct subsets to the same generic source name. Retain meaningful existing names even when longer than 24 characters.
 2. identify their type and semantic type
 3. provide a very short summary of the dataset.
+    - include known filter scope and row limits; distinguish selected columns from selected rows. Do not infer full-source coverage or missing rows from a small sample or unusual value distribution.
 
 Types to consider include: string, number, date, datetime, time, duration
 
@@ -201,7 +209,8 @@ class DataLoadAgent(object):
         messages = [{"role":"system", "content": self.system_prompt},
                     {"role":"user","content": user_query}]
         
-        response = self.client.get_completion(messages = messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
+        response = self.client.get_completion(messages = messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model),
+                                              response_format=_RESPONSE_FORMAT)
 
         candidates = []
         for choice in response.choices:

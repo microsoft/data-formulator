@@ -79,6 +79,8 @@ export const ScrollFadeEdge: React.FC<{
             [edge]: 0,
             height: SCROLL_FADE.height,
             pointerEvents: 'none',
+            // Outlined input labels sit at z-index 1; the fade must cover them too.
+            zIndex: 2,
             opacity: visible ? 1 : 0,
             transition: 'opacity 0.2s ease',
             background: (theme) => {

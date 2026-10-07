@@ -21,13 +21,13 @@
     "type": "function",
     "function": {
       "name": "write_report",
-      "description": "Deliver a Markdown report and end the run. `report` is the full report text (embed charts with ![caption](chart://chart_id)).",
+      "description": "Deliver a Markdown report and return an observation. `report` is the full report text; embed verified charts with ![caption](chart://chart_id). Follow the baseline completion rules after delivery.",
       "parameters": {
         "type": "object",
         "properties": {
           "report": {
             "type": "string",
-            "description": "The full Markdown report text. Embed charts with ![caption](chart://chart_id) referencing IDs from [AVAILABLE CHARTS]."
+            "description": "The full Markdown report text. Embed charts with ![caption](chart://chart_id) using IDs from [AVAILABLE CHARTS] or successful visualize results."
           }
         },
         "required": ["report"]

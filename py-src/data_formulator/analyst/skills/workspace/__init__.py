@@ -1,0 +1,1 @@
+"""Analyst workspace input and memory capability."""

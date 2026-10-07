@@ -84,6 +84,11 @@ export const DataOperationCard: React.FC<DataOperationCardProps> = ({
                     );
                 })}
             </List>
+            {(operation.resultReferences || []).map(reference => (
+                <Typography key={reference.id} color="text.secondary" sx={{ mt: 0.5, fontSize: textVar.xs }}>
+                    {t('dataLoading.operation.virtualSource', { defaultValue: '{{name}}: Virtual source (rows remain remote)', name: reference.displayName })}
+                </Typography>
+            ))}
             {operation.failedSteps.length > 0 && (
                 <Box sx={{ py: 1 }}>
                     <Typography variant="body2" color="error">

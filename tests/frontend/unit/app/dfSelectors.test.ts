@@ -15,6 +15,7 @@ const makeMinimalState = (
     models: [],
     globalModels: [],
     selectedModelId: undefined,
+    serverConfig: { DISABLE_CUSTOM_MODELS: false },
     ...overrides,
   } as unknown as DataFormulatorState;
 };
@@ -111,7 +112,36 @@ describe('dfSelectors.getActiveModel', () => {
       models: [userModel],
       globalModels: undefined,
       selectedModelId: 'user-1',
+      serverConfig: { DISABLE_CUSTOM_MODELS: false },
     } as unknown as DataFormulatorState;
     expect(dfSelectors.getActiveModel(state)).toEqual(userModel);
+  });
+
+  it('should ignore user models when custom models are disabled', () => {
+    const userModel = makeModel({ id: 'user-1' });
+    const globalModel = makeModel({ id: 'global-1' });
+    const state = makeMinimalState({ models: [userModel], globalModels: [globalModel], selectedModelId: 'user-1' });
+    (state as any).serverConfig = { DISABLE_CUSTOM_MODELS: true };
+    expect(dfSelectors.getActiveModel(state)).toEqual(globalModel);
+  });
+});
+
+describe('dfSelectors.selectSessionEmpty', () => {
+  const makeEmptySession = (workspaceFileCount: number): DataFormulatorState => ({
+    inputTables: [],
+    derivedTables: [],
+    textTurns: [],
+    draftNodes: [],
+    generatedReports: [],
+    analystChatPending: null,
+    workspaceFileCount,
+  } as unknown as DataFormulatorState);
+
+  it('keeps a workspace that contains a non-table file', () => {
+    expect(dfSelectors.selectSessionEmpty(makeEmptySession(1))).toBe(false);
+  });
+
+  it('discards a workspace with no tables, files, or interactions', () => {
+    expect(dfSelectors.selectSessionEmpty(makeEmptySession(0))).toBe(true);
   });
 });

@@ -25,11 +25,29 @@ export const duplicateField = (field: FieldItem) => {
     } as FieldItem;
 }
 
-export const ROOTLESS_THREAD_ID = '__rootless_thread__';
+export const createConversationRootId = (id: string = crypto.randomUUID()) => `conversation-root:${id}`;
+export const isConversationRootId = (id: string | undefined): boolean =>
+    !!id?.startsWith('conversation-root:');
+
+export type ComputationInputSource = {
+    id: string;
+    kind: 'data' | 'file';
+    displayName: string;
+    contentHash?: string;
+};
+
+export interface DataProvenance {
+    origin: string;
+    role: string;
+    editPolicy: string;
+    inputSources: ComputationInputSource[];
+    stale: boolean;
+}
 
 export interface Trigger {
+    externalReferenceId?: string;
     // On which table this action is triggered. A run started before any data
-    // exists has none, so it carries `ROOTLESS_THREAD_ID` instead.
+    // exists carries its conversation root ID instead.
     tableId: string,
 
     chart?: Chart, // what's the intented chart from the user when running formulation
@@ -52,7 +70,7 @@ export interface ClarificationOption {
 
 export interface ClarificationQuestion {
     text: string;
-    responseType?: 'single_choice' | 'free_text';
+    responseType?: 'single_choice' | 'multi_choice' | 'free_text';
     options?: ClarificationOption[];
 }
 
@@ -64,19 +82,34 @@ export interface ClarificationResponse {
     answer: string;
     /** Opaque selected option value; never rendered as the user's answer. */
     value?: string;
-    source: 'option' | 'free_text' | 'freeform';
+    /** multi_choice: the selected option labels, in option order. */
+    selections?: string[];
+    source: 'option' | 'free_text' | 'freeform' | 'skip';
 }
 
 /** Legacy persisted value retained only for rendering historical sessions. */
 export type DelegateTarget = 'data_loading' | 'report_gen';
+
+export interface ProgressStep {
+    id: string;
+    kind: 'thought' | 'tool' | 'chart' | 'warning' | 'info';
+    label: string;
+    status: 'running' | 'completed' | 'failed' | 'interrupted' | 'unknown';
+    tool?: string;
+    toolCallId?: string;
+    executionId?: string;
+}
 
 export interface InteractionEntry {
     from: Actor;
     to: Actor;
     role: 'prompt' | 'clarify' | 'instruction' | 'error' | 'explain' | 'delegate';
     plan?: string; // agent's reasoning / thought for this action
+    progressSteps?: ProgressStep[];
     content: string;
     displayContent?: string;
+    executions?: TerminalExecution[];
+    codeExecutions?: CodeExecution[];
     /** Names of files / images the user attached with this prompt, surfaced as
      *  chips in the message bubble (the file bytes live in workspace scratch/,
      *  not here). */
@@ -95,9 +128,60 @@ export type DeriveStatus = 'running' | 'clarifying' | 'completed' | 'error' | 'i
 export interface LoadedTableNode {
     kind: 'loaded-table';
     id: string;
+    /** With `external`, the id of an ExternalTableReference instead of a workspace table. */
     tableId: string;
+    external?: boolean;
     parentNodeId: string;
     createdAt: number;
+}
+
+export interface FileNode {
+    kind: 'file';
+    id: string;
+    path: string;
+    displayName: string;
+    contentHash: string;
+    parentNodeId: string;
+    createdAt: number;
+    notes?: string;
+}
+
+export interface ExternalTableReference {
+    kind: 'external-table-reference';
+    id: string;
+    connectorId: string;
+    connectorName?: string;
+    sourceLocation?: { address: string; database?: string };
+    tableKey: string;
+    sourceTable: { id: string; name: string };
+    displayName: string;
+    capturedAt: string;
+    // Semantic models have no raw rows to copy; they are only queried.
+    queryModel?: 'semantic';
+    summary: {
+        description?: string;
+        columns: { name: string; type: string; source_type?: string; description?: string;
+            // Semantic models only: field role, declared aggregation, and owning model table.
+            role?: string; aggregation?: string; entity?: string }[];
+        relationships?: unknown[];
+        rowCount?: number;
+        sizeBytes?: number;
+        sampleRows?: Record<string, unknown>[];
+        sampleTruncated?: boolean;
+        sampleColumns?: string[];
+        inspection?: {
+            schema_source?: string;
+            schema_complete?: boolean;
+            row_count_status?: string;
+            sample_status?: string;
+            sample_method?: string;
+            filtered?: boolean;
+            row_limit?: number;
+            columns_omitted?: number;
+            values_truncated?: boolean;
+        };
+    };
+    queryIntent?: Record<string, unknown>;
 }
 
 export interface PendingClarification {
@@ -111,11 +195,14 @@ export interface DraftNode {
     id: string;
     displayId: string;
     parentNodeId: string;
+    createdAt?: number;
     derive: {
         source: string[];
+        inputSources?: ComputationInputSource[];
         trigger: Trigger;
         status: DeriveStatus;
         runningPlan?: string; // live agent thought text while running
+        progressSteps?: ProgressStep[];
         code?: string;
         codeSignature?: string;
         outputVariable?: string;
@@ -125,7 +212,7 @@ export interface DraftNode {
     actionId?: string;
 }
 
-export type ThreadNode = DraftNode | DictTable | LoadedTableNode;
+export type ThreadNode = DraftNode | DictTable | LoadedTableNode | FileNode;
 
 /**
  * A first-class interaction in the thread: either a clarify/explain turn or a
@@ -136,23 +223,107 @@ export type ThreadNode = DraftNode | DictTable | LoadedTableNode;
  * Deleting either uses the same generic artifact path. Delegate is not a turn;
  * a hand-off is an agent action handled directly.
  */
+export interface TerminalFilesystemPolicy {
+    allowWrite: string[];
+    configured: boolean;
+    requested: string[];
+    skipped: string[];
+}
+
+export interface TerminalExecution {
+    id: string;
+    createdAt?: number;
+    argv: string[];
+    cwd: string;
+    purpose: string;
+    writePaths?: string[];
+    dangerouslyDisableSandbox?: boolean;
+    sandboxDisablingReason?: string;
+    sandboxFilesystem?: TerminalFilesystemPolicy;
+    status: 'awaiting_approval' | 'running' | 'completed' | 'failed' | 'rejected' | 'interrupted' | 'unknown';
+    commandText?: string;
+    result?: Record<string, unknown>;
+}
+
+export interface CodeExecution {
+    id: string;
+    createdAt?: number;
+    tool: string;
+    purpose: string;
+    code: string;
+    status: 'running' | 'completed' | 'failed' | 'interrupted' | 'unknown';
+    output?: string;
+    error?: string;
+}
+
+export interface WorkflowDefinition {
+    name: string; overview: string; prompt?: string; source?: unknown; deliverables: string[];
+    parameters?: { name: string; label: string; type?: 'text' | 'number' | 'boolean' | 'select'; description?: string;
+        required?: boolean; default?: string | number | boolean; options?: string[]; allow_custom?: boolean }[];
+    steps?: { id: string; instructions: string; description?: string; next?: string;
+        checkers?: { id: string; condition: string; when?: 'before' | 'during' | 'after'; on_fail?: string }[] }[];
+}
+
 export interface TextTurn {
+    progressSteps?: ProgressStep[];
+    externalReferenceId?: string;
+    workflowCardFor?: string;
+    workflowMessage?: { runId: string; messageId: string; status: 'queued' | 'received'; kind?: 'steering' | 'reply'; afterOutputIds?: string[] };
     kind: 'text';
     id: string;
     displayId: string;
     /** clarify carries `options`; explain has none. */
     textKind: 'clarify' | 'explain';
+    presentation?: 'long_response';
     /** Markdown: the question preamble, or the answer. */
     content: string;
     /** The user message that triggered this turn (shown with the card so the
      *  exchange stays self-contained — the run produced no table to anchor it). */
     prompt?: string;
+    outputIds?: string[];
+    workflow?: {
+        runId: string;
+        status: string;
+        stepId: string;
+        calls: number;
+        toolCalls?: number;
+        activity?: string;
+        pauseRequested?: boolean;
+        interruptedResponse?: string;
+        overview?: string;
+        prompt?: string;
+        deliverables?: string[];
+        setup?: { parameters: Record<string, string | number | boolean>; instructions: string };
+        activeTool?: { id: string; tool: string; step_id: string; details: Record<string, string>; input?: Record<string, unknown> };
+        appliedMessageIds?: string[];
+        planRevision?: number;
+        planReviewPending?: boolean;
+        planHistory?: { revision: number; reason: string; steps: NonNullable<TextTurn['workflow']>['steps'];
+            checks: NonNullable<NonNullable<TextTurn['workflow']>['checks']> }[];
+        terminalRequest?: { id: string; argv: string[]; cwd: string; purpose: string; timeout_seconds: number;
+            dangerouslyDisableSandbox?: boolean; sandboxDisablingReason?: string; sandboxFilesystem?: TerminalFilesystemPolicy };
+        dataOperation?: DataOperation;
+        interactionId?: string;
+        questions?: ClarificationQuestion[];
+        steps: { id: string; description?: string; instructions: string; status: 'pending' | 'current' | 'reviewing' | 'passed' | 'failed' | 'visited' | 'completed'; checkIds?: string[];
+            elapsedSeconds?: number;
+            next?: string; checkers?: { id: string; condition?: string; when?: 'before' | 'during' | 'after'; on_fail?: string }[];
+            assessment?: { status: string; explanation: string; evidence_ids: string[] } }[];
+        outputVersions: Record<string, string>;
+        artifacts?: { nodeId: string; chartId?: string; stepId?: string; planRevision: number }[];
+        checks?: { id: string; status: string; explanation: string }[];
+        transitions?: { from: string; to: string; reason: string; plan_revision?: number }[];
+        log?: { id: string; tool: string; text: string; call?: number; step_id?: string; plan_revision?: number; details?: Record<string, string>; input?: Record<string, unknown> }[];
+    };
+    executions?: TerminalExecution[];
+    codeExecutions?: CodeExecution[];
     /** clarify only (empty/undefined ⇒ a plain explanation). */
     options?: ClarificationQuestion[];
     /** Display-only immutable loading alternatives for a data-operation pause. */
     dataOperation?: DataOperation;
     /** A user-confirmed form artifact that owns the canvas while focused. */
     form?: FormArtifact;
+    sourceFormId?: string;
     /** True once the user has responded to THIS clarify — it then locks
      *  (read-only). A later response is a *new* conversation, not a re-answer. */
     answered?: boolean;
@@ -181,6 +352,7 @@ export interface TextTurn {
         completedStepCount: number;
         operationId?: string;
     };
+    startedAt?: number;
     createdAt: number;
 }
 
@@ -210,58 +382,8 @@ export interface DataCleanBlock {
     dialogItem?: any; // Store the dialog item from the model response
 }
 
-// ── Conversational data loading chat types ────────────────────────────────
-
-export interface ChatAttachment {
-    type: 'image' | 'file' | 'text_file';
-    name: string;
-    url?: string;           // data URL or object URL for images
-    scratchPath?: string;   // path in workspace scratch folder (for large files)
-    preview?: string;       // first N lines for text files
-}
-
-export interface InlineTablePreview {
-    name: string;
-    columns: string[];
-    sampleRows: Record<string, any>[];  // first 5-10 rows
-    totalRows: number;
-    csvScratchPath?: string;
-}
-
-export interface CodeExecution {
-    code: string;
-    stdout?: string;
-    error?: string;
-    resultTable?: InlineTablePreview;
-}
-
-export interface PendingTableLoad {
-    name: string;
-    csvScratchPath: string;
-    preview: InlineTablePreview;
-    confirmed: boolean;
-}
-
-export interface LoadPlanCandidate {
-    sourceId: string;
-    tableKey: string;
-    displayName: string;
-    sourceTable: string;
-    sourceTableName?: string;
-    query?: LoadQuery;
-    /** Backend-detected reason this candidate cannot be loaded (unknown source_id, missing table_key, etc.). */
-    resolutionError?: string;
-}
-
-export interface LoadPlan {
-    response: string;
-    options: Array<{ label: string; tables: LoadPlanCandidate[] }>;
-    confirmed?: boolean;
-}
-
 /**
- * Agent-proposed inline connection form (design 38). Rendered as a card in the
- * data-loading chat so the user can enter credentials and connect without
+ * Agent-proposed connection form. The user can enter credentials and connect without
  * leaving the conversation. One prompt === one form card === one new connection.
  */
 export interface ConnectorFormPrompt {
@@ -273,31 +395,80 @@ export interface ConnectorFormPrompt {
     tableCount?: number;                // optional: tables discovered on connect
 }
 
-export interface ConnectorFormArtifact {
-    kind: 'connector';
+/**
+ * Shared shape of agent-proposed setup forms (configure skill). Each form is a
+ * prefilled artifact the user reviews and submits through the same API as the
+ * matching manual dialog.
+ */
+interface SetupFormBase {
     title: string;
-    connector: ConnectorFormPrompt;
 }
 
-/** Canvas-owning form artifacts. Add future form kinds to this union. */
-export type FormArtifact = ConnectorFormArtifact;
-
-export interface ChatMessage {
+/** An existing item the agent proposed to revise; the user may update it or save a new one. */
+export interface SetupFormTarget {
     id: string;
-    role: 'user' | 'assistant';
-    content: string;                    // markdown text
-    attachments?: ChatAttachment[];     // images, files attached by user
-    tables?: InlineTablePreview[];      // tables to show inline (assistant only)
-    codeBlocks?: CodeExecution[];       // executed code + results (assistant only)
-    pendingLoads?: PendingTableLoad[];  // tables awaiting user confirmation
-    loadPlan?: LoadPlan;                // Agent-proposed data loading plan
-    dataOperation?: DataOperation;      // Immutable option-based loading proposal
-    connectorForm?: ConnectorFormPrompt; // Agent-proposed inline connection form
-    divider?: boolean;                  // renders a "new request" separator instead of a bubble; excluded from agent history
-    hidden?: boolean;                   // included in agent history but NOT rendered (e.g. a post-connect trigger that continues the conversation)
-    canContinue?: boolean;              // agent paused at the tool-call limit — show a "Continue" button to resume the task
-    timestamp: number;
+    name: string;
 }
+
+export interface ConnectorFormArtifact extends SetupFormBase {
+    kind: 'connector';
+    connector: ConnectorFormPrompt;
+    draft?: {
+        revision: number;
+        fields: string[];
+        changedByAgent: string[];
+        conflict: boolean;
+    };
+}
+
+export interface ScheduleConfig {
+    name: string; workflow: string; model_id: string; time: string; timezone: string; weekdays: number[];
+    enabled: boolean; auto_approve: boolean; max_retries: number; catch_up: boolean;
+    /** Language for the run's reports and messages; unattended runs cannot read the app language. */
+    language?: string;
+    setup?: { parameters: Record<string, string | number | boolean>; instructions: string };
+}
+
+export interface ScheduleFormArtifact extends SetupFormBase {
+    kind: 'schedule';
+    schedule: {
+        /** Existing schedule being edited; absent when creating one. */
+        target?: SetupFormTarget;
+        config: Partial<ScheduleConfig>;
+        workflowName?: string;
+        /** Values the agent could not verify; the user resolves them before saving. */
+        issues?: string[];
+        status?: 'pending' | 'saved';
+        savedId?: string;
+        nextAt?: string;
+    };
+}
+
+export interface SessionsFormArtifact extends SetupFormBase {
+    kind: 'sessions';
+    sessions: {
+        /** Sessions listed in the panel; each is renamed, opened, or deleted on its own. */
+        items: {
+            sessionId: string; currentName: string; suggestedName?: string; reason?: string;
+            current?: boolean; updatedAt?: string; tableCount?: number; chartCount?: number; deleted?: boolean; renamed?: boolean;
+        }[];
+        open?: { sessionId: string; displayName: string };
+    };
+}
+
+export interface WorkflowFormArtifact extends SetupFormBase {
+    kind: 'workflow';
+    workflow: {
+        content: string;
+        definition: WorkflowDefinition;
+        /** Saved user workflow (by path) this proposal revises. */
+        target?: SetupFormTarget;
+        saved?: { path: string; content_hash: string };
+    };
+}
+
+/** Canvas-owning form artifacts. Add future setup form kinds to this union. */
+export type FormArtifact = ConnectorFormArtifact | ScheduleFormArtifact | SessionsFormArtifact | WorkflowFormArtifact;
 
 // Data source types for tracking where data originated
 export type DataSourceType = 'paste' | 'file' | 'url' | 'stream' | 'database' | 'example' | 'extract';
@@ -334,6 +505,8 @@ export interface DataSourceConfig {
 
     // The original table name before backend sanitization (e.g. "Sales Report 2024")
     originalTableName?: string;
+    importedFrom?: { connectorId: string; tableKey: string };
+    loadQuery?: { sourceTable?: string; query: Record<string, unknown> };
 }
 
 export type InputTableSource =
@@ -370,7 +543,6 @@ export interface FieldSemanticsInfo {
 
 export interface TableSemanticsInfo {
     tableId: string;
-    displayName?: string;
     fields: Record<string, FieldSemanticsInfo>;
 }
 
@@ -397,12 +569,14 @@ export interface InputTable {
     description: string;
     sourceConfig?: DataSourceConfig;
     addedAt: number;
+    dataProvenance?: DataProvenance;
 }
 
 export interface DictTable {
     kind: 'table'; // discriminant for ThreadNode union
     id: string; // name/id of the table
     displayId: string; // display id of the table 
+    dataProvenance?: DataProvenance;
     
     names: string[]; // column names
     metadata: {[key: string]: {
@@ -423,6 +597,7 @@ export interface DictTable {
     rows: any[]; // table content, each entry is a row
     derive?: { // how is this table derived
         source: string[], // which tables are this table computed from
+        inputSources?: ComputationInputSource[], // durable data/file inputs used by the computation
         code: string,
         codeSignature?: string, // HMAC-SHA256 signature proving code was generated by the server
         outputVariable: string, // the Python variable name containing the result DataFrame (required)
@@ -677,6 +852,9 @@ export interface ConnectorInstance {
     deletable?: boolean;
     params_form: Array<{name: string; type: string; required: boolean; default?: string | number | boolean; options?: string[]; advanced?: boolean; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
     pinned_params: Record<string, string>;
+    configured_params?: Record<string, string | number | boolean> | null;
+    /** Which instance this connector points at (cluster, host, bucket…), resolved by the loader. */
+    connection_identity?: string;
     hierarchy: Array<{key: string; label: string}>;
     effective_hierarchy: Array<{key: string; label: string}>;
     auth_mode?: string;

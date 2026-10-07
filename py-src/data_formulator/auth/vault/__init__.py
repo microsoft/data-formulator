@@ -70,7 +70,6 @@ def get_credential_vault() -> Optional[CredentialVault]:
     """Return the global :class:`CredentialVault` singleton.
 
     Returns ``None`` when:
-    - Data connectors are disabled (nothing needs credentials)
     - Key resolution fails
     """
     global _vault, _initialized
@@ -78,16 +77,6 @@ def get_credential_vault() -> Optional[CredentialVault]:
         return _vault
 
     _initialized = True
-
-    # Skip vault creation when data connectors are disabled (e.g. ephemeral
-    # demo deployments).  No connectors → no credentials to store.
-    try:
-        from flask import current_app
-        if current_app.config.get('CLI_ARGS', {}).get('disable_data_connectors'):
-            logger.info("Credential vault skipped (data connectors disabled)")
-            return None
-    except RuntimeError:
-        pass  # Outside Flask request context — continue normally
 
     home = get_data_formulator_home()
     key = _resolve_key(home)

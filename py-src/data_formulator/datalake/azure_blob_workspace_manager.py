@@ -26,6 +26,7 @@ from data_formulator.datalake.workspace_manager import (
     WorkspaceManager,
     SESSION_STATE_FILENAME,
     WORKSPACE_META_FILENAME,
+    _session_source_ids,
     _strip_sensitive,
 )
 
@@ -121,6 +122,8 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
         *,
         table_count: Optional[int] = None,
         chart_count: Optional[int] = None,
+        source_ids: Optional[list[str]] = None,
+        scheduled_run: Optional[dict] = None,
     ) -> None:
         """Upload a lightweight ``workspace_meta.json`` blob for fast listing.
 
@@ -133,6 +136,7 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
 
         # Preserve createdAt if the meta blob already exists.
         created_at = now_iso
+        existing: dict = {}
         if self._blob_exists(blob_name):
             try:
                 existing = json.loads(self._download_blob(blob_name))
@@ -152,8 +156,20 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
         }
         if table_count is not None:
             meta["tableCount"] = table_count
+        elif existing.get("tableCount") is not None:
+            meta["tableCount"] = existing["tableCount"]
         if chart_count is not None:
             meta["chartCount"] = chart_count
+        elif existing.get("chartCount") is not None:
+            meta["chartCount"] = existing["chartCount"]
+        if source_ids is not None:
+            meta["sourceIds"] = source_ids
+        elif isinstance(existing.get("sourceIds"), list):
+            meta["sourceIds"] = existing["sourceIds"]
+        if scheduled_run is not None:
+            meta["scheduledRun"] = scheduled_run
+        elif existing.get("scheduledRun"):
+            meta["scheduledRun"] = existing["scheduledRun"]
         self._upload_blob(blob_name, json.dumps(meta, ensure_ascii=False))
 
     def _ensure_meta(self, workspace_id: str) -> dict:
@@ -208,7 +224,9 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
                 "created_at": meta.get("createdAt") or meta.get("updatedAt"),
                 "updated_at": meta.get("updatedAt"),
                 "table_count": meta.get("tableCount"),
+                "scheduled_run": meta.get("scheduledRun"),
                 "chart_count": meta.get("chartCount"),
+                "source_ids": meta.get("sourceIds", []),
             })
 
         workspaces.sort(key=lambda w: w.get("updated_at") or "", reverse=True)
@@ -331,11 +349,20 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
 
         aw = clean_state.get("activeWorkspace")
         dn = aw["displayName"] if isinstance(aw, dict) and aw.get("displayName") else workspace_id
-        tables = clean_state.get("tables")
+        tables = clean_state.get("inputTables")
+        if not isinstance(tables, list):
+            tables = clean_state.get("tables")
         tc = len(tables) if isinstance(tables, list) else None
         charts = clean_state.get("charts")
         cc = len(charts) if isinstance(charts, list) else None
-        self._upload_meta(workspace_id, dn, table_count=tc, chart_count=cc)
+        self._upload_meta(
+            workspace_id,
+            dn,
+            table_count=tc,
+            chart_count=cc,
+            source_ids=_session_source_ids(clean_state),
+            scheduled_run=aw.get("scheduledRun") if isinstance(aw, dict) else None,
+        )
 
         logger.debug(f"Saved session state to blob {blob_name}")
 

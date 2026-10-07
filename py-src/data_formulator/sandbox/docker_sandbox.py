@@ -135,7 +135,7 @@ class DockerSandbox(Sandbox):
             )
 
             script_path = os.path.join(tmpdir, "run.py")
-            with open(script_path, "w") as f:
+            with open(script_path, "w", encoding="utf-8") as f:
                 f.write(wrapper_script)
 
             # ---- assemble docker command --------------------------------------

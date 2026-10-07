@@ -22,13 +22,100 @@ vi.mock('../../../../src/app/stateMigrations', () => ({
 
 import { ApiRequestError } from '../../../../src/app/apiClient';
 import { workspaceDB } from '../../../../src/app/workspaceDB';
-import { listWorkspaces, loadWorkspace, saveWorkspaceState, WorkspaceLoadSupersededError } from '../../../../src/app/workspaceService';
+import { listWorkspaceFiles, listWorkspaces, loadWorkspace, saveWorkspaceState, WorkspaceLoadSupersededError, isLargeConnectorTable, loadsAsConnectorReference, createExternalTableReference } from '../../../../src/app/workspaceService';
+import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
 import { getInputTablePreview } from '../../../../src/app/inputTablePreviewCache';
 
 beforeEach(() => {
     vi.restoreAllMocks();
     mockState.serverConfig.WORKSPACE_BACKEND = 'ephemeral';
     mockState.activeWorkspace = { id: 'workspace-1', displayName: 'Temporary session' };
+});
+
+describe('scheduled run sessions', () => {
+    const session = {
+        activeWorkspace: { id: 'scheduled-run', displayName: 'Daily report', readOnly: true,
+            scheduledRun: { scheduleId: 'test', scheduleName: 'Daily report', scheduledFor: '2026-09-30T09:00:00Z' } },
+        textTurns: [{ id: 'scheduled-summary-run', kind: 'text', content: 'Completed', createdAt: 1 }],
+    };
+    const run = { id: 'run', status: 'paused', step_id: 'inspect', message: 'Execution failed.', started_at: '2026-09-30T09:00:00Z',
+        instance: { name: 'Daily report', steps: [{ id: 'inspect', instructions: 'Inspect source' }] },
+        evidence: { failed: { tool: 'inspect_data', text: 'Source unavailable', step_id: 'inspect' } },
+        outputs: [{ id: 'chart-output', type: 'result', content: { result: { chart_id: 'chart-test', content: { virtual: { table_name: 'summary_data' } } } } }] };
+
+    it('honors the server read-only flag without saving a browser recovery copy', async () => {
+        mockState.serverConfig.WORKSPACE_BACKEND = 'local';
+        const requestSpy = vi.spyOn(await import('../../../../src/app/apiClient'), 'apiRequest')
+            .mockResolvedValue({ data: { state: session, read_only: true } });
+        const result = await loadWorkspace('scheduled-run');
+        expect(result?.readOnly).toBe(true);
+        expect(result?.workflowRun).toBeUndefined();
+        expect(requestSpy).toHaveBeenCalledOnce();
+    });
+
+    it('restores the workflow turn and returns the checkpoint so its outputs publish from the workspace', async () => {
+        mockState.serverConfig.WORKSPACE_BACKEND = 'local';
+        vi.spyOn(await import('../../../../src/app/apiClient'), 'apiRequest').mockResolvedValue({ data: {
+            state: { ...session, activeWorkspace: { ...session.activeWorkspace, readOnly: false } }, workflow_run: run } });
+        const result = await loadWorkspace('scheduled-run');
+        expect(result?.readOnly).toBe(false);
+        expect(result?.workflowRun).toBe(run);
+        expect(result?.state.textTurns).toHaveLength(1);
+        expect(result?.state.textTurns[0].workflow).toMatchObject({ runId: 'run', status: 'paused',
+            steps: [expect.objectContaining({ id: 'inspect' })], log: [expect.objectContaining({ text: 'Source unavailable' })] });
+        expect(result?.state.focusedId).toEqual({ type: 'text', textId: 'textTurn-workflow-run' });
+    });
+});
+
+describe('external table reference artifacts', () => {
+    it('uses configured thresholds with strict boundaries and preserves zero', () => {
+        const config = { EXTERNAL_TABLE_MAX_ROWS: 100, EXTERNAL_TABLE_MAX_BYTES: 1024 };
+        expect(isLargeConnectorTable({ row_count: 100, size_bytes: 1024 }, config)).toBe(false);
+        expect(isLargeConnectorTable({ row_count: 101 }, config)).toBe(true);
+        expect(isLargeConnectorTable({ file_size: 1025 }, config)).toBe(true);
+        expect(isLargeConnectorTable({ row_count: 1 }, { EXTERNAL_TABLE_MAX_ROWS: 0 })).toBe(true);
+        expect(isLargeConnectorTable({}, config)).toBe(false);
+        expect(isLargeConnectorTable({ row_count: 1000001 }, { EXTERNAL_TABLE_MAX_ROWS: 2000000 })).toBe(false);
+    });
+
+    it.each([
+        [null, false], [{}, false], [{ row_count: 1_000_000 }, false],
+        [{ row_count: '1000001' }, true], [{ size_bytes: '19327352832' }, true],
+        [{ file_size: 18 * 1024 ** 3 }, true], [{ original_size_bytes: 0, size_bytes: 18 * 1024 ** 3 }, true],
+    ])('detects large source metadata %j', (metadata, expected) => {
+        expect(isLargeConnectorTable(metadata)).toBe(expected);
+    });
+
+    it('adds semantic models as references regardless of size', () => {
+        expect(loadsAsConnectorReference({ query_model: 'semantic' })).toBe(true);
+        expect(loadsAsConnectorReference({ query_model: 'relational', row_count: 10 })).toBe(false);
+        expect(loadsAsConnectorReference({ row_count: 2_000_000 })).toBe(true);
+    });
+
+    it('keeps references in session state without files or table imports', async () => {
+        const requestSpy = vi.spyOn(await import('../../../../src/app/apiClient'), 'apiRequest')
+            .mockResolvedValue({ data: {} });
+        const reference = createExternalTableReference({
+            kind: 'external-table-reference',
+            connectorId: 'adx', tableKey: 'events-key', sourceTable: { id: 'events', name: 'events' },
+            displayName: 'Events', capturedAt: '2026-09-18T00:00:00Z',
+            summary: { columns: [{ name: 'timestamp', type: 'datetime' }], rowCount: 19_521_849 },
+        });
+        let state = dataFormulatorReducer(undefined, dfActions.upsertExternalTableReference(reference));
+        state = dataFormulatorReducer(state, dfActions.upsertExternalTableReference(reference));
+        expect(state.externalTableReferences).toEqual([reference]);
+        expect(dfSelectors.selectSessionEmpty(state)).toBe(false);
+        expect(state.inputTables).toEqual([]);
+        expect(state.fileNodes).toEqual([]);
+        state = dataFormulatorReducer(state, dfActions.loadState(JSON.parse(JSON.stringify(state))));
+        expect(state.externalTableReferences).toEqual([reference]);
+        state = dataFormulatorReducer(state, dfActions.setFocused({ type: 'external-table', referenceId: reference.id }));
+        state = dataFormulatorReducer(state, dfActions.removeExternalTableReference(reference.id));
+        expect(state.externalTableReferences).toEqual([]);
+        expect(state.focusedId).toBeUndefined();
+        expect(dataFormulatorReducer(state, dfActions.resetState()).externalTableReferences).toEqual([]);
+        expect(requestSpy).not.toHaveBeenCalled();
+    });
 });
 
 describe('ephemeral workspace recovery', () => {
@@ -69,6 +156,15 @@ describe('ephemeral workspace recovery', () => {
 });
 
 describe('local workspace parity', () => {
+    it('lists durable workspace files without requesting scratch items', async () => {
+        const files = [{ name: 'summary.md', origin: 'agent' }, { name: 'source.txt', origin: null }];
+        const requestSpy = vi.spyOn(await import('../../../../src/app/apiClient'), 'apiRequest')
+            .mockResolvedValue({ data: { files } });
+
+        expect(await listWorkspaceFiles()).toEqual(files);
+        expect(requestSpy).toHaveBeenCalledExactlyOnceWith('/api/workspace/files');
+    });
+
     it('returns only the server workspace list without consulting recovery storage', async () => {
         mockState.serverConfig.WORKSPACE_BACKEND = 'local';
         vi.spyOn(await import('../../../../src/app/apiClient'), 'apiRequest').mockResolvedValue({

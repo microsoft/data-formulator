@@ -178,6 +178,7 @@ class AzureBlobWorkspace(Workspace):
         # file-level locking like the local workspace, so we use a threading
         # lock to serialise in-process read-modify-write cycles).
         self._metadata_lock = threading.Lock()
+        self._memory_lock = threading.RLock()
 
         # --- blob data cache -------------------------------------------------
         # Request-local in-memory cache of downloaded blob bytes keyed by
@@ -210,6 +211,14 @@ class AzureBlobWorkspace(Workspace):
     def _data_blob_key(self, filename: str) -> str:
         """Blob-internal key for a data file (under data/ subdirectory)."""
         return f"data/{filename}"
+
+    def _workspace_file_blob_key(self, filename: str) -> str:
+        """Blob-internal key for a non-tabular workspace file."""
+        return f"files/{filename}"
+
+    def _memory_blob_key(self, filename: str) -> str:
+        """Blob-internal key for a workspace memory artifact."""
+        return f"memory/{filename}"
 
     def _cache_key(self, filename: str) -> str:
         """Globally-unique key for the disk cache: container + full blob name."""
@@ -413,6 +422,34 @@ class AzureBlobWorkspace(Workspace):
 
     def file_exists(self, filename: str) -> bool:
         return self._blob_exists(self._data_blob_key(safe_data_filename(filename)))
+
+    def _write_workspace_file(self, filename: str, content: bytes) -> None:
+        self._upload_bytes(self._workspace_file_blob_key(filename), content)
+
+    def _rename_workspace_file(self, filename: str, new_filename: str) -> None:
+        if self._blob_exists(self._workspace_file_blob_key(new_filename)):
+            raise ValueError("A file with this name already exists")
+        self._write_workspace_file(new_filename, self._read_workspace_file(filename))
+        self._delete_workspace_file(filename)
+
+    def _read_workspace_file(self, filename: str) -> bytes:
+        return self._download_bytes(self._workspace_file_blob_key(filename))
+
+    def _delete_workspace_file(self, filename: str) -> None:
+        blob_key = self._workspace_file_blob_key(filename)
+        if self._blob_exists(blob_key):
+            self._delete_blob(blob_key)
+
+    def _write_memory_file(self, filename: str, content: bytes) -> None:
+        self._upload_bytes(self._memory_blob_key(filename), content)
+
+    def _read_memory_file(self, filename: str) -> bytes:
+        return self._download_bytes(self._memory_blob_key(filename))
+
+    def _delete_memory_file(self, filename: str) -> None:
+        blob_key = self._memory_blob_key(filename)
+        if self._blob_exists(blob_key):
+            self._delete_blob(blob_key)
 
     def delete_table(self, table_name: str) -> bool:
         metadata = self.get_metadata()
@@ -717,6 +754,11 @@ class AzureBlobWorkspace(Workspace):
                 local_file.parent.mkdir(parents=True, exist_ok=True)
                 data = self._container.download_blob(blob.name).readall()
                 local_file.write_bytes(data)
+            for name in self.list_scratch_files():
+                source = self.resolve_scratch_file(name.removeprefix("scratch/"))
+                target = tmp_path / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
             yield tmp_path
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
