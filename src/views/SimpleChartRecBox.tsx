@@ -27,9 +27,10 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, explanationContent, fetchCodeExpl, fetchColumnStats, fetchFieldSemanticType, generateFreshChart, generateStarterQuestions, GeneratedReport } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from '../app/utils';
+import { authoredFieldSemantics } from '../app/fieldSemantics';
 import { streamRequest, apiRequest } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
-import { Chart, ClarificationResponse, ComputationInputSource, DictTable, DraftNode, FieldItem, createDictTable, InteractionEntry, computeInsightKey, TextTurn, TableSemanticsInfo, createConversationRootId, ProgressStep } from "../components/ComponentType";
+import { Chart, ClarificationResponse, ComputationInputSource, DictTable, DraftNode, FieldItem, createDictTable, InteractionEntry, computeInsightKey, TextTurn, createConversationRootId, ProgressStep } from "../components/ComponentType";
 import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clarification';
 import { parseDataOperation } from '../dataOperations/models';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
@@ -45,6 +46,7 @@ import BoltIcon from '@mui/icons-material/Bolt';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import StopIcon from '@mui/icons-material/Stop';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
+import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
 
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
@@ -1073,6 +1075,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         let allNewConcepts: FieldItem[] = [];
         let isCompleted = false;
         let lastCreatedTableId: string | null = clarificationContext?.lastCreatedTableId ?? null;
+        let revisedAppFile: string | null = null;
 
         // ── DraftNode tracking ──
         // Local accumulator mirrors the DraftNode's interaction (avoids stale closure reads)
@@ -1288,6 +1291,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 ...(!lastCreatedTableId && runSourceChartIdRef.current
                     ? { sourceChartId: runSourceChartIdRef.current }
                     : {}),
+                ...(!lastCreatedTableId && revisedAppFile ? { revisedFile: revisedAppFile } : {}),
                 actionId,
                 progressSteps: snapshotProgress(true),
                 ...(resumeTraj ? { resume: {
@@ -1307,6 +1311,21 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             return turnId;
         };
         let reportFinalized = false;
+        // A pause (clarify / explain / interact) is a later committed action, so
+        // the report written earlier in this run is complete. Settle it here: the
+        // resumed run is a new request and would otherwise leave it "composing".
+        const settleReportOnPause = () => {
+            if (!reportId || reportFinalized) return;
+            reportFlushNow();
+            dispatch(dfActions.updateGeneratedReportContent({
+                id: reportId,
+                content: accumulatedReportMarkdown,
+                status: accumulatedReportMarkdown.trim() ? 'completed' : 'error',
+                title: accumulatedReportMarkdown.match(/^#\s+(.+)$/m)?.[1].trim(),
+                triggerTableId: lastCreatedTableId || focusedTableId || undefined,
+            }));
+            reportFinalized = true;
+        };
         const finalizeReport = (status: 'completed' | 'error', summary = '', result: any = {}) => {
             if (!reportId || reportFinalized) return;
             reportFlushNow();
@@ -1551,8 +1570,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 return;
             }
 
-            // write_html_app → add the saved app to the thread and open it.
-            if (result.type === "action" && result.action === "write_html_app") {
+            // write_app / write_html_app (new or rewritten in place) → add the app to the thread and open it.
+            if (result.type === "action" && (result.action === "write_app" || result.action === "write_html_app")) {
                 const file = result.file;
                 if (file && typeof file.path === 'string' && file.path.startsWith('files/')
                     && typeof file.content_hash === 'string') {
@@ -1570,7 +1589,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         addProgressStep(pendingThought, 'thought');
                         pendingThought = '';
                     }
-                    addProgressStep(t('htmlApp.created', { title: file.display_name || fileName }), 'info');
+                    addProgressStep(t(result.updated ? 'htmlApp.updated' : 'htmlApp.created', { title: file.display_name || fileName }), 'info');
                     if (currentDraftId) {
                         publishProgress();
                     }
@@ -1732,6 +1751,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             parentNodeId: currentDraftId || runLastNodeRef.current || askedFromTable || askedFromNode,
                             createdAt: Date.now(),
                         }));
+                        // A revised app comes into view, like a newly written one.
+                        if (result.tool === 'edit_file' && file.app === true) {
+                            revisedAppFile = fileName;
+                            dispatch(dfActions.setFocused({ type: 'file', fileName }));
+                            addProgressStep(t('htmlApp.updated', { title: file.display_name || fileName }), 'info');
+                        }
                     }
                 }
                 if (step) {
@@ -1845,35 +1870,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }
                 candidateTable.displayId = refinedGoal?.display_name || candidateTable.displayId;
 
-                const fieldMetadata = refinedGoal?.['field_metadata'];
-                const semanticFields: TableSemanticsInfo['fields'] = {};
-                if (fieldMetadata && typeof fieldMetadata === 'object') {
-                    for (const [fieldName, meta] of Object.entries(fieldMetadata)) {
-                        if (!candidateTable.metadata[fieldName]) continue;
-                        if (typeof meta === 'string') {
-                            semanticFields[fieldName] = { semanticType: meta };
-                        } else if (typeof meta === 'object' && meta !== null) {
-                            const m = meta as Record<string, any>;
-                            semanticFields[fieldName] = {
-                                ...(m['semantic_type'] ? { semanticType: m['semantic_type'] } : {}),
-                                ...(m['unit'] ? { unit: m['unit'] } : {}),
-                                ...(m['intrinsic_domain'] ? { intrinsicDomain: m['intrinsic_domain'] } : {}),
-                            };
-                        }
-                    }
-                }
-
-                const fieldDisplayNames = refinedGoal?.['field_display_names'];
-                if (fieldDisplayNames && typeof fieldDisplayNames === 'object') {
-                    for (const [fieldName, displayName] of Object.entries(fieldDisplayNames)) {
-                        if (candidateTable.metadata[fieldName] && typeof displayName === 'string') {
-                            semanticFields[fieldName] = { ...semanticFields[fieldName], displayName };
-                        }
-                    }
-                }
-
+                const semanticFields = authoredFieldSemantics(candidateTable.names,
+                    refinedGoal?.['field_metadata'], refinedGoal?.['field_display_names']);
                 if (Object.keys(semanticFields).length > 0) {
-                    dispatch(dfActions.upsertTableSemantics({ tableId: candidateTableId, fields: semanticFields }));
+                    dispatch(dfActions.applyAuthoredFieldSemantics({ tableId: candidateTableId, fields: semanticFields }));
                 }
 
                 createdTables.push(candidateTable);
@@ -2012,6 +2012,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             ...(dataOperation ? { dataOperation } : {}),
                             parentNodeId,
                             ...(runSourceChartIdRef.current ? { sourceChartId: runSourceChartIdRef.current } : {}),
+                            ...(isExplainEvent && !lastCreatedTableId && revisedAppFile ? { revisedFile: revisedAppFile } : {}),
                             actionId,
                             // Resume token (§12): present iff the backend stamped a
                             // trajectory on the event (clarify/interact does today).
@@ -2126,6 +2127,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     allResults.push(data);
                     await processStreamingResult(data);
                     if (data.type === "completion" || data.type === "clarify" || data.type === "explain" || data.type === "interact") {
+                        if (data.type !== "completion") settleReportOnPause();
                         handleCompletion();
                         return;
                     }
@@ -2505,14 +2507,23 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         }
     }, [charts, dispatch, focusedTableId]);
 
+    // A text panel can open over a file the canvas is already showing (an app or
+    // document the turn follows); closing the panel should leave that file in focus.
+    const keepCanvasFile = useCallback(() => {
+        if (canvasTarget?.type !== 'file') return false;
+        dispatch(dfActions.setFocused({ type: 'file', fileName: canvasTarget.fileName }));
+        return true;
+    }, [canvasTarget, dispatch]);
+
     // "Close" a live pause: keep the pending block in the thread, hide its
     // panel, and switch focus to the previous chart.
     const closePause = useCallback(() => {
         if (pendingClarification?.draftId) {
             setDismissedPauseDraftId(pendingClarification.draftId);
         }
+        if (keepCanvasFile()) return;
         switchFocusToPreviousChart();
-    }, [pendingClarification, switchFocusToPreviousChart]);
+    }, [pendingClarification, keepCanvasFile, switchFocusToPreviousChart]);
 
     // Drop the "closed pause" latch once that draft is gone (resolved / deleted)
     // so it never lingers as a stale filter.
@@ -2585,6 +2596,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // canvas returns to its empty state.
     const closeTextTurn = useCallback(() => {
         if (!focusedTextTurn) return;
+        if (keepCanvasFile()) return;
         if (focusedTextTurn.sourceChartId && charts.some(chart => chart.id === focusedTextTurn.sourceChartId)) {
             dispatch(dfActions.setFocused({ type: 'chart', chartId: focusedTextTurn.sourceChartId }));
             return;
@@ -2599,7 +2611,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             return;
         }
         dispatch(dfActions.setFocused(undefined));
-    }, [charts, dispatch, focusedTextTurn, tables, textTurns]);
+    }, [charts, dispatch, focusedTextTurn, keepCanvasFile, tables, textTurns]);
 
     const closeFocusedDraft = useCallback(() => {
         if (!focusedDraft) return;
@@ -3053,12 +3065,21 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 </IconButton>
                             </span>
                         </Tooltip>
-                        <Menu anchorEl={quickActionAnchor} open={!!quickActionAnchor} onClose={() => setQuickActionAnchor(null)}>
+                        <Menu anchorEl={quickActionAnchor} open={!!quickActionAnchor} onClose={() => setQuickActionAnchor(null)}
+                            anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+                            transformOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                            sx={{ '& .MuiMenu-paper': { mt: -0.5 }, '& .MuiMenuItem-root': { fontSize: textVar.sm } }}>
                             <MenuItem onClick={() => {
                                 setQuickActionAnchor(null);
                                 submitChat(t('chartRec.reportConversationPrompt'));
                             }}>
                                 <EditOutlinedIcon fontSize="small" sx={{ mr: 1 }} />{t('chartRec.writeReport')}
+                            </MenuItem>
+                            <MenuItem onClick={() => {
+                                setQuickActionAnchor(null);
+                                submitChat(t('chartRec.appConversationPrompt'));
+                            }}>
+                                <DashboardOutlinedIcon fontSize="small" sx={{ mr: 1 }} />{t('chartRec.createApp')}
                             </MenuItem>
                             <MenuItem onClick={() => {
                                 setQuickActionAnchor(null);

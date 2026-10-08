@@ -589,6 +589,8 @@
     "generateReport": "レポートを生成します",
     "quickActions": "クイックアクション",
     "writeReport": "レポートを書きます",
+    "createApp": "アプリを作成",
+    "appConversationPrompt": "現在の会話とデータから、インタラクティブなアプリ（ダッシュボードやエクスプローラー）を作るのを手伝ってください。作る前に、選べる有用な方向性をいくつか提案してください。",
     "createWorkflow": "ワークフローを作成します",
     "reportConversationPrompt": "現在の会話とデータからレポート作成を手伝ってください。下書き前に選べるよう、有用な方向をいくつか提案してください。",
     "reportPrompt": "この探索の主な発見をまとめたレポートを書きます。",
@@ -1425,12 +1427,16 @@
     "delete": "削除します"
   },
   "htmlApp": {
+    "askAgentToFix": "エージェントに修正を依頼",
     "reload": "アプリを再読み込み",
     "appError": "アプリのエラー",
     "navigationBlocked": "アプリが別のページへ移動しようとしたため停止しました。再読み込みしてもう一度お試しください。",
     "tooManyQueries": "保留中のデータ要求が多すぎます。",
     "frameTitle": "{{title}}（サンドボックス アプリ）",
+    "viewSource": "ソースを表示",
+    "editSource": "ソースを編集",
     "previewApp": "アプリをプレビュー",
-    "created": "アプリを作成しました: {{title}}"
+    "created": "アプリを作成しました: {{title}}",
+    "updated": "アプリを更新しました: {{title}}"
   }
 }

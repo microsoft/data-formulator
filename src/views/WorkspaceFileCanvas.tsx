@@ -3,6 +3,7 @@ import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogCont
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import WrapTextIcon from '@mui/icons-material/WrapText';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import CodeIcon from '@mui/icons-material/Code';
 import { useDispatch, useSelector } from 'react-redux';
 import { CompactMarkdown } from './InteractionEntryCard';
 import { MarkdownEditor } from '../components/MarkdownEditor';
@@ -25,6 +26,7 @@ import {
     type WorkspaceFilePreview,
 } from '../app/workspaceService';
 import { iconVar, textVar } from '../app/layout';
+import { floatingAppControlsRight, floatingPillSx } from '../app/tokens';
 
 const WorkspaceWorkbookPreview = React.lazy(() => import('./WorkspaceWorkbookPreview').then(module => ({
     default: module.WorkspaceWorkbookPreview,
@@ -35,6 +37,7 @@ const WorkspacePdfPreview = React.lazy(() => import('./WorkspacePdfPreview').the
 })));
 
 const HtmlAppPreview = React.lazy(() => import('./HtmlAppPreview'));
+const ReactAppPreview = React.lazy(() => import('./ReactAppPreview'));
 
 const textDrafts = new Map<string, { content: string; savedContent: string; hash: string }>();
 
@@ -42,14 +45,19 @@ const warnUnsavedDrafts = (event: BeforeUnloadEvent) => {
     if (textDrafts.size > 0) { event.preventDefault(); event.returnValue = ''; }
 };
 
-export const WorkspaceFileCanvas: FC<{ fileName: string; sourceFile?: File }> = ({ fileName, sourceFile }) => {
+/**
+ * `floatingAppControls`: the host canvas floats its own close button at the top
+ * right, so HTML apps can preview full-bleed with floating source/reload buttons.
+ */
+export const WorkspaceFileCanvas: FC<{ fileName: string; sourceFile?: File; floatingAppControls?: boolean }> = ({ fileName, sourceFile, floatingAppControls = false }) => {
     const identity = useSelector((state: DataFormulatorState) => state.identity);
     const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
     const draftKey = JSON.stringify([identity?.type, identity?.id, workspaceId, fileName]);
-    return <WorkspaceFileContent key={`${draftKey}:${!!sourceFile}`} fileName={fileName} draftKey={draftKey} sourceFile={sourceFile} />;
+    return <WorkspaceFileContent key={`${draftKey}:${!!sourceFile}`} fileName={fileName} draftKey={draftKey} sourceFile={sourceFile}
+        floatingAppControls={floatingAppControls} />;
 };
 
-const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?: File }> = ({ fileName, draftKey, sourceFile }) => {
+const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?: File; floatingAppControls: boolean }> = ({ fileName, draftKey, sourceFile, floatingAppControls }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch();
     const mounted = useRef(false);
@@ -79,9 +87,21 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
     const [saveError, setSaveError] = useState('');
     const isMarkdown = /\.(md|markdown)$/i.test(fileName);
     const isHtml = /\.html?$/i.test(fileName);
-    const hasPreview = isMarkdown || isHtml;
+    const isReactApp = /\.app\.jsx$/i.test(fileName);
+    const isApp = isHtml || isReactApp;
+    const hasPreview = isMarkdown || isApp;
     const [appReloadKey, setAppReloadKey] = useState(0);
     const dirty = textFile !== null && textFile.content !== textFile.savedContent;
+    // A canvas app previews full-bleed with floating controls; the file bar returns
+    // for source editing or whenever there is something to save.
+    const appChromeless = floatingAppControls && isApp && mode === 'preview' && textFile !== null && !sourceFile && !dirty && !saveError;
+    // Only agent-editable workspace apps can be repaired with edit_file.
+    const askAgentToFix = !readOnly && textFile && !dirty ? (errors: string[]) => dispatch(dfActions.queueAnalystTask({
+        text: `The app files/${fileName} shows these errors:\n${errors.map(error => `- ${error}`).join('\n')}\n`
+            + `Fix it in place with edit_file (path "files/${fileName}", expected_content_hash "${textFile.hash}"), `
+            + `preferably with targeted replacements; keep its df-app manifest and do not create a copy.`,
+        images: [], attachments: [],
+    })) : undefined;
     const [preview, setPreview] = useState<WorkspaceFilePreview | null>(null);
     const [pdfFile, setPdfFile] = useState<Blob | null>(null);
     const [workbookFile, setWorkbookFile] = useState<Blob | null>(null);
@@ -227,8 +247,23 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 event.preventDefault();
                 if (dirty) void save();
             }
-        }} sx={{ width: '100%', height: '100%', overflow: 'hidden', bgcolor: 'background.default', display: 'flex', flexDirection: 'column' }}>
-            <Box sx={{
+        }} sx={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', bgcolor: 'background.default', display: 'flex', flexDirection: 'column' }}>
+            {appChromeless && <Box role="group" aria-label="App controls" sx={{
+                // Sits left of the canvas pane's close button, which floats at the same corner.
+                position: 'absolute', top: 8, right: floatingAppControlsRight + 34, zIndex: 15, display: 'flex', alignItems: 'center', gap: 0.5,
+            }}>
+                <Tooltip title={readOnly ? t('htmlApp.viewSource') : t('htmlApp.editSource')}>
+                    <IconButton size="small" aria-label={readOnly ? t('htmlApp.viewSource') : t('htmlApp.editSource')} onClick={() => setMode('edit')} sx={floatingPillSx}>
+                        <CodeIcon sx={{ fontSize: iconVar.lg }} />
+                    </IconButton>
+                </Tooltip>
+                <Tooltip title={t('htmlApp.reload')}>
+                    <IconButton size="small" aria-label={t('htmlApp.reload')} onClick={() => setAppReloadKey(value => value + 1)} sx={floatingPillSx}>
+                        <RefreshIcon sx={{ fontSize: iconVar.lg }} />
+                    </IconButton>
+                </Tooltip>
+            </Box>}
+            {!appChromeless && <Box sx={{
                 minHeight: 36, flexShrink: 0, display: 'grid', alignItems: 'center', gap: 1,
                 gridTemplateColumns: isPdf && !textFile ? 'minmax(0, 1fr) auto minmax(40px, 1fr)' : 'minmax(0, 1fr)',
                 pl: 1.5, pr: 5, py: 0.25, boxSizing: 'border-box', borderBottom: '1px solid', borderColor: 'divider',
@@ -254,9 +289,9 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                                 onChange={(_, value) => { if (value) setMode(value); }}
                                 sx={{ flexShrink: 0, '& .MuiToggleButton-root': { minHeight: 28, px: 1, py: 0.25, fontSize: textVar.md, textTransform: 'none', lineHeight: 1.4, border: 0, borderRadius: '4px !important' } }}>
                                 <ToggleButton value="edit" aria-label={readOnly ? 'View source' : 'Edit source'}>{readOnly ? 'Source' : 'Edit'}</ToggleButton>
-                                <ToggleButton value="preview" aria-label={isHtml ? t('htmlApp.previewApp') : 'Preview Markdown'}>Preview</ToggleButton>
+                                <ToggleButton value="preview" aria-label={isApp ? t('htmlApp.previewApp') : 'Preview Markdown'}>Preview</ToggleButton>
                             </ToggleButtonGroup>}
-                            {isHtml && mode === 'preview' && <Tooltip title={t('htmlApp.reload')}>
+                            {isApp && mode === 'preview' && <Tooltip title={t('htmlApp.reload')}>
                                 <IconButton aria-label={t('htmlApp.reload')} onClick={() => setAppReloadKey(value => value + 1)}><RefreshIcon /></IconButton>
                             </Tooltip>}
                             {(!hasPreview || mode === 'edit') && <Tooltip title="Wrap lines">
@@ -307,7 +342,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                     </Box>
                 )}
                 {isPdf && !textFile && <Box />}
-            </Box>
+            </Box>}
             <Dialog open={renameOpen} onClose={() => { if (!renaming) setRenameOpen(false); }} maxWidth="xs" fullWidth aria-labelledby="rename-file-title">
                 <DialogTitle id="rename-file-title">Rename file</DialogTitle>
                 <DialogContent>
@@ -342,9 +377,11 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 </Suspense>}
                 {!loading && imageUrl && <Box component="img" src={imageUrl} alt={fileName}
                     sx={{ display: 'block', maxWidth: '100%', maxHeight: '100%', mx: 'auto', objectFit: 'contain' }} />}
-                {!loading && textFile && (isHtml && mode === 'preview'
+                {!loading && textFile && (isApp && mode === 'preview'
                     ? <Suspense fallback={<LoadingStatus label={t('dataThread.loadingFilePreview', { defaultValue: 'Loading file preview...' })} sx={{ height: '100%', p: 2 }} />}>
-                        <HtmlAppPreview html={textFile.content} title={fileName} reloadKey={appReloadKey} />
+                        {isReactApp
+                            ? <ReactAppPreview source={textFile.content} title={fileName} reloadKey={appReloadKey} reserveTopRight={appChromeless} onAskFix={askAgentToFix} />
+                            : <HtmlAppPreview html={textFile.content} title={fileName} reloadKey={appReloadKey} reserveTopRight={appChromeless} onAskFix={askAgentToFix} />}
                     </Suspense>
                     : isMarkdown && mode === 'preview'
                     ? <Box sx={{ height: '100%', overflow: 'auto', px: 3, py: 2, boxSizing: 'border-box', fontSize: textVar.md, overflowWrap: 'anywhere', '& img': { maxWidth: '100%' }, '& pre': { overflow: 'auto' } }}>

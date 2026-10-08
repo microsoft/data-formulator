@@ -74,6 +74,19 @@ class TestScratchFileInjection:
         for name in ["scratch/missing.parquet", "scratch/../data/private.parquet", "missing.md"]:
             assert "unavailable or expired" in agent._build_file_selection_context(name)
 
+    def test_selected_agent_file_is_editable_in_place(self, tmp_path):
+        agent = _agent()
+        agent.workspace = Workspace("test-user", root_dir=tmp_path)
+        user_file = agent.workspace.save_workspace_file(b"user", "notes.md")
+        agent_file = agent.workspace.save_workspace_file(b"app", "dash.app.jsx", agent_managed=True)
+        user_context = agent._build_file_selection_context("notes.md")
+        assert '"ownership": "user-managed"' in user_context
+        assert user_file.content_hash not in user_context
+        agent_context = agent._build_file_selection_context("dash.app.jsx")
+        assert '"ownership": "agent-managed"' in agent_context
+        assert '"edit_policy": "agent_editable"' in agent_context
+        assert f'"content_hash": "{agent_file.content_hash}"' in agent_context
+
     def test_scratch_note_injected(self):
         agent = _agent()
         msgs = agent._build_initial_messages(

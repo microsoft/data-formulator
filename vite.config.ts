@@ -1,12 +1,13 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import path from 'path';
+import { dfReactRuntime } from './vite-plugins/dfReactRuntime';
 
 // Get port from environment variable with fallback to 5567
 const apiPort = process.env.API_PORT || 5567;
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), dfReactRuntime({ root: __dirname, flintChartLocal: process.env.FLINT_CHART_LOCAL })],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

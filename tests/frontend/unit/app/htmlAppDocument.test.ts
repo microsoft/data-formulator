@@ -16,7 +16,9 @@ import {
 
 const theme: HtmlAppTheme = {
     font: 'Segoe UI, sans-serif', fontMono: 'monospace', text: '#111', muted: '#666', bg: '#fff',
-    surface: '#fafafa', border: '#ddd', primary: '#0067b8', palette: ['#4c78a8'],
+    canvas: '#f6f7f9', surface: '#fafafa', border: '#ddd', primary: '#0067b8', primarySoft: '#e5f0f8', primaryText: '#005a9e',
+    secondary: '#8764b8', accent: '#c85a17', positive: '#2e7d32', negative: '#d32f2f', warning: '#ed6c02',
+    textSize: { xxs: 10, xs: 11, sm: 12, md: 13, lg: 14, xl: 16, xxl: 18 }, palette: ['#4c78a8'],
 };
 const manifest = { version: 1, title: 'Sales', tables: ['sales'] };
 
@@ -64,6 +66,18 @@ describe('buildAppDocument', () => {
         expect(output).toContain('"channel":"c\\u003c1>"');
     });
 
+    it('exposes design tokens and injects the kit stylesheet before author styles', () => {
+        const output = buildAppDocument('<head><style>.author{}</style></head><body></body>', {
+            runtimeScripts: [], theme, config: {}, kitStylesheet: '.df-card{}',
+        });
+        expect(output).toContain('--df-primary-text:#005a9e');
+        expect(output).toContain('--df-text-md:13px');
+        expect(output).toContain('--df-palette-1:#4c78a8');
+        expect(output).toContain('--df-canvas:#f6f7f9');
+        expect(output.indexOf('.df-card{}')).toBeGreaterThan(output.indexOf('--df-primary'));
+        expect(output.indexOf('.df-card{}')).toBeLessThan(output.indexOf('.author{}'));
+    });
+
     it('blocks network access and keeps the container from framing external pages', () => {
         expect(APP_CSP).toContain("connect-src 'none'");
         expect(APP_CSP).toContain("default-src 'none'");
@@ -91,6 +105,28 @@ describe('normalizeAppQuery', () => {
             filters: [{ field: 'region', op: 'in', values: ['a', null] }, { field: 'amount', op: 'range', min: 1 }],
             search: 'x',
         });
+    });
+
+    it('accepts orderBy as a column, a list, or {field, descending} entries', () => {
+        const order = (options: Record<string, unknown>) => {
+            const request = normalizeAppQuery('sales', options, manifest);
+            return [request.order_by_fields, request.method];
+        };
+        expect(order({ orderBy: 'year' })).toEqual([['year'], 'head']);
+        expect(order({ orderBy: 'year', descending: true })).toEqual([['year'], 'bottom']);
+        expect(order({ orderBy: [{ field: 'Year', descending: false }] })).toEqual([['Year'], 'head']);
+        expect(order({ orderBy: [{ field: 'amount_sum', descending: true }, 'region'], descending: true }))
+            .toEqual([['amount_sum', 'region'], 'bottom']);
+        expect(order({ orderBy: [{ field: 'amount', order: 'DESC' }] })).toEqual([['amount'], 'bottom']);
+        expect(() => order({ orderBy: [{ field: 'a', descending: true }, 'b'] })).toThrow(/same direction/);
+        expect(() => order({ orderBy: [3] })).toThrow(/orderBy must be/);
+        expect(() => order({ orderBy: 'a', descending: 'yes' })).toThrow(/descending/);
+    });
+
+    it('rejects unknown options with the list of supported ones', () => {
+        expect(() => normalizeAppQuery('sales', { sort: 'year', where: {} }, manifest))
+            .toThrow('Unknown DF.query option "sort", "where"; use columns, aggregates, filters, search, orderBy, descending, limit, offset.');
+        expect(() => normalizeAppQuery('sales', 'year', manifest)).toThrow(/must be an object/);
     });
 
     it('applies default and maximum row limits', () => {
@@ -155,6 +191,31 @@ describe('DF app runtime', () => {
         expect(settled).not.toHaveBeenCalled();
         expect(posted.filter(message => message.type === 'query')).toHaveLength(0);
         expect(Object.isFrozen(DF)).toBe(true);
+    });
+
+    it('formats numbers, percents, deltas, and missing values', () => {
+        const { DF } = load();
+        expect(DF.format.number(1234.567)).toBe(new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(1235));
+        expect(DF.format.number(3.14159, 2)).toBe(new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(3.14));
+        expect(DF.format.percent(0.256)).toBe(new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 }).format(0.256));
+        expect(DF.format.delta(-1.5, 1)).toBe('\u2212' + new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(1.5));
+        expect(DF.format.delta(2, 0)).toBe('+2');
+        for (const missing of [null, undefined, NaN, '', 'n/a']) expect(DF.format.number(missing)).toBe('\u2014');
+        expect(DF.format.compact('1500')).toBe(new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(1500));
+        expect(DF.format.date('2021-05-01')).toBe(new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
+            .format(new Date(Date.UTC(2021, 4, 1))));
+    });
+
+    it('validates sparkline fields before rendering', async () => {
+        const { DF } = load();
+        await expect(DF.sparkline('#spark', [], { x: 'year' })).rejects.toThrow(/needs \{x, y\}/);
+        await expect(DF.sparkline('#missing', [], { x: 'year', y: 'value' })).rejects.toThrow(/target not found/);
+    });
+
+    it('reports undeclared table queries to the host', async () => {
+        const { DF, posted } = load();
+        await expect(DF.query('other')).rejects.toThrow(/not declared/);
+        expect(posted).toContainEqual({ dfApp: 'chan', type: 'error', message: 'DF.query: Table "other" is not declared in the app manifest.' });
     });
 
     it('reports host query errors to the caller', async () => {

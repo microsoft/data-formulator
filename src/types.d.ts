@@ -32,3 +32,8 @@ declare module "vm-browserify";
 declare module "vega-lite" {
     export function compile(spec: any, options?: any): { spec: any };
 }
+
+declare module "virtual:df-react-runtime" {
+    const source: string;
+    export default source;
+}

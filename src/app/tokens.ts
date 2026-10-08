@@ -162,6 +162,12 @@ export const transition = {
  * plain document backgrounds. Resting state is neutral; spread this and
  * override `color` / `&:hover` for destructive or active variants.
  */
+/**
+ * Right offset (px) for controls floating over a full-bleed HTML app: clears the
+ * app's own vertical scrollbar (~15px when scrollbars are always shown).
+ */
+export const floatingAppControlsRight = 24;
+
 export const floatingPillSx: SxProps = {
     backgroundColor: 'background.paper',
     border: `1px solid ${borderColor.divider}`,

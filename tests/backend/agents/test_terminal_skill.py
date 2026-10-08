@@ -563,6 +563,42 @@ def test_linux_terminal_mounts_host_read_only_and_scratch_writable(tmp_path, mon
         "--bind", str(state.resolve()), str(state.resolve())]
 
 
+def test_terminal_hides_df_secrets_and_api_port(tmp_path, monkeypatch):
+    secret = tmp_path / ".vault_key"
+    secret.write_text("key")
+    monkeypatch.setattr(terminal.sys, "platform", "darwin")
+    monkeypatch.setattr(terminal.Path, "is_file", lambda self: True)
+    command = terminal.confined_command(["ls"], tmp_path, protected_files=[str(secret)], protected_ports=[5567])
+    profile = command[2]
+    assert f'(deny file-read* file-write* (literal "{secret}"))' in profile
+    assert '(deny network-outbound (remote ip "localhost:5567"))' in profile
+    # Everything else stays open: reads, other local ports, and the network.
+    assert "(allow file-read* sysctl-read mach-lookup network*)" in profile
+    monkeypatch.setattr(terminal.sys, "platform", "linux")
+    monkeypatch.setattr(terminal.shutil, "which", lambda name: "/usr/bin/bwrap")
+    command = terminal.confined_command(["ls"], tmp_path, protected_files=[str(secret)], protected_ports=[5567])
+    assert command[command.index(str(secret)) - 2:command.index(str(secret)) + 1] == ["--ro-bind", "/dev/null", str(secret)]
+    assert "--share-net" in command
+
+
+def test_terminal_protects_existing_df_secret_files(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_FORMULATOR_HOME", str(tmp_path))
+    (tmp_path / ".vault_key").write_text("key")
+    (tmp_path / "configuration.json").write_text("{}")
+    assert terminal.protected_files() == [str((tmp_path / ".vault_key").resolve()),
+                                          str((tmp_path / "configuration.json").resolve())]
+
+
+def test_vault_key_is_owner_only(tmp_path):
+    from data_formulator.auth.vault import _resolve_key
+
+    created = _resolve_key(tmp_path)
+    assert created and (tmp_path / ".vault_key").stat().st_mode & 0o777 == 0o600
+    (tmp_path / ".vault_key").chmod(0o644)
+    assert _resolve_key(tmp_path) == created
+    assert (tmp_path / ".vault_key").stat().st_mode & 0o777 == 0o600
+
+
 def test_terminal_approval_is_exact_owned_and_single_use(tmp_path):
     broker = terminal.TerminalRequests()
     spec = {"argv": ["printf", "hello"], "cwd": str(tmp_path), "purpose": "Inspect data tooling"}

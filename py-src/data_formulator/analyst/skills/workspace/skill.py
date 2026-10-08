@@ -11,6 +11,7 @@ from typing import Any, Generator
 from data_formulator.datalake.text_edit import apply_text_patch, TextEditConflictError
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
 from data_formulator.analyst.input_provenance import normalize_input_sources
+from data_formulator.analyst.skills.html_app.skill import REACT_APP_SUFFIX, check_app_revision
 from data_formulator.analyst.workspace_inputs import (
     WorkspaceInputEngine,
     normalize_external_references,
@@ -182,8 +183,17 @@ class WorkspaceSkill:
                 raise ValueError("Output must be a DataFrame, bytes, or UTF-8 text without null bytes")
             if len(encoded) > 128 * 1024 * 1024:
                 raise ValueError("Files must be under 128 MB")
+            app = None
+            if editing:
+                previous = original.decode("utf-8", errors="replace") if len(original) <= 2_000_000 else None
+                app = check_app_revision(filename, previous, content, ctx)
+                if app is not None and display_name is None:
+                    display_name = app["title"]
+            elif filename.lower().endswith(REACT_APP_SUFFIX):
+                raise ValueError("Create apps with write_app (html_app skill); it validates the code and opens the app")
             metadata = ctx.workspace.save_workspace_file(
-                encoded, filename, mimetypes.guess_type(filename)[0],
+                encoded, filename,
+                "text/jsx" if filename.lower().endswith(REACT_APP_SUFFIX) else mimetypes.guess_type(filename)[0],
                 expected_content_hash=expected_hash if editing else None,
                 display_name=display_name, agent_managed=True,
             )
@@ -196,6 +206,7 @@ class WorkspaceSkill:
                 "origin": metadata.origin, "edit_policy": metadata.edit_policy,
                 "url": f"/api/workspace/files/{quote(metadata.name, safe='')}",
                 "temporary": False, "available_in_workspace": True,
+                **({"app": True, "tables": app["tables"], "warnings": app["warnings"]} if app is not None else {}),
             }, ensure_ascii=False))
         input_tables = (ctx.payload or {}).get("input_tables") or []
         input_tool_names = {

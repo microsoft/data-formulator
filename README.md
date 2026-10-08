@@ -146,6 +146,22 @@ your operating system:
 
   Open [http://localhost:5567](http://localhost:5567) in your browser. To stop, press `Ctrl+C` or run `docker compose down`.
 
+- **Try the latest development build**
+
+  The `dev` branch has fixes that are not released yet (and may be less stable). With Docker, build it straight from GitHub, no checkout needed:
+
+  ```bash
+  docker build -t data-formulator:dev "https://github.com/microsoft/data-formulator.git#dev"
+  docker run --rm -p 5567:5567 --env-file .env -v data_formulator_home:/home/appuser/.data_formulator data-formulator:dev
+  ```
+
+  Or from source (requires Node.js 20, yarn, and [uv](https://docs.astral.sh/uv/)):
+
+  ```bash
+  git clone -b dev https://github.com/microsoft/data-formulator.git && cd data-formulator
+  yarn install --frozen-lockfile && yarn build && uv run data_formulator
+  ```
+
 - **Option 4: Working as developer**
   
   You can build Data Formulator locally and develop your own version. Check out details in [DEVELOPMENT.md](DEVELOPMENT.md).

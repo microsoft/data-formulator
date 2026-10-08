@@ -346,3 +346,38 @@ class TestGenerateSemanticTypesPrompt:
         prompt = generate_semantic_types_prompt()
         for t in ALL_SEMANTIC_TYPES:
             assert t in prompt, f"Type {t!r} not present in generated prompt"
+
+
+class TestSemanticGuidanceConsistency:
+    """Every semantic type the agents are told to use must be one Flint registers."""
+
+    def test_visualize_field_metadata_schema_lists_exactly_the_registered_types(self):
+        import json
+        from pathlib import Path
+
+        import data_formulator.analyst.skills.visualization as visualization
+
+        tools = json.loads((Path(visualization.__file__).parent / "tools.json").read_text())
+        schema = tools[0]["function"]["parameters"]["properties"]["field_metadata"]["additionalProperties"]["oneOf"]
+        assert schema[0]["enum"] == ALL_SEMANTIC_TYPES
+        assert schema[1]["properties"]["semantic_type"]["enum"] == ALL_SEMANTIC_TYPES
+        assert set(schema[1]["properties"]) == {
+            "semantic_type", "unit", "intrinsic_domain", "sort_order", "diverging_midpoint",
+        }
+
+    def test_prompt_recommends_no_unregistered_types(self):
+        prompt = generate_semantic_types_prompt()
+        for name in ("Revenue/Cost", "AgeGroup", "Score/Rating", "Use String"):
+            assert name not in prompt
+
+    def test_data_load_example_uses_registered_types_and_orders_only_ordered_fields(self):
+        import json
+        import re
+
+        from data_formulator.agents.agent_data_load import EXAMPLES
+
+        for block in re.findall(r"\[OUTPUT\]\s*```json\s*(\{.*?\})\s*```", EXAMPLES, re.S):
+            for name, field in json.loads(block)["fields"].items():
+                assert field["semantic_type"] in ALL_SEMANTIC_TYPES, name
+                if "sort_order" in field:
+                    assert field["semantic_type"] not in CATEGORICAL_TYPES - {RANGE}, name

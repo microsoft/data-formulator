@@ -143,8 +143,45 @@ class TerminalRequests:
             return pending["proposal"]
 
 
+def protected_files() -> list[str]:
+    """Data Formulator's own secrets. Sandboxed commands never need them: connectors read
+    the credential store inside the server, not through the terminal."""
+    from data_formulator.configuration import configuration_path
+    from data_formulator.datalake.workspace import get_data_formulator_home
+
+    home = get_data_formulator_home()
+    candidates = (home / ".vault_key", home / "credentials.db", configuration_path())
+    return list(dict.fromkeys(str(path.resolve()) for path in candidates if path.is_file()))
+
+
+def protected_ports() -> list[int]:
+    """Ports serving Data Formulator's API: the backend, and the browser-facing origin (a dev proxy)."""
+    from flask import current_app, has_app_context, has_request_context, request
+
+    ports = set()
+    if has_app_context():
+        port = current_app.config.get("CLI_ARGS", {}).get("port")
+        if isinstance(port, int):
+            ports.add(port)
+    if has_request_context():
+        for url in (request.host_url, request.headers.get("Origin", "")):
+            try:
+                port = urlsplit(url).port
+            except ValueError:
+                port = None
+            if port:
+                ports.add(port)
+    return sorted(ports)
+
+
 def confined_command(argv: list[str], scratch_dir: Path, *, write_paths: list[str] | None = None,
-                     runtime_dir: Path | None = None) -> list[str]:
+                     runtime_dir: Path | None = None, protected_files: list[str] | None = None,
+                     protected_ports: list[int] | None = None) -> list[str]:
+    """Confine writes to scratch and the allowed paths; hide DF's secrets and (macOS) its API ports.
+
+    Reads elsewhere and the network stay open, so commands can still use the user's
+    files, CLI logins, local databases, and remote services.
+    """
     scratch = str(scratch_dir.resolve(strict=True))
     writable = [scratch]
     if runtime_dir is not None:
@@ -162,6 +199,10 @@ def confined_command(argv: list[str], scratch_dir: Path, *, write_paths: list[st
         for path in writable:
             matcher = "subpath" if Path(path).is_dir() else "literal"
             profile += f'(allow file-write* ({matcher} {json.dumps(path)}))'
+        for path in protected_files or []:
+            profile += f'(deny file-read* file-write* (literal {json.dumps(path)}))'
+        for port in protected_ports or []:
+            profile += f'(deny network-outbound (remote ip "localhost:{int(port)}"))'
         return [executable, "-p", profile, *argv]
     if sys.platform == "linux":
         executable = shutil.which("bwrap")
@@ -171,6 +212,9 @@ def confined_command(argv: list[str], scratch_dir: Path, *, write_paths: list[st
                    "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--remount-ro", "/proc"]
         for path in writable:
             command.extend(["--bind", path, path])
+        # Bubblewrap shares the host network, so ports cannot be filtered; secrets are masked.
+        for path in protected_files or []:
+            command.extend(["--ro-bind", "/dev/null", path])
         return [*command, "--cap-drop", "ALL", "--", *argv]
     raise OSError("Terminal write confinement is unavailable on this platform; command was not run.")
 
@@ -212,7 +256,8 @@ def _run_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir: Pa
         argv = proposal["argv"]
     else:
         policy = sandbox_filesystem_policy(prepare=True)
-        argv = confined_command(proposal["argv"], scratch_dir, write_paths=policy["allowWrite"], runtime_dir=runtime_dir)
+        argv = confined_command(proposal["argv"], scratch_dir, write_paths=policy["allowWrite"], runtime_dir=runtime_dir,
+                                protected_files=protected_files(), protected_ports=protected_ports())
     temporary_dir = runtime_dir / "tmp"
     cache_dir = runtime_dir / "cache"
     temporary_dir.mkdir(exist_ok=True)

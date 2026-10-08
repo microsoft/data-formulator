@@ -152,3 +152,45 @@ class TestSampleTablePagination:
             all_values.extend(r["value"] for r in rows)
             offset += len(rows)
         assert all_values == list(range(50))
+
+
+class TestSampleTableAggregateOrdering:
+    """Aggregated rows can be ordered by aggregate outputs (top-N queries)."""
+
+    @pytest.fixture()
+    def sales_table(self, tmp_workspace):
+        df = pd.DataFrame({
+            "region": ["a", "b", "b", "c", "c", "c"],
+            "amount": [5, 1, 2, 10, 20, 30],
+        })
+        tmp_workspace.write_parquet(df, "sales")
+        return "sales"
+
+    def test_orders_by_aggregate_output_descending(self, client, sales_table):
+        result = _sample(client, sales_table, size=2, method="bottom", select_fields=["region"],
+                         aggregate_fields_and_functions=[["amount", "sum"]],
+                         order_by_fields=["amount_sum"])
+        assert [row["region"] for row in result["rows"]] == ["c", "a"]
+        assert result["total_row_count"] == 3
+
+    def test_orders_by_count_ascending(self, client, sales_table):
+        result = _sample(client, sales_table, size=3, method="head", select_fields=["region"],
+                         aggregate_fields_and_functions=[[None, "count"]],
+                         order_by_fields=["_count"])
+        assert [row["_count"] for row in result["rows"]] == [1, 2, 3]
+
+    def test_ignores_ungrouped_source_columns_when_aggregating(self, client, sales_table):
+        result = _sample(client, sales_table, size=5, method="head", select_fields=["region"],
+                         aggregate_fields_and_functions=[[None, "count"]],
+                         order_by_fields=["amount"])
+        assert len(result["rows"]) == 3
+
+    def test_pandas_path_orders_by_aggregate_output(self):
+        from data_formulator.routes.tables import _apply_aggregation_and_sample
+
+        df = pd.DataFrame({"region": ["a", "b", "b"], "amount": [5, 1, 2]})
+        rows, total = _apply_aggregation_and_sample(
+            df, [["amount", "avg"], [None, "count"]], ["region"], "bottom", ["_count", "missing"], 10,
+        )
+        assert list(rows["region"]) == ["b", "a"]
+        assert total == 2

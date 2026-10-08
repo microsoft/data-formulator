@@ -589,6 +589,8 @@
     "generateReport": "Generate a report",
     "quickActions": "Quick actions",
     "writeReport": "Write a report",
+    "createApp": "Create an app",
+    "appConversationPrompt": "Help me build an interactive app (dashboard or explorer) from our current conversation and data. Suggest a few useful directions for me to choose from before building it.",
     "createWorkflow": "Create a workflow",
     "reportConversationPrompt": "Help me write a report from our current conversation and data. Suggest a few useful directions for me to choose from before drafting it.",
     "reportPrompt": "Write a report summarizing the key findings from this exploration.",
@@ -1425,12 +1427,16 @@
     "delete": "Delete"
   },
   "htmlApp": {
+    "askAgentToFix": "Ask agent to fix",
     "reload": "Reload app",
     "appError": "App error",
     "navigationBlocked": "The app tried to navigate away and was stopped. Reload it to try again.",
     "tooManyQueries": "Too many pending data requests.",
     "frameTitle": "{{title}} (sandboxed app)",
+    "viewSource": "View source",
+    "editSource": "Edit source",
     "previewApp": "Preview app",
-    "created": "Created app: {{title}}"
+    "created": "Created app: {{title}}",
+    "updated": "Updated app: {{title}}"
   }
 }

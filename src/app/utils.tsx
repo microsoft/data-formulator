@@ -633,7 +633,7 @@ export const assembleVegaChart = (
     const semanticTypes: Record<string, string | any> = {};
     for (const [fieldName, info] of Object.entries(fieldSemantics ?? {})) {
         if (info.semanticType) {
-            const { displayName: _displayName, ...annotation } = info;
+            const { displayName: _displayName, authored: _authored, ...annotation } = info;
             semanticTypes[fieldName] = Object.keys(annotation).length === 1
                 ? info.semanticType
                 : annotation;

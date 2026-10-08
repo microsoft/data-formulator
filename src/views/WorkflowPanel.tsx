@@ -31,6 +31,7 @@ import { getCachedChart } from '../app/chartCache';
 import { ApiRequestError, apiRequest, streamRequest } from '../app/apiClient';
 import { handleApiError } from '../app/errorHandler';
 import { getAgentLanguage, getUrls, resolveRecommendedChart } from '../app/utils';
+import { authoredFieldSemantics } from '../app/fieldSemantics';
 import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
 import { store } from '../app/store';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
@@ -264,7 +265,8 @@ function workflowResultNodes(output: Pick<RunOutput, 'content' | 'input_sources'
     chart.title = goal.title;
     chart.subtitle = goal.subtitle;
     chart.titleKey = computeInsightKey(chart);
-    return { table, chart, concepts };
+    const semantics = authoredFieldSemantics(table.names, goal.field_metadata, goal.field_display_names);
+    return { table, chart, concepts, semantics };
 }
 
 export async function publishWorkflowRun(run: Run, workspaceId: string, focus = true) {
@@ -322,11 +324,14 @@ export async function publishWorkflowRun(run: Run, workspaceId: string, focus = 
             const tableId = output.content.result.content.virtual.table_name;
             const parentNodeId = dfSelectors.getAllTables(store.getState()).find(item => item.id === tableId)?.parentNodeId
                 || outputParent(tableId);
-            const { table, chart, concepts } = workflowResultNodes(output, output.content.result.content.rows,
+            const { table, chart, concepts, semantics } = workflowResultNodes(output, output.content.result.content.rows,
                 dfSelectors.getAllTables(store.getState()), `workflow-field-${run.id}-${output.id}`, parentNodeId, turnId, createdAt);
             table.virtual = { tableId, rowCount: output.content.result.content.virtual.row_count };
             store.dispatch(dfActions.addConceptItems(concepts));
             store.dispatch(dfActions.insertDerivedTables(table));
+            if (Object.keys(semantics).length > 0) {
+                store.dispatch(dfActions.applyAuthoredFieldSemantics({ tableId: table.id, fields: semantics }));
+            }
             store.dispatch(fetchFieldSemanticType(table));
             if (!dfSelectors.getAllCharts(store.getState()).some(item => item.id === chart.id)) store.dispatch(dfActions.addChart(chart));
             if (focus) {

@@ -29,9 +29,9 @@ result; do not hand an available loading step back to the user.
 | Analyze a new subject or load data | Ground the question in workspace inputs, then choose an available acquisition route for missing data. For connected sources, inspect matching metadata and call `propose_data_operation`. | For import proposals, use `user_review_needed: false` for a clear single recommendation; ambiguous choices or material substitutions require review. Continue analysis after successful acquisition. |
 | Find out what data exists | Use workspace inventory for available inputs or catalog discovery for connected sources; summarize coverage and limits. | The availability question is answered; no unsolicited import is needed. |
 | Set up or manage Data Formulator: connect or repair a source, create or revise a workflow, schedule a workflow, or find, open, rename, or delete sessions | Load `configure` and follow its setup flow. | The setup form awaits the user's review, or was submitted directly; do not claim the change succeeded before the form shows it. |
-| Create or revise a file | Use `create_file` or `edit_file`; for an interactive HTML app or dashboard, load `html_app` instead. | The requested artifact exists as a durable workspace file, not merely a description of how to create it. |
+| Create or revise a file | Use `create_file` or `edit_file`; for an interactive app or dashboard, load `html_app` instead. | The requested artifact exists as a durable workspace file, not merely a description of how to create it. |
 | Write an analytical report | Load `report`; reuse or create needed charts; inspect evidence; call `write_report`. | The report is delivered. |
-| Build an interactive app or dashboard | Load `html_app`; ground it in workspace tables; call `write_html_app`. | The app is open on the canvas. |
+| Build or change an interactive app or dashboard | Load `html_app`; ground it in workspace tables; call `write_app`, or revise an existing app in place. | The app is open on the canvas. |
 | Explain or clarify | Answer from available evidence; prefer `ask_user` for a necessary choice or missing intent. | The question is answered or the unresolved choice is presented. |
 
 A subject change can require other data; do not force the new request onto the

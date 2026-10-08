@@ -74,16 +74,17 @@ describe('Analyst landing attachment handoff', () => {
         expect(requestBody().user_question).toBe('Explain them together');
     });
 
-    it.each(['Write a report', 'Create a workflow'])('starts %s as a visible user prompt requesting suggestions', async label => {
+    it.each(['Write a report', 'Create an app', 'Create a workflow'])('starts %s as a visible user prompt requesting suggestions', async label => {
         const { dispatchSpy } = mountTask();
         fireEvent.click(screen.getByRole('button', { name: 'Quick actions' }));
         expect(streamRequest).not.toHaveBeenCalled();
-        expect(screen.getAllByRole('menuitem')).toHaveLength(2);
+        expect(screen.getAllByRole('menuitem')).toHaveLength(3);
         fireEvent.click(screen.getByRole('menuitem', { name: label }));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
         expect(requestBody()).not.toHaveProperty('max_iterations');
         const prompt = requestBody().user_question;
-        expect(prompt).toContain(label === 'Write a report' ? 'write a report' : 'create a workflow');
+        expect(prompt).toContain({ 'Write a report': 'write a report', 'Create an app': 'build an interactive app',
+            'Create a workflow': 'create a workflow' }[label]);
         expect(prompt).toContain('Suggest a few useful directions');
         const draftAction = dispatchSpy.mock.calls.map(([action]) => action as any)
             .find(action => action.type === dfActions.createDraftNode.type);
@@ -268,7 +269,9 @@ describe('Analyst landing attachment handoff', () => {
             yield { type: 'result', status: 'success', content: { result: {
                 status: 'ok', content: { rows: [{ year: 2025, revenue: 30 }],
                     virtual: { table_name: 'yearly_orders', row_count: 1 } },
-                refined_goal: { output_variable: 'result', display_name: 'Yearly revenue' },
+                refined_goal: { output_variable: 'result', display_name: 'Yearly revenue',
+                    field_metadata: { year: 'year', revenue: { semantic_type: 'quantitative', currency: 'USD' } },
+                    field_display_names: { revenue: 'Revenue' } },
             } } };
             yield { type: 'completion', status: 'success', content: { summary: 'Revenue was 30 in 2025.' } };
         });
@@ -290,6 +293,11 @@ describe('Analyst landing attachment handoff', () => {
         await waitFor(() => expect(store.getState().textTurns).toHaveLength(2));
         expect(streamRequest).toHaveBeenCalledTimes(2);
         expect(store.getState().derivedTables[0]).toMatchObject({ id: 'yearly_orders', parentNodeId: proposalId });
+        // Agent annotations are normalized: 'year' becomes Year, the encoding word is dropped, currency becomes the unit.
+        expect(store.getState().tableSemantics.find(info => info.tableId === 'yearly_orders')?.fields).toMatchObject({
+            year: { semanticType: 'Year' },
+            revenue: { unit: 'USD', displayName: 'Revenue' },
+        });
         expect(store.getState().textTurns[1]).toMatchObject({ parentNodeId: 'yearly_orders', content: 'Revenue was 30 in 2025.' });
         expect(store.getState().draftNodes).toHaveLength(0);
     });
@@ -680,9 +688,42 @@ describe('Analyst landing attachment handoff', () => {
             await waitFor(() => expect(dfSelectors.selectCanvasTarget(store.getState()))
                 .toEqual({ type: 'file', fileName: 'sales_app.html' }));
             expect(store.getState().inputTables).toHaveLength(0);
+
+            // Closing the run's explanation keeps the app it explains on the canvas.
+            await waitFor(() => expect(store.getState().textTurns.some(turn => turn.textKind === 'explain')).toBe(true));
+            const explanation = store.getState().textTurns.find(turn => turn.textKind === 'explain')!;
+            act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: explanation.id })));
+            expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'file', fileName: 'sales_app.html' });
+            fireEvent.click(await screen.findByRole('button', { name: /^Close/ }));
+            expect(store.getState().focusedId).toEqual({ type: 'file', fileName: 'sales_app.html' });
         } finally {
             window.removeEventListener('df:workspace-files-changed', refreshed);
         }
+    });
+
+    it('brings an app into view after the agent revises it with edit_file', async () => {
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'tool_result', tool: 'edit_file', status: 'ok', stdout: JSON.stringify({
+                path: 'files/sales.app.jsx', name: 'sales.app.jsx', display_name: 'Sales explorer',
+                content_hash: 'revised-hash', available_in_workspace: true, app: true, tables: ['sales'], warnings: [],
+            }) };
+            yield { type: 'completion', status: 'success', content: { summary: 'Added a units chart.' } };
+        });
+        const { store } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'built', displayId: 'Built', textKind: 'explain',
+                content: 'Built the dashboard.', parentNodeId: 'conversation-root:test', createdAt: 1 }));
+            store.dispatch(dfActions.upsertFileNode({ kind: 'file', id: 'file-sales.app.jsx', path: 'sales.app.jsx',
+                displayName: 'Sales explorer', contentHash: 'old-hash', parentNodeId: 'built', createdAt: 1 }));
+            store.dispatch(dfActions.queueAnalystTask({ text: 'Add a units chart to the dashboard', images: [], attachments: [] }));
+        });
+        await waitFor(() => expect(store.getState().fileNodes[0]).toMatchObject({ contentHash: 'revised-hash', parentNodeId: 'built' }));
+        // The run's explanation keeps the revised app on the canvas, though the app's node lives in an older turn.
+        await waitFor(() => expect(store.getState().textTurns.some(turn => turn.content === 'Added a units chart.')).toBe(true));
+        const explanation = store.getState().textTurns.find(turn => turn.content === 'Added a units chart.')!;
+        expect(explanation.revisedFile).toBe('sales.app.jsx');
+        act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: explanation.id })));
+        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'file', fileName: 'sales.app.jsx' });
     });
 
     it.each(['create_file', 'edit_file'])('refreshes artifacts immediately after %s without adding a durable table', async tool => {
@@ -703,6 +744,8 @@ describe('Analyst landing attachment handoff', () => {
             expect(store.getState().inputTables).toHaveLength(0);
             expect(store.getState().fileNodes).toHaveLength(1);
             expect(store.getState().fileNodes[0]).toMatchObject({ path: 'summary.md', displayName: 'Summary' });
+            // Only app revisions take over the canvas.
+            expect(store.getState().focusedId).not.toEqual({ type: 'file', fileName: 'summary.md' });
             act(() => store.dispatch(dfActions.setFocused({ type: 'reference', referenceId: store.getState().fileNodes[0].id })));
             expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'file', fileName: 'summary.md' });
         } finally {
@@ -774,6 +817,28 @@ describe('Analyst landing attachment handoff', () => {
             expect(dfSelectors.selectCanvasTarget(store.getState())?.type).not.toBe('text');
             expect(screen.getByTestId('explanation-panel').textContent).toBe(content);
         }
+    });
+
+    it.each(['clarify', 'terminal'])('settles a written report when the run then pauses (%s)', async pause => {
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'action', action: 'write_report' };
+            yield { type: 'text_delta', channel: 'report', content: '# SupportInsights\n\nThree big ideas.' };
+            if (pause === 'clarify') {
+                yield { type: 'clarify', questions: [{ text: 'Add a forecast?', options: ['Yes', 'No'] }],
+                    trajectory: [{ role: 'user', content: 'Write a final report' }] } as any;
+            } else {
+                yield { type: 'interact', terminal_request: { id: 'run-1', argv: ['python', 'check.py'], cwd: '.',
+                    purpose: 'Check figures' }, trajectory: [{ role: 'user', content: 'Write a final report' }],
+                    completed_step_count: 2 } as any;
+            }
+        });
+        const { store } = mountTask({ text: 'Write a final report', images: [], attachments: [] });
+        await waitFor(() => expect(store.getState().generatedReports[0]?.status).toBe('completed'));
+        const [report] = store.getState().generatedReports;
+        expect(report).toMatchObject({ title: 'SupportInsights', content: '# SupportInsights\n\nThree big ideas.' });
+        // The pause turn closes the request; no empty closing turn is added for the report.
+        expect(store.getState().textTurns.filter(turn => turn.textKind === 'explain' && !turn.content
+            && !turn.executions?.length)).toHaveLength(0);
     });
 
     it.each(['success', 'empty-summary', 'error', 'disconnect', 'cancel', 'end'])('keeps report request and output together after %s', async outcome => {

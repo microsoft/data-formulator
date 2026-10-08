@@ -1882,7 +1882,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
         return <ExternalTableReferenceCanvas key={focusedId.referenceId} referenceId={focusedId.referenceId} />;
     }
     if (focusedId?.type === 'file') {
-        return <WorkspaceFileCanvas fileName={focusedId.fileName} />;
+        return <WorkspaceFileCanvas fileName={focusedId.fileName} floatingAppControls />;
     }
     if (focusedId?.type === 'conversation') {
         return <ConversationCanvas textTurnId={focusedId.tableId} entryIndex={focusedId.entryIndex} nodeIds={focusedId.nodeIds} />;

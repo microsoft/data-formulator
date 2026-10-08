@@ -644,6 +644,8 @@
     "generateReport": "生成报告",
     "quickActions": "快捷操作",
     "writeReport": "写报告",
+    "createApp": "创建应用",
+    "appConversationPrompt": "根据我们当前的对话和数据，帮我构建一个交互式应用（仪表板或探索工具）。在构建之前，先给出几个有用的方向供我选择。",
     "createWorkflow": "创建工作流",
     "reportConversationPrompt": "帮我根据当前对话和数据撰写报告。在起草之前，先推荐几个有用的方向供我选择。",
     "reportPrompt": "撰写一份报告，总结本次探索的主要发现。",
@@ -1425,12 +1427,16 @@
     "delete": "删除"
   },
   "htmlApp": {
+    "askAgentToFix": "让智能体修复",
     "reload": "重新加载应用",
     "appError": "应用错误",
     "navigationBlocked": "应用尝试跳转到其他页面，已被阻止。请重新加载后重试。",
     "tooManyQueries": "待处理的数据请求过多。",
     "frameTitle": "{{title}}（沙盒应用）",
+    "viewSource": "查看源代码",
+    "editSource": "编辑源代码",
     "previewApp": "预览应用",
-    "created": "已创建应用：{{title}}"
+    "created": "已创建应用：{{title}}",
+    "updated": "已更新应用：{{title}}"
   }
 }

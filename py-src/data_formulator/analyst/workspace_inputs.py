@@ -54,6 +54,8 @@ class WorkspaceInputRef:
     origin: WorkspaceInputOrigin = "workspace"
     memory_id: str | None = None
     path: str | None = None
+    # "agent_editable" for agent-created workspace files the agent may revise in place.
+    edit_policy: str | None = None
 
 
 @dataclass(frozen=True)
@@ -258,6 +260,12 @@ def build_workspace_input_manifest(
                 content_hash=workspace_file.content_hash,
                 capabilities=_file_capabilities(workspace_file.name, workspace_file.media_type),
                 path=f"files/{workspace_file.name}",
+                edit_policy=(
+                    "agent_editable"
+                    if getattr(workspace_file, "origin", None) == "agent"
+                    and getattr(workspace_file, "edit_policy", None) == "agent_editable"
+                    else None
+                ),
             )
         )
 
@@ -420,7 +428,15 @@ def render_workspace_input_context(
         for item in manifest.files:
             media_type = item.media_type or "unknown type"
             size = f", {item.size_bytes} bytes" if item.size_bytes is not None else ""
-            lines.append(f"- {item.id}: {item.display_name} ({media_type}{size})")
+            editable = f"; agent-editable at {item.path}" if item.edit_policy == "agent_editable" else ""
+            lines.append(f"- {item.id}: {item.display_name} ({media_type}{size}{editable})")
+        if any(item.edit_policy == "agent_editable" for item in manifest.files):
+            lines.extend((
+                "",
+                "Revise agent-editable files in place (edit_file with that path and the hash in the ID as "
+                "expected_content_hash) when the user asks to change them; create a new file only when they "
+                "want a separate one.",
+            ))
 
     preview_by_id = {item.input_id: item for item in preview.selected}
     for item in manifest.files:

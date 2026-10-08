@@ -10,6 +10,7 @@ import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
 import { vlAdaptChart, vlRecommendEncodings } from 'flint-chart';
 import { migrateState } from './stateMigrations';
+import { applyAuthoredSemantics, mergeInferredSemantics, normalizeFieldAnnotation } from './fieldSemantics';
 import { getDataTable } from '../views/ChartUtils';
 import { getUrls, computeContentHash } from './utils';
 import { apiRequest, ApiRequestError } from './apiClient';
@@ -1400,6 +1401,13 @@ export const dataFormulatorSlice = createSlice({
             if (index >= 0) state.tableSemantics[index] = action.payload;
             else state.tableSemantics.push(action.payload);
         },
+        /** Record agent-authored annotations; they win over inference for the fields they cover. */
+        applyAuthoredFieldSemantics: (state, action: PayloadAction<TableSemanticsInfo>) => {
+            const index = state.tableSemantics.findIndex(info => info.tableId === action.payload.tableId);
+            const fields = applyAuthoredSemantics(index >= 0 ? state.tableSemantics[index].fields : {}, action.payload.fields);
+            if (index >= 0) state.tableSemantics[index] = { tableId: action.payload.tableId, fields };
+            else state.tableSemantics.push({ tableId: action.payload.tableId, fields });
+        },
         extendTableWithNewFields: (state, action: PayloadAction<{tableId: string, columnName: string, values: any[], previousName: string | undefined, parentIDs: string[]}>) => {
             // extend the existing extTable with new columns from the new table
             let newValues = action.payload.values;
@@ -2459,17 +2467,13 @@ export const dataFormulatorSlice = createSlice({
             if (!table) return;
 
             if (data["result"]?.length > 0) {
-                let typeMap = data['result'][0]['fields'];
-                const fields: TableSemanticsInfo['fields'] = {};
-                for (let name of table.names) {
-                    const inferred = typeMap[name];
-                    if (!inferred) continue;
-                    fields[name] = {
-                        ...(inferred.semantic_type ? { semanticType: inferred.semantic_type } : {}),
-                        ...(Array.isArray(inferred.sort_order) && inferred.sort_order.length > 0 ? { sortOrder: inferred.sort_order } : {}),
-                        ...(inferred.intrinsic_domain ? { intrinsicDomain: inferred.intrinsic_domain } : {}),
-                        ...(inferred.unit ? { unit: inferred.unit } : {}),
-                    };
+                const typeMap = data['result'][0]['fields'] || {};
+                const inferredFields: TableSemanticsInfo['fields'] = {};
+                for (const name of table.names) {
+                    // Inference proposes display names nowhere; ignore any it returns.
+                    const { display_name: _displayName, displayName: _display, ...inferred } = typeMap[name] || {};
+                    const info = normalizeFieldAnnotation(inferred);
+                    if (info) inferredFields[name] = info;
                 }
 
                 const suggestedName = data["result"][0]["suggested_table_name"] as string | undefined;
@@ -2482,8 +2486,9 @@ export const dataFormulatorSlice = createSlice({
                         item.id === tableId ? { ...item, displayId: suggestedName } : item
                     );
                 }
-                const info = { tableId, fields };
                 const existingIndex = state.tableSemantics.findIndex(item => item.tableId === tableId);
+                const existingFields = existingIndex >= 0 ? state.tableSemantics[existingIndex].fields : {};
+                const info = { tableId, fields: mergeInferredSemantics(table.names, inferredFields, existingFields) };
                 if (existingIndex >= 0) state.tableSemantics[existingIndex] = info;
                 else state.tableSemantics.push(info);
             }
@@ -2875,6 +2880,9 @@ export const dfSelectors = {
             }
             const latestFile = fileNodes.filter(node => node.parentNodeId === art.id).slice(-1)[0];
             if (latestFile) return { type: 'file', fileName: latestFile.path };
+            if (art.revisedFile && fileNodes.some(node => node.path === art.revisedFile)) {
+                return { type: 'file', fileName: art.revisedFile };
+            }
             if (art.sourceFormId && textTurns.some(turn => turn.id === art.sourceFormId && turn.form)) {
                 return { type: 'text', textId: art.sourceFormId };
             }

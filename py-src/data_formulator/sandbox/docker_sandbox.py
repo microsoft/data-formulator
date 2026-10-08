@@ -6,7 +6,9 @@ Docker-based sandbox for executing Python code in an isolated container.
 
 The workspace directory is mounted **read-only** as the container's working
 directory so user scripts can read data files via e.g.
-``pd.read_csv("file.csv")`` but cannot tamper with the host filesystem.
+``pd.read_csv("file.csv")`` but cannot tamper with the host filesystem. The
+container also has no network, a read-only root filesystem, and no
+capabilities (see :func:`docker_run_command`).
 The output DataFrame is serialised to Parquet and read back via a
 bind-mounted output directory.
 """
@@ -34,6 +36,46 @@ DEFAULT_DOCKER_IMAGE = os.environ.get(
     "DOCKER_SANDBOX_IMAGE", "data-formulator-sandbox"
 )
 DEFAULT_TIMEOUT = int(os.environ.get("DOCKER_SANDBOX_TIMEOUT", "120"))
+# Containers get no network by default: agent code only transforms workspace
+# data, and network access would allow exfiltration and SSRF to internal
+# services (including cloud metadata endpoints). Override only deliberately.
+DEFAULT_NETWORK = os.environ.get("DOCKER_SANDBOX_NETWORK", "none")
+
+
+def docker_run_command(
+    image: str, workspace_path: str, output_dir: str, script_path: str,
+    *, network: str = DEFAULT_NETWORK,
+) -> list[str]:
+    """``docker run`` arguments for one confined execution.
+
+    The container has no network, a read-only root filesystem with a small
+    private ``/tmp``, no Linux capabilities, no privilege escalation, resource
+    limits, and only the workspace (read-only) and an output directory mounted.
+    """
+    command = [
+        "docker", "run", "--rm",
+        "--network", network,
+        "--read-only",
+        "--tmpfs", "/tmp:rw,nosuid,nodev,size=256m",
+        "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges",
+        "--memory", "512m",
+        "--cpus", "1",
+        "--pids-limit", "256",
+        # Library caches (matplotlib, fontconfig, …) must live in the writable /tmp.
+        "-e", "HOME=/tmp", "-e", "MPLCONFIGDIR=/tmp/matplotlib", "-e", "XDG_CACHE_HOME=/tmp/cache",
+    ]
+    # Only set an explicit user on platforms that support os.getuid/os.getgid
+    if hasattr(os, "getuid") and hasattr(os, "getgid"):
+        try:
+            command += ["--user", f"{os.getuid()}:{os.getgid()}"]
+        except OSError:
+            pass  # Fall back to the image's non-root default user
+    command += ["-v", f"{os.path.abspath(workspace_path)}:/sandbox/workdir:ro"]
+    command += ["-v", f"{output_dir}:/sandbox/outputs:rw"]
+    command += ["-v", f"{script_path}:/sandbox/run.py:ro"]
+    command += ["-w", "/sandbox/workdir", image, "python", "/sandbox/run.py"]
+    return command
 
 
 def _safe_error_response(content, detail=None):
@@ -138,32 +180,7 @@ class DockerSandbox(Sandbox):
             with open(script_path, "w", encoding="utf-8") as f:
                 f.write(wrapper_script)
 
-            # ---- assemble docker command --------------------------------------
-            docker_cmd: list[str] = [
-                "docker", "run",
-                "--rm",
-                "--memory", "512m",
-                "--cpus", "1",
-                "--pids-limit", "256",
-            ]
-
-            # Only set an explicit user on platforms that support os.getuid/os.getgid
-            user_flag: list[str] = []
-            if hasattr(os, "getuid") and hasattr(os, "getgid"):
-                try:
-                    user_flag = ["--user", f"{os.getuid()}:{os.getgid()}"]
-                except OSError:
-                    # Fall back to image's default user if UID/GID cannot be determined
-                    user_flag = []
-            docker_cmd += user_flag
-
-            abs_ws = os.path.abspath(workspace_path)
-            docker_cmd += ["-v", f"{abs_ws}:/sandbox/workdir:ro"]
-            docker_cmd += ["-v", f"{output_dir}:/sandbox/outputs:rw"]
-            docker_cmd += ["-v", f"{script_path}:/sandbox/run.py:ro"]
-            docker_cmd += ["-w", "/sandbox/workdir"]
-            docker_cmd += [self.docker_image]
-            docker_cmd += ["python", "/sandbox/run.py"]
+            docker_cmd = docker_run_command(self.docker_image, workspace_path, output_dir, script_path)
 
             # ---- execute ------------------------------------------------------
             try:

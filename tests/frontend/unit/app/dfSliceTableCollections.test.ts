@@ -241,7 +241,7 @@ describe("split table collections", () => {
         tableId: "orders",
         fields: {
           order_id: {
-            semanticType: "identifier",
+            semanticType: "ID",
             sortOrder: ["first", "second"],
             intrinsicDomain: [1, 100],
             unit: "order",
@@ -256,6 +256,21 @@ describe("split table collections", () => {
       dfActions.removeTableLocally("orders")
     );
     expect(state.tableSemantics).toEqual([]);
+  });
+
+  it("layers agent-authored semantics over every inference result", () => {
+    let state = dataFormulatorReducer(undefined, dfActions.addTableToStore(sourceTable as any));
+    state = dataFormulatorReducer(state, dfActions.applyAuthoredFieldSemantics({
+      tableId: "orders", fields: { order_id: { semanticType: "Rank", displayName: "Order" } },
+    }));
+    const infer = (fields: Record<string, unknown>) => fetchFieldSemanticType.fulfilled(
+      { result: [{ fields }] }, "request-id", sourceTable as any);
+    state = dataFormulatorReducer(state, infer({ order_id: { semantic_type: "identifier", unit: "order", display_name: "Ignored" } }));
+    expect(state.tableSemantics[0].fields.order_id).toMatchObject({ semanticType: "Rank", unit: "order", displayName: "Order" });
+
+    state = dataFormulatorReducer(state, infer({ order_id: { semantic_type: "String" } }));
+    expect(state.tableSemantics[0].fields.order_id).toMatchObject({ semanticType: "Rank", displayName: "Order" });
+    expect(state.tableSemantics[0].fields.order_id.unit).toBeUndefined();
   });
 
   it("does not replace a manually renamed table with a late inferred name", () => {

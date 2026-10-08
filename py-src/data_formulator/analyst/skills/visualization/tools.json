@@ -112,7 +112,27 @@
             "required": ["chart_type", "encodings"],
             "additionalProperties": false
           },
-          "field_metadata": {"type": "object", "description": "Map of field name -> SemanticType for the output columns."},
+          "field_metadata": {
+            "type": "object",
+            "description": "Semantic annotations for encoded output columns: a SemanticType name, or an object with semantic_type and optional unit, intrinsic_domain, sort_order, and diverging_midpoint.",
+            "additionalProperties": {
+              "oneOf": [
+                {"type": "string", "enum": ["DateTime", "Date", "Time", "Timestamp", "Year", "Quarter", "Month", "Week", "Day", "Hour", "YearMonth", "YearQuarter", "YearWeek", "Decade", "Duration", "Amount", "Price", "Quantity", "Temperature", "Percentage", "Profit", "PercentageChange", "Sentiment", "Correlation", "Count", "Number", "Rank", "Score", "ID", "Latitude", "Longitude", "Country", "State", "City", "Region", "Address", "ZipCode", "Category", "Name", "Status", "Boolean", "Direction", "Range", "Unknown"]},
+                {
+                  "type": "object",
+                  "properties": {
+                    "semantic_type": {"type": "string", "enum": ["DateTime", "Date", "Time", "Timestamp", "Year", "Quarter", "Month", "Week", "Day", "Hour", "YearMonth", "YearQuarter", "YearWeek", "Decade", "Duration", "Amount", "Price", "Quantity", "Temperature", "Percentage", "Profit", "PercentageChange", "Sentiment", "Correlation", "Count", "Number", "Rank", "Score", "ID", "Latitude", "Longitude", "Country", "State", "City", "Region", "Address", "ZipCode", "Category", "Name", "Status", "Boolean", "Direction", "Range", "Unknown"]},
+                    "unit": {"type": "string", "description": "Unit or currency code, e.g. USD, kg, °C."},
+                    "intrinsic_domain": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2, "description": "[min, max] of a bounded scale, e.g. [1, 5] for a 5-point rating."},
+                    "sort_order": {"type": "array", "items": {"type": "string"}, "description": "Natural order of ordered categories, e.g. [\"Low\", \"Medium\", \"High\"]."},
+                    "diverging_midpoint": {"type": "number", "description": "Baseline a diverging color scale pivots on, e.g. 100 for an index."}
+                  },
+                  "required": ["semantic_type"],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
           "field_display_names": {"type": "object", "description": "Map of field name -> human-readable display name for chart axes and table headers."}
         },
         "required": ["title", "display_name", "input_sources", "code", "output_variable", "chart"]

@@ -44,6 +44,7 @@ const MAX_LIST_ITEMS = 200;
 const MAX_FILTER_VALUES = 1000;
 const AGGREGATE_OPS = new Set(['count', 'sum', 'avg', 'min', 'max']);
 const FILTER_OPS = new Set(['in', 'range', 'contains']);
+const QUERY_OPTIONS = ['columns', 'aggregates', 'filters', 'search', 'orderBy', 'descending', 'limit', 'offset'];
 
 export interface HtmlAppManifest {
     version: number;
@@ -51,15 +52,27 @@ export interface HtmlAppManifest {
     tables: string[];
 }
 
+/** Design tokens exposed to apps as `--df-*` CSS variables and `DF.theme`. */
 export interface HtmlAppTheme {
     font: string;
     fontMono: string;
     text: string;
     muted: string;
     bg: string;
+    /** Page background behind raised tiles. */
+    canvas: string;
     surface: string;
     border: string;
     primary: string;
+    primarySoft: string;
+    primaryText: string;
+    secondary: string;
+    accent: string;
+    positive: string;
+    negative: string;
+    warning: string;
+    /** Density-aware type ramp in px, mirroring the host's `--df-text-*`. */
+    textSize: { xxs: number; xs: number; sm: number; md: number; lg: number; xl: number; xxl: number };
     palette: string[];
 }
 
@@ -100,11 +113,13 @@ const escapeInlineScript = (source: string) => source.replace(/<\/(script)/gi, '
 export function themeStylesheet(theme: HtmlAppTheme): string {
     const variables: [string, string][] = [
         ['font', theme.font], ['font-mono', theme.fontMono], ['text', theme.text], ['muted', theme.muted],
-        ['bg', theme.bg], ['surface', theme.surface], ['border', theme.border], ['primary', theme.primary],
+        ['bg', theme.bg], ['canvas', theme.canvas], ['surface', theme.surface], ['border', theme.border], ['primary', theme.primary],
+        ['primary-soft', theme.primarySoft], ['primary-text', theme.primaryText], ['secondary', theme.secondary],
+        ['accent', theme.accent], ['positive', theme.positive], ['negative', theme.negative], ['warning', theme.warning],
+        ...Object.entries(theme.textSize).map(([step, size]): [string, string] => [`text-${step}`, `${Number(size) || 13}px`]),
+        ...theme.palette.slice(0, 10).map((color, index): [string, string] => [`palette-${index + 1}`, color]),
     ];
-    return `:root{${variables.map(([name, value]) => `--df-${name}:${cssValue(value)}`).join(';')};color-scheme:light}`
-        + 'html,body{margin:0;background:var(--df-bg);color:var(--df-text);font-family:var(--df-font)}'
-        + 'body{padding:16px 20px;box-sizing:border-box}';
+    return `:root{${variables.map(([name, value]) => `--df-${name}:${cssValue(value)}`).join(';')};color-scheme:light}`;
 }
 
 /** Assemble the sandboxed app document; the CSP precedes all author content. */
@@ -112,6 +127,8 @@ export function buildAppDocument(html: string, options: {
     runtimeScripts: string[];
     theme: HtmlAppTheme;
     config: Record<string, unknown>;
+    /** Base stylesheet (the DF app kit); author styles come after it and win ties. */
+    kitStylesheet?: string;
 }): string {
     const author = new DOMParser().parseFromString(html, 'text/html');
     author.querySelectorAll('meta[http-equiv], base').forEach(node => node.remove());
@@ -127,6 +144,7 @@ export function buildAppDocument(html: string, options: {
         + '<meta http-equiv="x-dns-prefetch-control" content="off">'
         + '<meta name="referrer" content="no-referrer">'
         + `<style>${themeStylesheet(options.theme)}</style>`
+        + (options.kitStylesheet ? `<style>${options.kitStylesheet.replace(/<\/(style)/gi, '<\\/$1')}</style>` : '')
         + `<script>window.__DF_APP_CONFIG__=${config};</script>`
         + runtime
         + author.head.innerHTML
@@ -176,14 +194,43 @@ function normalizeFilter(filter: unknown): Record<string, unknown> {
     return normalized;
 }
 
+/** Accept `orderBy` as a column, a list of columns, or `{field, descending}` entries. */
+function normalizeOrderBy(value: unknown, descending: unknown): { fields: string[]; descending: boolean } {
+    if (descending !== undefined && descending !== null && typeof descending !== 'boolean') {
+        throw new Error('descending must be true or false.');
+    }
+    const items = value === undefined || value === null ? [] : Array.isArray(value) ? value : [value];
+    if (items.length > MAX_LIST_ITEMS) throw new Error(`orderBy accepts at most ${MAX_LIST_ITEMS} columns.`);
+    const directions = new Set<boolean>();
+    const fields = items.map(item => {
+        if (typeof item === 'string' && item) {
+            directions.add(descending === true);
+            return item;
+        }
+        if (isRecord(item) && typeof item.field === 'string' && item.field) {
+            const itemDescending = item.descending ?? (typeof item.order === 'string' ? item.order.toLowerCase() === 'desc' : descending);
+            directions.add(itemDescending === true);
+            return item.field;
+        }
+        throw new Error('orderBy must be a column name, a list of column names, or {field, descending} entries.');
+    });
+    if (directions.size > 1) throw new Error('All orderBy columns must sort in the same direction.');
+    return { fields: Array.from(new Set(fields)), descending: directions.has(true) };
+}
+
 /** Validate an app's DF.query request and map it onto the sample-table API. */
 export function normalizeAppQuery(table: unknown, options: unknown, manifest: HtmlAppManifest): SampleTableRequest {
     if (typeof table !== 'string' || !manifest.tables.includes(table)) {
         throw new Error(`Table "${String(table)}" is not declared in the app manifest.`);
     }
+    if (options !== undefined && options !== null && !isRecord(options)) throw new Error('DF.query options must be an object.');
     const input = isRecord(options) ? options : {};
+    const unknown = Object.keys(input).filter(key => !QUERY_OPTIONS.includes(key));
+    if (unknown.length) {
+        throw new Error(`Unknown DF.query option ${unknown.map(key => `"${key}"`).join(', ')}; use ${QUERY_OPTIONS.join(', ')}.`);
+    }
     const columns = stringList(input.columns, 'columns');
-    const orderBy = stringList(input.orderBy, 'orderBy');
+    const order = normalizeOrderBy(input.orderBy, input.descending);
     const aggregates = input.aggregates === undefined || input.aggregates === null ? [] : input.aggregates;
     if (!Array.isArray(aggregates) || aggregates.length > 50) throw new Error('aggregates must be a list of at most 50 entries.');
     const aggregateFields = aggregates.map((aggregate): [string | null, string] => {
@@ -202,10 +249,10 @@ export function normalizeAppQuery(table: unknown, options: unknown, manifest: Ht
         table,
         size: integer(input.limit, 'limit', DEFAULT_QUERY_ROWS, 1, MAX_QUERY_ROWS),
         offset: integer(input.offset, 'offset', 0, 0, 10_000_000),
-        method: orderBy.length && input.descending === true ? 'bottom' : 'head',
+        method: order.fields.length && order.descending ? 'bottom' : 'head',
         select_fields: columns,
         aggregate_fields_and_functions: aggregateFields,
-        order_by_fields: orderBy,
+        order_by_fields: order.fields,
         filters: filters.map(normalizeFilter),
         ...(typeof input.search === 'string' && input.search.trim() ? { search: input.search } : {}),
     };

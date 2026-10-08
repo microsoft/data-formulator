@@ -45,7 +45,8 @@ const run = (): Run => ({
                 rows: [{ category: 'A', value: 2 }], virtual: { table_name: 'chart_values', row_count: 1 },
             }, refined_goal: { output_variable: 'result', display_name: 'Category Values', title: 'Values by category', chart: {
                 chart_type: 'Bar Chart', encodings: { x: 'category', y: 'value' },
-            } },
+            }, field_metadata: { category: { semantic_type: 'Category', sort_order: ['B', 'A'] } },
+                field_display_names: { value: 'Value' } },
         } } },
         { id: 'report', type: 'report', content: '# Review\n![Values](chart://chart-native)' },
     ],
@@ -262,10 +263,13 @@ describe('Workflow session publication', () => {
         const snapshot = run();
         await publishWorkflowRun(snapshot, 'session');
         await waitFor(() => expect(store.getState().tableSemantics).toEqual(expect.arrayContaining([
-            expect.objectContaining({ tableId: 'measurements', fields: { value: { semanticType: 'Currency', unit: 'USD', intrinsicDomain: [0, 100] } } }),
+            expect.objectContaining({ tableId: 'measurements', fields: { value: { semanticType: 'Amount', unit: 'USD', intrinsicDomain: [0, 100] } } }),
+            // The agent's own annotations win over inference; inference fills the rest.
             expect.objectContaining({ tableId: 'chart_values', fields: {
-                value: { semanticType: 'Currency', unit: 'USD', intrinsicDomain: [0, 100] },
-                category: { semanticType: 'Category', sortOrder: ['A', 'B'] },
+                value: { semanticType: 'Amount', unit: 'USD', intrinsicDomain: [0, 100], displayName: 'Value',
+                    authored: { displayName: 'Value' } },
+                category: { semanticType: 'Category', sortOrder: ['B', 'A'],
+                    authored: { semanticType: 'Category', sortOrder: ['B', 'A'] } },
             } }),
         ])));
         const inferenceCalls = () => vi.mocked(apiRequest).mock.calls.filter(([url]) => url === inferenceUrl);

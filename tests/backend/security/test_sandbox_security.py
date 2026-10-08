@@ -15,6 +15,7 @@ import pandas as pd
 import pytest
 
 from data_formulator.sandbox import LocalSandbox, DockerSandbox
+from data_formulator.sandbox.docker_sandbox import docker_run_command
 
 pytestmark = [pytest.mark.backend]
 
@@ -155,3 +156,44 @@ output_df = pd.DataFrame()
         result = sandbox.run_python_code(code, workspace, "output_df")
         assert result["status"] == "error"
         assert not os.path.exists(os.path.join(workspace._path, "evil.txt"))
+
+
+def test_docker_command_is_confined():
+    command = docker_run_command("img", "/ws", "/out", "/run.py")
+    joined = " ".join(command)
+    for flag in ("--network none", "--read-only", "--cap-drop ALL", "--security-opt no-new-privileges",
+                 "--memory 512m", "--pids-limit 256", "/ws:/sandbox/workdir:ro", "/out:/sandbox/outputs:rw"):
+        assert flag in joined
+    assert command[command.index("--tmpfs") + 1].startswith("/tmp:")
+    assert command[-3:] == ["img", "python", "/sandbox/run.py"]
+
+
+@skip_no_docker
+class TestDockerSandboxConfinement:
+    """The container has no network, an immutable root, and no privileges."""
+
+    @pytest.fixture
+    def sandbox(self):
+        return DockerSandbox(timeout=120)
+
+    def test_transform_still_works(self, sandbox, workspace):
+        code = "import pandas as pd\noutput_df = pd.read_csv('sample.csv').assign(double=lambda d: d.value * 2)\n"
+        result = sandbox.run_python_code(code, workspace, "output_df")
+        assert result["status"] == "ok", result
+        assert result["content"]["double"].tolist() == [20, 40]
+
+    @pytest.mark.parametrize("code", [
+        "import socket\nsocket.create_connection(('1.1.1.1', 80), timeout=3)\n",
+        "import socket\nsocket.getaddrinfo('example.com', 443)\n",
+        "open('/etc/evil', 'w').write('x')\n",
+        "open('/usr/local/lib/evil.py', 'w').write('x')\n",
+    ])
+    def test_network_and_root_writes_fail(self, sandbox, workspace, code):
+        result = sandbox.run_python_code(code + "import pandas as pd\noutput_df = pd.DataFrame()\n", workspace, "output_df")
+        assert result["status"] == "error"
+
+    def test_tmp_is_writable_but_private(self, sandbox, workspace):
+        code = "import pandas as pd\nopen('/tmp/x', 'w').write('ok')\noutput_df = pd.DataFrame({'v': [open('/tmp/x').read()]})\n"
+        result = sandbox.run_python_code(code, workspace, "output_df")
+        assert result["status"] == "ok", result
+        assert result["content"]["v"].tolist() == ["ok"]

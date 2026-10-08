@@ -33,7 +33,7 @@ import {
     Tabs,
     Tab,
 } from '@mui/material';
-import { borderColor, radius, transition } from '../app/tokens';
+import { borderColor, floatingAppControlsRight, floatingPillSx, radius, transition } from '../app/tokens';
 
 
 import { VisualizationViewFC } from './VisualizationView';
@@ -699,6 +699,9 @@ export const DataFormulatorFC = ({ }) => {
         }}/>
     );
 
+    // Apps (HTML or React) preview full-bleed; their close button matches the app's floating controls.
+    const floatingCanvasClose = viewMode === 'editor' && canvasTarget?.type === 'file' && /\.(html?|app\.jsx)$/i.test(canvasTarget.fileName);
+
     const canvasPanel = (
         <Box sx={{
             ...(isPhone ? {} : borderBoxStyle),
@@ -709,13 +712,15 @@ export const DataFormulatorFC = ({ }) => {
                 <IconButton
                     size="small"
                     onClick={closeCanvas}
-                    sx={{
+                    sx={floatingCanvasClose ? {
+                        ...floatingPillSx, position: 'absolute', top: 8, right: floatingAppControlsRight, zIndex: 20,
+                    } : {
                         position: 'absolute', top: 8, right: 8, zIndex: 20,
                         color: 'text.secondary',
                         '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' },
                     }}
                 >
-                    <CloseIcon sx={{ fontSize: iconVar.md }} />
+                    <CloseIcon sx={{ fontSize: floatingCanvasClose ? iconVar.lg : iconVar.md }} />
                 </IconButton>
             </Tooltip>
             {viewMode === 'editor' ? visPane : <ReportView />}

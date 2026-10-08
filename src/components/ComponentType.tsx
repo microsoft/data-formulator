@@ -342,6 +342,8 @@ export interface TextTurn {
     /** The chart the user was on when this turn was created — canvas provenance
      *  only (focusing the turn keeps this chart on the canvas). NOT positioning. */
     sourceChartId?: string;
+    /** An existing app the run revised in place; focusing the turn shows that app. */
+    revisedFile?: string;
     actionId?: string;
     /**
      * §12 opaque resume token — set iff the backend stamped a trajectory on the
@@ -538,7 +540,11 @@ export interface FieldSemanticsInfo {
     intrinsicDomain?: [number, number];
     unit?: string;
     sortOrder?: any[];
+    /** Value a diverging color scale pivots on (Flint `divergingMidpoint`). */
+    divergingMidpoint?: number;
     displayName?: string;
+    /** What the agent authored; layered over every inference result. Not sent to Flint. */
+    authored?: Omit<FieldSemanticsInfo, 'authored'>;
 }
 
 export interface TableSemanticsInfo {

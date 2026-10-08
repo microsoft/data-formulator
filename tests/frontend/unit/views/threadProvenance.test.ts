@@ -362,6 +362,31 @@ it('highlights the displayed file when its closing chat response or follow-up is
   expect(screen.getByRole('button', { name: file.displayName }).closest('.selected-artifact-card')).toBeNull();
 });
 
+it('renders a later branch off the turn that produced a table, with its file', () => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'lead', displayId: 'Lead', textKind: 'explain',
+    prompt: 'Summarize the stocks', content: 'Here is the summary.', parentNodeId: CONVERSATION_ROOT_ID, createdAt: 1 }));
+  store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'result', displayId: 'Result', names: [], metadata: {}, rows: [],
+    parentNodeId: 'lead', derive: { source: [], code: '', dialog: [], trigger: {
+      tableId: CONVERSATION_ROOT_ID, resultTableId: 'result', instruction: 'Summarize',
+      interaction: [{ from: 'data-agent', to: 'user', role: 'instruction', content: 'Summarize' }],
+    } } } as any));
+  // Asked later while the first explanation was focused: a second branch off 'lead'.
+  store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'branch', displayId: 'Branch', textKind: 'explain',
+    prompt: 'Build an interactive app', content: 'Built the explorer app.', parentNodeId: 'lead', createdAt: 5 }));
+  store.dispatch(dfActions.upsertFileNode({ kind: 'file', id: 'file-explorer.app.jsx', path: 'explorer.app.jsx',
+    displayName: 'Stock Explorer', parentNodeId: 'branch', createdAt: 6, contentHash: 'app-hash' }));
+  const theme = createTheme({ palette: { custom: { main: '#a34d16' } } } as any);
+  render(React.createElement(Provider, { store, children:
+    React.createElement(ThemeProvider, { theme, children:
+      React.createElement(LayoutProvider, { children: React.createElement(DataThread) }),
+    }),
+  }));
+  expect(screen.getByText('Built the explorer app.')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Stock Explorer' })).toBeTruthy();
+  expect(document.querySelectorAll('[data-thread-item="file-explorer.app.jsx"]')).toHaveLength(1);
+});
+
 it('opens, updates, and deletes a file result without a text turn, retaining it on deletion failure', async () => {
   const store = configureStore({ reducer: dataFormulatorReducer });
   const file = { kind: 'file' as const, id: 'file-result', path: 'scratch/cpi.parquet',

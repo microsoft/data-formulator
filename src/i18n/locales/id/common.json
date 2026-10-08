@@ -589,6 +589,8 @@
     "generateReport": "Buat laporan",
     "quickActions": "Tindakan cepat",
     "writeReport": "Tulis laporan",
+    "createApp": "Buat aplikasi",
+    "appConversationPrompt": "Bantu saya membuat aplikasi interaktif (dasbor atau penjelajah) dari percakapan dan data kita saat ini. Sarankan beberapa arah yang berguna untuk saya pilih sebelum membuatnya.",
     "createWorkflow": "Buat alur kerja",
     "reportConversationPrompt": "Bantu saya menulis laporan dari percakapan dan data saat ini. Sarankan beberapa arahan bermanfaat untuk saya pilih sebelum menyusun draf.",
     "reportPrompt": "Tulis laporan yang meringkas temuan kunci dari penjelajahan ini.",
@@ -1425,12 +1427,16 @@
     "delete": "Hapus"
   },
   "htmlApp": {
+    "askAgentToFix": "Minta agen memperbaiki",
     "reload": "Muat ulang aplikasi",
     "appError": "Kesalahan aplikasi",
     "navigationBlocked": "Aplikasi mencoba berpindah ke halaman lain dan dihentikan. Muat ulang untuk mencoba lagi.",
     "tooManyQueries": "Terlalu banyak permintaan data yang tertunda.",
     "frameTitle": "{{title}} (aplikasi sandbox)",
+    "viewSource": "Lihat sumber",
+    "editSource": "Edit sumber",
     "previewApp": "Pratinjau aplikasi",
-    "created": "Aplikasi dibuat: {{title}}"
+    "created": "Aplikasi dibuat: {{title}}",
+    "updated": "Aplikasi diperbarui: {{title}}"
   }
 }

@@ -20,7 +20,7 @@ MAX_DOCX_XML_BYTES = 5 * 1024 * 1024
 MAX_TEXT_CHARS = 200_000
 MAX_PDF_PREVIEW_PAGES = 20
 TEXT_EXTENSIONS = {
-    ".csv", ".json", ".log", ".md", ".py", ".sql", ".tsv", ".txt", ".xml", ".yaml", ".yml",
+    ".csv", ".json", ".jsx", ".log", ".md", ".py", ".sql", ".tsv", ".txt", ".xml", ".yaml", ".yml",
 }
 
 

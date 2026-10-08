@@ -58,8 +58,11 @@ import 'prismjs/themes/prism.css'; //Example style, you can use another
 
 import { checkChartAvailability, generateChartSkeleton, getDataTable } from './ChartUtils';
 import { getConversationInputContext, getConversationSourceKey, getThreadLeadUpTurns, getThreadConversationIds, getThreadTriggers, isThreadLeafTable, resolveThreadParentTableId, orderThreadOutputs, resolveArtifactParentNodeId, getStepTerminalExecutions, getStepCodeExecutions, getStepExecutionTurns } from './threadProvenance';
+import { findLeadIn, findRevealTarget, revealDelta } from './threadReveal';
 
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
+import HtmlIcon from '@mui/icons-material/Html';
+import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import AddIcon from '@mui/icons-material/Add';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
@@ -171,11 +174,11 @@ const ToolActivityRow: React.FC<{ nodeId: string; label: string; executions: Non
         <ButtonBase onClick={() => setExpanded(previous => !previous)} aria-expanded={expanded}
         aria-label={t('dataThread.viewStepActivity', { defaultValue: 'View step tool calls' })}
         title={label} sx={{ width: '100%', minWidth: 0, justifyContent: 'flex-start', gap: 0.5,
-            py: 0.5, color: 'text.secondary', textAlign: 'left', '&:hover': { bgcolor: 'action.hover' },
+            py: '2px', color: 'text.secondary', textAlign: 'left', '&:hover': { bgcolor: 'action.hover' },
             '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
-        <ChevronRightIcon sx={{ width: 12, height: 12, flexShrink: 0, transform: expanded ? 'rotate(90deg)' : undefined }} />
-        {active && !expanded && <CircularProgress size={10} color="inherit" sx={{ flexShrink: 0 }} />}
-        <Typography component="span" sx={{ minWidth: 0, fontSize: textVar.xs, fontStyle: 'italic',
+        <ChevronRightIcon sx={{ width: 10, height: 10, flexShrink: 0, transform: expanded ? 'rotate(90deg)' : undefined }} />
+        {active && <CircularProgress size={8} color="inherit" sx={{ flexShrink: 0 }} />}
+        <Typography component="span" sx={{ minWidth: 0, fontSize: textVar.xxs, fontStyle: 'italic',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</Typography>
         <Typography component="span" sx={{ flexShrink: 0, fontSize: textVar.xxs, color: 'text.disabled', whiteSpace: 'nowrap' }}>
             {t('dataThread.toolCallCount', { count: calls.length, defaultValue: '{{count}} calls' })}
@@ -191,23 +194,23 @@ const ToolActivityRow: React.FC<{ nodeId: string; label: string; executions: Non
                         : execution.status === 'interrupted' ? PauseCircleOutlineIcon : HelpOutlineIcon;
                     return <ButtonBase key={execution.id} aria-label={execution.purpose} aria-pressed={selected}
                     title={execution.purpose} onClick={() => onSelect(execution)}
-                    sx={{ display: 'flex', width: '100%', minWidth: 0, justifyContent: 'flex-start', gap: 0.5, py: 0.5,
+                    sx={{ display: 'flex', width: '100%', minWidth: 0, justifyContent: 'flex-start', gap: 0.5, py: '2px',
                         pl: 0, pr: 0.5, borderRadius: 0.5, bgcolor: selected ? 'action.selected' : 'transparent',
                         color: selected ? 'text.primary' : 'text.secondary', textAlign: 'left',
                         '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
                         '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
-                    {'code' in execution ? <CodeIcon sx={{ width: 12, height: 12, flexShrink: 0 }} />
-                        : <TerminalIcon sx={{ width: 12, height: 12, flexShrink: 0 }} />}
-                    <Typography component="span" sx={{ flex: 1, minWidth: 0, fontSize: textVar.xs, fontStyle: 'italic',
+                    {'code' in execution ? <CodeIcon sx={{ width: 10, height: 10, flexShrink: 0 }} />
+                        : <TerminalIcon sx={{ width: 10, height: 10, flexShrink: 0 }} />}
+                    <Typography component="span" sx={{ flex: 1, minWidth: 0, fontSize: textVar.xxs, fontStyle: 'italic',
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{execution.purpose}</Typography>
                     <Tooltip title={statusLabel}>
                         <Box component="span" role={execution.status === 'running' ? undefined : 'img'}
                             aria-label={execution.status === 'running' ? undefined : statusLabel}
-                            sx={{ width: 14, height: 14, flexShrink: 0, display: 'flex', alignItems: 'center',
+                            sx={{ width: 12, height: 12, flexShrink: 0, display: 'flex', alignItems: 'center',
                                 justifyContent: 'center', color: 'text.secondary' }}>
                             {execution.status === 'running'
-                                ? <CircularProgress size={10} color="inherit" aria-label={statusLabel} />
-                                : <StatusIcon sx={{ width: 12, height: 12 }} />}
+                                ? <CircularProgress size={8} color="inherit" aria-label={statusLabel} />
+                                : <StatusIcon sx={{ width: 10, height: 10 }} />}
                         </Box>
                     </Tooltip>
                 </ButtonBase>;
@@ -1540,9 +1543,12 @@ let SingleThreadGroupView: FC<{
         for (const file of fileNodes.filter(node => artifactParentOf(node.parentNodeId) === parentNodeId)) {
             const selected = focusedId?.type === 'reference' ? focusedId.referenceId === file.id
                 : canvasTarget?.type === 'file' && canvasTarget.fileName === file.path;
+            const isHtmlApp = /\.html?$/i.test(file.path);
+            const FileGlyph = isHtmlApp ? HtmlIcon : /\.app\.jsx$/i.test(file.path) ? DashboardOutlinedIcon : InsertDriveFileOutlinedIcon;
             timelineItems.push({
                 key: file.id, outputNodeId: file.id, type: 'artifact', highlighted: highlighted || selected,
-                gutterIcon: <InsertDriveFileOutlinedIcon sx={{ width: 14, height: 14,
+                // The HTML wordmark is short and wide; enlarge it without moving the gutter.
+                gutterIcon: <FileGlyph sx={{ width: isHtmlApp ? 22 : 14, height: isHtmlApp ? 22 : 14, m: isHtmlApp ? '-4px' : 0,
                     color: selected ? 'primary.main' : 'text.secondary' }} />,
                 element: <Box className="data-thread-card-wrapper" sx={{ display: 'flex', width: '100%', minWidth: 0 }}>
                         <ThreadArtifactCard artifactType="file" title={file.displayName} selected={selected} notes={file.notes}
@@ -1556,6 +1562,10 @@ let SingleThreadGroupView: FC<{
 
     // Push reports whose authored parent is this table, plus unmigrated legacy
     // reports. Only reports owned by an active draft render in that draft block.
+    // A report still streaming for a running table renders inside that table's
+    // running draft block (below the prompt); artifact slots must skip it.
+    const rendersInRunningBlock = (report: GeneratedReport) => report.status === 'generating'
+        && !!report.triggerTableId && runningAgentTableIds.has(report.triggerTableId);
     const pushReportItems = (
         tableId: string,
         highlighted: boolean,
@@ -1566,8 +1576,7 @@ let SingleThreadGroupView: FC<{
             ...(reportsByTriggerTable.get(tableId) || []),
         ].filter((report, index, all) => all.findIndex(item => item.id === report.id) === index);
         for (const report of reports) {
-            if (report.status === 'generating' && report.triggerTableId
-                && runningAgentTableIds.has(report.triggerTableId)) continue;
+            if (rendersInRunningBlock(report)) continue;
             timelineItems.push(buildReportTimelineItem(report, highlighted));
         }
         pushFileItems(tableId, highlighted);
@@ -1703,6 +1712,7 @@ let SingleThreadGroupView: FC<{
                 }
                 if (isExecutionTurn) pushFileItems(turn.id, turnHighlighted);
                 for (const report of reportsByParentNode.get(turn.id) || []) {
+                    if (rendersInRunningBlock(report)) continue;
                     timelineItems.push(buildReportTimelineItem(report, turnHighlighted));
                 }
                 if (summarizesLoadedTables) {
@@ -1979,6 +1989,10 @@ let SingleThreadGroupView: FC<{
         pushLoadedTables(tableId, triggerType);
         // Conversation on the table: the run's closing answer, then anything new.
         pushTableTextTurns(tableId, highlighted, triggerType);
+        // Later requests that branch off the turns which produced this table
+        // (e.g. asked while an earlier explanation was focused) render here;
+        // nothing else renders a lead-up turn's other children.
+        for (const turn of leadUp) pushTextTurnSubtree(turn.id, highlighted, triggerType);
         // Running / clarifying agent state.
         pushAgentDraftItems(tableId, triggerType, highlighted);
     };
@@ -3290,6 +3304,20 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         return undefined;
     }, [focusedId, charts, generatedReports, loadedTableNodes, fileNodes, tables, textTurnsForHome, textTurnRootByTurn]);
 
+    // The thread (root table or conversation) holding the focused item, so a
+    // collapsed thread opens to show it. Files and loaded-table references
+    // resolve through their producing turn without changing table highlights.
+    const focusedThreadAnchor = useMemo(() => {
+        if (focusedTableId) return focusedTableId;
+        if (focusedId?.type !== 'reference' && focusedId?.type !== 'file') return undefined;
+        const nodes = [...loadedTableNodes, ...fileNodes, ...generatedReports];
+        const node = focusedId.type === 'reference'
+            ? nodes.find(item => item.id === focusedId.referenceId)
+            : fileNodes.find(item => item.path === focusedId.fileName);
+        const parent = node ? resolveArtifactParentNodeId(node.id, nodes) : undefined;
+        return parent && (tables.some(table => table.id === parent) ? parent : textTurnRootByTurn.get(parent));
+    }, [focusedTableId, focusedId, loadedTableNodes, fileNodes, generatedReports, tables, textTurnRootByTurn]);
+
     // A data-operation turn replaces the canvas, so no table is "on screen" —
     // the table above stays a context highlight rather than a selection.
     const canvasOwnedByTurn = useMemo(() => (
@@ -3312,19 +3340,58 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     const threadScrollRef = useRef<null | HTMLDivElement>(null)
     // Outer wrapper containing both the thread area and the chatbox.
     const outerRef = useRef<null | HTMLDivElement>(null)
+    // Bring the focused item into view when focus arrives from outside the
+    // thread (agent output, canvas, sidebar). Clicks inside the thread never
+    // move it, and a user who is scrolling is not fought.
+    const threadPointerAtRef = useRef(0);
+    const userScrollAtRef = useRef(0);
+    const fileNodesRef = useRef(fileNodes);
+    fileNodesRef.current = fileNodes;
     useEffect(() => {
-        if (focusedId?.type !== 'text') return;
-        const frame = requestAnimationFrame(() => {
-            const viewport = threadScrollRef.current;
-            const row = Array.from(viewport?.querySelectorAll<HTMLElement>('[data-thread-item]') || [])
-                .find(item => item.dataset.threadItem === `textturn-${focusedId.textId}`);
-            if (!viewport || !row) return;
+        if (!focusedId || performance.now() - threadPointerAtRef.current < 400) return;
+        const startedAt = performance.now();
+        let frame = 0;
+        let timer = 0;
+        let lastTop: number | undefined;
+        let stableFrames = 0;
+        const measure = (viewport: HTMLElement, target: HTMLElement, settle: boolean) => {
             const visible = viewport.getBoundingClientRect();
-            const bounds = row.getBoundingClientRect();
-            const offset = Math.min(bounds.bottom - visible.bottom + 12, bounds.top - visible.top - 12);
-            if (offset > 0) viewport.scrollBy({ top: offset, behavior: 'smooth' });
-        });
-        return () => cancelAnimationFrame(frame);
+            return { visible, delta: revealDelta(visible, target.getBoundingClientRect(),
+                findLeadIn(target)?.getBoundingClientRect(), settle) };
+        };
+        // Late layout shifts (thumbnails, measured heights) can push the item
+        // back toward an edge; correct once unless the user took over.
+        const settle = (scrolledAt: number) => {
+            const viewport = threadScrollRef.current;
+            const target = viewport && findRevealTarget(viewport, focusedId, fileNodesRef.current);
+            if (!viewport || !target || userScrollAtRef.current > scrolledAt) return;
+            const { delta } = measure(viewport, target, true);
+            if (Math.abs(delta) > 8) viewport.scrollBy({ top: delta, behavior: 'smooth' });
+        };
+        const attempt = () => {
+            const viewport = threadScrollRef.current;
+            const now = performance.now();
+            if (!viewport || now - startedAt > 3000) return;
+            const target = now - userScrollAtRef.current < 800 ? null
+                : findRevealTarget(viewport, focusedId, fileNodesRef.current);
+            // Wait until the item exists (a thread may be expanding) and stops moving.
+            const top = target?.getBoundingClientRect().top;
+            stableFrames = target && top === lastTop ? stableFrames + 1 : 0;
+            lastTop = top;
+            if (!target || stableFrames < 6) {
+                frame = requestAnimationFrame(attempt);
+                return;
+            }
+            const { visible, delta } = measure(viewport, target, false);
+            if (delta === 0) return;
+            const instant = Math.abs(delta) > 2 * visible.height
+                || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+            viewport.scrollBy({ top: delta, behavior: instant ? 'auto' : 'smooth' });
+            const scrolledAt = performance.now();
+            timer = window.setTimeout(() => settle(scrolledAt), 900);
+        };
+        frame = requestAnimationFrame(attempt);
+        return () => { cancelAnimationFrame(frame); window.clearTimeout(timer); };
     }, [focusedId]);
     // Column geometry follows density: bigger text needs a wider card, or table
     // names truncate. DataFormulator snaps the pane from the same tokens.
@@ -3341,7 +3408,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     useEffect(() => {
         const key = focusedThreadKeyRef.current;
         if (key) setThreadExpansion(previous => previous[key] ? previous : { ...previous, [key]: true });
-    }, [focusedTableId]);
+    }, [focusedThreadAnchor]);
     // Must run before the save effect so a workspace switch reads storage before it is overwritten.
     const workspaceId = activeWorkspace?.id;
     useEffect(() => {
@@ -3875,8 +3942,11 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             const expansionKey = `${activeWorkspace?.id || ''}:${group.firstTurn?.id || firstEntry.conversationRootId || firstTrigger?.resultTableId || firstEntry.key}`;
             const isLatest = index === orderedGroups.length - 1;
             if (isLatest) latestThreadKeyRef.current = expansionKey;
-            if (focusedTableId && group.entries.some(entry => entry.leafTable && (entry.leafTable.id === focusedTableId
-                || getCachedTriggers(entry.leafTable).some(trigger => trigger.tableId === focusedTableId || trigger.resultTableId === focusedTableId)))) {
+            if (focusedThreadAnchor && group.entries.some(entry => entry.conversationRootId === focusedThreadAnchor
+                || entry.originTableId === focusedThreadAnchor
+                || (entry.leafTable && (entry.leafTable.id === focusedThreadAnchor
+                    || getCachedTriggers(entry.leafTable).some(trigger => trigger.tableId === focusedThreadAnchor
+                        || trigger.resultTableId === focusedThreadAnchor))))) {
                 focusedThreadKeyRef.current = expansionKey;
             }
             const expanded = threadExpansion[expansionKey] ?? isLatest;
@@ -4104,7 +4174,11 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         .map(indices => indices.map(index => allThreadEntries[index]));
 
     let view = hasContent ? (
-        <Box ref={threadScrollRef} onScroll={updateThreadScrollFade} sx={{ 
+        <Box ref={threadScrollRef} onScroll={updateThreadScrollFade}
+            onPointerDown={() => { threadPointerAtRef.current = performance.now(); }}
+            onWheel={() => { userScrollAtRef.current = performance.now(); }}
+            onTouchMove={() => { userScrollAtRef.current = performance.now(); }}
+            sx={{ 
             overflowY: 'auto',
             overflowX: 'hidden',
             position: 'relative',

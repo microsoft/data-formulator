@@ -2,14 +2,23 @@
   {
     "type": "function",
     "function": {
-      "name": "write_html_app",
-      "description": "Create an interactive HTML app as a new workspace file and open it on the canvas. The app runs in a sandbox without network access and reads the declared workspace tables live through the DF runtime. Revise an existing app with edit_file instead.",
+      "name": "write_app",
+      "description": "Create an interactive React app (dashboard, explorer) and open it on the canvas: a new file (filename), or a full rewrite of an existing app in place (path + expected_content_hash). It runs in a sandbox without network access and reads the declared workspace tables live through @df/data hooks. For small changes to an existing app, use edit_file replacements instead.",
       "parameters": {
         "type": "object",
         "properties": {
           "filename": {
             "type": "string",
-            "description": "New visible filename ending in .html, without directories, for example sales_explorer.html."
+            "description": "For a new app: a visible filename ending in .app.jsx, without directories, for example sales_explorer.app.jsx."
+          },
+          "path": {
+            "type": "string",
+            "description": "To rewrite an existing agent-editable app in place: its files/... path (ending in .app.jsx). Omit filename when you pass path."
+          },
+          "expected_content_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "With path: the app's current content_hash. On conflict, reread the app before retrying."
           },
           "title": {
             "type": "string",
@@ -17,7 +26,54 @@
           },
           "tables": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
+            "description": "Workspace table names the app reads with @df/data hooks. Only these tables are available to the app."
+          },
+          "code": {
+            "type": "string",
+            "description": "The complete single-file React app: imports only from react, @df/ui, @df/data, @df/chart, @df/format, @df/icons, or @mui/material, and `export default function App()`."
+          }
+        },
+        "required": [
+          "title",
+          "tables",
+          "code"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "write_html_app",
+      "description": "Create an interactive HTML app and open it on the canvas: a new file (filename), or a full rewrite of an existing app in place (path + expected_content_hash). The app runs in a sandbox without network access and reads the declared workspace tables live through the DF runtime. For small changes to an existing app, use edit_file replacements instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "For a new app: a visible filename ending in .html, without directories, for example sales_explorer.html."
+          },
+          "path": {
+            "type": "string",
+            "description": "To rewrite an existing agent-editable app in place: its files/... path (ending in .html). Omit filename when you pass path."
+          },
+          "expected_content_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "With path: the app's current content_hash. On conflict, reread the app before retrying."
+          },
+          "title": {
+            "type": "string",
+            "description": "Short single-line title shown to the user (at most 80 characters)."
+          },
+          "tables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
             "description": "Workspace table names the app reads with DF.query or DF.table. Only these tables are available to the app."
           },
           "html": {
@@ -25,7 +81,11 @@
             "description": "The complete HTML document, with inline CSS and JavaScript only. Do not load external scripts, stylesheets, fonts, or images."
           }
         },
-        "required": ["filename", "title", "tables", "html"]
+        "required": [
+          "title",
+          "tables",
+          "html"
+        ]
       }
     }
   }
