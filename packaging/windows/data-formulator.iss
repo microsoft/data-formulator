@@ -33,7 +33,9 @@ DefaultDirName={localappdata}\Programs\Data Formulator
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
-MinVersion=10.0.22000
+; 10.0.20348 admits Windows Server 2022 (the 1ES signing/validation agent) alongside
+; Windows 11 (10.0.22000+); Windows 10 client builds (<= 19045) stay unsupported.
+MinVersion=10.0.20348
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#OutputDir}
