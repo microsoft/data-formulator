@@ -703,6 +703,12 @@ Microsoft signatures on the launcher/setup before emitting checksum and manifest
 sidecars. Run `test-installer.ps1 -RequireSignatures` on the resulting installer
 before any promotion; this also verifies the installed uninstaller.
 
+Inno Setup 6.6.1 names its external-signing cache `uninst-*.e32`, even for
+an x64 application. This is a PE executable, not the installed uninstaller's
+final filename. Preserve the compiler-generated cache name, include
+`uninst-*.e32` alongside `uninst-*.exe` in the ESRP uninstaller task's file
+pattern, and sign it in place before assembly.
+
 On a service-session ADO agent, `test-installer.ps1 -ValidationMode Headless`
 can exercise installation, signatures, payload integrity, sandbox/CLR, reinstall,
 and uninstall without an interactive desktop. This is **candidate-only**
@@ -710,6 +716,75 @@ validation: `installation.json` records `guiVerified: false`, and the GUI report
 explicitly records that it was skipped. Full validation remains the default.
 Publish headless results only as distinctly labeled candidate artifacts; require
 full interactive and browser-download acceptance before release promotion.
+
+### macOS ESRP candidates
+
+Build the application on a native macOS agent from a pinned source revision.
+Before sending it to ESRP, prepare a symlink-preserving ZIP with the application
+at its root:
+
+```bash
+uv run python packaging/macos/release.py prepare \
+  --app 'dist/Data Formulator.app' --architecture arm64 \
+  --output signing/Data-Formulator-macOS-arm64.zip
+```
+
+Use `x86_64` only for an actual Intel build. The helper rejects an architecture
+mismatch and external/broken bundle symlinks. It sets the bundle display/build
+versions from `pyproject.toml` before signing and refuses to modify an application
+that already has a non-ad-hoc signature.
+
+The ADO scripts repository owns ESRP authentication and signing tasks. Reuse the
+existing v6 workload-identity connection; do not export private keys or add
+credentials to application code. Apple-key authorization does not establish
+that a particular entitlement or nested-code layout is supported. Require a
+successful signed candidate before enabling publication.
+
+After ESRP signing, extract the returned ZIP on macOS with `ditto -x -k`.
+Validate against the independently approved Apple Team ID, not a value derived
+from the artifact being validated:
+
+```bash
+uv run python packaging/macos/release.py verify \
+  --app 'signed/Data Formulator.app' --architecture arm64 \
+  --team-id "$APPROVED_APPLE_TEAM_ID" --reports build/mac-signature
+```
+
+After successful notarization, use the `staple` subcommand with the same
+arguments. It attaches and validates the ticket and requires Gatekeeper
+acceptance. `verify --notarized` validates an already stapled app without
+changing it. Both commands check the source version, Developer ID identity,
+secure timestamp, hardened runtime, and strict recursive code signatures.
+Reports start in a failed state and record success only after all requested
+operations succeed.
+
+Use `packaging/test_desktop.py` to exercise the returned signed application,
+then `packaging/macos/build-dmg.sh` to package it without modifying signed code.
+An app notarization ticket is not a DMG signature or DMG ticket. Complete the
+approved disk-image signing/notarization workflow and copied-app acceptance
+before promoting a DMG. Keep a checksum and source/pipeline provenance for the
+exact final artifact.
+
+After notarization of the signed disk image, the final trust gate is:
+
+```bash
+uv run python packaging/macos/release.py staple-dmg \
+  --dmg 'candidate/Data-Formulator-macOS-arm64.dmg' --architecture arm64 \
+  --team-id "$APPROVED_APPLE_TEAM_ID" --reports build/mac-dmg-signature
+```
+
+Use `verify-dmg` instead when the disk-image ticket is already stapled. These
+commands require a valid outer Developer ID signature and notarization ticket,
+image Gatekeeper acceptance, and a valid stapled application after copying it
+out of the image and ejecting it. They record the final DMG SHA-256 only after
+all gates pass. The application must already have been stapled before creating
+the disk image.
+
+The signature report intentionally records `releaseEligible: false` and
+`guiVerified: false`: it is not a runtime or release-approval report. A headless
+smoke test cannot replace native GUI, browser-download/Gatekeeper, offline
+launch, or upgrade acceptance. Do not publish a candidate as a finished signed
+release, remove quarantine, or advise users to bypass Gatekeeper.
 
 ## Docker
 

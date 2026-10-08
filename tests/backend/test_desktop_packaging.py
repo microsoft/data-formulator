@@ -1,4 +1,5 @@
 import importlib.util
+import ast
 import json
 import os
 import shutil
@@ -17,6 +18,16 @@ spec.loader.exec_module(metadata)
 desktop_spec = importlib.util.spec_from_file_location("desktop_test", PROJECT_ROOT / "packaging/test_desktop.py")
 desktop_test = importlib.util.module_from_spec(desktop_spec)
 desktop_spec.loader.exec_module(desktop_test)
+
+
+def test_desktop_spec_excludes_unused_tk_runtime():
+    tree = ast.parse((PROJECT_ROOT / "packaging/data_formulator_desktop.spec").read_text())
+    analysis = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "Analysis"
+    )
+    excludes = next(keyword.value for keyword in analysis.keywords if keyword.arg == "excludes")
+    assert set(ast.literal_eval(excludes)) == {"tkinter", "_tkinter"}
 
 
 @pytest.mark.parametrize("version,expected", [
@@ -255,8 +266,9 @@ fi
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell 7 is required")
-@pytest.mark.parametrize("prepare_outcome", ["prepare", "unexpected-error"])
-def test_external_signing_phase_handoff(tmp_path, prepare_outcome):
+@pytest.mark.parametrize("prepare_outcome", ["prepare", "unexpected-error", "multiple-cache-files"])
+@pytest.mark.parametrize("cache_name", ["uninst-cache.exe", "uninst-6.6.1-256508f590.e32"])
+def test_external_signing_phase_handoff(tmp_path, prepare_outcome, cache_name):
     payload = tmp_path / "payload"
     payload.mkdir()
     (payload / "Data Formulator.exe").write_bytes(b"application")
@@ -272,9 +284,12 @@ foreach ($argument in $args) {
     }
 }
 if ($env:FAKE_COMPILER_OUTCOME -ne 'assemble') {
-    $file = Join-Path $definitions.ExternalUninstallerDir 'uninst-cache.exe'
+    $file = Join-Path $definitions.ExternalUninstallerDir $env:FAKE_CACHE_FILENAME
     Set-Content -LiteralPath $file -Value 'uninstaller'
-    if ($env:FAKE_COMPILER_OUTCOME -eq 'prepare') {
+    if ($env:FAKE_COMPILER_OUTCOME -eq 'multiple-cache-files') {
+        Set-Content -LiteralPath (Join-Path $definitions.ExternalUninstallerDir 'uninst-extra.e32') -Value 'unexpected'
+    }
+    if ($env:FAKE_COMPILER_OUTCOME -in 'prepare', 'multiple-cache-files') {
         Write-Output "Signed uninstaller mode is enabled. Sign $file and compile again"
     } else { Write-Output 'Unrelated compiler error' }
     exit 2
@@ -291,7 +306,7 @@ function uv {
 }
 function Get-AuthenticodeSignature {
     param([string]$LiteralPath)
-    $status = if ($LiteralPath.EndsWith('uninst-cache.exe') -and $env:FAKE_CACHE_SIGNED -ne '1') { 'NotSigned' } else { 'Valid' }
+    $status = if ($LiteralPath.EndsWith($env:FAKE_CACHE_FILENAME) -and $env:FAKE_CACHE_SIGNED -ne '1') { 'NotSigned' } else { 'Valid' }
     [pscustomobject]@{
         Status = $status
         SignerCertificate = [pscustomobject]@{ Subject = 'CN=Microsoft Corporation, O=Microsoft Corporation, C=US' }
@@ -313,10 +328,11 @@ if (@(Get-ChildItem $env:CANDIDATE -Filter '*.sha256').Count) { throw 'Assembly 
         env={**os.environ, "WRAPPER": str(PROJECT_ROOT / "packaging/windows/build-installer.ps1"),
              "PAYLOAD": str(payload), "CANDIDATE": str(output), "COMPILER": str(compiler),
              "BOOTSTRAPPER": str(bootstrapper), "UNINSTALLER_CACHE": str(tmp_path / "cache"),
-             "FAKE_COMPILER_OUTCOME": prepare_outcome, "FAKE_CACHE_SIGNED": "0"},
+             "FAKE_COMPILER_OUTCOME": prepare_outcome, "FAKE_CACHE_SIGNED": "0",
+             "FAKE_CACHE_FILENAME": cache_name},
         capture_output=True, text=True, timeout=30,
     )
-    if prepare_outcome == "unexpected-error":
+    if prepare_outcome != "prepare":
         assert result.returncode != 0
         assert "Unexpected uninstaller preparation result" in result.stderr
         assert not list(output.glob("*.sha256"))
@@ -329,3 +345,4 @@ if (@(Get-ChildItem $env:CANDIDATE -Filter '*.sha256').Count) { throw 'Assembly 
         assert {file["path"] for file in manifest["files"]} == {"Data Formulator.exe", ".data-formulator-payload"}
         assert len(list(output.glob("*.sha256"))) == 1
         assert (payload / "Data Formulator.exe").read_bytes() == b"application"
+        assert (tmp_path / "cache" / cache_name).read_text().strip() == "uninstaller"
