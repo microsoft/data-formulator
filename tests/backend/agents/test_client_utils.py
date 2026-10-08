@@ -544,6 +544,19 @@ class TestCheaperInference:
         assert c.model == "claude-sonnet-5"
 
 
+class TestApiRoute:
+    def test_uses_openai_compatible_api_with_bare_model_id(self):
+        client = Client("api_route", "gpt-5.5", api_key="k")
+        assert client.model == "gpt-5.5"
+        assert client.params["api_base"] == "https://global.api-route.com/v1"
+        assert client.params["custom_llm_provider"] == "openai"
+
+    def test_custom_base_url_strips_trailing_slash(self):
+        client = Client("api_route", "gpt-5.5", api_key="k",
+                        api_base="https://global.api-route.com/v1/")
+        assert client.params["api_base"] == "https://global.api-route.com/v1"
+
+
 # ---------------------------------------------------------------------------
 # Ollama api_base normalisation
 # ---------------------------------------------------------------------------
