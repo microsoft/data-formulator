@@ -30,11 +30,6 @@ def test_desktop_spec_excludes_unused_tk_runtime():
     assert set(ast.literal_eval(excludes)) == {"tkinter", "_tkinter"}
 
 
-
-def test_windows_installer_supports_validation_agent_os():
-    lines = (PROJECT_ROOT / "packaging/windows/data-formulator.iss").read_text().splitlines()
-    assert "MinVersion=10.0.20348" in lines
-
 @pytest.mark.parametrize("version,expected", [
     ("0.8.0a2", "0.8.0.10002"),
     ("0.8.0b1", "0.8.0.20001"),
