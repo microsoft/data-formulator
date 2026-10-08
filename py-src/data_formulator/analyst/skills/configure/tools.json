@@ -1,0 +1,308 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "list_connectors",
+      "description": "List connector types available in this deployment when you need to look up a type key or answer a question about supported sources. Not required to open the connection form: propose_connection can show the selector directly.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "describe_connector",
+      "description": "Return setup fields and authentication choices for one source_type returned by list_connectors. After this, call propose_connection in the same turn; describing fields does not open the form.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_type": {
+            "type": "string",
+            "description": "Connector type key returned by list_connectors."
+          }
+        },
+        "required": [
+          "source_type"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "read_connector_form",
+      "description": "Read the currently targeted connector form artifact, its revision, schema and non-sensitive user-edited values. Credentials are never returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_workflows",
+      "description": "List saved and built-in workflows with their paths, overviews, and run parameters. Use before scheduling or when the user asks which workflows exist.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_schedules",
+      "description": "List workflow schedules with cadence, status, next run, recent run outcomes, and the server model connections a schedule can use. Reports when scheduling is unavailable.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_sessions",
+      "description": "Find the user's saved sessions, newest first, with names, dates, counts, and a content summary (data, prompts, reports, workflows). Use query terms to search names and content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Optional search terms matched against session names and content summaries."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Maximum sessions to return (default 20)."
+          },
+          "empty": {
+            "type": "boolean",
+            "description": "Only sessions without tables, charts, or reports (searches all sessions)."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "propose_connection",
+      "description": "Open the user-confirmed connection form with a connector selector. Call immediately when the user wants to connect a source, even if its type is unknown; omit source_type to let the user choose in the form. No prior discovery call is required. Provide a known source_type to preselect it. Never invent credentials. The user always confirms Connect.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_type": {
+            "type": "string",
+            "description": "Connector type key returned by list_connectors."
+          },
+          "prefilled": {
+            "type": "object",
+            "description": "Optional connector field values already supplied by the user. Values seed the live form and must not be repeated in prose.",
+            "additionalProperties": {}
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "update_connector_form",
+      "description": "Patch the existing form artifact after reading it. Preserve unrelated fields; never connect, save credentials, or create a replacement form. Pause for user review.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "form_id",
+          "revision",
+          "values"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "propose_workflow",
+      "description": "Propose or revise an analysis workflow definition in the current conversation for user review, Save, or Run. Use this for workflow creation instead of creating a Markdown file. This action neither saves nor executes the workflow. Ground it in the user's conversation and available data; use ask_user for material unknowns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "definition": {
+            "$ref": "workflow-definition"
+          },
+          "summary": {
+            "type": "string",
+            "description": "Concise description of the proposed definition or revision, without claiming execution or saving."
+          },
+          "replaces": {
+            "type": "string",
+            "description": "Path of the user's saved workflow (origin user, from list_workflows) that this proposal revises. The form then lets the user update that workflow or save a new one. Omit for a new workflow."
+          }
+        },
+        "required": [
+          "definition",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "propose_schedule",
+      "description": "Propose a new workflow schedule, or a change to an existing one, as a prefilled schedule form. Schedules run a saved workflow unattended in new sessions. Omitted fields keep existing values (when editing) or use the user's defaults (timezone, selected server model).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schedule_id": {
+            "type": "string",
+            "description": "Existing schedule ID from list_schedules to revise. The form then lets the user update it or save a new schedule. Omit to create."
+          },
+          "name": {
+            "type": "string",
+            "description": "Schedule name; defaults to the workflow name."
+          },
+          "workflow": {
+            "type": "string",
+            "description": "Saved workflow path from list_workflows. Omit when the user has not chosen; the form lists saved workflows to pick from."
+          },
+          "time": {
+            "type": "string",
+            "description": "Run time as 24-hour HH:MM."
+          },
+          "weekdays": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 6
+            },
+            "description": "Days to run, 0=Monday through 6=Sunday."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA timezone such as America/Los_Angeles. Omit to use the user's timezone."
+          },
+          "model_id": {
+            "type": "string",
+            "description": "Server model connection ID from list_schedules."
+          },
+          "setup": {
+            "type": "object",
+            "description": "Workflow inputs: parameters keyed by parameter name, plus optional instructions.",
+            "properties": {
+              "parameters": {
+                "type": "object"
+              },
+              "instructions": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "False saves the schedule paused."
+          },
+          "catch_up": {
+            "type": "boolean",
+            "description": "Run once after missed occurrences."
+          },
+          "auto_approve": {
+            "type": "boolean",
+            "description": "Auto-approve terminal commands and single-option data loads during runs. Only when the user asks; always requires review."
+          },
+          "user_review_needed": {
+            "type": "boolean",
+            "description": "Default true: open the form for the user to review and submit. Set false only when the user's request is explicit and every value is supplied or verified; the application then submits the form automatically and leaves it open if anything is missing, invalid, or requires elevated permissions."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "propose_session_changes",
+      "description": "Show sessions in a panel where the user can rename, open (in a new tab), or delete each one. Use it to present sessions the user asked to find or organize, and to rename or open sessions they asked about. Session IDs come from list_sessions. Deletion is always the user's own action in the panel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "Short panel title describing the selection, such as 'Empty sessions'."
+          },
+          "sessions": {
+            "type": "array",
+            "maxItems": 50,
+            "description": "Sessions to show, in the order to list them.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "session_id": {
+                  "type": "string"
+                },
+                "display_name": {
+                  "type": "string",
+                  "maxLength": 120,
+                  "description": "New name. Applied when the user asked for the rename and user_review_needed is false; otherwise it prefills the rename field."
+                },
+                "reason": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "description": "Brief note on why it is listed or what is proposed."
+                }
+              },
+              "required": [
+                "session_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "open_session_id": {
+            "type": "string",
+            "description": "Session to open in this tab (leaves the current session)."
+          },
+          "user_review_needed": {
+            "type": "boolean",
+            "description": "Default true. Set false only when the user explicitly asked to rename or open these sessions; suggested names and opening then apply directly."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  }
+]

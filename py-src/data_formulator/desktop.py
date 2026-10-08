@@ -1,4 +1,5 @@
 import ctypes
+import json
 import os
 import socket
 import sys
@@ -7,10 +8,11 @@ import time
 import urllib.error
 import urllib.request
 from multiprocessing import freeze_support
+from pathlib import Path
 
 
 _INSTANCE_HOST = "127.0.0.1"
-_INSTANCE_PORT = int(os.environ.get("DF_DESKTOP_COORDINATION_PORT", "49731"))
+_INSTANCE_PORT = int(os.environ.get("DF_DESKTOP_COORDINATION_PORT", "0"))
 _ACTIVATE_MESSAGE = b"DATA_FORMULATOR_ACTIVATE_V1\n"
 _ACTIVATE_ACK = b"DATA_FORMULATOR_ACTIVE_V1\n"
 
@@ -26,30 +28,86 @@ def _configure_standard_streams() -> None:
             pass
 
 
+def _instance_directory() -> Path:
+    home = Path(os.environ.get("DATA_FORMULATOR_HOME") or Path.home() / ".data_formulator")
+    directory = home.expanduser() / ".desktop"
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    return directory
+
+
 def _signal_existing_instance(timeout: float = 1.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            with socket.create_connection((_INSTANCE_HOST, _INSTANCE_PORT), timeout=0.2) as client:
+            port = int((_instance_directory() / "port").read_text(encoding="ascii"))
+            if not 0 < port < 65536:
+                raise ValueError("Invalid desktop activation port")
+            with socket.create_connection((_INSTANCE_HOST, port), timeout=0.2) as client:
                 client.sendall(_ACTIVATE_MESSAGE)
-                return client.recv(len(_ACTIVATE_ACK)) == _ACTIVATE_ACK
-        except OSError:
+                acknowledgement = b""
+                while len(acknowledgement) < len(_ACTIVATE_ACK):
+                    chunk = client.recv(len(_ACTIVATE_ACK) - len(acknowledgement))
+                    if not chunk:
+                        break
+                    acknowledgement += chunk
+                return acknowledgement == _ACTIVATE_ACK
+        except (OSError, ValueError):
             time.sleep(0.05)
     return False
 
 
-def _claim_single_instance() -> socket.socket | None:
-    coordinator = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+class _DesktopCoordinator:
+    def __init__(self, listener, lock):
+        self.listener = listener
+        self.lock = lock
+        self.activate = threading.Event()
+        threading.Thread(
+            target=_listen_for_activation,
+            args=(listener, self.activate),
+            daemon=True,
+        ).start()
+
+    def close(self) -> None:
+        try:
+            self.listener.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        self.listener.close()
+        self.lock.release()
+
+
+def _claim_single_instance() -> _DesktopCoordinator | None:
+    from filelock import FileLock, Timeout
+
+    directory = _instance_directory()
+    lock = FileLock(directory / "instance.lock", thread_local=False)
+    deadline = time.monotonic() + 5.0
+    while True:
+        try:
+            lock.acquire(timeout=0)
+            break
+        except Timeout:
+            if _signal_existing_instance(timeout=0.3):
+                return None
+            if time.monotonic() >= deadline:
+                raise RuntimeError(
+                    "Data Formulator is already running but is not responding. "
+                    "Wait for it to finish starting, or close it before trying again."
+                ) from None
+
+    coordinator = None
     try:
+        coordinator = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         coordinator.bind((_INSTANCE_HOST, _INSTANCE_PORT))
         coordinator.listen(2)
-        return coordinator
-    except OSError as exc:
-        coordinator.close()
-        if _signal_existing_instance():
-            return None
+        (directory / "port").write_text(str(coordinator.getsockname()[1]), encoding="ascii")
+        return _DesktopCoordinator(coordinator, lock)
+    except Exception as exc:
+        if coordinator is not None:
+            coordinator.close()
+        lock.release()
         raise RuntimeError(
-            f"Desktop coordination port {_INSTANCE_PORT} is already in use"
+            f"Could not open desktop coordination port {_INSTANCE_PORT}: {exc}"
         ) from exc
 
 
@@ -61,7 +119,13 @@ def _listen_for_activation(coordinator: socket.socket, activate: threading.Event
             return
         with connection:
             try:
-                message = connection.recv(len(_ACTIVATE_MESSAGE))
+                connection.settimeout(0.5)
+                message = b""
+                while len(message) < len(_ACTIVATE_MESSAGE):
+                    chunk = connection.recv(len(_ACTIVATE_MESSAGE) - len(message))
+                    if not chunk:
+                        break
+                    message += chunk
                 if message == _ACTIVATE_MESSAGE:
                     activate.set()
                     connection.sendall(_ACTIVATE_ACK)
@@ -219,6 +283,34 @@ def _self_test_clr() -> int:
     return 0
 
 
+def _write_desktop_test_result(result_path: str, passed: bool, message: str) -> None:
+    Path(result_path).write_text(json.dumps({"passed": passed, "message": message}) + "\n")
+
+
+def _gui_is_ready(window) -> bool:
+    return window.evaluate_js(
+        "window.location.search.includes('desktop=1') && "
+        "document.readyState === 'complete' && "
+        "Boolean(document.getElementById('root')?.childElementCount)"
+    ) is True
+
+
+def _monitor_gui_test(window, result_path: str) -> None:
+    try:
+        while not _gui_is_ready(window):
+            time.sleep(0.25)
+        _write_desktop_test_result(result_path, True, "Frontend mounted in native webview")
+        os._exit(0)
+    except Exception as exc:
+        _write_desktop_test_result(result_path, False, str(exc))
+        os._exit(1)
+
+
+def _gui_test_timeout(result_path: str) -> None:
+    _write_desktop_test_result(result_path, False, "GUI self-test exceeded 120 seconds")
+    os._exit(1)
+
+
 def run_desktop() -> None:
     # PyInstaller replaces freeze_support() so spawned multiprocessing workers
     # enter their target function instead of relaunching the desktop app.
@@ -228,13 +320,27 @@ def run_desktop() -> None:
     if os.environ.get("DF_DESKTOP_SELF_TEST") == "1":
         sys.exit(_run_self_test())
 
+    gui_test = os.environ.get("DF_DESKTOP_GUI_TEST") == "1"
+    result_path = os.environ.get("DF_DESKTOP_TEST_RESULT", "")
+    if gui_test:
+        if not result_path or not os.environ.get("DATA_FORMULATOR_HOME"):
+            raise RuntimeError("GUI test requires DF_DESKTOP_TEST_RESULT and an isolated DATA_FORMULATOR_HOME")
+        _write_desktop_test_result(result_path, False, "GUI self-test started but did not finish")
+        watchdog = threading.Timer(120, _gui_test_timeout, args=(result_path,))
+        watchdog.daemon = True
+        watchdog.start()
+
     coordinator = _claim_single_instance()
     if coordinator is None:
+        if gui_test:
+            _write_desktop_test_result(result_path, False, "Another desktop instance is running")
+            sys.exit(1)
         return
 
     try:
         import webview
     except ImportError as exc:
+        coordinator.close()
         raise RuntimeError(
             "Desktop support is not installed. Run: uv pip install -e '.[desktop]'"
         ) from exc
@@ -242,12 +348,7 @@ def run_desktop() -> None:
     _enable_per_monitor_dpi()
 
     try:
-        activate = threading.Event()
-        threading.Thread(
-            target=_listen_for_activation,
-            args=(coordinator, activate),
-            daemon=True,
-        ).start()
+        activate = coordinator.activate
 
         port = _available_port()
         url = f"http://127.0.0.1:{port}?desktop=1"
@@ -284,11 +385,18 @@ def run_desktop() -> None:
                 _wait_until_ready(url)
             except Exception as exc:  # pragma: no cover - error path
                 print(f"Failed to start the backend: {exc}")
+                if gui_test:
+                    _write_desktop_test_result(result_path, False, f"Backend failed: {exc}")
+                    os._exit(1)
                 return
             window.load_url(url)
 
         threading.Thread(target=_start_backend, daemon=True).start()
-        webview.start()
+        if gui_test:
+            webview.start(_monitor_gui_test, (window, result_path), gui="edgechromium" if sys.platform == "win32" else None)
+            sys.exit(1)
+        else:
+            webview.start()
     finally:
         coordinator.close()
 

@@ -96,13 +96,10 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
     const tableSemantics = useSelector((state: DataFormulatorState) =>
         state.tableSemantics.find(info => info.tableId === focusedTableId),
     );
-    const displayName = tableSemantics?.displayName?.trim()
-        || targetTable?.displayId
+    const displayName = targetTable?.displayId
         || targetTable?.id
         || 'table';
-    const realName = targetTable?.derive
-        ? targetTable.virtual?.tableId
-        : targetTable?.source?.originalTableName || targetTable?.virtual?.tableId;
+    const realName = targetTable?.source?.type === 'file' ? targetTable.source.fileName : undefined;
     const showRealName = !!realName
         && realName.toLowerCase().replace(/[\s_-]+/g, '') !== displayName.toLowerCase().replace(/[\s_-]+/g, '');
 
@@ -199,10 +196,15 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
     const headerBar = showHeaderBar ? (
         <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.5, px: 0.5, pt: 1, pb: 1 }}>
             <Box sx={{ minWidth: 0 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, minWidth: 0 }}>
                     <Typography sx={{ fontSize: textVar.xl, fontWeight: 600, color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
                         {displayName}
                     </Typography>
+                    {targetTable?.derive && (
+                        <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary', flexShrink: 0 }}>
+                            {t('chart.derivedTable', { defaultValue: 'Derived table' })}
+                        </Typography>
+                    )}
                     {searchQuery ? (
                         <Chip
                             size="small"

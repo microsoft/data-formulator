@@ -20,10 +20,20 @@ declare module "*.css" {
 
 declare module "prettier";
 
+declare module "*?raw" {
+    const content: string;
+    export default content;
+}
+
 declare module "prettier/parser-babel";
 
 declare module "vm-browserify";
 
 declare module "vega-lite" {
     export function compile(spec: any, options?: any): { spec: any };
+}
+
+declare module "virtual:df-react-runtime" {
+    const source: string;
+    export default source;
 }

@@ -1,0 +1,18 @@
+{
+  "navigation": {
+    "startExploration": "探索を開始します",
+    "installLocally": "ローカルにインストールします",
+    "tryOnlineDemo": "オンラインデモを試します",
+    "video": "動画",
+    "github": "GitHub",
+    "contactUs": "お問い合わせ",
+    "termsOfUse": "利用規約",
+    "about": "概要",
+    "home": "ホーム",
+    "data": "データ",
+    "visualization": "可視化",
+    "report": "レポート",
+    "chat": "チャット",
+    "agentRules": "エージェントルール"
+  }
+}

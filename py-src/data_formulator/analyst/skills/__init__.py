@@ -5,7 +5,7 @@
 
 Each skill lives in its own sub-package under this directory and ships a
 ``SKILL.md`` with YAML frontmatter (``name`` / ``description`` /
-``when_to_use`` / ``always_on`` / ``actions``). At startup the registry scans
+``when_to_use`` / ``always_on`` / ``includes`` / ``tools`` / ``actions``). At startup the registry scans
 those frontmatter blocks to build a cheap, always-resident index (tier-1
 progressive disclosure) **and** imports each skill's Python code module so the
 skill instance is always available to the agent.
@@ -28,7 +28,8 @@ import importlib
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -80,6 +81,7 @@ def _meta_from_frontmatter(raw: dict[str, Any], fallback_name: str) -> SkillMeta
         description=str(raw.get("description") or ""),
         when_to_use=str(raw.get("when_to_use") or ""),
         always_on=bool(raw.get("always_on", False)),
+        includes=_coerce_name_list(raw.get("includes")),
         tool_names=_coerce_name_list(raw.get("tools")),
         action_names=_coerce_name_list(raw.get("actions")),
     )
@@ -107,6 +109,22 @@ class SkillRegistry:
     # ``actions`` is a committing action, in ``tools`` an inspection tool).
     tool_specs: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     _doc_paths: dict[str, Path] = field(default_factory=dict)
+    terminal_mode: str = "ask"
+
+    def with_terminal_policy(self, mode: str) -> SkillRegistry:
+        registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths), terminal_mode=mode)
+        if mode == "off":
+            for collection in (registry.metas, registry.skills, registry.tool_specs, registry._doc_paths):
+                collection.pop("terminal", None)
+        elif "terminal" in registry.metas:
+            registry.metas["terminal"] = replace(registry.metas["terminal"], always_on=True)
+            for spec in registry.tool_specs.get("terminal", []):
+                spec["function"]["description"] += (
+                    " Each invocation requires exact-command approval." if mode == "ask" else
+                    " The application automatically executes permitted invocations; do not ask for routine approval."
+                )
+        return registry
 
     def canonical_name(self, name: str) -> str:
         """Resolve a public skill name, accepting legacy underscore aliases."""
@@ -155,9 +173,41 @@ class SkillRegistry:
     def has(self, name: str) -> bool:
         return self.canonical_name(name) in self.metas
 
+    def expanded_names(self, names) -> list[str]:
+        """Resolve bundles to themselves and their members in declaration order."""
+        expanded: list[str] = []
+        visited: set[str] = set()
+
+        def visit(raw_name: str) -> None:
+            name = self.canonical_name(raw_name)
+            if name in visited or name not in self.metas:
+                return
+            visited.add(name)
+            expanded.append(name)
+            for included_name in self.metas[name].includes:
+                visit(included_name)
+
+        for name in names:
+            visit(name)
+        return expanded
+
+    def included_skill_names(self) -> set[str]:
+        """Return implementation members hidden from the public skill index."""
+        included: set[str] = set()
+        for meta in self.metas.values():
+            included.update(self.expanded_names(meta.includes))
+        return included
+
+    def is_active(self, loaded_names, name: str) -> bool:
+        return self.canonical_name(name) in self.expanded_names(loaded_names)
+
     def gated_skill_names(self) -> list[str]:
         """Skills that load on demand (not ``always_on``)."""
-        return [n for n in self.names() if not self.metas[n].always_on]
+        included = self.included_skill_names()
+        return [
+            name for name in self.names()
+            if not self.metas[name].always_on and name not in included
+        ]
 
     def action_owner(self, action: str) -> str | None:
         """Return the skill name that unlocks ``action``, or ``None`` if no
@@ -183,13 +233,40 @@ class SkillRegistry:
         return "\n".join(lines)
 
     def load_body(self, name: str) -> str:
-        """Return the ``SKILL.md`` body (frontmatter stripped) for ``name``."""
+        """Return a skill's body followed by the bodies of included members."""
         name = self.canonical_name(name)
-        path = self._doc_paths.get(name)
-        if not path or not path.exists():
+        if name not in self.metas:
             raise KeyError(f"Unknown skill: {name!r}")
-        _, body = _parse_front_matter(path.read_text(encoding="utf-8"))
-        return body.strip()
+        bodies: list[str] = []
+        for expanded_name in self.expanded_names([name]):
+            path = self._doc_paths.get(expanded_name)
+            if not path or not path.exists():
+                continue
+            _, body = _parse_front_matter(path.read_text(encoding="utf-8"))
+            if expanded_name == "workspace":
+                terminal_route = (
+                    "| Existing CLI access or local files | Use `run_terminal` to acquire a bounded dataset "
+                    "into scratch without requiring a new connector. Register the working dataset with "
+                    "`create_data` and acquisition metadata, then use its returned input ID and path for "
+                    "analysis and visualization or report tools. Follow the terminal skill's approval "
+                    "and execution contract. |\n"
+                    if self.has("terminal") else ""
+                )
+                body = body.replace("{terminal_acquisition_route}\n", terminal_route)
+            if expanded_name == "terminal":
+                policy = (
+                    "The application pauses for approval of each exact invocation. Submit the tool call directly; "
+                    "a pending proposal has not executed."
+                    if self.terminal_mode == "ask" else
+                    "Auto approval is enabled. Sandboxed commands, including writes within the configured policy, "
+                    "execute immediately. Only dangerouslyDisableSandbox requests require user approval."
+                )
+                body = body.replace("{terminal_policy}", policy)
+                from data_formulator.analyst.skills.terminal.skill import sandbox_filesystem_policy
+                body = body.replace("{terminal_filesystem_policy}", json.dumps(sandbox_filesystem_policy()))
+            if body.strip():
+                bodies.append(body.strip())
+        return "\n\n".join(bodies)
 
     def get_skill(self, name: str) -> Skill | None:
         """Return the (eagerly-instantiated) skill code module, or ``None`` for
@@ -199,8 +276,15 @@ class SkillRegistry:
     def tools_for(self, names) -> list[dict[str, Any]]:
         """Merge the inspection tool specs contributed by the named (loaded) skills."""
         out: list[dict[str, Any]] = []
-        for name in names:
-            out.extend(self._specs_split(name)[0])
+        seen: set[str] = set()
+        for name in self.expanded_names(names):
+            for spec in self._specs_split(name)[0]:
+                tool_name = spec.get("function", {}).get("name")
+                if tool_name and tool_name in seen:
+                    continue
+                if tool_name:
+                    seen.add(tool_name)
+                out.append(spec)
         return out
 
     # ------------------------------------------------------------------
@@ -220,8 +304,15 @@ class SkillRegistry:
         actions vs inspection tools.
         """
         out: list[dict[str, Any]] = []
-        for name in names:
-            out.extend(self._specs_split(name)[1])
+        seen: set[str] = set()
+        for name in self.expanded_names(names):
+            for spec in self._specs_split(name)[1]:
+                action_name = spec.get("function", {}).get("name")
+                if action_name and action_name in seen:
+                    continue
+                if action_name:
+                    seen.add(action_name)
+                out.append(spec)
         return out
 
     def action_required_fields(self, name: str) -> tuple[str, ...]:
@@ -304,7 +395,15 @@ def _load_tool_specs(skill_dir: Path) -> list[dict[str, Any]]:
     except Exception:
         logger.warning("Failed to parse %s", f, exc_info=True)
         return []
-    return [s for s in data if isinstance(s, dict)] if isinstance(data, list) else []
+    specs = [spec for spec in data if isinstance(spec, dict)] if isinstance(data, list) else []
+    for spec in specs:
+        properties = spec.get("function", {}).get("parameters", {}).get("properties", {})
+        if properties.get("definition") == {"$ref": "workflow-definition"}:
+            from copy import deepcopy
+            from data_formulator.workflows.instances import WORKFLOW_DEFINITION_SCHEMA
+
+            properties["definition"] = deepcopy(WORKFLOW_DEFINITION_SCHEMA)
+    return specs
 
 
 def build_registry(skills_dir: Path | None = None) -> SkillRegistry:

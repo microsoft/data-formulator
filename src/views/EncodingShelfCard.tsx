@@ -80,7 +80,6 @@ import { DictTable } from "../components/ComponentType";
 
 import { resolveChartFields, assembleVegaChart, resolveRecommendedChart } from '../app/utils';
 import { buildSpecForRestyle, buildDataContext, callRestyleAgent, makeVariant } from '../app/restyle';
-import { classifyChartIntent } from '../app/intentClassifier';
 import { downscaleImageForAgent } from '../app/chartCache';
 import { EncodingBox } from './EncodingBox';
 
@@ -287,8 +286,7 @@ export const TriggerCard: FC<{
 /**
  * One-click style presets surfaced in the bottom-left palette menu of the
  * follow-up speech bubble. Each entry maps to a detailed natural-language
- * instruction that is fed directly to the chart restyle agent (bypassing the
- * intent classifier — we already know this is a style change).
+ * instruction that is fed directly to the chart restyle agent.
  *
  * Labels are short so the menu stays compact; descriptions are one-liners
  * shown as secondary text. Keep the instructions self-contained (they replace
@@ -1072,10 +1070,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             display: 'flex', 
             flexDirection: 'column', 
         }}>
-            {/* Opaque agent-working overlay — blocks the encoding shelf +
-                chat box while any agent phase runs (intent classify, restyle,
-                or the data agent), showing the live status text, instead of
-                dimming the chart canvas. */}
+            {/* Opaque agent-working overlay blocks the encoding shelf while
+                the data agent runs, without dimming the chart canvas. */}
             {isAgentWorking && (
                 <Box sx={{
                     position: 'absolute',

@@ -59,6 +59,15 @@ def _reload_data_loader_module():
     return importlib.import_module("data_formulator.data_loader")
 
 
+@pytest.fixture(autouse=True)
+def _restore_data_loader_package():
+    # A reimported package lacks its already-imported submodules as attributes, breaking later tests.
+    import data_formulator.data_loader
+    original = sys.modules["data_formulator.data_loader"]
+    yield
+    sys.modules["data_formulator.data_loader"] = data_formulator.data_loader = original
+
+
 @pytest.fixture()
 def client_with_plugin(tmp_path, monkeypatch):
     """Spin up a Flask app whose data_loader registry includes a fake plugin."""

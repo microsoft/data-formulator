@@ -7,13 +7,15 @@
 //   sx={{ borderBottom: `1px solid ${borderColor.divider}`, boxShadow: shadow.sm }}
 // ════════════════════════════════════════════════════════════════════════
 
-import type { SxProps } from '@mui/material';
+import type { SxProps, Theme } from '@mui/material';
+import { alpha } from '@mui/material/styles';
+import { iconVar, textVar } from './layout';
 
 // ── Border colors ──────────────────────────────────────────────────────
 
 export const borderColor = {
     /** 0.12 — section dividers, table borders, tab underlines, sidebar edges
-     *  DataLoadingChat, ExplComponents, RefreshDataDialog, ReportView tables,
+    *  ExplComponents, RefreshDataDialog, ReportView tables,
      *  TableSelectionView, DataLoadingThread, DBTableManager */
     divider: 'rgba(0, 0, 0, 0.12)',
 
@@ -35,6 +37,72 @@ export const sidebarEdge = {
     overlayShadow: '5px 0 16px -8px rgba(0, 0, 0, 0.32)',
 } as const;
 
+/** Reading typography for reports; other long-form canvases (workflow runs) match it. */
+export const readingTypography = {
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+    color: 'rgb(55, 53, 47)',
+} as const;
+
+/** Sidebar panels keep only panel controls (pin, collapse) in the header;
+ *  the tab's own actions live in this toolbar row below it. */
+export const sidebarToolbarSx = {
+    display: 'flex', alignItems: 'center', gap: 1, px: 1.25, py: 0.75, minWidth: 0, flexShrink: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)', borderBottom: '1px solid rgba(0, 0, 0, 0.06)',
+} as const;
+
+/** The tab's main action in `sidebarToolbarSx` (Add connector, New session, ...). */
+export const sidebarPrimaryActionSx = {
+    flexShrink: 0, minWidth: 0, height: 30, px: 1, borderRadius: 1, borderColor: borderColor.view,
+    fontSize: textVar.xs, fontWeight: 500, textTransform: 'none', whiteSpace: 'nowrap', color: 'primary.main',
+    '& .MuiButton-startIcon': { ml: -0.25, mr: 0.5 },
+    '& .MuiButton-startIcon .MuiSvgIcon-root': { fontSize: iconVar.sm },
+    '&:hover': { borderColor: 'primary.main', bgcolor: 'transparent' },
+} as const;
+
+/** One item in a sidebar list (sessions, knowledge, schedules). Children may use:
+ *  `.sidebar-row-actions` (faded in on hover/focus, always on touch), `.sidebar-row-meta`
+ *  (faded out meanwhile), and `.sidebar-row-trailing` to stack both in one slot so the
+ *  title never resizes; add `.sidebar-row-active` to pin the hover state. */
+export const sidebarRowSx = {
+    display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0,
+    px: 1.25, py: 0.5,
+    cursor: 'pointer', userSelect: 'none', color: 'text.primary',
+    '&:hover, &.sidebar-row-active': { bgcolor: 'rgba(0, 0, 0, 0.045)' },
+    '& .sidebar-row-trailing': { display: 'grid', flexShrink: 0, alignItems: 'center', justifyItems: 'end', '& > *': { gridArea: '1 / 1' } },
+    '& .sidebar-row-actions': { display: 'inline-flex', flexShrink: 0, opacity: 0, pointerEvents: 'none' },
+    '&:hover .sidebar-row-actions, &:focus-within .sidebar-row-actions, &.sidebar-row-active .sidebar-row-actions': { opacity: 1, pointerEvents: 'auto' },
+    '&:hover .sidebar-row-meta, &:focus-within .sidebar-row-meta, &.sidebar-row-active .sidebar-row-meta': { opacity: 0 },
+    '@media (hover: none)': {
+        '& .sidebar-row-actions': { opacity: 1, pointerEvents: 'auto' },
+        '& .sidebar-row-trailing .sidebar-row-meta': { opacity: 0 },
+    },
+} as const;
+
+export const sidebarRowTitleSx = { flex: 1, minWidth: 0, fontSize: textVar.sm, fontWeight: 500, lineHeight: 1.45 } as const;
+
+export const sidebarRowMetaSx = { flexShrink: 0, fontSize: textVar.xxs, color: 'text.secondary' } as const;
+
+/** Icon action on a sidebar row or artifact card: accent glyph, distinct from gray row metadata, with a circular hover. */
+export const sidebarRowActionSx = {
+    p: 0, width: 22, height: 22, borderRadius: '50%', color: 'primary.main',
+    '&:hover': { bgcolor: (theme: Theme) => alpha(theme.palette.primary.main, 0.1) },
+    '& .MuiSvgIcon-root': { fontSize: iconVar.sm },
+} as const;
+
+/** Destructive variant of `sidebarRowActionSx`. */
+export const sidebarRowDangerActionSx = {
+    ...sidebarRowActionSx,
+    color: 'error.main',
+    '&:hover': { bgcolor: (theme: Theme) => alpha(theme.palette.error.main, 0.1) },
+} as const;
+
+/** Compact menus opened from sidebar rows and toolbars. */
+export const sidebarMenuSx = {
+    '& .MuiMenuItem-root': { fontSize: textVar.sm, minHeight: 0, py: 0.5 },
+    '& .MuiListItemIcon-root': { minWidth: 26 },
+    '& .MuiSvgIcon-root': { fontSize: iconVar.sm },
+} as const;
+
 // ── Composite border styles (spread into sx) ───────────────────────────
 
 /** Section divider border — tabs, sidebars, table wrappers */
@@ -45,6 +113,9 @@ export const ComponentBorderStyle: SxProps = { border: `1px solid ${borderColor.
 
 /** Outer container border — panels, dialogs, popovers */
 export const ViewBorderStyle: SxProps = { border: `1px solid ${borderColor.view}` };
+
+/** Selected/highlighted agent-response surface. */
+export const agentResponseFill = (primaryColor: string) => alpha(primaryColor, 0.055);
 
 // ── Box shadows ────────────────────────────────────────────────────────
 
@@ -78,7 +149,7 @@ export const transition = {
     normal: 'all 0.2s ease',
 
     /** Drawer slides, focus rings, snackbar entrances
-     *  MessageSnackbar, DataLoadingChat, AgentRulesDialog */
+    *  MessageSnackbar, AgentRulesDialog */
     slow: 'all 0.3s ease',
 } as const;
 
@@ -91,6 +162,12 @@ export const transition = {
  * plain document backgrounds. Resting state is neutral; spread this and
  * override `color` / `&:hover` for destructive or active variants.
  */
+/**
+ * Right offset (px) for controls floating over a full-bleed HTML app: clears the
+ * app's own vertical scrollbar (~15px when scrollbars are always shown).
+ */
+export const floatingAppControlsRight = 24;
+
 export const floatingPillSx: SxProps = {
     backgroundColor: 'background.paper',
     border: `1px solid ${borderColor.divider}`,
@@ -115,7 +192,7 @@ export const radius = {
     sm: 1,
 
     /** Floating panels, dialogs, chat cards, table containers
-     *  DataThread popups, ChatDialog, About, DataLoadingChat, TableSelectionView */
+    *  DataThread popups, ChatDialog, About, TableSelectionView */
     md: 2,
 
     /** Status indicators, model icons

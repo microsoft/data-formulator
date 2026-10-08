@@ -30,6 +30,20 @@ def _reset_vault_singleton():
 
 class TestExplicitKey:
 
+    def test_configured_only_connectors_keep_the_vault_available(self, tmp_path, monkeypatch):
+        from flask import Flask
+        from data_formulator.auth.vault import get_credential_vault
+        monkeypatch.setenv('CREDENTIAL_VAULT_KEY', Fernet.generate_key().decode())
+        monkeypatch.setenv('CREDENTIAL_VAULT', 'local')
+        monkeypatch.setattr('data_formulator.auth.vault.get_data_formulator_home', lambda: tmp_path)
+        app = Flask(__name__)
+        app.config['CLI_ARGS'] = {'disable_data_connectors': True}
+        with app.app_context():
+            vault = get_credential_vault()
+            assert vault is not None
+            vault.store('installation:configuration', 'admin', {'password': 'configured-secret'})
+            assert vault.retrieve('installation:configuration', 'admin') == {'password': 'configured-secret'}
+
     def test_env_key_takes_priority(self, tmp_path, monkeypatch):
         key = Fernet.generate_key().decode()
         monkeypatch.setenv("CREDENTIAL_VAULT_KEY", key)

@@ -1,12 +1,13 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import path from 'path';
+import { dfReactRuntime } from './vite-plugins/dfReactRuntime';
 
 // Get port from environment variable with fallback to 5567
 const apiPort = process.env.API_PORT || 5567;
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), dfReactRuntime({ root: __dirname, flintChartLocal: process.env.FLINT_CHART_LOCAL })],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -17,8 +18,8 @@ export default defineConfig({
         ? { 'flint-chart': path.resolve(__dirname, process.env.FLINT_CHART_LOCAL) }
         : {}),
     },
-    // Keep a single copy of Flint's (optional) peer deps when aliased to local source.
-    dedupe: ['vega', 'vega-lite', 'echarts', 'chart.js'],
+    // Keep a single copy of React and Flint's (optional) peer deps.
+    dedupe: ['react', 'react-dom', 'vega', 'vega-lite', 'echarts', 'chart.js'],
   },
   build: {
     outDir: path.join(__dirname, 'py-src', 'data_formulator', "dist"),
@@ -44,6 +45,18 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      '/api/configurations/terminal': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: false,
+      },
+      '/api/workflows': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: false,
+      },
+      '/api/agent/analyst-streaming': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: false,
+      },
       '/api': {
         target: `http://localhost:${apiPort}`,
         changeOrigin: true,

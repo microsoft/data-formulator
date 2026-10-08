@@ -8,9 +8,12 @@ so user scripts access files via e.g. ``pd.read_csv("sample.csv")``.
 """
 
 import atexit
+from contextvars import ContextVar
 import logging
 import os
+import signal
 import threading
+import time
 import warnings
 from multiprocessing import Pipe, Process
 from sys import addaudithook
@@ -20,15 +23,21 @@ import pandas as pd
 from .base import Sandbox
 
 logger = logging.getLogger(__name__)
+execution_cancellation = ContextVar("sandbox_execution_cancellation", default=None)
 
 
 # ---------------------------------------------------------------------------
 # Persistent warm worker
 # ---------------------------------------------------------------------------
 
-def _warm_worker_loop(conn):
+def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
     """Long-lived child process that pre-imports heavy libraries then
     waits for code to execute.
+
+    ``allow_network`` relaxes only the audit hooks' network blocks; it is set
+    for OS-confined workers whose sandbox already denies loopback and local
+    sockets (see :mod:`.confinement`). ``announce_ready`` sends a
+    ``{"status": "ready"}`` handshake once the worker can accept code.
 
     Protocol (over *conn*):
         Host -> worker:  (code, allowed_objects, workspace_path)           — fresh namespace
@@ -135,9 +144,10 @@ def _warm_worker_loop(conn):
         if event in _blocked_os_events:
             raise IOError("dangerous os operation forbidden in sandbox")
         # Block network access — code should only transform data, not
-        # make outbound connections (prevents data exfiltration).
-        if event in ("socket.connect", "socket.bind", "socket.sendto",
-                      "socket.sendmsg", "socket.getaddrinfo"):
+        # make outbound connections (prevents data exfiltration). An OS-confined
+        # worker may reach the internet; its sandbox denies loopback and sockets.
+        if not allow_network and event in ("socket.connect", "socket.bind", "socket.sendto",
+                                           "socket.sendmsg", "socket.getaddrinfo"):
             raise IOError("network access forbidden in sandbox")
         # Block ctypes / dynamic library loading (could bypass audit hooks)
         if event in ("ctypes.dlopen", "ctypes.dlsym", "ctypes.set_errno"):
@@ -145,9 +155,9 @@ def _warm_worker_loop(conn):
         # Block import of dangerous modules (allow re-import of ctypes
         # since scipy/sklearn pre-loaded it for BLAS access).
         if event == "import" and type(arg[0]) == str:
-            _blocked_modules = ("subprocess", "shutil", "socket", "http",
-                                "urllib", "requests", "ctypes", "multiprocessing",
-                                "signal", "resource")
+            _blocked_modules = ("subprocess", "shutil", "ctypes", "multiprocessing", "signal", "resource")
+            if not allow_network:
+                _blocked_modules += ("socket", "http", "urllib", "requests")
             mod_name = arg[0].split(".")[0]
             if mod_name in _blocked_modules:
                 if mod_name == "ctypes" and "ctypes" in _sys.modules:
@@ -160,6 +170,9 @@ def _warm_worker_loop(conn):
 
     # Persistent namespace for SandboxSession (None when not active).
     _persistent_ns = None
+
+    if announce_ready:
+        conn.send({"status": "ready"})
 
     while True:
         try:
@@ -217,6 +230,12 @@ def _warm_worker_loop(conn):
             # server-originated code is executed. Additional audit hooks above block
             # file writes, network access, subprocess spawning, and dangerous imports.
             exec(code, namespace)  # nosec  # codeql[py/code-injection]
+        except KeyboardInterrupt:
+            captured = namespace.get("_captured")
+            conn.send({"status": "interrupted", "error_message": "Python execution interrupted by user.",
+                       "stdout": captured.getvalue()[-8000:] if hasattr(captured, "getvalue") else ""})
+            conn.close()
+            return
         except Exception as err:
             conn.send({"status": "error", "error_message": f"Error: {type(err).__name__} - {err}"})
             _allowed_workspace[0] = None
@@ -243,55 +262,209 @@ def _warm_worker_loop(conn):
     conn.close()
 
 
+class DuplexConnection:
+    """A two-pipe stand-in for ``multiprocessing.Pipe()``'s duplex connection.
+
+    Confined workers are started through ``sandbox-exec``/``bwrap`` rather than
+    ``multiprocessing``, and talk to the host over two inherited pipes.
+    """
+
+    def __init__(self, reader, writer):
+        self._reader = reader
+        self._writer = writer
+
+    def send(self, obj):
+        self._writer.send(obj)
+
+    def recv(self):
+        return self._reader.recv()
+
+    def poll(self, timeout=0.0):
+        return self._reader.poll(timeout)
+
+    def close(self):
+        for connection in (self._reader, self._writer):
+            try:
+                connection.close()
+            except OSError:
+                pass
+
+
+class _ConfinedProcess:
+    """``multiprocessing.Process``-like handle for a worker started under the OS sandbox."""
+
+    def __init__(self, popen, write_dir: str):
+        self._popen = popen
+        self._write_dir = write_dir
+
+    @property
+    def pid(self):
+        return self._popen.pid
+
+    @property
+    def exitcode(self):
+        return self._popen.poll()
+
+    def is_alive(self) -> bool:
+        return self._popen.poll() is None
+
+    def terminate(self):
+        if self.is_alive():
+            self._popen.terminate()
+
+    def kill(self):
+        if self.is_alive():
+            self._popen.kill()
+
+    def join(self, timeout=None):
+        import subprocess
+        try:
+            self._popen.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return
+        import shutil
+        shutil.rmtree(self._write_dir, ignore_errors=True)
+
+
+def _spawn_confined(kind: str, key: str) -> tuple[_ConfinedProcess, DuplexConnection]:
+    """Start a warm worker under the OS sandbox and wait for its ready handshake."""
+    import subprocess
+    import tempfile
+    from multiprocessing.connection import Connection
+    from . import confinement
+
+    write_dir = tempfile.mkdtemp(prefix="df-pyworker-")
+    to_child_read, to_child_write = os.pipe()
+    to_host_read, to_host_write = os.pipe()
+    command = confinement.confined_worker_command(kind, key, write_dir, to_child_read, to_host_write)
+    try:
+        popen = subprocess.Popen(
+            command, cwd=write_dir, env=confinement.worker_environment(os.path.realpath(write_dir)),
+            stdin=subprocess.DEVNULL, pass_fds=(to_child_read, to_host_write), start_new_session=True,
+        )
+    finally:
+        os.close(to_child_read)
+        os.close(to_host_write)
+    conn = DuplexConnection(Connection(to_host_read, writable=False), Connection(to_child_write, readable=False))
+    proc = _ConfinedProcess(popen, write_dir)
+    try:
+        ready = conn.poll(timeout=_WarmWorkerPool.READY_TIMEOUT) and conn.recv()
+    except (EOFError, OSError):
+        ready = None
+    if not (isinstance(ready, dict) and ready.get("status") == "ready"):
+        proc.kill()
+        proc.join(timeout=2)
+        conn.close()
+        raise OSError(f"confined Python worker did not start (exit code {proc.exitcode})")
+    return proc, conn
+
+
 class _WarmWorkerPool:
     """Pool of persistent child processes with pre-imported libraries.
 
-    Workers are forked once and reuse the same process for multiple
+    Workers are started once and reuse the same process for multiple
     calls, avoiding the ~600ms pandas/numpy import overhead each time.
     A simple LIFO stack ensures thread-safe checkout/return.
+
+    Where the OS sandbox is available (:mod:`.confinement`), a worker can read
+    only the workspaces it was started for, so workers are pooled by
+    :func:`~.confinement.worker_key` (Data Formulator's workspaces share one
+    key) and only the most recently used keys keep warm workers.
     """
+
+    READY_TIMEOUT = 60
+    MAX_WORKSPACES = 3
 
     def __init__(self, size: int = 2):
         self._size = size
         self._lock = threading.Lock()
-        self._available: list[tuple[Process, object]] = []
-        self._all: list[tuple[Process, object]] = []
+        self._available: dict[object, list[tuple[object, object]]] = {}
+        self._recent: list[object] = []
+        self._all: list[tuple[object, object]] = []
         self._closed = False
+        self._confinement_failed = False
+        self._keys: dict[int, object] = {}
         atexit.register(self.shutdown)
 
-    def _spawn(self) -> tuple[Process, object]:
+    def _confinement(self) -> str | None:
+        from .confinement import confinement_kind
+        return None if self._confinement_failed else confinement_kind()
+
+    def _key(self, workspace_path: str | None):
+        if self._confinement() is None:
+            return None
+        from .confinement import worker_key
+        return worker_key(workspace_path)
+
+    def _spawn(self, workspace_path: str | None = None) -> tuple[object, object]:
+        kind = self._confinement()
+        if kind is not None:
+            try:
+                return _spawn_confined(kind, self._key(workspace_path))
+            except Exception as exc:
+                self._confinement_failed = True
+                logger.warning(
+                    "OS confinement for the Python sandbox is unavailable (%s); "
+                    "falling back to the audit-hook sandbox without OS isolation.", exc,
+                )
         parent_conn, child_conn = Pipe()
         p = Process(target=_warm_worker_loop, args=(child_conn,), daemon=True)
         p.start()
         return p, parent_conn
 
-    def acquire(self) -> tuple[Process, object]:
-        """Get a warm worker (process, conn). Spawns one if needed."""
+    def acquire(self, workspace_path: str | None = None) -> tuple[object, object]:
+        """Get a warm worker (process, conn) for *workspace_path*. Spawns one if needed."""
+        key = self._key(workspace_path)
         with self._lock:
-            while self._available:
-                proc, conn = self._available.pop()
+            if key in self._recent:
+                self._recent.remove(key)
+            self._recent.append(key)
+            evicted = [old for old in self._recent[:-self.MAX_WORKSPACES]]
+            self._recent = self._recent[-self.MAX_WORKSPACES:]
+            stale = [pair for old in evicted for pair in self._available.pop(old, [])]
+            available = self._available.setdefault(key, [])
+            pair = None
+            while available:
+                proc, conn = available.pop()
                 if proc.is_alive():
-                    return proc, conn
+                    pair = (proc, conn)
+                    break
                 # Dead worker -- discard and try next
-            # No available workers -- spawn a new one (up to pool size is advisory)
-            pair = self._spawn()
-            self._all.append(pair)
+        for proc, conn in stale:
+            self.discard(proc, conn)
+        if pair is not None:
             return pair
+        # No available workers -- spawn a new one (up to pool size is advisory)
+        pair = self._spawn(workspace_path)
+        with self._lock:
+            self._all.append(pair)
+            self._keys[id(pair[0])] = self._key(workspace_path)
+        return pair
 
-    def release(self, proc: Process, conn) -> None:
+    def release(self, proc, conn) -> None:
         """Return a worker to the pool for reuse."""
         with self._lock:
-            if not self._closed and proc.is_alive():
-                self._available.append((proc, conn))
+            key = self._keys.get(id(proc))
+            if not self._closed and proc.is_alive() and key in self._recent:
+                self._available.setdefault(key, []).append((proc, conn))
+                return
+        self.discard(proc, conn)
 
-    def discard(self, proc: Process, conn) -> None:
+    def discard(self, proc, conn) -> None:
         """Discard a broken worker (don't put it back)."""
+        with self._lock:
+            self._keys.pop(id(proc), None)
+            self._all = [pair for pair in self._all if pair[0] is not proc]
         try:
             conn.send(None)
         except Exception:
             pass
         try:
             proc.terminate()
+        except Exception:
+            pass
+        try:
+            proc.join(timeout=0)
         except Exception:
             pass
 
@@ -330,9 +503,13 @@ class SandboxSession:
 
     EXECUTION_TIMEOUT = int(os.environ.get("DF_SANDBOX_TIMEOUT", "120"))
 
-    def __init__(self):
-        self._proc, self._conn = _worker_pool.acquire()
+    def __init__(self, workspace_path: str | None = None):
+        # Confined workers can read only the workspace they were started for,
+        # so the worker is acquired on first use when no workspace is given.
+        self._proc = self._conn = None
         self._closed = False
+        if workspace_path is not None:
+            self._proc, self._conn = _worker_pool.acquire(workspace_path)
 
     # -- public API --------------------------------------------------------
 
@@ -345,6 +522,8 @@ class SandboxSession:
         """
         if self._closed:
             return {"status": "error", "error_message": "Session is closed"}
+        if self._conn is None:
+            self._proc, self._conn = _worker_pool.acquire(workspace_path)
         try:
             self._conn.send((code, {**allowed_objects}, workspace_path, True))
             if self._conn.poll(timeout=self.EXECUTION_TIMEOUT):
@@ -373,6 +552,8 @@ class SandboxSession:
         if self._closed:
             return
         self._closed = True
+        if self._conn is None:
+            return
         try:
             self._conn.send("__clear_ns__")
             if self._conn.poll(timeout=5):
@@ -495,7 +676,8 @@ class LocalSandbox(Sandbox):
 
     Uses a pool of pre-warmed child processes with pandas/numpy/duckdb
     already imported, giving ~1 ms execution overhead per call.
-    Audit hooks in the child block file writes and dangerous operations.
+    Audit hooks in the child block file writes and dangerous operations, and
+    on macOS/Linux the child also runs under the OS sandbox (:mod:`.confinement`).
     """
 
     # ------------------------------------------------------------------
@@ -575,14 +757,39 @@ class LocalSandbox(Sandbox):
     @staticmethod
     def _run_in_warm_subprocess(code, allowed_objects, workspace_path=None):
         """Send code to a warm worker from the pool, return the result."""
-        proc, conn = _worker_pool.acquire()
+        cancel = execution_cancellation.get()
+        if cancel is not None and cancel.is_set():
+            return {"status": "interrupted", "error_message": "Interrupted before Python execution.", "stdout": ""}
+        proc, conn = _worker_pool.acquire(workspace_path)
         try:
             conn.send((code, {**allowed_objects}, workspace_path))
-            # Enforce a wall-clock timeout to prevent runaway code
-            if conn.poll(timeout=LocalSandbox.EXECUTION_TIMEOUT):
-                result = conn.recv()
+            deadline = time.monotonic() + LocalSandbox.EXECUTION_TIMEOUT
+            while not conn.poll(timeout=0.05):
+                if cancel is not None and cancel.is_set():
+                    result = {"status": "interrupted", "error_message": "Python execution interrupted by user.", "stdout": ""}
+                    try:
+                        if os.name != "nt":
+                            os.kill(proc.pid, signal.SIGINT)
+                            if conn.poll(timeout=0.75):
+                                result.update(conn.recv())
+                                result["status"] = "interrupted"
+                    except (OSError, EOFError):
+                        pass
+                    finally:
+                        _worker_pool.discard(proc, conn)
+                        proc.join(timeout=0.5)
+                        if proc.is_alive():
+                            proc.kill()
+                            proc.join()
+                        conn.close()
+                    return result
+                if time.monotonic() >= deadline:
+                    break
             else:
-                # Timed out — kill and discard the worker
+                result = conn.recv()
+                _worker_pool.release(proc, conn)
+                return result
+            if time.monotonic() >= deadline:
                 _worker_pool.discard(proc, conn)
                 return {
                     "status": "error",
@@ -591,8 +798,6 @@ class LocalSandbox(Sandbox):
                         f"{LocalSandbox.EXECUTION_TIMEOUT}s"
                     ),
                 }
-            _worker_pool.release(proc, conn)
-            return result
         except Exception as e:
             exit_code = proc.exitcode
             _worker_pool.discard(proc, conn)

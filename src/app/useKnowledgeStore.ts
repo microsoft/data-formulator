@@ -70,7 +70,6 @@ export function useKnowledgeStore() {
 
     const fetchAll = useCallback(async () => {
         await Promise.all([
-            fetchList('rules'),
             fetchList('workflows'),
             fetchKnowledgeLimits().then(setLimits).catch(() => { /* best-effort */ }),
         ]);

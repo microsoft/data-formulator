@@ -553,11 +553,7 @@ Agent 在构建数据摘要时会自动读取该字段并生成人类可读的 p
 | ReportGenAgent | `build_lightweight_table_context` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | ChartInsightAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | CodeExplanationAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| SimpleAgents (`nl_to_filter`) | 直接列描述注入 | ✅ | — | — | — | — |
 
 > **双来源描述**：当 `source_description` 和 `user_description` 同时存在且不同时，
 > Agent 会看到 `(source: ... | user: ...)` 格式，确保用户注释作为补充而非覆盖源描述。
 > 当两者一致或只有一方时，显示 `display_description`。
->
-> **注意**：`nl_to_filter` 目前仅注入 `description`，不包含 `verbose_name`/`expression`/双来源。
-> 这是因为 filter 场景下列名+类型+描述已足够。

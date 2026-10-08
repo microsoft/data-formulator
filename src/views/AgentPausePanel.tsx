@@ -20,12 +20,18 @@
 
 import React, { FC, ReactNode, useEffect, useRef, useState } from 'react';
 import {
-    Box, Button, IconButton, InputAdornment, Radio, TextField, Tooltip, Typography, useTheme,
+    Box, Button, ButtonBase, CircularProgress, Collapse, IconButton, InputAdornment, Radio, TextField, Tooltip, Typography, useTheme,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
+import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded';
+import CodeIcon from '@mui/icons-material/Code';
+import TerminalIcon from '@mui/icons-material/Terminal';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { useTranslation } from 'react-i18next';
 import { AgentToyIcon } from './AgentToyIcon';
 import {
@@ -36,6 +42,8 @@ import { renderFieldHighlights, CompactMarkdown } from './InteractionEntryCard';
 import { iconVar, textVar } from '../app/layout';
 import { DataOperationCard } from '../components/DataOperationCard';
 import type { DataOperation } from '../dataOperations/models';
+import { ExecutionCodeBlock, TerminalExecutionView, TerminalMessageContent } from '../components/TerminalApprovalDialog';
+import type { TerminalExecution, CodeExecution } from '../components/ComponentType';
 
 // ---------------------------------------------------------------------------
 // Shared shell
@@ -110,10 +118,9 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
                     {icon}
                 </Box>
                 <Typography sx={{
-                    fontSize: textVar.xs, fontWeight: 600,
+                    fontSize: textVar.sm, fontWeight: 600,
                     color: theme.palette.text.primary,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em', flex: 1,
+                    flex: 1,
                 }}>
                     {title}
                 </Typography>
@@ -137,9 +144,65 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
     );
 };
 
+interface ResponseOptionButtonProps {
+    children: ReactNode;
+    accentColor: string;
+    selected?: boolean;
+    disabled?: boolean;
+    onClick: () => void;
+}
+
+export const ResponseOptionButton: FC<ResponseOptionButtonProps> = ({
+    children,
+    accentColor,
+    selected = false,
+    disabled = false,
+    onClick,
+}) => {
+    const theme = useTheme();
+    return (
+        <Box sx={{ position: 'relative', overflow: 'hidden', borderRadius: '6px' }}>
+            <Typography
+                component="button"
+                type="button"
+                disabled={disabled}
+                aria-pressed={selected}
+                onClick={onClick}
+                sx={{
+                    position: 'relative', zIndex: 1,
+                    px: '8px', py: '4px',
+                    borderRadius: '6px',
+                    border: `1px solid ${selected ? alpha(accentColor, 0.6) : alpha(theme.palette.text.primary, 0.12)}`,
+                    backgroundColor: selected ? alpha(accentColor, 0.12) : theme.palette.background.paper,
+                    cursor: disabled ? 'default' : 'pointer',
+                    fontSize: textVar.xs,
+                    fontWeight: selected ? 600 : 400,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    whiteSpace: 'normal',
+                    wordBreak: 'break-word',
+                    lineHeight: 1.4,
+                    color: disabled ? theme.palette.text.disabled : theme.palette.text.primary,
+                    textAlign: 'left',
+                    fontFamily: theme.typography.fontFamily,
+                    '&:hover': disabled ? {} : {
+                        backgroundColor: alpha(accentColor, selected ? 0.16 : 0.08),
+                    },
+                }}
+            >
+                {children}
+            </Typography>
+        </Box>
+    );
+};
+
 // ---------------------------------------------------------------------------
 // ClarificationPanel (also handles `variant="explain"`)
 // ---------------------------------------------------------------------------
+
+/** Options shown before a long list collapses behind "+N more". */
+const OPTION_PREVIEW_COUNT = 8;
 
 interface ClarificationPanelProps {
     questions: ClarificationQuestion[];
@@ -172,14 +235,14 @@ interface ClarificationPanelProps {
     /** Close: de-highlight the pause and switch focus to the previous chart. */
     onClose: () => void;
     /** Delete: remove this pending pause block. */
-    onDelete: () => void;
+    onDelete?: () => void;
 }
 
 export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     questions,
     dataOperation,
     variant = 'clarify',
-    selectedAnswers,
+    selectedAnswers: controlledAnswers,
     onSelectAnswer,
     onClearAnswer,
     onSubmit,
@@ -194,10 +257,17 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     // they answer. A question's own index holds its typed text; the sentinel
     // key -1 holds the explain variant's panel-level custom-followup override.
     const [freeTexts, setFreeTexts] = useState<Record<number, string>>({});
+    const [localAnswers, setLocalAnswers] = useState<Record<number, ClarificationResponse>>({});
+    const [hasUsedSkip, setHasUsedSkip] = useState(false);
+    const [expandedOptions, setExpandedOptions] = useState<Record<number, boolean>>({});
+    const selectedAnswers = controlledAnswers ?? localAnswers;
 
     useEffect(() => {
         submittedRef.current = false;
         setFreeTexts({});
+        setLocalAnswers({});
+        setHasUsedSkip(false);
+        setExpandedOptions({});
     }, [questions]);
 
     const setFreeText = (key: number, value: string) =>
@@ -239,12 +309,13 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     // A clarify panel auto-submits (on the click that completes it) only when
     // EVERY answer is a clicked option — a pure "click your way through" flow.
     // The moment any text answer is in play (a free_text question, or the user
-    // typed into a single_choice's "type your own" field), we show an explicit
+    // typed into a single_choice's "type your own" field), or a multi_choice
+    // question needs an explicit "done", we show an explicit
     // shared submit button instead, so a stray option click can never sweep up
     // an unfinished typed answer. The button belongs to the panel, not a row.
-    const hasFreeTextQuestion = !isExplain && questions.some(q => q.responseType === 'free_text');
+    const needsExplicitSubmit = !isExplain && questions.some(q => q.responseType === 'free_text' || q.responseType === 'multi_choice');
     const anyTextTyped = questions.some((_q, idx) => (freeTexts[idx] || '').trim().length > 0);
-    const showPanelSubmit = !isExplain && (hasFreeTextQuestion || anyTextTyped);
+    const showPanelSubmit = !isExplain && (needsExplicitSubmit || anyTextTyped || hasUsedSkip);
 
     // Gather the reply: each question's clicked option, else its typed
     // free-text; plus (explain only) the optional panel-level custom override.
@@ -272,6 +343,11 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     // pick is invalidated the moment the user starts typing.
     const recordFreeText = (idx: number, value: string) => {
         setFreeText(idx, value);
+        setLocalAnswers(previous => {
+            const next = { ...previous };
+            delete next[idx];
+            return next;
+        });
         const typed = value.trim();
         if (typed) {
             onSelectAnswer?.(idx, { question_index: idx, answer: typed, source: 'free_text' }, false);
@@ -308,9 +384,10 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
         // sits at the end of the input line via an InputAdornment for tight
         // spacing rather than floating in its own column.
         const hasTypedAnswer = (freeTexts[idx] || '').trim().length > 0;
+        const isSkipped = selectedAnswers[idx]?.source === 'skip';
         return (
             <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: '8px', pr: '4px' }}>
-                <Box sx={{ flex: '0 1 auto', width: '100%', maxWidth: 320 }}>
+            <Box sx={{ flex: '0 1 auto', minWidth: 0, width: '100%', maxWidth: 320 }}>
                     <TextField
                         value={freeTexts[idx] || ''}
                         onChange={(e) => recordFreeText(idx, e.target.value)}
@@ -337,6 +414,45 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                         sx={freeTextSx}
                     />
                 </Box>
+                {questions[idx]?.responseType === 'free_text' && <Button
+                    size="small"
+                    variant="text"
+                    color="inherit"
+                    aria-pressed={isSkipped}
+                    sx={{
+                        flexShrink: 0, minWidth: 0, fontSize: textVar.xs, mb: '2px',
+                        px: '8px', py: '4px', borderRadius: '6px', lineHeight: 1.4,
+                        border: `1px solid ${isSkipped ? alpha(accentColor, 0.6) : 'transparent'}`,
+                        color: isSkipped ? theme.palette.text.primary : theme.palette.text.secondary,
+                        fontWeight: isSkipped ? 600 : 400,
+                        backgroundColor: isSkipped ? alpha(accentColor, 0.12) : 'transparent',
+                        textDecoration: 'none',
+                        '&:hover': {
+                            backgroundColor: isSkipped ? alpha(accentColor, 0.16) : 'transparent',
+                            textDecoration: 'none',
+                        },
+                    }}
+                    onClick={() => {
+                        setHasUsedSkip(true);
+                        setFreeText(idx, '');
+                        if (isSkipped) {
+                            setLocalAnswers(previous => {
+                                const next = { ...previous };
+                                delete next[idx];
+                                return next;
+                            });
+                            onClearAnswer?.(idx);
+                        } else {
+                            const response: ClarificationResponse = {
+                                question_index: idx, answer: t('chartRec.skipAnswer'), source: 'skip',
+                            };
+                            setLocalAnswers(previous => ({ ...previous, [idx]: response }));
+                            onSelectAnswer?.(idx, response, false);
+                        }
+                    }}
+                >
+                    {t('chartRec.skipAnswer')}
+                </Button>}
                 {trailing && <Box sx={{ flexShrink: 0, mb: '2px', ml: 'auto' }}>{trailing}</Box>}
             </Box>
         );
@@ -406,10 +522,37 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
             setFreeText(response.question_index, '');
         }
         if (onSelectAnswer) {
-            onSelectAnswer(response.question_index, response);
+            if (showPanelSubmit) onSelectAnswer(response.question_index, response, false);
+            else onSelectAnswer(response.question_index, response);
+            return;
+        }
+        if (showPanelSubmit) {
+            setLocalAnswers(previous => ({ ...previous, [response.question_index]: response }));
             return;
         }
         submitResponses([response]);
+    };
+
+    // multi_choice: each click toggles one option; the answer lists the picks in option order.
+    const toggleMultiOption = (idx: number, label: string) => {
+        const current = selectedAnswers?.[idx];
+        const picked = new Set(current?.source === 'option' ? current.selections ?? [] : []);
+        if (picked.has(label)) picked.delete(label);
+        else picked.add(label);
+        const selections = (questions[idx]?.options || []).map(option => option.label).filter(item => picked.has(item));
+        if ((freeTexts[idx] || '').length > 0) setFreeText(idx, '');
+        if (selections.length === 0) {
+            setLocalAnswers(previous => {
+                const next = { ...previous };
+                delete next[idx];
+                return next;
+            });
+            onClearAnswer?.(idx);
+            return;
+        }
+        const response: ClarificationResponse = { question_index: idx, answer: selections.join(', '), selections, source: 'option' };
+        setLocalAnswers(previous => ({ ...previous, [idx]: response }));
+        onSelectAnswer?.(idx, response, false);
     };
 
     const title = t(isExplain ? 'chartRec.explanationTitle' : 'chartRec.clarificationTitle');
@@ -520,63 +663,67 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                             renderQuestionField(questionIndex, t('chartRec.freeTextClarificationPlaceholder'), fieldTrailing)
                         ) : (
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                {showChips && (question.options || []).length > 0 && (
-                                    <>
-                                        {isExplain && (
+                                {showChips && (question.options || []).length > 0 && (() => {
+                                    const options = question.options || [];
+                                    const isMulti = !isExplain && question.responseType === 'multi_choice';
+                                    const selected = selectedAnswers?.[questionIndex];
+                                    const isOptionSelected = (option: typeof options[number]) => selected?.source === 'option'
+                                        && (isMulti ? !!selected.selections?.includes(option.label)
+                                            : option.value ? selected.value === option.value : selected.answer === option.label);
+                                    // Collapse only when it hides at least two options; picks stay visible.
+                                    const collapsible = options.length > OPTION_PREVIEW_COUNT + 1;
+                                    const expanded = !collapsible || !!expandedOptions[questionIndex];
+                                    const visible = expanded ? options
+                                        : options.filter((option, index) => index < OPTION_PREVIEW_COUNT || isOptionSelected(option));
+                                    return <>
+                                        {(isExplain || isMulti) && (
                                             <Typography sx={{
                                                 fontSize: textVar.xxs,
                                                 color: theme.palette.text.disabled,
                                                 fontStyle: 'italic',
                                                 mt: '2px',
                                             }}>
-                                                {t('chartRec.explanationFollowupsLabel')}
+                                                {isExplain ? t('chartRec.explanationFollowupsLabel')
+                                                    : t('chartRec.multiChoiceLabel', { defaultValue: 'Select all that apply' })}
                                             </Typography>
                                         )}
-                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                            {(question.options || []).map((option, optionIndex) => {
-                                                const selected = selectedAnswers?.[questionIndex];
-                                                const isSelected = selected?.source === 'option'
-                                                    && (option.value
-                                                        ? selected.value === option.value
-                                                        : selected.answer === option.label);
-                                                return (
-                                                    <Box key={optionIndex} sx={{ position: 'relative', overflow: 'hidden', borderRadius: '6px' }}>
-                                                        <Typography
-                                                            component="button"
-                                                            type="button"
-                                                            onClick={() => handleAnswer({
-                                                                question_index: questionIndex,
-                                                                answer: option.label,
-                                                                ...(option.value ? { value: option.value } : {}),
-                                                                source: 'option',
-                                                            })}
-                                                            sx={{
-                                                                position: 'relative', zIndex: 1,
-                                                                px: '8px', py: '4px',
-                                                                borderRadius: '6px',
-                                                                border: `1px solid ${isSelected ? alpha(accentColor, 0.6) : alpha(theme.palette.text.primary, 0.12)}`,
-                                                                backgroundColor: isSelected ? alpha(accentColor, 0.12) : theme.palette.background.paper,
-                                                                cursor: 'pointer',
-                                                                fontSize: textVar.xs,
-                                                                fontWeight: isSelected ? 600 : 400,
-                                                                display: 'inline-block',
-                                                                whiteSpace: 'normal',
-                                                                wordBreak: 'break-word',
-                                                                lineHeight: 1.4,
-                                                                color: theme.palette.text.primary,
-                                                                textAlign: 'left',
-                                                                fontFamily: theme.typography.fontFamily,
-                                                                '&:hover': { backgroundColor: alpha(accentColor, isSelected ? 0.16 : 0.08) },
-                                                            }}
-                                                        >
-                                                            {renderFieldHighlights(option.label, accentColor)}
-                                                        </Typography>
-                                                    </Box>
-                                                );
-                                            })}
+                                        <Box role={isMulti ? 'group' : undefined} aria-label={isMulti ? question.text : undefined}
+                                            sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                            {visible.map(option => (
+                                                <ResponseOptionButton
+                                                    key={`${options.indexOf(option)}-${option.label}`}
+                                                    accentColor={accentColor}
+                                                    selected={isOptionSelected(option)}
+                                                    onClick={() => isMulti
+                                                        ? toggleMultiOption(questionIndex, option.label)
+                                                        : handleAnswer({
+                                                            question_index: questionIndex,
+                                                            answer: option.label,
+                                                            ...(option.value ? { value: option.value } : {}),
+                                                            source: 'option',
+                                                        })}
+                                                >
+                                                    {isMulti && isOptionSelected(option) && <CheckRoundedIcon sx={{ fontSize: iconVar.xs }} />}
+                                                    {renderFieldHighlights(option.label, accentColor)}
+                                                </ResponseOptionButton>
+                                            ))}
+                                            {collapsible && (
+                                                <ButtonBase
+                                                    aria-expanded={expanded}
+                                                    onClick={() => setExpandedOptions(previous => ({ ...previous, [questionIndex]: !expanded }))}
+                                                    sx={{
+                                                        px: '8px', py: '4px', borderRadius: '6px', fontSize: textVar.xs, lineHeight: 1.4,
+                                                        color: theme.palette.text.secondary, fontFamily: theme.typography.fontFamily,
+                                                        '&:hover': { color: theme.palette.text.primary, textDecoration: 'underline' },
+                                                    }}
+                                                >
+                                                    {expanded ? t('chartRec.showFewerOptions', { defaultValue: 'Show fewer' })
+                                                        : t('chartRec.showMoreOptions', { defaultValue: '+{{count}} more', count: options.length - visible.length })}
+                                                </ButtonBase>
+                                            )}
                                         </Box>
-                                    </>
-                                )}
+                                    </>;
+                                })()}
                                 {/* single_choice questions also accept a typed
                                     answer (chips are shortcuts, not the only
                                     option). explain has no per-question freeform. */}
@@ -642,6 +789,46 @@ interface ExplanationPanelProps {
  * but carries no inputs or actions — it's purely "here's what I said",
  * dismissible by the header's delete button or by focusing another item.
  */
+const StepToolCall: FC<{ execution: TerminalExecution | CodeExecution }> = ({ execution }) => {
+    const { t } = useTranslation();
+    const isCode = 'code' in execution;
+    const purpose = execution.purpose || t(isCode ? 'tool.pythonCode' : 'terminal.command', {
+        defaultValue: isCode ? 'Python code' : 'Command',
+    });
+    // Expanded code and output read at the panel's body size, like an explanation.
+    return <Box sx={{ minWidth: 0, pb: 1, '& pre': { fontSize: textVar.sm } }}>
+        <Typography sx={{ fontSize: textVar.sm, lineHeight: 1.6, overflowWrap: 'anywhere' }}>{purpose}</Typography>
+        <Typography sx={{ fontSize: textVar.xs, lineHeight: 1.5, color: execution.status === 'failed' ? 'error.main' : 'text.secondary' }}>
+            {t(`terminal.status.${execution.status}`, { defaultValue: execution.status })}
+        </Typography>
+        {isCode ? <ExecutionCodeBlock code={execution.code} language="python"
+            label={t('tool.pythonCode', { defaultValue: 'Python code' })}
+            copyLabel={t('tool.copyCode', { defaultValue: 'Copy code' })}
+            result={{ output: execution.output, error: execution.error }} />
+            : <TerminalExecutionView execution={execution} detailsOnly />}
+    </Box>;
+};
+
+export const ToolActivityPanel: FC<{ execution: TerminalExecution | CodeExecution; onClose: () => void }> = ({ execution, onClose }) => {
+    const theme = useTheme();
+    const { t } = useTranslation();
+    const isCode = 'code' in execution;
+
+    return <AgentPauseShell
+        icon={isCode ? <CodeIcon sx={{ fontSize: textVar.xl, color: theme.palette.primary.main }} />
+            : <TerminalIcon sx={{ fontSize: textVar.xl, color: theme.palette.primary.main }} />}
+        accentColor={theme.palette.primary.main}
+        title={t(isCode ? 'tool.pythonCode' : 'terminal.command', { defaultValue: isCode ? 'Python code' : 'Command' })}
+        closeTooltip={t('chartRec.pauseClose')}
+        onClose={onClose}
+    >
+        <Box sx={{ maxHeight: 'clamp(120px, 32vh, 360px)', overflowY: 'auto',
+            pb: '8px', pl: '20px', pr: '8px', fontSize: textVar.sm }}>
+            <StepToolCall key={execution.id} execution={execution} />
+        </Box>
+    </AgentPauseShell>;
+};
+
 export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, onDelete }) => {
     const theme = useTheme();
     const { t } = useTranslation();
@@ -665,7 +852,67 @@ export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, 
                 pb: '8px', pl: '20px', pr: '8px',
                 fontSize: textVar.sm,
             }}>
-                <CompactMarkdown content={content} color={theme.palette.text.primary} />
+                <TerminalMessageContent content={content} />
+            </Box>
+        </AgentPauseShell>
+    );
+};
+
+interface FailedDraftPanelProps {
+    prompt?: string;
+    error: string;
+    onClose: () => void;
+    onRetry: () => void;
+    retryDisabled?: boolean;
+    retryLabel?: string;
+}
+
+/** Focused view for a retained failed analysis round. */
+export const FailedDraftPanel: FC<FailedDraftPanelProps> = ({
+    prompt,
+    error,
+    onClose,
+    onRetry,
+    retryDisabled = false,
+    retryLabel,
+}) => {
+    const theme = useTheme();
+    const { t } = useTranslation();
+    const accent = theme.palette.error.main;
+
+    return (
+        <AgentPauseShell
+            icon={<ErrorOutlineRoundedIcon sx={{ fontSize: textVar.xl, color: alpha(accent, 0.75) }} />}
+            accentColor={accent}
+            title={t('chartRec.interruptedTitle', { defaultValue: 'Interrupted' })}
+            closeTooltip={t('chartRec.pauseClose')}
+            onClose={onClose}
+        >
+            <Box sx={{ pb: '8px', pl: '20px', pr: '8px' }}>
+                {prompt && (
+                    <Typography sx={{
+                        mb: '5px', fontSize: textVar.sm, fontWeight: 500,
+                        color: theme.palette.text.primary, wordBreak: 'break-word',
+                    }}>
+                        {prompt}
+                    </Typography>
+                )}
+                <Typography sx={{
+                    fontSize: textVar.xs, lineHeight: 1.45,
+                    color: theme.palette.text.secondary, wordBreak: 'break-word',
+                }}>
+                    {error}
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', mt: '7px' }}>
+                    <ResponseOptionButton
+                        accentColor={theme.palette.primary.main}
+                        disabled={retryDisabled}
+                        onClick={onRetry}
+                    >
+                        <ReplayRoundedIcon sx={{ fontSize: iconVar.sm }} />
+                        {retryLabel || t('messages.retry', { defaultValue: 'Retry' })}
+                    </ResponseOptionButton>
+                </Box>
             </Box>
         </AgentPauseShell>
     );
