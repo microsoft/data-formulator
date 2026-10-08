@@ -1,4 +1,5 @@
 import importlib.util
+import ast
 import json
 import os
 import shutil
@@ -17,6 +18,16 @@ spec.loader.exec_module(metadata)
 desktop_spec = importlib.util.spec_from_file_location("desktop_test", PROJECT_ROOT / "packaging/test_desktop.py")
 desktop_test = importlib.util.module_from_spec(desktop_spec)
 desktop_spec.loader.exec_module(desktop_test)
+
+
+def test_desktop_spec_excludes_unused_tk_runtime():
+    tree = ast.parse((PROJECT_ROOT / "packaging/data_formulator_desktop.spec").read_text())
+    analysis = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "Analysis"
+    )
+    excludes = next(keyword.value for keyword in analysis.keywords if keyword.arg == "excludes")
+    assert set(ast.literal_eval(excludes)) == {"tkinter", "_tkinter"}
 
 
 @pytest.mark.parametrize("version,expected", [

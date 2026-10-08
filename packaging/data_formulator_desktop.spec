@@ -116,6 +116,7 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
+    excludes=["tkinter", "_tkinter"],
     noarchive=False,
 )
 
