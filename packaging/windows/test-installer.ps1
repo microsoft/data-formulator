@@ -116,6 +116,13 @@ try {
     & uv run --no-sync python (Join-Path $root 'packaging/test_desktop.py') @runtimeArguments --reports (Join-Path $reportsPath 'reinstalled-runtime')
     if ($LASTEXITCODE -ne 0) { throw 'Reinstalled application smoke test failed' }
     Invoke-Setup $uninstaller @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$reportsPath\uninstall.log`"")
+    # Inno's first uninstall phase can exit before its temporary second phase finishes removing
+    # unins000.exe and the install directory, so wait (bounded) for that removal to complete.
+    $removalDeadline = [DateTime]::UtcNow.AddSeconds(120)
+    while ((Test-Path -LiteralPath $uninstaller) -or (Test-Path -LiteralPath $installPath)) {
+        if ([DateTime]::UtcNow -gt $removalDeadline) { throw 'Uninstall left the uninstaller or installation directory behind' }
+        Start-Sleep -Milliseconds 500
+    }
     Assert-DataRetained
     if (Test-Path -LiteralPath $exe) { throw 'Uninstall left the application executable behind' }
     if (Test-Path 'HKCU:\Software\Microsoft\Data Formulator\Installer') { throw 'Uninstall left installer registration behind' }
