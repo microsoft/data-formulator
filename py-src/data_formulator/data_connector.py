@@ -2696,7 +2696,7 @@ def _load_connectors_yaml(path: "Path") -> list[dict]:
         return []
     try:
         import yaml
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         entries = data.get("connectors", [])
         if not isinstance(entries, list):
