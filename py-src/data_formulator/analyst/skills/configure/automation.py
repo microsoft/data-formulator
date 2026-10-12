@@ -63,12 +63,38 @@ def propose_workflow(spec: dict[str, Any], ctx: SkillContext) -> Generator[Event
             return (f"Workflow {spec['replaces']!r} is not one of the user's saved workflows. "
                     "Call list_workflows, or omit replaces to propose a new workflow.")
         body["target"] = {"id": saved["path"], "name": saved.get("name") or saved["path"]}
+    if spec.get("schedule") is not None:
+        schedule, error = _proposed_schedule(spec["schedule"], content, ctx)
+        if error:
+            return error
+        body["schedule"] = schedule
     yield {"type": "completion", "status": "success", "content": {
         "summary": spec.get("summary") or f"Proposed workflow: {definition['name']}",
         "form": form_payload("workflow", title=definition["name"], body=body),
         "total_steps": ctx.payload.get("completed_step_count", 0),
     }}
     return None
+
+
+def _proposed_schedule(spec: Any, content: str, ctx: SkillContext) -> tuple[dict[str, Any] | None, str | None]:
+    """Validate the schedule proposed with a workflow; the workflow form creates it when the user saves."""
+    from data_formulator.workflows.instances import parse_definition, resolve_setup
+
+    _, error = _schedule_owner(ctx)
+    if error:
+        return None, f"{error} Propose the workflow without a schedule and tell the user why."
+    if not isinstance(spec, dict) or {"workflow", "schedule_id"} & set(spec):
+        return None, ("Invalid schedule: give only timing, inputs, and options. Saving the proposed "
+                      "workflow schedules it; use propose_schedule to change an existing schedule.")
+    try:
+        config, issues = _schedule_changes(spec)
+    except ValueError as exc:
+        return None, f"Invalid schedule: {exc}."
+    try:
+        resolve_setup(parse_definition(content), config.get("setup"))
+    except ValueError as exc:
+        issues.append(str(exc))
+    return {"config": config, "issues": issues}, None
 
 
 def _schedule_owner(ctx: SkillContext) -> tuple[str | None, str | None]:

@@ -7,6 +7,7 @@ import {
   shouldShowInputSourceTransition,
   shouldAutoFocusGeneratedChart,
 } from '../../../../src/app/agentInteractionPolicy';
+import { ThreadGraph } from '../../../../src/app/threadGraph';
 const CONVERSATION_ROOT_ID = 'conversation-root:test';
 
 describe('agent interaction policy', () => {
@@ -30,17 +31,40 @@ describe('agent interaction policy', () => {
     expect(resolveRunParentNodeId('textTurn-question')).toBe('textTurn-question');
   });
 
-  it('continues from the latest response when its chart is focused', () => {
-    const turns = [
-      { id: 'older-response', parentNodeId: 'orders', createdAt: 10 },
-      { id: 'latest-response', parentNodeId: 'older-response', createdAt: 20 },
-      { id: 'other-thread', parentNodeId: 'customers', createdAt: 30 },
-    ];
+  it('continues the open conversation after a focused table, or starts from the table once it led on', () => {
+    const table = (id: string, parentNodeId?: string) => ({ id, parentNodeId, derive: { trigger: { tableId: 'root' } } } as any);
+    const turn = (id: string, parentNodeId: string, createdAt: number) => ({ id, parentNodeId, createdAt } as any);
+    const graphOf = (turns: any[], tables: any[]) => new ThreadGraph({ tables, turns });
+    // orders → older → latest; customers → other
+    const open = graphOf([turn('older-response', 'orders', 10), turn('latest-response', 'older-response', 20),
+      turn('other-thread', 'customers', 30)], [table('orders', 'root'), table('customers', 'root')]);
+    expect(resolveConversationParentNodeId(null, 'orders', open)).toBe('latest-response');
+    expect(resolveConversationParentNodeId('older-response', 'orders', open)).toBe('older-response');
+    expect(resolveConversationParentNodeId(null, 'orders', open, id => id !== 'latest-response')).toBe('older-response');
+    // orders → summary → request → step → by-year: that conversation led on, so start from orders.
+    const ledOn = graphOf([turn('summary', 'orders', 10), turn('request', 'summary', 20), turn('step', 'request', 30)],
+      [table('orders', 'root'), table('by-year', 'step')]);
+    expect(resolveConversationParentNodeId(null, 'orders', ledOn)).toBeUndefined();
+    // …unless another conversation after orders is still open.
+    const both = graphOf([turn('summary', 'orders', 10), turn('request', 'summary', 20), turn('step', 'request', 30),
+      turn('aside', 'summary', 25)], [table('orders', 'root'), table('by-year', 'step')]);
+    expect(resolveConversationParentNodeId(null, 'orders', both)).toBe('aside');
+    expect(resolveConversationParentNodeId(null, 'orders', graphOf([], [table('orders', 'root')]))).toBeUndefined();
+  });
 
-    expect(resolveConversationParentNodeId(null, 'orders', turns, ['orders', 'customers']))
-      .toBe('latest-response');
-    expect(resolveConversationParentNodeId('older-response', 'orders', turns, ['orders', 'customers']))
-      .toBe('older-response');
+  it('continues the open conversation after an app or report the same way', () => {
+    const turn = (id: string, parentNodeId: string, createdAt: number) => ({ id, parentNodeId, createdAt } as any);
+    const graph = new ThreadGraph({ tables: [], turns: [turn('ask', 'conversation-root:a', 1), turn('built', 'file-app', 3)],
+      fileNodes: [{ id: 'file-app', parentNodeId: 'ask', createdAt: 2 }] });
+    expect(resolveConversationParentNodeId(null, 'file-app', graph)).toBe('built');
+    // A workflow proposal that closed the run is an open end as well.
+    const proposed = new ThreadGraph({ tables: [], turns: [turn('ask', 'conversation-root:a', 1),
+      { id: 'proposal', parentNodeId: 'file-app', createdAt: 3, form: { kind: 'workflow' } } as any],
+      fileNodes: [{ id: 'file-app', parentNodeId: 'ask', createdAt: 2 }] });
+    expect(resolveConversationParentNodeId(null, 'file-app', proposed)).toBe('proposal');
+    const reportOnly = new ThreadGraph({ tables: [], turns: [turn('ask', 'conversation-root:a', 1)],
+      reports: [{ id: 'report', parentNodeId: 'ask', createdAt: 2 }] });
+    expect(resolveConversationParentNodeId(null, 'report', reportOnly)).toBeUndefined();
   });
 
   it('classifies generalized computation source transitions', () => {

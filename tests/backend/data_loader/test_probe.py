@@ -564,3 +564,31 @@ class TestMongoPipeline:
             loader._compile_probe_pipeline({"aggregates": [{"op": "median", "column": "x"}]}, 1)
 
 
+
+
+def test_file_scan_query_memory_scales_with_the_machine(monkeypatch):
+    from data_formulator.data_loader import probe_utils
+
+    monkeypatch.delenv("DF_QUERY_MEMORY_LIMIT_MB", raising=False)
+    monkeypatch.setenv("DF_QUERY_MAX_WORKERS", "2")
+    for physical, budget in [(4096, 1024), (8192, 2048), (65536, 4096), (1024, 512)]:
+        monkeypatch.setattr(probe_utils, "_physical_memory_mb", lambda physical=physical: physical)
+        assert probe_utils.query_memory_limit_mb() == budget
+    monkeypatch.setattr(probe_utils, "_physical_memory_mb", lambda: None)
+    assert probe_utils.query_memory_limit_mb() == 512
+    monkeypatch.setenv("DF_QUERY_MEMORY_LIMIT_MB", "1500")
+    assert probe_utils.query_memory_limit_mb() == 1500
+    config = probe_utils.duckdb_query_config()
+    assert config["memory_limit"] == "1500MB"
+    assert config["temp_directory"].endswith("data-formulator-query-spill")
+
+
+def test_file_scan_capabilities_tell_the_agent_its_memory_budget(monkeypatch):
+    from data_formulator.data_loader.azure_blob_data_loader import AzureBlobDataLoader
+    from data_formulator.data_loader.kusto_data_loader import KustoDataLoader
+
+    monkeypatch.setenv("DF_QUERY_MEMORY_LIMIT_MB", "2048")
+    capabilities = AzureBlobDataLoader.query_capabilities()
+    assert capabilities["memory_budget_mb"] == 2048
+    assert "2048 MB of memory" in capabilities["guidance"]
+    assert "memory_budget_mb" not in KustoDataLoader.query_capabilities()

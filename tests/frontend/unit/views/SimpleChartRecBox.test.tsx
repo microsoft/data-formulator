@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { buildThreads } from '../../../../src/app/threadGraph';
 import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
 import { SimpleChartRecBox } from '../../../../src/views/SimpleChartRecBox';
 import { buildTableRefChip } from '../../../../src/views/DataThreadCards';
@@ -47,6 +48,11 @@ describe('Analyst landing attachment handoff', () => {
     const requestBody = (index = 0) => JSON.parse(
         vi.mocked(streamRequest).mock.calls[index][1].body as string,
     );
+    // The thread chain above a node, nearest first (design-docs/58).
+    const chainAbove = (store: { getState: () => any }, id: string) =>
+        dfSelectors.getThreadGraph(store.getState()).ancestors(id);
+    const turnWith = (store: { getState: () => any }, predicate: (turn: any) => boolean) =>
+        store.getState().textTurns.find(predicate);
 
     it('retries an interrupted later step with the request that started its run', async () => {
         const { store } = mountTask();
@@ -54,10 +60,11 @@ describe('Analyst landing attachment handoff', () => {
             store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'life', displayId: 'Life', names: [],
                 metadata: {}, rows: [], virtual: { tableId: 'life', rowCount: 0 } } as any));
             store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'loaded', displayId: 'Loaded', textKind: 'explain',
-                content: 'Added three datasets.', parentNodeId: 'conversation-root:test', createdAt: 1,
-                answered: true, answer: 'Explain them together' }));
+                content: 'Added three datasets.', parentNodeId: 'conversation-root:test', createdAt: 1, answered: true }));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'reply', displayId: 'Reply', textKind: 'explain',
+                content: '', prompt: 'Explain them together', parentNodeId: 'loaded', createdAt: 1.5 }));
             store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'step-1', displayId: 'Step', textKind: 'explain',
-                content: 'Compare the datasets', parentNodeId: 'loaded', actionId: 'run', createdAt: 2,
+                content: 'Compare the datasets', parentNodeId: 'reply', actionId: 'run', createdAt: 2,
                 codeExecutions: [{ id: 'step-1', tool: 'execute_python_script', code: 'print(1)', purpose: 'Compare', status: 'completed' }] }));
             store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'chart-data', displayId: 'Chart data', names: [],
                 metadata: {}, rows: [], parentNodeId: 'step-1', derive: { source: ['life'], code: '', dialog: [],
@@ -86,11 +93,10 @@ describe('Analyst landing attachment handoff', () => {
         expect(prompt).toContain({ 'Write a report': 'write a report', 'Create an app': 'build an interactive app',
             'Create a workflow': 'create a workflow' }[label]);
         expect(prompt).toContain('Suggest a few useful directions');
-        const draftAction = dispatchSpy.mock.calls.map(([action]) => action as any)
-            .find(action => action.type === dfActions.createDraftNode.type);
-        expect(draftAction.payload.interaction).toEqual(expect.arrayContaining([
-            expect.objectContaining({ from: 'user', role: 'prompt', content: prompt }),
-        ]));
+        // The user's message is its own node in the thread (design-docs/58).
+        const promptAction = dispatchSpy.mock.calls.map(([action]) => action as any)
+            .find(action => action.type === dfActions.addTextTurn.type && action.payload.prompt);
+        expect(promptAction.payload).toMatchObject({ prompt, content: '' });
         expect(apiRequest).not.toHaveBeenCalledWith('/api/workflows/message', expect.anything());
     });
 
@@ -99,8 +105,6 @@ describe('Analyst landing attachment handoff', () => {
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'paused-run', displayId: 'Paused run', textKind: 'explain',
             content: 'Waiting for inputs', parentNodeId: 'conversation-root:run', createdAt: 1,
             workflow: { runId: 'run', status: 'paused', stepId: 'inspect', calls: 1, steps: [], outputVersions: {} } }));
-        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'textTurn-workflow-card-run', displayId: 'Workflow',
-            textKind: 'explain', content: '', parentNodeId: 'paused-run', createdAt: 2, workflowCardFor: 'paused-run' }));
         const proposal = { content: 'name: New workflow', definition: { name: 'New workflow' } };
         const form = { kind: 'workflow', title: 'New workflow', workflow: proposal };
         vi.mocked(streamRequest).mockImplementationOnce(async function* () {
@@ -118,9 +122,10 @@ describe('Analyst landing attachment handoff', () => {
         })]));
         expect(apiRequest).not.toHaveBeenCalledWith('/api/workflows/message', expect.anything());
         await waitFor(() => expect(store.getState().textTurns.find(turn => turn.form?.kind === 'workflow')).toBeDefined());
+        const request = store.getState().textTurns.find(turn => turn.prompt === 'I want to create a workflow from this analysis.');
+        expect(request).toMatchObject({ parentNodeId: 'paused-run', content: '' });
         expect(store.getState().textTurns.find(turn => turn.form?.kind === 'workflow')).toMatchObject({
-            parentNodeId: 'textTurn-workflow-card-run', prompt: 'I want to create a workflow from this analysis.',
-            form,
+            parentNodeId: request!.id, form,
         });
         expect(store.getState().textTurns.find(turn => turn.id === 'paused-run')?.workflow?.status).toBe('paused');
     });
@@ -215,7 +220,7 @@ describe('Analyst landing attachment handoff', () => {
         vi.mocked(apiRequest).mockImplementation(async url => String(url).includes('list-tables')
             ? listing : { data: { result: [], statistics: {} } } as any);
         vi.mocked(streamRequest).mockImplementationOnce(async function* () {
-            yield { type: 'tool_start', tool: 'load_data', args: { tables: ['folder/orders.csv'] } };
+            yield { type: 'tool_start', tool: 'load_data', args: { tables: ['Recent orders'] } };
             await loading;
             yield { type: 'tool_result', tool: 'load_data', status: 'ok' };
             yield { type: 'data_operation_result', operation: {
@@ -228,7 +233,7 @@ describe('Analyst landing attachment handoff', () => {
         });
         const { store } = mountTask({ text: 'Load orders', images: [], attachments: [] });
         try {
-            await waitFor(() => expect(store.getState().pendingTableLoads[0]?.names).toEqual(['orders.csv']));
+            await waitFor(() => expect(store.getState().pendingTableLoads[0]?.names).toEqual(['Recent orders']));
             await act(async () => { finishLoad(); });
             await waitFor(() => expect(apiRequest).toHaveBeenCalled());
             expect(store.getState().pendingTableLoads).toHaveLength(1);
@@ -239,6 +244,37 @@ describe('Analyst landing attachment handoff', () => {
         await waitFor(() => expect(store.getState().inputTables).toHaveLength(1));
         expect(store.getState().externalTableReferences).toEqual(includeSource ? [sourceReference] : []);
         expect(store.getState().pendingTableLoads).toEqual([]);
+    });
+
+    it('groups one load into a set of its tables, leaving the sources they were queried from on the shelf', async () => {
+        const reference = (tableKey: string) => ({ kind: 'external-table-reference', id: `external:kusto:${tableKey}`,
+            connectorId: 'kusto', tableKey, sourceTable: { id: tableKey, name: tableKey }, displayName: tableKey,
+            capturedAt: '2026-10-11T00:00:00Z', summary: { columns: [], rowCount: 100 } });
+        vi.mocked(apiRequest).mockImplementation(async url => String(url).includes('list-tables')
+            ? { data: { tables: ['Beats', 'Titan'].map(key => ({ name: `${key.toLowerCase()}_alerts`, columns: [], row_count: 5,
+                sample_rows: [], imported_from: { source_id: 'kusto', table_key: key } })) } }
+            : { data: { result: [], statistics: {} } } as any);
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'data_operation_result', operation: {
+                schema_version: 1, id: 'operation', status: 'loaded', reason: 'Load alerts',
+                plans: [{ id: 'plan', hash: 'a'.repeat(64), label: 'Alerts', summary: '',
+                    steps: [{ kind: 'connector_query', display_name: 'Alerts' }] }],
+                result_table_ids: ['beats_alerts', 'titan_alerts'],
+                // Two sources the tables were queried from, and one connected as a reference only.
+                result_references: [reference('Beats'), reference('Titan'), reference('Walker')],
+            } };
+            yield { type: 'completion', content: { summary: 'Loaded.' } };
+        });
+        const { store } = mountTask({ text: 'Load the alerts', images: [], attachments: [] });
+        await waitFor(() => expect(store.getState().textTurns.at(-1)?.content).toBe('Loaded.'));
+        const state = store.getState();
+        expect(state.externalTableReferences.map(item => item.tableKey)).toEqual(['Beats', 'Titan', 'Walker']);
+        expect(state.artifactSets).toHaveLength(1);
+        const members = state.artifactSets[0].memberIds.map(id => state.loadedTableNodes.find(node => node.id === id));
+        expect(members.map(node => [node?.tableId, !!node?.external])).toEqual([
+            ['external:kusto:Walker', true], ['beats_alerts', false], ['titan_alerts', false],
+        ]);
+        expect(state.loadedTableNodes).toHaveLength(3);
     });
 
     it('continues an approved load through chart creation and completion in the same stream', async () => {
@@ -276,29 +312,33 @@ describe('Analyst landing attachment handoff', () => {
             yield { type: 'completion', status: 'success', content: { summary: 'Revenue was 30 in 2025.' } };
         });
         const { store } = mountTask({ text: trajectory[0].content, images: [], attachments: [] });
-        await waitFor(() => expect(store.getState().textTurns).toHaveLength(1));
-        const proposalId = store.getState().textTurns[0].id;
+        await waitFor(() => expect(turnWith(store, turn => turn.dataOperation)).toBeDefined());
+        const proposalId = turnWith(store, turn => turn.dataOperation).id;
         try {
             fireEvent.click(screen.getByRole('button', { name: 'Submit clarification' }));
             await waitFor(() => expect(store.getState().loadedTableNodes).toHaveLength(1));
             expect(requestBody(1).interaction_response).toEqual({ operation_id: 'operation', plan_id: 'plan' });
             expect(requestBody(1).trajectory).toEqual(trajectory);
-            expect(store.getState().textTurns[0]).toMatchObject({ answered: true, dataOperation: { status: 'loaded' } });
-            expect(store.getState().loadedTableNodes[0]).toMatchObject({ tableId: 'orders', parentNodeId: proposalId });
-            expect(store.getState().draftNodes).toHaveLength(1);
+            expect(turnWith(store, turn => turn.id === proposalId)).toMatchObject({ answered: true, dataOperation: { status: 'loaded' } });
+            // The loaded table follows the user's choice in the chain, and the live draft follows the table.
+            const loaded = store.getState().loadedTableNodes[0];
+            expect(loaded).toMatchObject({ tableId: 'orders' });
+            expect(chainAbove(store, loaded.id)).toContain(proposalId);
+            expect(store.getState().draftNodes).toEqual([expect.objectContaining({ parentNodeId: loaded.id })]);
             expect(store.getState().pendingTableLoads).toHaveLength(0);
         } finally {
             await act(async () => { finishAnalysis(); });
         }
-        await waitFor(() => expect(store.getState().textTurns).toHaveLength(2));
+        await waitFor(() => expect(turnWith(store, turn => turn.content === 'Revenue was 30 in 2025.')).toBeDefined());
         expect(streamRequest).toHaveBeenCalledTimes(2);
-        expect(store.getState().derivedTables[0]).toMatchObject({ id: 'yearly_orders', parentNodeId: proposalId });
+        expect(store.getState().derivedTables[0]).toMatchObject({ id: 'yearly_orders' });
+        expect(chainAbove(store, 'yearly_orders')).toContain(store.getState().loadedTableNodes[0].id);
         // Agent annotations are normalized: 'year' becomes Year, the encoding word is dropped, currency becomes the unit.
         expect(store.getState().tableSemantics.find(info => info.tableId === 'yearly_orders')?.fields).toMatchObject({
             year: { semanticType: 'Year' },
             revenue: { unit: 'USD', displayName: 'Revenue' },
         });
-        expect(store.getState().textTurns[1]).toMatchObject({ parentNodeId: 'yearly_orders', content: 'Revenue was 30 in 2025.' });
+        expect(turnWith(store, turn => turn.content === 'Revenue was 30 in 2025.')).toMatchObject({ parentNodeId: 'yearly_orders' });
         expect(store.getState().draftNodes).toHaveLength(0);
     });
 
@@ -317,9 +357,13 @@ describe('Analyst landing attachment handoff', () => {
         const { store } = mountTask({ text: 'Add orders', images: [], attachments: [] });
         await waitFor(() => expect(store.getState().externalTableReferences).toEqual([reference]));
         expect(store.getState().inputTables).toEqual([]);
-        await waitFor(() => expect(store.getState().textTurns).toHaveLength(1));
+        await waitFor(() => expect(turnWith(store, turn => turn.content === 'Added orders as a workspace reference.')).toBeDefined());
+        // prompt → virtual reference → closing answer
+        const prompt = turnWith(store, turn => turn.prompt === 'Add orders');
         expect(store.getState().loadedTableNodes).toEqual([expect.objectContaining({ tableId: reference.id, external: true,
-            parentNodeId: store.getState().textTurns[0].id })]);
+            parentNodeId: prompt.id })]);
+        expect(turnWith(store, turn => turn.content === 'Added orders as a workspace reference.').parentNodeId)
+            .toBe(store.getState().loadedTableNodes[0].id);
         expect(vi.mocked(apiRequest).mock.calls.some(([url]) => String(url).includes('list-tables'))).toBe(false);
         expect(store.getState().pendingTableLoads).toEqual([]);
     });
@@ -383,8 +427,9 @@ describe('Analyst landing attachment handoff', () => {
         expect(requestBody().input_tables.some((table: { id: string }) => table.id === reference.id)).toBe(false);
         expect(requestBody().focused_file).toBeUndefined();
         expect(store.getState().fileNodes).toEqual([]);
-        await waitFor(() => expect(store.getState().textTurns).toHaveLength(1));
-        const reply = store.getState().textTurns[0];
+        const closingReplies = () => store.getState().textTurns.filter(turn => turn.content === 'Review the event sources.');
+        await waitFor(() => expect(closingReplies()).toHaveLength(1));
+        const reply = closingReplies()[0];
         expect(reply.externalReferenceId).toBe(reference.id);
         const derived = store.getState().derivedTables[0];
         expect(derived.derive?.trigger.externalReferenceId).toBe(reference.id);
@@ -393,13 +438,13 @@ describe('Analyst landing attachment handoff', () => {
         fireEvent.keyDown(input, { key: 'Enter' });
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(2));
         expect(requestBody(1).focused_external_reference).toBe(reference.id);
-        await waitFor(() => expect(store.getState().textTurns).toHaveLength(2));
+        await waitFor(() => expect(closingReplies()).toHaveLength(2));
         act(() => store.dispatch(dfActions.setFocused({ type: 'table', tableId: derived.id })));
         fireEvent.change(input, { target: { value: 'Show the source events for this result' } });
         fireEvent.keyDown(input, { key: 'Enter' });
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(3));
         expect(requestBody(2).focused_external_reference).toBe(reference.id);
-        await waitFor(() => expect(store.getState().textTurns).toHaveLength(3));
+        await waitFor(() => expect(closingReplies()).toHaveLength(3));
         act(() => {
             store.dispatch(dfActions.removeExternalTableReference(reference.id));
             store.dispatch(dfActions.setFocused({ type: 'table', tableId: derived.id }));
@@ -490,8 +535,9 @@ describe('Analyst landing attachment handoff', () => {
         try {
             await waitFor(() => expect(dfSelectors.getAllTables(store.getState())[0]?.rows).toEqual([{ value: 2 }]));
             expect(store.getState().inputTables).toHaveLength(1);
+            // A refresh keeps the item where it is: one reference, right after the request.
             expect(store.getState().loadedTableNodes).toHaveLength(1);
-            expect(store.getState().loadedTableNodes[0].parentNodeId).toMatch(/^conversation-root:/);
+            expect(store.getState().loadedTableNodes[0].parentNodeId).toBe(turnWith(store, turn => turn.prompt === 'Create and revise measurements').id);
             expect(store.getState().inputTables[0].dataProvenance?.editPolicy).toBe('agent_editable');
             await waitFor(() => expect(store.getState().derivedTables).toHaveLength(1));
             expect(dispatchSpy.mock.calls.map(([action]) => action)
@@ -500,7 +546,13 @@ describe('Analyst landing attachment handoff', () => {
             expect(derived?.displayId).toBe('Doubled Measurements');
             expect(derived?.derive?.source).toEqual(['measurements']);
             expect(derived?.derive?.trigger.tableId).toBe('measurements');
-            expect(derived?.derive?.trigger.interaction?.at(-1)?.inputTableNames).toEqual(['Measurements']);
+            // The step that made the table is the agent message right before it. The agent gave no
+            // instruction, so none is stored (the thread reads it from the table's chart), and the
+            // table keeps its own code rather than listing it as a call.
+            const step = turnWith(store, turn => turn.id === derived?.parentNodeId);
+            expect(step.content).toBe('');
+            expect(step.codeExecutions ?? []).toEqual([]);
+            expect(derived?.derive?.code).toBeTruthy();
             expect(store.getState().fileNodes).toEqual([]);
         } finally {
             await act(async () => { finishRun(); });
@@ -523,21 +575,19 @@ describe('Analyst landing attachment handoff', () => {
             yield { type: 'completion', status: 'success', content: { summary: 'Created Retail Sales.' } };
         });
         const { store } = mountTask({ text: 'Create a demo dataset', images: [], attachments: [] });
-        let rootId: string | undefined;
+        const request = () => turnWith(store, turn => turn.prompt === 'Create a demo dataset');
         try {
             await waitFor(() => expect(store.getState().loadedTableNodes).toHaveLength(1));
-            const draft = store.getState().draftNodes[0];
-            rootId = draft.parentNodeId;
-            expect(rootId).toMatch(/^conversation-root:/);
-            expect(store.getState().loadedTableNodes[0].parentNodeId).toBe(draft.id);
+            // request → new data, and the run's live draft follows the data.
+            expect(request().parentNodeId).toMatch(/^conversation-root:/);
+            expect(store.getState().loadedTableNodes[0].parentNodeId).toBe(request().id);
+            expect(store.getState().draftNodes[0].parentNodeId).toBe(store.getState().loadedTableNodes[0].id);
         } finally {
             await act(async () => { finishRun(); });
         }
-        await waitFor(() => expect(store.getState().textTurns).toHaveLength(1));
-        const response = store.getState().textTurns[0];
-        expect(response.parentNodeId).toBe(rootId);
-        expect(response.prompt).toBe('Create a demo dataset');
-        expect(store.getState().loadedTableNodes[0].parentNodeId).toBe(response.id);
+        await waitFor(() => expect(turnWith(store, turn => turn.content === 'Created Retail Sales.')).toBeDefined());
+        const response = turnWith(store, turn => turn.content === 'Created Retail Sales.');
+        expect(response.parentNodeId).toBe(store.getState().loadedTableNodes[0].id);
         expect(store.getState().draftNodes).toHaveLength(0);
         act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: response.id })));
         expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'table', tableId: 'retail_sales' });
@@ -564,14 +614,14 @@ describe('Analyst landing attachment handoff', () => {
         try {
             await waitFor(() => expect(store.getState().loadedTableNodes).toHaveLength(1));
             expect(store.getState().inputTables).toHaveLength(1);
-            expect(store.getState().loadedTableNodes[0].parentNodeId).toBe(store.getState().draftNodes[0].id);
+            expect(store.getState().loadedTableNodes[0].parentNodeId).toBe(turnWith(store, turn => turn.prompt === 'Load consumer price data').id);
         } finally {
             await act(async () => { finishRun(); });
         }
-        await waitFor(() => expect(store.getState().textTurns).toHaveLength(1));
-        const response = store.getState().textTurns[0];
-        expect(response.prompt).toBe('Load consumer price data');
-        expect(store.getState().loadedTableNodes[0]).toMatchObject({ tableId: 'consumer_prices', parentNodeId: response.id });
+        await waitFor(() => expect(turnWith(store, turn => turn.content === 'Loaded consumer prices.')).toBeDefined());
+        const response = turnWith(store, turn => turn.content === 'Loaded consumer prices.');
+        expect(response.parentNodeId).toBe(store.getState().loadedTableNodes[0].id);
+        expect(store.getState().loadedTableNodes[0]).toMatchObject({ tableId: 'consumer_prices' });
         expect(store.getState().draftNodes).toHaveLength(0);
         act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: response.id })));
         expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'table', tableId: 'consumer_prices' });
@@ -609,27 +659,27 @@ describe('Analyst landing attachment handoff', () => {
         });
         fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Explore daily and regional sales' } });
         fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
-        await waitFor(() => expect(store.getState().textTurns).toHaveLength(2));
+        await waitFor(() => expect(turnWith(store, turn => turn.content === 'Created both charts.')).toBeDefined());
         const state = store.getState();
+        const request = turnWith(store, turn => turn.prompt === 'Explore daily and regional sales');
+        expect(request.parentNodeId).toBe('textTurn-opening');
         expect(state.derivedTables).toHaveLength(2);
+        // request → daily → step → daily_chart → regional → step → regional_chart → closing answer
         expect(state.loadedTableNodes.map(node => [node.tableId, node.parentNodeId])).toEqual([
-            ['daily', 'textTurn-opening'], ['regional', 'daily_chart'],
-        ]);
-        expect(state.derivedTables.map(table => [table.id, table.parentNodeId])).toEqual([
-            ['daily_chart', 'textTurn-opening'], ['regional_chart', 'daily_chart'],
+            ['daily', request.id], ['regional', 'daily_chart'],
         ]);
         state.derivedTables.forEach((table, index) => {
-            const instruction = table.derive!.trigger.interaction!.find(entry => entry.role === 'instruction')!;
-            expect(instruction.progressSteps).toMatchObject([
-                { kind: 'tool', toolCallId: `inspect-${['daily', 'regional'][index]}`, status: 'completed' },
+            const name = ['daily', 'regional'][index];
+            const step = turnWith(store, turn => turn.id === table.parentNodeId);
+            expect(step.parentNodeId).toBe(state.loadedTableNodes[index].id);
+            expect(step.progressSteps).toMatchObject([
+                { kind: 'tool', toolCallId: `inspect-${name}`, status: 'completed' },
                 { kind: 'chart', status: 'completed' },
             ]);
-            expect(instruction.progressSteps).toHaveLength(2);
-            expect(typeof instruction.plan).toBe('string');
+            expect(step.progressSteps).toHaveLength(2);
         });
-        expect(state.textTurns[0].dataOperation).toBeUndefined();
-        expect(state.textTurns[0].content).toBe('Previous analysis.');
-        expect(state.textTurns[1].parentNodeId).toBe('regional_chart');
+        expect(turnWith(store, turn => turn.id === 'textTurn-opening')).toMatchObject({ content: 'Previous analysis.' });
+        expect(turnWith(store, turn => turn.content === 'Created both charts.').parentNodeId).toBe('regional_chart');
         expect(state.draftNodes).toHaveLength(0);
     });
 
@@ -660,8 +710,11 @@ describe('Analyst landing attachment handoff', () => {
         try {
             act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Which majors pay most?', images: [], attachments: [] })));
             await waitFor(() => expect(store.getState().draftNodes).toHaveLength(1));
-            expect(store.getState().draftNodes[0].parentNodeId).toBe('loaded-reply');
-            expect(store.getState().textTurns[0].answered).not.toBe(true);
+            // A follow-up on an item continues from that item (design-docs/58, rule 3).
+            const request = turnWith(store, turn => turn.prompt === 'Which majors pay most?');
+            expect(request.parentNodeId).toBe('college-reference');
+            expect(store.getState().draftNodes[0].parentNodeId).toBe(request.id);
+            expect(turnWith(store, turn => turn.id === 'loaded-reply').answered).not.toBe(true);
         } finally {
             await act(async () => { finishRun(); });
         }
@@ -690,8 +743,8 @@ describe('Analyst landing attachment handoff', () => {
             expect(store.getState().inputTables).toHaveLength(0);
 
             // Closing the run's explanation keeps the app it explains on the canvas.
-            await waitFor(() => expect(store.getState().textTurns.some(turn => turn.textKind === 'explain')).toBe(true));
-            const explanation = store.getState().textTurns.find(turn => turn.textKind === 'explain')!;
+            await waitFor(() => expect(turnWith(store, turn => turn.content === 'The app compares revenue by region.')).toBeDefined());
+            const explanation = turnWith(store, turn => turn.content === 'The app compares revenue by region.');
             act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: explanation.id })));
             expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'file', fileName: 'sales_app.html' });
             fireEvent.click(await screen.findByRole('button', { name: /^Close/ }));
@@ -701,10 +754,10 @@ describe('Analyst landing attachment handoff', () => {
         }
     });
 
-    it('brings an app into view after the agent revises it with edit_file', async () => {
+    it('adds an edited app as a new app that follows the request (design-docs/58, rule 8)', async () => {
         vi.mocked(streamRequest).mockImplementationOnce(async function* () {
             yield { type: 'tool_result', tool: 'edit_file', status: 'ok', stdout: JSON.stringify({
-                path: 'files/sales.app.jsx', name: 'sales.app.jsx', display_name: 'Sales explorer',
+                path: 'files/sales_2.app.jsx', name: 'sales_2.app.jsx', display_name: 'Sales explorer',
                 content_hash: 'revised-hash', available_in_workspace: true, app: true, tables: ['sales'], warnings: [],
             }) };
             yield { type: 'completion', status: 'success', content: { summary: 'Added a units chart.' } };
@@ -715,15 +768,145 @@ describe('Analyst landing attachment handoff', () => {
                 content: 'Built the dashboard.', parentNodeId: 'conversation-root:test', createdAt: 1 }));
             store.dispatch(dfActions.upsertFileNode({ kind: 'file', id: 'file-sales.app.jsx', path: 'sales.app.jsx',
                 displayName: 'Sales explorer', contentHash: 'old-hash', parentNodeId: 'built', createdAt: 1 }));
+            store.dispatch(dfActions.setFocused({ type: 'file', fileName: 'sales.app.jsx' }));
             store.dispatch(dfActions.queueAnalystTask({ text: 'Add a units chart to the dashboard', images: [], attachments: [] }));
         });
-        await waitFor(() => expect(store.getState().fileNodes[0]).toMatchObject({ contentHash: 'revised-hash', parentNodeId: 'built' }));
-        // The run's explanation keeps the revised app on the canvas, though the app's node lives in an older turn.
-        await waitFor(() => expect(store.getState().textTurns.some(turn => turn.content === 'Added a units chart.')).toBe(true));
-        const explanation = store.getState().textTurns.find(turn => turn.content === 'Added a units chart.')!;
-        expect(explanation.revisedFile).toBe('sales.app.jsx');
+        await waitFor(() => expect(turnWith(store, turn => turn.content === 'Added a units chart.')).toBeDefined());
+        // app → request → new app → closing answer; the original app is unchanged.
+        const request = turnWith(store, turn => turn.prompt === 'Add a units chart to the dashboard');
+        expect(request.parentNodeId).toBe('file-sales.app.jsx');
+        expect(store.getState().fileNodes).toEqual([
+            expect.objectContaining({ id: 'file-sales.app.jsx', contentHash: 'old-hash', parentNodeId: 'built' }),
+            expect.objectContaining({ id: 'file-sales_2.app.jsx', contentHash: 'revised-hash', parentNodeId: request.id }),
+        ]);
+        const explanation = turnWith(store, turn => turn.content === 'Added a units chart.');
+        expect(explanation.parentNodeId).toBe('file-sales_2.app.jsx');
         act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: explanation.id })));
-        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'file', fileName: 'sales.app.jsx' });
+        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'file', fileName: 'sales_2.app.jsx' });
+    });
+
+    it('continues the conversation after an app, like after a derived table (design-docs/58, rule 3)', async () => {
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'completion', status: 'success', content: { summary: 'Fixed the map.' } };
+        });
+        const { store } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'ask', displayId: 'Ask', textKind: 'explain',
+                content: '', prompt: 'Build an explorer', parentNodeId: 'conversation-root:test', createdAt: 1 }));
+            store.dispatch(dfActions.upsertFileNode({ kind: 'file', id: 'file-quakes.app.jsx', path: 'quakes.app.jsx',
+                displayName: 'Quake explorer', contentHash: 'hash', parentNodeId: 'ask', createdAt: 2 }));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'built', displayId: 'Built', textKind: 'explain',
+                content: 'Built the explorer.', parentNodeId: 'file-quakes.app.jsx', createdAt: 3, answered: true }));
+            store.dispatch(dfActions.setFocused({ type: 'file', fileName: 'quakes.app.jsx' }));
+            store.dispatch(dfActions.queueAnalystTask({ text: 'The map is not showing', images: [], attachments: [] }));
+        });
+        await waitFor(() => expect(turnWith(store, turn => turn.content === 'Fixed the map.')).toBeDefined());
+        // ask → app → built → request: one thread, not a branch from the app.
+        expect(turnWith(store, turn => turn.prompt === 'The map is not showing').parentNodeId).toBe('built');
+    });
+
+    it.each(['report', 'connected source'])('continues the conversation after a %s in the thread', async kind => {
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'completion', status: 'success', content: { summary: 'Answered.' } };
+        });
+        const { store } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'ask', displayId: 'Ask', textKind: 'explain',
+                content: '', prompt: 'Start', parentNodeId: 'conversation-root:test', createdAt: 1 }));
+            if (kind === 'report') {
+                store.dispatch(dfActions.saveGeneratedReport({ id: 'report-1', content: '# Findings', selectedChartIds: [],
+                    createdAt: 2, parentNodeId: 'ask', status: 'completed' }));
+            } else {
+                store.dispatch(dfActions.upsertExternalTableReference({ kind: 'external-table-reference', id: 'external:kusto:Beats',
+                    connectorId: 'kusto', tableKey: 'Beats', sourceTable: { id: 'Beats', name: 'Beats' }, displayName: 'Beats',
+                    capturedAt: '', summary: { columns: [] } } as any));
+                store.dispatch(dfActions.addLoadedTableNode({ kind: 'loaded-table', id: 'loaded-beats', tableId: 'external:kusto:Beats',
+                    external: true, parentNodeId: 'ask', createdAt: 2 }));
+            }
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'closing', displayId: 'Closing', textKind: 'explain',
+                content: 'Done.', parentNodeId: kind === 'report' ? 'report-1' : 'loaded-beats', createdAt: 3, answered: true }));
+            store.dispatch(dfActions.setFocused(kind === 'report' ? { type: 'report', reportId: 'report-1' } : { type: 'reference', referenceId: 'loaded-beats' }));
+            store.dispatch(dfActions.queueAnalystTask({ text: 'Tell me more', images: [], attachments: [] }));
+        });
+        await waitFor(() => expect(turnWith(store, turn => turn.content === 'Answered.')).toBeDefined());
+        expect(turnWith(store, turn => turn.prompt === 'Tell me more').parentNodeId).toBe('closing');
+        if (kind !== 'report') expect(requestBody().focused_external_reference).toBe('external:kusto:Beats');
+    });
+
+    it('shows the running plan while the agent works on the focused app', async () => {
+        let continueStream!: () => void;
+        const continuation = new Promise<void>(resolve => { continueStream = resolve; });
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'tool_start', tool: 'execute_python_script', code: 'print(1)', purpose: 'Inspect the explorer map' } as any;
+            await continuation;
+            yield { type: 'completion', status: 'success', content: { summary: 'Done.' } };
+        });
+        const { store, container } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'quakes', displayId: 'Quakes', names: [], metadata: {}, rows: [],
+                parentNodeId: 'conversation-root:test', derive: { source: [], code: '', dialog: [], trigger: { tableId: 'conversation-root:test', resultTableId: 'quakes' } } } as any));
+            store.dispatch(dfActions.upsertFileNode({ kind: 'file', id: 'file-quakes.app.jsx', path: 'quakes.app.jsx',
+                displayName: 'Quake explorer', contentHash: 'hash', parentNodeId: 'quakes', createdAt: 2 }));
+            store.dispatch(dfActions.setFocused({ type: 'file', fileName: 'quakes.app.jsx' }));
+            store.dispatch(dfActions.queueAnalystTask({ text: 'The map is not showing', images: [], attachments: [] }));
+        });
+        try {
+            await waitFor(() => expect(container.textContent).toContain('Inspect the explorer map'));
+        } finally {
+            await act(async () => { continueStream(); });
+        }
+        await waitFor(() => expect(store.getState().draftNodes).toHaveLength(0));
+    });
+
+    it.each(['completion', 'clarify'])('places a new app between the request and the message that ends the run (%s)', async ending => {
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'action', action: 'write_html_app', file: {
+                name: 'sales_app.html', path: 'files/sales_app.html', display_name: 'Sales explorer',
+                content_hash: 'app-hash', url: '/api/workspace/files/sales_app.html',
+            } };
+            if (ending === 'completion') yield { type: 'completion', status: 'success', content: { summary: 'Built the app.' } };
+            else yield { type: 'clarify', questions: [{ text: 'Add a forecast?', options: ['Yes', 'No'] }] } as any;
+        });
+        const { store } = mountTask({ text: 'Build an interactive sales dashboard', images: [], attachments: [] });
+        await waitFor(() => expect(store.getState().draftNodes).toHaveLength(0));
+        const state = store.getState();
+        const request = turnWith(store, turn => turn.prompt === 'Build an interactive sales dashboard');
+        const endingTurn = state.textTurns.at(-1)!;
+        expect(request.parentNodeId).toMatch(/^conversation-root:/);
+        expect(state.fileNodes).toEqual([expect.objectContaining({ parentNodeId: request.id })]);
+        expect(endingTurn.parentNodeId).toBe(state.fileNodes[0].id);
+    });
+
+    it.each([
+        ['an app open on the canvas', 'sales.app.jsx', 'file-sales.app.jsx'],
+        ['a workspace file outside any thread', 'uploaded.md', /^conversation-root:/],
+    ])('continues the right thread when asking about %s', async (_label, fileName, expectedParent) => {
+        let finishRun!: () => void;
+        const running = new Promise<void>(resolve => { finishRun = resolve; });
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () { await running; });
+        const { store } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'built', displayId: 'Built', textKind: 'explain',
+                content: 'Built the dashboard.', parentNodeId: 'conversation-root:test', createdAt: 1 }));
+            store.dispatch(dfActions.upsertFileNode({ kind: 'file', id: 'file-sales.app.jsx', path: 'sales.app.jsx',
+                displayName: 'Sales explorer', contentHash: 'app-hash', parentNodeId: 'built', createdAt: 2 }));
+            store.dispatch(dfActions.setFocused({ type: 'file', fileName }));
+        });
+        try {
+            act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Add a units chart', images: [], attachments: [] })));
+            await waitFor(() => expect(store.getState().draftNodes).toHaveLength(1));
+            // The request continues from the app item itself (rule 3).
+            const request = turnWith(store, turn => turn.prompt === 'Add a units chart');
+            if (typeof expectedParent === 'string') {
+                expect(request.parentNodeId).toBe(expectedParent);
+            } else {
+                expect(request.parentNodeId).toMatch(expectedParent);
+            }
+            expect(store.getState().draftNodes[0].parentNodeId).toBe(request.id);
+            expect(requestBody().focused_file).toBe(fileName);
+        } finally {
+            await act(async () => { finishRun(); });
+        }
     });
 
     it.each(['create_file', 'edit_file'])('refreshes artifacts immediately after %s without adding a durable table', async tool => {
@@ -785,9 +968,12 @@ describe('Analyst landing attachment handoff', () => {
             expect(store.getState().focusedId).toEqual(previousCanvas);
             expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual(previousCanvas);
             expect(screen.queryByTestId('explanation-panel')).toBeNull();
-            expect(store.getState().textTurns.find(turn => turn.id === 'question')).toMatchObject({ answered: true, answer: 'Revenue' });
+            expect(store.getState().textTurns.find(turn => turn.id === 'question')).toMatchObject({ answered: true });
+            // The reply is a user message following the question; the run's draft follows the reply.
+            const reply = turnWith(store, turn => turn.prompt === 'Revenue');
+            expect(reply.parentNodeId).toBe('question');
             const draft = dispatchSpy.mock.calls.map(([action]) => action).find(dfActions.createDraftNode.match);
-            expect(draft?.payload.parentNodeId).toBe('question');
+            expect(draft?.payload.parentNodeId).toBe(reply.id);
             act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: 'question' })));
             if (target === 'self') expect(screen.getByTestId('explanation-panel').textContent).toBe('Which metric?');
             else {
@@ -804,8 +990,9 @@ describe('Analyst landing attachment handoff', () => {
             yield { type: 'completion', status: 'success', content: { summary: content, presentation } };
         });
         const { store } = mountTask({ text: 'Answer my question', images: [], attachments: [] });
-        await waitFor(() => expect(store.getState().textTurns).toHaveLength(1));
-        const turn = store.getState().textTurns[0];
+        await waitFor(() => expect(store.getState().textTurns).toHaveLength(2));
+        const turn = turnWith(store, item => item.content === content);
+        expect(turn.parentNodeId).toBe(turnWith(store, item => item.prompt === 'Answer my question').id);
         expect(turn.textKind).toBe('explain');
         expect(turn.presentation).toBe(presentation);
         expect(turn.form).toBeUndefined();
@@ -836,9 +1023,10 @@ describe('Analyst landing attachment handoff', () => {
         await waitFor(() => expect(store.getState().generatedReports[0]?.status).toBe('completed'));
         const [report] = store.getState().generatedReports;
         expect(report).toMatchObject({ title: 'SupportInsights', content: '# SupportInsights\n\nThree big ideas.' });
-        // The pause turn closes the request; no empty closing turn is added for the report.
-        expect(store.getState().textTurns.filter(turn => turn.textKind === 'explain' && !turn.content
+        // The pause message follows the report; no empty closing message is added for it.
+        expect(store.getState().textTurns.filter(turn => turn.textKind === 'explain' && !turn.content && !turn.prompt
             && !turn.executions?.length)).toHaveLength(0);
+        expect(store.getState().textTurns.find(turn => turn.parentNodeId === report.id)).toBeDefined();
     });
 
     it.each(['success', 'empty-summary', 'error', 'disconnect', 'cancel', 'end'])('keeps report request and output together after %s', async outcome => {
@@ -855,11 +1043,12 @@ describe('Analyst landing attachment handoff', () => {
         await waitFor(() => expect(store.getState().generatedReports[0]?.status).toBe(
             ['success', 'empty-summary'].includes(outcome) ? 'completed' : 'error'));
         const report = store.getState().generatedReports[0];
-        const owner = store.getState().textTurns.find(turn => turn.id === report.parentNodeId);
-        expect(owner).toMatchObject({
-            prompt: 'Write a report for this analysis',
-            content: outcome === 'success' ? 'Report ready.' : '',
-        });
+        // request → report → closing answer
+        const request = store.getState().textTurns.find(turn => turn.id === report.parentNodeId);
+        expect(request).toMatchObject({ prompt: 'Write a report for this analysis', content: '' });
+        if (outcome === 'success') {
+            expect(store.getState().textTurns.find(turn => turn.parentNodeId === report.id)).toMatchObject({ content: 'Report ready.' });
+        }
         expect(report.content).toBe('# Findings\n\nVerified observations.');
         expect(store.getState().draftNodes).toHaveLength(0);
     });
@@ -873,7 +1062,7 @@ describe('Analyst landing attachment handoff', () => {
         act(() => {
             store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'textTurn-origin', displayId: 'Origin',
                 textKind: 'explain', content: 'Earlier analysis', parentNodeId: 'conversation-root:original',
-                createdAt: 1, answered, ...(answered ? { answer: 'Continue analysis' } : {}) }));
+                createdAt: 1, answered }));
             store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'textTurn-newer', displayId: 'Later',
                 textKind: 'explain', content: 'Later analysis', parentNodeId: 'textTurn-origin', createdAt: 2 }));
             store.dispatch(dfActions.setFocused({ type: 'text', textId: 'textTurn-origin' }));
@@ -881,15 +1070,15 @@ describe('Analyst landing attachment handoff', () => {
         });
         await waitFor(() => expect(store.getState().generatedReports[0]?.status).toBe('error'));
         const report = store.getState().generatedReports[0];
-        const owner = store.getState().textTurns.find(turn => turn.id === report.parentNodeId)!;
-        expect(owner.parentNodeId).toBe('textTurn-origin');
-        expect(owner.prompt).toBe(answered ? 'Report on the earlier analysis' : undefined);
-        expect(store.getState().textTurns.find(turn => turn.id === 'textTurn-origin')?.answer)
-            .toBe(answered ? 'Continue analysis' : 'Report on the earlier analysis');
+        // The request follows the focused message even though it already has a follower: a new branch.
+        const request = store.getState().textTurns.find(turn => turn.id === report.parentNodeId)!;
+        expect(request.parentNodeId).toBe('textTurn-origin');
+        expect(request.prompt).toBe('Report on the earlier analysis');
+        expect(store.getState().textTurns.find(turn => turn.id === 'textTurn-origin')?.answered).toBe(true);
         expect(store.getState().draftNodes).toHaveLength(0);
     });
 
-    it('keeps a form-associated chat turn focused when clicking outside the composer', async () => {
+    it('keeps a form message focused when clicking outside the composer', async () => {
         const { store } = mountTask();
         act(() => {
             store.dispatch(dfActions.addTextTurn({
@@ -897,15 +1086,11 @@ describe('Analyst landing attachment handoff', () => {
                 content: 'Connect MySQL', createdAt: 1, parentNodeId: 'conversation-root:test',
                 form: { kind: 'connector', title: 'MySQL', connector: { sourceType: 'mysql' } },
             }));
-            store.dispatch(dfActions.addTextTurn({
-                kind: 'text', id: 'form-followup', displayId: 'form-followup', textKind: 'explain',
-                content: 'Review the updated host.', sourceFormId: 'form-owner', parentNodeId: 'form-owner', createdAt: 2,
-            }));
-            store.dispatch(dfActions.setFocused({ type: 'text', textId: 'form-followup' }));
+            store.dispatch(dfActions.setFocused({ type: 'text', textId: 'form-owner' }));
         });
         await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
         fireEvent.mouseDown(document.body);
-        expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'form-followup' });
+        expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'form-owner' });
         expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'text', textId: 'form-owner' });
         act(() => {
             store.dispatch(dfActions.addTextTurn({
@@ -937,7 +1122,7 @@ describe('Analyst landing attachment handoff', () => {
                 patch: { host: 'agent.example' }, response: 'Review the suggested host.' } };
         });
         act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Change the host', images: [], attachments: [] })));
-        await waitFor(() => expect(store.getState().textTurns.some(turn => turn.sourceFormId === formId)).toBe(true));
+        await waitFor(() => expect(store.getState().textTurns.some(turn => turn.content === 'Review the suggested host.')).toBe(true));
         expect(requestBody(1).connector_form).toEqual({ form_id: formId, source_type: 'mysql',
             status: 'pending', revision: 1, values: { host: 'user.example' } });
         expect(JSON.stringify(requestBody(1))).not.toContain('never-send');
@@ -959,9 +1144,12 @@ describe('Analyst landing attachment handoff', () => {
         await screen.findByRole('dialog');
         expect(streamRequest).toHaveBeenCalledTimes(1);
         const originalConversation = requestBody().conversation_id;
-        expect(store.getState().textTurns).toHaveLength(1);
-        const intentId = store.getState().textTurns[0].id;
-        expect(store.getState().textTurns[0]).toMatchObject({
+        // request → the step message carrying the proposed command
+        expect(store.getState().textTurns).toHaveLength(2);
+        const intent = turnWith(store, turn => !!turn.executions?.length);
+        const intentId = intent.id;
+        expect(intent.parentNodeId).toBe(turnWith(store, turn => turn.prompt === 'Find local data').id);
+        expect(intent).toMatchObject({
             content: proposal.purpose,
             executions: [{ id: proposal.id, status: 'awaiting_approval', argv: proposal.argv,
                 dangerouslyDisableSandbox: unsandboxed, sandboxDisablingReason: proposal.sandboxDisablingReason }],
@@ -992,15 +1180,15 @@ describe('Analyst landing attachment handoff', () => {
         expect(requestBody(1).terminal_response).not.toHaveProperty('dangerouslyDisableSandbox');
         expect(requestBody(1).terminal_response).not.toHaveProperty('sandboxDisablingReason');
         await waitFor(() => expect(store.getState().textTurns.some(turn => turn.form)).toBe(true));
-        expect(store.getState().textTurns).toHaveLength(2);
-        expect(store.getState().textTurns[0]).toMatchObject({
-            id: intentId, content: proposal.purpose,
+        expect(store.getState().textTurns).toHaveLength(3);
+        expect(turnWith(store, turn => turn.id === intentId)).toMatchObject({
+            content: proposal.purpose,
             executions: [{ id: proposal.id, status: decision === 'approve' ? 'completed' : 'rejected',
                 dangerouslyDisableSandbox: unsandboxed, sandboxDisablingReason: proposal.sandboxDisablingReason,
                 result: decision === 'approve' ? { exit_code: 0, output: '/data/sales.csv' } : { rejected: true } }],
         });
-        expect(store.getState().textTurns[1].parentNodeId).toBe(intentId);
-        if (decision === 'approve') expect(store.getState().textTurns[0].progressSteps).toMatchObject([
+        expect(turnWith(store, turn => !!turn.form).parentNodeId).toBe(intentId);
+        if (decision === 'approve') expect(turnWith(store, turn => turn.id === intentId).progressSteps).toMatchObject([
             { tool: 'run_terminal', toolCallId: proposal.id, executionId: proposal.id, status: 'completed' },
         ]);
         expect(screen.queryByRole('dialog')).toBeNull();
@@ -1015,12 +1203,36 @@ describe('Analyst landing attachment handoff', () => {
             yield { type: 'terminal_result', request: proposal, result: { exit_code: 0, output: '/data/sales.csv' } } as any;
         });
         const { store } = mountTask({ text: 'Find local data', images: [], attachments: [] });
-        await waitFor(() => expect(store.getState().textTurns[0]?.executions?.[0].status).toBe(outcome));
-        expect(store.getState().textTurns[0]).toMatchObject({ content: proposal.purpose,
+        const step = () => store.getState().textTurns.find(turn => turn.executions?.length);
+        await waitFor(() => expect(step()?.executions?.[0].status).toBe(outcome));
+        expect(step()).toMatchObject({ content: proposal.purpose,
             executions: [{ id: proposal.id, argv: proposal.argv, cwd: proposal.cwd }] });
         expect(streamRequest).toHaveBeenCalledTimes(1);
         expect(requestBody().terminal_response).toBeUndefined();
         expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('records an Auto command on its own step when the run continues from a question', async () => {
+        const proposal = { id: 'auto-after-reply', argv: ['az', 'account', 'show'], cwd: '/data', purpose: 'Check Azure access', timeout_seconds: 60 };
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'terminal_started', request: proposal } as any;
+            yield { type: 'terminal_result', request: proposal, result: { exit_code: 0, output: 'ok' } } as any;
+            yield { type: 'completion', content: { summary: 'Access confirmed.' } } as any;
+        });
+        const { store } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'question', displayId: 'Question', textKind: 'clarify',
+                content: 'Where should the data come from?', parentNodeId: 'conversation-root:test', createdAt: 1 }));
+            store.dispatch(dfActions.setFocused({ type: 'text', textId: 'question' }));
+            store.dispatch(dfActions.queueAnalystTask({ text: 'Test it with my credentials', images: [], attachments: [] }));
+        });
+        await waitFor(() => expect(store.getState().textTurns.at(-1)?.content).toBe('Access confirmed.'));
+        // The command finishes on the step that ran it; the question it continued from is untouched.
+        const step = turnWith(store, turn => !!turn.executions?.length);
+        expect(step.id).not.toBe('question');
+        expect(step.executions).toMatchObject([{ id: proposal.id, status: 'completed' }]);
+        expect(turnWith(store, turn => turn.id === 'question').executions).toBeUndefined();
+        expect(turnWith(store, turn => turn.id === 'question').progressSteps).toBeUndefined();
     });
 
     it('keeps one prompt owner while an Auto terminal command continues', async () => {
@@ -1036,12 +1248,14 @@ describe('Analyst landing attachment handoff', () => {
         });
         const { store } = mountTask({ text: 'Analyze Azure usage', images: [], attachments: [] });
         try {
-            await waitFor(() => expect(store.getState().textTurns[0]?.executions?.[0].status).toBe('running'));
+            await waitFor(() => expect(store.getState().textTurns.find(turn => turn.executions?.length)?.executions?.[0].status).toBe('running'));
             const state = store.getState();
-            const terminalTurn = state.textTurns[0];
-            expect(terminalTurn.prompt).toBe('Analyze Azure usage');
+            // request → step message with the running command → live draft
+            const request = turnWith(store, turn => turn.prompt === 'Analyze Azure usage');
+            const terminalTurn = turnWith(store, turn => !!turn.executions?.length);
+            expect(terminalTurn.parentNodeId).toBe(request.id);
             expect(state.draftNodes).toHaveLength(1);
-            expect(state.draftNodes[0].derive.trigger.interaction?.filter(entry => entry.role === 'prompt')).toHaveLength(0);
+            expect(state.draftNodes[0].derive.trigger.interaction ?? []).toHaveLength(0);
             expect(state.draftNodes[0].parentNodeId).toBe(terminalTurn.id);
             expect(state.draftNodes[0].derive.runningPlan).toContain(proposal.purpose);
             expect(state.draftNodes[0].derive.progressSteps).toMatchObject([
@@ -1068,15 +1282,16 @@ describe('Analyst landing attachment handoff', () => {
             yield { type: 'completion', content: { summary: 'Calculation finished.' } } as any;
         });
         const { store } = mountTask({ text: 'Calculate a total', images: [], attachments: [] });
+        const codeStep = () => store.getState().textTurns.find(turn => turn.codeExecutions?.length);
         try {
-            await waitFor(() => expect(store.getState().textTurns[0]?.codeExecutions?.[0].status).toBe('running'));
+            await waitFor(() => expect(codeStep()?.codeExecutions?.[0].status).toBe('running'));
             expect(store.getState().draftNodes[0].derive.runningPlan).toContain('Calculate total');
             expect(store.getState().textTurns.filter(turn => turn.prompt)).toHaveLength(1);
         } finally {
             await act(async () => { continueStream(); });
         }
-        await waitFor(() => expect(store.getState().textTurns[0]?.codeExecutions?.[0].status).toBe(outcome));
-        const step = store.getState().textTurns[0];
+        await waitFor(() => expect(codeStep()?.codeExecutions?.[0].status).toBe(outcome));
+        const step = codeStep()!;
         expect(step.progressSteps).toMatchObject([{ kind: 'tool', tool: 'execute_python_script',
             status: outcome, executionId: step.codeExecutions![0].id }]);
         expect(step.codeExecutions![0].code).toBe('print(42)');
@@ -1091,38 +1306,6 @@ describe('Analyst landing attachment handoff', () => {
         expect(store.getState().focusedId).toEqual(focus);
         fireEvent.click(screen.getByRole('button', { name: 'Close tool activity' }));
         expect(screen.queryByTestId('tool-activity-panel')).toBeNull();
-    });
-
-    it.each(['chart', 'answer', 'long_response'] as const)('opens chart-step explanations above the composer without replacing the selected %s', target => {
-        const { store } = mountTask();
-        act(() => {
-            store.dispatch(dfActions.addChart({ id: 'original-chart', chartType: 'Bar Chart', tableRef: 'orders', source: 'user', encodingMap: {} } as any));
-            store.dispatch(dfActions.addChart({ id: 'other-chart', chartType: 'Bar Chart', tableRef: 'orders', source: 'user', encodingMap: {} } as any));
-            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'answer', displayId: 'Answer', textKind: 'explain',
-                content: 'Existing answer', createdAt: 1, sourceChartId: 'original-chart', parentNodeId: 'conversation-root:test',
-                ...(target === 'long_response' ? { presentation: 'long_response' as const } : {}) }));
-            store.dispatch(dfActions.setFocused(target === 'chart'
-                ? { type: 'chart', chartId: 'original-chart' } : { type: 'text', textId: 'answer' }));
-        });
-        const focus = store.getState().focusedId;
-        const canvas = dfSelectors.selectCanvasTarget(store.getState());
-        const openExplanation = () => act(() => {
-            window.dispatchEvent(new CustomEvent('df-view-explanation', { detail: {
-                content: 'Compare storage accounts', sourceTableId: 'orders', timestamps: [123],
-            } }));
-        });
-        openExplanation();
-        expect(screen.getByTestId('explanation-panel').textContent).toBe('Compare storage accounts');
-        expect(screen.queryByTestId('tool-activity-panel')).toBeNull();
-        expect(store.getState().focusedId).toEqual(focus);
-        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual(canvas);
-        fireEvent.click(screen.getByRole('button', { name: 'Close explanation' }));
-        expect(screen.queryByText('Compare storage accounts')).toBeNull();
-        expect(store.getState().focusedId).toEqual(focus);
-        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual(canvas);
-        openExplanation();
-        act(() => store.dispatch(dfActions.setFocused({ type: 'chart', chartId: 'other-chart' })));
-        expect(screen.queryByText('Compare storage accounts')).toBeNull();
     });
 
     it('keeps only the selected execution in the panel, refreshes it, and dismisses on navigation', async () => {
@@ -1155,24 +1338,31 @@ describe('Analyst landing attachment handoff', () => {
             yield { type: 'tool_start', tool: 'execute_python_script', tool_call_id: 'first', code: 'print(1)', purpose: 'Inspect first' } as any;
             yield { type: 'tool_start', tool: 'execute_python_script', tool_call_id: 'second', code: 'print(2)', purpose: 'Inspect second' } as any;
             yield { type: 'tool_result', tool: 'execute_python_script', tool_call_id: 'unknown', status: 'ok', stdout: 'Wrong call' } as any;
-            expect(store.getState().textTurns.map(turn => turn.codeExecutions?.[0].status)).toEqual(['running', 'running']);
+            expect(codeStatuses()).toEqual(['running', 'running']);
             yield { type: 'tool_result', tool: 'execute_python_script', tool_call_id: 'second', status: 'error', stdout: 'second output', error: 'second failed' } as any;
-            expect(store.getState().textTurns.map(turn => turn.codeExecutions?.[0].status)).toEqual(['running', 'failed']);
+            expect(codeStatuses()).toEqual(['running', 'failed']);
             yield { type: 'context_info', rules_injected: ['Additional context'] } as any;
             yield { type: 'tool_result', tool: 'execute_python_script', tool_call_id: 'first', status: 'ok', stdout: 'first output' } as any;
             yield { type: 'completion', content: { summary: 'Finished both calls.' } } as any;
         });
         const { store } = mountTask({ text: 'Run both checks', images: [], attachments: [] });
+        const codeStatuses = () => store.getState().textTurns.flatMap(turn => turn.codeExecutions || []).map(call => call.status);
         await waitFor(() => expect(store.getState().textTurns.at(-1)?.content).toBe('Finished both calls.'));
         const turns = store.getState().textTurns;
-        expect(turns[0].codeExecutions![0]).toMatchObject({ code: 'print(1)', output: 'first output', status: 'completed' });
-        expect(turns[1].codeExecutions![0]).toMatchObject({ code: 'print(2)', output: 'second output', status: 'failed' });
-        expect(turns[0].progressSteps![0]).toMatchObject({ toolCallId: 'first', status: 'completed', executionId: turns[0].codeExecutions![0].id });
-        expect(turns[1].progressSteps![0]).toMatchObject({ toolCallId: 'second', status: 'failed', executionId: turns[1].codeExecutions![0].id });
-        expect(turns[0].progressSteps![0].id).not.toBe(turns[1].progressSteps![0].id);
-        expect(turns[2].progressSteps!.filter(step => step.kind === 'tool')).toMatchObject([
-            { toolCallId: 'first', status: 'completed' }, { toolCallId: 'second', status: 'failed' },
+        // request → step message with both calls → closing answer
+        expect(turns).toHaveLength(3);
+        const step = turns[1];
+        expect(step.parentNodeId).toBe(turns[0].id);
+        expect(step.codeExecutions).toMatchObject([
+            { code: 'print(1)', output: 'first output', status: 'completed' },
+            { code: 'print(2)', output: 'second output', status: 'failed' },
         ]);
+        expect(step.progressSteps!.filter(item => item.kind === 'tool')).toMatchObject([
+            { toolCallId: 'first', status: 'completed', executionId: step.codeExecutions![0].id },
+            { toolCallId: 'second', status: 'failed', executionId: step.codeExecutions![1].id },
+        ]);
+        expect(turns[2].parentNodeId).toBe(step.id);
+        expect((turns[2].progressSteps || []).filter(item => item.kind === 'tool')).toHaveLength(0);
         const restored = dataFormulatorReducer(undefined, dfActions.loadState(JSON.parse(JSON.stringify(store.getState()))));
         expect(restored.textTurns.map(turn => turn.progressSteps)).toEqual(turns.map(turn => turn.progressSteps));
     });
@@ -1186,8 +1376,41 @@ describe('Analyst landing attachment handoff', () => {
         });
         const { store } = mountTask({ text: 'Run legacy checks', images: [], attachments: [] });
         await waitFor(() => expect(store.getState().textTurns.at(-1)?.content).toBe('Stream ended.'));
-        expect(store.getState().textTurns.slice(0, 2).map(turn => turn.progressSteps![0].status)).toEqual(['interrupted', 'interrupted']);
-        expect(store.getState().textTurns.slice(0, 2).map(turn => turn.codeExecutions![0].output)).toEqual([undefined, undefined]);
+        const step = store.getState().textTurns.find(turn => turn.codeExecutions?.length)!;
+        expect(step.progressSteps!.map(item => item.status)).toEqual(['interrupted', 'interrupted']);
+        expect(step.codeExecutions!.map(call => [call.status, call.output])).toEqual([['interrupted', undefined], ['interrupted', undefined]]);
+    });
+
+    it('keeps the earlier request when a run resumes from its question', async () => {
+        const trajectory = [{ role: 'user', content: 'Compare the security alert sources' }];
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'tool_start', tool: 'execute_python_script', tool_call_id: 'first', code: 'print(1)', purpose: 'Survey sources' } as any;
+            yield { type: 'tool_result', tool: 'execute_python_script', tool_call_id: 'first', status: 'ok', stdout: '3' } as any;
+            yield { type: 'clarify', questions: [{ text: 'Which scenario would you like to explore?', options: ['Compare all three'] }],
+                trajectory, completed_step_count: 1 } as any;
+        });
+        const { store } = mountTask({ text: 'Compare the security alert sources', images: [], attachments: [] });
+        await waitFor(() => expect(store.getState().textTurns.some(turn => turn.textKind === 'clarify')).toBe(true));
+        const request = turnWith(store, turn => turn.prompt === 'Compare the security alert sources');
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'tool_start', tool: 'execute_python_script', tool_call_id: 'second', code: 'print(2)', purpose: 'Check coverage' } as any;
+            yield { type: 'tool_result', tool: 'execute_python_script', tool_call_id: 'second', status: 'ok', stdout: 'ok' } as any;
+            yield { type: 'completion', content: { summary: 'All three compared.' } } as any;
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Submit clarification' }));
+        await waitFor(() => expect(store.getState().textTurns.at(-1)?.content).toBe('All three compared.'));
+        // request → step → question → reply → step → answer, one chain with nothing overwritten.
+        const question = turnWith(store, turn => turn.textKind === 'clarify');
+        const reply = turnWith(store, turn => turn.prompt === 'Revenue');
+        expect(turnWith(store, turn => turn.id === request.id)).toMatchObject({ prompt: request.prompt, parentNodeId: request.parentNodeId });
+        expect(reply.id).not.toBe(request.id);
+        expect(reply.parentNodeId).toBe(question.id);
+        const steps = store.getState().textTurns.filter(turn => turn.codeExecutions?.length);
+        expect(steps.map(step => step.parentNodeId)).toEqual([request.id, reply.id]);
+        expect(new Set(store.getState().textTurns.map(turn => turn.id)).size).toBe(store.getState().textTurns.length);
+        const threads = buildThreads(dfSelectors.getThreadGraph(store.getState()));
+        expect(threads.filter(thread => thread.nodeIds.includes(request.id))[0].nodeIds).toContain(store.getState().textTurns.at(-1)!.id);
+        expect(threads.some(thread => thread.branchFromId)).toBe(false);
     });
 
     it('preserves progress across a clarification without mixing it into the resumed stage', async () => {
@@ -1198,8 +1421,9 @@ describe('Analyst landing attachment handoff', () => {
             yield { type: 'clarify', questions: [{ text: 'Which metric?', options: ['Revenue'] }], trajectory } as any;
         });
         const { store } = mountTask({ text: 'Choose a metric', images: [], attachments: [] });
-        await waitFor(() => expect(store.getState().textTurns[0]?.textKind).toBe('clarify'));
-        expect(store.getState().textTurns[0].progressSteps).toMatchObject([{ toolCallId: 'before-pause', status: 'completed' }]);
+        const question = () => store.getState().textTurns.find(turn => turn.textKind === 'clarify');
+        await waitFor(() => expect(question()).toBeDefined());
+        expect(question()!.progressSteps).toMatchObject([{ toolCallId: 'before-pause', status: 'completed' }]);
         vi.mocked(streamRequest).mockImplementationOnce(async function* () {
             yield { type: 'tool_start', tool: 'inspect_source_data', tool_call_id: 'after-pause' } as any;
             yield { type: 'tool_result', tool: 'inspect_source_data', tool_call_id: 'after-pause', status: 'ok' } as any;
@@ -1208,9 +1432,12 @@ describe('Analyst landing attachment handoff', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Submit clarification' }));
         await waitFor(() => expect(store.getState().textTurns.at(-1)?.content).toBe('Revenue inspected.'));
         expect(requestBody(1).trajectory).toEqual(trajectory);
-        expect(store.getState().textTurns[0].progressSteps).toMatchObject([{ toolCallId: 'before-pause', status: 'completed' }]);
-        expect(store.getState().textTurns[1].progressSteps).toMatchObject([{ toolCallId: 'after-pause', status: 'completed' }]);
-        expect(store.getState().textTurns[1].progressSteps).toHaveLength(1);
+        // question → reply → resumed answer: each message keeps its own stage's progress.
+        expect(question()!.progressSteps).toMatchObject([{ toolCallId: 'before-pause', status: 'completed' }]);
+        const resumed = store.getState().textTurns.at(-1)!;
+        expect(store.getState().textTurns.find(turn => turn.id === resumed.parentNodeId)?.parentNodeId).toBe(question()!.id);
+        expect(resumed.progressSteps).toMatchObject([{ toolCallId: 'after-pause', status: 'completed' }]);
+        expect(resumed.progressSteps).toHaveLength(1);
     });
 
     it('marks a command interrupted if its stream ends before a result', async () => {
@@ -1226,8 +1453,9 @@ describe('Analyst landing attachment handoff', () => {
             throw new Error('Connection lost');
         });
         fireEvent.click(screen.getByRole('button', { name: 'Run once' }));
-        await waitFor(() => expect(store.getState().textTurns[0].executions?.[0].status).toBe('interrupted'));
-        expect(store.getState().textTurns).toHaveLength(1);
+        await waitFor(() => expect(store.getState().textTurns.find(turn => turn.executions?.length)?.executions?.[0].status).toBe('interrupted'));
+        // request → step message with the command; no extra message for the dropped stream.
+        expect(store.getState().textTurns).toHaveLength(2);
     });
 
     it('sends queued images and uploaded scratch paths and labels the prompt', async () => {
@@ -1245,12 +1473,8 @@ describe('Analyst landing attachment handoff', () => {
             scratch_files: ['scratch/sales_ab12.csv'],
         });
         expect(store.getState().analystChatPending).toBeNull();
-        const draftAction = dispatchSpy.mock.calls.map(([action]) => action)
-            .find(dfActions.createDraftNode.match);
-        expect(draftAction?.payload.interaction[0]).toMatchObject({
-            content: 'Extract data and show',
-            attachments: ['sales_ab12.csv', 'image'],
-        });
+        expect(dispatchSpy).toHaveBeenCalled();
+        expect(turnWith(store, turn => turn.prompt === 'Extract data and show').attachments).toEqual(['sales_ab12.csv', 'image']);
     });
 
     it.each([

@@ -486,6 +486,8 @@ class AnalystAgent:
         # context).
         self._loaded_skills = self._initial_loaded_skills(workspace_inputs, connector_form)
         self._run_payload = {
+            # Apps this run created or versioned; skill contexts copy the payload but share this set.
+            "apps_written": set(),
             "input_tables": input_tables,
             "external_references": normalize_external_references(external_references),
             "workspace_inputs": workspace_inputs,

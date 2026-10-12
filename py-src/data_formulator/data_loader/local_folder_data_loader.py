@@ -281,7 +281,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
             raise ValueError("File artifacts must use the file preview or file import")
         self._last_total_rows = None
         sql = probe_utils.compile_probe_sql(query, limit, dialect=probe_utils.DUCKDB)
-        with duckdb.connect(config={"memory_limit": "512MB"}) as connection:
+        with duckdb.connect(config=probe_utils.duckdb_query_config()) as connection:
             if resolved.suffix.lower() == ".parquet":
                 self._last_total_rows = pq.ParquetFile(str(resolved)).metadata.num_rows
             probe_utils.register_file_scan(connection, str(resolved))

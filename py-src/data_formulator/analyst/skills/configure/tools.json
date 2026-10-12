@@ -151,7 +151,7 @@
     "type": "function",
     "function": {
       "name": "propose_workflow",
-      "description": "Propose or revise an analysis workflow definition in the current conversation for user review, Save, or Run. Use this for workflow creation instead of creating a Markdown file. This action neither saves nor executes the workflow. Ground it in the user's conversation and available data; use ask_user for material unknowns.",
+      "description": "Propose or revise an analysis workflow definition in the current conversation for user review, Save, or Run. Use this for workflow creation instead of creating a Markdown file. This action neither saves nor executes the workflow; include schedule when the user wants it to run on a recurring schedule. Ground it in the user's conversation and available data; use ask_user for material unknowns.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -165,6 +165,63 @@
           "replaces": {
             "type": "string",
             "description": "Path of the user's saved workflow (origin user, from list_workflows) that this proposal revises. The form then lets the user update that workflow or save a new one. Omit for a new workflow."
+          },
+          "schedule": {
+            "type": "object",
+            "description": "Recurring schedule for this workflow, when the user asks for one. The form's Save then creates the workflow and its schedule together, after the user reviews both. Omitted fields use the user's defaults (09:00 daily, their timezone, the selected server model).",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Schedule name; defaults to the workflow name."
+              },
+              "time": {
+                "type": "string",
+                "description": "Run time as 24-hour HH:MM."
+              },
+              "weekdays": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 6
+                },
+                "description": "Days to run, 0=Monday through 6=Sunday."
+              },
+              "timezone": {
+                "type": "string",
+                "description": "IANA timezone such as America/Los_Angeles. Omit to use the user's timezone."
+              },
+              "model_id": {
+                "type": "string",
+                "description": "Server model connection ID from list_schedules."
+              },
+              "setup": {
+                "type": "object",
+                "description": "Workflow inputs: parameters keyed by parameter name, plus optional instructions.",
+                "properties": {
+                  "parameters": {
+                    "type": "object"
+                  },
+                  "instructions": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "enabled": {
+                "type": "boolean",
+                "description": "False saves the schedule paused."
+              },
+              "catch_up": {
+                "type": "boolean",
+                "description": "Run once after missed occurrences."
+              },
+              "auto_approve": {
+                "type": "boolean",
+                "description": "Auto-approve terminal commands and single-option data loads during runs. Only when the user asks; always requires review."
+              }
+            },
+            "additionalProperties": false
           }
         },
         "required": [

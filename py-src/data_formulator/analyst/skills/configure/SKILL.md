@@ -47,6 +47,7 @@ dialogs. Every setup task follows the same flow:
 |---|---|---|---|
 | Connect or repair a data source | `list_connectors`, `describe_connector`, `read_connector_form` | `propose_connection`, `update_connector_form` | The form shows Connected. |
 | Create or revise a workflow | Conversation, workspace inputs, `list_workflows` | `propose_workflow` | The user saves or runs the proposal. |
+| Create a workflow and schedule it | Conversation, workspace inputs, `list_schedules` | `propose_workflow` with `schedule` | The user saves the workflow and its schedule together. |
 | Schedule a workflow or change a schedule | `list_workflows`, `list_schedules` | `propose_schedule` | The form shows the saved schedule. |
 | Find, open, rename, or delete sessions | `list_sessions` | `propose_session_changes` | The session panel lists the sessions for the user to act on. |
 
@@ -146,10 +147,16 @@ selected weekdays. Call `list_workflows` for the workflow path and its parameter
 and `list_schedules` for existing schedules, availability, and server model
 connections. If scheduling is unavailable, explain why instead of proposing.
 
-Schedule only saved workflows. For a workflow that exists only as a proposal in
-the conversation, ask the user to save it first (or propose it if none exists),
-then schedule it in a later turn. When the user has not chosen among several
-saved workflows or a timing, propose the form anyway with what is known: omit
+When the user wants a new or revised workflow to run on a schedule, propose both
+at once: pass `schedule` to `propose_workflow` (timing, inputs, options; no
+workflow path). Saving the proposal then creates the workflow and its schedule,
+so do not defer scheduling to a later turn. Call `list_schedules` first for
+availability and server model connections; if scheduling is unavailable, propose
+the workflow alone and explain why. For a workflow that exists only as an earlier
+proposal in the conversation, propose it again with `schedule`.
+
+`propose_schedule` schedules saved workflows or changes existing schedules. When
+the user has not chosen among several saved workflows or a timing, propose the form anyway with what is known: omit
 `workflow` to let the user pick it from the form's list, and leave unknown
 timing at the form defaults. To change a schedule, pass its `schedule_id`
 and only the fields that change (the form lets the user update it or save a new

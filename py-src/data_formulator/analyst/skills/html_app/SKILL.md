@@ -184,8 +184,10 @@ to use it.
 ## Revising an app
 
 When the user asks to change an app, including the selected one or one marked
-agent-editable in the inventory, update that file in place. Create another app
-only when the user asks for a separate one.
+agent-editable in the inventory, revise that app. A revision is saved as a new
+version of it (`sales.app.jsx` becomes `sales_2.app.jsx`) and the original stays
+as it was; the result gives the new `path` and `content_hash`. Further revisions
+in the same run update that new version, so make them against its path.
 
 - Small changes (a chart, a control, a label, a query): `edit_file` with the
   app's path, `expected_content_hash`, and targeted `replacements`. Keep the

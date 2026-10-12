@@ -326,6 +326,8 @@ qualifiers or cryptic abbreviations. Provide a short meaningful `display_name`, 
 omitting extensions and underscores. Creation rejects existing filenames.
 
 Use `edit_file` for revisions to an agent-managed file at the same `files/...` path.
+Revising an app saves a new version of it under a new path (see the html_app skill);
+use the `path` the result returns.
 Read the file and obtain its SHA-256 `content_hash` from the latest create/edit
 result or input inventory. Imported originals remain protected.
 Choose a text patch for a small change or full text/code replacement for a new

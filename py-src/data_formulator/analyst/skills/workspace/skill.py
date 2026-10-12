@@ -11,7 +11,9 @@ from typing import Any, Generator
 from data_formulator.datalake.text_edit import apply_text_patch, TextEditConflictError
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
 from data_formulator.analyst.input_provenance import normalize_input_sources
-from data_formulator.analyst.skills.html_app.skill import REACT_APP_SUFFIX, check_app_revision
+from data_formulator.analyst.skills.html_app.skill import (
+    REACT_APP_SUFFIX, app_revision_target, check_app_revision, record_app_written,
+)
 from data_formulator.analyst.workspace_inputs import (
     WorkspaceInputEngine,
     normalize_external_references,
@@ -189,6 +191,11 @@ class WorkspaceSkill:
                 app = check_app_revision(filename, previous, content, ctx)
                 if app is not None and display_name is None:
                     display_name = app["title"]
+                if app is not None:
+                    # Editing an app makes a new version of it (design-docs/58, rule 8).
+                    target = app_revision_target(filename, ctx)
+                    if target != filename:
+                        filename, expected_hash = target, None
             elif filename.lower().endswith(REACT_APP_SUFFIX):
                 raise ValueError("Create apps with write_app (html_app skill); it validates the code and opens the app")
             metadata = ctx.workspace.save_workspace_file(
@@ -197,6 +204,8 @@ class WorkspaceSkill:
                 expected_content_hash=expected_hash if editing else None,
                 display_name=display_name, agent_managed=True,
             )
+            if app is not None:
+                record_app_written(metadata.name, ctx)
             ctx.payload["workspace_inputs"] = WorkspaceInputEngine(
                 ctx.workspace, ctx.payload.get("input_tables", []),
             ).manifest

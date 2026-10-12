@@ -17,7 +17,7 @@
     "openGitHubAuthorization": "Buka GitHub",
     "manageCopilotConnection": "Kelola di GitHub",
     "deviceCode": "Kode perangkat",
-    "deviceCodeInstructions": "Masukkan kode ini di {{provider}} untuk menghubungkan akun Anda.",
+    "deviceCodeInstructions": "Salin kode ini, pilih Buka {{provider}}, lalu tempelkan di halaman yang terbuka.",
     "copyDeviceCode": "Salin kode perangkat",
     "copyDeviceCodeFailed": "Tidak dapat menyalin kode. Pilih kode untuk menyalin secara manual.",
     "copilotBilling": "Eksperimental. Batas langganan Copilot dan kebijakan organisasi berlaku. Hanya model obrolan yang kompatibel yang dicantumkan.",

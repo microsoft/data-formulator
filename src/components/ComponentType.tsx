@@ -184,12 +184,6 @@ export interface ExternalTableReference {
     queryIntent?: Record<string, unknown>;
 }
 
-export interface PendingClarification {
-    trajectory: any[];
-    completedStepCount: number;
-    lastCreatedTableId: string | null;
-}
-
 export interface DraftNode {
     kind: 'draft';
     id: string;
@@ -207,12 +201,21 @@ export interface DraftNode {
         codeSignature?: string;
         outputVariable?: string;
         dialog?: any[];
-        pendingClarification?: PendingClarification | null;
     };
     actionId?: string;
 }
 
-export type ThreadNode = DraftNode | DictTable | LoadedTableNode | FileNode;
+/** Several items produced together in one step: one node in the thread whose members are those items (design-docs/58, rule 9). */
+export interface ArtifactSetNode {
+    kind: 'artifact-set';
+    id: string;
+    parentNodeId: string;
+    /** Member item ids in the order they were produced; each member's `parentNodeId` is this set. */
+    memberIds: string[];
+    createdAt: number;
+}
+
+export type ThreadNode = DraftNode | DictTable | LoadedTableNode | FileNode | ArtifactSetNode;
 
 /**
  * A first-class interaction in the thread: either a clarify/explain turn or a
@@ -267,8 +270,8 @@ export interface WorkflowDefinition {
 export interface TextTurn {
     progressSteps?: ProgressStep[];
     externalReferenceId?: string;
-    workflowCardFor?: string;
-    workflowMessage?: { runId: string; messageId: string; status: 'queued' | 'received'; kind?: 'steering' | 'reply'; afterOutputIds?: string[] };
+    /** A user message sent to a workflow run (steering while running, or a reply that resumes it). */
+    workflowMessage?: { runId: string; messageId: string; status: 'queued' | 'received'; kind?: 'steering' | 'reply' };
     kind: 'text';
     id: string;
     displayId: string;
@@ -277,9 +280,12 @@ export interface TextTurn {
     presentation?: 'long_response';
     /** Markdown: the question preamble, or the answer. */
     content: string;
-    /** The user message that triggered this turn (shown with the card so the
-     *  exchange stays self-contained — the run produced no table to anchor it). */
+    /** The user's message (design-docs/58): a turn with a prompt and no
+     *  content is a user message node; the agent's reply follows as its own node. */
     prompt?: string;
+    /** Files and images the user attached to `prompt`. */
+    attachments?: string[];
+    /** A workflow run's outputs, in the order the run produced them. */
     outputIds?: string[];
     workflow?: {
         runId: string;
@@ -323,13 +329,9 @@ export interface TextTurn {
     dataOperation?: DataOperation;
     /** A user-confirmed form artifact that owns the canvas while focused. */
     form?: FormArtifact;
-    sourceFormId?: string;
-    /** True once the user has responded to THIS clarify — it then locks
-     *  (read-only). A later response is a *new* conversation, not a re-answer. */
+    /** True once the user has responded to THIS question or form — it then locks
+     *  (read-only). The response itself is the user message that follows it. */
     answered?: boolean;
-    /** The user's response to this clarify, shown in the resolved read-only view
-     *  (question → answer). */
-    answer?: string;
     /**
      * The thread node this turn FOLLOWS (design-docs/42) — the SINGLE authored
      * edge that places the turn in the thread. Captured once at ask time: the
@@ -342,8 +344,6 @@ export interface TextTurn {
     /** The chart the user was on when this turn was created — canvas provenance
      *  only (focusing the turn keeps this chart on the canvas). NOT positioning. */
     sourceChartId?: string;
-    /** An existing app the run revised in place; focusing the turn shows that app. */
-    revisedFile?: string;
     actionId?: string;
     /**
      * §12 opaque resume token — set iff the backend stamped a trajectory on the
@@ -466,6 +466,14 @@ export interface WorkflowFormArtifact extends SetupFormBase {
         /** Saved user workflow (by path) this proposal revises. */
         target?: SetupFormTarget;
         saved?: { path: string; content_hash: string };
+        /** A schedule proposed with the workflow; saving the workflow also saves it. */
+        schedule?: {
+            config: Partial<ScheduleConfig>;
+            /** Values the agent could not verify; the user resolves them before saving. */
+            issues?: string[];
+            savedId?: string;
+            nextAt?: string;
+        };
     };
 }
 
@@ -626,6 +634,8 @@ export interface DictTable {
 
     /** Authored thread edge. Data provenance remains in `derive`. */
     parentNodeId?: string;
+    /** When the table was produced; orders it among the other followers of its parent. */
+    createdAt?: number;
 
     source?: DataSourceConfig;
     

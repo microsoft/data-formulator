@@ -41,7 +41,7 @@ import {
 import type { KnowledgeItem } from '../api/knowledgeApi';
 import { borderColor, radius, sidebarRowActionSx, sidebarRowDangerActionSx, sidebarRowSx, sidebarRowTitleSx } from '../app/tokens';
 import { dfActions, dfSelectors, type DataFormulatorState } from '../app/dfSlice';
-import { isLeafDerivedTable, buildLeafEvents } from './workflowContext';
+import { isLeafDerivedTable, buildLeafEvents, threadConversationOf } from './workflowContext';
 import { SessionDistillDialog, findSessionWorkflow } from './SessionDistill';
 import { iconVar, textVar } from '../app/layout';
 
@@ -102,6 +102,8 @@ export const KnowledgePanel: React.FC = () => {
     const hasTables = tables.length > 0;
     const charts = useSelector((s: DataFormulatorState) => s.charts);
     const conceptShelfItems = useSelector((s: DataFormulatorState) => s.conceptShelfItems);
+    const threadGraph = useSelector(dfSelectors.getThreadGraph);
+    const textTurns = useSelector((s: DataFormulatorState) => s.textTurns);
     const selectedModelId = useSelector((s: DataFormulatorState) => s.selectedModelId);
     const allModels = useSelector((s: DataFormulatorState) => [...s.globalModels, ...s.models]);
 
@@ -201,11 +203,12 @@ export const KnowledgePanel: React.FC = () => {
     // (i.e. has a user message). Cheap to compute — same predicate as
     // before, just used for the placeholder enable-state.
     const hasDistillableSession = React.useMemo(() => {
+        const conversationOf = threadConversationOf(threadGraph, textTurns);
         return tables.some(t =>
             isLeafDerivedTable(t, tables) &&
-            buildLeafEvents(t, tables, charts, conceptShelfItems) != null,
+            buildLeafEvents(t, tables, conversationOf, charts, conceptShelfItems) != null,
         );
-    }, [tables, charts, conceptShelfItems]);
+    }, [tables, threadGraph, textTurns, charts, conceptShelfItems]);
 
     const selectedModel = allModels.find(m => m.id === selectedModelId);
     const canDistillFromSession = hasDistillableSession && !!selectedModel && !!activeWorkspace;

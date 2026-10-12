@@ -15,13 +15,12 @@ import {
 } from '@mui/material';
 
 import { dfActions } from '../app/dfSlice';
-import { DictTable, Trigger } from "../components/ComponentType";
+import { DictTable } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AddchartIcon from '@mui/icons-material/Addchart';
 
-import { TriggerCard } from './EncodingShelfCard';
 import { ComponentBorderStyle, shadow, sidebarRowActionSx, sidebarRowDangerActionSx } from '../app/tokens';
 import { iconVar, textVar } from '../app/layout';
 
@@ -196,34 +195,6 @@ export let buildTableRefChip = (props: {
                 : { type: 'table', tableId }))}
             actions={props.onDelete && <ArtifactDeleteButton label={props.deleteLabel || 'Delete table'} onClick={props.onDelete} />} />
     </Box>
-}
-
-// ─── Trigger Card Wrapper ────────────────────────────────────────────────────
-
-export let buildTriggerCard = (
-    trigger: Trigger,
-    focusedChartId: string | undefined,
-    highlighted: boolean = false,
-    dimmed: boolean = false,
-) => {
-    let selectedClassName = trigger.chart?.id == focusedChartId ? 'selected-card' : '';
-    
-    let triggerCard = <div key={'thread-card-trigger-box'}>
-        <Box sx={{ flex: 1 }} >
-            <TriggerCard className={selectedClassName} trigger={trigger} 
-                hideFields={!!(trigger.interaction && trigger.interaction.length > 0)} 
-                highlighted={highlighted}
-                sx={{
-                    '& .MuiBox-root': { mx: 0.5, my: 0.25 },
-                    '& .MuiSvgIcon-root': { width: '12px', height: '12px' },
-                }}
-            />
-        </Box>
-    </div>;
-
-    return <Box sx={{ display: 'flex', flexDirection: 'column' }} key={`trigger-card-${trigger.chart?.id}`}>
-        {triggerCard}
-    </Box>;
 }
 
 // ─── Table Card ──────────────────────────────────────────────────────────────

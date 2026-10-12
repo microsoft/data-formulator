@@ -213,7 +213,7 @@ class AzureBlobDataLoader(ExternalDataLoader):
         if extension not in ("parquet", "csv", "tsv", "json", "jsonl"):
             raise ValueError(f"Unsupported file type: {source_table}")
         self._last_total_rows = None
-        with duckdb.connect(config={"memory_limit": "512MB"}) as connection:
+        with duckdb.connect(config=probe_utils.duckdb_query_config()) as connection:
             relation = self._register_source(connection, source_table)
             string_columns = tuple(name for name, datatype in zip(relation.columns, relation.types)
                                    if str(datatype) == "VARCHAR")

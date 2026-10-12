@@ -218,7 +218,8 @@ class WorkflowAgent(AnalystAgent):
         self.read_messages = lambda: []
         self.run_dir = workspace.confined_scratch.resolve("workflow-" + state["id"])
         self.run_dir.mkdir(exist_ok=True)
-        self._run_payload = {"input_tables": [], "charts": [], "skill_state": {}, "conversation_id": state["id"]}
+        self._run_payload = {"input_tables": [], "charts": [], "skill_state": {}, "conversation_id": state["id"],
+                             "apps_written": set()}
         self.state.setdefault("outputs", [])
         self.workspace_skill = self.registry.get_skill("workspace")
         self.visualization_skill = self.registry.get_skill("visualization")

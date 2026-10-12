@@ -123,7 +123,7 @@ class S3DataLoader(ExternalDataLoader):
             raise ValueError(f"Unsupported file type: {source}")
         self._last_total_rows = None
         sql = probe_utils.compile_probe_sql(query, limit, dialect=probe_utils.DUCKDB)
-        with duckdb.connect(config={"memory_limit": "512MB"}) as connection:
+        with duckdb.connect(config=probe_utils.duckdb_query_config()) as connection:
             self._register_source(connection, source)
             return connection.execute(sql).fetch_arrow_table()
 

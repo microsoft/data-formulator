@@ -135,7 +135,7 @@
     "type": "function",
     "function": {
       "name": "edit_file",
-      "description": "Edit an existing agent-managed workspace file. Provide exactly one of replacement content, Python code/output_variable, or text replacements/append_text. Requires the current content_hash from creation, editing, or list_workspace_items(scope=input). User-managed sources and internal files are protected; create a copy instead. Preserves filename and display name unless a new display_name is supplied.",
+      "description": "Edit an existing agent-managed workspace file. Provide exactly one of replacement content, Python code/output_variable, or text replacements/append_text. Requires the current content_hash from creation, editing, or list_workspace_items(scope=input). User-managed sources and internal files are protected; create a copy instead. Preserves filename and display name unless a new display_name is supplied; editing an app saves a new version of it under a new path, returned in the result.",
       "parameters": {
         "type": "object",
         "properties": {

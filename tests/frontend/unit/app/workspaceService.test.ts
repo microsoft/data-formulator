@@ -17,6 +17,7 @@ vi.mock('../../../../src/app/store', () => ({
 }));
 
 vi.mock('../../../../src/app/stateMigrations', () => ({
+    DF_STATE_VERSION: 14,
     migrateState: vi.fn((state) => state),
 }));
 

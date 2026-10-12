@@ -126,3 +126,29 @@ def test_missing_cli_has_actionable_error(monkeypatch):
     monkeypatch.setattr(azure_cli, "find_azure_cli", lambda: None)
     with pytest.raises(CredentialUnavailableError, match="Install it and run 'az login'"):
         azure_cli.DesktopAzureCliCredential(None).get_token(azure_cli._COGNITIVE_SERVICES_SCOPE)
+
+
+@pytest.mark.parametrize("platform", ["win32", "darwin", "linux"])
+def test_account_status_hides_only_windows_console(monkeypatch, platform):
+    import sys
+
+    from data_formulator import data_connector
+
+    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.setattr(azure_cli, "expose_azure_cli", lambda: "/trusted/path/az.cmd")
+    monkeypatch.setattr(subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    run = Mock(return_value=SimpleNamespace(returncode=0, stdout=json.dumps({
+        "user": {"name": "test-user"}, "name": "test-subscription", "tenantId": "test-tenant",
+    })))
+    monkeypatch.setattr(subprocess, "run", run)
+
+    assert data_connector._az_account_summary() == {
+        "user": "test-user", "subscription": "test-subscription", "tenant_id": "test-tenant",
+    }
+    args, options = run.call_args
+    assert args[0][1:3] == ["account", "show"]
+    assert options["stdin"] == subprocess.DEVNULL
+    if platform == "win32":
+        assert options["creationflags"] == 0x08000000
+    else:
+        assert "creationflags" not in options

@@ -128,7 +128,9 @@ const parseScheduleTime = (text: string) => {
 
 /** Schedule fields shared by the Schedules dialog and agent-proposed schedule forms. */
 export const ScheduleConfigFields: React.FC<{ items: WorkflowLibraryItem[]; config: ScheduleConfig; onChange: (config: ScheduleConfig) => void;
-    disabled: boolean; hideName?: boolean }> = ({ items, config, onChange, disabled, hideName = false }) => {
+    disabled: boolean; hideName?: boolean;
+    /** The workflow being scheduled when it is fixed (a proposal saved with its schedule); hides the workflow choice. */
+    fixedWorkflow?: WorkflowLibraryItem }> = ({ items, config, onChange, disabled, hideName = false, fixedWorkflow }) => {
     const { t } = useTranslation();
     const models = useSelector((state: DataFormulatorState) => state.globalModels);
     const [customDays, setCustomDays] = useState(false);
@@ -138,18 +140,18 @@ export const ScheduleConfigFields: React.FC<{ items: WorkflowLibraryItem[]; conf
         if (time) onChange({ ...config, time });
         setTimeText(null);
     };
-    const workflow = items.find(item => item.path === config.workflow);
+    const workflow = fixedWorkflow ?? items.find(item => item.path === config.workflow);
     const repeat = customDays ? 'custom' : config.weekdays.length === 7 ? 'daily'
         : config.weekdays.length === 5 && [0, 1, 2, 3, 4].every(day => config.weekdays.includes(day)) ? 'weekdays' : 'custom';
     return <>
-        <TextField size="small" select required label={t('schedule.workflow')} value={config.workflow} disabled={disabled}
+        {!fixedWorkflow && <TextField size="small" select required label={t('schedule.workflow')} value={config.workflow} disabled={disabled}
             onChange={event => {
                 const selected = items.find(item => item.path === event.target.value);
                 onChange({ ...config, workflow: event.target.value, name: !config.name || config.name === workflow?.name ? selected?.name || '' : config.name,
                     setup: { parameters: Object.fromEntries((selected?.parameters || []).flatMap(parameter => parameter.default === undefined ? [] : [[parameter.name, parameter.default]])), instructions: '' } });
             }}>
             {items.map(item => <MenuItem key={item.path} value={item.path}>{item.name}</MenuItem>)}
-        </TextField>
+        </TextField>}
         {!hideName && <TextField size="small" required label={t('schedule.name')} value={config.name} disabled={disabled}
             onChange={event => onChange({ ...config, name: event.target.value })} />}
         <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 2 }}>

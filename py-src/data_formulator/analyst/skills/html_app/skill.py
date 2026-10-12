@@ -7,10 +7,11 @@ Two committing actions share one flow: ``write_app`` saves a React app
 (``*.app.jsx``, design-docs/57) and ``write_html_app`` a plain HTML app. The
 handler validates the request, stamps a manifest declaring which workspace
 tables the app may read (a ``// @df-app`` header line or a ``df-app-manifest``
-script), and saves an agent-managed workspace file. Revisions update the same
-file: a full rewrite passes ``path`` and ``expected_content_hash`` to the same
-action, and targeted ``edit_file`` patches are validated by
-``check_app_revision`` so a broken edit is refused.
+script), and saves an agent-managed workspace file. A revision (a full rewrite
+passing ``path`` and ``expected_content_hash``, or targeted ``edit_file``
+patches validated by ``check_app_revision``) is saved as a new version of the
+app, leaving the original as it was; later revisions in the same run update
+that version (design-docs/58, rule 8).
 
 The frontend renders the file in an opaque-origin sandboxed iframe with a
 restrictive CSP and injects the DF runtime; the app reads declared tables through
@@ -244,6 +245,38 @@ def read_html_manifest(html: str) -> dict[str, Any] | None:
     return manifest if isinstance(manifest, dict) else None
 
 
+_VERSION_SUFFIX_RE = re.compile(r"^(?P<stem>.*?)(?:_(?P<version>\d+))?$")
+
+
+def app_revision_target(filename: str, ctx: SkillContext) -> str:
+    """The file a revision of the app ``filename`` is saved to.
+
+    Editing an app makes a new app (design-docs/58, rule 8): the revision goes
+    to the next free ``<stem>_<n>`` name and the original stays as it was. An
+    app this run already created or versioned is updated in place, so several
+    edits in one run make one new version.
+    """
+    created = ctx.payload.get("apps_written")
+    if isinstance(created, set) and filename in created:
+        return filename
+    suffix = REACT_APP_SUFFIX if filename.lower().endswith(REACT_APP_SUFFIX) else "." + filename.rsplit(".", 1)[-1]
+    base = filename[: -len(suffix)]
+    match = _VERSION_SUFFIX_RE.match(base)
+    stem = match.group("stem") if match and match.group("stem") else base
+    taken = {item.name for item in ctx.workspace.list_workspace_files()} if ctx.workspace is not None else set()
+    version = int(match.group("version")) + 1 if match and match.group("version") else 2
+    while f"{stem}_{version}{suffix}" in taken:
+        version += 1
+    return f"{stem}_{version}{suffix}"
+
+
+def record_app_written(filename: str, ctx: SkillContext) -> None:
+    """Remember an app this run created, so its later revisions update it in place."""
+    created = ctx.payload.get("apps_written")
+    if isinstance(created, set):
+        created.add(filename)
+
+
 def check_app_revision(filename: str, original: str | None, content: Any, ctx: SkillContext) -> dict[str, Any] | None:
     """Validate an ``edit_file`` revision of an app like ``write_app`` validates a new one.
 
@@ -290,6 +323,18 @@ def check_app_revision(filename: str, original: str | None, content: Any, ctx: S
 
 def _save_app(ctx: SkillContext, encoded: bytes, filename: str, media_type: str, title: str,
               expected_hash: str | None = None) -> dict[str, Any]:
+    if expected_hash is not None:
+        # A revision checks the hash of the app it revises, then becomes a new version.
+        current = ctx.workspace.get_metadata().files.get(filename)
+        if current is None:
+            raise ValueError(f"files/{filename} does not exist; create a new app with filename instead")
+        if current.origin != "agent" or current.edit_policy != "agent_editable":
+            raise ValueError("This workspace file is protected; create a new app with filename instead")
+        if current.content_hash != expected_hash:
+            raise ValueError("File changed; read it again before revising it")
+        target = app_revision_target(filename, ctx)
+        if target != filename:
+            filename, expected_hash = target, None
     try:
         metadata = ctx.workspace.save_workspace_file(
             encoded, filename, media_type, display_name=title, agent_managed=True,
@@ -297,6 +342,7 @@ def _save_app(ctx: SkillContext, encoded: bytes, filename: str, media_type: str,
         )
     except FileNotFoundError as error:
         raise ValueError(f"files/{filename} does not exist; create a new app with filename instead") from error
+    record_app_written(metadata.name, ctx)
     try:
         from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine
         ctx.payload["workspace_inputs"] = WorkspaceInputEngine(
@@ -339,10 +385,13 @@ class HtmlAppSkill:
             yield {"type": "error", "message": message, "message_code": "agent.parseActionFailed"}
             return f"[{'APP' if react else 'HTML APP'} NOT {'UPDATED' if updating else 'CREATED'}] {error}"
 
-        yield {"type": "action", "action": action, "file": file, "updated": updating}
+        versioned = updating and file["path"] != spec.get("path")
+        yield {"type": "action", "action": action, "file": file, "updated": updating and not versioned}
         return json.dumps({
-            "status": "updated" if updating else "delivered",
-            "message": f"The app was {'updated' if updating else 'saved'} and opened on the canvas.",
+            "status": "versioned" if versioned else "updated" if updating else "delivered",
+            "message": (f"The revision was saved as a new version, {file['path']}, and opened on the canvas; "
+                        f"{spec.get('path')} is unchanged. Revise {file['path']} from now on.") if versioned
+                       else f"The app was {'updated' if updating else 'saved'} and opened on the canvas.",
             **{key: file[key] for key in ("name", "path", "display_name", "content_hash")},
             "tables": tables,
             "warnings": warnings,

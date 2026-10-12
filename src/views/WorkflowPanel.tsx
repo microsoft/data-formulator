@@ -187,6 +187,15 @@ function workflowSteps(run: Pick<Run, 'instance' | 'checks' | 'step_progress' | 
     });
 }
 
+/** The user message that starts a workflow run's chain. */
+export const workflowRequestId = (runId: string) => `textTurn-workflow-${runId}-request`;
+
+/**
+ * A workflow run's record (design-docs/58): the open end of the run's chain.
+ * The run's request starts the chain and everything the run adds goes right
+ * before this record, so it shows live status while running and closes the
+ * chain once completed.
+ */
 export function workflowTextTurn(run: Run, existing?: TextTurn): TextTurn {
     const turnId = `textTurn-workflow-${run.id}`;
     const outputVersions = { ...existing?.workflow?.outputVersions };
@@ -194,10 +203,10 @@ export function workflowTextTurn(run: Run, existing?: TextTurn): TextTurn {
     const createdAt = Date.parse(run.started_at);
     return {
         kind: 'text', id: turnId, displayId: run.instance?.name || run.name || i18n.t('workflow.fallbackName'), textKind: 'explain',
-        parentNodeId: createConversationRootId(run.id), createdAt, actionId: run.id,
-        prompt: existing?.prompt || `Run workflow: ${run.instance?.name || run.name || run.id}`,
+        parentNodeId: existing?.parentNodeId ?? workflowRequestId(run.id), createdAt, actionId: run.id,
         outputIds: [...outputIds],
-        content: run.message || `${run.instance?.name || i18n.t('workflow.fallbackName')}: ${i18n.t(`workflow.status.${run.status}`, { defaultValue: run.status })}`,
+        content: run.message || (run.status === 'completed' ? i18n.t('workflow.completedMessage')
+            : `${run.instance?.name || i18n.t('workflow.fallbackName')}: ${i18n.t(`workflow.status.${run.status}`, { defaultValue: run.status })}`),
         form: run.interaction?.form?.connector ? existing?.workflow?.interactionId === run.interaction.call_id && existing.form
             ? existing.form : { kind: 'connector', title: run.interaction.form.title,
                 draft: { revision: 0, fields: [], changedByAgent: [], conflict: false },
@@ -239,7 +248,7 @@ export function workflowTextTurn(run: Run, existing?: TextTurn): TextTurn {
 
 type RunOutput = NonNullable<Run['outputs']>[number];
 
-/** The derived table, chart, and fields a visualization result adds to the thread, with the step's question as its trigger. */
+/** The derived table, chart, and fields a visualization result adds to the thread; the step's question is the message before it. */
 function workflowResultNodes(output: Pick<RunOutput, 'content' | 'input_sources'>, rows: any[], tables: DictTable[], fieldPrefix: string,
     parentNodeId: string, fallbackSource: string, createdAt: number) {
     const result = output.content.result;
@@ -248,6 +257,7 @@ function workflowResultNodes(output: Pick<RunOutput, 'content' | 'input_sources'
     const table = createDictTable(tableId, rows, undefined);
     table.displayId = goal.display_name || tableId;
     table.parentNodeId = parentNodeId;
+    table.createdAt = createdAt;
     const inputSources = (output.input_sources || []).map(source => ({ id: source.id, kind: source.kind, displayName: source.display_name || source.id }));
     const sourceNames = inputSources.filter(source => source.kind === 'data').map(source => source.displayName.replace(/\.[^/.]+$/, ''));
     const sourceIds = tables.filter(item =>
@@ -257,8 +267,7 @@ function workflowResultNodes(output: Pick<RunOutput, 'content' | 'input_sources'
     table.derive = { code: result.code, codeSignature: result.code_signature,
         outputVariable: goal.output_variable, source: sourceIds,
         inputSources, dialog: result.dialog || [], trigger: { tableId: sourceIds[0] || fallbackSource, resultTableId: tableId,
-            chart: triggerChart, interaction: [{ from: 'data-agent', to: 'datarec-agent',
-                role: 'instruction', content: output.content.question || goal.title, timestamp: createdAt }] } };
+            chart: triggerChart } };
     const concepts: FieldItem[] = table.names.map(name => ({ id: `${fieldPrefix}-${name}`, name, source: 'custom', tableRef: 'custom' }));
     const chart = resolveRecommendedChart(goal, concepts, table);
     chart.id = result.chart_id;
@@ -269,22 +278,68 @@ function workflowResultNodes(output: Pick<RunOutput, 'content' | 'input_sources'
     return { table, chart, concepts, semantics };
 }
 
-export async function publishWorkflowRun(run: Run, workspaceId: string, focus = true) {
+/** The node a workflow run's next output or message follows: whatever its record currently follows. */
+const workflowChainHead = (runId: string) =>
+    store.getState().textTurns.find(turn => turn.id === `textTurn-workflow-${runId}`)?.parentNodeId;
+/** Put a node the run just added right before its record. */
+const advanceWorkflowChain = (runId: string, nodeId: string) =>
+    store.dispatch(dfActions.updateTextTurn({ id: `textTurn-workflow-${runId}`, parentNodeId: nodeId }));
+
+/** Publish a run's state; `startNodeId` is where a newly started run's request follows. */
+export async function publishWorkflowRun(run: Run, workspaceId: string, focus = true, startNodeId?: string) {
     if (store.getState().activeWorkspace?.id !== workspaceId || deletedWorkflowRuns.has(`${workspaceId}/${run.id}`)) return;
     const turnId = `textTurn-workflow-${run.id}`;
     const existing = store.getState().textTurns.find(turn => turn.id === turnId);
     for (const message of store.getState().textTurns) {
         if (message.workflowMessage?.runId === run.id && message.workflowMessage.status === 'queued'
             && run.applied_message_ids?.includes(message.workflowMessage.messageId)) {
-            store.dispatch(dfActions.updateTextTurn({ id: message.id, content: i18n.t('workflow.messageReceived'),
+            store.dispatch(dfActions.updateTextTurn({ id: message.id,
                 workflowMessage: { ...message.workflowMessage, status: 'received' } }));
         }
     }
     const outputVersions = { ...existing?.workflow?.outputVersions };
     const outputIds = [...new Set([...(existing?.outputIds || []), ...workflowOutputIds(run)])];
-    const outputParent = (id: string) => outputIds[outputIds.indexOf(id) - 1] || turnId;
     const createdAt = Date.parse(run.started_at);
+    const requestId = workflowRequestId(run.id);
     store.dispatch(dfActions.addTextTurn(workflowTextTurn(run, existing)));
+    if (!store.getState().textTurns.some(turn => turn.id === requestId)) {
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: requestId, displayId: requestId, textKind: 'explain', content: '',
+            prompt: `Run workflow: ${run.instance?.name || run.name || run.id}`, actionId: run.id, createdAt,
+            parentNodeId: startNodeId || createConversationRootId(run.id) }));
+    }
+    /** An output already published keeps its place; a new one goes right before the record. */
+    const placeOutput = (existingParent: string | undefined) => existingParent ?? workflowChainHead(run.id)!;
+    // The tables one data operation loads are produced together (design-docs/58, rule 9):
+    // the server records one `import-<operation>-<table>` output per table.
+    const importOperationOf = new Map<string, string>();
+    for (const output of run.outputs || []) {
+        if (output.type !== 'tool_result' || !output.id.startsWith('import-')) continue;
+        const tableName = JSON.parse(output.stdout || '{}').table_name;
+        if (typeof tableName === 'string' && output.id.endsWith(`-${tableName}`)) {
+            importOperationOf.set(`workflow-data-${run.id}-${tableName}`, output.id.slice('import-'.length, -tableName.length - 1));
+        }
+    }
+    /** Add a newly loaded table: with the others its operation loaded, when they are what the run produced last. */
+    const addImportedTable = (nodeId: string, tableId: string) => {
+        const operation = importOperationOf.get(nodeId);
+        const head = workflowChainHead(run.id)!;
+        const setId = `artifactSet-workflow-${run.id}-${operation}`;
+        const state = store.getState();
+        const set = operation ? state.artifactSets.find(item => item.id === setId) : undefined;
+        const previous = operation && importOperationOf.get(head) === operation
+            ? state.loadedTableNodes.find(node => node.id === head) : undefined;
+        store.dispatch(dfActions.addLoadedTableNode({ kind: 'loaded-table', id: nodeId, tableId, createdAt,
+            parentNodeId: set && head === setId ? setId : head }));
+        if (set && head === setId) {
+            store.dispatch(dfActions.addArtifactSet({ ...set, memberIds: [...set.memberIds, nodeId] }));
+        } else if (previous) {
+            store.dispatch(dfActions.addArtifactSet({ kind: 'artifact-set', id: setId, parentNodeId: previous.parentNodeId,
+                memberIds: [previous.id, nodeId], createdAt: previous.createdAt }));
+            advanceWorkflowChain(run.id, setId);
+        } else {
+            advanceWorkflowChain(run.id, nodeId);
+        }
+    };
     if (!existing && focus) {
         store.dispatch(dfActions.setFocused({ type: 'text', textId: turnId }));
         store.dispatch(dfActions.setViewMode('editor'));
@@ -308,27 +363,38 @@ export async function publishWorkflowRun(run: Run, workspaceId: string, focus = 
             table.displayId = existingTable?.displayId || metadata.display_name || table.displayId;
             store.dispatch(dfActions.addTableToStore(table));
             store.dispatch(fetchFieldSemanticType(table));
-            store.dispatch(dfActions.addLoadedTableNode({ kind: 'loaded-table', id: `workflow-data-${run.id}-${table.id}`,
-                tableId: table.id, parentNodeId: store.getState().loadedTableNodes.find(node => node.id === `workflow-data-${run.id}-${table.id}`)?.parentNodeId
-                    || outputParent(`workflow-data-${run.id}-${table.id}`), createdAt }));
+            const nodeId = `workflow-data-${run.id}-${table.id}`;
+            const placed = store.getState().loadedTableNodes.find(node => node.id === nodeId)?.parentNodeId;
+            if (placed) {
+                store.dispatch(dfActions.addLoadedTableNode({ kind: 'loaded-table', id: nodeId, tableId: table.id, parentNodeId: placed, createdAt }));
+            } else addImportedTable(nodeId, table.id);
         } else if (output.type === 'tool_result' && ['create_file', 'edit_file'].includes(output.tool || '')) {
             const metadata = JSON.parse(output.stdout || '{}');
             if (!metadata.available_in_workspace || !metadata.path?.startsWith('files/')) continue;
             const path = metadata.path.slice('files/'.length);
+            const placed = store.getState().fileNodes.find(node => node.id === `file-${path}`)?.parentNodeId;
             store.dispatch(dfActions.upsertFileNode({ kind: 'file', id: `file-${path}`, path,
                 displayName: metadata.display_name || metadata.name, contentHash: metadata.content_hash,
-                parentNodeId: store.getState().fileNodes.find(node => node.id === `file-${path}`)?.parentNodeId
-                    || outputParent(`file-${path}`), createdAt }));
+                parentNodeId: placeOutput(placed), createdAt }));
+            if (!placed) advanceWorkflowChain(run.id, `file-${path}`);
             notifyWorkspaceFilesChanged();
         } else if (output.type === 'result') {
             const tableId = output.content.result.content.virtual.table_name;
-            const parentNodeId = dfSelectors.getAllTables(store.getState()).find(item => item.id === tableId)?.parentNodeId
-                || outputParent(tableId);
+            const placed = dfSelectors.getAllTables(store.getState()).find(item => item.id === tableId)?.parentNodeId;
+            // The step's question is the agent message the table follows.
+            let parentNodeId = placed;
+            if (!parentNodeId) {
+                parentNodeId = `textTurn-workflow-step-${run.id}-${output.id}`;
+                store.dispatch(dfActions.addTextTurn({ kind: 'text', id: parentNodeId, displayId: parentNodeId, textKind: 'explain',
+                    content: output.content.question || output.content.result.refined_goal.title || '', actionId: run.id,
+                    parentNodeId: workflowChainHead(run.id)!, createdAt }));
+            }
             const { table, chart, concepts, semantics } = workflowResultNodes(output, output.content.result.content.rows,
                 dfSelectors.getAllTables(store.getState()), `workflow-field-${run.id}-${output.id}`, parentNodeId, turnId, createdAt);
             table.virtual = { tableId, rowCount: output.content.result.content.virtual.row_count };
             store.dispatch(dfActions.addConceptItems(concepts));
             store.dispatch(dfActions.insertDerivedTables(table));
+            if (!placed) advanceWorkflowChain(run.id, table.id);
             if (Object.keys(semantics).length > 0) {
                 store.dispatch(dfActions.applyAuthoredFieldSemantics({ tableId: table.id, fields: semantics }));
             }
@@ -340,10 +406,11 @@ export async function publishWorkflowRun(run: Run, workspaceId: string, focus = 
             }
         } else if (output.type === 'report') {
             const reportId = `workflow-report-${run.id}`;
+            const placed = store.getState().generatedReports.find(report => report.id === reportId)?.parentNodeId;
             store.dispatch(dfActions.saveGeneratedReport({ id: reportId, content: output.content,
-                title: run.instance?.name, parentNodeId: store.getState().generatedReports.find(report => report.id === reportId)?.parentNodeId
-                    || outputParent(reportId), createdAt, status: 'completed',
+                title: run.instance?.name, parentNodeId: placeOutput(placed), createdAt, status: 'completed',
                 selectedChartIds: (run.outputs || []).filter(item => item.type === 'result').map(item => item.content.result.chart_id) }));
+            if (!placed) advanceWorkflowChain(run.id, reportId);
             if (focus) {
                 store.dispatch(dfActions.setFocused({ type: 'report', reportId }));
                 store.dispatch(dfActions.setViewMode('report'));
@@ -352,18 +419,6 @@ export async function publishWorkflowRun(run: Run, workspaceId: string, focus = 
         outputVersions[output.id] = version;
         const workflow = store.getState().textTurns.find(turn => turn.id === turnId)?.workflow;
         if (workflow) store.dispatch(dfActions.updateTextTurn({ id: turnId, outputIds: [...outputIds], workflow: { ...workflow, outputVersions: { ...outputVersions } } }));
-    }
-    const cardId = `textTurn-workflow-card-${run.id}`;
-    const card = store.getState().textTurns.find(turn => turn.id === cardId);
-    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: cardId, displayId: i18n.t('workflow.statusTitle'), textKind: 'explain',
-        workflowCardFor: turnId, content: '', createdAt: card?.createdAt || createdAt,
-        parentNodeId: existing?.workflow?.status === 'completed' && card ? card.parentNodeId : outputIds.at(-1) || turnId }));
-    if (run.status === 'completed') {
-        const completionId = `textTurn-workflow-completed-${run.id}`;
-        const completion = store.getState().textTurns.find(turn => turn.id === completionId);
-        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: completionId, displayId: i18n.t('workflow.completedTitle'),
-            textKind: 'explain', parentNodeId: cardId, createdAt: completion?.createdAt || Date.now(),
-            content: run.message || i18n.t('workflow.completedMessage') }));
     }
     if (focus && run.status === 'paused' && (existing?.workflow?.status !== 'paused' || existing.workflow.calls !== run.calls)) {
         store.dispatch(dfActions.setFocused({ type: 'text', textId: turnId }));
@@ -381,10 +436,8 @@ export function selectChatWorkflow(state: DataFormulatorState): TextTurn | undef
     const focus = state.focusedId;
     if (focus?.type !== 'text') return undefined;
     const focusedTurn = state.textTurns.find(turn => turn.id === focus.textId);
-    const workflowTurn = focusedTurn?.workflowCardFor
-        ? state.textTurns.find(turn => turn.id === focusedTurn.workflowCardFor) : focusedTurn;
-    return workflowTurn?.workflow && ['running', 'paused'].includes(workflowTurn.workflow.status)
-        ? workflowTurn : undefined;
+    return focusedTurn?.workflow && ['running', 'paused'].includes(focusedTurn.workflow.status)
+        ? focusedTurn : undefined;
 }
 
 function canAnswerWorkflowQuestion(turn: TextTurn) {
@@ -396,14 +449,21 @@ function canAnswerWorkflowQuestion(turn: TextTurn) {
 async function replyWorkflowQuestion(turn: TextTurn, text: string, onAccepted?: () => void, messageId?: string) {
     const workflow = turn.workflow;
     if (workflow?.status !== 'paused' || workflow.terminalRequest || !text.trim()) throw new Error(i18n.t('workflow.notWaitingForReply'));
-    const afterOutputIds = [...(turn.outputIds || [])];
     const replyId = workflow.interactionId || messageId || crypto.randomUUID();
     await executeWorkflow({ run_id: workflow.runId, reply: text.trim() }, () => {
-        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: `textTurn-workflow-reply-${workflow.runId}-${replyId}`,
-            displayId: i18n.t('workflow.replyTitle'), textKind: 'explain', prompt: text.trim(),
-            content: workflow.interactionId ? i18n.t('workflow.answeredQuestion') : i18n.t('workflow.resumedWithMessage'),
-            parentNodeId: turn.id, createdAt: Date.now(), workflowMessage: { runId: workflow.runId,
-                messageId: replyId, kind: 'reply', status: 'received', afterOutputIds } }));
+        // The question the run paused on stays in the chain, answered, before the reply.
+        if (workflow.questions?.length) {
+            const questionId = `textTurn-workflow-question-${workflow.runId}-${replyId}`;
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: questionId, displayId: questionId, textKind: 'clarify',
+                content: workflow.questions.map(question => question.text).join('\n\n'), options: workflow.questions, answered: true,
+                actionId: workflow.runId, parentNodeId: workflowChainHead(workflow.runId) || turn.parentNodeId, createdAt: Date.now() }));
+            advanceWorkflowChain(workflow.runId, questionId);
+        }
+        const id = `textTurn-workflow-reply-${workflow.runId}-${replyId}`;
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id, displayId: i18n.t('workflow.replyTitle'), textKind: 'explain',
+            prompt: text.trim(), content: '', parentNodeId: workflowChainHead(workflow.runId) || turn.parentNodeId, createdAt: Date.now(),
+            workflowMessage: { runId: workflow.runId, messageId: replyId, kind: 'reply', status: 'received' } }));
+        advanceWorkflowChain(workflow.runId, id);
         onAccepted?.();
     });
 }
@@ -414,14 +474,15 @@ export async function sendWorkflowMessage(turn: TextTurn, text: string, messageI
     if (!workspaceId || !turn.workflow || !text.trim()) throw new Error(i18n.t('workflow.selectActiveWorkflow'));
     const current = store.getState().textTurns.find(item => item.id === turn.id) || turn;
     if (current.workflow?.status === 'paused') return replyWorkflowQuestion(current, text, onAccepted, messageId);
-    const afterOutputIds = [...(current.outputIds || [])];
     await post('message', { run_id: turn.workflow.runId, message_id: messageId, message: text.trim() });
     if (store.getState().activeWorkspace?.id !== workspaceId) return;
     const received = store.getState().textTurns.find(item => item.id === turn.id)?.workflow?.appliedMessageIds?.includes(messageId);
-    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: `textTurn-workflow-message-${messageId}`,
-        displayId: i18n.t('workflow.messageTitle'), textKind: 'explain', parentNodeId: turn.id, createdAt: Date.now(),
-        prompt: text.trim(), content: received ? i18n.t('workflow.messageReceived') : i18n.t('workflow.messageQueued'),
-        workflowMessage: { runId: turn.workflow.runId, messageId, kind: 'steering', afterOutputIds, status: received ? 'received' : 'queued' } }));
+    // Steering is a message within the run: it goes right before the run's record.
+    const id = `textTurn-workflow-message-${messageId}`;
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id, displayId: i18n.t('workflow.messageTitle'), textKind: 'explain',
+        parentNodeId: workflowChainHead(turn.workflow.runId) || turn.parentNodeId, createdAt: Date.now(), prompt: text.trim(), content: '',
+        workflowMessage: { runId: turn.workflow.runId, messageId, kind: 'steering', status: received ? 'received' : 'queued' } }));
+    advanceWorkflowChain(turn.workflow.runId, id);
     store.dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }));
     onAccepted?.();
 }
@@ -433,7 +494,8 @@ interface WorkflowRequest {
     interaction_response?: { operation_id: string; plan_id: string };
 }
 
-export async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => void) {
+/** Run or resume a workflow; a new run's request follows `startNodeId` (e.g. its definition), else starts a thread. */
+export async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => void, startNodeId?: string) {
     const state = store.getState();
     const workspaceId = state.activeWorkspace?.id;
     const model = [...state.globalModels, ...state.models].find(item => item.id === state.selectedModelId);
@@ -495,8 +557,9 @@ export async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => 
                 store.dispatch(dfActions.saveGeneratedReport({ id: streamingReportId, content: '',
                     title: latest.instance?.name, status: 'generating', generatingPhase: 'writing',
                     createdAt: previous?.createdAt || Date.now(),
-                    parentNodeId: previous?.parentNodeId || turn?.outputIds?.filter(id => id !== streamingReportId).at(-1) || turn?.id,
+                    parentNodeId: previous?.parentNodeId || workflowChainHead(latest.id) || workflowRequestId(latest.id),
                     selectedChartIds: (latest.outputs || []).filter(output => output.type === 'result').map(output => output.content.result.chart_id) }));
+                if (!previous && turn) advanceWorkflowChain(latest.id, streamingReportId);
                 if (turn?.workflow) store.dispatch(dfActions.updateTextTurn({ id: turn.id, workflow: { ...turn.workflow,
                     artifacts: [...(turn.workflow.artifacts || []).filter(artifact => artifact.nodeId !== streamingReportId),
                         { nodeId: streamingReportId, stepId: latest.step_id, planRevision: latest.plan_revision || 0 }] } }));
@@ -508,7 +571,7 @@ export async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => 
             } else if (result.type === 'workflow_state' && result.run) {
                 flushReport();
                 latest = result.run;
-                await publishWorkflowRun(latest, workspaceId);
+                await publishWorkflowRun(latest, workspaceId, true, startNodeId);
                 onAccepted?.();
                 onAccepted = undefined;
             } else if (result.type === 'activity' && latest) {
@@ -918,7 +981,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
         {!interactionOnly && <>
         {canvas && <Box component="header" aria-label={t('workflow.statusTitle')} sx={{ mb: 1.5, overflowWrap: 'anywhere' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap' }}>
-                <Typography component="h1" sx={{ minWidth: 0, fontFamily: 'inherit', fontSize: '1.375rem', lineHeight: 1.25, fontWeight: 700, letterSpacing: 0 }}>{turn.prompt?.replace(/^Run workflow: /, '') || t('workflow.fallbackName')}</Typography>
+                <Typography component="h1" sx={{ minWidth: 0, fontFamily: 'inherit', fontSize: '1.375rem', lineHeight: 1.25, fontWeight: 700, letterSpacing: 0 }}>{turn.displayId || t('workflow.fallbackName')}</Typography>
                 <Typography sx={{ fontSize: textVar.sm, color: statusColor, textTransform: 'capitalize' }}>
                     {workflow.status === 'running' ? <ShimmerText tone="neutral" fontSize="inherit">{workflow.pauseRequested ? t('workflow.stopping') : workflow.planReviewPending ? t('workflow.reviewingPlan') : statusLabel('running')}</ShimmerText> : statusLabel(workflow.status)}
                 </Typography>
@@ -955,10 +1018,12 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 if (store.getState().activeWorkspace?.id !== workspaceId) return;
                 deletedWorkflowRuns.add(`${workspaceId}/${workflow.runId}`);
                 if (workflow.status === 'running') executions.get(workspaceId)?.abort();
-                for (const card of store.getState().textTurns.filter(item => item.workflowCardFor === turn.id)) {
-                    store.dispatch(dfActions.removeTextTurn(card.id));
-                }
                 store.dispatch(dfActions.removeTextTurn(turn.id));
+                // A request the run answered with nothing goes with it.
+                const requestId = workflowRequestId(workflow.runId);
+                if (!dfSelectors.getThreadGraph(store.getState()).childrenOf(requestId).length) {
+                    store.dispatch(dfActions.removeTextTurn(requestId));
+                }
             } catch (reason) { handleApiError(reason, 'Delete workflow node'); }
             finally { setDeleting(false); }
         }} />}>{summary}</ThreadArtifactCard>}

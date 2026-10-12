@@ -77,9 +77,7 @@ export const formatAnalystToolProgress = (
                 .filter(Boolean).join(' · ');
             break;
         case 'load_data':
-            detail = Array.isArray(values.tables)
-                ? values.tables.map((table: unknown) => String(table).split('/').pop()).join(', ')
-                : '';
+            detail = Array.isArray(values.tables) ? values.tables.map(String).join(', ') : '';
             break;
         case 'describe_connector':
             detail = values.source_type || '';

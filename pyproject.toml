@@ -38,7 +38,9 @@ dependencies = [
     "scikit-learn",
     "pyyaml",
     "jsonschema>=4.18",
-    "pyarrow>=13.0.0",
+    # 25.0.0 bundles mimalloc 3.3.1, which crashes when pyarrow is first
+    # loaded on a thread that exits (apache/arrow#50471); fixed in 25.0.1.
+    "pyarrow>=13.0.0,!=25.0.0",
     "xlrd",
     "openpyxl>=3.1.0",
     "lxml", # pandas.read_html web table extraction

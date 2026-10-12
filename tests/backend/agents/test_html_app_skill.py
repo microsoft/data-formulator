@@ -255,23 +255,37 @@ def _hash(workspace, name):
     return workspace.read_workspace_file(name)[0].content_hash
 
 
-def test_write_app_rewrites_an_existing_app_in_place(workspace) -> None:
+def test_write_app_saves_a_rewrite_as_a_new_version_then_updates_it_within_the_run(workspace) -> None:
     workspace.write_parquet(pd.DataFrame({"region": ["a"], "units": [3]}), "units")
     _run(workspace, _react_spec(), action="write_app")
+    original = workspace.read_workspace_file("sales.app.jsx")[1]
     code = REACT_APP.replace("'sales'", "'units'").replace("amount", "units")
+    run = {"input_tables": [], "apps_written": set()}
     events, observation, _ = _run(workspace, {
         "path": "files/sales.app.jsx", "expected_content_hash": _hash(workspace, "sales.app.jsx"),
         "title": "Units explorer", "tables": ["units"], "code": code,
-    }, action="write_app")
+    }, payload=run, action="write_app")
 
+    # Editing an app makes a new app; the original stays as it was (design-docs/58, rule 8).
     assert [event["type"] for event in events] == ["action"]
-    assert events[0]["updated"] is True and events[0]["file"]["path"] == "files/sales.app.jsx"
+    assert events[0]["updated"] is False and events[0]["file"]["path"] == "files/sales_2.app.jsx"
     result = json.loads(observation)
-    assert result["status"] == "updated" and "expected_content_hash" in result["revise_with"]
-    assert [item.name for item in workspace.list_workspace_files()] == ["sales.app.jsx"]
-    metadata, content = workspace.read_workspace_file("sales.app.jsx")
+    assert result["status"] == "versioned" and result["path"] == "files/sales_2.app.jsx"
+    assert sorted(item.name for item in workspace.list_workspace_files()) == ["sales.app.jsx", "sales_2.app.jsx"]
+    assert workspace.read_workspace_file("sales.app.jsx")[1] == original
+    metadata, content = workspace.read_workspace_file("sales_2.app.jsx")
     assert metadata.display_name == "Units explorer"
     assert content.decode().startswith('// @df-app {"version": 2, "title": "Units explorer", "tables": ["units"]}\n')
+
+    # A later revision in the same run updates the version it made.
+    events, observation, _ = _run(workspace, {
+        "path": "files/sales_2.app.jsx", "expected_content_hash": _hash(workspace, "sales_2.app.jsx"),
+        "title": "Units by region", "tables": ["units"], "code": code,
+    }, payload=run, action="write_app")
+    assert events[0]["updated"] is True and events[0]["file"]["path"] == "files/sales_2.app.jsx"
+    assert json.loads(observation)["status"] == "updated"
+    assert sorted(item.name for item in workspace.list_workspace_files()) == ["sales.app.jsx", "sales_2.app.jsx"]
+    assert workspace.read_workspace_file("sales_2.app.jsx")[0].display_name == "Units by region"
 
 
 @pytest.mark.parametrize(("spec", "message"), [
@@ -332,7 +346,10 @@ def test_edit_file_validates_app_revisions(workspace) -> None:
     ]).text)
     assert result["app"] is True and result["tables"] == ["sales"] and result["warnings"] == []
     assert result["display_name"] == "Regional sales"
-    metadata = workspace.read_workspace_file("sales.app.jsx")[0]
+    # The edit is a new version of the app; the original is unchanged.
+    assert result["path"] == "files/sales_2.app.jsx"
+    assert workspace.read_workspace_file("sales.app.jsx")[1].decode() == original
+    metadata = workspace.read_workspace_file("sales_2.app.jsx")[0]
     assert (metadata.media_type, metadata.display_name) == ("text/jsx", "Regional sales")
 
 

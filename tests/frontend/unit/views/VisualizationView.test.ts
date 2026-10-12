@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ChartEditorFC, checkChartAvailabilityOnPreparedData, normalizeOperationPreview, VisualizationViewFC } from '../../../../src/views/VisualizationView';
 import { dataFormulatorReducer, dfActions, dfSelectors, generateFreshChart } from '../../../../src/app/dfSlice';
 import { computeDisplayRowsCacheKey, displayRowsCache } from '../../../../src/app/displayRowsCache';
-import { ConversationCanvas, conversationPath } from '../../../../src/views/ConversationCanvas';
+import { ConversationCanvas } from '../../../../src/views/ConversationCanvas';
 import { CompactMarkdown, InteractionEntryCard, workspaceFileFromHref } from '../../../../src/views/InteractionEntryCard';
 import { invalidateChart, setCachedChart } from '../../../../src/app/chartCache';
 import { SourceTableShelf } from '../../../../src/views/SourceTableShelf';
@@ -374,24 +374,27 @@ it.each(['conversation', 'long_response'] as const)('normalizes mixed legacy com
     expect(container.querySelector('details pre')?.textContent).toBe(JSON.stringify(execution.argv, null, 2));
 });
 
-it('shows table-owned instructions in conversation without making the instruction card clickable', () => {
+it('shows the instruction message before a table in conversation without making the instruction card clickable', () => {
     const store = configureStore({ reducer: dataFormulatorReducer });
     const entry = { from: 'data-agent', to: 'user', role: 'instruction', content: 'Which deployments drive token volume?', timestamp: 10 } as const;
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'instruction', displayId: 'instruction', textKind: 'explain',
+        content: entry.content, parentNodeId: 'root', createdAt: 1 }));
     store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'deployments', displayId: 'Deployments', names: [], metadata: {}, rows: [],
-        derive: { source: [], code: '', dialog: [], trigger: { tableId: 'root', instruction: entry.content, interaction: [entry] } },
+        parentNodeId: 'instruction', derive: { source: [], code: '', dialog: [], trigger: { tableId: 'root', instruction: entry.content } },
     } as any));
-    const onClick = vi.fn(() => store.dispatch(dfActions.setFocused({ type: 'conversation', tableId: 'deployments', entryIndex: 0 })));
+    const onClick = vi.fn(() => store.dispatch(dfActions.setFocused({ type: 'conversation', tableId: 'deployments' })));
     const card = render(React.createElement(InteractionEntryCard, { entry, onClick }));
     fireEvent.click(screen.getByText(entry.content));
     expect(onClick).not.toHaveBeenCalled();
     expect(screen.queryByRole('button')).toBeNull();
-    store.dispatch(dfActions.setFocused({ type: 'conversation', tableId: 'deployments', entryIndex: 0 }));
+    store.dispatch(dfActions.setFocused({ type: 'conversation', tableId: 'deployments', nodeIds: ['instruction', 'deployments'] }));
     expect(dfSelectors.getEffectiveTableId(store.getState())).toBe('deployments');
-    expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'conversation', tableId: 'deployments', entryIndex: 0 });
+    expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'conversation', tableId: 'deployments', nodeIds: ['instruction', 'deployments'] });
     card.unmount();
     const { container } = render(React.createElement(Provider, { store, children: React.createElement(VisualizationViewFC) }));
     expect(screen.getByRole('heading', { name: 'Conversation' })).toBeTruthy();
-    expect(container.querySelector('[data-conversation-entry="deployments-interaction-0"]')?.textContent).toBe(entry.content);
+    expect(container.querySelector('[data-conversation-entry="instruction"]')?.textContent).toBe(entry.content);
+    expect(container.querySelector('[data-conversation-entry="deployments"]')).toBeTruthy();
 });
 
 it('shows command-only migrated table history in conversation', () => {
@@ -401,18 +404,12 @@ it('shows command-only migrated table history in conversation', () => {
             from: 'data-agent', to: 'user', role: 'explain', content: '```json\n{"argv":["pwd"],"cwd":"/"}\n```',
         }] } },
     }] } as any));
-    store.dispatch(dfActions.setFocused({ type: 'conversation', tableId: 'legacy-table', nodeIds: ['legacy-table'] }));
+    // The table's history is now the message before it.
+    const history = store.getState().derivedTables[0].parentNodeId;
+    expect(store.getState().textTurns.find(turn => turn.id === history)?.executions?.[0].argv).toEqual(['pwd']);
+    store.dispatch(dfActions.setFocused({ type: 'conversation', tableId: 'legacy-table', nodeIds: [history!, 'legacy-table'] }));
     render(React.createElement(Provider, { store, children: React.createElement(VisualizationViewFC) }));
     expect(screen.getByRole('button', { name: /pwd Status unavailable/ })).toBeTruthy();
-});
-
-it('follows shared ancestry and a single continuation without mixing sibling branches', () => {
-    const nodes = [{ id: 'root' }, { id: 'first', parentNodeId: 'root' },
-        { id: 'left', parentNodeId: 'first' }, { id: 'right', parentNodeId: 'first' },
-        { id: 'next', parentNodeId: 'left' }];
-    expect(conversationPath(nodes, 'left')).toEqual(['root', 'first', 'left', 'next']);
-    expect(conversationPath(nodes, 'first')).toEqual(['root', 'first']);
-    expect(conversationPath([{ id: 'cycle', parentNodeId: 'cycle' }], 'cycle')).toEqual(['cycle']);
 });
 
 it('renders a conversation canvas with full messages and collapsed command results', () => {
@@ -451,13 +448,15 @@ vi.mock('../../../../src/components/ConnectorFormCard', () => ({
 
 it.each(['table', 'chart', 'chart-image'])('shows inline table and chart previews and opens the %s artifact', target => {
     const store = configureStore({ reducer: dataFormulatorReducer });
+    // request → instruction → usage → findings
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'request', displayId: 'request', textKind: 'explain',
+        content: '', prompt: 'Visualize it and write a report', parentNodeId: 'root', createdAt: 1 }));
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'instruction', displayId: 'instruction', textKind: 'explain',
+        content: 'Which resources account for observed token consumption?', parentNodeId: 'request', createdAt: 2 }));
     store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'usage', displayId: 'Usage', names: ['resource', 'tokens'],
         metadata: { resource: { type: 'string' }, tokens: { type: 'number' } },
         rows: Array.from({ length: 7 }, (_, index) => ({ resource: `resource-${index}`, tokens: index * 100 })),
-        derive: { source: [], code: '', dialog: [], trigger: { tableId: 'root', instruction: 'Inspect usage', interaction: [
-            { from: 'user', to: 'data-agent', role: 'prompt', content: 'Visualize it and write a report', timestamp: 1 },
-            { from: 'data-agent', to: 'user', role: 'instruction', content: 'Which resources account for observed token consumption?', timestamp: 2 },
-        ] } },
+        parentNodeId: 'instruction', derive: { source: [], code: '', dialog: [], trigger: { tableId: 'root', instruction: 'Inspect usage' } },
     } as any));
     store.dispatch(dfActions.addChart({ id: 'usage-chart', chartType: 'Bar Chart', tableRef: 'usage', source: 'user', encodingMap: {} } as any));
     const image = 'data:image/png;base64,preview';
@@ -466,7 +465,7 @@ it.each(['table', 'chart', 'chart-image'])('shows inline table and chart preview
         parentNodeId: 'usage', content: 'Usage increased this month.', createdAt: 1,
     }));
     store.dispatch(dfActions.setFocused({ type: 'text', textId: 'findings' }));
-    render(React.createElement(Provider, { store, children: React.createElement(ConversationCanvas, { textTurnId: 'findings', nodeIds: ['usage', 'findings'] }) }));
+    render(React.createElement(Provider, { store, children: React.createElement(ConversationCanvas, { textTurnId: 'findings', nodeIds: ['request', 'instruction', 'usage', 'findings'] }) }));
     expect(screen.getByRole('img', { name: 'Bar Chart - Usage' }).getAttribute('src')).toBe(image);
     expect(screen.getByText('Visualize it and write a report')).toBeTruthy();
     expect(screen.getByText('Which resources account for observed token consumption?')).toBeTruthy();

@@ -3,8 +3,14 @@ import {
     isLeafDerivedTable,
     buildLeafEvents,
     buildDistillModelConfig,
+    threadConversationOf,
 } from '../../../../src/views/workflowContext';
-import type { DictTable } from '../../../../src/components/ComponentType';
+import { ThreadGraph } from '../../../../src/app/threadGraph';
+import type { DictTable, TextTurn } from '../../../../src/components/ComponentType';
+
+// The conversation leading into each fixture table, as the thread would give it.
+const conversations = new Map<string, any[]>();
+const conversationOf = (tableId: string) => conversations.get(tableId) ?? [];
 
 function makeTable(id: string, overrides?: Partial<DictTable>): DictTable {
     return {
@@ -24,6 +30,7 @@ function makeDerived(
     id: string,
     parentId: string,
     opts?: {
+        /** The messages before the table. */
         interaction?: any[];
         dialog?: any[];
         chart?: any;
@@ -33,6 +40,7 @@ function makeDerived(
         code?: string;
     },
 ): DictTable {
+    conversations.set(id, opts?.interaction ?? []);
     return makeTable(id, {
         names: opts?.names ?? ['col1'],
         rows: opts?.rows ?? [{ col1: 'a' }],
@@ -45,7 +53,6 @@ function makeDerived(
             trigger: {
                 tableId: parentId,
                 resultTableId: id,
-                interaction: opts?.interaction ?? [],
                 ...(opts?.chart ? { chart: opts.chart } : {}),
             },
         },
@@ -99,7 +106,7 @@ describe('buildLeafEvents', () => {
 
     it('returns null for non-derived table', () => {
         const root = makeTable('root');
-        expect(buildLeafEvents(root, [root])).toBeNull();
+        expect(buildLeafEvents(root, [root], conversationOf)).toBeNull();
     });
 
     it('returns null when no user-originated message exists in chain', () => {
@@ -107,7 +114,7 @@ describe('buildLeafEvents', () => {
         const t1 = makeDerived('t1', 'root', {
             interaction: [agentInstruction],
         });
-        expect(buildLeafEvents(t1, [root, t1])).toBeNull();
+        expect(buildLeafEvents(t1, [root, t1], conversationOf)).toBeNull();
     });
 
     it('builds a flat event timeline from a single-step chain', () => {
@@ -121,7 +128,7 @@ describe('buildLeafEvents', () => {
                 { role: 'system', content: 'system prompt' },
             ],
         });
-        const ctx = buildLeafEvents(t1, [root, t1]);
+        const ctx = buildLeafEvents(t1, [root, t1], conversationOf);
         expect(ctx).not.toBeNull();
 
         const messages = eventsOfType(ctx, 'message');
@@ -171,7 +178,7 @@ describe('buildLeafEvents', () => {
         const t2 = makeDerived('t2', 't1', {
             interaction: [step2Instruction],
         });
-        const ctx = buildLeafEvents(t2, [root, t1, t2]);
+        const ctx = buildLeafEvents(t2, [root, t1, t2], conversationOf);
         expect(ctx).not.toBeNull();
 
         const tables = eventsOfType(ctx, 'create_table');
@@ -195,7 +202,7 @@ describe('buildLeafEvents', () => {
                 from: 'user', to: 'data-agent', role: 'instruction', content: 'step3',
             }],
         });
-        const ctx = buildLeafEvents(t3, [root, t1, t3]);
+        const ctx = buildLeafEvents(t3, [root, t1, t3], conversationOf);
         expect(ctx).not.toBeNull();
         const tables = eventsOfType(ctx, 'create_table');
         expect(tables.map(e => e.table_id)).toEqual(['t1', 't3']);
@@ -213,7 +220,7 @@ describe('buildLeafEvents', () => {
                 },
             },
         });
-        const ctx = buildLeafEvents(t1, [root, t1]);
+        const ctx = buildLeafEvents(t1, [root, t1], conversationOf);
         expect(ctx).not.toBeNull();
         const types = ctx!.map(e => e.type);
         // create_table immediately followed by create_chart for the same step.
@@ -238,7 +245,7 @@ describe('buildLeafEvents', () => {
                 { from: 'user', to: 'data-agent', role: 'error', content: 'boom' },
             ],
         });
-        const ctx = buildLeafEvents(t1, [root, t1]);
+        const ctx = buildLeafEvents(t1, [root, t1], conversationOf);
         const messages = eventsOfType(ctx, 'message');
         expect(messages).toHaveLength(1);
         expect(messages[0].content).toBe('Show sales trend');
@@ -251,7 +258,7 @@ describe('buildLeafEvents', () => {
             interaction: [userPrompt],
             code,
         });
-        const ctx = buildLeafEvents(t1, [root, t1]);
+        const ctx = buildLeafEvents(t1, [root, t1], conversationOf);
         const tables = eventsOfType(ctx, 'create_table');
         expect(tables[0].code).toBe(code);
         expect(tables[0]).not.toHaveProperty('code_shape');
@@ -266,7 +273,7 @@ describe('buildLeafEvents', () => {
             rows,
             rowCount: rows.length,
         });
-        const ctx = buildLeafEvents(t1, [root, t1]);
+        const ctx = buildLeafEvents(t1, [root, t1], conversationOf);
         const tables = eventsOfType(ctx, 'create_table');
         expect(tables[0].columns).toEqual(['region', 'revenue']);
         expect(tables[0].row_count).toBe(8);
@@ -313,5 +320,25 @@ describe('buildDistillModelConfig', () => {
             api_key: 'test-key',
             api_base: 'https://dashscope.example.com/compatible-mode/v1',
         });
+    });
+});
+
+describe('threadConversationOf', () => {
+    it('reads the messages before a table back to the previous table, passing over loaded items', () => {
+        const turn = (id: string, parentNodeId: string, fields: Partial<TextTurn>): TextTurn =>
+            ({ kind: 'text', id, displayId: id, textKind: 'explain', content: '', parentNodeId, createdAt: 0, ...fields });
+        const textTurns = [
+            turn('ask', 'root', { prompt: 'Compare regions' }),
+            turn('step', 'loaded', { content: 'Regional totals' }),
+        ];
+        const root = makeTable('root');
+        const result = makeTable('result', { parentNodeId: 'step', derive: { source: ['root'], code: '', dialog: [],
+            trigger: { tableId: 'root', resultTableId: 'result' } } } as any);
+        const graph = new ThreadGraph({ tables: [root, result], turns: textTurns,
+            loadedNodes: [{ kind: 'loaded-table', id: 'loaded', tableId: 'other', parentNodeId: 'ask', createdAt: 0 }] } as any);
+        expect(threadConversationOf(graph, textTurns)('result')).toEqual([
+            { from: 'user', to: 'data-agent', role: 'prompt', content: 'Compare regions' },
+            { from: 'data-agent', to: 'user', role: 'instruction', content: 'Regional totals' },
+        ]);
     });
 });

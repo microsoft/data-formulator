@@ -1279,16 +1279,18 @@ def _az_account_summary() -> dict[str, Any] | None:
     """
     import json as _json
     import subprocess
+    import sys
 
     from data_formulator.auth.azure_cli import expose_azure_cli
 
     azure_cli = expose_azure_cli()
     if azure_cli is None:
         return None
+    options = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
     try:
         result = subprocess.run(
             [azure_cli, "account", "show", "--only-show-errors", "-o", "json"],
-            capture_output=True, text=True, timeout=15,
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=15, **options,
         )
     except (subprocess.TimeoutExpired, OSError):
         return None

@@ -507,6 +507,19 @@ def test_query_failure_preserves_registered_source_and_reports_failure(tmp_path)
     assert completed.to_public_dict()["load_outcomes"][0]["compute_ready"] is False
 
 
+@pytest.mark.parametrize(("error", "message"), [
+    (RuntimeError("Out of Memory Error: failed to allocate data of size 4.0 KiB (493.7 MiB/488.2 MiB used)"),
+     "Recent events could not be loaded: the source query ran out of memory. Load fewer rows or columns, or aggregate in the query."),
+    (RuntimeError("internal connector detail"), "Recent events could not be loaded."),
+])
+def test_query_failure_explains_running_out_of_memory_only(tmp_path, error, message):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    step = ConnectorQueryStep(source_id="warehouse", table_key="Events", display_name="Recent events",
+                              source_table="Events", query=LoadQuery(limit=10))
+    result = DataOperationExecutor(workspace, lambda _: _Loader(error=error)).execute(_operation(step))
+    assert result.failed_steps[0].error.message == message
+
+
 def test_native_kql_diagnostic_reaches_failed_step(tmp_path):
     from unittest.mock import Mock
     from azure.kusto.data.exceptions import KustoApiError

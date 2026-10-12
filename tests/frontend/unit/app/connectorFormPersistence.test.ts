@@ -22,9 +22,12 @@ describe('connector form persistence', () => {
         expect(state.textTurns[0].form?.draft?.conflict).toBe(true);
         state = dataFormulatorReducer(state, dfActions.addTextTurn({
             kind: 'text', id: 'follow-up', displayId: 'follow-up', textKind: 'explain',
-            content: 'A long explanation '.repeat(100), createdAt: 2, sourceFormId: 'form-1', parentNodeId: 'form-1',
+            content: 'A long explanation '.repeat(100), createdAt: 2, parentNodeId: 'form-1',
         }));
+        // A later message traces past the form to the item before it (none here); the form opens when it is focused.
         state = dataFormulatorReducer(state, dfActions.setFocused({ type: 'text', textId: 'follow-up' }));
+        expect(dfSelectors.selectCanvasTarget(state)).toBeUndefined();
+        state = dataFormulatorReducer(state, dfActions.setFocused({ type: 'text', textId: 'form-1' }));
         expect(dfSelectors.selectCanvasTarget(state)).toEqual({ type: 'text', textId: 'form-1' });
         expect(state.textTurns.filter(turn => turn.form)).toHaveLength(1);
     });

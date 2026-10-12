@@ -814,13 +814,24 @@ class ExternalDataLoader(ABC):
                 "dimensions. Do not recreate measures from raw columns. To change grain, query again."
             ),
         }
-        return {
+        capabilities = {
             "execution_model": cls.QUERY_EXECUTION,
             "aggregate_loading": "supported" if cls.query_data_as_arrow is not ExternalDataLoader.query_data_as_arrow else "unsupported",
             "native_query_languages": [],
             "guidance": guidance.get(cls.QUERY_EXECUTION,
                 "Query execution cost is unknown. Do not assume server-side pushdown or a cheap probe."),
         }
+        if cls.QUERY_EXECUTION in ("remote_file_scan", "local_file_scan"):
+            from data_formulator.data_loader.probe_utils import query_memory_limit_mb
+            budget = query_memory_limit_mb()
+            capabilities["memory_budget_mb"] = budget
+            capabilities["guidance"] += (
+                f" Each query runs in about {budget} MB of memory in the application. Sorts and aggregates can "
+                "spill to disk, but the loaded result must fit: long text columns over many rows are the usual "
+                "cause of running out. Select only the columns you need, filter rows, or aggregate in the query; "
+                "if a load runs out of memory, narrow it rather than retrying the same scope."
+            )
+        return capabilities
 
     #: Params naming *which* instance of this source a connector points at
     #: (cluster, host, bucket…), most significant first.  When ``None`` the

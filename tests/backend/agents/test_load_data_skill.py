@@ -441,6 +441,8 @@ def test_unambiguous_load_executes_without_review_or_narration(
     assert [event["type"] for event in events] == ["tool_start", "tool_result", "data_operation_result"]
     operation = events[-1]["operation"]
     assert operation["status"] == "loaded"
+    # The progress names what each step loads, not the source it reads from.
+    assert events[0]["args"]["tables"] == [step["display_name"] for step in operation["plans"][0]["steps"]]
     assert operation["result_table_ids"]
     assert workspace.list_tables()
     loader.fetch_data_as_arrow.assert_called_once()

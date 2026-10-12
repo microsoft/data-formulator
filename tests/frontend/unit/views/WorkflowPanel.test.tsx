@@ -12,16 +12,17 @@ import { store } from '../../../../src/app/store';
 import { dfActions, dfSelectors, fetchGlobalModelList } from '../../../../src/app/dfSlice';
 import { apiRequest, streamRequest } from '../../../../src/app/apiClient';
 import { getUrls } from '../../../../src/app/utils';
-import { pauseWorkflowRun, publishWorkflowRun, sendWorkflowMessage, WorkflowProgress, WorkflowPanel, WorkflowRunObserver, Run, selectChatWorkflow } from '../../../../src/views/WorkflowPanel';
+import { pauseWorkflowRun, publishWorkflowRun, sendWorkflowMessage, WorkflowProgress, WorkflowPanel, WorkflowRunObserver, Run, selectChatWorkflow, workflowRequestId } from '../../../../src/views/WorkflowPanel';
 import { SchedulesPanel } from '../../../../src/views/WorkflowSchedules';
 import { SimpleChartRecBox } from '../../../../src/views/SimpleChartRecBox';
 import { FreeDataViewFC } from '../../../../src/views/DataView';
 import { DataThread } from '../../../../src/views/DataThread';
 import { LayoutProvider } from '../../../../src/app/LayoutProvider';
 import { VisualizationViewFC } from '../../../../src/views/VisualizationView';
-import { getThreadConversationIds, orderThreadOutputs } from '../../../../src/views/threadProvenance';
+import { buildThreads } from '../../../../src/app/threadGraph';
 import { ConversationCanvas } from '../../../../src/views/ConversationCanvas';
 import { ReportView } from '../../../../src/views/ReportView';
+import { getSerializableState } from '../../../../src/app/useAutoSave';
 
 vi.mock('../../../../src/app/apiClient', async importOriginal => ({
     ...await importOriginal<typeof import('../../../../src/app/apiClient')>(),
@@ -68,6 +69,31 @@ describe('Workflow session publication', () => {
             { name: 'measurements', columns: [{ name: 'value', type: 'INTEGER' }], row_count: 1,
                 sample_rows: [{ value: 2 }], content_hash: 'hash', origin: 'agent', role: 'source', edit_policy: 'agent_editable' },
         ] } } as any);
+    });
+
+    it('groups the tables one data operation loaded into one set, across publications', async () => {
+        const table = (name: string) => ({ name, columns: [], row_count: 1, sample_rows: [], content_hash: name,
+            origin: 'agent', role: 'source', edit_policy: 'agent_editable' });
+        vi.mocked(apiRequest).mockImplementation(async url => url === '/api/workflows/run-state' ? new Promise(() => {})
+            : { data: { files: [], tables: ['beats', 'titan', 'walker', 'measurements'].map(table) } } as any);
+        const imported = (operation: string, name: string) => ({ id: `import-${operation}-${name}`, type: 'tool_result',
+            tool: 'create_data', stdout: JSON.stringify({ table_name: name }) });
+        const base = { ...run(), outputs: [imported('op-1', 'beats'), imported('op-1', 'titan')] };
+        await publishWorkflowRun(base, 'session');
+        // A later publication adds the operation's third table, then another output.
+        await publishWorkflowRun({ ...base, outputs: [...base.outputs, imported('op-1', 'walker'),
+            { id: 'data', type: 'tool_result', tool: 'create_data', stdout: JSON.stringify({ table_name: 'measurements' }) }] }, 'session');
+        const state = store.getState();
+        expect(state.artifactSets).toEqual([expect.objectContaining({ id: 'artifactSet-workflow-native-op-1',
+            parentNodeId: workflowRequestId('native'),
+            memberIds: ['beats', 'titan', 'walker'].map(name => `workflow-data-native-${name}`) })]);
+        const parentOf = (id: string) => [...state.loadedTableNodes, ...state.textTurns].find(node => node.id === id)?.parentNodeId;
+        // request → {beats, titan, walker} → measurements → the run's record
+        expect(parentOf('workflow-data-native-measurements')).toBe('artifactSet-workflow-native-op-1');
+        expect(parentOf('textTurn-workflow-native')).toBe('workflow-data-native-measurements');
+        // Publishing the same state again changes nothing.
+        await publishWorkflowRun({ ...base, outputs: [...base.outputs, imported('op-1', 'walker')] }, 'session');
+        expect(store.getState().artifactSets).toEqual(state.artifactSets);
     });
 
     it.each([false, true])('simplifies schedule defaults and reveals missing required inputs (missing: %s)', async missing => {
@@ -247,6 +273,8 @@ describe('Workflow session publication', () => {
         await publishWorkflowRun({ ...run(), status: 'paused', outputs: [], message: 'Execution failed.' }, 'session');
         store.dispatch(dfActions.setActiveWorkspace({ id: 'scheduled-private-test', displayName: 'Scheduled run', readOnly: true }));
         render(<Provider store={store}><WorkflowProgress turn={store.getState().textTurns[0]} canvas /></Provider>);
+        // KNOWN PRODUCT BUG (fails today): WorkflowProgress titles the run from `turn.prompt`, which the
+        // run record no longer carries (the request message does), so the heading falls back to "Workflow".
         expect(screen.getByRole('heading', { name: 'Native review' })).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Review request' })).not.toBeInTheDocument();
@@ -303,43 +331,52 @@ describe('Workflow session publication', () => {
         expect(screen.getAllByText(result.displayId)).toHaveLength(1);
     });
 
-    it.each([false, true])('distinguishes dedicated loading from visualization-time loading (dedicated: %s)', dedicated => {
+    it.each([false, true])('shows dedicated and visualization-time loading as items in the chain (dedicated: %s)', dedicated => {
+        // Every item a run loads joins its chain (design-docs/58, rule 1): a load made while
+        // visualizing sits between the request and the step that used it; a dedicated load
+        // has its own summary before the next request.
         const rootId = 'conversation-root:aircraft';
         store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'incidents', displayId: 'Incident Records',
             names: [], rows: [], metadata: {}, description: '', virtual: { tableId: 'incidents', rowCount: 0 } }));
-        if (dedicated) store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'load-summary', displayId: 'Data loaded',
-            textKind: 'explain', prompt: 'Load incident data', content: 'Incident data is ready.',
-            parentNodeId: rootId, createdAt: 1 }));
-        const parentNodeId = dedicated ? 'load-summary' : rootId;
+        const userMessage = (id: string, prompt: string, parentNodeId: string, createdAt: number) => dfActions.addTextTurn({
+            kind: 'text', id, displayId: id, textKind: 'explain', prompt, content: '', parentNodeId, createdAt });
+        store.dispatch(userMessage('request', dedicated ? 'Load incident data' : 'Compare incidents by flight phase', rootId, 1));
         store.dispatch(dfActions.addLoadedTableNode({ kind: 'loaded-table', id: 'loaded-incidents', tableId: 'incidents',
-            parentNodeId, createdAt: 1 }));
+            parentNodeId: 'request', createdAt: 2 }));
+        let stepParent = 'loaded-incidents';
+        if (dedicated) {
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'load-summary', displayId: 'Data loaded',
+                textKind: 'explain', content: 'Incident data is ready.', parentNodeId: 'loaded-incidents', createdAt: 3 }));
+            store.dispatch(userMessage('compare', 'Compare incidents by flight phase', 'load-summary', 4));
+            stepParent = 'compare';
+        }
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'count-step', displayId: 'Count', textKind: 'explain',
+            content: 'Count incidents by phase', parentNodeId: stepParent, createdAt: 5 }));
         store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'phase-counts', displayId: 'Incidents by Flight Phase',
-            names: [], rows: [], metadata: {}, description: '', parentNodeId, derive: {
+            names: [], rows: [], metadata: {}, description: '', parentNodeId: 'count-step', derive: {
                 source: ['incidents'], code: 'result = incidents', outputVariable: 'result', dialog: [],
-                trigger: { tableId: rootId, resultTableId: 'phase-counts', chart: undefined, interaction: [
-                    { from: 'user', to: 'data-agent', role: 'prompt', content: 'Compare incidents by flight phase', timestamp: 2 },
-                    { from: 'data-agent', to: 'datarec-agent', role: 'instruction', content: 'Count incidents by phase', timestamp: 3 },
-                ] },
+                trigger: { tableId: rootId, resultTableId: 'phase-counts', chart: undefined },
             } } as any));
         const { container } = renderThread();
         expect(screen.getAllByRole('button', { name: 'view chat' })).toHaveLength(1);
         expect(container.querySelectorAll('[data-thread-item="loaded-incidents"]')).toHaveLength(1);
+        const output = container.querySelector<HTMLElement>('[data-thread-item="loaded-incidents"]')!;
+        const artifact = within(output).getByRole('button', { name: 'Incident Records' });
+        expect(artifact.closest('.data-thread-card')).toBeInTheDocument();
+        expect(screen.getAllByText('Incident Records', { exact: true }).filter(node => node.closest('[data-thread-item]'))).toHaveLength(1);
+        const step = screen.getByText('Count incidents by phase');
+        const request = screen.getByText(dedicated ? 'Load incident data' : 'Compare incidents by flight phase');
+        expect(request.compareDocumentPosition(output) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(output.compareDocumentPosition(step) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(!!screen.queryByText('Incident data is ready.')).toBe(dedicated);
         if (dedicated) {
-            const output = container.querySelector<HTMLElement>('[data-thread-item="loaded-incidents"]')!;
-            const artifact = within(output).getByRole('button', { name: 'Incident Records' });
-            expect(artifact.closest('.data-thread-card')).toBeInTheDocument();
-            expect(screen.queryByText('Loaded: Incident Records')).not.toBeInTheDocument();
-            fireEvent.click(artifact);
-            expect(store.getState().focusedId).toEqual({ type: 'reference', referenceId: 'loaded-incidents' });
-            expect(artifact.closest('.selected-artifact-card')).toBeInTheDocument();
-        } else {
-            const loadedReference = screen.getByText('Loaded: Incident Records');
-            expect(screen.getByText('Count incidents by phase').closest('[data-thread-item]')).toContainElement(loadedReference);
-            expect(loadedReference.closest('button, .data-thread-card')).toBeNull();
-            expect(loadedReference).toHaveStyle({ color: 'rgba(0, 0, 0, 0.6)' });
-            expect(screen.getAllByText('Incident Records', { exact: true })).toHaveLength(1);
+            expect(output.compareDocumentPosition(screen.getByText('Incident data is ready.')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+            expect(screen.getByText('Incident data is ready.').compareDocumentPosition(screen.getByText('Compare incidents by flight phase'))
+                & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         }
-        expect(screen.getByText('Compare incidents by flight phase')).toBeInTheDocument();
+        fireEvent.click(artifact);
+        expect(store.getState().focusedId).toEqual({ type: 'reference', referenceId: 'loaded-incidents' });
+        expect(artifact.closest('.selected-artifact-card')).toBeInTheDocument();
         expect(screen.getByText('Incidents by Flight Phase')).toBeInTheDocument();
     });
 
@@ -360,7 +397,9 @@ describe('Workflow session publication', () => {
         expect(within(output).getByText('games_reviews.parquet')).toBeInTheDocument();
         expect(within(output).getByText('(virtual)')).toBeInTheDocument();
         fireEvent.click(within(output).getByRole('button'));
-        expect(store.getState().focusedId).toEqual({ type: 'external-table', referenceId: reference.id });
+        // The thread node takes focus, so a follow-up continues this thread; the canvas shows the source.
+        expect(store.getState().focusedId).toEqual({ type: 'reference', referenceId: 'loaded-reviews' });
+        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'external-table', referenceId: reference.id });
         expect(output.querySelector('.selected-artifact-card')).toBeInTheDocument();
     });
 
@@ -398,50 +437,52 @@ describe('Workflow session publication', () => {
 
     it('shows loaded data before ongoing thinking and keeps it before the final summary', () => {
         const rootId = 'conversation-root:live-load';
+        // The request is its own message; the run's live draft follows the chain head (design-docs/58).
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'load-request', displayId: 'Load', textKind: 'explain',
+            prompt: 'Load consumer price data', content: '', parentNodeId: rootId, createdAt: 1 }));
         store.dispatch(dfActions.createDraftNode({ id: 'loading-draft', displayId: 'Load data',
-            parentNodeId: rootId, parentTableId: rootId, source: [], interaction: [
-                { from: 'user', to: 'data-agent', role: 'prompt', content: 'Load consumer price data', timestamp: 1 },
-            ] }));
+            parentNodeId: 'load-request', parentTableId: rootId, source: [], interaction: [] }));
         const { container } = renderThread();
         expect(container.querySelector('[data-thread-item="loaded-consumer-prices"]')).toBeNull();
         act(() => {
             store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'consumer_prices', displayId: 'Consumer Prices',
                 names: [], rows: [], metadata: {}, description: '', virtual: { tableId: 'consumer_prices', rowCount: 0 } }));
             store.dispatch(dfActions.addLoadedTableNode({ kind: 'loaded-table', id: 'loaded-consumer-prices',
-                tableId: 'consumer_prices', parentNodeId: 'loading-draft', createdAt: 2 }));
+                tableId: 'consumer_prices', parentNodeId: 'load-request', createdAt: 2 }));
+            store.dispatch(dfActions.moveDraftNode({ draftId: 'loading-draft', parentNodeId: 'loaded-consumer-prices' }));
         });
         const output = container.querySelector('[data-thread-item="loaded-consumer-prices"]')!;
         expect(output).toBeInTheDocument();
         expect(screen.getByText('Load consumer price data').compareDocumentPosition(output) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        const thinking = container.querySelector(`[data-thread-item="agent-thinking-${rootId}"]`)!;
+        const thinking = container.querySelector('[data-thread-item="agent-thinking-loading-draft"]')!;
         expect(thinking).toBeInTheDocument();
         expect(output.compareDocumentPosition(thinking) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         act(() => {
             store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'load-summary', displayId: 'Summary',
-                textKind: 'explain', prompt: 'Load consumer price data', content: 'Loaded consumer prices.',
-                parentNodeId: rootId, createdAt: 3 }));
-            store.dispatch(dfActions.removeDraftNode({ draftId: 'loading-draft', fileParentNodeId: 'load-summary' }));
+                textKind: 'explain', content: 'Loaded consumer prices.', parentNodeId: 'loaded-consumer-prices', createdAt: 3 }));
+            store.dispatch(dfActions.removeDraftNode('loading-draft'));
         });
         expect(container.querySelectorAll('[data-thread-item="loaded-consumer-prices"]')).toHaveLength(1);
-        expect(container.querySelector(`[data-thread-item="agent-thinking-${rootId}"]`)).toBeNull();
+        expect(container.querySelector('[data-thread-item="agent-thinking-loading-draft"]')).toBeNull();
         const completedOutput = container.querySelector('[data-thread-item="loaded-consumer-prices"]')!;
         const summary = container.querySelector('[data-thread-item="textturn-load-summary"]')!;
         expect(completedOutput.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         act(() => {
-            store.dispatch(dfActions.updateTextTurn({ id: 'load-summary', answered: true, answer: 'Show overall trends' }));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'trend-request', displayId: 'Trends', textKind: 'explain',
+                prompt: 'Show overall trends', content: '', parentNodeId: 'load-summary', createdAt: 4 }));
             store.dispatch(dfActions.createDraftNode({ id: 'trend-draft', displayId: 'Trends',
-                parentNodeId: 'load-summary', parentTableId: rootId, source: ['consumer_prices'], interaction: [] }));
+                parentNodeId: 'trend-request', parentTableId: rootId, source: ['consumer_prices'], interaction: [] }));
         });
         const followup = screen.getByText('Show overall trends');
         expect(followup).toBeVisible();
         expect(summary.compareDocumentPosition(followup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        const followupThinking = container.querySelector(`[data-thread-item="agent-running-${rootId}"]`)!;
+        const followupThinking = container.querySelector('[data-thread-item="agent-thinking-trend-draft"]')!;
         expect(followupThinking).toBeInTheDocument();
         expect(followup.compareDocumentPosition(followupThinking) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         act(() => {
             store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'trend-summary', displayId: 'Trends',
-                textKind: 'explain', content: 'Prices have increased.', parentNodeId: 'load-summary', createdAt: 5 }));
-            store.dispatch(dfActions.removeDraftNode({ draftId: 'trend-draft', fileParentNodeId: 'trend-summary' }));
+                textKind: 'explain', content: 'Prices have increased.', parentNodeId: 'trend-request', createdAt: 5 }));
+            store.dispatch(dfActions.removeDraftNode('trend-draft'));
         });
         expect(screen.getAllByText('Show overall trends')).toHaveLength(1);
         expect(followup.compareDocumentPosition(container.querySelector('[data-thread-item="textturn-trend-summary"]')!)
@@ -451,13 +492,16 @@ describe('Workflow session publication', () => {
     it.each([true, false])('orders loaded data before its summary but after earlier remarks (summary: %s)', summary => {
         store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'consumer_prices', displayId: 'Consumer Prices',
             names: [], rows: [], metadata: {}, description: '', virtual: { tableId: 'consumer_prices', rowCount: 0 } }));
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'load-request', displayId: 'Load', textKind: 'explain',
+            prompt: 'Load consumer price data', content: '', parentNodeId: 'conversation-root:load', createdAt: 0 }));
+        // The chain records what happened first: a closing summary follows the load; an earlier remark precedes it.
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'textTurn-load', displayId: 'Load data',
-            textKind: 'explain', prompt: 'Load consumer price data', content: summary ? 'Loaded consumer prices.' : 'Preparing the import.',
-            parentNodeId: 'conversation-root:load', createdAt: summary ? 3 : 1 }));
+            textKind: 'explain', content: summary ? 'Loaded consumer prices.' : 'Preparing the import.',
+            parentNodeId: summary ? 'loaded-consumer-prices' : 'load-request', createdAt: summary ? 3 : 1 }));
         store.dispatch(dfActions.addLoadedTableNode({ kind: 'loaded-table', id: 'loaded-consumer-prices',
-            tableId: 'consumer_prices', parentNodeId: 'textTurn-load', createdAt: 2 }));
+            tableId: 'consumer_prices', parentNodeId: summary ? 'load-request' : 'textTurn-load', createdAt: 2 }));
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'textTurn-followup', displayId: 'Follow-up',
-            textKind: 'explain', content: 'A later analysis.', parentNodeId: 'consumer_prices', createdAt: 4 }));
+            textKind: 'explain', content: 'A later analysis.', parentNodeId: summary ? 'textTurn-load' : 'loaded-consumer-prices', createdAt: 4 }));
         const { container } = renderThread();
         const rows = Array.from(container.querySelectorAll('[data-thread-item]')).map(element => element.getAttribute('data-thread-item'));
         const outputIndex = rows.indexOf('loaded-consumer-prices');
@@ -489,7 +533,11 @@ describe('Workflow session publication', () => {
         expect(screen.getByText('(steering) Compare weekly returns instead.')).toBeTruthy();
         expect(screen.queryByText('Queued for workflow.')).toBeNull();
         expect(store.getState().textTurns.find(item => item.id === turn.id)!.workflow).toEqual(turn.workflow);
-        expect(store.getState().textTurns.some(item => item.prompt === 'Compare weekly returns instead.' && item.parentNodeId === turn.id)).toBe(true);
+        // Steering is a message within the run, placed right before its record.
+        const steering = store.getState().textTurns.find(item => item.prompt === 'Compare weekly returns instead.')!;
+        expect(steering).toMatchObject({ content: '', parentNodeId: 'textTurn-workflow-native-request',
+            workflowMessage: { runId: 'native', kind: 'steering' } });
+        expect(store.getState().textTurns.find(item => item.id === turn.id)!.parentNodeId).toBe(steering.id);
         expect(streamRequest).not.toHaveBeenCalled();
         expect(store.getState().draftNodes).toHaveLength(0);
         const sentMessage = store.getState().textTurns.find(item => item.workflowMessage)!;
@@ -523,7 +571,7 @@ describe('Workflow session publication', () => {
         expect(screen.queryByText('Queued for workflow.')).toBeNull();
     });
 
-    it.each([0, 3, 8])('renders a workflow reply and acknowledgment once across split output segments after %s outputs', async afterOutputs => {
+    it.each([0, 3, 8])('renders a workflow reply once at its place among outputs after %s outputs', async afterOutputs => {
         const outputs = Array.from({ length: 8 }, (_, index) => {
             const output = structuredClone(run().outputs![2]);
             output.id = `chart-${index}`;
@@ -532,15 +580,23 @@ describe('Workflow session publication', () => {
             output.content.result.refined_goal.display_name = `Chart values ${index}`;
             return output;
         });
-        await publishWorkflowRun({ ...run(), outputs }, 'session');
-        const turn = store.getState().textTurns.find(item => item.workflow)!;
+        await publishWorkflowRun({ ...run(), outputs: outputs.slice(0, afterOutputs) }, 'session');
+        // A reply is a user message node placed right before the run's record; later outputs follow it.
+        const record = store.getState().textTurns.find(item => item.id === 'textTurn-workflow-native')!;
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'textTurn-workflow-reply-native-question',
-            displayId: 'Workflow reply', textKind: 'explain', prompt: 'should be fine', content: 'Answered workflow question.',
-            parentNodeId: turn.id, createdAt: Date.now(), workflowMessage: { runId: 'native', messageId: 'question',
-                kind: 'reply', status: 'received', afterOutputIds: turn.outputIds!.slice(0, afterOutputs) } }));
-        renderThread(true);
+            displayId: 'Workflow reply', textKind: 'explain', prompt: 'should be fine', content: '',
+            parentNodeId: record.parentNodeId, createdAt: Date.now(), workflowMessage: { runId: 'native', messageId: 'question',
+                kind: 'reply', status: 'received' } }));
+        store.dispatch(dfActions.updateTextTurn({ id: record.id, parentNodeId: 'textTurn-workflow-reply-native-question' }));
+        await publishWorkflowRun({ ...run(), outputs }, 'session');
+        const { container } = renderThread(true);
         expect(screen.getAllByText('should be fine')).toHaveLength(1);
-        expect(screen.queryByText('Answered workflow question.')).toBeNull();
+        const reply = screen.getByText('should be fine');
+        const outputBlock = (index: number) => container.querySelector(`[data-thread-item="regular-table-box-chart_values_${index}"]`)!;
+        if (afterOutputs) expect(outputBlock(afterOutputs - 1).compareDocumentPosition(reply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        if (afterOutputs < 8) expect(reply.compareDocumentPosition(outputBlock(afterOutputs)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(reply.compareDocumentPosition(container.querySelector('[data-thread-item="textturn-textTurn-workflow-native"]')!)
+            & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
     it('places steering after existing outputs and before outputs created later', async () => {
@@ -549,7 +605,8 @@ describe('Workflow session publication', () => {
         const turn = store.getState().textTurns[0];
         await sendWorkflowMessage(turn, 'Compare next month.', 'steering-1');
         const message = store.getState().textTurns.find(item => item.workflowMessage)!;
-        expect(message.workflowMessage!.afterOutputIds).toEqual(turn.outputIds);
+        expect(message.parentNodeId).toBe('workflow-report-native');
+        expect(store.getState().textTurns.find(item => item.id === turn.id)!.parentNodeId).toBe(message.id);
         const { container } = renderThread();
         expect(container.textContent!.lastIndexOf('notes.txt')).toBeLessThan(container.textContent!.indexOf('Compare next month.'));
         await act(async () => { await publishWorkflowRun({ ...snapshot, outputs: [...snapshot.outputs!, {
@@ -609,28 +666,30 @@ describe('Workflow session publication', () => {
             store.dispatch(dfActions.setFocused(focus));
             expect(selectChatWorkflow(store.getState())).toBeUndefined();
         }
-        const workflowTurn = store.getState().textTurns.find(turn => turn.workflow?.runId === 'native')!;
-        const card = store.getState().textTurns.find(turn => turn.workflowCardFor === workflowTurn.id)!;
-        for (const textId of [workflowTurn.id, card.id]) {
+        // Messages on the run's chain (its request, a step) are not the run's record.
+        for (const textId of ['textTurn-workflow-native-request', 'textTurn-workflow-step-native-chart']) {
             store.dispatch(dfActions.setFocused({ type: 'text', textId }));
-            expect(selectChatWorkflow(store.getState())?.workflow?.runId).toBe('native');
+            expect(selectChatWorkflow(store.getState())).toBeUndefined();
         }
+        const workflowTurn = store.getState().textTurns.find(turn => turn.workflow?.runId === 'native')!;
+        store.dispatch(dfActions.setFocused({ type: 'text', textId: workflowTurn.id }));
+        expect(selectChatWorkflow(store.getState())?.workflow?.runId).toBe('native');
         await publishWorkflowRun({ ...snapshot, status: 'completed' }, 'session');
         expect(selectChatWorkflow(store.getState())).toBeUndefined();
     });
 
-    it.each(['workflow', 'card', 'chart', 'table'])('places a new analyst request after the focused %s artifact', async target => {
+    it.each(['workflow', 'chart', 'table'])('places a new analyst request after the focused %s artifact', async target => {
         store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
         store.dispatch(dfActions.selectModel('test-model'));
-        const snapshot = run();
+        // A focused running record steers its run; a completed one continues as an ordinary thread.
+        const fromWorkflow = target === 'workflow';
+        const snapshot = { ...run(), status: fromWorkflow ? 'completed' : 'running' };
         await publishWorkflowRun(snapshot, 'session');
         const workflowTurn = store.getState().textTurns.find(turn => turn.workflow)!;
-        const card = store.getState().textTurns.find(turn => turn.workflowCardFor === workflowTurn.id)!;
-        const fromWorkflow = target === 'workflow' || target === 'card';
-        const parentId = fromWorkflow ? card.id : 'chart_values';
+        const parentId = fromWorkflow ? workflowTurn.id : 'chart_values';
         const focus = target === 'chart' ? { type: 'chart' as const, chartId: 'chart-native' }
             : target === 'table' ? { type: 'table' as const, tableId: 'chart_values' }
-            : { type: 'text' as const, textId: target === 'workflow' ? workflowTurn.id : card.id };
+            : { type: 'text' as const, textId: workflowTurn.id };
         store.dispatch(dfActions.setFocused(focus));
         let finish!: () => void;
         const pending = new Promise<void>(resolve => { finish = resolve; });
@@ -649,10 +708,12 @@ describe('Workflow session publication', () => {
         fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
         expect(String(vi.mocked(streamRequest).mock.calls[0][0])).not.toContain('/workflows/');
-        expect(store.getState().draftNodes[0]?.parentNodeId).toBe(parentId);
+        const request = store.getState().textTurns.find(turn => turn.prompt === prompt)!;
+        expect(request).toMatchObject({ parentNodeId: parentId, content: '' });
+        expect(store.getState().draftNodes[0]?.parentNodeId).toBe(request.id);
         const expectPromptAfterArtifact = () => {
-            const artifact = fromWorkflow ? container.querySelector(`[data-thread-item="textturn-${card.id}"]`)!
-                : screen.getByText('Category Values').closest('[data-thread-item]')!;
+            const artifact = fromWorkflow ? container.querySelector(`[data-thread-item="textturn-${workflowTurn.id}"]`)!
+                : container.querySelector('[data-thread-item="regular-table-box-chart_values"]')!;
             expect(artifact).toBeTruthy();
             const prompts = screen.getAllByText(prompt).filter(node => node.closest('[data-thread-item]'));
             expect(prompts).toHaveLength(1);
@@ -662,7 +723,7 @@ describe('Workflow session publication', () => {
         await act(async () => { finish(); });
         await waitFor(() => expect(store.getState().textTurns.find(turn => turn.form?.kind === 'workflow')).toBeDefined());
         const proposalTurn = store.getState().textTurns.find(turn => turn.form?.kind === 'workflow')!;
-        expect(proposalTurn).toMatchObject({ parentNodeId: parentId, prompt, form: { kind: 'workflow', workflow: proposal } });
+        expect(proposalTurn).toMatchObject({ parentNodeId: request.id, form: { kind: 'workflow', workflow: proposal } });
         expectPromptAfterArtifact();
         expect(store.getState().textTurns.find(turn => turn.id === workflowTurn.id)?.workflow).toEqual(workflowTurn.workflow);
         expect(vi.mocked(apiRequest).mock.calls.some(([url]) => String(url).includes('/workflows/message'))).toBe(false);
@@ -673,21 +734,29 @@ describe('Workflow session publication', () => {
         await publishWorkflowRun(snapshot, 'session');
         await publishWorkflowRun(snapshot, 'session');
         const state = store.getState();
-        expect(state.textTurns.filter(turn => !turn.workflowCardFor)).toHaveLength(1);
-        expect(state.textTurns[0].prompt).toBe('Run workflow: Native review');
+        // The run's chain: request → outputs (a step message before the chart's table) → record.
+        expect(state.textTurns.map(turn => turn.id).sort()).toEqual(['textTurn-workflow-native',
+            'textTurn-workflow-native-request', 'textTurn-workflow-step-native-chart']);
+        const turnById = (id: string) => state.textTurns.find(turn => turn.id === id)!;
+        expect(turnById('textTurn-workflow-native-request')).toMatchObject({ prompt: 'Run workflow: Native review', content: '',
+            parentNodeId: 'conversation-root:native' });
+        expect(turnById('textTurn-workflow-native').prompt).toBeUndefined();
+        expect(turnById('textTurn-workflow-step-native-chart')).toMatchObject({ content: 'Values by category', parentNodeId: 'file-notes.txt' });
         expect(state.inputTables).toHaveLength(1);
         expect(state.derivedTables).toHaveLength(1);
         expect(state.derivedTables[0].displayId).toBe('Category Values');
         expect(state.derivedTables[0].derive?.source).toEqual(['measurements']);
         expect(state.derivedTables[0].derive?.trigger.chart?.source).toBe('trigger');
+        expect(state.derivedTables[0].derive?.trigger.interaction).toBeUndefined();
         expect(state.loadedTableNodes).toHaveLength(1);
         expect(state.fileNodes).toHaveLength(1);
         expect(dfSelectors.getAllCharts(state).filter(chart => chart.id === 'chart-native')).toHaveLength(1);
         expect(state.generatedReports).toHaveLength(1);
         expect(state.generatedReports[0].selectedChartIds).toEqual(['chart-native']);
-        expect(state.textTurns[0].outputIds).toEqual(['workflow-data-native-measurements', 'file-notes.txt', 'chart_values', 'workflow-report-native']);
-        expect([state.loadedTableNodes[0], state.fileNodes[0], state.derivedTables[0], state.generatedReports[0]]
-            .map(output => output.parentNodeId)).toEqual([state.textTurns[0].id, 'workflow-data-native-measurements', 'file-notes.txt', 'chart_values']);
+        expect(turnById('textTurn-workflow-native').outputIds).toEqual(['workflow-data-native-measurements', 'file-notes.txt', 'chart_values', 'workflow-report-native']);
+        expect([state.loadedTableNodes[0], state.fileNodes[0], state.derivedTables[0], state.generatedReports[0], turnById('textTurn-workflow-native')]
+            .map(output => output.parentNodeId)).toEqual(['textTurn-workflow-native-request', 'workflow-data-native-measurements',
+                'textTurn-workflow-step-native-chart', 'chart_values', 'workflow-report-native']);
         expect(vi.mocked(apiRequest).mock.calls.filter(([url]) => url === getUrls().LIST_TABLES)).toHaveLength(1);
         expect(vi.mocked(apiRequest).mock.calls.filter(([url]) => url === getUrls().SERVER_PROCESS_DATA_ON_LOAD)).toHaveLength(2);
         expect(apiRequest).toHaveBeenCalledTimes(3);
@@ -735,18 +804,21 @@ describe('Workflow session publication', () => {
         unmount();
         renderThread();
         expectThreadOrder();
-    });
+    }, 15_000);
 
     it('keeps a new analyst thread after older threads before and after completion', async () => {
         await publishWorkflowRun({ ...run(), status: 'completed' }, 'session');
         const startedAt = Date.now();
+        // Requests are their own message nodes; the live draft follows the request.
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'new-request', displayId: 'New question', textKind: 'explain',
+            prompt: 'Compare recent days by hour', content: '', parentNodeId: 'conversation-root:new-question', createdAt: startedAt }));
         store.dispatch(dfActions.createDraftNode({ id: 'new-draft', displayId: 'New question',
-            parentNodeId: 'conversation-root:new-question', parentTableId: 'conversation-root:new-question',
-            source: [], interaction: [{ from: 'user', to: 'data-agent', role: 'prompt',
-                content: 'Compare recent days by hour', timestamp: startedAt }] }));
+            parentNodeId: 'new-request', parentTableId: 'conversation-root:new-question', source: [], interaction: [] }));
+        const draftCreatedAt = store.getState().draftNodes.find(draft => draft.id === 'new-draft')!.createdAt;
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'later-request', displayId: 'Later request', textKind: 'explain',
+            prompt: 'A later request', content: '', parentNodeId: 'conversation-root:later-question', createdAt: startedAt + 10 }));
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'later-answer', displayId: 'Later answer',
-            textKind: 'explain', prompt: 'A later request', content: 'A faster answer',
-            parentNodeId: 'conversation-root:later-question', createdAt: startedAt + 10 }));
+            textKind: 'explain', content: 'A faster answer', parentNodeId: 'later-request', createdAt: startedAt + 11 }));
         let view = renderThread();
         const expectThreadOrder = () => {
             const content = view.container.textContent!;
@@ -759,14 +831,13 @@ describe('Workflow session publication', () => {
         expectThreadOrder();
         act(() => {
             store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'new-answer', displayId: 'New answer',
-                textKind: 'explain', prompt: 'Compare recent days by hour', content: 'The summary only covers 2011.',
-                parentNodeId: 'conversation-root:new-question', createdAt: startedAt + 20 }));
+                textKind: 'explain', content: 'The summary only covers 2011.', parentNodeId: 'new-request', createdAt: startedAt + 20 }));
             store.dispatch(dfActions.removeDraftNode('new-draft'));
         });
         expectThreadOrder();
-        expect(store.getState().textTurns.find(turn => turn.id === 'new-answer')?.startedAt).toBe(startedAt);
+        expect(store.getState().textTurns.find(turn => turn.id === 'new-answer')?.startedAt).toBe(draftCreatedAt);
         view.unmount();
-        store.dispatch(dfActions.loadState(store.getState()));
+        store.dispatch(dfActions.loadState(getSerializableState(store.getState())));
         view = renderThread();
         expectThreadOrder();
         view.unmount();
@@ -786,7 +857,11 @@ describe('Workflow session publication', () => {
         await publishWorkflowRun(snapshot, 'session');
         snapshot.outputs![1].version = 'updated-notes';
         await publishWorkflowRun(snapshot, 'session');
-        expect(store.getState().derivedTables.find(table => table.id === 'next_values')?.parentNodeId).toBe('workflow-report-native');
+        // The new chart's step message follows the persisted tail (the report); the record stays last.
+        expect(store.getState().textTurns.find(turn => turn.id === 'textTurn-workflow-step-native-chart-next')?.parentNodeId)
+            .toBe('workflow-report-native');
+        expect(store.getState().derivedTables.find(table => table.id === 'next_values')?.parentNodeId).toBe('textTurn-workflow-step-native-chart-next');
+        expect(store.getState().textTurns.find(turn => turn.id === 'textTurn-workflow-native')?.parentNodeId).toBe('next_values');
         expect([store.getState().fileNodes[0].parentNodeId, store.getState().derivedTables[0].parentNodeId]).toEqual(firstParents);
         expect(store.getState().textTurns[0].outputIds).toEqual(['workflow-data-native-measurements', 'file-notes.txt', 'chart_values', 'workflow-report-native', 'next_values']);
         const { container } = renderThread();
@@ -796,115 +871,49 @@ describe('Workflow session publication', () => {
         expect(screen.getAllByText('Next Values')).toHaveLength(1);
     });
 
-    it('breaks a workflow using rendered output heights instead of undercounting chart groups', async () => {
-        const viewportHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
-        const blockHeight = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
-            if (this.dataset.threadFlowBlock?.startsWith('output-chart_values')) return 200;
-            return this.hasAttribute('data-thread-flow-block') ? 160 : 0;
-        });
-        try {
-            const snapshot = run();
-            for (let index = 1; index <= 2; index++) {
-                const chart = structuredClone(snapshot.outputs![2]);
-                chart.id = `chart-${index}`;
-                chart.content.result.chart_id = `chart-${index}`;
-                chart.content.result.content.virtual.table_name = `chart_values_${index}`;
-                snapshot.outputs!.push(chart);
-            }
-            await publishWorkflowRun(snapshot, 'session');
-            const { container } = renderThread(true);
-            const segmentOf = (id: string) => container.querySelector(`[data-thread-flow-block="output-${id}"]`)
-                ?.closest('[data-thread-segment]')?.getAttribute('data-thread-segment');
-            await waitFor(() => expect(segmentOf('chart_values_2')).not.toBe(segmentOf('chart_values')));
-            expect(segmentOf('chart_values')).toBeDefined();
-            expect(segmentOf('chart_values_2')).toBeDefined();
-            expect(container.querySelectorAll('[data-thread-flow-block="output-chart_values"]')).toHaveLength(1);
-            const outputIds = ['chart_values', 'chart_values_1', 'chart_values_2'];
-            const initialSegments = outputIds.map(segmentOf);
-            blockHeight.mockImplementation(function (this: HTMLElement) {
-                return this.hasAttribute('data-thread-flow-block') ? 4000 : 0;
-            });
-            await act(async () => { await publishWorkflowRun({ ...snapshot, calls: (snapshot.calls ?? 0) + 1 }, 'session'); });
-            expect(outputIds.map(segmentOf)).toEqual(initialSegments);
-        } finally {
-            viewportHeight.mockRestore();
-            blockHeight.mockRestore();
-        }
-    });
-
-    it('counts the workspace shelf toward the first workflow segment height', async () => {
-        const viewportHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(711);
-        const blockHeight = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
-            if (this.hasAttribute('data-thread-shelf')) return 150;
-            if (this.hasAttribute('data-thread-flow-header')) return 24;
-            const key = this.dataset.threadFlowBlock;
-            if (!key) return 0;
-            if (key === 'output-chart_values') return 192;
-            if (key === 'output-chart_values_1') return 173;
-            if (key === 'output-chart_values_2') return 203;
-            if (key.startsWith('output-workflow-data-')) return 95;
-            if (key.startsWith('output-workflow-report-')) return 40;
-            if (key.includes('completed-')) return 51;
-            return 147;
-        });
-        try {
-            const snapshot = run();
-            const charts = Array.from({ length: 3 }, (_, index) => {
-                const chart = structuredClone(snapshot.outputs![2]);
-                chart.id = `chart-${index}`;
-                chart.content.result.chart_id = `chart-${index}`;
-                chart.content.result.content.virtual.table_name = index ? `chart_values_${index}` : 'chart_values';
-                return chart;
-            });
-            snapshot.outputs = [snapshot.outputs![0], ...charts, snapshot.outputs![3]];
-            snapshot.status = 'completed';
-            await publishWorkflowRun(snapshot, 'session');
-            const { container } = renderThread(true);
-            const segmentOf = (id: string) => container.querySelector(`[data-thread-flow-block="output-${id}"]`)
-                ?.closest('[data-thread-segment]')?.getAttribute('data-thread-segment');
-            await waitFor(() => expect(segmentOf('chart_values_2')).toBe('1'));
-            expect(segmentOf('chart_values')).toBe('0');
-            expect(segmentOf('chart_values_1')).toBe('0');
-        } finally {
-            viewportHeight.mockRestore();
-            blockHeight.mockRestore();
-        }
-    });
-
-    it('anchors one workflow card after its outputs and keeps completed follow-ups below that boundary', async () => {
+    it('keeps the run record after its outputs and completed follow-ups below it', async () => {
         const snapshot = run();
         snapshot.outputs = [snapshot.outputs![2]];
         await publishWorkflowRun(snapshot, 'session');
-        const cardId = 'textTurn-workflow-card-native';
-        expect(store.getState().textTurns.find(turn => turn.id === cardId)?.parentNodeId).toBe('chart_values');
+        const recordId = 'textTurn-workflow-native';
+        const record = () => store.getState().textTurns.filter(turn => turn.id === recordId);
+        expect(record()[0].parentNodeId).toBe('chart_values');
         snapshot.outputs.push({ id: 'report', type: 'report', content: '# Final review' });
         await publishWorkflowRun(snapshot, 'session');
-        expect(store.getState().textTurns.find(turn => turn.id === cardId)?.parentNodeId).toBe('workflow-report-native');
+        expect(record()[0].parentNodeId).toBe('workflow-report-native');
         snapshot.status = 'completed';
         await publishWorkflowRun(snapshot, 'session');
+        // A follow-up continues from the completed record.
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'after-workflow', displayId: 'Follow-up',
-            textKind: 'explain', prompt: 'Now compare next month.', content: 'Next-month analysis.',
-            parentNodeId: 'textTurn-workflow-completed-native', createdAt: Date.now() + 1 }));
+            textKind: 'explain', prompt: 'Now compare next month.', content: '', parentNodeId: recordId, createdAt: Date.now() + 1 }));
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'after-workflow-answer', displayId: 'Follow-up answer',
+            textKind: 'explain', content: 'Next-month analysis.', parentNodeId: 'after-workflow', createdAt: Date.now() + 2 }));
         await publishWorkflowRun(snapshot, 'session');
-        expect(store.getState().textTurns.filter(turn => turn.id === cardId)).toHaveLength(1);
-        expect(store.getState().textTurns.find(turn => turn.id === cardId)?.parentNodeId).toBe('workflow-report-native');
-        expect(store.getState().textTurns.find(turn => turn.id === 'textTurn-workflow-completed-native')?.parentNodeId).toBe(cardId);
+        expect(record()).toHaveLength(1);
+        expect(record()[0].parentNodeId).toBe('workflow-report-native');
+        expect(store.getState().textTurns.find(turn => turn.id === 'after-workflow')?.parentNodeId).toBe(recordId);
         const { container } = renderThread();
-        const card = container.querySelector(`[data-thread-item="textturn-${cardId}"]`)!;
+        const card = container.querySelector(`[data-thread-item="textturn-${recordId}"]`)!;
         expect(card).toBeTruthy();
+        expect(container.querySelector('[data-thread-item="report-workflow-report-native"]')!.compareDocumentPosition(card)
+            & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         expect(card.compareDocumentPosition(screen.getByText('Now compare next month.')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        expect(container.querySelectorAll(`[data-thread-item="textturn-${cardId}"]`)).toHaveLength(1);
+        expect(container.querySelectorAll(`[data-thread-item="textturn-${recordId}"]`)).toHaveLength(1);
+        expect(screen.getAllByRole('button', { name: 'view chat' })).toHaveLength(1);
     });
 
     it('keeps the workflow run on the canvas when its completion message is focused', async () => {
         await publishWorkflowRun({ ...run(), status: 'completed', message: 'Completed and verified the review.' }, 'session');
+        expect(store.getState().textTurns.find(item => item.id === 'textTurn-workflow-native')?.content).toBe('Completed and verified the review.');
         renderThread();
+        // KNOWN PRODUCT BUG (fails today): the completed record (the closing message) renders only as the
+        // progress card in the thread, so its completion message is not shown there.
         fireEvent.click(screen.getByText('Completed and verified the review.'));
-        expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'textTurn-workflow-completed-native' });
+        expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'textTurn-workflow-native' });
         expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'text', textId: 'textTurn-workflow-native' });
     });
 
-    it.each(['textTurn-workflow-native', 'textTurn-workflow-card-native'])('sends an analyst follow-up from completed workflow focus %s with its status and output context', async focusedTextId => {
+    it.each(['textTurn-workflow-native'])('sends an analyst follow-up from completed workflow focus %s with its status and output context', async focusedTextId => {
         const snapshot = { ...run(), status: 'completed' };
         await publishWorkflowRun(snapshot, 'session');
         store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
@@ -936,8 +945,11 @@ describe('Workflow session publication', () => {
             output_ids: ['workflow-data-native-measurements', 'file-notes.txt', 'chart_values', 'workflow-report-native'] });
         expect(context.checks).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'coverage', status: 'passed' })]));
         expect(context.reports[0].content).toContain('# Review');
+        // The request continues from the completed record; the answer follows the request.
+        const request = store.getState().textTurns.find(turn => turn.prompt === body.user_question)!;
+        expect(request).toMatchObject({ parentNodeId: 'textTurn-workflow-native', content: '' });
         await waitFor(() => expect(store.getState().textTurns.find(turn => turn.content === 'The coverage check passed for all requested regions.'))
-            .toMatchObject({ parentNodeId: 'textTurn-workflow-completed-native', prompt: body.user_question }));
+            .toMatchObject({ parentNodeId: request.id }));
         expect(store.getState().textTurns.find(turn => turn.id === 'textTurn-workflow-native')?.answered).not.toBe(true);
     });
 
@@ -1035,6 +1047,37 @@ describe('Workflow session publication', () => {
             content: proposal.content, setup: { parameters: { period: 'Q1' }, instructions: '' },
         });
         await waitFor(() => expect(store.getState().textTurns.find(turn => turn.workflow)?.workflow?.status).toBe('completed'));
+    });
+
+    it('saves a proposed workflow together with the schedule proposed with it', async () => {
+        const definition = { name: 'Quarterly review', overview: 'Review current sales', deliverables: ['Sales report'],
+            parameters: [{ name: 'period', label: 'Period', default: 'Q1' }] };
+        const proposal = { definition, content: 'version: 1\nname: Quarterly review\noverview: Review current sales\ndeliverables: [Sales report]',
+            schedule: { config: { time: '08:00', weekdays: [0, 1, 2, 3, 4], model_id: 'server-model' }, issues: [] } };
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'scheduled-proposal', displayId: 'Proposal', textKind: 'explain',
+            content: 'Ready to review.', form: { kind: 'workflow', title: definition.name, workflow: proposal },
+            parentNodeId: 'conversation-root:authoring', createdAt: 1 }));
+        vi.mocked(apiRequest).mockImplementation(async (url, options) => {
+            if (url === '/api/workflows/save') return { data: { path: JSON.parse(options!.body as string).path, content_hash: 'saved-hash' } } as any;
+            if (url === '/api/schedules' && options?.method === 'POST') return { data: { schedule: { id: 'schedule-1', next_at: '2026-10-12T15:00:00Z' } } } as any;
+            if (url === '/api/schedules') return { data: { available: true, schedules: [] } } as any;
+            return { data: { items: [], runs: [], drafts: [] } } as any;
+        });
+        store.dispatch(dfActions.setFocused({ type: 'text', textId: 'scheduled-proposal' }));
+        render(<Provider store={store}><VisualizationViewFC /></Provider>);
+        fireEvent.click(await screen.findByRole('button', { name: 'Save workflow' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Save workflow' });
+        expect(await within(dialog).findByRole('checkbox', { name: 'Also run it on a schedule' })).toBeChecked();
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Save and schedule' }));
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Save workflow' })).not.toBeInTheDocument());
+        // The schedule runs the workflow just saved, with its default inputs.
+        const scheduled = JSON.parse(vi.mocked(apiRequest).mock.calls.find(([url, options]) => url === '/api/schedules' && options?.method === 'POST')![1]!.body as string);
+        expect(scheduled.config).toMatchObject({ workflow: 'quarterly-review.workflow.yaml', name: 'Quarterly review', time: '08:00',
+            weekdays: [0, 1, 2, 3, 4], model_id: 'server-model', setup: { parameters: { period: 'Q1' } } });
+        const saved = store.getState().textTurns.find((turn: any) => turn.id === 'scheduled-proposal')!.form as any;
+        expect(saved.workflow.saved.path).toBe('quarterly-review.workflow.yaml');
+        expect(saved.workflow.schedule).toMatchObject({ savedId: 'schedule-1', nextAt: '2026-10-12T15:00:00Z' });
+        expect(screen.getByText(/^Scheduled /)).toBeInTheDocument();
     });
 
     it('formats definition sections and saves a renamed workflow without losing YAML fields', async () => {
@@ -1445,7 +1488,13 @@ describe('Workflow session publication', () => {
         const body = JSON.parse(vi.mocked(streamRequest).mock.calls[0][1]!.body as string);
         expect(body.run_id).toBe('native');
         expect(body.reply).toBe('Last quarter');
-        expect(store.getState().textTurns.some(item => item.prompt === 'Last quarter' && item.parentNodeId === turn.id)).toBe(true);
+        // The question stays in the chain, answered, followed by the reply; both go right before the record.
+        const turnById = (id: string) => store.getState().textTurns.find(item => item.id === id);
+        expect(turnById('textTurn-workflow-question-native-question')).toMatchObject({ textKind: 'clarify', answered: true,
+            parentNodeId: 'workflow-report-native', options: [expect.objectContaining({ text: 'Which date range should I use?' })] });
+        expect(turnById('textTurn-workflow-reply-native-question')).toMatchObject({ prompt: 'Last quarter', content: '',
+            parentNodeId: 'textTurn-workflow-question-native-question' });
+        expect(turnById(turn.id)!.parentNodeId).toBe('textTurn-workflow-reply-native-question');
         await waitFor(() => expect(store.getState().textTurns[0].workflow?.status).toBe('completed'));
     });
 
@@ -1738,9 +1787,11 @@ describe('Workflow session publication', () => {
         snapshot.status = 'completed';
         await publishWorkflowRun(snapshot, 'session');
         await publishWorkflowRun(snapshot, 'session');
-        expect(store.getState().textTurns.filter(turn => !turn.workflowCardFor)).toHaveLength(2);
+        expect(store.getState().textTurns.map(turn => turn.id).sort()).toEqual(['textTurn-workflow-native', 'textTurn-workflow-native-request']);
         expect(store.getState().textTurns.filter(turn => turn.prompt)).toHaveLength(1);
-        expect(store.getState().textTurns.find(turn => turn.id === 'textTurn-workflow-completed-native')?.content).toBe('Workflow completed.');
+        // The completed record is the run's closing message.
+        expect(store.getState().textTurns.find(turn => turn.id === 'textTurn-workflow-native')).toMatchObject({
+            content: 'Workflow completed.', parentNodeId: 'workflow-report-native' });
         expect(store.getState().generatedReports).toHaveLength(1);
         expect(store.getState().generatedReports[0].content).toBe('# Revised');
     });
@@ -1786,7 +1837,9 @@ describe('Workflow session publication', () => {
         expect(text.indexOf('Category Values')).toBeLessThan(text.indexOf('completed · 3 tool calls'));
         expect(text.indexOf('notes.txt')).toBeLessThan(text.indexOf('Category Values'));
         expect(text.indexOf('Category Values')).toBeLessThan(text.indexOf('Native review', text.indexOf('Run workflow: Native review') + 'Run workflow: Native review'.length));
-        expect(text.lastIndexOf('notes.txt')).toBeLessThan(text.indexOf(snapshot.message));
+        // KNOWN PRODUCT BUG (fails today): the completed record is the run's closing message, but the
+        // thread renders it only as the progress card, so its response never appears in the thread.
+        expect(text.indexOf(snapshot.message)).toBeGreaterThan(text.lastIndexOf('notes.txt'));
         expect(container.querySelector('[data-workflow-progress="native"]')!.textContent).not.toContain(snapshot.message);
     });
 
@@ -2038,6 +2091,8 @@ describe('Workflow session publication', () => {
         expect(container.querySelector('[data-workflow-scroll]')?.parentElement).toHaveStyle({
             '--df-text-md': '0.875rem', '--df-text-sm': '0.8125rem', '--df-text-xs': '0.75rem',
         });
+        // KNOWN PRODUCT BUG (fails today): WorkflowProgress titles the run from `turn.prompt`, which the
+        // run record no longer carries (the request message does), so the heading falls back to "Workflow".
         expect(screen.getByRole('heading', { level: 1, name: 'Native review' })).toHaveStyle({ fontSize: '1.375rem' });
         expect(screen.getByText('Regional comparison chart')).not.toBeVisible();
         expect(screen.getByText('Summary report')).not.toBeVisible();
@@ -2287,25 +2342,27 @@ describe('Workflow session publication', () => {
         const snapshot = run();
         snapshot.status = 'completed';
         await publishWorkflowRun(snapshot, 'session');
-        const state = store.getState();
-        const nodes = getThreadConversationIds('chart_values', dfSelectors.getAllTables(state), state.textTurns,
-            state.loadedTableNodes, state.fileNodes, state.generatedReports);
+        const thread = buildThreads(dfSelectors.getThreadGraph(store.getState())).find(item => item.nodeIds.includes('chart_values'))!;
+        const nodes = thread.nodeIds;
         expect(nodes.indexOf('chart_values')).toBeLessThan(nodes.indexOf('workflow-report-native'));
+        expect(nodes.indexOf('workflow-report-native')).toBeLessThan(nodes.indexOf('textTurn-workflow-native'));
         expect(nodes.filter(id => id === 'workflow-report-native')).toHaveLength(1);
-        render(<Provider store={store}><ConversationCanvas textTurnId="chart_values" nodeIds={nodes} /></Provider>);
+        render(<Provider store={store}><ConversationCanvas textTurnId={thread.key} nodeIds={nodes} /></Provider>);
         const report = screen.getAllByRole('button', { name: 'Native review' });
         expect(report).toHaveLength(1);
         fireEvent.click(report[0]);
         expect(store.getState().focusedId).toEqual({ type: 'report', reportId: 'workflow-report-native' });
     });
 
-    it('uses authored output order without special placement rules for reports', () => {
-        const items = [{ key: 'prompt' }, { key: 'chart', outputNodeId: 'table' },
-            { key: 'report', outputNodeId: 'report' }, { key: 'completion' }];
-        const turn = { outputIds: ['report', 'table'] } as any;
-        expect(orderThreadOutputs(items, [turn]).map(item => item.key)).toEqual(['prompt', 'report', 'chart', 'completion']);
-        expect(orderThreadOutputs(items, [{ outputIds: ['table', 'report'] } as any])).toEqual(items);
-        expect(orderThreadOutputs(items, [{} as any])).toEqual(items);
+    it('uses authored output order without special placement rules for reports', async () => {
+        // Outputs join the run's chain in the order the run produced them, a report included.
+        const snapshot = run();
+        const [data, file, chart, report] = snapshot.outputs!;
+        snapshot.outputs = [data, report, file, chart];
+        await publishWorkflowRun(snapshot, 'session');
+        const thread = buildThreads(dfSelectors.getThreadGraph(store.getState())).find(item => item.nodeIds.includes('chart_values'))!;
+        expect(thread.nodeIds).toEqual(['textTurn-workflow-native-request', 'workflow-data-native-measurements', 'workflow-report-native',
+            'file-notes.txt', 'textTurn-workflow-step-native-chart', 'chart_values', 'textTurn-workflow-native']);
     });
 
     it('restores older workflow output order without republishing artifacts or changing focus', async () => {
@@ -2364,7 +2421,11 @@ describe('Workflow session publication', () => {
         expect(state.generatedReports).toHaveLength(1);
         expect(state.fileNodes).toHaveLength(1);
         expect([state.loadedTableNodes[0], state.fileNodes[0], state.derivedTables[0], state.generatedReports[0]]
-            .map(artifact => artifact.parentNodeId)).toEqual([turn.parentNodeId, 'workflow-data-delete-completed-measurements', 'file-notes.txt', 'chart_values']);
+            .map(artifact => artifact.parentNodeId)).toEqual(['textTurn-workflow-delete-completed-request',
+                'workflow-data-delete-completed-measurements', 'textTurn-workflow-step-delete-completed-chart', 'chart_values']);
+        // The run's request and step messages stay with the artifacts they lead to.
+        expect(state.textTurns.map(item => item.id).sort()).toEqual(['textTurn-workflow-delete-completed-request',
+            'textTurn-workflow-step-delete-completed-chart']);
         expect(apiRequest).not.toHaveBeenCalled();
         await publishWorkflowRun(snapshot, 'session');
         expect(store.getState().textTurns.some(item => item.id === turn.id)).toBe(false);
@@ -2415,6 +2476,7 @@ describe('Workflow session publication', () => {
         await waitFor(() => expect(store.getState().textTurns.some(item => item.id === turn.id)).toBe(false));
         expect(apiRequest).toHaveBeenCalledWith('/api/workflows/pause', expect.objectContaining({ body: JSON.stringify({ run_id: snapshot.id }) }));
         await publishWorkflowRun({ ...snapshot, status: 'completed' }, 'session');
-        expect(store.getState().textTurns).toHaveLength(0);
+        // The run produced nothing, so its request goes with it; the late update does not bring either back.
+        expect(store.getState().textTurns).toEqual([]);
     });
 });

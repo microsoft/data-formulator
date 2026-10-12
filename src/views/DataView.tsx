@@ -24,6 +24,7 @@ import { SelectableDataGrid } from './SelectableDataGrid';
 import { formatCellValue, getColumnAlign } from './ViewUtils';
 import { borderColor } from '../app/tokens';
 import { iconVar, textVar } from '../app/layout';
+import { externalReferenceTitle } from '../app/workspaceService';
 
 export interface FreeDataViewProps {
     // When true, render a maximize/restore toggle that pops the table into a
@@ -92,6 +93,11 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
         (state: DataFormulatorState) => dfSelectors.getAllTables(state).find(t => t.id === focusedTableId),
     );
     const tableCount = useSelector((state: DataFormulatorState) => dfSelectors.getAllTables(state).length);
+    // The connected source a table was queried from.
+    const importedFrom = targetTable?.source?.importedFrom;
+    const sourceReference = useSelector((state: DataFormulatorState) => importedFrom
+        ? state.externalTableReferences.find(item => item.connectorId === importedFrom.connectorId && item.tableKey === importedFrom.tableKey)
+        : undefined);
     const firstTableId = useSelector((state: DataFormulatorState) => dfSelectors.getAllTables(state)[0]?.id);
     const tableSemantics = useSelector((state: DataFormulatorState) =>
         state.tableSemantics.find(info => info.tableId === focusedTableId),
@@ -231,6 +237,14 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                     {showRealName && (
                         <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', fontFamily: 'var(--df-font-mono)' }}>
                             · {t('dataGrid.filename', { name: realName })}
+                        </Typography>
+                    )}
+                    {sourceReference && (
+                        <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
+                            · <Link component="button" underline="hover" color="inherit" sx={{ fontSize: 'inherit', verticalAlign: 'baseline' }}
+                                onClick={() => dispatch(dfActions.setFocused({ type: 'external-table', referenceId: sourceReference.id }))}>
+                                {t('dataThread.loadedFrom', { defaultValue: 'from {{source}}', source: externalReferenceTitle(sourceReference) })}
+                            </Link>
                         </Typography>
                     )}
                 </Box>

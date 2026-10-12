@@ -81,7 +81,9 @@ export function formArtifactFromEvent(form: FormEvent): FormArtifact {
             const workflow = form.workflow || {};
             return {
                 kind: 'workflow', title: title || String(workflow.definition?.name || 'Workflow'),
-                workflow: { content: String(workflow.content ?? ''), definition: workflow.definition, ...targetOf(workflow.target) },
+                workflow: { content: String(workflow.content ?? ''), definition: workflow.definition, ...targetOf(workflow.target),
+                    ...(workflow.schedule ? { schedule: { config: workflow.schedule.config || {},
+                        issues: Array.isArray(workflow.schedule.issues) ? workflow.schedule.issues.map(String) : [] } } : {}) },
             };
         }
         default:
@@ -115,7 +117,7 @@ export function formArtifactStatus(form: FormArtifact): string {
             const { workflow } = form;
             if (!workflow.saved) return form.title;
             const verb = workflow.target && workflow.saved.path === workflow.target.id ? 'Updated' : 'Saved';
-            return `${verb} workflow: ${workflow.definition.name}`;
+            return `${verb}${workflow.schedule?.savedId ? ' and scheduled' : ''} workflow: ${workflow.definition.name}`;
         }
     }
 }

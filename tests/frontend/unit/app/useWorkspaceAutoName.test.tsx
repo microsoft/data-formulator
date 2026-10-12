@@ -12,22 +12,9 @@ const mocks = vi.hoisted(() => ({
         externalTableReferences: [] as any[],
         workspaceItemOrder: [] as string[],
         derivedTables: [],
-        textTurns: [] as any[],
-        draftNodes: [
-            {
-                derive: {
-                    trigger: {
-                        interaction: [
-                            {
-                                from: 'user',
-                                role: 'instruction',
-                                content: '分析销售趋势',
-                            },
-                        ],
-                    },
-                },
-            },
-        ],
+        // A run's request is its own message from the start (design-docs/58).
+        textTurns: [{ kind: 'text', id: 'request', textKind: 'explain', prompt: '分析销售趋势', content: '', createdAt: 1 }] as any[],
+        draftNodes: [] as any[],
         globalModels: [
             {
                 id: 'global-1',

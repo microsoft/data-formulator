@@ -30,6 +30,7 @@ afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    window.history.replaceState({}, '', '/');
 });
 
 describe('Model connection form', () => {
@@ -265,6 +266,23 @@ describe('Model connection form', () => {
         expect(apiRequest).toHaveBeenCalledWith(base + '/cancel', expect.objectContaining({ body: JSON.stringify({ flow_id: 'copilot-flow' }) }));
         expect(screen.queryByLabelText('Device code')).not.toBeInTheDocument();
         expect(screen.queryByRole('link', { name: 'Manage on GitHub' })).not.toBeInTheDocument();
+    });
+
+    it('does not open an about:blank authorization window in the desktop app', async () => {
+        window.history.replaceState({}, '', '/?desktop=1');
+        mockCopilot(false, false);
+        const open = vi.spyOn(window, 'open').mockReturnValue(null);
+        openForm();
+        await chooseProvider('GitHub Copilot');
+        const connect = screen.getByRole('button', { name: 'Connect GitHub Copilot' });
+        await waitFor(() => expect(connect).toBeEnabled());
+        fireEvent.click(connect);
+        expect(await screen.findByRole('link', { name: 'Open GitHub' })).toHaveAttribute('href', 'https://github.com/login/device');
+        expect(screen.getByText(modelStrings.model.deviceCodeInstructions)).toBeVisible();
+        const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+        screen.getByRole('link', { name: 'Open GitHub' }).dispatchEvent(click);
+        expect(click.defaultPrevented).toBe(false);
+        expect(open).not.toHaveBeenCalled();
     });
 
     it('cancels a late Copilot authorization start without touching the new provider', async () => {

@@ -76,6 +76,14 @@ def _semantic_column_descriptions(fields: list[dict], output_names: list[str]) -
     return described
 
 
+def _load_failure_message(display_name: str, exc: Exception) -> str:
+    """Why a step failed, when the reason tells the agent how to retry; otherwise a generic message."""
+    if "out of memory" in str(exc).lower():
+        return (f"{display_name} could not be loaded: the source query ran out of memory. "
+                "Load fewer rows or columns, or aggregate in the query.")
+    return f"{display_name} could not be loaded."
+
+
 @dataclass(frozen=True)
 class DataOperationExecutionResult:
     result_table_ids: tuple[str, ...]
@@ -158,7 +166,7 @@ class DataOperationExecutor:
                     error=OperationError(
                         code="connector_error",
                         message=(str(exc) if isinstance(exc, (ValueError, NotImplementedError))
-                                 else f"{step.display_name} could not be loaded."),
+                                 else _load_failure_message(step.display_name, exc)),
                     ),
                 ))
         for reference in result_references:

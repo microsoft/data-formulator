@@ -34,7 +34,10 @@ describe('rehydrating a payload that predates a collection', () => {
         expect(restored.textTurns[0].codeExecutions[0]).toMatchObject({ code: 'print(1)', status: 'interrupted' });
         expect(restored.textTurns[0].executions[0].status).toBe('completed');
         expect(restored.draftNodes[0].derive.progressSteps[1].status).toBe('interrupted');
-        expect(restored.draftNodes[0].derive.trigger.interaction[0].plan).toBe('✓ Creating chart\x1ERunning code');
+        // The draft's history is the message before it; its legacy plan text survives as steps.
+        const history = restored.textTurns.find((turn: any) => turn.id === restored.draftNodes[0].parentNodeId);
+        expect(history).toMatchObject({ content: 'History', parentNodeId: 'turn' });
+        expect(history.progressSteps.map((step: any) => step.label)).toEqual(['✓ Creating chart', 'Running code']);
     });
 
     it('backfills a missing array so consumers can read .length', () => {

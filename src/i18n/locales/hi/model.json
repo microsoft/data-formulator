@@ -17,7 +17,7 @@
     "openGitHubAuthorization": "GitHub खोलें",
     "manageCopilotConnection": "GitHub पर प्रबंधित करें",
     "deviceCode": "डिवाइस कोड",
-    "deviceCodeInstructions": "अपना खाता जोड़ने के लिए {{provider}} पर यह कोड दर्ज करें।",
+    "deviceCodeInstructions": "यह कोड कॉपी करें, {{provider}} खोलें चुनें, फिर खुले हुए पेज पर इसे पेस्ट करें।",
     "copyDeviceCode": "डिवाइस कोड कॉपी करें",
     "copyDeviceCodeFailed": "कोड कॉपी नहीं हुआ। इसे चुनकर मैन्युअल रूप से कॉपी करें।",
     "copilotBilling": "प्रयोगात्मक। Copilot सदस्यता सीमाएं और संगठन की नीतियां लागू होती हैं। केवल संगत चैट मॉडल सूचीबद्ध हैं।",

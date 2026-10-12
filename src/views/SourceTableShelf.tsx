@@ -408,6 +408,7 @@ export const SourceTableShelf: FC<{
     const tables = useSelector(dfSelectors.getAllTables);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    const canvasTarget = useSelector(dfSelectors.selectCanvasTarget);
     const externalReferences = useSelector((state: DataFormulatorState) => state.externalTableReferences);
     const pendingTableLoads = useSelector((state: DataFormulatorState) => state.pendingTableLoads);
     const workspaceItemOrder = useSelector((state: DataFormulatorState) => state.workspaceItemOrder);
@@ -810,7 +811,7 @@ export const SourceTableShelf: FC<{
             artifactType: 'table' as const,
             title,
             notes: reference.sourceTable.name !== title ? reference.sourceTable.name : undefined,
-            selected: focusedId?.type === 'external-table' && focusedId.referenceId === reference.id,
+            selected: canvasTarget?.type === 'external-table' && canvasTarget.referenceId === reference.id,
             deleting: false,
             open: () => dispatch(dfActions.setFocused({ type: 'external-table', referenceId: reference.id })),
             remove: () => { dispatch(dfActions.removeExternalTableReference(reference.id)); },

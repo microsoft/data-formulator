@@ -13,7 +13,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import i18n from '../i18n';
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel,
+import { Alert, Box, Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel,
     Radio, RadioGroup, Tab, Tabs, TextField, Typography } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
@@ -114,7 +114,7 @@ export const ScheduleFormArtifactView: React.FC<{ turn: TextTurn; form: Schedule
         try {
             const result = await saveSchedule(config, updating ? schedule.target!.id : undefined);
             update({ config, status: 'saved', savedId: result.id, nextAt: result.next_at, issues: [] },
-                { answered: true, answer: `Saved schedule ${config.name}` });
+                { answered: true });
         } catch (reason) {
             setError(errorMessage(reason, t('schedule.saveFailed')));
         } finally {
@@ -307,10 +307,28 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
         .map(parameter => [parameter.name, parameter.default ?? (parameter.type === 'boolean' ? false : '')])));
     const [instructions, setInstructions] = useState('');
     const [error, setError] = useState('');
+    // A schedule proposed with the workflow is saved with it; the user can add or drop one in the Save dialog.
+    const models = useSelector((state: DataFormulatorState) => state.globalModels);
+    const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
+    const [schedulingAvailable, setSchedulingAvailable] = useState<boolean | null>(null);
+    const [scheduleOn, setScheduleOn] = useState(!!proposal.schedule);
+    const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig>(() => {
+        const proposed = proposal.schedule?.config;
+        return { ...defaultScheduleConfig(models, selectedModelId), ...proposed, setup: {
+            parameters: { ...Object.fromEntries((definition.parameters || []).flatMap(parameter =>
+                parameter.default === undefined ? [] : [[parameter.name, parameter.default]])), ...proposed?.setup?.parameters },
+            instructions: proposed?.setup?.instructions || '' } };
+    });
+    const scheduling = scheduleOn && schedulingAvailable === true;
+    const scheduleIncomplete = scheduling && (!scheduleConfig.weekdays.length || !scheduleConfig.model_id);
     const generation = useRef(0);
     useEffect(() => { generation.current += 1; return () => { generation.current += 1; }; }, [workspaceId, turn.id]);
     const openSave = () => {
         setWorkflowName(definition.name); setSaveError(''); setSaveOpen(true);
+        setScheduleConfig(previous => previous.model_id ? previous
+            : { ...previous, model_id: defaultScheduleConfig(models, selectedModelId).model_id });
+        void apiRequest<{ available: boolean }>('/api/schedules')
+            .then(({ data }) => setSchedulingAvailable(data.available)).catch(() => setSchedulingAvailable(false));
         // Read the target's hash when the dialog opens, so edits made after that are not silently overwritten.
         if (target) void workflowApi<{ content_hash?: string }>('read', { path: target.id })
             .then(result => setTargetHash(result.content_hash)).catch(() => setTargetHash(undefined));
@@ -347,6 +365,12 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
                 <Typography component="h1" variant="h6" sx={{ fontWeight: 600, m: 0 }}>{definition.name}</Typography>
                 <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', mt: 0.25, mb: 0.5 }}>
                     {target ? t('workflow.definitionRevises', { name: target.name }) : t('workflow.definition')}</Typography>
+                {proposal.schedule?.savedId && <Typography data-workflow-schedule sx={{ display: 'flex', alignItems: 'center', gap: 0.5,
+                    fontSize: textVar.sm, color: 'text.secondary', mb: 0.5, '& svg': { fontSize: 14 } }}>
+                    <ScheduleOutlinedIcon />
+                    {t('workflow.scheduledCaption', { cadence: scheduleCadence({ ...defaultScheduleConfig([]), ...proposal.schedule.config } as ScheduleConfig),
+                        timezone: proposal.schedule.config.timezone || '' })}
+                </Typography>}
                 <Tabs value={definitionView} onChange={(_, value) => setDefinitionView(value)} aria-label={t('workflow.definitionView')}
                     sx={{ minHeight: 36, borderBottom: 1, borderColor: 'divider', '& .MuiTab-root': { minHeight: 36, px: 1.5, fontSize: textVar.sm, textTransform: 'none' } }}>
                     <Tab id={`workflow-illustration-${turn.id}`} aria-controls={`workflow-definition-view-${turn.id}`} value="illustration" label={t('workflow.illustration')} />
@@ -409,7 +433,7 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
             <Box component="form" onSubmit={async event => {
                     event.preventDefault();
                     const path = updating ? target!.id : filename.trim();
-                    if (saving || !path || !workflowName.trim()) return;
+                    if (saving || !path || !workflowName.trim() || scheduleIncomplete) return;
                     const current = generation.current;
                     setSaving(true); setSaveError('');
                     try {
@@ -420,10 +444,22 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
                         const saved = await workflowApi<{ path: string; content_hash: string }>('save', { path, content,
                             ...(contentHash ? { content_hash: contentHash } : {}) });
                         if (current !== generation.current) return;
-                        dispatch(dfActions.updateTextTurn({ id: turn.id, form: { ...form, title: name,
-                            workflow: { ...proposal, content, definition: { ...definition, name }, saved } } }));
-                        setSaveOpen(false);
+                        const workflow: WorkflowFormArtifact['workflow'] = { ...proposal, content, definition: { ...definition, name }, saved };
+                        let scheduleError = '';
+                        if (scheduling) {
+                            const config = { ...scheduleConfig, workflow: saved.path, name: scheduleConfig.name || name };
+                            try {
+                                const result = await saveSchedule(config, proposal.schedule?.savedId);
+                                workflow.schedule = { config, issues: [], savedId: result.id, nextAt: result.next_at };
+                            } catch (reason) {
+                                scheduleError = t('workflow.scheduleFailed', { error: errorMessage(reason, t('schedule.saveFailed')) });
+                            }
+                            if (current !== generation.current) return;
+                        }
+                        dispatch(dfActions.updateTextTurn({ id: turn.id, form: { ...form, title: name, workflow } }));
                         notifyWorkspaceFilesChanged();
+                        // The workflow is saved either way; a failed schedule keeps the dialog open to retry.
+                        if (scheduleError) setSaveError(scheduleError); else setSaveOpen(false);
                     } catch (reason) { if (current === generation.current) setSaveError(errorMessage(reason, t('workflow.saveFailed'))); }
                     finally { if (current === generation.current) setSaving(false); }
             }}>
@@ -435,10 +471,19 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
                         onChange={event => setWorkflowName(event.target.value)} slotProps={{ htmlInput: { maxLength: 200 } }} />
                     {!updating && <TextField required label={t('workflow.filename')} size="small" value={filename} disabled={saving}
                         onChange={event => setFilename(event.target.value)} slotProps={{ htmlInput: { pattern: '[^/\\\\]+\\.workflow\\.ya?ml' } }} />}
+                    {schedulingAvailable && <FormControlLabel sx={{ m: 0, gap: 0.5, '& .MuiCheckbox-root': { p: 0.5 } }}
+                        control={<Checkbox size="small" checked={scheduleOn} disabled={saving} onChange={event => setScheduleOn(event.target.checked)} />}
+                        label={t('workflow.alsoSchedule')} />}
+                    {scheduling && <>
+                        {!!proposal.schedule?.issues?.length && <Alert severity="warning">
+                            {proposal.schedule.issues.map(issue => <Box key={issue}>{issue}</Box>)}</Alert>}
+                        <ScheduleConfigFields items={[]} config={scheduleConfig} onChange={setScheduleConfig} disabled={saving} hideName
+                            fixedWorkflow={{ path: '', name: workflowName, parameters: definition.parameters }} />
+                    </>}
                 </DialogContent>
                 <DialogActions><Button disabled={saving} onClick={() => setSaveOpen(false)}>{t('app.cancel')}</Button>
-                    <Button type="submit" startIcon={<SaveIcon />} disabled={saving || (!updating && !filename.trim()) || !workflowName.trim()}>
-                        {updating ? t('workflow.update') : t('app.save')}</Button></DialogActions>
+                    <Button type="submit" startIcon={<SaveIcon />} disabled={saving || (!updating && !filename.trim()) || !workflowName.trim() || scheduleIncomplete}>
+                        {scheduling ? t('workflow.saveAndSchedule') : updating ? t('workflow.update') : t('app.save')}</Button></DialogActions>
             </Box>
         </Dialog>
         <Dialog open={setupOpen} onClose={() => !starting && setSetupOpen(false)} fullWidth maxWidth="sm" aria-labelledby={`workflow-setup-${turn.id}`}>
@@ -449,7 +494,8 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
                 const parameters = Object.fromEntries((definition.parameters || []).map(parameter => [parameter.name,
                     parameter.type === 'number' && values[parameter.name] !== '' ? Number(values[parameter.name]) : values[parameter.name]]));
                 setStarting(true); setError('');
-                try { await executeWorkflow({ content: proposal.content, setup: { parameters, instructions: instructions.trim() } }, () => setSetupOpen(false)); }
+                // A run started from this definition follows it in the thread.
+                try { await executeWorkflow({ content: proposal.content, setup: { parameters, instructions: instructions.trim() } }, () => setSetupOpen(false), turn.id); }
                 catch (reason) { if (current === generation.current) { setError(errorMessage(reason, t('workflow.runFailed'))); setSetupOpen(false); } }
                 finally { if (current === generation.current) setStarting(false); }
             }}>

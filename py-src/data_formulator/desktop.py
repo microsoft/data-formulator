@@ -1,5 +1,6 @@
 import ctypes
 import json
+import logging
 import os
 import socket
 import sys
@@ -28,9 +29,12 @@ def _configure_standard_streams() -> None:
             pass
 
 
+def _data_home() -> Path:
+    return Path(os.environ.get("DATA_FORMULATOR_HOME") or Path.home() / ".data_formulator").expanduser()
+
+
 def _instance_directory() -> Path:
-    home = Path(os.environ.get("DATA_FORMULATOR_HOME") or Path.home() / ".data_formulator")
-    directory = home.expanduser() / ".desktop"
+    directory = _data_home() / ".desktop"
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     return directory
 
@@ -337,6 +341,11 @@ def run_desktop() -> None:
             sys.exit(1)
         return
 
+    # Native crashes (e.g. inside arrow.dll) cannot be caught, but this keeps
+    # the Python stack of every thread for the next launch to report.
+    from data_formulator import crash_report
+    crash_report.enable(_data_home())
+
     try:
         import webview
     except ImportError as exc:
@@ -348,6 +357,11 @@ def run_desktop() -> None:
     _enable_per_monitor_dpi()
 
     try:
+        # Load pyarrow's bundled mimalloc on the long-lived main thread. If it
+        # first initializes on the short-lived backend thread below, later
+        # allocations on Flask threads can crash (apache/arrow#50471).
+        import pyarrow  # noqa: F401
+
         activate = coordinator.activate
 
         port = _available_port()
@@ -383,6 +397,7 @@ def run_desktop() -> None:
                 server_thread = threading.Thread(target=run_app, daemon=True)
                 server_thread.start()
                 _wait_until_ready(url)
+                crash_report.report_previous_crash(logging.getLogger("data_formulator.desktop"))
             except Exception as exc:  # pragma: no cover - error path
                 print(f"Failed to start the backend: {exc}")
                 if gui_test:
@@ -397,6 +412,7 @@ def run_desktop() -> None:
             sys.exit(1)
         else:
             webview.start()
+            crash_report.mark_clean_exit()
     finally:
         coordinator.close()
 

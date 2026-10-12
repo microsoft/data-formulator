@@ -3,7 +3,7 @@
     "type": "function",
     "function": {
       "name": "write_app",
-      "description": "Create an interactive React app (dashboard, explorer) and open it on the canvas: a new file (filename), or a full rewrite of an existing app in place (path + expected_content_hash). It runs in a sandbox without network access and reads the declared workspace tables live through @df/data hooks. For small changes to an existing app, use edit_file replacements instead.",
+      "description": "Create an interactive React app (dashboard, explorer) and open it on the canvas: a new file (filename), or a full rewrite of an existing app (path + expected_content_hash), saved as a new version of it. It runs in a sandbox without network access and reads the declared workspace tables live through @df/data hooks. For small changes to an existing app, use edit_file replacements instead.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -13,7 +13,7 @@
           },
           "path": {
             "type": "string",
-            "description": "To rewrite an existing agent-editable app in place: its files/... path (ending in .app.jsx). Omit filename when you pass path."
+            "description": "To rewrite an existing agent-editable app (saved as a new version of it): its files/... path (ending in .app.jsx). Omit filename when you pass path."
           },
           "expected_content_hash": {
             "type": "string",
@@ -48,7 +48,7 @@
     "type": "function",
     "function": {
       "name": "write_html_app",
-      "description": "Create an interactive HTML app and open it on the canvas: a new file (filename), or a full rewrite of an existing app in place (path + expected_content_hash). The app runs in a sandbox without network access and reads the declared workspace tables live through the DF runtime. For small changes to an existing app, use edit_file replacements instead.",
+      "description": "Create an interactive HTML app and open it on the canvas: a new file (filename), or a full rewrite of an existing app (path + expected_content_hash), saved as a new version of it. The app runs in a sandbox without network access and reads the declared workspace tables live through the DF runtime. For small changes to an existing app, use edit_file replacements instead.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -58,7 +58,7 @@
           },
           "path": {
             "type": "string",
-            "description": "To rewrite an existing agent-editable app in place: its files/... path (ending in .html). Omit filename when you pass path."
+            "description": "To rewrite an existing agent-editable app (saved as a new version of it): its files/... path (ending in .html). Omit filename when you pass path."
           },
           "expected_content_hash": {
             "type": "string",
