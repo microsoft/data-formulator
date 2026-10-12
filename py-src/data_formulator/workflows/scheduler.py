@@ -114,7 +114,7 @@ def execute_occurrence(app, store: ScheduleStore, occurrence: dict):
                 state = new_run(workflow, occurrence["id"], config.get("setup"), config.get("language", "en"))
                 state["workflow_path"] = config["workflow"]
                 save_run(path, state)
-            state = json.loads(path.read_text())
+            state = json.loads(path.read_text(encoding="utf-8"))
             persist(read_only=True)
             response_body = {}
             while True:
@@ -149,11 +149,11 @@ def execute_occurrence(app, store: ScheduleStore, occurrence: dict):
                             cancellation.set()
                     path.with_suffix(".pause").touch()
                     run_finished(path, time.monotonic() + PAUSE_GRACE_SECONDS)
-                    state = json.loads(path.read_text())
+                    state = json.loads(path.read_text(encoding="utf-8"))
                     persist(read_only=False)
                     store.finish(occurrence, "needs_attention", "The run exceeded its time limit and was paused.")
                     return
-                state = json.loads(path.read_text())
+                state = json.loads(path.read_text(encoding="utf-8"))
                 if state["status"] == "completed":
                     persist(read_only=False)
                     store.finish(occurrence, "completed")

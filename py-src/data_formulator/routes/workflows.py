@@ -74,7 +74,7 @@ def save_run(path: Path, state: dict):
 
 def read_messages(path: Path) -> list[dict]:
     inbox = path.with_suffix(".messages")
-    return json.loads(inbox.read_text()) if inbox.exists() else []
+    return json.loads(inbox.read_text(encoding="utf-8")) if inbox.exists() else []
 
 
 def omit_known_rows(run: dict, known: set[str]) -> dict:
@@ -110,7 +110,7 @@ def steer_run():
             if existing["text"] != text.strip():
                 raise AppError(ErrorCode.INVALID_REQUEST, "Message ID already used for different text.")
             return json_ok({"message": existing})
-        state = json.loads(path.read_text())
+        state = json.loads(path.read_text(encoding="utf-8"))
         if state["status"] not in {"running", "paused"}:
             raise AppError(ErrorCode.INVALID_REQUEST, "This workflow is complete. Start a new run for a new request.")
         if len(messages) >= 100:
@@ -136,7 +136,7 @@ def list_instances():
             if path.is_symlink():
                 continue
             try:
-                state = json.loads(path.read_text())
+                state = json.loads(path.read_text(encoding="utf-8"))
                 runs.append({key: state[key] for key in ("id", "status", "started_at", "step_id", "message")}
                             | {"name": state["instance"]["name"]}
                             | ({"workflow_path": state["workflow_path"]} if "workflow_path" in state else {}))
@@ -201,7 +201,7 @@ def get_run():
     path = run_path(workspace, body.get("run_id"))
     if not path.exists():
         raise AppError(ErrorCode.INVALID_REQUEST, "Workflow run not found in this session.")
-    state = json.loads(path.read_text())
+    state = json.loads(path.read_text(encoding="utf-8"))
     if state["status"] == "running":
         execution_lock = FileLock(str(path) + ".lock")
         try:
@@ -210,7 +210,7 @@ def get_run():
             pass
         else:
             try:
-                state = json.loads(path.read_text())
+                state = json.loads(path.read_text(encoding="utf-8"))
                 if state["status"] == "running":
                     state.update(status="paused", message="Execution interrupted: the workflow executor stopped. Review and resume the checkpoint.")
                     save_run(path, state)
@@ -242,7 +242,7 @@ def download_artifact():
     path = run_path(workspace, body.get("run_id"))
     if not path.exists():
         raise AppError(ErrorCode.INVALID_REQUEST, "Run not found.")
-    state = json.loads(path.read_text())
+    state = json.loads(path.read_text(encoding="utf-8"))
     filename = body.get("filename")
     if not isinstance(filename, str) or filename not in state.get("artifacts", []) or Path(filename).name != filename:
         raise AppError(ErrorCode.INVALID_REQUEST, "Unknown run artifact.")
@@ -279,7 +279,7 @@ def run_instance():
                 raise ValueError("Setup is only accepted for new runs. Use steering to revise an existing run.")
             if not path.exists():
                 raise ValueError("Run not found in this session.")
-            state = json.loads(path.read_text())
+            state = json.loads(path.read_text(encoding="utf-8"))
             if state["status"] == "completed":
                 raise ValueError("This run is complete. Start a new run for fresh data.")
             terminal_response = body.get("terminal_response")
