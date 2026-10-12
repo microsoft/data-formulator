@@ -54,6 +54,7 @@ import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutl
 import { borderColor, transition, conversationWidth } from '../app/tokens';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
+import { listReplaceableArtifacts } from '../app/artifactReplacement';
 import { resolveConversationParentNodeId, resolveDerivedTriggerTableId, resolveRunParentNodeId, shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
 import { ClarificationPanel, ExplanationPanel, ToolActivityPanel, FailedDraftPanel } from './AgentPausePanel';
 import { CARD_WIDTH } from './threadLayout';
@@ -550,7 +551,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     .filter(([, v]: [string, any]) => v?.fieldID)
                     .map(([k, v]: [string, any]) => [k, conceptShelfItems.find(f => f.id === v.fieldID)?.name || v.fieldID]))
                 : {};
-            return { chartType: chart?.chartType || '', encodings: encodings as Record<string, string> };
+            return { chartType: chart?.chartType || '', encodings: encodings as Record<string, string>,
+                chartId: charts.find(c => c.tableRef === tableId && c.source !== 'trigger')?.id };
         };
         const workflowContext = (turn: TextTurn) => {
             const workflow = turn.workflow;
@@ -596,9 +598,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 pendingQuestion = '';
             } else if (table?.derive) {
                 const instruction = turnById.get(path[index - 1] || '');
-                const { chartType, encodings } = chartSummary(table.id);
+                const { chartType, encodings, chartId } = chartSummary(table.id);
                 focusedSteps.push({
                     table_name: table.virtual?.tableId || table.id,
+                    chart_id: chartId,
                     columns: table.names,
                     row_count: table.virtual?.rowCount ?? table.rows.length,
                     user_question: pendingQuestion,
@@ -606,6 +609,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     display_instruction: instruction?.content || '',
                     chart_type: chartType,
                     encodings,
+                });
+                pendingQuestion = '';
+            } else {
+                // Apps, files, and reports on the chain, by the id the agent can revise or replace them with.
+                const file = fileNodes.find(item => item.id === nodeId);
+                const report = generatedReports.find(item => item.id === nodeId);
+                if (!file && !report) return;
+                focusedSteps.push({
+                    user_question: pendingQuestion,
+                    created_artifact: file ? { kind: file.path.match(/\.(app\.jsx|html?)$/i) ? 'app' : 'file', id: `files/${file.path}`, name: file.displayName }
+                        : { kind: 'report', id: report!.id, name: report!.title || report!.id },
                 });
                 pendingQuestion = '';
             }
@@ -642,7 +656,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const otherThreads = peripheralThreads.length > 0 ? peripheralThreads : undefined;
 
         return { focusedThread, otherThreads };
-    }, [tables, charts, conceptShelfItems, textTurns, generatedReports, threadGraph]);
+    }, [tables, charts, conceptShelfItems, textTurns, generatedReports, fileNodes, threadGraph]);
 
     const exploreFromChat = useCallback((prompt: string, clarificationContext?: {
         authorWorkflow?: boolean;
@@ -820,6 +834,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             input_tables: actionTables.map(toAnalystTableRef),
             external_references: externalReferences,
             focused_external_reference: externalReferenceId,
+            // What the agent may replace to fix an artifact the user wants fixed.
+            replaceable_artifacts: listReplaceableArtifacts({ tables, charts, fileNodes, reports: generatedReports,
+                graph: threadGraph, focusNodeId: askedFromNode }),
             primary_tables: primaryTableNames,
             ...(images.length > 0 ? { attached_images: images } : {}),
             ...(scratchPaths.length > 0 ? { scratch_files: scratchPaths } : {}),
@@ -1027,9 +1044,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             if (reportFlushTimer) return;
             reportFlushTimer = setTimeout(() => { reportFlushTimer = null; reportFlushNow(); }, 90);
         };
-        const ensureReport = () => {
+        const ensureReport = (replaces?: { id?: string; node_id?: string }) => {
             if (reportId) return reportId;
             const newId = `report-${Date.now()}`;
+            // The report this one fixes (`replaces`), deleted once this one is in place.
+            const replacedReport = replaces ? (currentStore.getState() as DataFormulatorState).generatedReports
+                .find(report => report.id === (replaces.node_id || replaces.id)) : undefined;
             const inProgressReport: GeneratedReport = {
                 id: newId,
                 content: '',
@@ -1043,10 +1063,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 parentNodeId: chainHead(),
                 triggerTableId: lastCreatedTableId || focusedTableId,
             };
+            if (replacedReport) inProgressReport.replaced = { id: replacedReport.id, name: replacedReport.title || replacedReport.id };
             settleStep();
             inProgressReport.parentNodeId = chainHead();
             dispatch(dfActions.saveGeneratedReport(inProgressReport));
             itemProduced(newId);
+            if (replacedReport) dispatch(dfActions.deleteGeneratedReport(replacedReport.id));
             dispatch(dfActions.setFocused({ type: 'report', reportId: newId }));
             dispatch(dfActions.setViewMode('report'));
             reportId = newId;
@@ -1102,6 +1124,23 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             publishProgress();
         }
         /** Record an item the run just added with `chainHead()` as its parent: it becomes the head. */
+        /**
+         * Delete a table the agent replaced (with its charts and workspace data). What
+         * followed it continues from where it came from; a canvas showing it shows the fix.
+         */
+        const retireReplacedTable = (tableId: string, replacementChartId: string) => {
+            const state = currentStore.getState() as DataFormulatorState;
+            const focus = state.focusedId;
+            const showing = (focus?.type === 'table' && focus.tableId === tableId)
+                || (focus?.type === 'chart' && dfSelectors.getAllCharts(state).some(chart => chart.id === focus.chartId && chart.tableRef === tableId));
+            const retiredChartIds = new Set(dfSelectors.getAllCharts(state).filter(chart => chart.tableRef === tableId).map(chart => chart.id));
+            dispatch(dfActions.deleteTable(tableId));
+            runCreatedChartIds.splice(0, runCreatedChartIds.length, ...runCreatedChartIds.filter(id => !retiredChartIds.has(id)));
+            createdTables = createdTables.filter(table => table.id !== tableId);
+            createdCharts = createdCharts.filter(chart => chart.tableRef !== tableId);
+            runSourceTables.delete(tableId);
+            if (showing) dispatch(dfActions.setFocused({ type: 'chart', chartId: replacementChartId }));
+        };
         function itemProduced(itemId: string) {
             stepMessageId = null;
             advanceTo(itemId);
@@ -1131,8 +1170,18 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             return id;
         };
         /** A file or app the run wrote. A file it updated in place keeps its existing place in the thread. */
-        const addFileItem = (fileName: string, displayName: string, contentHash: string) => {
-            const exists = (currentStore.getState() as DataFormulatorState).fileNodes.some(node => node.path === fileName);
+        const addFileItem = (fileName: string, displayName: string, contentHash: string, replaces?: { name?: string }) => {
+            const existing = (currentStore.getState() as DataFormulatorState).fileNodes.find(node => node.path === fileName);
+            if (existing && replaces) {
+                // Fixed in place (`replaces`): it keeps its name and moves to after the request that fixed it.
+                settleStep();
+                dispatch(dfActions.replaceFileNode({ kind: 'file', id: existing.id, path: fileName, displayName, contentHash,
+                    parentNodeId: chainHead(), createdAt: Date.now(),
+                    replaced: { id: existing.id, name: replaces.name || existing.displayName || fileName } }));
+                itemProduced(existing.id);
+                return;
+            }
+            const exists = !!existing;
             if (!exists) settleStep();
             dispatch(dfActions.upsertFileNode({ kind: 'file', id: `file-${fileName}`, path: fileName, displayName, contentHash,
                 parentNodeId: chainHead(), createdAt: Date.now() }));
@@ -1407,7 +1456,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             // ── report streaming (AnalystAgent only) ──
             // write_report commitment → create the report + switch view.
             if (result.type === "action" && result.action === "write_report") {
-                ensureReport();
+                ensureReport(result.replaces);
                 // Flush any buffered agent reasoning as its own step. We do NOT
                 // add an "outputting write_report" step — the live generating
                 // report card already indicates that the report is being
@@ -1436,7 +1485,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     && typeof file.content_hash === 'string') {
                     const fileName = file.path.slice('files/'.length);
                     notifyWorkspaceFilesChanged();
-                    addFileItem(fileName, file.display_name || fileName, file.content_hash);
+                    addFileItem(fileName, file.display_name || fileName, file.content_hash, result.replaces);
                     dispatch(dfActions.setFocused({ type: 'file', fileName }));
                     if (pendingThought) {
                         addProgressStep(pendingThought, 'thought');
@@ -1600,7 +1649,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     if (file && typeof file.path === 'string' && file.path.startsWith('files/')
                         && typeof file.content_hash === 'string' && file.available_in_workspace === true) {
                         const fileName = file.path.slice('files/'.length);
-                        addFileItem(fileName, file.display_name || file.name || fileName, file.content_hash);
+                        addFileItem(fileName, file.display_name || file.name || fileName, file.content_hash, file.replaces);
                         // An app the agent edited comes into view, like a newly written one.
                         if (result.tool === 'edit_file' && file.app === true) {
                             dispatch(dfActions.setFocused({ type: 'file', fileName }));
@@ -1707,6 +1756,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     dispatch(dfActions.applyAuthoredFieldSemantics({ tableId: candidateTableId, fields: semanticFields }));
                 }
 
+                // The table this one fixes (`replaces`), deleted with its chart once this one is in place.
+                const replaces = result.content.replaces;
+                const replacedTable = replaces ? (currentStore.getState() as DataFormulatorState).derivedTables.find(table =>
+                    table.id !== candidateTableId
+                    && (table.id === replaces.node_id || table.id === replaces.id || table.virtual?.tableId === replaces.id)) : undefined;
+                if (replacedTable) candidateTable.replaced = { id: replacedTable.id, name: replacedTable.displayId || replacedTable.id };
+
                 createdTables.push(candidateTable);
                 runSourceTables.set(candidateTable.id, candidateTable);
                 lastCreatedTableId = candidateTableId;
@@ -1779,6 +1835,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 dispatch(fetchCodeExpl(candidateTable));
 
                 itemProduced(candidateTableId);
+                if (replacedTable) retireReplacedTable(replacedTable.id, newChart.id);
             }
 
             // ── clarify / explain: pause and let user respond ──

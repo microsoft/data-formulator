@@ -26,6 +26,10 @@ flag or exclude partial ones. Answer from the data; label facts it cannot suppor
 
 ## Inputs and Publication
 
+To fix a chart the user says is wrong or unwanted, publish the corrected one with
+`replaces` set to the old table or chart id; the old pair is deleted. Variations
+and follow-ups add new charts instead.
+
 Follow the workspace Data Access Paths to choose or load inputs. Compute
 chart-specific filters, grouping, and ranking from their listed paths. No
 separate `create_data` call is needed to prepare or publish chart data.

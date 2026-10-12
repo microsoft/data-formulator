@@ -104,6 +104,11 @@ def build_focused_thread_context(focused_thread: list[dict[str, Any]]) -> str:
             if len(columns) > 15:
                 col_str += f", ... ({len(columns)} total)"
             lines.append(f"  Created: {table_name} ({row_count:,} rows: {col_str})")
+        if step.get("chart_id"):
+            lines.append(f"  Chart id: {step['chart_id']}")
+        artifact = step.get("created_artifact")
+        if isinstance(artifact, dict) and artifact.get("id"):
+            lines.append(f"  Created {artifact.get('kind') or 'artifact'}: {artifact['id']} ({artifact.get('name') or ''})")
         # Chart info — skip empty or "Auto" (unresolved trigger stub)
         chart_type = step.get("chart_type", "")
         encodings = step.get("encodings", {})

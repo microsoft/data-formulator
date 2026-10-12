@@ -74,6 +74,17 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
         return onWorkspaceFilesChanged(() => setFileRevision(current => current + 1));
     }, [temporary, sourceFile]);
     const [textFile, setTextFile] = useState<{ content: string; savedContent: string; hash: string } | null>(null);
+    // A file rewritten under the same name (an agent fix with `replaces`, or any in-place edit)
+    // reaches the thread as a new content hash: reload it once per hash, unless it is our own save.
+    const storedHash = useSelector((state: DataFormulatorState) => state.fileNodes.find(node => node.path === fileName)?.contentHash);
+    const reloadedHash = useRef(storedHash);
+    const loadedHash = useRef<string | undefined>(undefined);
+    loadedHash.current = textFile?.hash;
+    useEffect(() => {
+        if (temporary || sourceFile || !storedHash || storedHash === reloadedHash.current) return;
+        reloadedHash.current = storedHash;
+        if (loadedHash.current !== storedHash) setFileRevision(current => current + 1);
+    }, [storedHash, temporary, sourceFile]);
     const [mode, setMode] = useState('preview');
     const [lineWrap, setLineWrap] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -98,8 +109,8 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
     // Only agent-editable workspace apps can be repaired with edit_file.
     const askAgentToFix = !readOnly && textFile && !dirty ? (errors: string[]) => dispatch(dfActions.queueAnalystTask({
         text: `The app files/${fileName} shows these errors:\n${errors.map(error => `- ${error}`).join('\n')}\n`
-            + `Fix it in place with edit_file (path "files/${fileName}", expected_content_hash "${textFile.hash}"), `
-            + `preferably with targeted replacements; keep its df-app manifest and do not create a copy.`,
+            + `Fix it in place with edit_file (path "files/${fileName}", expected_content_hash "${textFile.hash}", `
+            + `replaces "files/${fileName}"), preferably with targeted replacements; keep its df-app manifest and do not create a copy.`,
         images: [], attachments: [],
     })) : undefined;
     const [preview, setPreview] = useState<WorkspaceFilePreview | null>(null);

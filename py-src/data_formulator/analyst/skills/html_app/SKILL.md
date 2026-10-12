@@ -187,7 +187,10 @@ When the user asks to change an app, including the selected one or one marked
 agent-editable in the inventory, revise that app. A revision is saved as a new
 version of it (`sales.app.jsx` becomes `sales_2.app.jsx`) and the original stays
 as it was; the result gives the new `path` and `content_hash`. Further revisions
-in the same run update that new version, so make them against its path.
+in the same run update that new version, so make them against its path. When the
+user wants a broken or unwanted app fixed (including errors from its banner),
+pass `replaces` with the app's path: the fix is saved in place under the same
+filename instead of as a new version.
 
 - Small changes (a chart, a control, a label, a query): `edit_file` with the
   app's path, `expected_content_hash`, and targeted `replacements`. Keep the

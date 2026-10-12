@@ -1,8 +1,8 @@
 import React from 'react';
 import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
-import { ClarificationPanel, ExplanationPanel, ToolActivityPanel } from '../../../../src/views/AgentPausePanel';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ClarificationPanel, ExplanationPanel, PAUSE_REGION_MIN_HEIGHT, ToolActivityPanel } from '../../../../src/views/AgentPausePanel';
 import { parseDataOperation } from '../../../../src/dataOperations/models';
 import type { ClarificationResponse } from '../../../../src/components/ComponentType';
 import { migrateState } from '../../../../src/app/stateMigrations';
@@ -481,5 +481,41 @@ describe('ClarificationPanel', () => {
       answer: 'Focus on 2024.',
       source: 'free_text',
     }]);
+  });
+});
+
+describe('pause panel height', () => {
+  const mockHeights = (scroll: number, client: number) => {
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(scroll);
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(client);
+  };
+  const region = () => document.querySelector('[data-pause-scroll-region]') as HTMLElement;
+  afterEach(() => { vi.restoreAllMocks(); window.localStorage.clear(); });
+
+  it('offers no grip when the content already fits', () => {
+    mockHeights(60, 60);
+    render(<ExplanationPanel content="Short answer." onClose={() => {}} />);
+    expect(screen.queryByRole('separator')).toBeNull();
+  });
+
+  it('resizes long content within its limits, remembers the height, and resets on double-click', () => {
+    mockHeights(1000, 300);
+    const { unmount } = render(<ExplanationPanel content="A long answer." onClose={() => {}} />);
+    const grip = screen.getByRole('separator', { name: 'chartRec.resizePanel' });
+    fireEvent.keyDown(grip, { key: 'ArrowUp' });
+    expect(getComputedStyle(region()).maxHeight).toBe('316px');
+    expect(window.localStorage.getItem('df.pausePanelHeight')).toBe('316');
+    // Never below the minimum, never past 70% of the window.
+    fireEvent.keyDown(grip, { key: 'Home' });
+    expect(window.localStorage.getItem('df.pausePanelHeight')).toBe(String(PAUSE_REGION_MIN_HEIGHT));
+    fireEvent.keyDown(grip, { key: 'End' });
+    expect(window.localStorage.getItem('df.pausePanelHeight')).toBe(String(Math.round(window.innerHeight * 0.7)));
+    unmount();
+    // The next panel opens at the chosen height.
+    render(<ExplanationPanel content="Another long answer." onClose={() => {}} />);
+    expect(getComputedStyle(region()).maxHeight).toBe(`${Math.round(window.innerHeight * 0.7)}px`);
+    fireEvent.doubleClick(screen.getByRole('separator'));
+    expect(window.localStorage.getItem('df.pausePanelHeight')).toBeNull();
+    expect(getComputedStyle(region()).maxHeight).not.toBe(`${Math.round(window.innerHeight * 0.7)}px`);
   });
 });

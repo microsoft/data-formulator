@@ -7,6 +7,10 @@
       "parameters": {
         "type": "object",
         "properties": {
+          "replaces": {
+            "type": "string",
+            "description": "Id of the table (or its chart) to replace, from [REPLACEABLE ARTIFACTS] or a visualize result earlier in this run. Only to fix an artifact the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the old one is deleted and this takes its place after the latest request. Never when exploring something new; a new artifact keeps the analysis history."
+          },
           "display_name": {
             "type": "string",
             "maxLength": 80,

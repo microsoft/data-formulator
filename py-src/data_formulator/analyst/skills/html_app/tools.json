@@ -7,6 +7,10 @@
       "parameters": {
         "type": "object",
         "properties": {
+          "replaces": {
+            "type": "string",
+            "description": "The app's files/... path, equal to path, to rewrite it in place instead of saving a new version. Only to fix an artifact the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the old one is deleted and this takes its place after the latest request. Never when exploring something new; a new artifact keeps the analysis history."
+          },
           "filename": {
             "type": "string",
             "description": "For a new app: a visible filename ending in .app.jsx, without directories, for example sales_explorer.app.jsx."
@@ -52,6 +56,10 @@
       "parameters": {
         "type": "object",
         "properties": {
+          "replaces": {
+            "type": "string",
+            "description": "The app's files/... path, equal to path, to rewrite it in place instead of saving a new version. Only to fix an artifact the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the old one is deleted and this takes its place after the latest request. Never when exploring something new; a new artifact keeps the analysis history."
+          },
           "filename": {
             "type": "string",
             "description": "For a new app: a visible filename ending in .html, without directories, for example sales_explorer.html."

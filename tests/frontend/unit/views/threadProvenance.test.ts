@@ -1108,3 +1108,16 @@ it('deletes a stranded tool step, then the reply nothing answers, reopening the 
   expect(store.getState().textTurns.map((turn: TextTurn) => turn.id)).toEqual(['ask', 'question']);
   expect(store.getState().textTurns.find((turn: TextTurn) => turn.id === 'question')?.answered).toBe(false);
 });
+
+it('notes what a fixed artifact replaced', () => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  store.dispatch(userMessage('ask', 'Fix the trend', CONVERSATION_ROOT_ID, 0));
+  store.dispatch(agentMessage('step', 'Recompute the trend', 'ask', 1));
+  store.dispatch(dfActions.addTableToStore({ ...derivedTable('d_fixed', 'Fixed trend', 'step'), replaced: { id: 'd_old', name: 'Old trend' } }));
+  store.dispatch(agentMessage('app-step', '', 'd_fixed', 2));
+  store.dispatch(dfActions.upsertFileNode({ kind: 'file', id: 'file-app.app.jsx', path: 'app.app.jsx', displayName: 'Trend app',
+    contentHash: 'h', parentNodeId: 'app-step', createdAt: 3, replaced: { id: 'file-app.app.jsx', name: 'Trend app' } }));
+  const { container } = renderDataThread(store);
+  const notes = [...container.querySelectorAll('[data-replaced-note]')].map(note => note.textContent);
+  expect(notes).toEqual(['Replaced Old trend', 'Replaced the earlier version']);
+});

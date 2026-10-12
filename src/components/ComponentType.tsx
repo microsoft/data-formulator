@@ -144,6 +144,14 @@ export interface FileNode {
     parentNodeId: string;
     createdAt: number;
     notes?: string;
+    /** Set when the agent fixed this file in place: it moved to after the fixing request. */
+    replaced?: ReplacedArtifact;
+}
+
+/** What a fixed artifact replaced, for the thread's note (the old one is gone). */
+export interface ReplacedArtifact {
+    id: string;
+    name: string;
 }
 
 export interface ExternalTableReference {
@@ -636,6 +644,8 @@ export interface DictTable {
     parentNodeId?: string;
     /** When the table was produced; orders it among the other followers of its parent. */
     createdAt?: number;
+    /** The artifact this one replaced when the agent fixed it (it was deleted). */
+    replaced?: ReplacedArtifact;
 
     source?: DataSourceConfig;
     

@@ -819,6 +819,7 @@ def analyst_streaming():
                 focused_file=content.get("focused_file"),
                 external_references=external_references,
                 focused_external_reference=content.get("focused_external_reference"),
+                replaceable_artifacts=content.get("replaceable_artifacts"),
                 conversation_id=conversation_id,
                 connector_form=content.get("connector_form"),
             ):

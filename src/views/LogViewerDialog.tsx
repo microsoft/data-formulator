@@ -46,6 +46,7 @@ import {
     Tabs,
     Tooltip,
     Typography,
+    useTheme,
 } from '@mui/material';
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -60,6 +61,7 @@ import { getUrls } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { DataFormulatorState } from '../app/dfSlice';
 import { textVar } from '../app/layout';
+import { codeEditorSearchPanelSx } from '../app/tokens';
 import { WorkspaceFile, previewWorkspaceFile, downloadWorkspaceFile } from '../app/workspaceService';
 import { formatBytes } from './ViewUtils';
 
@@ -145,73 +147,6 @@ const savedStateEditorTheme = EditorView.theme({
     },
     '&.cm-focused': { outline: 'none' },
     '.cm-scroller': { fontFamily: 'var(--df-font-mono)' },
-    '.cm-panels': {
-        backgroundColor: '#f7f8fa',
-        color: '#30343b',
-        fontFamily: 'Roboto, sans-serif',
-    },
-    '.cm-panels.cm-panels-bottom': {
-        borderTop: '1px solid rgba(0, 0, 0, 0.12)',
-    },
-    '.cm-search': {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-        padding: '7px 10px',
-    },
-    '.cm-search label, .cm-search br': { display: 'none' },
-    '.cm-search .cm-textfield': {
-        width: 'min(320px, 45vw)',
-        height: '30px',
-        boxSizing: 'border-box',
-        padding: '4px 9px',
-        border: '1px solid rgba(0, 0, 0, 0.18)',
-        borderRadius: '6px',
-        backgroundColor: '#fff',
-        color: '#202124',
-        fontFamily: 'var(--df-font-mono)',
-        fontSize: `${textVar.sm}px`,
-        outline: 'none',
-    },
-    '.cm-search .cm-textfield:focus': {
-        borderColor: '#1976d2',
-        boxShadow: '0 0 0 2px rgba(25, 118, 210, 0.14)',
-    },
-    '.cm-search .cm-button': {
-        height: '30px',
-        boxSizing: 'border-box',
-        margin: '0',
-        padding: '4px 10px',
-        border: '1px solid rgba(0, 0, 0, 0.14)',
-        borderRadius: '6px',
-        backgroundImage: 'none',
-        backgroundColor: '#fff',
-        color: '#3c4043',
-        fontFamily: 'Roboto, sans-serif',
-        fontSize: `${textVar.xs}px`,
-        cursor: 'pointer',
-    },
-    '.cm-search .cm-button:hover': {
-        borderColor: 'rgba(25, 118, 210, 0.45)',
-        backgroundColor: 'rgba(25, 118, 210, 0.06)',
-        color: '#1565c0',
-    },
-    '.cm-search button[name="close"]': {
-        position: 'static',
-        width: '30px',
-        height: '30px',
-        marginLeft: 'auto',
-        border: '0',
-        borderRadius: '6px',
-        backgroundColor: 'transparent',
-        color: '#5f6368',
-        fontSize: '18px',
-        cursor: 'pointer',
-    },
-    '.cm-search button[name="close"]:hover': {
-        backgroundColor: 'rgba(0, 0, 0, 0.06)',
-        color: '#202124',
-    },
 });
 
 const savedStateEditorExtensions = [
@@ -323,6 +258,7 @@ export const LogViewerDialog: FC<{
     title,
 }) => {
     const { t } = useTranslation();
+    const theme = useTheme();
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const [openState, setOpenState] = useState(false);
     const open = openProp ?? openState;
@@ -678,7 +614,8 @@ export const LogViewerDialog: FC<{
                                         : <Box component="pre" sx={{ m: 0, p: 2, overflow: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontFamily: 'var(--df-font-mono)', fontSize: textVar.xs }}>{scratchPreview}</Box>}
                                 </Box>
                             </Box>
-                            <Box sx={{ display: activeTab === 1 ? 'block' : 'none', flex: 1, minHeight: 0, overflow: 'hidden', '& > .cm-theme': { height: '100%' } }}>
+                            <Box sx={{ display: activeTab === 1 ? 'block' : 'none', flex: 1, minHeight: 0, overflow: 'hidden', '& > .cm-theme': { height: '100%' },
+                                ...codeEditorSearchPanelSx(theme) }}>
                                 <CodeMirror
                                     value={savedState}
                                     height="100%"

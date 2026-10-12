@@ -5,7 +5,7 @@ import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@r
 import { shallowEqual } from 'react-redux';
 import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, TextTurn, TerminalExecution, CodeExecution, InputTable, TableSemanticsInfo, LoadedTableNode, ProgressStep } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
-import { ArtifactSetNode, DictTable, FileNode, ExternalTableReference, ComputationInputSource, createConversationRootId, isConversationRootId } from "../components/ComponentType";
+import { ArtifactSetNode, DictTable, FileNode, ReplacedArtifact, ExternalTableReference, ComputationInputSource, createConversationRootId, isConversationRootId } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
 import { vlAdaptChart, vlRecommendEncodings } from 'flint-chart';
@@ -171,6 +171,8 @@ export interface GeneratedReport {
     parentNodeId?: string;
     contentSnapshotHash?: string;
     prompt?: string;
+    /** The report this one replaced when the agent fixed it (it was deleted). */
+    replaced?: ReplacedArtifact;
     status?: 'generating' | 'completed' | 'error';
     generatingPhase?: 'inspecting' | 'writing';  // transient: which phase the agent is in while generating
     // transient: accumulated inspect steps, flipped to done on completion.
@@ -1322,6 +1324,27 @@ export const dataFormulatorSlice = createSlice({
                 existing.contentHash = node.contentHash;
                 if (node.notes !== undefined) existing.notes = node.notes;
             } else state.fileNodes.push(node);
+        },
+        /**
+         * A file the agent fixed in place (`replaces`): it keeps its path but moves to
+         * after the fixing request, as if the old one were deleted and a new one made.
+         */
+        replaceFileNode: (state, action: PayloadAction<FileNode>) => {
+            const node = action.payload;
+            const existing = state.fileNodes.find(item => item.path === node.path);
+            if (!existing) {
+                state.fileNodes.push(node);
+                return;
+            }
+            if (existing.id !== node.parentNodeId) {
+                // What followed the old position continues from where it came from.
+                repairThreadEdges(state, [{ id: existing.id, parentNodeId: existing.parentNodeId }]);
+                existing.parentNodeId = node.parentNodeId;
+                existing.createdAt = node.createdAt;
+            }
+            existing.displayName = node.displayName;
+            existing.contentHash = node.contentHash;
+            if (node.replaced) existing.replaced = node.replaced;
         },
         removeFileNodes: (state, action: PayloadAction<string>) => {
             const removed = state.fileNodes.filter(node => node.path === action.payload);

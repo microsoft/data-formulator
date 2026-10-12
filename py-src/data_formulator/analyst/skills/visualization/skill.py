@@ -5,6 +5,9 @@ from typing import Any, Generator
 
 from data_formulator.agents.agent_utils import generate_data_summary
 from data_formulator.analyst.input_provenance import normalize_input_sources
+from data_formulator.analyst.replacement import (
+    forget_run_artifact, mark_run_artifacts_used, record_run_artifact, resolve_replacement,
+)
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
 from data_formulator.security.code_signing import sign_result
 
@@ -60,6 +63,7 @@ class VisualizationSkill:
                 action,
                 (ctx.payload or {}).get("workspace_inputs"),
             )
+            replaces = resolve_replacement(action["replaces"], "table", ctx) if action.get("replaces") is not None else None
             if action.get("connector_inputs"):
                 bindings = yield from self._load_connector_inputs(action["connector_inputs"], ctx)
                 code = "connector_inputs = " + repr({item["alias"]: item["path"] for item in bindings}) + "\n" + code
@@ -120,16 +124,26 @@ class VisualizationSkill:
         transformed_data = transform_result["content"]
         ctx.runtime.register_run_chart(transform_result, chart_spec)
 
+        # This run's tables that the step read can no longer be replaced; the new one can.
+        mark_run_artifacts_used(ctx, [source.get("display_name", "") for source in input_sources])
+        table_name = (transformed_data.get("virtual") or {}).get("table_name")
+        if replaces:
+            forget_run_artifact(ctx, replaces["id"])
+        if table_name:
+            record_run_artifact(ctx, "table", table_name, display_name or title or table_name,
+                                aliases=[transform_result.get("chart_id")])
+
         yield {
             "type": "result",
             "status": "success",
             "content": {
                 "question": display_instruction,
                 "result": transform_result,
+                **({"replaces": replaces} if replaces else {}),
             },
         }
 
-        return self._format_observation(
+        observation = self._format_observation(
             step_index=step_index,
             display_instruction=display_instruction,
             code=transform_result.get("code", ""),
@@ -137,6 +151,9 @@ class VisualizationSkill:
             chart_id=transform_result.get("chart_id"),
             workspace=ctx.workspace,
         )
+        if replaces:
+            observation += f"\n\nReplaced {replaces['name']} ({replaces['id']}); it is deleted from the workspace."
+        return observation
 
     @staticmethod
     def _load_connector_inputs(raw_inputs, ctx: SkillContext):

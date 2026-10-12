@@ -563,3 +563,22 @@ describe('normalizeOperationPreview', () => {
         });
     });
 });
+it('reloads an open workspace file when it is rewritten under the same name', async () => {
+    const readText = vi.spyOn(workspaceService, 'readWorkspaceTextFile')
+        .mockResolvedValueOnce({ content: '# Broken version', content_hash: 'h1' } as any)
+        .mockResolvedValueOnce({ content: '# Fixed version', content_hash: 'h2' } as any);
+    try {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        const node = { kind: 'file' as const, id: 'file-notes.md', path: 'notes.md', displayName: 'Notes', contentHash: 'h1',
+            parentNodeId: 'conversation-root:a', createdAt: 1 };
+        store.dispatch(dfActions.upsertFileNode(node));
+        render(React.createElement(Provider, { store, children: React.createElement(WorkspaceFileCanvas, { fileName: 'notes.md' }) }));
+        expect(await screen.findByRole('heading', { name: 'Broken version' })).toBeTruthy();
+        // An agent fix saved in place reaches the thread as a new content hash.
+        act(() => { store.dispatch(dfActions.replaceFileNode({ ...node, contentHash: 'h2', createdAt: 2 })); });
+        expect(await screen.findByRole('heading', { name: 'Fixed version' })).toBeTruthy();
+        expect(readText).toHaveBeenCalledTimes(2);
+    } finally {
+        readText.mockRestore();
+    }
+});

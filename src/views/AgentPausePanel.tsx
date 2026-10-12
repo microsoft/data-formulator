@@ -16,9 +16,14 @@
  * only spot of color is the header icon's badge (`?` / `i`).
  * Keeping them in one file makes shared styling/layout tweaks (header
  * spacing, palette use, collapse animation) trivial to maintain.
+ *
+ * Long text scrolls inside a height cap. When it is taller than a small
+ * minimum, a grip on the panel's top edge lets the user drag that cap (from the
+ * minimum up to the content, at most 70% of the window); the chosen height is
+ * remembered for later panels, and double-clicking the grip restores the default.
  */
 
-import React, { FC, ReactNode, useEffect, useRef, useState } from 'react';
+import React, { FC, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Box, Button, ButtonBase, CircularProgress, Collapse, IconButton, InputAdornment, Radio, TextField, Tooltip, Typography, useTheme,
 } from '@mui/material';
@@ -48,6 +53,113 @@ import type { TerminalExecution, CodeExecution } from '../components/ComponentTy
 // ---------------------------------------------------------------------------
 // Shared shell
 // ---------------------------------------------------------------------------
+
+/** Below this the panel's text needs no resizing: shorter content just fits. */
+export const PAUSE_REGION_MIN_HEIGHT = 80;
+const PAUSE_HEIGHT_KEY = 'df.pausePanelHeight';
+const PAUSE_HEIGHT_STEP = 16;
+
+const readPauseHeight = (): number | undefined => {
+    try {
+        const value = Number(window.localStorage.getItem(PAUSE_HEIGHT_KEY));
+        return Number.isFinite(value) && value >= PAUSE_REGION_MIN_HEIGHT ? value : undefined;
+    } catch { return undefined; }
+};
+const writePauseHeight = (value: number | undefined) => {
+    try {
+        if (value === undefined) window.localStorage.removeItem(PAUSE_HEIGHT_KEY);
+        else window.localStorage.setItem(PAUSE_HEIGHT_KEY, String(value));
+    } catch { /* storage unavailable: the height lasts until the panel closes */ }
+};
+
+/** The panel's height cap chosen by the user, and how its scrolling regions report their content. */
+const PauseRegionContext = React.createContext<{ height?: number; register: (element: HTMLElement) => () => void } | null>(null);
+
+/**
+ * A scrolling text region of a pause panel. It is capped at `defaultMaxHeight`
+ * until the user drags the panel's grip; then every region follows that height.
+ */
+const PauseScrollRegion: FC<{ defaultMaxHeight: string; sx?: Record<string, unknown>; children: ReactNode }> = ({ defaultMaxHeight, sx, children }) => {
+    const region = useContext(PauseRegionContext);
+    const register = region?.register;
+    const ref = useRef<HTMLDivElement>(null);
+    useEffect(() => (ref.current && register ? register(ref.current) : undefined), [register]);
+    return <Box ref={ref} data-pause-scroll-region
+        sx={{ ...sx, boxSizing: 'border-box', maxHeight: region?.height !== undefined ? `${region.height}px` : defaultMaxHeight, overflowY: 'auto' }}>
+        {children}
+    </Box>;
+};
+
+/** Track the panel's scrolling regions and the height the user chose for them. */
+const usePauseRegionHeight = () => {
+    const [height, setHeight] = useState(readPauseHeight);
+    const [contentHeight, setContentHeight] = useState(0);
+    const regions = useRef(new Set<HTMLElement>());
+    const measure = useCallback(() => setContentHeight(Math.max(0, ...[...regions.current].map(element => element.scrollHeight))), []);
+    const observer = useMemo(() => typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure), [measure]);
+    useEffect(() => () => observer?.disconnect(), [observer]);
+    const register = useCallback((element: HTMLElement) => {
+        regions.current.add(element);
+        // The region is clipped at its cap, so watch its content to see it grow.
+        const content = [element, ...Array.from(element.children)];
+        content.forEach(node => observer?.observe(node));
+        measure();
+        return () => {
+            regions.current.delete(element);
+            content.forEach(node => observer?.unobserve(node));
+            measure();
+        };
+    }, [observer, measure]);
+    // From the minimum up to the full content, leaving room for the thread above.
+    const clamp = (value: number) => Math.round(Math.max(PAUSE_REGION_MIN_HEIGHT,
+        Math.min(value, contentHeight, window.innerHeight * 0.7)));
+    const current = () => Math.max(PAUSE_REGION_MIN_HEIGHT, ...[...regions.current].map(element => element.clientHeight));
+    return { height, setHeight, contentHeight, register, clamp, current };
+};
+
+/** Drag (or arrow keys) on the panel's top edge sets its text height; double-click restores the default. */
+const PauseResizeGrip: FC<{ resize: ReturnType<typeof usePauseRegionHeight> }> = ({ resize }) => {
+    const { t } = useTranslation();
+    const theme = useTheme();
+    const { height, setHeight, contentHeight, clamp, current } = resize;
+    const commit = (value: number | undefined) => { setHeight(value); writePauseHeight(value); };
+    const onPointerDown = (event: React.PointerEvent) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        const startY = event.clientY;
+        const start = current();
+        let last = height ?? start;
+        const move = (moveEvent: PointerEvent) => { last = clamp(start + startY - moveEvent.clientY); setHeight(last); };
+        const end = () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', end);
+            window.removeEventListener('pointercancel', end);
+            writePauseHeight(last);
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', end);
+        window.addEventListener('pointercancel', end);
+    };
+    const onKeyDown = (event: React.KeyboardEvent) => {
+        const value = height ?? current();
+        const next = event.key === 'ArrowUp' ? value + PAUSE_HEIGHT_STEP : event.key === 'ArrowDown' ? value - PAUSE_HEIGHT_STEP
+            : event.key === 'Home' ? PAUSE_REGION_MIN_HEIGHT : event.key === 'End' ? contentHeight : undefined;
+        if (next === undefined) return;
+        event.preventDefault();
+        commit(clamp(next));
+    };
+    return <Box role="separator" tabIndex={0} aria-orientation="horizontal"
+        aria-label={t('chartRec.resizePanel', { defaultValue: 'Resize panel' })}
+        aria-valuemin={PAUSE_REGION_MIN_HEIGHT} aria-valuemax={Math.round(contentHeight)} aria-valuenow={height}
+        title={t('chartRec.resizePanelHint', { defaultValue: 'Drag to resize; double-click to reset' })}
+        onPointerDown={onPointerDown} onKeyDown={onKeyDown} onDoubleClick={() => commit(undefined)}
+        sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 7, zIndex: 1, cursor: 'ns-resize', touchAction: 'none',
+            display: 'flex', justifyContent: 'center', alignItems: 'flex-start', pt: '2px',
+            '&::after': { content: '""', width: 28, height: 3, borderRadius: 2, bgcolor: alpha(theme.palette.text.primary, 0.18),
+                opacity: 0, transition: 'opacity 0.15s' },
+            '&:hover::after, &:focus-visible::after': { opacity: 1 },
+            '&:focus-visible': { outline: 'none' } }} />;
+};
 
 interface AgentPauseShellProps {
     /** Localized header label. */
@@ -96,9 +208,13 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
     const panelBg = alpha(fillAccent, 0.05);
     const panelBorder = alpha(fillAccent, 0.18);
     const primaryColor = theme.palette.primary.main;
+    const resize = usePauseRegionHeight();
+    const region = useMemo(() => ({ height: resize.height, register: resize.register }), [resize.height, resize.register]);
 
     return (
+        <PauseRegionContext.Provider value={region}>
         <Box sx={{
+            position: 'relative',
             display: 'flex', flexDirection: 'column',
             px: 0.5, pt: 0,
             borderBottom: `1px solid ${panelBorder}`,
@@ -110,6 +226,7 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
             overflow: 'hidden',
             mx: '-10px', mt: '-8px', mb: '4px',
         }}>
+            {resize.contentHeight > PAUSE_REGION_MIN_HEIGHT && <PauseResizeGrip resize={resize} />}
             <Box sx={{
                 display: 'flex', alignItems: 'center', gap: '6px', minHeight: 16,
                 px: 0.5, mx: -0.5, pt: '8px', pb: '6px',
@@ -141,6 +258,7 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
 
             {children}
         </Box>
+        </PauseRegionContext.Provider>
     );
 };
 
@@ -591,16 +709,11 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                         {/* The finding that motivates the options; bounded like a
                             question so long prose can't push them off-screen. */}
                         {(dataOperation.description || questions[0]?.text) && (
-                            <Box sx={{
-                                maxHeight: 'clamp(144px, 28vh, 288px)',
-                                overflowY: 'auto',
-                                pr: '4px',
-                                mb: '6px',
-                            }}>
+                            <PauseScrollRegion defaultMaxHeight="clamp(144px, 28vh, 288px)" sx={{ pr: '4px', mb: '6px' }}>
                                 <Typography component="div" sx={{ fontSize: textVar.sm, color: theme.palette.text.primary, lineHeight: 1.5 }}>
                                     {renderFieldHighlights(dataOperation.description || questions[0].text, accentColor)}
                                 </Typography>
-                            </Box>
+                            </PauseScrollRegion>
                         )}
                         <DataOperationCard
                             operation={dataOperation}
@@ -642,11 +755,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                         {/* Text portion is height-bounded and scrollable so very
                             long explanations don't push options off-screen.
                             Options remain fixed below the scrolling region. */}
-                        <Box sx={{
-                            maxHeight: 'clamp(144px, 28vh, 288px)',
-                            overflowY: 'auto',
-                            pr: '4px',
-                        }}>
+                        <PauseScrollRegion defaultMaxHeight="clamp(144px, 28vh, 288px)" sx={{ pr: '4px' }}>
                             <Typography component="div" sx={{ fontSize: textVar.sm, color: theme.palette.text.primary, lineHeight: 1.5 }}>
                                 {!isExplain && questions.length > 1 && (
                                     <>
@@ -655,7 +764,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                                 )}
                                 {renderFieldHighlights(question.text, accentColor)}
                             </Typography>
-                        </Box>
+                        </PauseScrollRegion>
 
                         {isFreeTextOnly ? (
                             // A free_text question is answered right here, with
@@ -822,10 +931,9 @@ export const ToolActivityPanel: FC<{ execution: TerminalExecution | CodeExecutio
         closeTooltip={t('chartRec.pauseClose')}
         onClose={onClose}
     >
-        <Box sx={{ maxHeight: 'clamp(120px, 32vh, 360px)', overflowY: 'auto',
-            pb: '8px', pl: '20px', pr: '8px', fontSize: textVar.sm }}>
+        <PauseScrollRegion defaultMaxHeight="clamp(120px, 32vh, 360px)" sx={{ pb: '8px', pl: '20px', pr: '8px', fontSize: textVar.sm }}>
             <StepToolCall key={execution.id} execution={execution} />
-        </Box>
+        </PauseScrollRegion>
     </AgentPauseShell>;
 };
 
@@ -846,14 +954,9 @@ export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, 
             onClose={onClose}
             onDelete={onDelete}
         >
-            <Box sx={{
-                maxHeight: 'clamp(120px, 32vh, 360px)',
-                overflowY: 'auto',
-                pb: '8px', pl: '20px', pr: '8px',
-                fontSize: textVar.sm,
-            }}>
+            <PauseScrollRegion defaultMaxHeight="clamp(120px, 32vh, 360px)" sx={{ pb: '8px', pl: '20px', pr: '8px', fontSize: textVar.sm }}>
                 <TerminalMessageContent content={content} />
-            </Box>
+            </PauseScrollRegion>
         </AgentPauseShell>
     );
 };

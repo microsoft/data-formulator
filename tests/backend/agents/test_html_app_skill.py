@@ -389,3 +389,42 @@ def test_input_inventory_marks_agent_editable_files(workspace) -> None:
     assert "agent-editable at files/sales.app.jsx" in app_line
     assert "agent-editable" not in notes_line
     assert "Revise agent-editable files in place" in text
+
+
+def test_replacing_an_app_rewrites_it_in_place(workspace) -> None:
+    _run(workspace, _react_spec(), action="write_app")
+    listed = [{"id": "files/sales.app.jsx", "node_id": "file-sales.app.jsx", "kind": "file", "name": "Sales explorer"}]
+    run = {"input_tables": [], "apps_written": set(), "replaceable_artifacts": listed, "run_artifacts": {}}
+    events, observation, _ = _run(workspace, {
+        "path": "files/sales.app.jsx", "expected_content_hash": _hash(workspace, "sales.app.jsx"),
+        "title": "Sales explorer", "tables": ["sales"], "code": REACT_APP.replace("Sales", "Fixed sales"),
+        "replaces": "files/sales.app.jsx",
+    }, payload=run, action="write_app")
+    # No new version: the fix keeps the filename, and the event tells the app which node it replaced.
+    assert events[0]["file"]["path"] == "files/sales.app.jsx" and events[0]["updated"] is True
+    assert events[0]["replaces"] == {"id": "files/sales.app.jsx", "node_id": "file-sales.app.jsx", "kind": "file", "name": "Sales explorer"}
+    assert json.loads(observation)["status"] == "updated"
+    assert [item.name for item in workspace.list_workspace_files()] == ["sales.app.jsx"]
+    assert "Fixed sales" in workspace.read_workspace_file("sales.app.jsx")[1].decode()
+
+    # replaces must name the file being revised, and only listed (or this run's) files qualify.
+    events, observation, _ = _run(workspace, {
+        "path": "files/sales.app.jsx", "expected_content_hash": _hash(workspace, "sales.app.jsx"),
+        "title": "Sales explorer", "tables": ["sales"], "code": REACT_APP, "replaces": "files/other.app.jsx",
+    }, payload={**run, "replaceable_artifacts": []}, action="write_app")
+    assert events[0]["type"] == "error" and "Cannot replace 'files/other.app.jsx'" in observation
+
+
+def test_edit_file_replacing_an_app_fixes_it_in_place(workspace) -> None:
+    from data_formulator.analyst.skills.workspace.skill import WorkspaceSkill
+    _run(workspace, _react_spec(), action="write_app")
+    ctx = SkillContext(client=None, workspace=workspace, payload={"input_tables": [], "apps_written": set(), "run_artifacts": {},
+        "replaceable_artifacts": [{"id": "files/sales.app.jsx", "node_id": "file-sales.app.jsx", "kind": "file", "name": "Sales explorer"}]})
+    result = json.loads(WorkspaceSkill().handle_tool("edit_file", {
+        "path": "files/sales.app.jsx", "expected_content_hash": _hash(workspace, "sales.app.jsx"), "replaces": "files/sales.app.jsx",
+        "replacements": [{"old_text": "<Page title=\"Sales\">", "new_text": "<Page title=\"Fixed\">"}],
+    }, ctx).text)
+    assert result["path"] == "files/sales.app.jsx" and result["replaces"]["node_id"] == "file-sales.app.jsx"
+    assert [item.name for item in workspace.list_workspace_files()] == ["sales.app.jsx"]
+    with pytest.raises(ValueError, match="revise it with edit_file"):
+        WorkspaceSkill().handle_tool("create_file", {"filename": "notes.md", "content": "x", "replaces": "files/sales.app.jsx"}, ctx)

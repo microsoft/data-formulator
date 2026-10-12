@@ -30,6 +30,7 @@ import re
 from typing import Any, Generator
 from urllib.parse import quote
 
+from data_formulator.analyst.replacement import record_run_artifact, resolve_replacement
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -321,6 +322,23 @@ def check_app_revision(filename: str, original: str | None, content: Any, ctx: S
     return {"title": title.strip(), "tables": tables, "warnings": warnings}
 
 
+def replace_file_in_place(spec: dict[str, Any], ctx: SkillContext) -> dict[str, Any] | None:
+    """Check ``replaces`` on a revision; a replaced app or file is rewritten in place, not versioned.
+
+    ``replaces`` must name the file being revised (``path``): the fixed file keeps its
+    filename, and the application moves it to after the request that fixed it.
+    """
+    if spec.get("replaces") is None:
+        return None
+    replaced = resolve_replacement(spec["replaces"], "file", ctx)
+    path = spec.get("path")
+    if not isinstance(path, str) or replaced["id"] != (path if path.startswith("files/") else f"files/{path}"):
+        raise ValueError(f"replaces must name the file being revised; pass path {replaced['id']} with its content_hash")
+    # Apps this run already wrote are saved in place (see app_revision_target).
+    record_app_written(replaced["id"][len("files/"):], ctx)
+    return replaced
+
+
 def _save_app(ctx: SkillContext, encoded: bytes, filename: str, media_type: str, title: str,
               expected_hash: str | None = None) -> dict[str, Any]:
     if expected_hash is not None:
@@ -379,6 +397,7 @@ class HtmlAppSkill:
         react = action == "write_app"
         updating = spec.get("path") is not None
         try:
+            replaces = replace_file_in_place(spec, ctx)
             file, warnings, tables = self._write_react(spec, ctx) if react else self._write_html(spec, ctx)
         except (ValueError, FileNotFoundError) as error:
             message = f"{action} failed: {error}"
@@ -386,7 +405,9 @@ class HtmlAppSkill:
             return f"[{'APP' if react else 'HTML APP'} NOT {'UPDATED' if updating else 'CREATED'}] {error}"
 
         versioned = updating and file["path"] != spec.get("path")
-        yield {"type": "action", "action": action, "file": file, "updated": updating and not versioned}
+        record_run_artifact(ctx, "file", file["path"], file.get("display_name") or file["name"])
+        yield {"type": "action", "action": action, "file": file, "updated": updating and not versioned,
+               **({"replaces": replaces} if replaces else {})}
         return json.dumps({
             "status": "versioned" if versioned else "updated" if updating else "delivered",
             "message": (f"The revision was saved as a new version, {file['path']}, and opened on the canvas; "

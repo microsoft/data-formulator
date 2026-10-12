@@ -11,8 +11,9 @@ from typing import Any, Generator
 from data_formulator.datalake.text_edit import apply_text_patch, TextEditConflictError
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
 from data_formulator.analyst.input_provenance import normalize_input_sources
+from data_formulator.analyst.replacement import record_run_artifact
 from data_formulator.analyst.skills.html_app.skill import (
-    REACT_APP_SUFFIX, app_revision_target, check_app_revision, record_app_written,
+    REACT_APP_SUFFIX, app_revision_target, check_app_revision, record_app_written, replace_file_in_place,
 )
 from data_formulator.analyst.workspace_inputs import (
     WorkspaceInputEngine,
@@ -144,6 +145,10 @@ class WorkspaceSkill:
                     )
             elif patching:
                 raise ValueError("Text patches require edit_file")
+            if args.get("replaces") is not None and not editing:
+                raise ValueError("To replace a file, revise it with edit_file and replaces set to its path")
+            # Fixing a file the user wants replaced rewrites it in place, even an app.
+            replaces = replace_file_in_place(args, ctx) if editing else None
             display_name = args.get("display_name")
             if display_name is not None:
                 if (not isinstance(display_name, str) or not display_name.strip()
@@ -206,6 +211,7 @@ class WorkspaceSkill:
             )
             if app is not None:
                 record_app_written(metadata.name, ctx)
+            record_run_artifact(ctx, "file", f"files/{metadata.name}", metadata.display_name or metadata.name)
             ctx.payload["workspace_inputs"] = WorkspaceInputEngine(
                 ctx.workspace, ctx.payload.get("input_tables", []),
             ).manifest
@@ -216,6 +222,7 @@ class WorkspaceSkill:
                 "url": f"/api/workspace/files/{quote(metadata.name, safe='')}",
                 "temporary": False, "available_in_workspace": True,
                 **({"app": True, "tables": app["tables"], "warnings": app["warnings"]} if app is not None else {}),
+                **({"replaces": replaces} if replaces else {}),
             }, ensure_ascii=False))
         input_tables = (ctx.payload or {}).get("input_tables") or []
         input_tool_names = {

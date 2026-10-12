@@ -1166,6 +1166,19 @@ let SingleThreadGroupView: FC<{
         });
     };
 
+    /** A muted line before an artifact the agent made to fix (replace) an earlier one, which is gone. */
+    const pushReplacedNote = (id: string, replaced: { name: string } | undefined, inPlace: boolean, highlighted: boolean) => {
+        if (!replaced) return;
+        timelineItems.push({
+            key: `replaced-${id}`, type: 'trigger', highlighted, secondaryActivity: true,
+            element: <Typography data-replaced-note sx={{ fontSize: textVar.xxs, fontStyle: 'italic', color: 'text.disabled', py: '1px',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {inPlace ? t('dataThread.replacedVersion', { defaultValue: 'Replaced the earlier version' })
+                    : t('dataThread.replaced', { defaultValue: 'Replaced {{name}}', name: replaced.name })}
+            </Typography>,
+        });
+    };
+
     const pushItem = (id: string, index: number) => {
         const node = threadGraph.nodes.get(id);
         const highlighted = isHL(id);
@@ -1178,6 +1191,7 @@ let SingleThreadGroupView: FC<{
                     return;
                 }
                 pushSourcesNote(table, highlighted);
+                pushReplacedNote(id, table.replaced, false, highlighted);
                 pushTableAndChartItems(id, _buildTableCard(id), highlighted);
                 return;
             }
@@ -1188,12 +1202,18 @@ let SingleThreadGroupView: FC<{
             }
             case 'file': {
                 const file = fileNodes.find(item => item.id === id);
-                if (file) pushFile(file, highlighted);
+                if (file) {
+                    pushReplacedNote(id, file.replaced, true, highlighted);
+                    pushFile(file, highlighted);
+                }
                 return;
             }
             case 'report': {
                 const report = generatedReports.find(item => item.id === id);
-                if (report) timelineItems.push(buildReportTimelineItem(report, highlighted));
+                if (report) {
+                    pushReplacedNote(id, report.replaced, false, highlighted);
+                    timelineItems.push(buildReportTimelineItem(report, highlighted));
+                }
                 return;
             }
             case 'workflow-definition': {

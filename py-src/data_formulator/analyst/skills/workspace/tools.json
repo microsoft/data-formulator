@@ -139,6 +139,10 @@
       "parameters": {
         "type": "object",
         "properties": {
+          "replaces": {
+            "type": "string",
+            "description": "The file's files/... path, equal to path, to fix it in place (an app is then not saved as a new version). Only to fix an artifact the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the old one is deleted and this takes its place after the latest request. Never when exploring something new; a new artifact keeps the analysis history."
+          },
           "path": {
             "type": "string",
             "description": "Exact existing files/... path from the input inventory or create_file result."

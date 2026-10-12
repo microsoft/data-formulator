@@ -785,6 +785,103 @@ describe('Analyst landing attachment handoff', () => {
         expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'file', fileName: 'sales_2.app.jsx' });
     });
 
+    describe('replacing an artifact the user wants fixed', () => {
+        const seedTable = (store: any) => {
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'ask', displayId: 'Ask', textKind: 'explain',
+                content: '', prompt: 'Chart the trend', parentNodeId: 'conversation-root:test', createdAt: 1 }));
+            store.dispatch(dfActions.insertDerivedTables({ kind: 'table', id: 'd_old', displayId: 'Old trend', names: ['a'], metadata: {},
+                rows: [{ a: 1 }], parentNodeId: 'ask', createdAt: 2, virtual: { tableId: 'd_old', rowCount: 1 },
+                derive: { source: [], code: '', dialog: [], trigger: { tableId: 'conversation-root:test', resultTableId: 'd_old' } } } as any));
+            store.dispatch(dfActions.addChart({ id: 'chart-old', chartType: 'Bar Chart', encodingMap: {}, tableRef: 'd_old', source: 'user' } as any));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'old-closing', displayId: 'Closing', textKind: 'explain',
+                content: 'Here is the trend.', parentNodeId: 'd_old', createdAt: 3, answered: true }));
+        };
+
+        it('deletes the old table and chart and puts the fix after the request', async () => {
+            vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+                yield { type: 'action', action: 'visualize', input_tables: [] };
+                yield { type: 'result', status: 'success', content: {
+                    replaces: { id: 'd_old', node_id: 'd_old', kind: 'table', name: 'Old trend' },
+                    result: { status: 'ok', chart_id: 'chart-fixed', content: { rows: [{ a: 2 }], virtual: { table_name: 'd_fixed', row_count: 1 } },
+                        refined_goal: { output_variable: 'df', display_name: 'Fixed trend' } } } };
+                yield { type: 'completion', status: 'success', content: { summary: 'Fixed the trend.' } };
+            });
+            const { store } = mountTask();
+            act(() => {
+                seedTable(store);
+                store.dispatch(dfActions.setFocused({ type: 'chart', chartId: 'chart-old' }));
+                store.dispatch(dfActions.queueAnalystTask({ text: 'The trend is wrong, fix it', images: [], attachments: [] }));
+            });
+            await waitFor(() => expect(turnWith(store, turn => turn.content === 'Fixed the trend.')).toBeDefined());
+            // The agent was told what it may replace, by the ids it knows.
+            expect(requestBody().replaceable_artifacts).toContainEqual(
+                { id: 'd_old', node_id: 'd_old', kind: 'table', name: 'Old trend', aliases: ['chart-old'] });
+            const state = store.getState();
+            expect(state.derivedTables.map((table: any) => table.id)).toEqual(['d_fixed']);
+            expect(state.derivedTables[0].replaced).toEqual({ id: 'd_old', name: 'Old trend' });
+            expect(dfSelectors.getAllCharts(state).some((chart: any) => chart.tableRef === 'd_old')).toBe(false);
+            // The fix follows the request; what followed the old table continues from where it came from.
+            const request = turnWith(store, turn => turn.prompt === 'The trend is wrong, fix it');
+            expect(chainAbove(store, 'd_fixed')).toContain(request.id);
+            expect(turnWith(store, turn => turn.id === 'old-closing').parentNodeId).toBe('ask');
+            // The closing message takes focus; the canvas shows the fix above it.
+            expect(dfSelectors.selectCanvasTarget(state)).toEqual({ type: 'chart', chartId: 'chart-fixed' });
+        });
+
+        it('moves an app fixed in place to after the request that fixed it', async () => {
+            vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+                yield { type: 'tool_result', tool: 'edit_file', status: 'ok', stdout: JSON.stringify({
+                    path: 'files/quakes.app.jsx', name: 'quakes.app.jsx', display_name: 'Quake explorer', content_hash: 'fixed-hash',
+                    available_in_workspace: true, app: true, tables: [], warnings: [],
+                    replaces: { id: 'files/quakes.app.jsx', node_id: 'file-quakes.app.jsx', kind: 'file', name: 'Quake explorer' } }) };
+                yield { type: 'completion', status: 'success', content: { summary: 'Fixed the app.' } };
+            });
+            const { store } = mountTask();
+            act(() => {
+                store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'ask', displayId: 'Ask', textKind: 'explain',
+                    content: '', prompt: 'Build an explorer', parentNodeId: 'conversation-root:test', createdAt: 1 }));
+                store.dispatch(dfActions.upsertFileNode({ kind: 'file', id: 'file-quakes.app.jsx', path: 'quakes.app.jsx',
+                    displayName: 'Quake explorer', contentHash: 'broken-hash', parentNodeId: 'ask', createdAt: 2 }));
+                store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'built', displayId: 'Built', textKind: 'explain',
+                    content: 'Built the explorer.', parentNodeId: 'file-quakes.app.jsx', createdAt: 3, answered: true }));
+                store.dispatch(dfActions.setFocused({ type: 'file', fileName: 'quakes.app.jsx' }));
+                store.dispatch(dfActions.queueAnalystTask({ text: 'The map crashes, fix it', images: [], attachments: [] }));
+            });
+            await waitFor(() => expect(turnWith(store, turn => turn.content === 'Fixed the app.')).toBeDefined());
+            const [app] = store.getState().fileNodes;
+            expect(store.getState().fileNodes).toHaveLength(1);
+            expect(app).toMatchObject({ contentHash: 'fixed-hash', replaced: { id: 'file-quakes.app.jsx', name: 'Quake explorer' } });
+            const request = turnWith(store, turn => turn.prompt === 'The map crashes, fix it');
+            expect(request.parentNodeId).toBe('built');
+            expect(chainAbove(store, app.id)).toContain(request.id);
+            // ask → built → request → … → app: one thread, the broken version gone.
+            expect(turnWith(store, turn => turn.id === 'built').parentNodeId).toBe('ask');
+            expect(turnWith(store, turn => turn.content === 'Fixed the app.').parentNodeId).toBe(app.id);
+        });
+
+        it('deletes a report the agent rewrote', async () => {
+            vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+                yield { type: 'action', action: 'write_report', replaces: { id: 'report-old', node_id: 'report-old', kind: 'report', name: 'Draft findings' } };
+                yield { type: 'text_delta', channel: 'report', content: '# Corrected findings' };
+                yield { type: 'completion', status: 'success', content: { summary: 'Rewrote the report.' } };
+            });
+            const { store } = mountTask();
+            act(() => {
+                store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'ask', displayId: 'Ask', textKind: 'explain',
+                    content: '', prompt: 'Write it up', parentNodeId: 'conversation-root:test', createdAt: 1 }));
+                store.dispatch(dfActions.saveGeneratedReport({ id: 'report-old', content: '# Draft findings', title: 'Draft findings',
+                    selectedChartIds: [], createdAt: 2, parentNodeId: 'ask', status: 'completed' }));
+                store.dispatch(dfActions.setFocused({ type: 'report', reportId: 'report-old' }));
+                store.dispatch(dfActions.queueAnalystTask({ text: 'The numbers are wrong, redo it', images: [], attachments: [] }));
+            });
+            await waitFor(() => expect(turnWith(store, turn => turn.content === 'Rewrote the report.')).toBeDefined());
+            const reports = store.getState().generatedReports;
+            expect(reports).toHaveLength(1);
+            expect(reports[0]).toMatchObject({ title: 'Corrected findings', replaced: { id: 'report-old', name: 'Draft findings' } });
+            expect(store.getState().focusedId).toEqual({ type: 'report', reportId: reports[0].id });
+        });
+    });
+
     it('continues the conversation after an app, like after a derived table (design-docs/58, rule 3)', async () => {
         vi.mocked(streamRequest).mockImplementationOnce(async function* () {
             yield { type: 'completion', status: 'success', content: { summary: 'Fixed the map.' } };

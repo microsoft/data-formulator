@@ -69,6 +69,7 @@ from data_formulator.analyst.skills import (
     build_registry,
 )
 from data_formulator.analyst.tools import build_tools
+from data_formulator.analyst.replacement import render_replaceable_context
 from data_formulator.analyst.workspace_inputs import (
     WorkspaceInputManifest,
     build_workspace_input_manifest,
@@ -449,6 +450,7 @@ class AnalystAgent:
         focused_file: str | None = None,
         external_references: list[dict[str, Any]] | None = None,
         focused_external_reference: str | None = None,
+        replaceable_artifacts: list[dict[str, Any]] | None = None,
     ) -> Generator[dict[str, Any], None, None]:
         """Run the unified analyst loop.
 
@@ -488,6 +490,10 @@ class AnalystAgent:
         self._run_payload = {
             # Apps this run created or versioned; skill contexts copy the payload but share this set.
             "apps_written": set(),
+            # Artifacts the agent may replace to fix one the user wants fixed, and this run's own
+            # (shared like apps_written), see analyst/replacement.py.
+            "replaceable_artifacts": [item for item in replaceable_artifacts or [] if isinstance(item, dict)],
+            "run_artifacts": {},
             "input_tables": input_tables,
             "external_references": normalize_external_references(external_references),
             "workspace_inputs": workspace_inputs,
@@ -569,6 +575,9 @@ class AnalystAgent:
             trajectory.append({"role": "user", "content": render_external_reference_context(
                 external_references, focused_external_reference,
             )})
+            replaceable_block = render_replaceable_context(self._run_payload["replaceable_artifacts"])
+            if replaceable_block:
+                trajectory.append({"role": "user", "content": replaceable_block})
             self._reset_progress_reminder(trajectory)
 
             while True:
