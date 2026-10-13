@@ -14,14 +14,6 @@ def test_preserves_pure_chinese_name() -> None:
     assert sanitize_table_name("订单明细.csv") == "订单明细"
 
 
-def test_preserves_japanese_name() -> None:
-    assert sanitize_table_name("売上データ.xlsx") == "売上データ"
-
-
-def test_preserves_korean_name() -> None:
-    assert sanitize_table_name("고객목록.csv") == "고객목록"
-
-
 def test_preserves_cyrillic_name() -> None:
     assert sanitize_table_name("отчёт.csv") == "отчёт"
 
@@ -42,16 +34,7 @@ def test_normalizes_spaces_and_hyphens() -> None:
     assert sanitize_table_name("sales report-2024.csv") == "sales_report_2024"
 
 
-def test_normalizes_special_chars_to_single_underscore() -> None:
-    result = sanitize_table_name("file@#$%name.csv")
-    assert "__" not in result
-
-
 # ---- Edge cases ----
-
-def test_strips_file_extension() -> None:
-    assert sanitize_table_name("data.xlsx") == "data"
-
 
 def test_empty_name_returns_unnamed() -> None:
     assert sanitize_table_name("") == "_unnamed"

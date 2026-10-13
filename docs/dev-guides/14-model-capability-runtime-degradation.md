@@ -65,7 +65,7 @@ class Client:
 | `chart_restyle` | `minimal` | 对 Vega-Lite spec 做样式编辑 |
 | `code_explanation` | `minimal` | 解释衍生字段 |
 | `sort_data` | `minimal` | 小列表的自然顺序排序 |
-| `simple` | `minimal` | nl_to_filter / workspace_name / intent |
+| `simple` | `minimal` | workspace_name |
 
 `DEFAULT_REASONING_EFFORT = "low"` —— 未在表中列出的 agent id 走默认值。
 

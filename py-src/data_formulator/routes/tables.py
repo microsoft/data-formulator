@@ -293,6 +293,20 @@ def _dedup_list(items: list) -> list:
     return list(dict.fromkeys(items))
 
 
+def _aggregate_output_names(valid_agg: list) -> list[str]:
+    """Result column names produced for ``(field, function)`` aggregate pairs."""
+    names = []
+    for field, function in valid_agg:
+        fn = function.lower()
+        if fn == "count":
+            names.append("_count")
+        elif fn in ("avg", "average", "mean"):
+            names.append(f"{field}_{function}")
+        elif fn in ("sum", "min", "max"):
+            names.append(f"{field}_{fn}")
+    return names
+
+
 def _build_parquet_sample_sql(
     columns: list[str],
     aggregate_fields_and_functions: list,
@@ -320,6 +334,9 @@ def _build_parquet_sample_sql(
     where_clause = _build_filter_where_duckdb(filters, columns, column_types, alias="t", search=search)
 
     if valid_agg:
+        # Aggregated rows can only be ordered by group keys or aggregate outputs.
+        sortable = set(valid_select) | set(_aggregate_output_names(valid_agg))
+        valid_order = [f for f in order_by_fields if f in sortable]
         select_parts = []
         for field, function in valid_agg:
             fn = function.lower()
@@ -487,6 +504,13 @@ def list_tables():
                     "source_type": meta.source_type,
                     "source_filename": meta.filename,
                     "original_name": meta.original_name,
+                    "content_hash": meta.content_hash,
+                    "origin": meta.origin,
+                    "role": meta.role,
+                    "edit_policy": meta.edit_policy or "protected",
+                    "input_sources": meta.input_sources,
+                    "imported_from": meta.imported_from,
+                    "stale": meta.stale,
                 }
                 if meta.description is not None:
                     table_entry["description"] = meta.description
@@ -551,6 +575,8 @@ def _apply_aggregation_and_sample(
             df_agg = pd.DataFrame([{k: df[c].agg(f) for k, (c, f) in agg_spec.items()}])
         total_row_count = len(df_agg)
         work = df_agg
+        # Aggregated rows can only be ordered by group keys or aggregate outputs.
+        valid_order = [f for f in order_by_fields if f in df_agg.columns]
     else:
         total_row_count = len(df)
         work = df[valid_select].copy() if valid_select else df.copy()
@@ -617,6 +643,11 @@ def sample_table():
         filters = data.get('filters') or None
         search = data.get('search') or None
 
+        if isinstance(sample_size, bool) or not isinstance(sample_size, int) or sample_size < 0:
+            raise AppError(ErrorCode.INVALID_REQUEST, "size must be a non-negative integer")
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise AppError(ErrorCode.INVALID_REQUEST, "offset must be a non-negative integer")
+
         workspace = _get_workspace()
         if _should_use_duckdb(workspace, table_id):
             schema_info = workspace.get_parquet_schema(table_id)
@@ -655,6 +686,8 @@ def sample_table():
             "rows": rows_json,
             "total_row_count": total_row_count,
         })
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_db_error(e)
 

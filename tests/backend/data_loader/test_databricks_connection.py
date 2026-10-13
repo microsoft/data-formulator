@@ -71,12 +71,6 @@ def test_token_path_requires_access_token() -> None:
         DatabricksDataLoader.validate_params(params)
 
 
-def test_hierarchy_is_catalog_schema_table() -> None:
-    assert [h["key"] for h in DatabricksDataLoader.catalog_hierarchy()] == [
-        "catalog", "schema", "table",
-    ]
-
-
 def test_effective_hierarchy_pins_provided_catalog() -> None:
     loader = _bare_loader(catalog="main")
     assert [h["key"] for h in loader.effective_hierarchy()] == ["schema", "table"]

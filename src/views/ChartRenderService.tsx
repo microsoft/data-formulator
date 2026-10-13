@@ -177,12 +177,9 @@ export const ChartRenderService: FC = () => {
             // rows; reuse that when present.
             const dispKey = computeDisplayRowsCacheKey(table, chart, items);
             const cachedDisplay = displayRowsCache.get(dispKey);
-            let visTableRows: any[] = cachedDisplay
+            const visTableRows: any[] = cachedDisplay
                 ? structuredClone(cachedDisplay.rows)
-                : structuredClone(table.rows);
-
-            // Pre-aggregate for the encoding map
-            visTableRows = prepVisTable(visTableRows, items, chart.encodingMap);
+                : prepVisTable(structuredClone(table.rows), items, chart.encodingMap);
 
             // --- Resolve the spec to render ---
             // If a style variant is active, render its stored Vega-Lite spec so

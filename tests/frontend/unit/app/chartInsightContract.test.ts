@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assembleVegaChart } from "../../../../src/app/utils";
+import { assembleVegaChart, extractFieldsFromEncodingMap } from "../../../../src/app/utils";
 import { Chart, computeInsightKey } from "../../../../src/components/ComponentType";
 
 
@@ -17,6 +17,32 @@ const chart = {
 
 
 describe("chart insight contract", () => {
+  const sortFields = [
+    { id: "category", name: "category", source: "original", tableRef: "table-1" },
+    { id: "value", name: "value", source: "original", tableRef: "table-1" },
+    { id: "tokens", name: "total_tokens", source: "original", tableRef: "table-1" },
+  ] as any;
+  const sortMetadata = {
+    category: { type: "string", levels: [] },
+    value: { type: "number", levels: [] },
+    total_tokens: { type: "number", levels: [] },
+  } as any;
+  const sortedBy = (sortBy: string, aggregate?: string) => ({
+    x: { fieldID: "category", dtype: "nominal", sortBy, sortOrder: "descending" },
+    y: { fieldID: "value", dtype: "quantitative", ...(aggregate ? { aggregate } : {}) },
+  }) as any;
+
+  it("carries an unmapped sortBy column only into unaggregated chart data", () => {
+    expect(extractFieldsFromEncodingMap(sortedBy("total_tokens"), sortFields).groupByFields).toEqual(["category", "value", "total_tokens"]);
+    expect(extractFieldsFromEncodingMap(sortedBy("total_tokens", "sum"), sortFields).groupByFields).toEqual(["category"]);
+    expect(extractFieldsFromEncodingMap(sortedBy("y"), sortFields).groupByFields).toEqual(["category", "value"]);
+  });
+
+  it.each(["total_tokens", "[null]", "[invalid", "color"])("renders when sortBy %s cannot be resolved", sortBy => {
+    expect(() => assembleVegaChart("Bar Chart", sortedBy(sortBy), sortFields,
+      [{ category: "A", value: 1 }, { category: "B", value: 2 }], sortMetadata, 400, 300)).not.toThrow();
+  });
+
   it("invalidates insight text when channel or aggregation changes", () => {
     const original = computeInsightKey(chart);
     const swapped = {
@@ -95,8 +121,8 @@ describe("chart insight contract", () => {
       undefined,
     ] as const;
 
-    const defaultSpec = assembleVegaChart(...args as any) as any;
-    const nytSpec = assembleVegaChart(...args as any, "nyt") as any;
+    const defaultSpec = (assembleVegaChart as any)(...args);
+    const nytSpec = (assembleVegaChart as any)(...args, "nyt");
 
     expect(nytSpec).not.toEqual(defaultSpec);
     expect(JSON.stringify(nytSpec)).toContain("#2f6b9a");

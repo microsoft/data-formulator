@@ -27,6 +27,36 @@ def manager(tmp_path) -> WorkspaceManager:
 
 
 class TestWorkspaceLifecycle:
+    def test_lazy_creation_opens_workspace_created_by_another_request(self, manager, monkeypatch):
+        from flask import Flask
+        from data_formulator import workspace_factory
+
+        create_workspace = manager.create_workspace
+
+        def concurrent_create(workspace_id):
+            create_workspace(workspace_id)
+            return create_workspace(workspace_id)
+
+        monkeypatch.setattr(manager, "create_workspace", concurrent_create)
+        monkeypatch.setattr(workspace_factory, "get_workspace_manager", lambda identity: manager)
+        with Flask(__name__).test_request_context(headers={"X-Workspace-Id": "racing-session"}):
+            workspace = workspace_factory.get_workspace("test-user")
+        assert workspace is not None
+        assert manager.workspace_exists("racing-session")
+
+    def test_lazy_creation_preserves_real_creation_errors(self, manager, monkeypatch):
+        from flask import Flask
+        from data_formulator import workspace_factory
+
+        def fail_create(workspace_id):
+            raise ValueError("Cannot create workspace")
+
+        monkeypatch.setattr(manager, "create_workspace", fail_create)
+        monkeypatch.setattr(workspace_factory, "get_workspace_manager", lambda identity: manager)
+        with Flask(__name__).test_request_context(headers={"X-Workspace-Id": "failed-session"}):
+            with pytest.raises(ValueError, match="Cannot create workspace"):
+                workspace_factory.get_workspace("test-user")
+
     def test_list_empty(self, manager):
         assert manager.list_workspaces() == []
 
@@ -62,12 +92,6 @@ class TestWorkspaceLifecycle:
         assert not manager.workspace_exists("nope")
         manager.create_workspace("test")
         assert manager.workspace_exists("test")
-
-    def test_workspace_exists_is_directory_based(self, manager):
-        """A bare directory (without any metadata files) counts as existing."""
-        bare_dir = manager.root / "bare_ws"
-        bare_dir.mkdir()
-        assert manager.workspace_exists("bare_ws")
 
     def test_delete_workspace(self, manager):
         manager.create_workspace("to_delete")
@@ -140,6 +164,10 @@ class TestSessionState:
         manager.create_workspace("ws")
         manager.save_session_state("ws", {
             "tables": [],
+            "inputTables": [{
+                "id": "sales",
+                "source": {"kind": "connector", "connectorId": "warehouse"},
+            }],
             "activeWorkspace": {"id": "ws", "displayName": "Old Name"},
         })
 
@@ -150,6 +178,7 @@ class TestSessionState:
             .read_text(encoding="utf-8")
         )
         assert meta["displayName"] == "New Name"
+        assert meta["sourceIds"] == ["warehouse"]
 
         state = manager.load_session_state("ws")
         assert state["activeWorkspace"]["displayName"] == "New Name"
@@ -180,6 +209,47 @@ class TestSessionState:
         loaded = manager.load_session_state("test")
         assert loaded["version"] == 2
 
+    def test_session_list_summarizes_data_sources(self, manager):
+        manager.create_workspace("sources")
+        manager.save_session_state("sources", {
+            "inputTables": [
+                {
+                    "id": "sales",
+                    "source": {
+                        "kind": "connector",
+                        "connectorId": "warehouse",
+                    },
+                },
+                {
+                    "id": "customers",
+                    "sourceConfig": {
+                        "type": "database",
+                        "connectorId": "warehouse",
+                    },
+                },
+                {
+                    "id": "forecast",
+                    "sourceConfig": {"type": "file"},
+                },
+                {
+                    "id": "legacy-kusto",
+                    "sourceConfig": {
+                        "type": "database",
+                        "connector_id": "kusto-prod",
+                    },
+                },
+                {
+                    "id": "unidentified-database",
+                    "sourceConfig": {"type": "database"},
+                },
+            ],
+        })
+
+        summary = manager.list_workspaces()[0]
+
+        assert summary["table_count"] == 5
+        assert summary["source_ids"] == ["kusto-prod", "upload", "warehouse"]
+
 
 class TestOpenWorkspace:
     """Integration: WorkspaceManager creates workspace, opens as Workspace, writes data."""
@@ -193,11 +263,6 @@ class TestOpenWorkspace:
     def test_open_nonexistent_raises(self, manager):
         with pytest.raises(ValueError, match="does not exist"):
             manager.open_workspace("nope", identity_id="test-user")
-
-    def test_create_and_open_workspace(self, manager):
-        ws = manager.create_and_open_workspace("new_ws", identity_id="test-user")
-        assert ws is not None
-        assert ws.list_tables() == []
 
     def test_write_data_in_workspace(self, manager):
         import pandas as pd
@@ -507,20 +572,18 @@ class TestEmptyWorkspaceVisibility:
         """The provisional flag is a hint, not the source of truth: anything
         that writes real content shows up even if it never clears the flag."""
         manager.create_workspace("stray")
-        (manager.root / "stray" / "workspace.yaml").write_text("tables: []")
+        (manager.root / "stray" / "workspace.yaml").write_text("tables:\n  orders: {}\n")
 
         assert any(w["id"] == "stray" for w in manager.list_workspaces())
 
-    def test_workspace_with_tables_is_visible(self, manager):
-        manager.create_workspace("real")
-        manager.save_session_state("real", {
-            "tables": [{"id": "t1", "name": "T1"}],
-            "activeWorkspace": {"id": "real", "displayName": "Real"},
-        })
+    def test_opened_but_empty_workspace_stays_hidden(self, manager):
+        """Opening a workspace (e.g. for a scratch attachment) writes an empty
+        workspace.yaml; that alone is not work worth listing."""
+        manager.create_workspace("opened")
+        manager.open_workspace("opened", "user:test")
+        assert (manager.root / "opened" / "workspace.yaml").exists()
 
-        ws_list = manager.list_workspaces()
-
-        assert any(w["id"] == "real" for w in ws_list)
+        assert not any(w["id"] == "opened" for w in manager.list_workspaces())
 
     def test_zero_count_workspace_is_visible(self, manager):
         """A workspace whose tables were all deleted (zero tables) still

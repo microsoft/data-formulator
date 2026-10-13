@@ -47,6 +47,7 @@ from data_formulator.datalake.azure_blob_workspace import AzureBlobWorkspace
 # Metadata types and operations
 from data_formulator.datalake.workspace_metadata import (
     TableMetadata,
+    WorkspaceFileMetadata,
     ColumnInfo,
     WorkspaceMetadata,
     ImportedFrom,
@@ -96,6 +97,7 @@ __all__ = [
     "WorkspaceManager",
     # Metadata
     "TableMetadata",
+    "WorkspaceFileMetadata",
     "ColumnInfo",
     "WorkspaceMetadata",
     "ImportedFrom",

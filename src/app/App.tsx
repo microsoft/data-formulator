@@ -19,7 +19,7 @@ import { AuthButton } from './AuthButton';
 import { IdentityMigrationDialog } from './IdentityMigrationDialog';
 
 import { red, purple, blue, brown, yellow, orange, } from '@mui/material/colors';
-import { palettes, defaultPaletteKey, paletteKeys, bgAlpha } from './tokens';
+import { palettes, defaultPaletteKey, paletteKeys } from './tokens';
 
 import _ from 'lodash';
 
@@ -54,13 +54,14 @@ import {
 
 
 import MuiAppBar from '@mui/material/AppBar';
-import { alpha, createTheme, styled, ThemeProvider, useTheme } from '@mui/material/styles';
+import { styled, ThemeProvider, useTheme } from '@mui/material/styles';
 import LogoutIcon from '@mui/icons-material/Logout';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
 
 import { DataFormulatorFC } from '../views/DataFormulator';
 import { LayoutProvider } from './LayoutProvider';
+import { createDfTheme } from './theme';
 import { MIN_SUPPORTED } from './layout';
 import { useAutoSave } from './useAutoSave';
 import { useWorkspaceAutoName } from './useWorkspaceAutoName';
@@ -79,6 +80,7 @@ import {
     useSearchParams,
 } from "react-router-dom";
 import { About } from '../views/About';
+import { ConfigurationView } from '../views/ConfigurationView';
 import { MessageSnackbar } from '../views/MessageSnackbar';
 import { ChartRenderService } from '../views/ChartRenderService';
 import { DictTable } from '../components/ComponentType';
@@ -95,9 +97,10 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { getUrls } from './utils';
 import { apiRequest } from './apiClient';
-import { listWorkspaces, loadWorkspace, deleteWorkspace, saveWorkspaceState, onWorkspaceListChanged, WorkspaceLoadSupersededError } from './workspaceService';
-import { getSerializableState } from './useAutoSave';
+import { listWorkspaces, deleteWorkspace, onWorkspaceListChanged } from './workspaceService';
+import { leaveSession, openSession } from './sessionThunks';
 import store, { persistor } from './store';
+import { useSessionTabs } from './useSessionTabs';
 import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
 import ChatIcon from '@mui/icons-material/Chat';
 import ArticleIcon from '@mui/icons-material/Article';
@@ -110,11 +113,11 @@ import YouTubeIcon from '@mui/icons-material/YouTube';
 import PublicIcon from '@mui/icons-material/Public';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
-import TranslateIcon from '@mui/icons-material/Translate';
 import CheckIcon from '@mui/icons-material/Check';
 import { useTranslation } from 'react-i18next';
+import { SUPPORTED_UI_LANGUAGES } from '../i18n';
 import { syncVegaLocale } from '../i18n/vega-locale';
-import { buttonVar, iconVar, textVar } from './layout';
+import { iconVar, textVar } from './layout';
 
 // Discord Icon Component
 const DiscordIcon: FC<{ sx?: any }> = ({ sx }) => (
@@ -187,10 +190,13 @@ declare module '@mui/material/styles' {
 }
 
 export const toolName = "Data Formulator"
+export const getToolName = (customName?: string) => customName?.trim() || toolName;
 
 const LANGUAGE_LABELS: Record<string, string> = {
     en: 'EN',
     zh: '中文',
+    hi: 'हिन्दी',
+    id: 'Bahasa Indonesia',
     ja: '日本語',
     ko: '한국어',
     fr: 'FR',
@@ -199,40 +205,56 @@ const LANGUAGE_LABELS: Record<string, string> = {
 
 const LanguageSwitcher: React.FC = () => {
     const { i18n } = useTranslation();
-    const availableLanguages = useSelector(
-        (state: DataFormulatorState) => state.serverConfig.AVAILABLE_LANGUAGES
-    );
+    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
-    if (!availableLanguages || availableLanguages.length <= 1) return null;
+    if (SUPPORTED_UI_LANGUAGES.length <= 1) return null;
+    const current = i18n.language.split('-')[0];
 
     return (
-        <ToggleButtonGroup
-            value={i18n.language.split('-')[0]}
-            exclusive
-            onChange={(_, value) => value && i18n.changeLanguage(value)}
-            size="small"
-            sx={{ 
-                height: '28px', 
-                my: 'auto',
-                '& .MuiToggleButton-root': {
-                    textTransform: 'none',
-                    fontSize: textVar.sm,
-                    py: 0,
-                    minWidth: '40px',
+        <>
+            <Button
+                size="small"
+                color="inherit"
+                aria-haspopup="menu"
+                aria-expanded={Boolean(anchorEl)}
+                onClick={(event) => setAnchorEl(event.currentTarget)}
+                endIcon={<KeyboardArrowDownIcon sx={{ fontSize: 16 }} />}
+                sx={{
+                    minWidth: 0,
+                    height: 28,
+                    px: 0.75,
                     color: 'text.secondary',
-                    borderColor: 'divider',
-                    '&.Mui-selected': {
-                        color: 'text.primary',
-                    },
-                },
-            }}
-        >
-            {availableLanguages.map(lang => (
-                <ToggleButton key={lang} value={lang}>
-                    {LANGUAGE_LABELS[lang] || lang.toUpperCase()}
-                </ToggleButton>
-            ))}
-        </ToggleButtonGroup>
+                    fontSize: textVar.sm,
+                    fontWeight: 400,
+                    textTransform: 'none',
+                    '& .MuiButton-endIcon': { ml: 0.25 },
+                }}
+            >
+                {LANGUAGE_LABELS[current] || current.toUpperCase()}
+            </Button>
+            <Menu
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={() => setAnchorEl(null)}
+            >
+                {SUPPORTED_UI_LANGUAGES.map(lang => (
+                    <MenuItem
+                        key={lang}
+                        selected={lang === current}
+                        onClick={() => {
+                            i18n.changeLanguage(lang);
+                            setAnchorEl(null);
+                        }}
+                        sx={menuItemSx}
+                    >
+                        <ListItemText primaryTypographyProps={{ fontSize: textVar.sm }}>
+                            {LANGUAGE_LABELS[lang] || lang.toUpperCase()}
+                        </ListItemText>
+                        {lang === current && <CheckIcon sx={{ ml: 1, fontSize: 14, color: 'text.secondary' }} />}
+                    </MenuItem>
+                ))}
+            </Menu>
+        </>
     );
 };
 
@@ -263,30 +285,23 @@ const menuItemSx = { fontSize: textVar.md, minHeight: 34, py: 0.5 };
 /** Language options rendered as menu rows for the compact overflow menu. */
 const LanguageMenuItems: React.FC<{ onSelect: () => void }> = ({ onSelect }) => {
     const { i18n } = useTranslation();
-    const availableLanguages = useSelector(
-        (state: DataFormulatorState) => state.serverConfig.AVAILABLE_LANGUAGES
-    );
 
-    if (!availableLanguages || availableLanguages.length <= 1) return null;
+    if (SUPPORTED_UI_LANGUAGES.length <= 1) return null;
     const current = i18n.language.split('-')[0];
 
     return (
         <>
-            {availableLanguages.map(lang => (
+            {SUPPORTED_UI_LANGUAGES.map(lang => (
                 <MenuItem
                     key={lang}
                     selected={lang === current}
                     onClick={() => { i18n.changeLanguage(lang); onSelect(); }}
                     sx={menuItemSx}
                 >
-                    <ListItemIcon>
-                        {lang === current
-                            ? <CheckIcon fontSize="small" />
-                            : <TranslateIcon fontSize="small" sx={{ opacity: 0.3 }} />}
-                    </ListItemIcon>
-                    <ListItemText primaryTypographyProps={{ fontSize: textVar.md }}>
+                    <ListItemText primaryTypographyProps={{ fontSize: textVar.sm }}>
                         {LANGUAGE_LABELS[lang] || lang.toUpperCase()}
                     </ListItemText>
+                    {lang === current && <CheckIcon sx={{ ml: 1, fontSize: 14, color: 'text.secondary' }} />}
                 </MenuItem>
             ))}
         </>
@@ -294,13 +309,14 @@ const LanguageMenuItems: React.FC<{ onSelect: () => void }> = ({ onSelect }) => 
 };
 
 /** Compact replacement for the About / App top-nav buttons. */
-const PageNavMenu: React.FC<{ isAboutPage: boolean }> = ({ isAboutPage }) => {
+const PageNavMenu: React.FC<{ isAboutPage: boolean; isAdministrationPage: boolean; canAdminister: boolean; appName: string }> = ({ isAboutPage, isAdministrationPage, canAdminister, appName }) => {
     const { t } = useTranslation();
     const navigate = useNavigate();
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const pages = [
         { to: '/about', label: t('appBar.about'), selected: isAboutPage },
-        { to: '/app', label: t('appBar.app'), selected: !isAboutPage },
+        { to: '/app', label: t('appBar.app'), selected: !isAboutPage && !isAdministrationPage },
+        ...(canAdminister ? [{ to: '/configurations', label: t('appBar.admin', { defaultValue: 'Admin' }), selected: isAdministrationPage }] : []),
     ];
     const currentLabel = pages.find(page => page.selected)?.label ?? '';
 
@@ -319,9 +335,11 @@ const PageNavMenu: React.FC<{ isAboutPage: boolean }> = ({ isAboutPage }) => {
                     '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
                 }}
             >
-                <Typography noWrap component="h1" sx={{ fontSize: textVar.xl, fontWeight: 300, letterSpacing: '0.03em' }}>
-                    {toolName}
-                </Typography>
+                <Box sx={{ minWidth: 0, textAlign: 'left', maxWidth: { xs: 160, sm: 320 } }}>
+                    <Typography noWrap component="h1" title={appName} sx={{ fontSize: textVar.xl, fontWeight: 300, lineHeight: 1.2, letterSpacing: 0 }}>
+                        {appName}
+                    </Typography>
+                </Box>
                 <Typography noWrap sx={{ fontSize: textVar.md, color: 'text.secondary' }}>
                     {`: ${currentLabel}`}
                 </Typography>
@@ -347,7 +365,7 @@ const PageNavMenu: React.FC<{ isAboutPage: boolean }> = ({ isAboutPage }) => {
                             {page.selected ? <CheckIcon fontSize="small" /> : null}
                         </ListItemIcon>
                         <ListItemText primaryTypographyProps={{ fontSize: textVar.md }}>
-                            {`${toolName}: ${page.label}`}
+                            {`${appName}: ${page.label}`}
                         </ListItemText>
                     </MenuItem>
                 ))}
@@ -460,7 +478,7 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
     const [loading, setLoading] = useState(false);
     const [listLoading, setListLoading] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-    const dispatch = useDispatch();
+    const dispatch = useDispatch<AppDispatch>();
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const { t } = useTranslation();
 
@@ -485,34 +503,19 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
 
     const handleOpen = async (wsId: string) => {
         if (activeWorkspace?.id === wsId) { onClose(); return; }
-        try { await saveWorkspaceState(getSerializableState(store.getState())); } catch { /* best effort */ }
         const wsEntry = workspaces.find(w => w.id === wsId);
         setLoading(true);
-        dispatch(dfActions.setSessionLoading({ loading: true, label: t('workspace.openingWorkspace') }));
         onClose();
-        try {
-            const result = await loadWorkspace(wsId);
-            if (result) {
-                const displayName = result.displayName || wsEntry?.display_name || wsId;
-                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: wsId, displayName, readOnly: result.readOnly } }));
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: t('workspace.openedSession', { name: displayName }) }));
-            } else {
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: t('workspace.failedToOpenWorkspace') }));
-            }
-        } catch (e) {
-            if (e instanceof WorkspaceLoadSupersededError) {
-                setLoading(false);
-                return;
-            }
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: t('workspace.failedToOpenWorkspace') }));
+        if (await dispatch(openSession(wsId, wsEntry?.display_name))) {
+            const displayName = store.getState().activeWorkspace?.displayName || wsId;
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: t('workspace.openedSession', { name: displayName }) }));
         }
         setLoading(false);
-        dispatch(dfActions.setSessionLoading({ loading: false }));
     };
 
     const handleCreate = () => {
-        dispatch(dfActions.resetState());
         onClose();
+        void dispatch(leaveSession());
     };
 
     const handleDelete = async (workspaceId: string) => {
@@ -654,25 +657,9 @@ const WorkspaceMenu: React.FC = () => {
 };
 
 // Exit the current session and return to the front-page (no workspace).
-// Saves work first so the session is recoverable from the workspace picker —
-// unless the session is empty, in which case it's discarded rather than left
-// behind as an untitled shell in the picker.
 const useExitSession = () => {
-    const dispatch = useDispatch();
-    const state = useSelector((s: DataFormulatorState) => s);
-    const sessionEmpty = useSelector(dfSelectors.selectSessionEmpty);
-
-    return useCallback(async () => {
-        const workspaceId = state.activeWorkspace?.id;
-        if (sessionEmpty) {
-            if (workspaceId) {
-                try { await deleteWorkspace(workspaceId); } catch { /* may never have been created */ }
-            }
-        } else {
-            try { await saveWorkspaceState(getSerializableState(state)); } catch { /* best effort */ }
-        }
-        dispatch(dfActions.resetState());
-    }, [state, sessionEmpty, dispatch]);
+    const dispatch = useDispatch<AppDispatch>();
+    return useCallback(() => dispatch(leaveSession()), [dispatch]);
 };
 
 const ExitSessionButton: React.FC = () => {
@@ -761,12 +748,16 @@ const ConfigDialog: React.FC<{
             </Tooltip>
             )}
             <Dialog onClose={() => setOpen(false)} open={open}>
-                <DialogTitle>{t('app.settings')}</DialogTitle>
+                <DialogTitle sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, px: 3, py: 2 }}>
+                    <Typography component="span" sx={{ fontSize: textVar.xl, fontWeight: 600, flex: 1 }}>
+                        {t('app.settings')}
+                    </Typography>
+                </DialogTitle>
                 <DialogContent>
                     <Box sx={{ 
                         display: 'flex', 
                         flexDirection: 'column', 
-                        gap: 3,
+                        gap: 2,
                         maxWidth: 400
                     }}>
                         <Divider><Typography variant="caption">{t('config.frontend')}</Typography></Divider>
@@ -807,6 +798,7 @@ const ConfigDialog: React.FC<{
                             <Box sx={{ flex: 1 }}>
                                 <TextField
                                     label={t('config.defaultChartWidth')}
+                                    size="small"
                                     type="number"
                                     variant="outlined"
                                     value={defaultChartWidth}
@@ -834,6 +826,7 @@ const ConfigDialog: React.FC<{
                             <Box sx={{ flex: 1 }}>
                                 <TextField
                                     label={t('config.defaultChartHeight')}
+                                    size="small"
                                     type="number"
                                     variant="outlined"
                                     value={defaultChartHeight}
@@ -860,6 +853,7 @@ const ConfigDialog: React.FC<{
                             <Box sx={{ flex: 1 }}>
                                 <TextField
                                     label={t('config.localRowLimit')}
+                                    size="small"
                                     type="number"
                                     variant="outlined"
                                     value={frontendRowLimit}
@@ -889,6 +883,7 @@ const ConfigDialog: React.FC<{
                             <Box sx={{ flex: 1 }}>
                                 <TextField
                                     label={t('config.maxStretchFactor')}
+                                    size="small"
                                     type="number"
                                     variant="outlined"
                                     value={maxStretchFactor}
@@ -920,6 +915,7 @@ const ConfigDialog: React.FC<{
                             <Box sx={{ flex: 1 }}>
                                 <TextField
                                     label={t('config.formulateTimeout')}
+                                    size="small"
                                     type="number"
                                     variant="outlined"
                                     value={formulateTimeoutSeconds}
@@ -943,7 +939,7 @@ const ConfigDialog: React.FC<{
                         </Box>
                     </Box>
                 </DialogContent>
-                <DialogActions sx={{'.MuiButton-root': {textTransform: 'none'}}}>
+                <DialogActions sx={{ px: 3, py: 1.5, gap: 0.5, '.MuiButton-root': { textTransform: 'none' } }}>
                     <Button sx={{marginRight: 'auto'}} onClick={() => {
                         setFormulateTimeoutSeconds(180);
                         setDefaultChartWidth(300);
@@ -1061,7 +1057,7 @@ const AppShell: FC = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const tables = useSelector(dfSelectors.getAllTables);
-    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const inWorkspaceSession = useSelector(dfSelectors.selectInSession);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
     useEffect(() => {        const authError = searchParams.get('auth_error');
@@ -1077,6 +1073,8 @@ const AppShell: FC = () => {
         setSearchParams(searchParams, { replace: true });
     }, []);
 
+    // Each tab owns the session named in its URL; tabs hand sessions off safely.
+    useSessionTabs();
     // Auto-persist session state to the active workspace (debounced)
     useAutoSave();
     // Auto-name workspace after first table + model are available
@@ -1084,14 +1082,17 @@ const AppShell: FC = () => {
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
 
     const isAboutPage = location.pathname === '/about';
-    const isAppPage = !isAboutPage;
+    const isAdministrationPage = location.pathname === '/configurations';
+    const canAdminister = !!serverConfig.MANAGED_MODE && !!serverConfig.CAN_CONFIGURE;
+    const appName = getToolName(serverConfig.APP_NAME);
+    const isAppPage = !isAboutPage && !isAdministrationPage;
 
     // The desktop canvas (threads, encoding shelf, viz cards) genuinely needs
     // room, so the app shell floors content at MIN_SUPPORTED. Landing and phone
     // workspace views reflow instead; the media override below removes the
     // desktop floor when Thread and Canvas become alternate full-width views.
-    const isLandingView = isAppPage && !activeWorkspace;
-    const shellMinWidth = isLandingView ? 0 : `${MIN_SUPPORTED.width}px`;
+    const isLandingView = isAppPage && !inWorkspaceSession;
+    const shellMinWidth = isLandingView || location.pathname === '/configurations' ? 0 : `${MIN_SUPPORTED.width}px`;
 
     // Narrow toolbars fold their controls into menus instead of letting the
     // nav buttons, session name and trailing actions overlap.
@@ -1100,7 +1101,7 @@ const AppShell: FC = () => {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [logsOpen, setLogsOpen] = useState(false);
     const exitSession = useExitSession();
-    const inSession = isAppPage && !!activeWorkspace;
+    const inSession = isAppPage && inWorkspaceSession;
 
     return (
         <Box sx={{
@@ -1129,25 +1130,28 @@ const AppShell: FC = () => {
                 <AppBar position="static">
                     <Toolbar ref={toolbarRef} variant="dense" sx={{ height: 40, minHeight: 36, position: 'relative', pl: '0px !important' }}>
                         <Box sx={{ width: 40, minWidth: 40, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                            <Box component="img" sx={{ height: 20 }} alt="" src={dfLogo} />
+                            <Box component="img" sx={{ height: 20, display: 'block', transform: 'translateY(-2px)' }} alt="" src={dfLogo} />
                         </Box>
                         {isCompactToolbar ? (
-                            <PageNavMenu isAboutPage={isAboutPage} />
+                            <PageNavMenu isAboutPage={isAboutPage} isAdministrationPage={isAdministrationPage} canAdminister={canAdminister} appName={appName} />
                         ) : (
                         <>
-                        <Button sx={{
+                        <Button component={RouterLink} to="/app" sx={{
                             display: "flex", flexDirection: "row", textTransform: "none",
-                            alignItems: 'stretch',
+                            alignItems: 'center',
                             backgroundColor: 'transparent',
                             minWidth: 0,
+                            height: 36,
                             px: 0.5,
                             "&:hover": {
                                 backgroundColor: "transparent"
                             }
                         }} color="inherit">
-                            <Typography noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' }, letterSpacing: '0.03em' }}>
-                                {toolName}
-                            </Typography>
+                            <Box sx={{ minWidth: 0, maxWidth: 360, textAlign: 'left', display: { xs: 'none', sm: 'block' } }}>
+                                <Typography noWrap component="h1" title={appName} sx={{ fontWeight: 300, lineHeight: 1.2, letterSpacing: 0 }}>
+                                    {appName}
+                                </Typography>
+                            </Box>
                         </Button>
                         <Box
                             sx={{
@@ -1159,18 +1163,14 @@ const AppShell: FC = () => {
                         >
                             <TopNavButton to="/about" label={t('appBar.about')} selected={isAboutPage} />
                             <TopNavButton to="/app" label={t('appBar.app')} selected={isAppPage} />
+                            {canAdminister && <TopNavButton to="/configurations" label={t('appBar.admin', { defaultValue: 'Admin' })} selected={isAdministrationPage} />}
                         </Box>
                         </>
-                        )}
-                        {!isCompactToolbar && !activeWorkspace && (
-                            <Typography noWrap sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', fontWeight: 500, fontSize: '0.65rem', color: 'text.secondary', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
-                                {t('appBar.microsoftResearch')}
-                            </Typography>
                         )}
                         {/* Workspace name — session indicator/switcher. Centered
                             absolutely when there is room, otherwise it flows
                             between the nav menu and the trailing actions. */}
-                        {activeWorkspace && isAppPage && (
+                        {inSession && (
                             isCompactToolbar ? (
                                 <Box sx={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', mx: 1 }}>
                                     <WorkspaceMenu />
@@ -1532,153 +1532,17 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     }, [configLoaded]);
 
     useEffect(() => {
-        document.title = toolName;
+        document.title = getToolName(serverConfig.APP_NAME);
+    }, [serverConfig.APP_NAME]);
+
+    useEffect(() => {
         // Load all server-configured models instantly (no connectivity check).
         // Users can verify connectivity via the "Test" button in the model dialog,
         // or errors will surface naturally when a model is first used.
         dispatch(fetchGlobalModelList());
     }, []);
 
-    let theme = createTheme({
-        typography: {
-            fontFamily: [
-                "Arial",
-                "Roboto",
-                "Helvetica Neue",
-                "sans-serif"
-            ].join(",")
-        },
-        // Default Material UI palette
-        // Active palette from user config — selectable via Settings dialog
-        // Available: material, fluent, vivid, jewel, electric, tealCoral, copilot
-        palette: (() => {
-            const p = palettes[activePaletteKey];
-            const bg = (entry: { main: string; bgcolor?: string }) => entry.bgcolor ?? alpha(entry.main, bgAlpha);
-            const tc = (entry: { main: string; textColor?: string }) => entry.textColor ?? entry.main;
-            return {
-                primary:   { main: p.primary.main,   bgcolor: bg(p.primary),   textColor: tc(p.primary)   },
-                secondary: { main: p.secondary.main, bgcolor: bg(p.secondary), textColor: tc(p.secondary) },
-                derived:   { main: p.derived.main,   bgcolor: bg(p.derived),   textColor: tc(p.derived)   },
-                custom:    { main: p.custom.main,    bgcolor: bg(p.custom),    textColor: tc(p.custom)    },
-                warning:   { main: p.warning.main },
-            };
-        })(),
-        components: {
-            MuiButton: {
-                defaultProps: {
-                    disableElevation: true,
-                },
-                styleOverrides: {
-                    root: {
-                        textTransform: 'none',
-                        borderRadius: 4,
-                        fontWeight: 500,
-                        lineHeight: 1.4,
-                        minWidth: 0,
-                        whiteSpace: 'nowrap',
-                        '& .MuiButton-startIcon': {
-                            marginLeft: 0,
-                            marginRight: buttonVar.iconGap,
-                        },
-                        '& .MuiButton-endIcon': {
-                            marginLeft: buttonVar.iconGap,
-                            marginRight: 0,
-                        },
-                    },
-                    sizeSmall: {
-                        minHeight: buttonVar.heightSmall,
-                        padding: `0 ${buttonVar.paddingSmall}`,
-                        fontSize: textVar.sm,
-                        '& .MuiButton-icon > :nth-of-type(1)': {
-                            fontSize: iconVar.sm,
-                        },
-                    },
-                    sizeMedium: {
-                        minHeight: buttonVar.heightMedium,
-                        padding: `0 ${buttonVar.paddingMedium}`,
-                        fontSize: textVar.md,
-                        '& .MuiButton-icon > :nth-of-type(1)': {
-                            fontSize: iconVar.md,
-                        },
-                    },
-                    text: ({ ownerState, theme: t }) => {
-                        const c = ownerState.color;
-                        if (c && c !== 'inherit' && c !== 'error' && c !== 'info' && c !== 'success' && c in t.palette) {
-                            const p = (t.palette as any)[c];
-                            if (p?.textColor) return { color: p.textColor };
-                        }
-                        return {};
-                    },
-                    outlined: ({ ownerState, theme: t }) => {
-                        const c = ownerState.color;
-                        if (c && c !== 'inherit' && c !== 'error' && c !== 'info' && c !== 'success' && c in t.palette) {
-                            const p = (t.palette as any)[c];
-                            if (p?.textColor) return { color: p.textColor, borderColor: alpha(p.textColor, 0.5) };
-                        }
-                        return {};
-                    },
-                },
-                variants: [
-                    {
-                        props: { variant: 'soft' },
-                        style: ({ theme: t }) => ({
-                            color: (t.palette.primary as any).textColor ?? t.palette.primary.main,
-                            backgroundColor: (t.palette.primary as any).bgcolor ?? alpha(t.palette.primary.main, 0.1),
-                            '&:hover': {
-                                backgroundColor: alpha(t.palette.primary.main, 0.16),
-                            },
-                        }),
-                    },
-                    {
-                        props: { variant: 'toolbar' },
-                        style: ({ theme: t }) => ({
-                            color: t.palette.text.secondary,
-                            backgroundColor: 'transparent',
-                            '&:hover': {
-                                color: t.palette.text.primary,
-                                backgroundColor: t.palette.action.hover,
-                            },
-                        }),
-                    },
-                ],
-            },
-            MuiIconButton: {
-                styleOverrides: {
-                    root: ({ ownerState, theme: t }) => {
-                        const c = ownerState.color;
-                        if (c && c !== 'inherit' && c !== 'default' && c !== 'error' && c !== 'info' && c !== 'success' && c in t.palette) {
-                            const p = (t.palette as any)[c];
-                            if (p?.textColor) return { color: p.textColor };
-                        }
-                        return {};
-                    },
-                },
-            },
-            MuiLink: {
-                styleOverrides: {
-                    root: ({ ownerState, theme: t }) => {
-                        const c = ownerState.color as string | undefined;
-                        if (c && c !== 'inherit' && c in t.palette) {
-                            const p = (t.palette as any)[c];
-                            if (p?.textColor) return { color: p.textColor };
-                        }
-                        return {};
-                    },
-                },
-            },
-        },
-        transitions: {
-            duration: {
-                shortest: 100,
-                shorter: 100,
-                short: 100,
-                standard: 100,
-                complex: 150,
-                enteringScreen: 100,
-                leavingScreen: 100,
-            },
-        },
-    });
+    let theme = createDfTheme(activePaletteKey);
 
     const router = useMemo(() => createBrowserRouter([
         {
@@ -1701,6 +1565,10 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 {
                     path: "about",
                     element: <About />,
+                },
+                {
+                    path: "configurations",
+                    element: <ConfigurationView />,
                 },
                 {
                     path: "*",

@@ -13,6 +13,7 @@
 // ════════════════════════════════════════════════════════════════════════
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import type { MenuProps } from '@mui/material/Menu';
 
 import {
     DENSITY_SCALE,
@@ -28,6 +29,17 @@ import {
 } from './layout';
 
 const DENSITY_STORAGE_KEY = 'df_density';
+
+export const menuPaperSlotProps = ({ anchorEl, open }: Pick<MenuProps, 'anchorEl' | 'open'>) => {
+    const anchor = open ? (typeof anchorEl === 'function' ? anchorEl() : anchorEl) : null;
+    const element = anchor && 'nodeType' in anchor ? anchor as HTMLElement : null;
+    const surface = element?.closest('button, [role="button"], .MuiButtonBase-root')?.parentElement ?? element;
+    const fontSize = surface?.ownerDocument.defaultView?.getComputedStyle(surface).fontSize;
+    const contextSize = fontSize && Number.parseFloat(fontSize) > 0 ? fontSize : '0px';
+    return {
+        style: { '--df-menu-font-size': `max(0.875rem, var(--df-text-md, 13px), ${contextSize})` } as React.CSSProperties,
+    };
+};
 
 export type DensityPreference = Density | 'auto';
 

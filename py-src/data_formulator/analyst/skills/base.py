@@ -66,9 +66,12 @@ class SkillMeta:
     name: str
     description: str
     when_to_use: str = ""
-    # ``always_on`` skills (e.g. visualization) are pre-loaded and their actions
-    # are never gated. Everything else loads dynamically.
+    # ``always_on`` profiles (currently ``meta``) are pre-loaded. Everything
+    # else loads dynamically or becomes active through an included profile.
     always_on: bool = False
+    # Other skill packages whose tools, actions, and guidance this bundle
+    # activates. Included skills remain the concrete owners of their handlers.
+    includes: tuple[str, ...] = ()
     # The inspection **tool** names this skill exposes (data gathering, no turn
     # commit). Declared in the ``SKILL.md`` frontmatter (``tools: [inspect_chart]``)
     # so the frontmatter is the complete, symmetric surface declaration; the

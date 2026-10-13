@@ -24,6 +24,7 @@ import { SelectableDataGrid } from './SelectableDataGrid';
 import { formatCellValue, getColumnAlign } from './ViewUtils';
 import { borderColor } from '../app/tokens';
 import { iconVar, textVar } from '../app/layout';
+import { externalReferenceTitle } from '../app/workspaceService';
 
 export interface FreeDataViewProps {
     // When true, render a maximize/restore toggle that pops the table into a
@@ -92,17 +93,19 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
         (state: DataFormulatorState) => dfSelectors.getAllTables(state).find(t => t.id === focusedTableId),
     );
     const tableCount = useSelector((state: DataFormulatorState) => dfSelectors.getAllTables(state).length);
+    // The connected source a table was queried from.
+    const importedFrom = targetTable?.source?.importedFrom;
+    const sourceReference = useSelector((state: DataFormulatorState) => importedFrom
+        ? state.externalTableReferences.find(item => item.connectorId === importedFrom.connectorId && item.tableKey === importedFrom.tableKey)
+        : undefined);
     const firstTableId = useSelector((state: DataFormulatorState) => dfSelectors.getAllTables(state)[0]?.id);
     const tableSemantics = useSelector((state: DataFormulatorState) =>
         state.tableSemantics.find(info => info.tableId === focusedTableId),
     );
-    const displayName = tableSemantics?.displayName?.trim()
-        || targetTable?.displayId
+    const displayName = targetTable?.displayId
         || targetTable?.id
         || 'table';
-    const realName = targetTable?.derive
-        ? targetTable.virtual?.tableId
-        : targetTable?.source?.originalTableName || targetTable?.virtual?.tableId;
+    const realName = targetTable?.source?.type === 'file' ? targetTable.source.fileName : undefined;
     const showRealName = !!realName
         && realName.toLowerCase().replace(/[\s_-]+/g, '') !== displayName.toLowerCase().replace(/[\s_-]+/g, '');
 
@@ -199,10 +202,15 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
     const headerBar = showHeaderBar ? (
         <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.5, px: 0.5, pt: 1, pb: 1 }}>
             <Box sx={{ minWidth: 0 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, minWidth: 0 }}>
                     <Typography sx={{ fontSize: textVar.xl, fontWeight: 600, color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
                         {displayName}
                     </Typography>
+                    {targetTable?.derive && (
+                        <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary', flexShrink: 0 }}>
+                            {t('chart.derivedTable', { defaultValue: 'Derived table' })}
+                        </Typography>
+                    )}
                     {searchQuery ? (
                         <Chip
                             size="small"
@@ -229,6 +237,14 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                     {showRealName && (
                         <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled', fontFamily: 'var(--df-font-mono)' }}>
                             · {t('dataGrid.filename', { name: realName })}
+                        </Typography>
+                    )}
+                    {sourceReference && (
+                        <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
+                            · <Link component="button" underline="hover" color="inherit" sx={{ fontSize: 'inherit', verticalAlign: 'baseline' }}
+                                onClick={() => dispatch(dfActions.setFocused({ type: 'external-table', referenceId: sourceReference.id }))}>
+                                {t('dataThread.loadedFrom', { defaultValue: 'from {{source}}', source: externalReferenceTitle(sourceReference) })}
+                            </Link>
                         </Typography>
                     )}
                 </Box>

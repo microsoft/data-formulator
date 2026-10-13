@@ -32,6 +32,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import CheckIcon from '@mui/icons-material/Check';
 
 import { DataFrameTable } from '../views/DataFrameTable';
+import { InlineLoadingStatus, LoadingStatus } from './FunComponents';
 import { fetchWithIdentity, CONNECTOR_ACTION_URLS, SourceTableRef } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { iconVar, textVar } from '../app/layout';
@@ -85,6 +86,10 @@ export interface ConnectorTablePreviewProps {
      *  table metadata (used when loading is driven from elsewhere, e.g. a
      *  batch action bar). */
     hideLoadActions?: boolean;
+    hideHeader?: boolean;
+    dockActions?: boolean;
+    previewRowLimit?: number;
+    loadLabel?: string;
 
     onLoad?: (importOptions: Record<string, any>) => void;
     /** Optional: load the table into a brand-new workspace session. When
@@ -161,6 +166,10 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
     alreadyLoaded,
     enableFilters = true,
     hideLoadActions = false,
+    hideHeader = false,
+    dockActions = false,
+    previewRowLimit = 10,
+    loadLabel,
     onLoad,
     onLoadInNewSession,
     onUnload,
@@ -262,7 +271,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
 
     const handleRefreshPreview = useCallback(() => {
         const validFilters = coerceFilters(filters, columns);
-        const opts: Record<string, any> = { size: 10 };
+        const opts: Record<string, any> = { size: previewRowLimit };
         if (validFilters.length > 0) opts.source_filters = validFilters;
         setRefreshing(true);
         apiRequest<any>(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
@@ -276,12 +285,14 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
         })
             .then(({ data }) => {
                 if (data.columns && data.rows) {
-                    onRefreshPreview?.(data.rows, data.columns, data.total_row_count ?? null);
+                    const total = data.total_row_count;
+                    const totalReliable = total != null && (total > data.rows.length || data.rows.length < previewRowLimit);
+                    onRefreshPreview?.(data.rows, data.columns, totalReliable ? total : null);
                 }
             })
             .catch(() => { /* best-effort */ })
             .finally(() => setRefreshing(false));
-    }, [filters, columns, connectorId, sourceTable, onRefreshPreview]);
+    }, [filters, columns, connectorId, sourceTable, onRefreshPreview, previewRowLimit]);
 
     // ── Load handler ─────────────────────────────────────────────────────
 
@@ -441,9 +452,12 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
     // ── JSX ──────────────────────────────────────────────────────────────
 
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', height: dockActions ? undefined : '100%', flex: dockActions ? 1 : undefined, minHeight: 0 }}>
+            <Box sx={dockActions
+                ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'auto' }
+                : { display: 'contents' }}>
             {/* Header — name + row count */}
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 0.5, flexShrink: 0 }}>
+            {!hideHeader && <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 0.5, flexShrink: 0 }}>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                     <Typography sx={{ fontSize: textVar.lg, fontWeight: 600 }} noWrap>{displayName}</Typography>
                     {pathBreadcrumb && (
@@ -461,14 +475,13 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                         //   - it exceeds the preview sample (more rows
                         //     exist than we returned), OR
                         //   - the sample is shorter than the preview cap
-                        //     of 10 (we exhausted the table).
+                        //     (we exhausted the table).
                         // Otherwise we fall back to the "Preview shows
                         // first N rows" notice, or — during loading — a
                         // hidden non-breaking space placeholder that
                         // reserves the same line height.
-                        const PREVIEW_CAP = 10;
                         const sampleLen = sampleRows.length;
-                        const totalReliable = rowCount != null && (rowCount > sampleLen || sampleLen < PREVIEW_CAP);
+                        const totalReliable = rowCount != null && (rowCount > sampleLen || sampleLen < previewRowLimit);
                         const previewNotice = t('connectorPreview.previewRowsNotice', {
                             count: sampleLen,
                             defaultValue: `Preview shows first ${sampleLen} rows only`,
@@ -511,9 +524,9 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                         );
                     })()}
                 </Box>
-            </Box>
+            </Box>}
 
-            {hasMetadataRow && (
+            {hasMetadataRow && !hideHeader && (
                 <Box sx={{
                     flexShrink: 0,
                     mt: 0.5, mb: 0.75,
@@ -535,41 +548,26 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                 </Box>
             )}
 
-            {/* Preview table — uses a *fixed* height (not minHeight) so the
-                section is identical across all tables and across the
-                loading→loaded transition. The value (290px) covers the
-                worst case: 10 compact rows (~220) + header (~22) + the
-                "…" continuation row that DataFrameTable renders when the
-                full table exceeds 10 rows (~22) + horizontal scrollbar
-                lane for wide tables (~15) + cell borders (~6).
-
-                Overflow is *horizontal only*: content is intrinsically
-                capped at 10 rows + header + "…" row, so a vertical
-                scrollbar would never represent real overflow — it would
-                only appear as a side effect of the horizontal scrollbar
-                eating into the height. `overflowY: hidden` keeps that
-                from happening. */}
-            <Box sx={{
-                flex: '0 0 auto',
-                height: 290,
+            {isLoading && sampleRows.length > 0 && <InlineLoadingStatus
+                label={t('connectorPreview.refreshingPreview', { defaultValue: 'Refreshing preview...' })} sx={{ py: 1 }} />}
+            <Box aria-busy={isLoading} sx={{
+                flex: dockActions ? '1 1 0' : '0 0 auto',
+                height: dockActions ? undefined : 290,
+                minHeight: dockActions ? 120 : undefined,
                 position: 'relative',
                 overflowX: 'auto',
-                overflowY: 'hidden',
+                overflowY: dockActions ? 'auto' : 'hidden',
             }}>
                 {isLoading && sampleRows.length === 0 ? (
-                    <Box sx={{
-                        position: 'absolute', inset: 0,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                        <CircularProgress size={18} thickness={4} sx={{ color: 'text.disabled', opacity: 0.6 }} />
-                    </Box>
+                    <LoadingStatus label={t('connectorPreview.loadingPreview', { defaultValue: 'Loading preview...' })}
+                        sx={{ position: 'absolute', inset: 0, p: 2 }} />
                 ) : sampleRows.length > 0 ? (
                     <DataFrameTable
                         columns={columns.map(c => c.name)}
                         rows={sampleRows}
                         totalRows={rowCount ?? undefined}
                         maxColumns={20}
-                        maxRows={10}
+                        maxRows={previewRowLimit}
                         fontSize={11}
                         headerFontSize={10}
                         showIndex
@@ -678,10 +676,11 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
             )}
 
             {/* Footer — load buttons (hidden when loading is driven externally) */}
+            </Box>
             {!hideLoadActions && (
-            <Box sx={{ mt: 1, pt: 1, flexShrink: 0, borderTop: '1px solid', borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <Box sx={{ mt: 1, pt: 1, pr: dockActions ? 6 : 0, flexShrink: 0, borderTop: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', display: 'flex', flexDirection: 'column', gap: 1 }}>
                 {alreadyLoaded ? (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: dockActions ? 'flex-end' : undefined, gap: 0.5 }}>
                         <Button
                             variant="outlined" size="small" disabled
                             startIcon={<CheckIcon sx={{ fontSize: iconVar.sm }} />}
@@ -722,9 +721,12 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                             variant="contained" size="small"
                             disabled={isLoading}
                             onClick={handleLoad}
+                            startIcon={isLoading ? <CircularProgress size={14} color="inherit" /> : undefined}
                             sx={{ textTransform: 'none', fontSize: textVar.sm, px: 3, height: 30, flexShrink: 0 }}
                         >
-                            {t('connectorPreview.loadTable', { defaultValue: 'Load Table' })}
+                            {isLoading
+                                ? t('common.loading', { defaultValue: 'Loading...' })
+                                : loadLabel || t('connectorPreview.loadTable', { defaultValue: 'Load Table' })}
                         </Button>
                     </Box>
                 )}

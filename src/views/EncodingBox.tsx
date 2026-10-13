@@ -312,18 +312,19 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 aria-labelledby="data-type-option-radio-buttons-group"
                 name="data-type-option-radio-buttons-group"
                 value={encoding.dtype || "auto"}
-                sx={{ width: 160 }}
+                sx={{ width: 200 }}
                 onChange={(event) => { 
                     if (event.target.value == "auto") {
                         updateEncProp("dtype", undefined);
                     } else {
-                        updateEncProp("dtype", event.target.value as "quantitative" | "qualitative" | "temporal");
+                        updateEncProp("dtype", event.target.value as "quantitative" | "nominal" | "ordinal" | "temporal");
                     }
                 }}
             >
                 {radioLabel(getIconFromDtype("auto"), "auto", `dtype-auto`, 40, false, "auto")}
                 {radioLabel(getIconFromDtype("quantitative"), "quantitative", `dtype-quantitative`, 40, false, "quantitative")}
                 {radioLabel(getIconFromDtype("nominal"), "nominal", `dtype-nominal`, 40, false, "nominal")}
+                {radioLabel(getIconFromDtype("ordinal"), "ordinal", `dtype-ordinal`, 40, false, "ordinal")}
                 {radioLabel(getIconFromDtype("temporal"), "temporal", `dtype-temporal`, 40, false, "temporal")}
             </RadioGroup>
         </FormControl>

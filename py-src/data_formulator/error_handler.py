@@ -58,7 +58,7 @@ _LLM_CODE_PATTERNS: list[tuple[str, str, bool]] = [
      ErrorCode.LLM_AUTH_FAILED, False),
     (r"429|rate.?limit|too many requests|quota",
      ErrorCode.LLM_RATE_LIMIT, True),
-    (r"context.{0,10}length|too many tokens|max.{0,10}tokens|token limit|maximum context",
+    (r"context.{0,10}(length|window)|input tokens exceed|prompt is too long|too many tokens|max.{0,10}tokens|token limit|maximum context",
      ErrorCode.LLM_CONTEXT_TOO_LONG, False),
     (r"model.{0,20}not.{0,5}found|model.{0,20}does not exist|no such model|decommissioned|deprecated model",
      ErrorCode.LLM_MODEL_NOT_FOUND, False),
@@ -81,8 +81,15 @@ def classify_and_wrap_llm_error(exc: Exception) -> AppError:
     The original exception text is preserved in ``detail`` for server-side
     logging but is **never** included in the client-facing ``message``.
     """
-    safe_message = classify_llm_error(exc)
     text = str(exc).lower()
+    if "unknown items in responses api response: []" in text:
+        return AppError(
+            ErrorCode.LLM_SERVICE_ERROR,
+            "Could not read the model's response. Try again.",
+            detail=str(exc),
+            retry=False,
+        )
+    safe_message = classify_llm_error(exc)
 
     error_code = ErrorCode.LLM_UNKNOWN_ERROR
     retry = False
