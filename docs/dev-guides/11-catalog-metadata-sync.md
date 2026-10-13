@@ -1,16 +1,14 @@
-# 11. Catalog Metadata 同步与 Annotations
+# 11. Catalog Metadata 同步
 
 ## 概述
 
-本模块提供远端数据源的全量 catalog metadata 同步，以及用户自有的 annotation 存储。
+本模块提供远端数据源的全量 catalog metadata 同步。
 支撑 Agent 搜索、前端目录浏览、以及未导入数据集的 metadata 预览。
 
 ## 架构
 
 ```
 catalog_cache/<source>.json     — 从远端自动同步（刷新时覆盖）
-catalog_annotations/<source>.json — 用户自有（同步时绝不覆盖）
-catalog_merge.py                — 运行时合并（双来源均保留，Agent 同时可见）
 ```
 
 ### 数据流
@@ -19,12 +17,11 @@ catalog_merge.py                — 运行时合并（双来源均保留，Agent
 1. 前端调用 `POST /sync-catalog-metadata`
 2. 后端调用 `loader.sync_catalog_metadata()` → 返回增强的表列表
 3. 结果以 `mode="replace"` 写入 `catalog_cache/`
-4. 后端将 cache 与 `catalog_annotations` 运行时合并
-5. 合并后的完整树**直接返回给前端**（前端不再二次调用 `GET_CATALOG_TREE`）
+4. 完整目录树**直接返回给前端**（前端不再二次调用 `GET_CATALOG_TREE`）
 
 **页面重载/普通展开（tree）：**
 1. 前端调用 `POST /get-catalog-tree`
-2. 后端**优先读 `catalog_cache`**，如有则合并 annotations 后返回
+2. 后端**优先读 `catalog_cache`**，如有则直接返回
 3. 无 cache 时降级调用 `loader.list_tables()`，但**不写入 cache**
 4. 前端将轻量树存入 React state
 
@@ -34,16 +31,15 @@ catalog_merge.py                — 运行时合并（双来源均保留，Agent
 
 **Agent 数据发现：**
 1. `search_data_tables` 搜索 workspace + cache（返回 `source_id`/`table_key`）
-2. `read_catalog_metadata` 读取 cache + annotations 的 merged view
+2. `read_catalog_metadata` 读取 cache 中的 metadata
 
 ### 身份隔离
 
-`catalog_cache` 和 `catalog_annotations` 按 identity 隔离存储，遵循现有
+`catalog_cache` 按 identity 隔离存储，遵循现有
 `DataConnector` 身份模型（参见 dev-guide-3 §5）：
 
-- **用户连接器**：`users/<identity>/catalog_cache/` 和 `users/<identity>/catalog_annotations/`
+- **用户连接器**：`users/<identity>/catalog_cache/`
 - 写入路径通过 `get_user_home(identity)` 获取，与 `save_catalog()` 一致。
-- 不同 identity 之间的 annotations 完全隔离。
 
 ## 关键文件
 
@@ -53,14 +49,12 @@ catalog_merge.py                — 运行时合并（双来源均保留，Agent
 | `py-src/.../superset_data_loader.py` | Superset loader，`list_tables()` 包含并行列信息拉取 + `extra` JSON 铺平 |
 | `py-src/.../superset_client.py` | `get_dataset_columns()`，含 fallback 到完整详情接口 |
 | `py-src/.../datalake/catalog_cache.py` | 磁盘缓存，含 `synced_at`、DuckDB/Python 双路径搜索 |
-| `py-src/.../datalake/catalog_annotations.py` | 用户标注，文件锁 + 乐观版本控制 |
-| `py-src/.../datalake/catalog_merge.py` | 运行时合并：`display_description` 用于前端显示；`source_description` + `user_description` 双来源保留供 Agent |
-| `py-src/.../data_connector.py` | API 端点：sync、PATCH/GET annotations |
+| `py-src/.../data_connector.py` | API 端点：sync、catalog tree 等 |
 | `py-src/.../agents/context.py` | `handle_read_catalog_metadata()` + `handle_search_data_tables()` |
 | `py-src/.../agents/agent_utils.py` | `build_catalog_metadata_lookups()` — Agent 上下文自动注入 |
-| `src/views/DataSourceSidebar.tsx` | 前端：sync API + 本地树渲染 + 标注弹窗 |
-| `src/components/VirtualizedCatalogTree.tsx` | 虚拟化树渲染 + merged tooltip + 标注提示图标 |
-| `src/app/utils.tsx` | `CONNECTOR_ACTION_URLS.SYNC_CATALOG_METADATA` / `CATALOG_ANNOTATIONS` |
+| `src/views/DataSourceSidebar.tsx` | 前端：sync API + 本地树渲染 |
+| `src/components/VirtualizedCatalogTree.tsx` | 虚拟化树渲染 + tooltip |
+| `src/app/utils.tsx` | `CONNECTOR_ACTION_URLS.SYNC_CATALOG_METADATA` |
 
 ## 缓存写入边界
 
@@ -80,11 +74,9 @@ Superset），connect 写入的种子 cache 即为富 metadata；对于其他 Lo
 
 | 端点 | 方法 | 用途 |
 |------|------|------|
-| `/api/connectors/sync-catalog-metadata` | POST | 全量 metadata 同步 → 直接返回 merged 目录树 + 同步摘要 |
+| `/api/connectors/sync-catalog-metadata` | POST | 全量 metadata 同步 → 直接返回目录树 + 同步摘要 |
 | `/api/connectors/get-catalog-tree` | POST | 浏览树（优先读 cache，不写 cache） |
-| `/api/connectors/get-cached-catalog-tree` | POST | 纯读 cache + annotations（页面重载） |
-| `/api/connectors/catalog-annotations` | PATCH | 单表标注 patch，乐观并发控制 |
-| `/api/connectors/catalog-annotations` | GET | 读取某个数据源的所有标注 |
+| `/api/connectors/get-cached-catalog-tree` | POST | 纯读 cache（页面重载） |
 
 ### Sync API 响应
 
@@ -95,26 +87,6 @@ Superset），connect 写入的种子 cache 即为富 metadata；对于其他 Lo
     "sync_summary": { "synced": 10, "partial": 2, "failed": 1, "total": 13 }
 }
 ```
-
-### Annotation PATCH 请求
-
-```json
-{
-    "connector_id": "superset_prod",
-    "table_key": "uuid-...",
-    "expected_version": 1,
-    "description": "...",
-    "notes": "...",
-    "tags": ["..."],
-    "columns": { "col_name": { "description": "..." } }
-}
-```
-
-语义规则：
-- `description: ""` → 删除该字段
-- 所有标注字段为空 → 从 annotations 中移除该表条目
-- `expected_version` 不匹配 → 返回 `ANNOTATION_CONFLICT` 错误
-- 新建文件（无 version）：传 `expected_version: 0` 或 `null`
 
 ## 存储格式
 
@@ -139,26 +111,6 @@ Superset），connect 写入的种子 cache 即为富 metadata；对于其他 Lo
             }
         }
     ]
-}
-```
-
-### catalog_annotations
-
-```json
-{
-    "source_id": "superset_prod",
-    "updated_at": "2026-04-28T10:00:00Z",
-    "version": 3,
-    "tables": {
-        "<table_key>": {
-            "description": "...",
-            "notes": "...",
-            "tags": ["..."],
-            "columns": {
-                "<col_name>": { "description": "..." }
-            }
-        }
-    }
 }
 ```
 
@@ -189,43 +141,16 @@ Superset），connect 写入的种子 cache 即为富 metadata；对于其他 Lo
 - `table_key` 不能为空。它作为 JSON 字典 key 使用（无文件系统路径风险）。
 - 其他辅助标识（`uuid`、`dataset_id`、`_source_name`）保留在 `metadata` 中备查。
 
-## Metadata 合并策略
+## 搜索
 
-读取时生成运行时 **merged metadata view**，不直接修改任何文件。
-
-- 表级：`display_description = user.description || source.description`（仅用于前端展示）
-- 列级：`display_column_description = user.columns[col].description || source.columns[col].description`（仅用于前端展示）
-- **Agent 上下文同时保留双来源**：`source_description` 和 `user_description` 均传给 Agent，
-  当两者都存在且不同时，Agent 会看到 `(source: ... | user: ...)` 格式的描述。
-  用户注释是补充而非覆盖，确保 Agent 不会丢失源系统的原始语义。
-- tags 和 notes 仅来自 annotations。
-
-合并调用点：
-- `merge_catalog()` / `merge_table_metadata()`（`catalog_merge.py`）
-- Agent `search_data_tables` 通过 `search_catalog_cache()` 的 annotation overlay
-- Agent `read_catalog_metadata` 产出供 LLM 消费的 merged view
-
-## 搜索与 Annotations
-
-`search_catalog_cache()` 接受 `annotations_by_source` 参数。
-用户标注命中权重更高：
+`find_catalog_cache()`（`datalake/catalog_cache.py`）按以下权重对 cache 中的表打分：
 
 | 匹配类型 | 分数 |
 |---------|------|
 | 表名 | +10 |
-| 用户描述 | +8 |
 | 远端描述 | +5 |
-| 用户备注 | +3 |
-| 用户列描述 | +3 |
 | 列名 | +2 |
 | 远端列描述 | +1 |
-
-无 annotation 时使用 DuckDB 初步检索；有 annotation 时走 Python 路径叠加标注。
-DuckDB 失败时自动回退到 Python。
-
-**已知限制：** 当提供 `annotations_by_source` 时，搜索始终走 Python 路径
-（DuckDB 无法在同一查询中读取 annotation JSON）。当前规模下足够；
-后续可优化为 DuckDB 联合读取 cache 和 annotation 两个 JSON 文件。
 
 ## Loader 实现
 
@@ -265,38 +190,15 @@ def sync_catalog_metadata(self, table_filter=None):
 - 单个 dataset 列拉取失败 → 标记 `source_metadata_status: "unavailable"`，不阻断其他。
 - `_build_column_entry()` 通用铺平 Superset 列的 `extra` JSON 字段（如 `certification`、`warning_markdown`），追加到 `description` 供 Agent 消费。
 
-## Annotation 写入策略
-
-### 并发控制
-
-- 文件锁复用 `workspace_metadata.py` 的 `_lock_file` / `_unlock_file`。
-- 非阻塞获取 + 10s 超时重试。
-- 乐观并发控制：客户端发送 `expected_version`；不匹配 → `ANNOTATION_CONFLICT`。
-
-### 清理语义
-
-- `description: ""` → 删除该 key
-- 空的列标注 → 删除该列 key；空的 columns 字典 → 删除 `columns`
-- 表标注完全为空 → 从 `tables` 中移除该表 key
-- 原子写入：`tempfile.mkstemp` + `os.replace`
-
-### 路径安全
-
-- `source_id` 从已注册的 connector 中解析（白名单），不使用客户端原始输入。
-- 文件路径使用 `datalake.naming` 的 `safe_source_id()`。
-- `table_key` 仅作为 JSON 字典 key，不参与文件系统路径构造。
-
 ## 连接生命周期
 
-| 操作 | catalog_cache | catalog_annotations |
-|------|--------------|-------------------|
-| 断开连接 | 保留 | 保留 |
-| 删除连接器 | 删除 | 保留 |
-| 重新连接 | 下次 sync 时覆盖 | 不变 |
-| 重新同步（刷新） | 覆盖 | 不变 |
-
+| 操作 | catalog_cache |
+|------|--------------|
+| 断开连接 | 保留 |
+| 删除连接器 | 删除 |
+| 重新连接 | 下次 sync 时覆盖 |
+| 重新同步（刷新） | 覆盖 |
 - 删除连接器调用 `delete_catalog(user_home, source_id)`。
-- Annotations 在连接器删除后仍保留 — 若重建同名连接器，旧标注自动生效。
 
 ## 前端浏览模型
 
@@ -320,7 +222,7 @@ def sync_catalog_metadata(self, table_filter=None):
 │                                                                       │
 │ 点击刷新按钮      → POST /api/connectors/sync-catalog-metadata        │
 │                    (全量拉取远端 metadata，更新磁盘缓存)               │
-│                    后端直接返回 merged tree（不再二次调 tree 接口）     │
+│                    后端直接返回目录树（不再二次调 tree 接口）           │
 │                    前端: 直接将返回的 tree 存入 state                  │
 │                                                                       │
 │ 展开/收起文件夹   → 纯前端操作，更新 treeExpanded state，零网络请求    │
@@ -355,16 +257,12 @@ def sync_catalog_metadata(self, table_filter=None):
     name: string;           // 显示名
     node_type: 'namespace' | 'table' | 'table_group';
     path: string[];         // 从根到当前节点的路径
-    metadata: {             // 轻量 merged metadata
+    metadata: {             // 轻量 metadata
         _source_name?: string;
         dataset_id?: number;
         row_count?: number;
-        description?: string;          // 等同 display_description
-        source_description?: string;   // 远端系统描述（只读）
-        user_description?: string;     // 用户标注描述
-        display_description?: string;  // = user_description || source_description
-        notes?: string;                // 用户备注
-        tags?: string[];               // 用户标签
+        description?: string;          // 源系统描述
+        source_description?: string;   // 远端系统描述
         source_metadata_status?: string;
         // 注意：不含 columns（轻量版）
     } | null;
@@ -422,7 +320,7 @@ onExpandedChange={(newIds) => {
 | 工具 | 层级 | 输入 | 输出 |
 |------|------|------|------|
 | `search_data_tables` | Search | keyword + scope | 候选列表：名称、描述、匹配列 + **source_id/table_key**（not-imported） |
-| `read_catalog_metadata` | Read | source_id + table_key + workspace | 完整 merged metadata：列、类型、描述、schema、row_count |
+| `read_catalog_metadata` | Read | source_id + table_key + workspace | 完整 metadata：列、类型、描述、schema、row_count |
 | `inspect_source_data` | Data | table_names + workspace（仅已导入） | Parquet schema、样例行、统计信息 |
 
 工作流：搜索 → 读取 metadata → （需要时导入） → 检查数据。
@@ -430,13 +328,13 @@ onExpandedChange={(newIds) => {
 ### Agent 上下文自动注入
 
 Agent 构建数据摘要时（`generate_data_summary`、`build_lightweight_table_context`），
-会自动通过 `build_catalog_metadata_lookups(workspace)` 将 merged catalog 元数据
+会自动通过 `build_catalog_metadata_lookups(workspace)` 将 catalog cache 元数据
 注入到上下文中。该函数：
 
 1. 从 `workspace.user_home` 自动解析用户目录（无需外部传参）
-2. 加载所有 source 的 `catalog_cache` 和 `catalog_annotations`
+2. 加载所有 source 的 `catalog_cache`
 3. 按 `table_key` / `_source_name` / `name` 匹配 workspace 中的表
-4. 提取 `display_description`、列描述、notes、tags 叠加到 LLM 上下文
+4. 提取表描述、列描述（含 `verbose_name`、`expression`）叠加到 LLM 上下文
 
 **设计原则：** `user_home` 不通过函数参数传播。`Workspace` 对象持有 `_identity_id`，
 通过 `user_home` property 自动派生用户目录。所有需要 catalog 数据的函数从
@@ -470,18 +368,15 @@ Agent 在构建数据摘要时会自动读取该字段并生成人类可读的 p
 |--------|---------|
 | `CATALOG_SYNC_TIMEOUT` | sync_catalog_metadata 超时（>120s） |
 | `CATALOG_NOT_FOUND` | connector_id 不存在或未连接 |
-| `ANNOTATION_CONFLICT` | PATCH 时 version 不匹配 |
-| `ANNOTATION_INVALID_PATCH` | 缺少 table_key 或无标注字段 |
 
 ## i18n Keys
 
 前端字符串在 `dataLoading` namespace：
 - 同步状态：`syncInProgress`、`syncComplete`、`syncPartial`
-- 标注：`annotationSaved`、`annotationConflict`
 - Metadata 状态徽章：`metadataStatusSynced`、`metadataStatusPartial`、`metadataStatusUnavailable`、`metadataStatusNotSynced`
 
 错误翻译在 `errors` namespace：
-- `catalogNotFound`、`annotationConflict`、`annotationInvalidPatch`
+- `catalogNotFound`
 
 ### 后端 message_code（TODO）
 
@@ -490,11 +385,8 @@ Agent 在构建数据摘要时会自动读取该字段并生成人类可读的 p
 
 | message_code | 状态 | 说明 |
 |-------------|------|------|
-| `annotation_conflict` | ✅ 已覆盖 | 通过 `AppError(ErrorCode.ANNOTATION_CONFLICT)` → 前端错误处理器 |
 | `catalog_sync_timeout` | ❌ 缺失 | Sync API 未显式捕获超时；应 raise `AppError(ErrorCode.CATALOG_SYNC_TIMEOUT)` |
-| `annotation_saved` | ❌ 缺失 | PATCH 返回 `{"status": "ok"}` 无 `message_code`；前端本地显示 toast |
 
-`annotation_saved` 优先级低（前端驱动的 toast 已足够）。
 `catalog_sync_timeout` 应在同步超时处理加固时一并解决。
 
 ## 新 Loader 检查清单
@@ -516,44 +408,36 @@ Agent 在构建数据摘要时会自动读取该字段并生成人类可读的 p
 
 | 字段 | 来源 | 说明 |
 |------|------|------|
-| `display_description` | merge 输出 | 前端展示用（`user_description \|\| source_description`）|
 | `source_description` | Loader → catalog_cache | 来自源系统的原始描述 |
-| `user_description` | annotations | 用户手工添加的注释（**补充**而非覆盖源描述）|
 | `verbose_name` | Loader（如 Superset） | 列的显示别名（如中文名） |
 | `expression` | Loader（如 Superset） | 计算列公式（如 `SUM(line_items.amount)`） |
 | `extra` | Loader（Superset） | Superset 列的 `extra` JSON 字段，包含 `certification`、`warning_markdown` 等信息。`_build_column_entry()` 自动铺平到 `description` |
-| `notes` / `tags` | annotations | 用户标注的备注和标签 |
 | `import_options` | 数据导入/刷新 | 用户选择的过滤/排序/行限制条件（与本次分析相关） |
 
 ### 管线节点传递矩阵
 
-| 管线节点 | description | verbose_name | expression | source/user_desc | notes/tags | import_options |
-|----------|:-----------:|:------------:|:----------:|:----------------:|:----------:|:--------------:|
-| **Loader** (`list_tables` / `sync_catalog_metadata`) | ✅ | ✅ (Superset) | ✅ (Superset) | — | — | — |
-| **catalog_cache** (`save_catalog` / `load_catalog`) | ✅ | ✅ | ✅ | ✅ | — | — |
-| **catalog_merge** (`merge_table_metadata`) | ✅ → `display_description` | ✅ (透传) | ✅ (透传) | ✅ | ✅ | — |
-| **`write_parquet_from_arrow`** (`workspace.py`) | — | — | — | — | — | ✅ 持久化 |
-| **`refresh_parquet_from_arrow`** (`workspace.py`) | — | — | — | — | — | ✅ 保留 |
-| **`_table_metadata_to_source_metadata`** (`tables.py`) | — | — | — | — | — | ✅ API 暴露 |
-| **`build_catalog_metadata_lookups`** (`agent_utils.py`) | ✅ `col_desc_cache` | ✅ `col_meta_cache` | ✅ `col_meta_cache` | ✅ `table_extra_cache` | ✅ `table_extra_cache` | — |
-| **`_format_import_options`** (`agent_utils.py`) | — | — | — | — | — | ✅ 格式化 |
-| **`get_field_summary`** (`agent_utils.py`) | ✅ `(description)` | ✅ `[verbose_name]` | ✅ `[calc: expr]` | ✅ `(source: ... \| user: ...)` | — | — |
-| **`generate_data_summary`** (`agent_utils.py`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **`build_lightweight_table_context`** (`context.py`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **`handle_read_catalog_metadata`** (`context.py`) | ✅ | ✅ `[verbose_name]` | ✅ `[calc: expr]` | ✅ | ✅ | — |
+| 管线节点 | description | verbose_name | expression | import_options |
+|----------|:-----------:|:------------:|:----------:|:--------------:|
+| **Loader** (`list_tables` / `sync_catalog_metadata`) | ✅ | ✅ (Superset) | ✅ (Superset) | — |
+| **catalog_cache** (`save_catalog` / `load_catalog`) | ✅ | ✅ | ✅ | — |
+| **`write_parquet_from_arrow`** (`workspace.py`) | — | — | — | ✅ 持久化 |
+| **`refresh_parquet_from_arrow`** (`workspace.py`) | — | — | — | ✅ 保留 |
+| **`_table_metadata_to_source_metadata`** (`tables.py`) | — | — | — | ✅ API 暴露 |
+| **`build_catalog_metadata_lookups`** (`agent_utils.py`) | ✅ `col_desc_cache` | ✅ `col_meta_cache` | ✅ `col_meta_cache` | — |
+| **`_format_import_options`** (`agent_utils.py`) | — | — | — | ✅ 格式化 |
+| **`get_field_summary`** (`agent_utils.py`) | ✅ `(description)` | ✅ `[verbose_name]` | ✅ `[calc: expr]` | — |
+| **`generate_data_summary`** (`agent_utils.py`) | ✅ | ✅ | ✅ | ✅ |
+| **`build_lightweight_table_context`** (`context.py`) | ✅ | ✅ | ✅ | ✅ |
+| **`handle_read_catalog_metadata`** (`context.py`) | ✅ | ✅ `[verbose_name]` | ✅ `[calc: expr]` | — |
 
 ### Agent 受益矩阵
 
-| Agent | 上下文入口 | description | verbose_name | expression | 双来源描述 | import_options |
-|-------|-----------|:-----------:|:------------:|:----------:|:----------:|:--------------:|
-| DataAgent | `generate_data_summary` + `read_catalog_metadata` tool | ✅ | ✅ | ✅ | ✅ | ✅ |
-| DataTransformationAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| DataRecAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| InteractiveExploreAgent | `build_lightweight_table_context` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| ReportGenAgent | `build_lightweight_table_context` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| ChartInsightAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| CodeExplanationAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ | ✅ |
-
-> **双来源描述**：当 `source_description` 和 `user_description` 同时存在且不同时，
-> Agent 会看到 `(source: ... | user: ...)` 格式，确保用户注释作为补充而非覆盖源描述。
-> 当两者一致或只有一方时，显示 `display_description`。
+| Agent | 上下文入口 | description | verbose_name | expression | import_options |
+|-------|-----------|:-----------:|:------------:|:----------:|:--------------:|
+| DataAgent | `generate_data_summary` + `read_catalog_metadata` tool | ✅ | ✅ | ✅ | ✅ |
+| DataTransformationAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ |
+| DataRecAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ |
+| InteractiveExploreAgent | `build_lightweight_table_context` | ✅ | ✅ | ✅ | ✅ |
+| ReportGenAgent | `build_lightweight_table_context` | ✅ | ✅ | ✅ | ✅ |
+| ChartInsightAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ |
+| CodeExplanationAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ |
