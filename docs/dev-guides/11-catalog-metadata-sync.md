@@ -143,7 +143,7 @@ Superset），connect 写入的种子 cache 即为富 metadata；对于其他 Lo
 
 ## 搜索
 
-`search_catalog_cache()` 按以下权重对 cache 中的表打分：
+`find_catalog_cache()`（`datalake/catalog_cache.py`）按以下权重对 cache 中的表打分：
 
 | 匹配类型 | 分数 |
 |---------|------|
