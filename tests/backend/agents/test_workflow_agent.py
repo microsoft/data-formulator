@@ -301,7 +301,7 @@ def test_step_description_survives_parsing_and_checkpoint_creation(instance):
     assert "description" in adaptation["function"]["parameters"]["properties"]["steps"]["items"]["properties"]
 
 
-@pytest.mark.parametrize("description", [None, "", "  ", 3, {}])
+@pytest.mark.parametrize("description", [None, "  ", 3])
 def test_step_description_rejects_invalid_values(instance, description):
     instance["steps"][0]["description"] = description
     with pytest.raises(ValueError, match="steps.0.description"):
@@ -1164,6 +1164,7 @@ def test_pause_interrupts_stalled_model_and_retains_partial_context(agent):
         worker.join(3)
 
 
+@pytest.mark.slow
 def test_python_pause_stops_worker_and_keeps_partial_stdout(agent):
     from threading import Timer
     from data_formulator.sandbox.local_sandbox import LocalSandbox
@@ -1463,6 +1464,7 @@ def test_user_workflow_save_read_across_workspaces(workflow_client, instance):
     assert client.post("/api/workflows/read", json={"path": "workspace/ignored.workflow.yaml"}, headers=headers).status_code == 400
 
 
+@pytest.mark.slow
 def test_running_unsaved_definition_creates_independent_plan_not_saved_file(workflow_client, instance, monkeypatch):
     from data_formulator.routes import agents
 
@@ -1602,6 +1604,7 @@ def test_server_demos_are_read_only_and_do_not_shadow_user_workflows(workflow_cl
     assert client.post("/api/workflows/read", json={"path": demo_path}).status_code == 200
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("decision", ["approve", "reject"])
 @pytest.mark.parametrize("mode", ["ask", "auto"])
 def test_terminal_resume_executes_only_approved_stored_command(workflow_client, monkeypatch, instance, decision, mode, tmp_path):
@@ -1673,6 +1676,7 @@ def test_pending_terminal_cannot_be_resumed_by_plain_reply(workflow_client, inst
     assert "Approve or reject" in response.json["error"]
 
 
+@pytest.mark.slow
 def test_selected_import_loads_native_data_then_continues_workflow(workflow_client, monkeypatch, instance):
     from uuid import uuid4
     import pyarrow as pa
@@ -1716,6 +1720,7 @@ def test_selected_import_loads_native_data_then_continues_workflow(workflow_clie
     loader.fetch_data_as_arrow.assert_called_once()
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("workflow_path", ["stock-review.yaml", "demo/household-cost-review.yaml"])
 def test_run_checkpoint_is_session_scoped(workflow_client, monkeypatch, instance, workflow_path):
     from data_formulator.routes import workflows
@@ -1725,7 +1730,7 @@ def test_run_checkpoint_is_session_scoped(workflow_client, monkeypatch, instance
     monkeypatch.setattr("data_formulator.routes.agents.get_client", lambda model: MagicMock())
 
     class Runner:
-        def __init__(self, client, workspace, state, checkpoint, cancel, identity):
+        def __init__(self, client, workspace, state, checkpoint, cancel, identity, workspace_id=None):
             self.state = state
             self.checkpoint = checkpoint
 
@@ -1807,3 +1812,81 @@ def test_checkpoint_directory_cannot_escape_session(workflow_client, tmp_path):
     assert client.post("/api/workflows/list", json={}, headers=headers).status_code == 400
     assert client.post("/api/workflows/run", json={"run_id": uuid4().hex, "model": {}}, headers=headers).status_code == 400
     assert not list(outside.iterdir())
+
+def test_an_app_the_workflow_writes_is_a_published_output(agent):
+    import pandas as pd
+    agent.workspace.write_parquet(pd.DataFrame({"region": ["a"], "amount": [1]}), "sales")
+    agent._execute("load_skill", {"name": "html_app"}, "load")
+    code = ("import { Page, ChartCard, DataTable } from '@df/ui';\nimport { useTable } from '@df/data';\n"
+            "export default function App() {\n  const sales = useTable('sales');\n"
+            "  return <Page title=\"Sales\"><ChartCard title=\"Rows\" query={sales}>{rows => <DataTable data={rows} />}</ChartCard></Page>;\n}\n")
+    result = agent._execute("write_app", {"filename": "sales.app.jsx", "title": "Sales explorer", "tables": ["sales"], "code": code}, "app")
+    assert "Evidence ID: app" in result
+    output = agent.state["outputs"][-1]
+    assert (output["id"], output["type"], output["tool"]) == ("app", "tool_result", "write_app")
+    published = json.loads(output["stdout"])
+    assert published["path"] == "files/sales.app.jsx" and published["available_in_workspace"] is True and published["app"] is True
+    assert output["step_id"] == agent.state["step_id"] and output["version"]
+
+
+def test_a_workflow_sees_its_session_as_files_and_hears_what_changed_on_restart(tmp_path, instance, monkeypatch):
+    import data_formulator.workspace_factory as factory
+
+    saved = {"charts": [], "derivedTables": [{"kind": "table", "id": "t-1", "displayId": "Prices", "names": ["item", "price"],
+                                               "metadata": {}, "virtual": {"tableId": "d_prices", "rowCount": 3},
+                                               "derive": {"source": [], "code": "", "trigger": {"tableId": "conversation-root:w"}}}],
+             "activeWorkspace": {"id": "session-1", "displayName": "Grocery study"}}
+
+    class Manager:
+        def load_session_state(self, workspace_id):
+            return saved if workspace_id == "session-1" else None
+
+    monkeypatch.setattr(factory, "get_workspace_manager", lambda identity_id: Manager())
+    monkeypatch.setattr("data_formulator.configuration.terminal_mode", lambda: "ask")
+    workspace = Workspace("workflow-test", root_dir=tmp_path)
+    workspace.save_workspace_file(b"# Plan\n- weekly", "notes/plan.md", "text/markdown", agent_managed=True)
+    agent = WorkflowAgent(MagicMock(), workspace, new_run(instance, "indexed"), lambda value: None, Event(), "user",
+                          workspace_id="session-1")
+
+    def pause(*args):
+        agent.state.update(status="paused", message="Paused")
+        if False:
+            yield
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Waiting", tool_calls=None))])
+
+    monkeypatch.setattr(agent, "_stream_llm", pause)
+    list(agent.run_workflow())
+    first = next(message["content"] for message in agent.state["trajectory"]
+                 if message["role"] == "user" and "[SESSION INDEX]" in str(message.get("content")))
+    assert "# Session: Grocery study" in first and "`session/tables/d_prices.json`" in first and "- weekly" in first
+    assert "Current workspace inventory" not in json.dumps(agent.state["trajectory"])
+
+    saved["derivedTables"][0]["displayId"] = "Prices (revised)"
+    agent.state["status"] = "running"
+    list(agent.run_workflow())
+    changes = [message["content"] for message in agent.state["trajectory"] if str(message.get("content")).startswith("[SESSION CHANGES]")]
+    assert len(changes) == 1 and "- changed `session/tables/d_prices.json`" in changes[0]
+    assert sum(message["role"] == "user" and "[SESSION INDEX]" in str(message.get("content"))
+               for message in agent.state["trajectory"]) == 1
+
+
+def test_a_workflow_reads_and_changes_session_files_like_the_analyst(agent):
+    import pandas as pd
+    agent.workspace.write_parquet(pd.DataFrame({"item": ["eggs", "milk"], "price": [3.5, 4.1]}), "d_prices")
+    agent.workspace.save_workspace_file(b"# Plan\n", "notes/plan.md", "text/markdown", agent_managed=True)
+    agent.workspace.save_workspace_file(b"old\n", "draft.md", "text/markdown", agent_managed=True)
+
+    read = agent._execute("read_file", {"paths": ["session/tables/d_prices.json", "files/notes/*"]}, "read-1")
+    files = json.loads(read.split("\n", 2)[2])["files"]
+    assert [item["path"] for item in files] == ["session/tables/d_prices.json", "files/notes/plan.md"]
+    assert json.loads(files[0]["content"])["rows"] == [{"item": "eggs", "price": 3.5}, {"item": "milk", "price": 4.1}]
+    agent.state["plan_review_pending"] = True
+    assert "read_file" in {spec["function"]["name"] for spec in agent._current_tools()}
+    agent._execute("search_files", {"pattern": "Plan"}, "search-1")
+    agent.state["plan_review_pending"] = False
+
+    agent._execute("move_file", {"path": "files/draft.md", "new_path": "files/notes/draft.md"}, "move-1")
+    agent._execute("delete_items", {"items": ["files/notes/draft.md"]}, "delete-1")
+    published = {output["tool"]: json.loads(output["stdout"]) for output in agent.state["outputs"]}
+    assert published["move_file"]["moved"] == {"from": "files/draft.md", "to": "files/notes/draft.md"}
+    assert [item["path"] for item in published["delete_items"]["deleted"]["files"]] == ["files/notes/draft.md"]

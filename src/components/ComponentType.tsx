@@ -144,6 +144,14 @@ export interface FileNode {
     parentNodeId: string;
     createdAt: number;
     notes?: string;
+    /** Set when the agent fixed this file in place: it moved to after the fixing request. */
+    replaced?: ReplacedArtifact;
+}
+
+/** What a fixed artifact replaced, for the thread's note (the old one is gone). */
+export interface ReplacedArtifact {
+    id: string;
+    name: string;
 }
 
 export interface ExternalTableReference {
@@ -184,12 +192,6 @@ export interface ExternalTableReference {
     queryIntent?: Record<string, unknown>;
 }
 
-export interface PendingClarification {
-    trajectory: any[];
-    completedStepCount: number;
-    lastCreatedTableId: string | null;
-}
-
 export interface DraftNode {
     kind: 'draft';
     id: string;
@@ -207,12 +209,21 @@ export interface DraftNode {
         codeSignature?: string;
         outputVariable?: string;
         dialog?: any[];
-        pendingClarification?: PendingClarification | null;
     };
     actionId?: string;
 }
 
-export type ThreadNode = DraftNode | DictTable | LoadedTableNode | FileNode;
+/** Several items produced together in one step: one node in the thread whose members are those items (design-docs/58, rule 9). */
+export interface ArtifactSetNode {
+    kind: 'artifact-set';
+    id: string;
+    parentNodeId: string;
+    /** Member item ids in the order they were produced; each member's `parentNodeId` is this set. */
+    memberIds: string[];
+    createdAt: number;
+}
+
+export type ThreadNode = DraftNode | DictTable | LoadedTableNode | FileNode | ArtifactSetNode;
 
 /**
  * A first-class interaction in the thread: either a clarify/explain turn or a
@@ -267,8 +278,8 @@ export interface WorkflowDefinition {
 export interface TextTurn {
     progressSteps?: ProgressStep[];
     externalReferenceId?: string;
-    workflowCardFor?: string;
-    workflowMessage?: { runId: string; messageId: string; status: 'queued' | 'received'; kind?: 'steering' | 'reply'; afterOutputIds?: string[] };
+    /** A user message sent to a workflow run (steering while running, or a reply that resumes it). */
+    workflowMessage?: { runId: string; messageId: string; status: 'queued' | 'received'; kind?: 'steering' | 'reply' };
     kind: 'text';
     id: string;
     displayId: string;
@@ -277,9 +288,12 @@ export interface TextTurn {
     presentation?: 'long_response';
     /** Markdown: the question preamble, or the answer. */
     content: string;
-    /** The user message that triggered this turn (shown with the card so the
-     *  exchange stays self-contained — the run produced no table to anchor it). */
+    /** The user's message (design-docs/58): a turn with a prompt and no
+     *  content is a user message node; the agent's reply follows as its own node. */
     prompt?: string;
+    /** Files and images the user attached to `prompt`. */
+    attachments?: string[];
+    /** A workflow run's outputs, in the order the run produced them. */
     outputIds?: string[];
     workflow?: {
         runId: string;
@@ -323,13 +337,9 @@ export interface TextTurn {
     dataOperation?: DataOperation;
     /** A user-confirmed form artifact that owns the canvas while focused. */
     form?: FormArtifact;
-    sourceFormId?: string;
-    /** True once the user has responded to THIS clarify — it then locks
-     *  (read-only). A later response is a *new* conversation, not a re-answer. */
+    /** True once the user has responded to THIS question or form — it then locks
+     *  (read-only). The response itself is the user message that follows it. */
     answered?: boolean;
-    /** The user's response to this clarify, shown in the resolved read-only view
-     *  (question → answer). */
-    answer?: string;
     /**
      * The thread node this turn FOLLOWS (design-docs/42) — the SINGLE authored
      * edge that places the turn in the thread. Captured once at ask time: the
@@ -464,6 +474,14 @@ export interface WorkflowFormArtifact extends SetupFormBase {
         /** Saved user workflow (by path) this proposal revises. */
         target?: SetupFormTarget;
         saved?: { path: string; content_hash: string };
+        /** A schedule proposed with the workflow; saving the workflow also saves it. */
+        schedule?: {
+            config: Partial<ScheduleConfig>;
+            /** Values the agent could not verify; the user resolves them before saving. */
+            issues?: string[];
+            savedId?: string;
+            nextAt?: string;
+        };
     };
 }
 
@@ -538,7 +556,11 @@ export interface FieldSemanticsInfo {
     intrinsicDomain?: [number, number];
     unit?: string;
     sortOrder?: any[];
+    /** Value a diverging color scale pivots on (Flint `divergingMidpoint`). */
+    divergingMidpoint?: number;
     displayName?: string;
+    /** What the agent authored; layered over every inference result. Not sent to Flint. */
+    authored?: Omit<FieldSemanticsInfo, 'authored'>;
 }
 
 export interface TableSemanticsInfo {
@@ -620,6 +642,10 @@ export interface DictTable {
 
     /** Authored thread edge. Data provenance remains in `derive`. */
     parentNodeId?: string;
+    /** When the table was produced; orders it among the other followers of its parent. */
+    createdAt?: number;
+    /** The artifact this one replaced when the agent fixed it (it was deleted). */
+    replaced?: ReplacedArtifact;
 
     source?: DataSourceConfig;
     

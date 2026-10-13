@@ -20,6 +20,7 @@ File format::
 """
 
 import json
+import threading
 import logging
 import os
 import re
@@ -214,6 +215,36 @@ def save_catalog(
         logger.debug("Catalog cache written: %s (%d tables)", path, len(tables))
     except Exception:
         logger.debug("Failed to write catalog cache for %s", source_id, exc_info=True)
+
+
+_TABLE_UPDATE_LOCK = threading.Lock()
+
+
+def update_table_metadata(
+    workspace_root: Path | str,
+    source_id: str,
+    updates: dict[str, dict[str, Any]],
+) -> None:
+    """Merge metadata fetched for individual tables (``table_key -> metadata``) into the cached
+    catalog, keeping its listing. Non-empty values win. Best-effort, like every cache write."""
+    if not updates:
+        return
+    try:
+        with _TABLE_UPDATE_LOCK:
+            payload = _load_catalog_raw(workspace_root, source_id)
+            if not payload:
+                return
+            tables = []
+            for table in payload.get("tables") or []:
+                fetched = updates.get(table.get("table_key"))
+                if fetched:
+                    metadata = dict(table.get("metadata") or {})
+                    metadata.update({key: value for key, value in fetched.items() if value not in (None, "", [], {})})
+                    table = {**table, "metadata": metadata}
+                tables.append(table)
+            _atomic_write_payload(workspace_root, source_id, {**payload, "tables": tables})
+    except Exception:
+        logger.debug("Failed to update table metadata for %s", source_id, exc_info=True)
 
 
 def record_catalog_refresh_failure(

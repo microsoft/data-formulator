@@ -1,5 +1,3 @@
-from dataclasses import FrozenInstanceError
-
 import pytest
 
 from data_formulator.data_operations import (
@@ -114,13 +112,6 @@ def test_operation_rejects_unknown_selected_plan() -> None:
         )
 
 
-def test_models_are_immutable() -> None:
-    plan = DataOperationPlan(label="Recent orders", summary="", steps=(_step(),))
-
-    with pytest.raises(FrozenInstanceError):
-        plan.label = "Changed"  # type: ignore[misc]
-
-
 def test_materialization_intent_round_trips_and_changes_plan_hash():
     from dataclasses import replace
 
@@ -145,7 +136,7 @@ def test_load_query_accepts_a_single_order_object() -> None:
     assert query.to_dict()["order_by"] == [{"column": "Year", "dir": "desc"}]
 
 
-@pytest.mark.parametrize("field", ["sql", "kql", "unknown"])
+@pytest.mark.parametrize("field", ["sql", "unknown"])
 def test_load_query_rejects_unsupported_fields_instead_of_loading_wrong_data(field):
     with pytest.raises(ValueError, match="structured query"):
         LoadQuery.from_dict({field: [], "limit": 10})

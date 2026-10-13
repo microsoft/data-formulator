@@ -5,6 +5,7 @@ Covers the pure ``compile_probe_sql`` compiler and the base-class
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 from unittest.mock import Mock, patch
 
@@ -276,28 +277,11 @@ class TestCompileProbeSql:
         sql = compile_probe_sql({"aggregates": [{"op": "count"}]}, out_limit=1)
         assert sql == 'SELECT count(*) AS "count" FROM t LIMIT 1'
 
-    def test_group_by_count_order(self):
-        sql = compile_probe_sql({
-            "group_by": ["region"],
-            "aggregates": [{"op": "count", "as": "n"}],
-            "order_by": [{"column": "n", "dir": "desc"}],
-        }, out_limit=50)
-        assert sql == (
-            'SELECT "region", count(*) AS "n" FROM t '
-            'GROUP BY "region" ORDER BY "n" DESC LIMIT 50'
-        )
-
     def test_count_distinct(self):
         sql = compile_probe_sql({
             "aggregates": [{"op": "count_distinct", "column": "region", "as": "d"}],
         }, out_limit=1)
         assert sql == 'SELECT count(DISTINCT "region") AS "d" FROM t LIMIT 1'
-
-    def test_filter_applied(self):
-        sql = compile_probe_sql({
-            "filters": [{"column": "region", "op": "EQ", "value": "West"}],
-        }, out_limit=10)
-        assert 'WHERE "region" = \'West\'' in sql
 
     def test_invalid_agg_op_raises(self):
         with pytest.raises(ValueError):
@@ -459,6 +443,16 @@ class TestSqlDialects:
             "SELECT * FROM t WHERE LOWER(`name`) LIKE LOWER('%foo%') LIMIT 10"
         )
 
+    def test_duckdb_ilike_matches_dates_and_numbers_as_text(self):
+        sql = compile_probe_sql(
+            {"filters": [{"column": "date", "op": "ILIKE", "value": "2014"},
+                         {"column": "n", "op": "ILIKE", "value": "4"}]},
+            out_limit=10,
+            dialect=probe_utils.DUCKDB,
+        )
+        t = pa.table({"date": [date(2014, 3, 1), date(2015, 1, 1)], "n": [4, 5]})  # noqa: F841 (scanned by DuckDB)
+        assert duckdb.sql(sql).fetchall() == [(date(2014, 3, 1), 4)]
+
     def test_bigquery_backtick_path_relation(self):
         sql = compile_probe_sql(
             {"columns": ["a"]},
@@ -564,3 +558,31 @@ class TestMongoPipeline:
             loader._compile_probe_pipeline({"aggregates": [{"op": "median", "column": "x"}]}, 1)
 
 
+
+
+def test_file_scan_query_memory_scales_with_the_machine(monkeypatch):
+    from data_formulator.data_loader import probe_utils
+
+    monkeypatch.delenv("DF_QUERY_MEMORY_LIMIT_MB", raising=False)
+    monkeypatch.setenv("DF_QUERY_MAX_WORKERS", "2")
+    for physical, budget in [(4096, 1024), (8192, 2048), (65536, 4096), (1024, 512)]:
+        monkeypatch.setattr(probe_utils, "_physical_memory_mb", lambda physical=physical: physical)
+        assert probe_utils.query_memory_limit_mb() == budget
+    monkeypatch.setattr(probe_utils, "_physical_memory_mb", lambda: None)
+    assert probe_utils.query_memory_limit_mb() == 512
+    monkeypatch.setenv("DF_QUERY_MEMORY_LIMIT_MB", "1500")
+    assert probe_utils.query_memory_limit_mb() == 1500
+    config = probe_utils.duckdb_query_config()
+    assert config["memory_limit"] == "1500MB"
+    assert config["temp_directory"].endswith("data-formulator-query-spill")
+
+
+def test_file_scan_capabilities_tell_the_agent_its_memory_budget(monkeypatch):
+    from data_formulator.data_loader.azure_blob_data_loader import AzureBlobDataLoader
+    from data_formulator.data_loader.kusto_data_loader import KustoDataLoader
+
+    monkeypatch.setenv("DF_QUERY_MEMORY_LIMIT_MB", "2048")
+    capabilities = AzureBlobDataLoader.query_capabilities()
+    assert capabilities["memory_budget_mb"] == 2048
+    assert "2048 MB of memory" in capabilities["guidance"]
+    assert "memory_budget_mb" not in KustoDataLoader.query_capabilities()

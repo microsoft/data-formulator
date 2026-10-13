@@ -2,6 +2,8 @@ import React, { FC, Suspense, useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, IconButton, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import WrapTextIcon from '@mui/icons-material/WrapText';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import CodeIcon from '@mui/icons-material/Code';
 import { useDispatch, useSelector } from 'react-redux';
 import { CompactMarkdown } from './InteractionEntryCard';
 import { MarkdownEditor } from '../components/MarkdownEditor';
@@ -15,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableRow } from '@mui/material'
 
 import {
     downloadWorkspaceFile,
+    isInvalidWorkspaceFileName,
     onWorkspaceFilesChanged,
     previewWorkspaceFile,
     previewUploadedWorkspaceFile,
@@ -24,6 +27,7 @@ import {
     type WorkspaceFilePreview,
 } from '../app/workspaceService';
 import { iconVar, textVar } from '../app/layout';
+import { floatingAppControlsRight, floatingPillSx } from '../app/tokens';
 
 const WorkspaceWorkbookPreview = React.lazy(() => import('./WorkspaceWorkbookPreview').then(module => ({
     default: module.WorkspaceWorkbookPreview,
@@ -33,20 +37,28 @@ const WorkspacePdfPreview = React.lazy(() => import('./WorkspacePdfPreview').the
     default: module.WorkspacePdfPreview,
 })));
 
+const HtmlAppPreview = React.lazy(() => import('./HtmlAppPreview'));
+const ReactAppPreview = React.lazy(() => import('./ReactAppPreview'));
+
 const textDrafts = new Map<string, { content: string; savedContent: string; hash: string }>();
 
 const warnUnsavedDrafts = (event: BeforeUnloadEvent) => {
     if (textDrafts.size > 0) { event.preventDefault(); event.returnValue = ''; }
 };
 
-export const WorkspaceFileCanvas: FC<{ fileName: string; sourceFile?: File }> = ({ fileName, sourceFile }) => {
+/**
+ * `floatingAppControls`: the host canvas floats its own close button at the top
+ * right, so HTML apps can preview full-bleed with floating source/reload buttons.
+ */
+export const WorkspaceFileCanvas: FC<{ fileName: string; sourceFile?: File; floatingAppControls?: boolean }> = ({ fileName, sourceFile, floatingAppControls = false }) => {
     const identity = useSelector((state: DataFormulatorState) => state.identity);
     const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
     const draftKey = JSON.stringify([identity?.type, identity?.id, workspaceId, fileName]);
-    return <WorkspaceFileContent key={`${draftKey}:${!!sourceFile}`} fileName={fileName} draftKey={draftKey} sourceFile={sourceFile} />;
+    return <WorkspaceFileContent key={`${draftKey}:${!!sourceFile}`} fileName={fileName} draftKey={draftKey} sourceFile={sourceFile}
+        floatingAppControls={floatingAppControls} />;
 };
 
-const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?: File }> = ({ fileName, draftKey, sourceFile }) => {
+const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?: File; floatingAppControls: boolean }> = ({ fileName, draftKey, sourceFile, floatingAppControls }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch();
     const mounted = useRef(false);
@@ -63,6 +75,20 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
         return onWorkspaceFilesChanged(() => setFileRevision(current => current + 1));
     }, [temporary, sourceFile]);
     const [textFile, setTextFile] = useState<{ content: string; savedContent: string; hash: string } | null>(null);
+    // A new translation function (e.g. once i18n finishes loading) must not refetch the file.
+    const tRef = useRef(t);
+    tRef.current = t;
+    // A file rewritten under the same name (an agent fix with `replaces`, or any in-place edit)
+    // reaches the thread as a new content hash: reload it once per hash, unless it is our own save.
+    const storedHash = useSelector((state: DataFormulatorState) => state.fileNodes.find(node => node.path === fileName)?.contentHash);
+    const reloadedHash = useRef(storedHash);
+    const loadedHash = useRef<string | undefined>(undefined);
+    loadedHash.current = textFile?.hash;
+    useEffect(() => {
+        if (temporary || sourceFile || !storedHash || storedHash === reloadedHash.current) return;
+        reloadedHash.current = storedHash;
+        if (loadedHash.current !== storedHash) setFileRevision(current => current + 1);
+    }, [storedHash, temporary, sourceFile]);
     const [mode, setMode] = useState('preview');
     const [lineWrap, setLineWrap] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -72,10 +98,26 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
     const [renaming, setRenaming] = useState(false);
     const [renameError, setRenameError] = useState('');
     const trimmedName = newName.trim();
-    const invalidName = !trimmedName || /[\\/]/.test(trimmedName) || Array.from(trimmedName).some(character => character.charCodeAt(0) < 32) || trimmedName === '.' || trimmedName === '..';
+    const invalidName = !trimmedName || isInvalidWorkspaceFileName(trimmedName);
     const [saveError, setSaveError] = useState('');
     const isMarkdown = /\.(md|markdown)$/i.test(fileName);
+    const isHtml = /\.html?$/i.test(fileName);
+    const isReactApp = /\.app\.jsx$/i.test(fileName);
+    const isApp = isHtml || isReactApp;
+    const hasPreview = isMarkdown || isApp;
+    const [appReloadKey, setAppReloadKey] = useState(0);
     const dirty = textFile !== null && textFile.content !== textFile.savedContent;
+    // A canvas app previews full-bleed with floating controls; the file bar returns
+    // for source editing or whenever there is something to save.
+    const appChromeless = floatingAppControls && isApp && mode === 'preview' && textFile !== null && !sourceFile && !dirty && !saveError;
+    // Only agent-editable workspace apps can be repaired with edit_file.
+    const repairRequest = (errors: string[], hash: string) =>
+        `The app files/${fileName} shows these errors:\n${errors.map(error => `- ${error}`).join('\n')}\n`
+        + `Fix it in place with edit_file (path "files/${fileName}", expected_content_hash "${hash}", `
+        + `replaces "files/${fileName}"), preferably with targeted replacements; keep its df-app manifest and do not create a copy.`;
+    const askAgentToFix = !readOnly && textFile && !dirty ? (errors: string[]) => dispatch(dfActions.queueAnalystTask({
+        text: repairRequest(errors, textFile.hash), images: [], attachments: [],
+    })) : undefined;
     const [preview, setPreview] = useState<WorkspaceFilePreview | null>(null);
     const [pdfFile, setPdfFile] = useState<Blob | null>(null);
     const [workbookFile, setWorkbookFile] = useState<Blob | null>(null);
@@ -132,7 +174,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 const file = await readWorkspaceTextFile(fileName);
                 if (!cancelled) {
                     setTextFile(textDrafts.get(draftKey) || { content: file.content, savedContent: file.content, hash: file.content_hash });
-                    setMode(isMarkdown && file.content.length > 0 && !textDrafts.has(draftKey) ? 'preview' : 'edit');
+                    setMode(hasPreview && file.content.length > 0 && !textDrafts.has(draftKey) ? 'preview' : 'edit');
                 }
                 return null;
             } catch {
@@ -146,7 +188,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 else setPreview(result);
             })
             .catch(() => {
-                if (!cancelled) setError(t('dataThread.previewUnavailable', {
+                if (!cancelled) setError(tRef.current('dataThread.previewUnavailable', {
                     defaultValue: 'A quick preview is not available for this file type.',
                 }));
             })
@@ -155,7 +197,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
             cancelled = true;
             if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
-    }, [fileName, isPdf, isMarkdown, draftKey, t, fileRevision, temporary, sourceFile]);
+    }, [fileName, isPdf, isMarkdown, hasPreview, draftKey, fileRevision, temporary, sourceFile]);
 
     const save = async () => {
         if (!textFile || readOnly || saving || discardOpen || renameOpen || renaming) return;
@@ -194,6 +236,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 textDrafts.set(renamedKey, draft);
                 textDrafts.delete(draftKey);
             }
+            dispatch(dfActions.renameFileNodes({ from: fileName, to: renamed.name }));
             if (mounted.current) {
                 setRenameOpen(false);
                 dispatch(dfActions.setFocused({ type: 'file', fileName: renamed.name }));
@@ -221,8 +264,23 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 event.preventDefault();
                 if (dirty) void save();
             }
-        }} sx={{ width: '100%', height: '100%', overflow: 'hidden', bgcolor: 'background.default', display: 'flex', flexDirection: 'column' }}>
-            <Box sx={{
+        }} sx={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', bgcolor: 'background.default', display: 'flex', flexDirection: 'column' }}>
+            {appChromeless && <Box role="group" aria-label="App controls" sx={{
+                // Sits left of the canvas pane's close button, which floats at the same corner.
+                position: 'absolute', top: 8, right: floatingAppControlsRight + 34, zIndex: 15, display: 'flex', alignItems: 'center', gap: 0.5,
+            }}>
+                <Tooltip title={readOnly ? t('htmlApp.viewSource') : t('htmlApp.editSource')}>
+                    <IconButton size="small" aria-label={readOnly ? t('htmlApp.viewSource') : t('htmlApp.editSource')} onClick={() => setMode('edit')} sx={floatingPillSx}>
+                        <CodeIcon sx={{ fontSize: iconVar.lg }} />
+                    </IconButton>
+                </Tooltip>
+                <Tooltip title={t('htmlApp.reload')}>
+                    <IconButton size="small" aria-label={t('htmlApp.reload')} onClick={() => setAppReloadKey(value => value + 1)} sx={floatingPillSx}>
+                        <RefreshIcon sx={{ fontSize: iconVar.lg }} />
+                    </IconButton>
+                </Tooltip>
+            </Box>}
+            {!appChromeless && <Box sx={{
                 minHeight: 36, flexShrink: 0, display: 'grid', alignItems: 'center', gap: 1,
                 gridTemplateColumns: isPdf && !textFile ? 'minmax(0, 1fr) auto minmax(40px, 1fr)' : 'minmax(0, 1fr)',
                 pl: 1.5, pr: 5, py: 0.25, boxSizing: 'border-box', borderBottom: '1px solid', borderColor: 'divider',
@@ -244,13 +302,16 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                     <Box sx={{ flex: 1 }} />
                     {textFile && <>
                         <Box role="group" aria-label="View controls" sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
-                            {isMarkdown && <ToggleButtonGroup exclusive value={mode} size="small" aria-label="File view"
+                            {hasPreview && <ToggleButtonGroup exclusive value={mode} size="small" aria-label="File view"
                                 onChange={(_, value) => { if (value) setMode(value); }}
                                 sx={{ flexShrink: 0, '& .MuiToggleButton-root': { minHeight: 28, px: 1, py: 0.25, fontSize: textVar.md, textTransform: 'none', lineHeight: 1.4, border: 0, borderRadius: '4px !important' } }}>
                                 <ToggleButton value="edit" aria-label={readOnly ? 'View source' : 'Edit source'}>{readOnly ? 'Source' : 'Edit'}</ToggleButton>
-                                <ToggleButton value="preview" aria-label="Preview Markdown">Preview</ToggleButton>
+                                <ToggleButton value="preview" aria-label={isApp ? t('htmlApp.previewApp') : 'Preview Markdown'}>Preview</ToggleButton>
                             </ToggleButtonGroup>}
-                            {(!isMarkdown || mode === 'edit') && <Tooltip title="Wrap lines">
+                            {isApp && mode === 'preview' && <Tooltip title={t('htmlApp.reload')}>
+                                <IconButton aria-label={t('htmlApp.reload')} onClick={() => setAppReloadKey(value => value + 1)}><RefreshIcon /></IconButton>
+                            </Tooltip>}
+                            {(!hasPreview || mode === 'edit') && <Tooltip title="Wrap lines">
                                 <IconButton aria-label="Wrap lines" aria-pressed={lineWrap} onClick={() => setLineWrap(value => !value)} color={lineWrap ? 'primary' : 'default'}><WrapTextIcon /></IconButton>
                             </Tooltip>}
                         </Box>
@@ -298,7 +359,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                     </Box>
                 )}
                 {isPdf && !textFile && <Box />}
-            </Box>
+            </Box>}
             <Dialog open={renameOpen} onClose={() => { if (!renaming) setRenameOpen(false); }} maxWidth="xs" fullWidth aria-labelledby="rename-file-title">
                 <DialogTitle id="rename-file-title">Rename file</DialogTitle>
                 <DialogContent>
@@ -333,7 +394,13 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 </Suspense>}
                 {!loading && imageUrl && <Box component="img" src={imageUrl} alt={fileName}
                     sx={{ display: 'block', maxWidth: '100%', maxHeight: '100%', mx: 'auto', objectFit: 'contain' }} />}
-                {!loading && textFile && (isMarkdown && mode === 'preview'
+                {!loading && textFile && (isApp && mode === 'preview'
+                    ? <Suspense fallback={<LoadingStatus label={t('dataThread.loadingFilePreview', { defaultValue: 'Loading file preview...' })} sx={{ height: '100%', p: 2 }} />}>
+                        {isReactApp
+                            ? <ReactAppPreview source={textFile.content} title={fileName} reloadKey={appReloadKey} reserveTopRight={appChromeless} onAskFix={askAgentToFix} />
+                            : <HtmlAppPreview html={textFile.content} title={fileName} reloadKey={appReloadKey} reserveTopRight={appChromeless} onAskFix={askAgentToFix} />}
+                    </Suspense>
+                    : isMarkdown && mode === 'preview'
                     ? <Box sx={{ height: '100%', overflow: 'auto', px: 3, py: 2, boxSizing: 'border-box', fontSize: textVar.md, overflowWrap: 'anywhere', '& img': { maxWidth: '100%' }, '& pre': { overflow: 'auto' } }}>
                         <CompactMarkdown content={textFile.content} color="text.primary" variant="document" />
                     </Box>

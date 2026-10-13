@@ -17,7 +17,7 @@ def test_builtin_meta_bundle_has_concrete_hidden_owners() -> None:
     assert registry.expanded_names(["meta"]) == [
         "meta", "analysis", "workspace", "visualization",
     ]
-    assert registry.gated_skill_names() == ["configure", "report", "terminal"]
+    assert registry.gated_skill_names() == ["configure", "connected_data", "html_app", "report", "terminal"]
     assert registry.get_skill("meta") is not None
     assert not registry.has("interaction")
     assert registry.action_owner("visualize") == "visualization"
@@ -29,6 +29,11 @@ def test_builtin_meta_bundle_has_concrete_hidden_owners() -> None:
         "inspect_source_data",
         "create_file",
         "edit_file",
+        "delete_items",
+        "list_files",
+        "read_file",
+        "search_files",
+        "move_file",
         "create_data",
         "update_data",
         "list_workspace_items",
@@ -71,7 +76,9 @@ def test_baseline_guides_progressive_visual_analysis() -> None:
     assert "pickup_datetime" not in baseline
     assert "explicit\nnonvisual requests" in visualization
     assert "Verify numerical claims independently" in visualization
-    workspace = registry.load_body("workspace")
+    # Acquisition guidance loads on demand; the workspace baseline points to it.
+    assert "load the `connected_data` skill" in registry.load_body("workspace")
+    workspace = registry.load_body("connected_data")
     assert "Omit `query` to add a source" in workspace
     assert "`compute_ready: false`" in workspace
     assert "Concrete queries never silently fall back to references" in workspace
@@ -109,7 +116,7 @@ def test_setup_actions_are_owned_by_the_gated_configure_skill() -> None:
         assert action_name not in tool_names
         assert not registry.is_active(["meta"], "configure")
     assert tool_names == {
-        "list_connectors", "describe_connector", "read_connector_form", "list_workflows", "list_schedules", "list_sessions",
+        "list_connectors", "read_connector_form", "list_workflows", "list_sessions",
     }
     assert {spec["function"]["name"] for spec in registry.action_tools_for(["workspace"])} == {"propose_data_operation"}
     configure = registry.load_body("configure")

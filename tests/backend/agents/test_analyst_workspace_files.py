@@ -18,8 +18,6 @@ from data_formulator.analyst.workspace_inputs import (
     WorkspaceInputEngine,
     build_workspace_input_manifest,
     build_workspace_input_preview,
-    render_workspace_input_context,
-    render_external_reference_context,
 )
 from data_formulator.datalake.file_manager import save_uploaded_file
 from data_formulator.datalake.workspace import Workspace
@@ -193,6 +191,7 @@ def test_agent_acquisition_refresh_preserves_metadata_and_checks_hash(tmp_path):
     assert workspace.get_table_metadata("acquired").import_options is None
 
 
+@pytest.mark.slow
 def test_agent_data_python_provenance_staleness_and_failed_update(tmp_path):
     workspace = Workspace("test-user", root_dir=tmp_path)
     skill = WorkspaceSkill()
@@ -306,7 +305,7 @@ def test_create_file_is_create_only_and_listed_as_input(tmp_path):
     with pytest.raises(ValueError, match="already exists"):
         skill.handle_tool("create_file", {"filename": "summary.md", "content": "overwrite"}, ctx)
     assert workspace.read_workspace_file("summary.md")[1] == b"# Summary"
-    for filename in ("../escape.md", "/absolute.md", "sub/file.md", "sub\\file.md", "_internal.md", ".hidden", "data_operations"):
+    for filename in ("../escape.md", "/absolute.md", "sub//file.md", "sub\\file.md", "_internal.md", ".hidden", "data_operations", "sub/_x.md"):
         with pytest.raises(ValueError):
             skill.handle_tool("create_file", {"filename": filename, "content": "bad"}, ctx)
     with pytest.raises(ValueError, match="2 MB"):
@@ -337,6 +336,7 @@ def test_obsolete_write_tools_are_not_available(tmp_path):
     assert workspace.confined_scratch.read_text("summary.md") == "# Generated"
 
 
+@pytest.mark.slow
 def test_python_artifact_combines_user_source_and_prior_scratch(tmp_path):
     workspace = Workspace("test-user", root_dir=tmp_path)
     workspace.write_parquet(pd.DataFrame({"value": [2, 3]}), "source")
@@ -411,7 +411,6 @@ def _docx(text: str) -> bytes:
 
 def _agent(workspace: Workspace) -> AnalystAgent:
     agent = AnalystAgent(client=None, workspace=workspace)
-    agent._build_lightweight_table_context = lambda *args, **kwargs: "TABLE_CTX"
     agent._build_system_prompt = lambda *args, **kwargs: "SYS"
     return agent
 
@@ -526,7 +525,7 @@ def test_text_memory_is_readable_and_searchable_workspace_item(tmp_path: Path) -
     }]
 
 
-def test_workspace_input_preview_is_bounded_and_rendered_with_data(tmp_path: Path) -> None:
+def test_workspace_input_preview_is_bounded(tmp_path: Path) -> None:
     workspace = Workspace("test-user", root_dir=tmp_path)
     workspace.save_workspace_file(b"abcdefghij", "notes.txt", "text/plain")
     manifest = build_workspace_input_manifest(
@@ -536,18 +535,9 @@ def test_workspace_input_preview_is_bounded_and_rendered_with_data(tmp_path: Pat
     preview = build_workspace_input_preview(
         manifest, workspace, budget_chars=4, max_file_chars=10,
     )
-    rendered = render_workspace_input_context(manifest, preview, "TABLE_CTX")
 
     assert preview.selected[0].content == "abcd"
     assert preview.selected[0].truncated is True
-    assert "[WORKSPACE INPUTS]" in rendered
-    assert "current locally readable input inventory" in rendered
-    assert "additional user-selected workspace sources" in rendered
-    assert "do not call list_workspace_items before reading or searching" in rendered
-    assert f"- {manifest.data[0].id}: orders" in rendered
-    assert "\n\nTABLE_CTX" in rendered
-    assert "### Preview: notes.txt (truncated)" in rendered
-    assert "<workspace-input-content>\nabcd\n</workspace-input-content>" in rendered
 
 
 def test_unsupported_file_stays_visible_without_preview(tmp_path: Path) -> None:
@@ -556,13 +546,10 @@ def test_unsupported_file_stays_visible_without_preview(tmp_path: Path) -> None:
     manifest = build_workspace_input_manifest([], workspace.list_workspace_files())
 
     preview = build_workspace_input_preview(manifest, workspace)
-    rendered = render_workspace_input_context(manifest, preview, "")
 
     assert manifest.files[0].capabilities == ("python",)
     assert preview.selected == ()
     assert preview.omitted_input_ids == (manifest.files[0].id,)
-    assert "archive.bin" in rendered
-    assert "1 file input(s) omitted from eager preview." in rendered
 
 
 def test_external_table_reference_is_session_context_not_file_or_computation_data(tmp_path: Path) -> None:
@@ -576,25 +563,20 @@ def test_external_table_reference_is_session_context_not_file_or_computation_dat
                 "sampleRows": [{"timestamp": "2026-09-18"}], "sampleTruncated": False},
     }
     manifest = build_workspace_input_manifest([], workspace.list_workspace_files(), workspace)
-    rendered = render_external_reference_context([reference], reference["id"])
+    # The session layer shows the reference as its own file; it is not a workspace input.
+    from data_formulator.analyst.session_layer import SessionLayer
+    layer = SessionLayer({"externalTableReferences": [reference],
+                          "focusedId": {"type": "external-table", "referenceId": reference["id"]}}, workspace)
+    view = json.loads(layer.view(f"session/references/{reference['id']}.json")["content"])
 
     assert not manifest.data
     assert not manifest.files
-    assert "events-key" in rendered
-    assert "timestamp" in rendered
-    assert "workspace Data Access Paths" in rendered
-    assert "untrusted data" in rendered
-    assert "not an executed query" in rendered
-    assert "not the full population or a random sample" in rendered
-    assert json.loads(rendered.splitlines()[-1])["references"][0]["summary"]["sampleRows"] == reference["summary"]["sampleRows"]
-    assert "not Python-readable files or tables" in rendered
-    assert "connectorId to source_id" in rendered
-    assert json.loads(rendered.splitlines()[-1])["focused_reference"] == reference["id"]
-    empty = render_external_reference_context([], reference["id"])
-    assert json.loads(empty.splitlines()[-1]) == {"focused_reference": None, "references": []}
-    assert "supersedes earlier" in empty
-    assert len(empty) < 250
-    assert json.loads(render_external_reference_context([None, {}]).splitlines()[-1])["references"] == []
+    assert view["tableKey"] == "events-key" and view["summary"]["columns"][0]["name"] == "timestamp"
+    assert view["summary"]["sampleRows"] == reference["summary"]["sampleRows"]
+    assert "query_capabilities" in view
+    assert f"Focus: `session/references/{reference['id']}.json` is on the canvas" in layer.index()
+    guidance = (Path(__file__).resolve().parents[3] / "py-src/data_formulator/analyst/skills/workspace/SKILL.md").read_text()
+    assert "use its `connectorId` as `source_id`" in guidance and "not a Python input" in guidance
     context = SkillContext(client=None, workspace=workspace, payload={"external_references": [reference]})
     skill = WorkspaceSkill()
     listed = json.loads(skill.handle_tool("list_workspace_items", {"scope": "input"}, context).text)
@@ -610,9 +592,6 @@ def test_external_table_reference_is_session_context_not_file_or_computation_dat
     assert json.loads(skill.handle_tool("list_workspace_items", {"query": "missing"}, context).text)["count"] == 0
     read = json.loads(skill.handle_tool("read_workspace_item", {"item_id": reference["id"]}, context).text)
     assert read["reference"]["summary"] == reference["summary"]
-    assert "propose_data_operation" not in rendered
-    assert "connector_inputs" not in rendered
-    assert "query_capabilities" in json.loads(rendered.splitlines()[-1])["references"][0]
 
     workspace.save_workspace_file(b"timestamp notes", "notes.txt", "text/plain")
     for selection in ({}, {"kinds": ["data"]}, {"kinds": ["external-table-reference"]},
@@ -648,19 +627,19 @@ def test_external_table_reference_is_session_context_not_file_or_computation_dat
         }, context)
 
 
-def test_external_reference_agent_context_bounds_large_ui_samples() -> None:
+def test_external_reference_view_bounds_large_ui_samples() -> None:
     reference = {
         "kind": "external-table-reference", "id": "external:test:reviews",
         "connectorId": "test", "tableKey": "reviews", "displayName": "Reviews",
         "summary": {"columns": [{"name": "review", "type": "string"}],
                     "sampleRows": [{"review": f"review {index}"} for index in range(50)]},
     }
-    rendered = render_external_reference_context([reference])
-    normalized = json.loads(rendered.splitlines()[-1])["references"]
-    assert len(normalized[0]["summary"]["sampleRows"]) == 5
-    assert normalized[0]["summary"]["cachedSampleRowCount"] == 50
+    from data_formulator.analyst.session_layer import SessionLayer
+    view = json.loads(SessionLayer({"externalTableReferences": [reference]}).view(
+        f"session/references/{reference['id']}.json")["content"])
+    assert len(view["summary"]["sampleRows"]) == 5
+    assert view["summary"]["cachedSampleRowCount"] == 50
     assert len(reference["summary"]["sampleRows"]) == 50
-    assert json.loads(render_external_reference_context(normalized).splitlines()[-1])["references"] == normalized
 
 
 def test_file_only_workspace_is_an_analysis_input(tmp_path: Path) -> None:
@@ -669,19 +648,18 @@ def test_file_only_workspace_is_an_analysis_input(tmp_path: Path) -> None:
     workspace_files = workspace.list_workspace_files()
     agent = _agent(workspace)
 
-    messages = agent._build_initial_messages(
-        [], "Summarize the notes", workspace_files=workspace_files,
-    )
+    from data_formulator.analyst.session_layer import SessionLayer
+    agent._run_payload = {"session_layer": SessionLayer({"focusedId": {"type": "file", "fileName": "README.md"}}, workspace)}
+    messages = agent._build_initial_messages("Summarize the notes")
     user_content = messages[1]["content"]
 
     manifest = build_workspace_input_manifest([], workspace_files, workspace)
     assert agent._initial_loaded_skills(manifest) == {"meta"}
-    assert "[WORKSPACE INPUTS]" in user_content
-    assert "## Files" in user_content
-    assert "README.md (text/markdown" in user_content
-    assert "# Dataset notes" in user_content
-    assert "read_workspace_item" in user_content
-    assert user_content.index("[WORKSPACE INPUTS]") < user_content.index("[USER QUESTION]")
+    assert "- `files/README.md`" in user_content
+    # The file on the canvas is shown as the file it is, and the question comes last.
+    assert "[ON THE CANVAS] `files/README.md`" in user_content and "# Dataset notes" in user_content
+    assert user_content.index("[SESSION INDEX]") < user_content.index("[ON THE CANVAS]") < user_content.index("[USER QUESTION]")
+    assert user_content.rstrip().endswith("Summarize the notes")
 
 
 def test_workspace_workspace_item_tool_reads_docx(tmp_path: Path) -> None:
@@ -844,6 +822,7 @@ def test_workspace_lists_visible_temp_items_from_storage(tmp_path: Path) -> None
     }
 
 
+@pytest.mark.slow
 def test_file_binary_edits_recheck_hash_after_computation(tmp_path: Path) -> None:
     workspace = Workspace("test-user", root_dir=tmp_path)
     context = SkillContext(client=None, workspace=workspace, runtime=_agent(workspace))
@@ -1095,10 +1074,9 @@ def test_pdf_adapter_exposes_page_reads_and_eager_preview(tmp_path: Path) -> Non
     assert preview.selected[0].preview_format == "structured"
     assert json.loads(preview.selected[0].content)["page_count"] == 2
 
-def test_reference_context_lists_connected_sources_for_discovery(monkeypatch):
+def test_index_lists_connected_sources_for_discovery(monkeypatch):
     import data_formulator.data_connector as data_connector
-    from data_formulator.analyst.workspace_inputs import render_external_reference_context
+    from data_formulator.analyst.session_layer import SessionLayer
 
     monkeypatch.setattr(data_connector, "list_available_connector_ids", lambda: ["powerbi:sales", "kusto:logs"])
-    text = render_external_reference_context([])
-    assert text.endswith("searchable with summarize_data_sources/find_data: powerbi:sales, kusto:logs")
+    assert "Searchable with summarize_data_sources and find_data: powerbi:sales, kusto:logs" in SessionLayer({}).index()

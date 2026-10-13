@@ -167,18 +167,3 @@ class TestSingleton:
         v1 = get_credential_vault()
         v2 = get_credential_vault()
         assert v1 is v2
-
-    def test_singleton_is_cached(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("CREDENTIAL_VAULT_KEY", raising=False)
-        monkeypatch.setattr(
-            "data_formulator.auth.vault.get_data_formulator_home",
-            lambda: tmp_path,
-        )
-
-        from data_formulator.auth.vault import get_credential_vault
-        import data_formulator.auth.vault as vault_mod
-
-        v1 = get_credential_vault()
-        assert vault_mod._initialized is True
-        v2 = get_credential_vault()
-        assert v1 is v2

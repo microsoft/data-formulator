@@ -17,7 +17,7 @@
     "openGitHubAuthorization": "GitHubを開きます",
     "manageCopilotConnection": "GitHubで管理",
     "deviceCode": "デバイスコード",
-    "deviceCodeInstructions": "アカウントを接続するため、このコードを {{provider}} に入力してください。",
+    "deviceCodeInstructions": "このコードをコピーし、「{{provider}}を開く」を選択して、開いたページに貼り付けてください。",
     "copyDeviceCode": "デバイスコードをコピー",
     "copyDeviceCodeFailed": "コードをコピーできませんでした。手動で選択してコピーしてください。",
     "copilotBilling": "試験運用中です。Copilotのサブスクリプション制限と組織ポリシーが適用されます。互換性のあるチャットモデルのみ表示されます。",

@@ -43,6 +43,8 @@ export function getUrls() {
         DELETE_TABLE: `/api/tables/delete-table`,
         GET_COLUMN_STATS: `/api/tables/analyze`,
         SAMPLE_TABLE: `/api/tables/sample-table`,
+        APP_SQL: `/api/apps/sql`,
+        APP_SOURCE_QUERY: `/api/apps/source-query`,
         SYNC_TABLE_DATA: `/api/tables/sync-table-data`,
         EXPORT_TABLE_CSV: `/api/tables/export-table-csv`,
 
@@ -633,7 +635,7 @@ export const assembleVegaChart = (
     const semanticTypes: Record<string, string | any> = {};
     for (const [fieldName, info] of Object.entries(fieldSemantics ?? {})) {
         if (info.semanticType) {
-            const { displayName: _displayName, ...annotation } = info;
+            const { displayName: _displayName, authored: _authored, ...annotation } = info;
             semanticTypes[fieldName] = Object.keys(annotation).length === 1
                 ? info.semanticType
                 : annotation;

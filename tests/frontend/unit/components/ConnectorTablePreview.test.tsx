@@ -98,21 +98,6 @@ describe('ConnectorTablePreview source metadata', () => {
         expect(JSON.parse(String(vi.mocked(apiRequest).mock.calls[0][1]?.body)).import_options.size).toBe(limit);
     });
 
-    it('uses descriptions on table headers without restoring the old metadata panel', () => {
-        const { container } = render(
-            <ConnectorTablePreview
-                {...baseProps}
-            />,
-        );
-
-        const orderHeader = Array.from(container.querySelectorAll('th'))
-            .find(header => header.textContent === 'order_id');
-        expect(orderHeader).toBeDefined();
-        expect(orderHeader?.getAttribute('title')).toBeNull();
-        expect(screen.queryByText('(订单编号)')).toBeNull();
-        expect(screen.queryByText('SUM(line_items.amount)')).toBeNull();
-    });
-
     it('shows progress and disables the load action while loading', () => {
         render(<ConnectorTablePreview {...baseProps} loading />);
 

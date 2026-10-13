@@ -7,7 +7,7 @@ import NoteAddOutlinedIcon from '@mui/icons-material/NoteAddOutlined';
 import { dfActions, type DataFormulatorState } from '../app/dfSlice';
 import { ensureActiveWorkspace } from '../app/sessionThunks';
 import type { AppDispatch } from '../app/store';
-import { createWorkspaceTextFile } from '../app/workspaceService';
+import { createWorkspaceTextFile, isInvalidWorkspaceFileName } from '../app/workspaceService';
 
 export const WorkspaceFileMenu = ({ onUpload, onCreated, disabled = false, busy = false }: {
     onUpload: () => void;
@@ -23,7 +23,7 @@ export const WorkspaceFileMenu = ({ onUpload, onCreated, disabled = false, busy 
     const [name, setName] = useState('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
-    const invalidName = !name.trim() || /[\\/]/.test(name) || Array.from(name).some(character => character.charCodeAt(0) < 32) || name === '.' || name === '..';
+    const invalidName = !name.trim() || isInvalidWorkspaceFileName(name.trim());
     const create = async () => {
         if (invalidName || saving || workspace?.readOnly) return;
         setSaving(true);

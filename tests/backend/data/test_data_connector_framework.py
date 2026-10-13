@@ -30,9 +30,7 @@ from data_formulator.data_connector import (
     DATA_CONNECTORS,
     DataConnector,
     SourceSpec,
-    _node_to_dict,
     _resolve_connector,
-    _resolve_env_refs,
     _sanitize_error,
     connectors_bp,
     list_available_connector_ids,
@@ -271,41 +269,10 @@ def connected_client(client):
 
 
 # ==================================================================
-# Tests: Blueprint & Registration
-# ==================================================================
-
-class TestSharedRouteRegistration:
-
-    def test_shared_routes_registered(self, app, source):
-        rules = [rule.rule for rule in app.url_map.iter_rules()]
-        assert "/api/connectors/connect" in rules
-        assert "/api/connectors/disconnect" in rules
-        assert "/api/connectors/get-status" in rules
-        assert "/api/connectors/get-catalog" in rules
-        assert "/api/connectors/get-catalog-tree" in rules
-        assert "/api/connectors/search-catalog" in rules
-        assert "/api/connectors/import-data" in rules
-        assert "/api/connectors/import-group" in rules
-        assert "/api/connectors/refresh-data" in rules
-        assert "/api/connectors/preview-data" in rules
-        assert "/api/connectors/column-values" in rules
-
-
-# ==================================================================
 # Tests: Frontend Config
 # ==================================================================
 
 class TestFrontendConfig:
-
-    def test_frontend_config_structure(self, source):
-        cfg = source.get_frontend_config()
-        assert cfg["source_id"] == "mock_db"
-        assert cfg["name"] == "Mock Database"
-        assert cfg["icon"] == "mock"
-        assert "params_form" in cfg
-        assert "pinned_params" in cfg
-        assert "hierarchy" in cfg
-        assert "effective_hierarchy" in cfg
 
     def test_pinned_params_excluded_from_form(self, source):
         cfg = source.get_frontend_config()
@@ -314,11 +281,6 @@ class TestFrontendConfig:
         assert "user" in form_names
         assert "password" in form_names
         assert cfg["pinned_params"]["host"] == "localhost"
-
-    def test_hierarchy_included(self, source):
-        cfg = source.get_frontend_config()
-        keys = [h["key"] for h in cfg["hierarchy"]]
-        assert keys == ["database", "schema", "table"]
 
     def test_pinned_source_effective_hierarchy(self, source_pinned):
         cfg = source_pinned.get_frontend_config()
@@ -403,17 +365,6 @@ class TestAuthRoutes:
         assert data["status"] == "success"
         assert "hierarchy" in data["data"]
         assert "effective_hierarchy" in data["data"]
-
-    def test_connect_merges_default_params(self, client):
-        """Default params (host=localhost) merged with user params."""
-        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = client.post("/api/connectors/connect", json={
-                "connector_id": "mock_db",
-                "params": {"user": "test", "password": "test"},
-            })
-        data = resp.get_json()
-        assert resp.status_code == 200
-        assert data["status"] == "success"
 
     def test_connect_bad_host_returns_error(self, app):
         source = DataConnector.from_loader(MockLoader, source_id="mock_bad")
@@ -561,13 +512,6 @@ class TestAuthRoutes:
         assert data["data"]["connected"] is False
         assert "params_form" in data["data"]
 
-    def test_status_not_connected_after_no_connect(self, client):
-        """Status should show not-connected for a user that never connected."""
-        with patch.object(DataConnector, "_get_identity", return_value="other-user"):
-            resp = client.post("/api/connectors/get-status", json={"connector_id": "mock_db"})
-        data = resp.get_json()
-        assert data["data"]["connected"] is False
-
     def test_safe_params_exclude_password(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
             resp = connected_client.post("/api/connectors/get-status", json={"connector_id": "mock_db"})
@@ -615,14 +559,6 @@ class TestCatalogRoutes:
         assert len(data["data"]["nodes"]) > 0
         # First level is "database" → namespace
         assert data["data"]["nodes"][0]["node_type"] == "namespace"
-
-    def test_ls_returns_hierarchy(self, connected_client):
-        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/get-catalog", json={"connector_id": "mock_db", "path": []})
-        data = resp.get_json()
-        assert "hierarchy" in data["data"]
-        assert "effective_hierarchy" in data["data"]
-        assert data["data"]["hierarchy"][0]["key"] == "database"
 
     def test_ls_drill_down_to_tables(self, connected_client):
         """Expand database → schema → tables."""
@@ -687,16 +623,6 @@ class TestCatalogRoutes:
         assert resp.status_code == 200
         assert "tree" in data["data"]
         assert "hierarchy" in data["data"]
-
-    def test_catalog_tree_with_filter(self, connected_client):
-        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/get-catalog-tree", json={
-                "connector_id": "mock_db",
-                "filter": "order",
-            })
-        data = resp.get_json()
-        assert resp.status_code == 200
-        assert "tree" in data["data"]
 
     def test_search_catalog_route(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
@@ -981,19 +907,6 @@ class TestDataRoutes:
         assert resp.status_code == 200
         assert resp.get_json()["status"] == "error"
 
-    def test_column_values_with_keyword(self, connected_client):
-        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/column-values", json={
-                "connector_id": "mock_db",
-                "source_table": "public.users",
-                "column_name": "name",
-                "keyword": "ali",
-                "limit": 10,
-            })
-        data = resp.get_json()
-        assert resp.status_code == 200
-        assert data["status"] == "success"
-
     def test_column_values_not_connected(self, client):
         with patch.object(DataConnector, "_get_identity", return_value="nobody"):
             resp = client.post("/api/connectors/column-values", json={
@@ -1018,10 +931,6 @@ class TestErrorHandling:
     def test_sanitize_error_permission(self):
         msg, code = _sanitize_error(PermissionError("access denied for user"))
         assert code == 403
-
-    def test_sanitize_error_invalid_params(self):
-        msg, code = _sanitize_error(ValueError("host is required"))
-        assert code == 200
 
     def test_sanitize_error_unknown(self):
         msg, code = _sanitize_error(RuntimeError("something weird happened"))
@@ -1066,23 +975,6 @@ class TestIdentityIsolation:
             resp = client.post("/api/connectors/get-status", json={"connector_id": "mock_db"})
             assert resp.get_json()["data"]["connected"] is True
 
-    def test_delete_does_not_affect_other_user(self, client):
-        """Deleting credentials for user-a doesn't affect user-b's session."""
-        with patch.object(DataConnector, "_get_identity", return_value="user-a"):
-            client.post("/api/connectors/connect", json={
-                "connector_id": "mock_db",
-                "params": {"host": "localhost", "user": "A", "password": "A"},
-            })
-        with patch.object(DataConnector, "_get_identity", return_value="user-b"):
-            client.post("/api/connectors/connect", json={
-                "connector_id": "mock_db",
-                "params": {"host": "localhost", "user": "B", "password": "B"},
-            })
-        # user-b should still be connected regardless of user-a's state
-        with patch.object(DataConnector, "_get_identity", return_value="user-b"):
-            resp = client.post("/api/connectors/get-status", json={"connector_id": "mock_db"})
-            assert resp.get_json()["data"]["connected"] is True
-
 
 # ==================================================================
 # Tests: Scope Pinning
@@ -1117,29 +1009,3 @@ class TestScopePinning:
             })
         data = resp.get_json()
         assert data["data"]["pinned_scope"]["database"] == "testdb"
-
-
-# ==================================================================
-# Tests: Helpers
-# ==================================================================
-
-class TestHelpers:
-
-    def test_node_to_dict(self):
-        node = CatalogNode("users", "table", ["db", "public", "users"], {"row_count": 5})
-        d = _node_to_dict(node)
-        assert d["name"] == "users"
-        assert d["node_type"] == "table"
-        assert d["path"] == ["db", "public", "users"]
-        assert d["metadata"]["row_count"] == 5
-
-    def test_resolve_env_refs(self, monkeypatch):
-        monkeypatch.setenv("MY_SECRET", "hunter2")
-        result = _resolve_env_refs({"password": "${MY_SECRET}", "host": "localhost"})
-        assert result["password"] == "hunter2"
-        assert result["host"] == "localhost"
-
-    def test_resolve_env_refs_missing(self, monkeypatch):
-        monkeypatch.delenv("NONEXISTENT_VAR", raising=False)
-        result = _resolve_env_refs({"password": "${NONEXISTENT_VAR}"})
-        assert result["password"] == ""

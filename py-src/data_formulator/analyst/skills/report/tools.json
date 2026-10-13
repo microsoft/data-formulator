@@ -10,7 +10,7 @@
           "chart_ids": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "List of chart IDs from [AVAILABLE CHARTS] to inspect."
+            "description": "List of chart IDs to inspect (session/charts/<id>.json in the index)."
           }
         },
         "required": ["chart_ids"]
@@ -25,9 +25,13 @@
       "parameters": {
         "type": "object",
         "properties": {
+          "replaces": {
+            "type": "string",
+            "description": "Id of the report to replace, from [REPLACEABLE ARTIFACTS]. Only to fix an artifact the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the old one is deleted and this takes its place after the latest request. Never when exploring something new; a new artifact keeps the analysis history."
+          },
           "report": {
             "type": "string",
-            "description": "The full Markdown report text. Embed charts with ![caption](chart://chart_id) using IDs from [AVAILABLE CHARTS] or successful visualize results."
+            "description": "The full Markdown report text. Embed charts with ![caption](chart://chart_id) using IDs of session charts (session/charts/<id>.json) or successful visualize results."
           }
         },
         "required": ["report"]

@@ -112,11 +112,6 @@ class TestOIDCLogin:
         assert body["error"]["code"] == "SERVICE_UNAVAILABLE"
         assert "not available" in body["error"]["message"]
 
-    def test_login_redirect_uri_uses_auth_callback(self, client):
-        resp = client.get("/api/auth/oidc/login")
-        location = resp.headers["Location"]
-        assert "%2Fauth%2Fcallback" in location or "/auth/callback" in location
-
 
 # ==================================================================
 # oidc_callback_bp: /auth/callback

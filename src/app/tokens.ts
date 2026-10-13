@@ -9,7 +9,7 @@
 
 import type { SxProps, Theme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { iconVar, textVar } from './layout';
+import { buttonVar, iconVar, textVar } from './layout';
 
 // ── Border colors ──────────────────────────────────────────────────────
 
@@ -162,6 +162,12 @@ export const transition = {
  * plain document backgrounds. Resting state is neutral; spread this and
  * override `color` / `&:hover` for destructive or active variants.
  */
+/**
+ * Right offset (px) for controls floating over a full-bleed HTML app: clears the
+ * app's own vertical scrollbar (~15px when scrollbars are always shown).
+ */
+export const floatingAppControlsRight = 24;
+
 export const floatingPillSx: SxProps = {
     backgroundColor: 'background.paper',
     border: `1px solid ${borderColor.divider}`,
@@ -337,3 +343,53 @@ export const paletteKeys = Object.keys(palettes) as (keyof typeof palettes)[];
 
 /** Background tint opacity — applied to `main` to produce `bgcolor`. */
 export const bgAlpha = 0.1;
+
+// ── Code editor find panel ─────────────────────────────────────────────
+
+/**
+ * CodeMirror's find/replace panel in the app's own controls: theme font,
+ * compact inputs and buttons, divider borders, and the palette's primary color
+ * for focus and hover. Spread into the `sx` of the box that holds the editor
+ * (MarkdownEditor, the log viewer); the panel is plain DOM, so it is styled
+ * from outside where the MUI theme is available.
+ */
+export const codeEditorSearchPanelSx = (theme: Theme) => {
+    const primary = theme.palette.primary.main;
+    const control = {
+        height: buttonVar.heightSmall, boxSizing: 'border-box', margin: '2px 4px 2px 0', verticalAlign: 'middle',
+        border: `1px solid ${borderColor.view}`, borderRadius: `${theme.shape.borderRadius}px`,
+        backgroundColor: theme.palette.background.paper, fontFamily: theme.typography.fontFamily,
+    } as const;
+    return {
+        '& .cm-panels': {
+            backgroundColor: theme.palette.grey[50], color: theme.palette.text.primary,
+            fontFamily: theme.typography.fontFamily, fontSize: textVar.xs,
+        },
+        '& .cm-panels.cm-panels-bottom': { borderTop: `1px solid ${borderColor.divider}` },
+        '& .cm-panels.cm-panels-top': { borderBottom: `1px solid ${borderColor.divider}` },
+        '& .cm-panels .cm-panel.cm-search': { position: 'relative', padding: '6px 40px 6px 10px', fontSize: textVar.xs },
+        '& .cm-panels .cm-search .cm-textfield': {
+            ...control, width: 'min(240px, 40vw)', padding: '0 8px', color: theme.palette.text.primary, fontSize: textVar.sm,
+            transition: transition.fast,
+            '&:focus': { outline: 'none', borderColor: primary, boxShadow: `0 0 0 2px ${alpha(primary, 0.16)}` },
+        },
+        '& .cm-panels .cm-search .cm-button': {
+            ...control, padding: '0 10px', backgroundImage: 'none', color: theme.palette.text.secondary,
+            fontSize: textVar.xs, cursor: 'pointer', transition: transition.fast,
+            '&:hover': { borderColor: primary, color: primary, backgroundColor: alpha(primary, 0.04) },
+            '&:active': { backgroundImage: 'none', backgroundColor: alpha(primary, 0.1) },
+            '&:focus-visible': { outline: `2px solid ${alpha(primary, 0.5)}`, outlineOffset: '1px' },
+        },
+        '& .cm-panels .cm-search label': {
+            display: 'inline-flex', alignItems: 'center', gap: '4px', margin: '2px 10px 2px 2px', verticalAlign: 'middle',
+            color: theme.palette.text.secondary, fontSize: textVar.xs, cursor: 'pointer', whiteSpace: 'nowrap',
+        },
+        '& .cm-panels .cm-search input[type="checkbox"]': { margin: 0, width: 13, height: 13, accentColor: primary, cursor: 'pointer' },
+        '& .cm-panels .cm-panel.cm-search button[name="close"]': {
+            position: 'absolute', top: '8px', right: '8px', width: 24, height: 24, padding: 0, border: 0,
+            borderRadius: `${theme.shape.borderRadius}px`, backgroundColor: 'transparent', color: theme.palette.text.secondary,
+            fontSize: iconVar.md, lineHeight: 1, cursor: 'pointer', transition: transition.fast,
+            '&:hover': { backgroundColor: theme.palette.action.hover, color: theme.palette.text.primary },
+        },
+    };
+};

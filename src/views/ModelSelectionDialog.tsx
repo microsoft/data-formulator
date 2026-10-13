@@ -229,6 +229,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     const isCopilot = newEndpoint === 'github_copilot';
     const isChatGPT = newEndpoint === 'chatgpt';
     const usesDeviceCode = isCopilot || isChatGPT;
+    const isDesktopApp = new URLSearchParams(window.location.search).get('desktop') === '1';
     const accountProvider = isAccountProvider ? newEndpoint : 'openrouter';
     const accountConnectionUrl = `/api/model-endpoints/connections/${accountProvider}`;
     const [newModel, setNewModel] = useState<string>(initialDefinition?.model || "");
@@ -393,7 +394,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
 
     const resumeOpenRouterLogin = (event: React.MouseEvent<HTMLAnchorElement>) => {
         const attempt = openRouterAttempt.current;
-        if (!attempt || attempt.cancelled) return;
+        // pywebview routes plain link clicks to the system browser; script popups would open twice or not at all.
+        if (!attempt || attempt.cancelled || isDesktopApp) return;
         try {
             if (attempt.popup && !attempt.popup.closed) {
                 attempt.popup.location.href = openRouterAuthUrl;
@@ -415,7 +417,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     const startOpenRouterLogin = async () => {
         cancelOpenRouterLogin();
         setOpenRouterError('');
-        const popup = window.open('', '_blank', 'popup,width=650,height=760');
+        const popup = isDesktopApp ? null : window.open('', '_blank', 'popup,width=650,height=760');
         if (popup) popup.opener = null;
         const attempt = { cancelled: false, provider: accountProvider, popup, flowId: undefined as string | undefined };
         openRouterAttempt.current = attempt;

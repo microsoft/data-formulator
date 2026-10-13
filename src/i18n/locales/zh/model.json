@@ -17,7 +17,7 @@
     "openGitHubAuthorization": "打开 GitHub",
     "manageCopilotConnection": "在 GitHub 中管理",
     "deviceCode": "设备代码",
-    "deviceCodeInstructions": "在 {{provider}} 输入此代码以连接账户。",
+    "deviceCodeInstructions": "复制此代码，选择“打开 {{provider}}”，然后在打开的页面中粘贴。",
     "copyDeviceCode": "复制设备代码",
     "copyDeviceCodeFailed": "无法复制代码。请选择代码并手动复制。",
     "copilotBilling": "实验性功能。受 Copilot 订阅限制和组织策略约束。仅列出兼容的聊天模型。",

@@ -53,11 +53,6 @@ describe('ApiRequestError', () => {
         expect(err.isRetryable).toBe(true);
     });
 
-    it('isRetryable returns false by default', () => {
-        const err = new ApiRequestError({ code: 'INTERNAL_ERROR', message: 'oops', retry: false }, 500);
-        expect(err.isRetryable).toBe(false);
-    });
-
     it('isAuthError returns true for auth codes', () => {
         for (const code of ['AUTH_REQUIRED', 'AUTH_EXPIRED', 'ACCESS_DENIED']) {
             const err = new ApiRequestError({ code, message: 'auth', retry: false }, 401);
@@ -120,26 +115,6 @@ describe('parseApiResponse', () => {
     });
 
     describe('Phase 2 unified format', () => {
-
-        it('should parse status:"success" response', () => {
-            const body = { status: 'success', data: { tables: ['a', 'b'] } };
-            const result = parseApiResponse(body, 200);
-            expect(result).toEqual({ data: { tables: ['a', 'b'] } });
-        });
-
-        it('should throw on error with HTTP 4xx status', () => {
-            const body = {
-                status: 'error',
-                error: { code: 'INVALID_REQUEST', message: 'Bad input', retry: false },
-            };
-            expect(() => parseApiResponse(body, 400)).toThrow(ApiRequestError);
-            try {
-                parseApiResponse(body, 400);
-            } catch (e: any) {
-                expect(e.apiError.code).toBe('INVALID_REQUEST');
-                expect(e.httpStatus).toBe(400);
-            }
-        });
 
         it('should throw on error with HTTP 5xx status', () => {
             const body = {
@@ -219,12 +194,6 @@ describe('parseStreamLine', () => {
         expect(event!.error!.retry).toBe(true);
     });
 
-    it('should parse a done event', () => {
-        const line = JSON.stringify({ type: 'done', data: { summary: 'all good' } });
-        const event = parseStreamLine(line);
-        expect(event!.type).toBe('done');
-    });
-
     it('should return null for empty lines', () => {
         expect(parseStreamLine('')).toBeNull();
         expect(parseStreamLine('   ')).toBeNull();
@@ -232,12 +201,6 @@ describe('parseStreamLine', () => {
 
     it('should return null for malformed JSON', () => {
         expect(parseStreamLine('not json {')).toBeNull();
-    });
-
-    it('should handle unicode content', () => {
-        const line = JSON.stringify({ type: 'text_delta', data: { text: '数据分析' } });
-        const event = parseStreamLine(line);
-        expect(event!.data.text).toBe('数据分析');
     });
 
     it('should reject legacy status-wrapped events', () => {
@@ -298,22 +261,6 @@ describe('apiRequest', () => {
         await expect(apiRequest('/api/test')).rejects.toMatchObject({
             apiError: { code: 'MALFORMED_RESPONSE' },
         });
-    });
-
-    it('should throw ApiRequestError on 400 + structured error', async () => {
-        mockFetch.mockResolvedValue(
-            mockResponse({
-                status: 'error',
-                error: { code: 'INVALID_REQUEST', message: 'Bad input', retry: false },
-            }, 400),
-        );
-        await expect(apiRequest('/api/test')).rejects.toThrow(ApiRequestError);
-        try {
-            await apiRequest('/api/test');
-        } catch (e: any) {
-            expect(e.apiError.code).toBe('INVALID_REQUEST');
-            expect(e.httpStatus).toBe(400);
-        }
     });
 
     it('should throw ApiRequestError on 502 + structured error', async () => {

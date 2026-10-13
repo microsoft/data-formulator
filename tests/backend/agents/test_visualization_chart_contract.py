@@ -27,11 +27,11 @@ def test_visualize_schema_requires_generalized_input_sources():
     )
     parameters = visualize["function"]["parameters"]
 
-    assert "workspace Data Access Paths" in visualize["function"]["description"]
+    assert "following the connected_data skill" in visualize["function"]["description"]
     assert "one-off chart path" in parameters["properties"]["connector_inputs"]["description"]
     load = next(spec for spec in registry.action_tools_for(["meta"])
                 if spec["function"]["name"] == "propose_data_operation")
-    assert "workspace Data Access Paths" in load["function"]["description"]
+    assert "following the connected_data skill" in load["function"]["description"]
     assert "user_review_needed=false executes automatically" in load["function"]["description"]
     loading_query = load["function"]["parameters"]["properties"]["options"]["items"]["properties"]["tables"]["items"]["properties"]["query"]
     assert loading_query["properties"]["native"]["properties"]["language"]["enum"] == ["kql", "cube_json", "dax"]
@@ -182,6 +182,7 @@ def test_visualize_validates_all_connector_aliases_before_loading():
     runtime.run_visualize_code.assert_not_called()
 
 
+@pytest.mark.slow
 def test_connector_aggregate_visualization_runs_real_python_without_intermediate_read(tmp_path):
     import pandas as pd
     from data_formulator.analyst.agent import AnalystAgent

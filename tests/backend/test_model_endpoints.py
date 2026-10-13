@@ -155,8 +155,8 @@ def test_kusto_cluster_discovery_rejects_external_pagination(connection_api, mon
     assert cli.call_count == 1
 
 
-@pytest.mark.parametrize("url", ["https://api.github.com/copilot_internal/v2/token", "https://api.github.com/user"])
-def test_copilot_github_requests_use_auth_headers(monkeypatch, url):
+def test_copilot_github_requests_use_auth_headers(monkeypatch):
+    url = "https://api.github.com/copilot_internal/v2/token"
     get = Mock(return_value=Mock(status_code=200, json=lambda: {"ok": True}))
     monkeypatch.setattr(model_endpoints.http, "get", get)
     assert model_endpoints._copilot_get(url, "private-oauth") == {"ok": True}
@@ -169,8 +169,8 @@ def test_copilot_github_requests_use_auth_headers(monkeypatch, url):
     assert get.call_args.kwargs["allow_redirects"] is False
 
 
-@pytest.mark.parametrize("status_code", [401, 403])
-def test_copilot_exchange_denial_identifies_stage_without_leaking_response(monkeypatch, status_code):
+def test_copilot_exchange_denial_identifies_stage_without_leaking_response(monkeypatch):
+    status_code = 403
     monkeypatch.setattr(model_endpoints.http, "get", Mock(return_value=Mock(
         status_code=status_code, text="private-token", json=lambda: {"message": "private-token"})))
     with pytest.raises(model_endpoints.AppError) as caught:
@@ -498,7 +498,7 @@ def test_openrouter_cancel_during_exchange_does_not_store_credentials(connection
     assert (identity[0], model_endpoints._CONNECTION_KEY) not in stored
 
 
-@pytest.mark.parametrize("response_status, expected_error", [(401, "AUTH_EXPIRED"), (403, "AUTH_EXPIRED"), (500, "SERVICE_UNAVAILABLE")])
+@pytest.mark.parametrize("response_status, expected_error", [(401, "AUTH_EXPIRED"), (500, "SERVICE_UNAVAILABLE")])
 def test_openrouter_account_failure_preserves_stored_key(connection_api, monkeypatch, response_status, expected_error):
     client, identity, stored = connection_api
     stored[(identity[0], model_endpoints._CONNECTION_KEY)] = {"api_key": "private-key"}

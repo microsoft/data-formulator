@@ -2,17 +2,18 @@
 // Licensed under the MIT License.
 
 import React, { useState } from 'react';
-import CodeMirror, { EditorView } from '@uiw/react-codemirror';
+import CodeMirror, { EditorState, EditorView } from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { python } from '@codemirror/lang-python';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
 import { sql } from '@codemirror/lang-sql';
 import { yaml } from '@codemirror/lang-yaml';
-import { Box, IconButton, Tooltip } from '@mui/material';
+import { Box, IconButton, Tooltip, useTheme } from '@mui/material';
 import WrapTextIcon from '@mui/icons-material/WrapText';
 
 import { iconVar, textVar } from '../app/layout';
+import { codeEditorSearchPanelSx } from '../app/tokens';
 
 interface MarkdownEditorProps {
     value: string;
@@ -55,7 +56,25 @@ const editorTheme = EditorView.theme({
     },
 });
 
+/** The find panel's labels in the app's sentence case (CodeMirror's defaults are lowercase). */
+const searchPhrases = EditorState.phrases.of({
+    'Find': 'Find', 'Replace': 'Replace', 'next': 'Next', 'previous': 'Previous', 'all': 'All',
+    'match case': 'Match case', 'regexp': 'Regexp', 'by word': 'By word', 'replace': 'Replace', 'replace all': 'Replace all', 'close': 'Close',
+});
+
+/** Keep the browser (and password managers) from offering past entries in the find and replace fields. */
+const quietSearchFields = EditorView.updateListener.of(update => {
+    const fields = update.view.dom.querySelectorAll<HTMLInputElement>('.cm-panels .cm-search input.cm-textfield:not([autocomplete])');
+    fields.forEach(field => {
+        for (const [name, value] of [['autocomplete', 'off'], ['autocorrect', 'off'], ['autocapitalize', 'off'], ['spellcheck', 'false'],
+            ['aria-autocomplete', 'none'], ['data-1p-ignore', 'true'], ['data-lpignore', 'true'], ['data-form-type', 'other']]) {
+            field.setAttribute(name, value);
+        }
+    });
+});
+
 export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ value, onChange, placeholder, readOnly = false, fileName, showToolbar = true, lineWrap: controlledLineWrap }) => {
+    const theme = useTheme();
     const [internalLineWrap, setLineWrap] = useState(true);
     const lineWrap = controlledLineWrap ?? internalLineWrap;
     const extension = fileName?.split('.').pop()?.toLowerCase();
@@ -65,12 +84,13 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ value, onChange,
         : extension === 'json' ? json()
         : extension === 'sql' ? sql()
         : extension === 'yaml' || extension === 'yml' ? yaml() : [];
-    const extensions = [language, editorTheme, ...(lineWrap ? [EditorView.lineWrapping] : [])];
+    const extensions = [language, editorTheme, searchPhrases, quietSearchFields, ...(lineWrap ? [EditorView.lineWrapping] : [])];
 
     return (
         <Box sx={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, bgcolor: 'background.paper',
             '& .md-editor-wrap-toggle': { opacity: 0.55, transition: 'opacity 150ms ease' },
-            '&:hover .md-editor-wrap-toggle, & .md-editor-wrap-toggle:focus-visible': { opacity: 1 } }}>
+            '&:hover .md-editor-wrap-toggle, & .md-editor-wrap-toggle:focus-visible': { opacity: 1 },
+            ...codeEditorSearchPanelSx(theme) }}>
             {showToolbar && <Tooltip title={lineWrap ? 'Disable line wrap' : 'Enable line wrap'}>
                 <IconButton
                     className="md-editor-wrap-toggle"

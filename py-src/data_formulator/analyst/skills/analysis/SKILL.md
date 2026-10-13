@@ -10,7 +10,7 @@ actions: []
 
 # Analysis
 
-Follow the workspace Data Access Paths when inputs need loading. Python reads
+When inputs need loading, load the `connected_data` skill and follow its Data Access Paths. Python reads
 actual workspace paths, not external reference IDs or connector addresses.
 Only `compute_ready: true` load outcomes are local computation inputs; follow
 the workspace policy to materialize a working dataset from a virtual outcome.
@@ -34,8 +34,10 @@ and file tools for durable documents or exports; computation alone does not crea
 Python runs in the workspace root directory. Use exact paths from context and
 assign any resulting DataFrame to the requested output variable. pandas, numpy,
 duckdb, sklearn, scipy, math, datetime, json, statistics, collections, re,
-random, itertools, functools, operator, and time are available. File writes,
-network access, and unlisted libraries are forbidden.
+random, itertools, functools, operator, and time are available. File writes
+and unlisted libraries are forbidden. Network access depends on the deployment
+(local macOS allows internet but never local services); when it is unavailable,
+acquire remote data with the data-loading tools instead.
 
 Prefer pandas for ordinary work. Use DuckDB for large aggregations, joins,
 filters, or window functions. Quote SQL identifiers containing spaces,

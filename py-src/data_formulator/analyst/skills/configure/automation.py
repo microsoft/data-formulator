@@ -33,11 +33,19 @@ def list_workflows(ctx: SkillContext) -> dict[str, Any]:
     if error := workflows_unavailable():
         return {"error": error}
     items = _workflow_store(ctx).list_all()
+    scheduling = list_schedules(ctx)
+    schedules = scheduling.pop("schedules", [])
+    paths = {item["path"] for item in items}
+    workflows = []
+    for item in items:
+        workflow = {key: item[key] for key in ("path", "name", "overview", "origin", "parameters", "error") if key in item}
+        workflow["schedules"] = [schedule for schedule in schedules if schedule["workflow"] == item["path"]]
+        workflows.append(workflow)
+    orphaned = [schedule for schedule in schedules if schedule["workflow"] not in paths]
     return {
-        "workflows": [
-            {key: item[key] for key in ("path", "name", "overview", "origin", "parameters", "error") if key in item}
-            for item in items
-        ],
+        "workflows": workflows,
+        **({"schedules_without_workflow": orphaned} if orphaned else {}),
+        "scheduling": scheduling,
         "note": "Schedules and runs reference a workflow by its path. Built-in examples use demo/ paths.",
     }
 
@@ -63,12 +71,38 @@ def propose_workflow(spec: dict[str, Any], ctx: SkillContext) -> Generator[Event
             return (f"Workflow {spec['replaces']!r} is not one of the user's saved workflows. "
                     "Call list_workflows, or omit replaces to propose a new workflow.")
         body["target"] = {"id": saved["path"], "name": saved.get("name") or saved["path"]}
+    if spec.get("schedule") is not None:
+        schedule, error = _proposed_schedule(spec["schedule"], content, ctx)
+        if error:
+            return error
+        body["schedule"] = schedule
     yield {"type": "completion", "status": "success", "content": {
         "summary": spec.get("summary") or f"Proposed workflow: {definition['name']}",
         "form": form_payload("workflow", title=definition["name"], body=body),
         "total_steps": ctx.payload.get("completed_step_count", 0),
     }}
     return None
+
+
+def _proposed_schedule(spec: Any, content: str, ctx: SkillContext) -> tuple[dict[str, Any] | None, str | None]:
+    """Validate the schedule proposed with a workflow; the workflow form creates it when the user saves."""
+    from data_formulator.workflows.instances import parse_definition, resolve_setup
+
+    _, error = _schedule_owner(ctx)
+    if error:
+        return None, f"{error} Propose the workflow without a schedule and tell the user why."
+    if not isinstance(spec, dict) or {"workflow", "schedule_id"} & set(spec):
+        return None, ("Invalid schedule: give only timing, inputs, and options. Saving the proposed "
+                      "workflow schedules it; use propose_schedule to change an existing schedule.")
+    try:
+        config, issues = _schedule_changes(spec)
+    except ValueError as exc:
+        return None, f"Invalid schedule: {exc}."
+    try:
+        resolve_setup(parse_definition(content), config.get("setup"))
+    except ValueError as exc:
+        issues.append(str(exc))
+    return {"config": config, "issues": issues}, None
 
 
 def _schedule_owner(ctx: SkillContext) -> tuple[str | None, str | None]:
@@ -193,7 +227,7 @@ def propose_schedule(spec: dict[str, Any], ctx: SkillContext) -> Generator[Event
     if schedule_id:
         existing = next((item for item in schedule_store().list(owner) if item["id"] == schedule_id), None)
         if existing is None:
-            return f"Schedule {schedule_id!r} was not found. Call list_schedules for current IDs."
+            return f"Schedule {schedule_id!r} was not found. Call list_workflows for current schedule IDs."
         config = dict(existing["config"])
         target = {"id": schedule_id, "name": existing["config"].get("name") or schedule_id}
     config.update(patch)

@@ -293,6 +293,20 @@ def _dedup_list(items: list) -> list:
     return list(dict.fromkeys(items))
 
 
+def _aggregate_output_names(valid_agg: list) -> list[str]:
+    """Result column names produced for ``(field, function)`` aggregate pairs."""
+    names = []
+    for field, function in valid_agg:
+        fn = function.lower()
+        if fn == "count":
+            names.append("_count")
+        elif fn in ("avg", "average", "mean"):
+            names.append(f"{field}_{function}")
+        elif fn in ("sum", "min", "max"):
+            names.append(f"{field}_{fn}")
+    return names
+
+
 def _build_parquet_sample_sql(
     columns: list[str],
     aggregate_fields_and_functions: list,
@@ -320,6 +334,9 @@ def _build_parquet_sample_sql(
     where_clause = _build_filter_where_duckdb(filters, columns, column_types, alias="t", search=search)
 
     if valid_agg:
+        # Aggregated rows can only be ordered by group keys or aggregate outputs.
+        sortable = set(valid_select) | set(_aggregate_output_names(valid_agg))
+        valid_order = [f for f in order_by_fields if f in sortable]
         select_parts = []
         for field, function in valid_agg:
             fn = function.lower()
@@ -558,6 +575,8 @@ def _apply_aggregation_and_sample(
             df_agg = pd.DataFrame([{k: df[c].agg(f) for k, (c, f) in agg_spec.items()}])
         total_row_count = len(df_agg)
         work = df_agg
+        # Aggregated rows can only be ordered by group keys or aggregate outputs.
+        valid_order = [f for f in order_by_fields if f in df_agg.columns]
     else:
         total_row_count = len(df)
         work = df[valid_select].copy() if valid_select else df.copy()

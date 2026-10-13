@@ -165,9 +165,13 @@ def test_ask_user_keeps_multi_choice_only_with_options() -> None:
 def test_schedule_edits_merge_existing_config(scheduling) -> None:
     saved = scheduling.save(IDENTITY, {"name": "Fuel", "workflow": "demo/gas-price-review.yaml", "model_id": "server-model",
                                        "time": "08:00", "timezone": "UTC", "weekdays": [0]})
-    listed = json.loads(ConfigureSkill().handle_tool("list_schedules", {}, _context()).text)
-    assert listed["schedules"][0]["cadence"] == "Mon at 08:00 (UTC)"
-    assert listed["server_models"] == [{"id": "server-model", "model": "gpt", "provider": "openai"}]
+    listed = json.loads(ConfigureSkill().handle_tool("list_workflows", {}, _context()).text)
+    fuel = next(item for item in listed["workflows"] if item["path"] == "demo/gas-price-review.yaml")
+    # Each workflow lists its schedules; scheduling itself is described once.
+    assert [schedule["cadence"] for schedule in fuel["schedules"]] == ["Mon at 08:00 (UTC)"]
+    assert all(not item["schedules"] for item in listed["workflows"] if item is not fuel)
+    assert listed["scheduling"]["available"] is True
+    assert listed["scheduling"]["server_models"] == [{"id": "server-model", "model": "gpt", "provider": "openai"}]
 
     events, _ = _action("propose_schedule", {"schedule_id": saved["id"], "enabled": False})
     form = events[0]["form"]
@@ -199,10 +203,11 @@ def test_workflow_revision_targets_only_saved_user_workflows(scheduling) -> None
 
 def test_scheduling_unavailable_is_reported_without_a_form(monkeypatch) -> None:
     monkeypatch.setattr("data_formulator.workflows.scheduler.scheduling_available", lambda: False)
-    listed = json.loads(ConfigureSkill().handle_tool("list_schedules", {}, _context()).text)
+    monkeypatch.setattr("data_formulator.analyst.skills.configure.automation.workflows_unavailable", lambda: None)
+    listed = json.loads(ConfigureSkill().handle_tool("list_workflows", {}, _context()).text)
     events, observation = _action("propose_schedule", {"workflow": "demo/gas-price-review.yaml"})
 
-    assert listed["available"] is False
+    assert listed["scheduling"]["available"] is False and listed["workflows"]
     assert events == [] and "only available in the local Data Formulator app" in observation
 
 
@@ -261,3 +266,34 @@ def test_setup_identity_comes_from_the_app_and_must_own_the_workspace(sessions, 
         assert "does not belong" in json.loads(ConfigureSkill().handle_tool("list_sessions", {}, foreign).text)["error"]
         events, observation = _action("propose_session_changes", {"open_session_id": "session_gas"}, foreign)
         assert events == [] and "does not belong" in observation
+
+
+def test_workflow_proposal_carries_a_schedule_saved_with_it(scheduling) -> None:
+    definition = {"version": 1, "name": "Quakes", "overview": "Daily earthquake review", "deliverables": ["Report"],
+                  "parameters": [{"name": "min_magnitude", "label": "Minimum magnitude", "type": "number", "required": True}],
+                  "steps": [{"id": "work", "description": "Review quakes.", "instructions": "Map recent quakes."}]}
+    events, _ = _action("propose_workflow", {"definition": definition, "summary": "Daily quakes", "schedule": {
+        "time": "08:00", "weekdays": [6, 0, 1, 2, 3, 4, 5], "model_id": "server-model", "setup": {"parameters": {"min_magnitude": 2.5}},
+    }})
+    schedule = events[0]["content"]["form"]["workflow"]["schedule"]
+    assert schedule["config"]["weekdays"] == [0, 1, 2, 3, 4, 5, 6] and schedule["config"]["time"] == "08:00"
+    assert schedule["config"]["setup"]["parameters"] == {"min_magnitude": 2.5}
+    assert schedule["issues"] == []
+
+    # Unknown inputs are left for the user; a path or schedule ID is not part of a new workflow's schedule.
+    events, _ = _action("propose_workflow", {"definition": definition, "summary": "Daily quakes", "schedule": {"timezone": "Mars/Base"}})
+    issues = events[0]["content"]["form"]["workflow"]["schedule"]["issues"]
+    assert any("timezone" in issue for issue in issues) and any("Minimum magnitude" in issue for issue in issues)
+    events, observation = _action("propose_workflow", {"definition": definition, "summary": "Daily quakes",
+                                                       "schedule": {"workflow": "demo/gas-price-review.yaml"}})
+    assert events == [] and "Saving the proposed workflow schedules it" in observation
+    events, observation = _action("propose_workflow", {"definition": definition, "summary": "Daily quakes", "schedule": {"time": "8am"}})
+    assert events == [] and "HH:MM" in observation
+
+
+def test_workflow_proposal_reports_unavailable_scheduling(scheduling, monkeypatch) -> None:
+    monkeypatch.setattr("data_formulator.workflows.scheduler.scheduling_available", lambda: False)
+    definition = {"version": 1, "name": "Quakes", "overview": "Daily earthquake review", "deliverables": ["Report"],
+                  "steps": [{"id": "work", "description": "Review quakes.", "instructions": "Map recent quakes."}]}
+    events, observation = _action("propose_workflow", {"definition": definition, "summary": "Daily", "schedule": {"time": "08:00"}})
+    assert events == [] and "without a schedule" in observation

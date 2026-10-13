@@ -178,6 +178,7 @@ steps:
     return app, store, schedule, occurrence
 
 
+@pytest.mark.slow
 def test_runner_creates_private_session(execution_context, monkeypatch):
     from data_formulator.workflows.scheduler import execute_occurrence
     from data_formulator.workflows.agent import WorkflowAgent
@@ -207,6 +208,7 @@ def test_runner_creates_private_session(execution_context, monkeypatch):
     assert "trajectory" not in private["workflow_run"]
 
 
+@pytest.mark.slow
 def test_scheduled_run_writes_in_the_schedule_language(execution_context, monkeypatch):
     from data_formulator.workflows.scheduler import execute_occurrence
     from data_formulator.workflows.agent import WorkflowAgent
@@ -257,6 +259,7 @@ def test_schedule_list_reflects_run_completed_after_resume(execution_context, mo
     assert store.history(schedule["id"]) == []
 
 
+@pytest.mark.slow
 def test_runner_retries_same_checkpoint(execution_context, monkeypatch):
     from data_formulator.workflows.scheduler import execute_occurrence
     from data_formulator.workflows.agent import WorkflowAgent
@@ -314,6 +317,7 @@ def test_busy_executor_defers_scheduled_run(execution_context, monkeypatch):
     assert (history["status"], history["message"]) == ("retry", "Workflow executor busy")
 
 
+@pytest.mark.slow
 def test_scheduled_run_time_limit_pauses_and_releases_occurrence(execution_context, monkeypatch):
     import time
     from data_formulator.workflows import scheduler
@@ -341,6 +345,7 @@ def test_scheduled_run_time_limit_pauses_and_releases_occurrence(execution_conte
     assert saved["textTurns"][0]["content"] == "Paused by time limit"
 
 
+@pytest.mark.slow
 def test_runner_waits_for_run_when_update_stream_ends_early(execution_context, monkeypatch):
     import queue
     import time

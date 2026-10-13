@@ -8,13 +8,15 @@ from data_formulator.datalake.workspace_metadata import MemorySource
 
 
 def _resolve_input(manifest: WorkspaceInputManifest, input_id: str, kind: Any):
-    """Return the manifest input for an exact id, or a unique shortened id/name match."""
+    """Return the manifest input for an exact id, or a unique shortened id, name, or path match."""
     items = [item for item in manifest.inputs if item.kind == kind]
     exact = next((item for item in items if item.id == input_id), None)
     if exact is not None:
         return exact
+    # A name or a session path the agent read also identifies an input.
     matches = [item for item in items if input_id in (
-        item.display_name, item.content_hash, item.id.rsplit(":", 1)[0], f"{item.kind}:{item.content_hash}")]
+        item.display_name, item.content_hash, item.id.rsplit(":", 1)[0], f"{item.kind}:{item.content_hash}",
+        item.path, f"session/tables/{item.display_name}.json")]
     if len(matches) == 1:
         return matches[0]
     listed = ", ".join(item.id for item in items[:12]) or "none"

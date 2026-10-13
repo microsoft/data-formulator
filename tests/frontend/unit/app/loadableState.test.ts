@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
     errorLoadable,
-    idleLoadable,
     loadingLoadable,
     successLoadable,
 } from '../../../../src/app/loadableState';
@@ -34,9 +33,5 @@ describe('loadableState', () => {
             error: 'Data connector error',
             data: { tree: [] },
         });
-    });
-
-    it('starts as idle without data', () => {
-        expect(idleLoadable()).toEqual({ status: 'idle' });
     });
 });

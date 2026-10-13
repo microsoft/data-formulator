@@ -347,7 +347,6 @@ const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, 
                                 dispatch(dfActions.updateTextTurn({
                                     id: turn.id,
                                     answered: true,
-                                    answer: `Connected to ${resolution.connectionName}`,
                                     form: { ...form, connector: { sourceType: form.connector.sourceType, ...resolution } },
                                 }));
                             }}
@@ -1882,13 +1881,10 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
         return <ExternalTableReferenceCanvas key={focusedId.referenceId} referenceId={focusedId.referenceId} />;
     }
     if (focusedId?.type === 'file') {
-        return <WorkspaceFileCanvas fileName={focusedId.fileName} />;
+        return <WorkspaceFileCanvas fileName={focusedId.fileName} floatingAppControls />;
     }
     if (focusedId?.type === 'conversation') {
-        return <ConversationCanvas textTurnId={focusedId.tableId} entryIndex={focusedId.entryIndex} nodeIds={focusedId.nodeIds} />;
-    }
-    if (focusedId?.type === 'explanation') {
-        return <ExplanationCanvas {...focusedId} />;
+        return <ConversationCanvas textTurnId={focusedId.tableId} nodeIds={focusedId.nodeIds} />;
     }
     if (focusedWorkflowTurn) {
         if (focusedWorkflowTurn.workflow?.status === 'paused' && focusedWorkflowTurn.workflow.dataOperation) {

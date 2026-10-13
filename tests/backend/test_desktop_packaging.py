@@ -203,6 +203,7 @@ def test_desktop_process_failure_keeps_log(tmp_path):
     assert "failure detail" in log.read_text()
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(sys.platform == "win32", reason="Exercises the macOS shell builder")
 @pytest.mark.parametrize("failure,failures,verify_failure,attempts,succeeds", [
     ("Resource busy", 1, False, 2, True),
@@ -254,6 +255,7 @@ fi
         assert failure in result.stderr
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell 7 is required")
 @pytest.mark.parametrize("prepare_outcome", ["prepare", "unexpected-error"])
 def test_external_signing_phase_handoff(tmp_path, prepare_outcome):

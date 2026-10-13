@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -101,6 +103,14 @@ def _source_is_discoverable(source_id: str) -> bool:
     except Exception:
         logger.debug("Connector availability unavailable for %s", source_id, exc_info=True)
         return True
+
+
+PREVIEW_TABLES = 4
+PREVIEW_SAMPLE_TABLES = 2
+PREVIEW_SAMPLE_ROWS = 3
+PREVIEW_COLUMNS = 40
+PREVIEW_CHARS = 8000
+PREVIEW_LIVE_SECONDS = 5.0
 
 
 class DataDiscoveryService:
@@ -255,6 +265,110 @@ class DataDiscoveryService:
             sources.append(summary)
         return {"sources": sources}
 
+    def _find_any_word(self, args: dict[str, Any], query: str | None) -> dict[str, Any] | None:
+        """A plain phrase that matched nothing as a whole, searched word by word (best matches first)."""
+        if not query or args.get("_any_word") or not re.fullmatch(r"[\w\s'’,.-]+", query):
+            return None
+        words = list(dict.fromkeys(word.lower() for word in re.findall(r"\w{3,}", query)))
+        if len(words) < 2:
+            return None
+        found = self.find_data({**args, "query": "|".join(map(re.escape, words)), "_any_word": True})
+        if not found.get("results"):
+            return None
+
+        def matched(hit: dict[str, Any]) -> int:
+            text = json.dumps(hit, ensure_ascii=False, default=str).lower()
+            return sum(word in text for word in words)
+
+        found["results"].sort(key=matched, reverse=True)
+        self._add_previews(found["results"])
+        found["query"] = query
+        found["note"] = (f"Nothing matched the whole phrase {query!r}; these results match any of its words, "
+                         "most matching words first.")
+        return found
+
+    def _add_previews(self, results: list[dict[str, Any]]) -> None:
+        """Give the top connected-table hits a preview (columns, row count, a few rows), so a search can
+        lead straight to a load. Tables without cached columns are fetched live within a short time limit,
+        and what arrives is saved to the catalog cache for later searches."""
+        from data_formulator.datalake.catalog_cache import load_catalog, update_table_metadata
+
+        user_home = getattr(self.workspace, "user_home", None)
+        hits = [hit for hit in results if hit.get("type") == "table" and hit.get("source_id")
+                and hit.get("status") == "not imported"][:PREVIEW_TABLES]
+        if not user_home or not hits:
+            return
+        entries: dict[tuple[str, str], dict[str, Any]] = {}
+        for source in {hit["source_id"] for hit in hits}:
+            try:
+                catalog = load_catalog(Path(user_home), source) or []
+            except Exception:
+                continue
+            entries.update({(source, table.get("table_key")): table for table in catalog})
+        metadata = {(hit["source_id"], hit.get("table_key")): dict((entries.get((hit["source_id"], hit.get("table_key"))) or {})
+                                                                   .get("metadata") or {}) for hit in hits}
+        missing = [key for key, meta in metadata.items() if not meta.get("columns") and (entries.get(key) or {}).get("path")]
+        for key, fetched in self._fetch_live_metadata(missing, entries).items():
+            metadata[key].update({name: value for name, value in fetched.items() if value not in (None, "", [], {})})
+            update_table_metadata(Path(user_home), key[0], {key[1]: fetched})
+        room = PREVIEW_CHARS
+        for index, hit in enumerate(hits):
+            meta = metadata[(hit["source_id"], hit.get("table_key"))]
+            columns = meta.get("columns") or []
+            if not columns:
+                continue
+            preview: dict[str, Any] = {
+                "columns": [{key: column[key] for key in ("name", "type", "description") if column.get(key)}
+                            for column in columns[:PREVIEW_COLUMNS]],
+                **({"more_columns": len(columns) - PREVIEW_COLUMNS} if len(columns) > PREVIEW_COLUMNS else {}),
+                **({"row_count": meta["row_count"]} if meta.get("row_count") is not None else {}),
+            }
+            if index < PREVIEW_SAMPLE_TABLES and meta.get("sample_rows"):
+                preview["sample_rows"] = [{name: (value[:120] + "…" if isinstance(value, str) and len(value) > 120 else value)
+                                           for name, value in row.items()} if isinstance(row, dict) else row
+                                          for row in meta["sample_rows"][:PREVIEW_SAMPLE_ROWS]]
+            size = len(json.dumps(preview, ensure_ascii=False, default=str))
+            if size > room:
+                preview.pop("sample_rows", None)
+                size = len(json.dumps(preview, ensure_ascii=False, default=str))
+            if size > room:
+                hit["preview"] = "omitted for size; use describe_data"
+                continue
+            hit["preview"] = preview
+            room -= size
+
+    @staticmethod
+    def _fetch_live_metadata(keys: list[tuple[str, str]], entries: dict[tuple[str, str], dict[str, Any]]
+                             ) -> dict[tuple[str, str], dict[str, Any]]:
+        """Live metadata for catalog tables, all within PREVIEW_LIVE_SECONDS; slow or failing ones are skipped."""
+        from concurrent.futures import ThreadPoolExecutor, wait
+        from data_formulator.data_connector import resolve_live_loader
+
+        if not keys:
+            return {}
+        jobs = {}
+        pool = ThreadPoolExecutor(max_workers=len(keys))
+        try:
+            for key in keys:
+                try:
+                    # Resolved here: the loader is found by the request's identity.
+                    loader = resolve_live_loader(key[0])
+                except Exception:
+                    continue
+                jobs[pool.submit(loader.get_metadata, list(entries[key]["path"]))] = key
+            done, _ = wait(jobs, timeout=PREVIEW_LIVE_SECONDS)
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+        fetched = {}
+        for future in done:
+            try:
+                meta = future.result()
+            except Exception:
+                continue
+            if isinstance(meta, dict) and meta.get("columns"):
+                fetched[jobs[future]] = meta
+        return fetched
+
     def find_data(self, args: dict[str, Any]) -> dict[str, Any]:
         from data_formulator.datalake.catalog_cache import (
             CatalogSearchError,
@@ -360,6 +474,9 @@ class DataDiscoveryService:
                 logger.debug("find_data: catalog search failed", exc_info=True)
 
         if not results:
+            fallback = self._find_any_word(args, query)
+            if fallback is not None:
+                return fallback
             try:
                 known = sorted(
                     source_id
@@ -384,6 +501,8 @@ class DataDiscoveryService:
 
         truncated = workspace_truncated or catalog_truncated or len(results) > limit
         from data_formulator.data_connector import get_query_capabilities
+        if not args.get("_any_word"):
+            self._add_previews(results[:limit])
         return {
             "results": results[:limit],
             "source_query_capabilities": {

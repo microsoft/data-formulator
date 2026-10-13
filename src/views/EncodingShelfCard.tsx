@@ -28,8 +28,6 @@ import {
     Divider,
     alpha,
     useTheme,
-    SxProps,
-    Theme,
     Slider,
     CircularProgress,
     LinearProgress,
@@ -37,9 +35,8 @@ import {
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
-import React from 'react';
 import { WritingPencil } from '../components/FunComponents';
-import { Channel, Chart, FieldItem, Trigger, duplicateChart, ChartStyleVariant, computeEncodingFingerprint, isVariantStale } from "../components/ComponentType";
+import { Channel, Chart, Trigger, duplicateChart, ChartStyleVariant, computeEncodingFingerprint, isVariantStale } from "../components/ComponentType";
 
 import _ from 'lodash';
 
@@ -115,7 +112,7 @@ const chartCategoryToI18nKey: Record<string, string> = {
 };
 
 import { AppDispatch } from '../app/store';
-import { borderColor, radius, transition } from '../app/tokens';
+import { transition } from '../app/tokens';
 
 import CloseIcon from '@mui/icons-material/Close';
 
@@ -134,153 +131,6 @@ export interface EncodingShelfCardProps {
     hideChat?: boolean;
 }
 
-
-
-// Add this utility function before the TriggerCard component
-export const renderTextWithEmphasis = (text: string | any, highlightChipSx?: SxProps<Theme>) => {
-    
-    if (typeof text !== 'string') {
-        text = text == null ? '' : String(text);
-    }
-    text = text.replace(/_/g, '_\u200B');
-    // Split the prompt by ** patterns and create an array of text and highlighted segments
-    const parts = text.split(/(\*\*.*?\*\*)/g);
-    
-    return parts.map((part: string, index: number) => {
-        if (part.startsWith('**') && part.endsWith('**')) {
-            // This is a highlighted part - remove the ** and wrap with styled component
-            const content = part.slice(2, -2).replaceAll('_', ' ');
-            return (
-                <Typography
-                    key={index}
-                    component="span"
-                    sx={{
-                        color: 'inherit',
-                        padding: '0px 2px',
-                        borderRadius: radius.sm,
-                        ...highlightChipSx
-                    }}
-                >
-                    {content}
-                </Typography>
-            );
-        }
-        return part;
-    });
-};
-
-export const TriggerCard: FC<{
-    className?: string, 
-    trigger: Trigger, 
-    hideFields?: boolean, 
-    mini?: boolean,
-    highlighted?: boolean,
-    sx?: SxProps<Theme>}> = function ({ className, trigger, hideFields, mini = false, highlighted = false, sx }) {
-
-    const { t } = useTranslation();
-    let theme = useTheme();
-
-    let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-    let charts = useSelector((state: DataFormulatorState) => state.charts);
-    let tables = useSelector(dfSelectors.getAllTables);
-
-    const dispatch = useDispatch<AppDispatch>();
-
-    let handleClick = () => {
-        // Find the actual chart for the table that owns this trigger
-        const ownerTable = tables.find(t => t.derive?.trigger === trigger);
-        const realChart = ownerTable ? charts.find(c => c.tableRef === ownerTable.id && c.source === 'user') : null;
-        if (realChart) {
-            dispatch(dfActions.setFocused({ type: 'chart', chartId: realChart.id }));
-        } else if (trigger.chart) {
-            dispatch(dfActions.setFocused({ type: 'chart', chartId: trigger.chart.id }));
-        }
-    }
-
-    let encodingComp : any = '';
-    let encFields = [];
-
-    if (trigger.chart) {
-
-        let chart = trigger.chart;
-        let encodingMap = chart?.encodingMap;
-
-        encFields = Object.entries(encodingMap)
-            .filter(([channel, encoding]) => {
-                return encoding.fieldID != undefined;
-            })
-            .map(([channel, encoding], index) => {
-                let field = fieldItems.find(f => f.id == encoding.fieldID) as FieldItem;
-                return field.name;
-            });
-
-        encodingComp = <Typography component="span" key="enc-fields" sx={{ fontSize: 'inherit', color: 'inherit' }}>
-            {Object.entries(encodingMap)
-                .filter(([channel, encoding]) => encoding.fieldID != undefined)
-                .map(([channel, encoding], index) => {
-                    let field = fieldItems.find(f => f.id == encoding.fieldID) as FieldItem;
-                    return <React.Fragment key={`trigger-${channel}-${field?.id}`}>
-                        {index > 0 ? <span style={{ margin: '0 2px', opacity: 0.5 }}> × </span> : ''}
-                        <span>{field?.name}</span>
-                    </React.Fragment>;
-                })}
-        </Typography>
-    }
-
-    // Derive prompt text from interaction log — show user's own entry
-    let prompt: string = '';
-    const interaction = trigger.interaction;
-    if (interaction && interaction.length > 0) {
-        // For user-initiated (single entry: user→subagent instruction), use that entry
-        // For agent sessions, this card is rendered for the user prompt entry
-        const userEntry = interaction.find(e => e.from === 'user');
-        prompt = userEntry?.content || '';
-    }
-
-    // Card always uses custom (orange) palette — only user entries are rendered as cards
-    const triggerPalette = theme.palette.custom;
-
-    // Process the prompt to highlight content in ** **
-    const processedPrompt = renderTextWithEmphasis(prompt, {
-        fontSize: mini ? 10 : 11, padding: '1px 4px',
-        borderRadius: radius.sm,
-        background: alpha(triggerPalette.main, 0.08), 
-    });
-
-    if (mini) {
-        return <Typography component="div" sx={{
-            fontSize: textVar.xxs, color: theme.palette.text.secondary,
-            my: '2px', textWrap: 'balance',
-            '&:hover': {
-                cursor: 'pointer',
-                color: theme.palette.text.primary,
-            },
-            '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
-            ...sx,
-        }} onClick={handleClick}>
-            {processedPrompt}{hideFields ? "" : encodingComp}
-        </Typography> 
-    }
-
-    return  <Typography component="div" className={`${className}`}
-        sx={{
-            cursor: 'pointer', 
-            fontSize: textVar.xs,
-            color: 'text.primary',
-            textAlign: 'left',
-            py: 0.5,
-            px: 1,
-            borderRadius: radius.sm,
-            backgroundColor: triggerPalette.bgcolor,
-            border: `1px solid ${borderColor.component}`,
-            ...(highlighted ? { borderLeft: `2px solid ${triggerPalette.main}` } : {}),
-            '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
-            ...sx,
-        }} 
-        onClick={handleClick}>
-            {processedPrompt}{hideFields ? "" : <>{" "}{encodingComp}</>}
-    </Typography>
-}
 
 
 /**
@@ -371,9 +221,14 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     })();
 
     let chart = allCharts.find(c => c.id == chartId) as Chart;
-    let trigger = chart.source == "trigger" ? tables.find(t => t.derive?.trigger?.chart?.id == chartId)?.derive?.trigger : undefined;
+    const triggerTable = chart.source == "trigger" ? tables.find(t => t.derive?.trigger?.chart?.id == chartId) : undefined;
+    let trigger = triggerTable?.derive?.trigger;
 
-    const triggerPrompt = trigger?.interaction?.find(e => e.role === 'instruction')?.content || '';
+    // The instruction that made a trigger chart's table is the agent message right before it (design-docs/58).
+    const threadGraph = useSelector(dfSelectors.getThreadGraph);
+    const textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
+    const instructionId = triggerTable ? threadGraph.edgeInto(triggerTable.id).at(-1) : undefined;
+    const triggerPrompt = textTurns.find(turn => turn.id === instructionId && !turn.prompt)?.content || '';
     let [prompt, setPrompt] = useState<string>(triggerPrompt);
 
     // Restyle (chart style refinement agent) — see design-docs/28-chart-style-refinement-agent.md

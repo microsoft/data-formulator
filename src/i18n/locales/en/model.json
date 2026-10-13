@@ -17,7 +17,7 @@
     "openGitHubAuthorization": "Open GitHub",
     "manageCopilotConnection": "Manage on GitHub",
     "deviceCode": "Device code",
-    "deviceCodeInstructions": "Enter this code on {{provider}} to connect your account.",
+    "deviceCodeInstructions": "Copy this code, select Open {{provider}}, then paste it on the page that opens.",
     "copyDeviceCode": "Copy device code",
     "copyDeviceCodeFailed": "Could not copy the code. Select it to copy manually.",
     "copilotBilling": "Experimental. Copilot subscription limits and organization policies apply. Only compatible chat models are listed.",

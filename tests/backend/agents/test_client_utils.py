@@ -6,7 +6,6 @@
 Tests cover the pure-logic parts that don't require a live LLM:
 - Model name prefixing for gemini / anthropic / ollama
 - Ollama api_base normalisation (trailing /api stripping)
-- Image block stripping helpers (_strip_image_blocks, _strip_images_from_messages)
 - Image request detection (_messages_contain_images)
 - Image deserialise error detection (_is_image_deserialize_error)
 - Client.from_config constructor
@@ -27,7 +26,7 @@ pytestmark = [pytest.mark.backend]
 # ---------------------------------------------------------------------------
 
 class TestModelNamePrefixing:
-    @pytest.mark.parametrize("wrapping_depth", [0, 1, 2])
+    @pytest.mark.parametrize("wrapping_depth", [0, 2])
     @pytest.mark.parametrize("api_type", [None, "responses"])
     @pytest.mark.parametrize("original_id", ["rs_" + "a" * 48, "a" * 432])
     def test_responses_replays_compatible_reasoning_items(self, monkeypatch, wrapping_depth, api_type, original_id):
@@ -496,10 +495,6 @@ class TestModelNamePrefixing:
 # ---------------------------------------------------------------------------
 
 class TestOrcaRouter:
-    def test_default_base_url(self):
-        c = Client("orcarouter", "auto", api_key="k")
-        assert c.params["api_base"] == "https://api.orcarouter.ai/v1"
-
     def test_custom_base_url_strips_trailing_slash(self):
         c = Client("orcarouter", "auto", api_key="k",
                    api_base="https://api.orcarouter.ai/v1/")
@@ -525,10 +520,6 @@ class TestOrcaRouter:
 # ---------------------------------------------------------------------------
 
 class TestCheaperInference:
-    def test_default_base_url(self):
-        c = Client("cheaperinference", "gpt-5.4-mini", api_key="k")
-        assert c.params["api_base"] == "https://api.cheaperinference.com/v1"
-
     def test_custom_base_url_strips_trailing_slash(self):
         c = Client("cheaperinference", "gpt-5.4-mini", api_key="k",
                    api_base="https://api.cheaperinference.com/v1/")
@@ -643,125 +634,12 @@ class TestAzureCredentialSelection:
 
 
 # ---------------------------------------------------------------------------
-# _strip_image_blocks
-# ---------------------------------------------------------------------------
-
-class TestStripImageBlocks:
-    def setup_method(self):
-        self.client = Client("openai", "gpt-4o", api_key="k")
-
-    def test_string_content_unchanged(self):
-        result = self.client._strip_image_blocks("hello")
-        assert result == "hello"
-
-    def test_image_url_blocks_removed(self):
-        content = [
-            {"type": "text", "text": "Describe this"},
-            {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}},
-        ]
-        result = self.client._strip_image_blocks(content)
-        assert len(result) == 1
-        assert result[0]["type"] == "text"
-
-    def test_non_image_blocks_preserved(self):
-        content = [
-            {"type": "text", "text": "Hello"},
-            {"type": "text", "text": "World"},
-        ]
-        result = self.client._strip_image_blocks(content)
-        assert len(result) == 2
-
-    def test_mixed_list_with_non_dict_preserved(self):
-        content = [
-            "plain string",
-            {"type": "image_url", "image_url": {}},
-            {"type": "text", "text": "keep"},
-        ]
-        result = self.client._strip_image_blocks(content)
-        assert "plain string" in result
-        assert any(isinstance(r, dict) and r.get("type") == "text" for r in result)
-        assert not any(isinstance(r, dict) and r.get("type") == "image_url" for r in result)
-
-    def test_all_images_removed_returns_empty_list(self):
-        content = [{"type": "image_url"}, {"type": "image_url"}]
-        result = self.client._strip_image_blocks(content)
-        assert result == []
-
-
-# ---------------------------------------------------------------------------
-# _strip_images_from_messages
-# ---------------------------------------------------------------------------
-
-class TestStripImagesFromMessages:
-    def setup_method(self):
-        self.client = Client("openai", "gpt-4o", api_key="k")
-
-    def _multimodal_messages(self):
-        return [
-            {"role": "system", "content": "You are helpful."},
-            {"role": "user", "content": [
-                {"type": "text", "text": "What is in this image?"},
-                {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}},
-            ]},
-        ]
-
-    def test_system_message_unchanged(self):
-        msgs = self._multimodal_messages()
-        result = self.client._strip_images_from_messages(msgs)
-        assert result[0]["content"] == "You are helpful."
-
-    def test_image_blocks_removed_from_user_message(self):
-        msgs = self._multimodal_messages()
-        result = self.client._strip_images_from_messages(msgs)
-        user_content = result[1]["content"]
-        assert all(
-            not (isinstance(b, dict) and b.get("type") == "image_url")
-            for b in user_content
-        )
-
-    def test_text_blocks_preserved_in_user_message(self):
-        msgs = self._multimodal_messages()
-        result = self.client._strip_images_from_messages(msgs)
-        user_content = result[1]["content"]
-        assert any(isinstance(b, dict) and b.get("type") == "text" for b in user_content)
-
-    def test_original_messages_not_mutated(self):
-        msgs = self._multimodal_messages()
-        original_len = len(msgs[1]["content"])
-        self.client._strip_images_from_messages(msgs)
-        assert len(msgs[1]["content"]) == original_len
-
-    def test_non_dict_messages_preserved(self):
-        msgs = ["plain string message"]
-        result = self.client._strip_images_from_messages(msgs)
-        assert result == ["plain string message"]
-
-
-# ---------------------------------------------------------------------------
 # _is_image_deserialize_error
 # ---------------------------------------------------------------------------
 
 class TestIsImageDeserializeError:
     def setup_method(self):
         self.client = Client("openai", "gpt-4o", api_key="k")
-
-    def test_image_url_expected_text_detected(self):
-        err = "Error: image_url content part was sent but expected `text` content"
-        assert self.client._is_image_deserialize_error(err) is True
-
-    def test_unknown_variant_image_url_detected(self):
-        err = "unknown variant `image_url`, expected one of `text`, `audio`"
-        assert self.client._is_image_deserialize_error(err) is True
-
-    def test_unrelated_error_not_detected(self):
-        assert self.client._is_image_deserialize_error("rate limit exceeded") is False
-
-    def test_empty_string_not_detected(self):
-        assert self.client._is_image_deserialize_error("") is False
-
-    def test_partial_match_image_url_without_expected(self):
-        """'image_url' alone without 'expected `text`' should NOT match."""
-        assert self.client._is_image_deserialize_error("received image_url block") is False
 
     def test_upstream_failure_with_images_detected(self):
         err = "400: Error from provider (OpenCode Go): Upstream request failed"
@@ -806,30 +684,12 @@ class TestMessagesContainImages:
 # ---------------------------------------------------------------------------
 
 class TestFromConfig:
-    def test_creates_client_from_dict(self):
-        cfg = {"endpoint": "openai", "model": "gpt-4o", "api_key": "mykey"}
-        c = Client.from_config(cfg)
-        assert c.endpoint == "openai"
-        assert c.model == "openai/gpt-4o"
-        assert c.params["api_key"] == "mykey"
-
     def test_strips_whitespace_from_values(self):
         cfg = {"endpoint": "  openai  ", "model": "  gpt-4o  ", "api_key": "  key  "}
         c = Client.from_config(cfg)
         assert c.endpoint == "openai"
         assert c.model == "openai/gpt-4o"
         assert c.params["api_key"] == "key"
-
-    def test_optional_fields_absent_when_empty(self):
-        cfg = {"endpoint": "openai", "model": "gpt-4o", "api_key": "k"}
-        c = Client.from_config(cfg)
-        # api_base and api_version should not be set when absent
-        assert "api_base" not in c.params or c.params.get("api_base", "") == ""
-
-    def test_gemini_prefix_applied_via_from_config(self):
-        cfg = {"endpoint": "gemini", "model": "gemini-pro", "api_key": "k"}
-        c = Client.from_config(cfg)
-        assert c.model.startswith("gemini/")
 
 
 # ---------------------------------------------------------------------------

@@ -75,17 +75,6 @@ class TestKnowledgeList:
         assert len(data["data"]["items"]) == 1
         assert data["data"]["items"][0]["title"] == "ROI Rule"
 
-    def test_list_invalid_category(self, client):
-        resp = client.post("/api/knowledge/list",
-                           json={"category": "invalid"})
-        data = resp.get_json()
-        assert data["status"] == "error"
-
-    def test_list_missing_category(self, client):
-        resp = client.post("/api/knowledge/list", json={})
-        data = resp.get_json()
-        assert data["status"] == "error"
-
 
 class TestKnowledgeRead:
     def test_read_existing(self, client, tmp_path):

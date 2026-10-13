@@ -17,7 +17,7 @@
     "openGitHubAuthorization": "GitHub 열기",
     "manageCopilotConnection": "GitHub에서 관리",
     "deviceCode": "디바이스 코드",
-    "deviceCodeInstructions": "{{provider}}에 이 코드를 입력하여 계정을 연결하세요.",
+    "deviceCodeInstructions": "이 코드를 복사하고 \"{{provider}} 열기\"를 선택한 다음, 열리는 페이지에 붙여 넣으세요.",
     "copyDeviceCode": "기기 코드 복사",
     "copyDeviceCodeFailed": "코드를 복사할 수 없습니다. 선택하여 수동으로 복사하세요.",
     "copilotBilling": "실험 기능입니다. Copilot 구독 제한과 조직 정책이 적용됩니다. 호환되는 채팅 모델만 표시됩니다.",

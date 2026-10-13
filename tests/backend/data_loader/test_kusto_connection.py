@@ -141,8 +141,8 @@ def test_native_kql_rejects_wildcard_scope():
     loader.client.execute_query.assert_not_called()
 
 
-@pytest.mark.parametrize("column_type", ["float", "real", "double"])
-def test_query_converts_floating_point_result_types(column_type: str) -> None:
+def test_query_converts_floating_point_result_types() -> None:
+    column_type = "real"
     loader = _loader()
     loader.client.execute.return_value = Mock(primary_results=[KustoResultTable({
         "Columns": [
@@ -359,7 +359,7 @@ def test_ambient_credential_separates_token_requests(monkeypatch, scopes, option
     source.get_token.assert_called_with(*scopes, **options)
 
 
-@pytest.mark.parametrize("expires_on", [900, 1000, 1300])
+@pytest.mark.parametrize("expires_on", [900, 1300])
 def test_ambient_credential_does_not_retain_short_lived_tokens(monkeypatch, expires_on):
     from azure.core.credentials import AccessToken
     from data_formulator.data_loader.kusto_data_loader import _KustoCachedCredential

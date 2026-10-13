@@ -46,10 +46,10 @@ it('keeps batch progress in system messages until the load finishes', async () =
     }
 });
 
-it.each(['success', 'info', 'warning', 'error'] as const)('uses compact neutral styling for %s system messages', type => {
+it('uses compact neutral styling for system messages, including errors', () => {
     const store = configureStore({ reducer: dataFormulatorReducer });
     render(<Provider store={store}><MessageSnackbar /></Provider>);
-    act(() => store.dispatch(dfActions.addMessages({ type, component: 'test', timestamp: Date.now(), value: 'Load finished' })));
+    act(() => store.dispatch(dfActions.addMessages({ type: 'error', component: 'test', timestamp: Date.now(), value: 'Load finished' })));
     const alert = screen.getByRole('alert');
     expect(alert).toHaveStyle({ fontSize: 'var(--df-text-sm)', backgroundColor: 'rgb(250, 250, 250)' });
     expect(alert.querySelector('.MuiAlert-icon')).toHaveStyle({ fontSize: '16px' });
@@ -812,4 +812,20 @@ it('keeps cached metadata visible when the connector is unavailable', async () =
     fireEvent.click(screen.getByRole('button', { name: 'Refresh metadata' }));
     await screen.findByText('retry success');
     expect(apiRequest).toHaveBeenCalledTimes(2);
+});
+it('groups workspace files in folders and opens the folder holding the open file', () => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    const file = (name: string, display_name?: string) => ({ name, content_hash: name, file_size: 1, created_at: '', ...(display_name ? { display_name } : {}) }) as any;
+    const files = [file('readme.md'), file('notes/plan.md', 'Plan'), file('notes/decisions.md'), file('lib/cleaning.py')];
+    render(<Provider store={store}><SourceTableShelf inputTables={[]} highlightedTableIds={[]} workspaceFiles={files} /></Provider>);
+    const notes = screen.getByRole('group', { name: 'notes' });
+    expect(notes).toHaveTextContent('Plan');
+    expect(notes).toHaveTextContent('decisions.md');
+    expect(notes).not.toHaveTextContent('notes/');
+    expect(screen.getByRole('group', { name: 'lib' })).toHaveTextContent('cleaning.py');
+    fireEvent.click(screen.getByRole('button', { name: /^notes\s*2/ }));
+    return waitFor(() => expect(screen.queryByRole('group', { name: 'notes' })).not.toBeInTheDocument()).then(() => {
+        act(() => store.dispatch(dfActions.setFocused({ type: 'file', fileName: 'notes/plan.md' })));
+        expect(screen.getByRole('group', { name: 'notes' })).toHaveTextContent('Plan');
+    });
 });

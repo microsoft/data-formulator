@@ -41,7 +41,6 @@ export function useWorkspaceAutoName() {
     const dispatch = useDispatch<AppDispatch>();
     const workspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const sourceKey = useSelector(selectSessionSourceKey);
-    const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
     const textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
     const models = useSelector(dfSelectors.getAllModels);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
@@ -64,22 +63,18 @@ export function useWorkspaceAutoName() {
         const timer = window.setTimeout(async () => {
             inFlight.current = true;
             const { id, displayName } = workspace;
-            // The first user prompt, preferring turns: a draft is deleted when its
-            // run completes, so its interaction log may already be gone.
+            // The first user message (a run's request is its own message from the start).
             const firstTurnPrompt = [...textTurns]
                 .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
                 .map(turn => turn.prompt)
                 .find(prompt => !!prompt);
-            const firstInteraction = draftNodes
-                .flatMap(n => n.derive?.trigger?.interaction || [])
-                .find(entry => entry.from === 'user' && (entry.role === 'prompt' || entry.role === 'instruction'));
             try {
                 const { data } = await apiRequest<{ display_name: string }>(getUrls().WORKSPACE_NAME, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         model,
-                        context: { tables: sources, userQuery: firstTurnPrompt || firstInteraction?.content || '' },
+                        context: { tables: sources, userQuery: firstTurnPrompt || '' },
                     }),
                 });
                 const name = data.display_name?.trim();

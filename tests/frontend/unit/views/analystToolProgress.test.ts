@@ -14,6 +14,19 @@ const labels: Record<string, string> = {
 const translate = (key: string): string => labels[key] || key;
 
 describe('formatAnalystToolProgress', () => {
+    it('shows a connector lookup with a type as reading its setup', () => {
+        expect(formatAnalystToolProgress('list_connectors', {}, translate)).toBe('Checking available connectors');
+        expect(formatAnalystToolProgress('list_connectors', { source_type: 'postgresql' }, translate))
+            .toBe('Reading connector setup: postgresql');
+    });
+
+    it('names every file a read covers', () => {
+        expect(formatAnalystToolProgress('read_file', {
+            paths: ['session/charts/*', 'session/tables/sales.json'],
+        }, (key: string) => key === 'dataThread.readingFile' ? 'Reading' : key))
+            .toBe('Reading: session/charts/*, session/tables/sales.json');
+    });
+
     it('keeps catalog paths compact', () => {
         expect(formatAnalystToolProgress('list_data', {
             source_id: 'mysql:mysql',

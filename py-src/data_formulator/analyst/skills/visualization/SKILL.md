@@ -26,7 +26,11 @@ flag or exclude partial ones. Answer from the data; label facts it cannot suppor
 
 ## Inputs and Publication
 
-Follow the workspace Data Access Paths to choose or load inputs. Compute
+To fix a chart the user says is wrong or unwanted, publish the corrected one with
+`replaces` set to the old table or chart id; the old pair is deleted. Variations
+and follow-ups add new charts instead.
+
+Choose inputs from the session; to load more, load the `connected_data` skill and follow its Data Access Paths. Compute
 chart-specific filters, grouping, and ranking from their listed paths. No
 separate `create_data` call is needed to prepare or publish chart data.
 Virtual load outcomes are not local chart inputs; follow the workspace policy
@@ -52,12 +56,14 @@ bindings remain available; retry with those paths instead of reloading.
 - `code`: standalone Python producing the DataFrame named by `output_variable`.
 - `input_sources`: durable inputs materially used by the transform. Use stable
   IDs and kinds from workspace context; use `[]` when none contributed.
-- `field_metadata`: semantic annotations for encoded fields. Preserve units,
-  baselines, intrinsic domains, and ordinal order; never invent a unit.
+- `field_metadata`: for encoded fields, a SemanticType name (`Year`, `Amount`,
+  `Category`, …; not `quantitative` or `nominal`) or an object adding `unit`,
+  `intrinsic_domain`, `sort_order` for ordered categories, and
+  `diverging_midpoint` for a baseline. Never invent a unit.
 - `field_display_names`: concise human-readable labels for axes and legends.
-- `chart.encodings`: map each channel to a Flint encoding object such as
-  `{"x": {"field": "category", "type": "nominal"}}`. A bare field-name
-  string is accepted as shorthand. Every `field` must name an output column.
+- `chart.encodings`: map each channel to a Flint encoding object
+  (`{"field": ..., "type": ...}`) or a bare field name. Every `field` must name
+  an output column.
 
 Choose the chart from the analytical intent: comparison, trend, distribution,
 relationship, composition, deviation, ranking, uncertainty, or spatial pattern.

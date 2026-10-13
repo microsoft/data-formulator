@@ -64,10 +64,7 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "filename": {
-            "type": "string",
-            "description": "Filename including extension, without directories, e.g. summary.md."
-          },
+          "filename": { "type": "string", "description": "File path including extension, optionally in folders, e.g. summary.md, notes/plan.md, lib/cleaning.py." },
           "display_name": {
             "type": "string",
             "minLength": 1,
@@ -135,14 +132,15 @@
     "type": "function",
     "function": {
       "name": "edit_file",
-      "description": "Edit an existing agent-managed workspace file. Provide exactly one of replacement content, Python code/output_variable, or text replacements/append_text. Requires the current content_hash from creation, editing, or list_workspace_items(scope=input). User-managed sources and internal files are protected; create a copy instead. Preserves filename and display name unless a new display_name is supplied.",
+      "description": "Edit an existing agent-managed workspace file. Provide exactly one of replacement content, Python code/output_variable, or text replacements/append_text. Requires the current content_hash from creation, editing, read_file, or list_workspace_items(scope=input). Also edits the session's chart specs (session/charts/<id>.json) and reports (session/reports/<id>.md); those edits are validated and rejected, changing nothing, if they are invalid. User-managed sources and internal files are protected; create a copy instead. Preserves filename and display name unless a new display_name is supplied; an app is edited in place.",
       "parameters": {
         "type": "object",
         "properties": {
-          "path": {
+          "replaces": {
             "type": "string",
-            "description": "Exact existing files/... path from the input inventory or create_file result."
+            "description": "The file's files/... path, equal to path. Only to fix an artifact the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the fixed file moves to after the latest request and the thread notes that it replaced the old one. Omit it for ordinary changes the user asks for."
           },
+          "path": { "type": "string", "description": "Exact existing path: files/... from list_files, the input inventory, or create_file; or session/charts/<id>.json or session/reports/<id>.md." },
           "display_name": {
             "type": "string",
             "minLength": 1,
@@ -201,6 +199,88 @@
           "path",
           "expected_content_hash"
         ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_files",
+      "description": "List the session's files: workspace files (files/, in folders: documents, apps, your notes and Python helpers), the session as files (session/: index.md, charts/<id>.json and reports/<id>.md you can edit, tables/<name>.json, references/<id>.json, and threads/<n>.md to read), and scratch/ intermediates. Data tables are read with the data tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Folder or prefix to list, e.g. files/notes, session/charts. Omit for everything." }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "read_file",
+      "description": "Read text files of the session (files/..., session/..., scratch/...). Read one file by path, a window of lines at a time, or several in one call with paths (globs allowed, e.g. session/charts/* or a chart with its table), up to 20 files within a size budget. Returns content_hash for edit_file and whether you may edit each file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "One file to read." },
+          "paths": { "type": "array", "items": { "type": "string" }, "maxItems": 20, "description": "Several files or globs to read together, each from its first line." },
+          "offset": { "type": "integer", "minimum": 1, "description": "First line to read (default 1); with path only." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 2000, "description": "Lines to read per file (default 400)." }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "search_files",
+      "description": "Search the text of every session file, like grep: workspace files and apps, chart specs, reports, table code and provenance, references, the conversation threads, and scratch. Returns matching lines with their path and line number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pattern": { "type": "string", "description": "Text to find (or a regular expression with regex=true)." },
+          "path": { "type": "string", "description": "Limit to a folder or prefix, e.g. session/, files/lib." },
+          "glob": { "type": "string", "description": "Limit to paths matching a glob, e.g. *.py or session/charts/*." },
+          "regex": { "type": "boolean" },
+          "case_sensitive": { "type": "boolean" },
+          "max_results": { "type": "integer", "minimum": 1, "maximum": 100 }
+        },
+        "required": ["pattern"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "move_file",
+      "description": "Rename or move a workspace file, into folders as needed (files/draft.md -> files/notes/draft.md). Content is unchanged; the file keeps its place in the thread. Organize your own files freely; move the user's files only when they ask.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Current path under files/." },
+          "new_path": { "type": "string", "description": "New path under files/." }
+        },
+        "required": ["path", "new_path"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "delete_items",
+      "description": "Delete tables (loaded or derived), charts, connected-source references, or workspace files and folders from this session when the user asks to remove them. Deletion is immediate and cannot be undone: delete only items the user named or clearly described, or your own working files (notes, helpers) you no longer need. A table goes with its charts, and a derived table goes with its last chart. Refused, deleting nothing, when something kept depends on an item: a table computed from it (include that table too only if the user wants it gone), a report or app using it (the user must change or remove those first), or a table computed from a file or whose code imports a helper. Items made earlier in this run cannot be deleted; fix them with replaces instead. Returns everything deleted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "type": "string" }, "description": "Ids of the items to delete: table names, chart ids (session/charts/<id>.json in the index), external reference ids, or files/... paths (a folder path deletes its files). Display names also match. An unknown id returns the session's items." }
+        },
+        "required": ["items"],
         "additionalProperties": false
       }
     }
@@ -366,7 +446,7 @@
     "type": "function",
     "function": {
       "name": "find_data",
-      "description": "Recursively find data below an optional exact source path. Query is an optional case-insensitive regex; omit it to enumerate descendants. Results are flat typed nodes with exact paths. For a named subject missing from workspace inputs, search before asking the user to supply data or specify analysis scope. Inspect matching metadata, then call propose_data_operation if loading is needed for the user's task. Search results are not loaded data. Use summarize_data_sources instead for a broad overview.",
+      "description": "Recursively find data below an optional exact source path. Query is an optional case-insensitive regex (a plain phrase with no whole match is searched word by word); omit it to enumerate descendants. Results are flat typed nodes with exact paths. For a named subject missing from workspace inputs, search before asking the user to supply data or specify analysis scope. The top table hits carry a preview (columns, row count, a few sample rows); when it covers the task, call propose_data_operation directly, otherwise use describe_data for the rest. Search results are not loaded data. Use summarize_data_sources instead for a broad overview.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -591,7 +671,7 @@
     "type": "function",
     "function": {
       "name": "propose_data_operation",
-      "description": "Add connected data to the workspace using the workspace Data Access Paths. For analysis, submit the needed query directly: the application also registers a virtual source reference only if that source/table is not already in the workspace. No separate preparation call is needed. Query results are materialized and never silently become virtual references. Omit query for an add-source request using automatic small/local or large/virtual loading, matching manual imports. Ground source IDs, table keys, and query fields in discovery or reference context. One option with user_review_needed=false executes automatically; review-required proposals pause for user selection. Multiple options always require review. Inspect load_outcomes: virtual means compute_ready=false with no local path; materialized means compute_ready=true with input paths and scope. When both are returned, compute from the materialized result without loading again. Source registration does not imply query success.",
+      "description": "Add connected data to the workspace, following the connected_data skill (load it first). For analysis, submit the needed query directly: the application also registers a virtual source reference only if that source/table is not already in the workspace. No separate preparation call is needed. Query results are materialized and never silently become virtual references. Omit query for an add-source request using automatic small/local or large/virtual loading, matching manual imports. Ground source IDs, table keys, and query fields in discovery or reference context. One option with user_review_needed=false executes automatically; review-required proposals pause for user selection. Multiple options always require review. Inspect load_outcomes: virtual means compute_ready=false with no local path; materialized means compute_ready=true with input paths and scope. When both are returned, compute from the materialized result without loading again. Source registration does not imply query success.",
       "parameters": {
         "type": "object",
         "properties": {

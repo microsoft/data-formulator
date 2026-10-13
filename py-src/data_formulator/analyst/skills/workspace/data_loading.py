@@ -190,7 +190,8 @@ class WorkspaceDataLoading:
             from data_formulator.data_loader.query_runtime import QueryCancelled
             selected = repository.select(operation.id, operation.plans[0].id)
             yield {"type": "tool_start", "tool": "load_data", "args": {
-                "tables": [step.source_table_name for step in operation.plans[0].steps],
+                # What each step loads (e.g. a filtered subset), not the source it reads from.
+                "tables": [step.display_name for step in operation.plans[0].steps],
             }}
             try:
                 result = DataOperationExecutor(

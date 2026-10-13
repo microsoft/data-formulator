@@ -37,6 +37,66 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# --- Memory for file-scan queries -------------------------------------------
+# Remote and local file sources run their queries in DuckDB inside the app.
+# Each query gets a share of physical memory: half of it, split across the
+# concurrent query workers, kept between 512 MB and 4 GB. DF_QUERY_MEMORY_LIMIT_MB
+# overrides it. Operators that can spill (sorts, aggregates, joins) use a temp
+# directory instead of failing; a result larger than the budget still fails.
+_MIN_QUERY_MEMORY_MB = 512
+_MAX_QUERY_MEMORY_MB = 4096
+
+
+def _physical_memory_mb() -> int | None:
+    import os
+    import sys
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            class MemoryStatus(ctypes.Structure):
+                _fields_ = [("length", ctypes.c_ulong), ("load", ctypes.c_ulong),
+                            ("total_physical", ctypes.c_ulonglong), ("available_physical", ctypes.c_ulonglong),
+                            ("total_page_file", ctypes.c_ulonglong), ("available_page_file", ctypes.c_ulonglong),
+                            ("total_virtual", ctypes.c_ulonglong), ("available_virtual", ctypes.c_ulonglong),
+                            ("available_extended_virtual", ctypes.c_ulonglong)]
+            status = MemoryStatus()
+            status.length = ctypes.sizeof(MemoryStatus)
+            if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return None
+            return int(status.total_physical // (1024 * 1024))
+        return int(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") // (1024 * 1024))
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def query_memory_limit_mb() -> int:
+    """The memory budget of one file-scan query, in MB."""
+    import os
+    override = os.environ.get("DF_QUERY_MEMORY_LIMIT_MB", "").strip()
+    if override:
+        try:
+            return max(64, int(override))
+        except ValueError:
+            logger.warning("Ignoring invalid DF_QUERY_MEMORY_LIMIT_MB=%r", override)
+    total = _physical_memory_mb()
+    if not total:
+        return _MIN_QUERY_MEMORY_MB
+    try:
+        workers = max(1, int(os.environ.get("DF_QUERY_MAX_WORKERS", "2")))
+    except ValueError:
+        workers = 2
+    return max(_MIN_QUERY_MEMORY_MB, min(_MAX_QUERY_MEMORY_MB, total // 2 // workers))
+
+
+def duckdb_query_config() -> dict[str, Any]:
+    """DuckDB settings for an in-app file-scan query: its memory budget and a place to spill."""
+    import os
+    import tempfile
+    spill = os.path.join(tempfile.gettempdir(), "data-formulator-query-spill")
+    os.makedirs(spill, exist_ok=True)
+    return {"memory_limit": f"{query_memory_limit_mb()}MB", "temp_directory": spill}
+
 # --- Row caps (design 37 §4.2) ---------------------------------------------
 # Hard cap on rows a single probe returns to the agent. Deliberately small:
 # probe results become input tokens on the next turn, so we never dump a large
@@ -223,6 +283,9 @@ def _compile_where(filters: list[dict[str, Any]], dialect: SqlDialect,
                 skip(f"BETWEEN filter on {col!r} requires a [low, high] value")
         elif op == "ILIKE" and dialect.ilike == "lower_like":
             parts.append(f"LOWER({qcol}) LIKE LOWER({_contains_lit(val)})")
+        elif op == "ILIKE" and dialect == DUCKDB:
+            # DuckDB has no ILIKE for dates or numbers; a text match there means their text form.
+            parts.append(f"CAST({qcol} AS VARCHAR) ILIKE {_contains_lit(val)}")
         elif op == "ILIKE":
             parts.append(f"{qcol} ILIKE {_contains_lit(val)}")
         else:
@@ -245,7 +308,7 @@ def preview_file(register_source: Callable, source: str, import_options: dict[st
     options = dict(import_options or {})
     options["size"] = min(max(1, int(options.get("size") or 50)), 5 if purpose == "agent" else 50)
     query = query_from_import_options(options)
-    with duckdb.connect(config={"memory_limit": "512MB"}) as connection:
+    with duckdb.connect(config=duckdb_query_config()) as connection:
         relation = register_source(connection, source, preview=True)
         available_columns = relation.columns
         selected = query["columns"] or available_columns

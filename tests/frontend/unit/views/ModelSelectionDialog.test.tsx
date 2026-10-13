@@ -30,6 +30,7 @@ afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    window.history.replaceState({}, '', '/');
 });
 
 describe('Model connection form', () => {
@@ -265,6 +266,23 @@ describe('Model connection form', () => {
         expect(apiRequest).toHaveBeenCalledWith(base + '/cancel', expect.objectContaining({ body: JSON.stringify({ flow_id: 'copilot-flow' }) }));
         expect(screen.queryByLabelText('Device code')).not.toBeInTheDocument();
         expect(screen.queryByRole('link', { name: 'Manage on GitHub' })).not.toBeInTheDocument();
+    });
+
+    it('does not open an about:blank authorization window in the desktop app', async () => {
+        window.history.replaceState({}, '', '/?desktop=1');
+        mockCopilot(false, false);
+        const open = vi.spyOn(window, 'open').mockReturnValue(null);
+        openForm();
+        await chooseProvider('GitHub Copilot');
+        const connect = screen.getByRole('button', { name: 'Connect GitHub Copilot' });
+        await waitFor(() => expect(connect).toBeEnabled());
+        fireEvent.click(connect);
+        expect(await screen.findByRole('link', { name: 'Open GitHub' })).toHaveAttribute('href', 'https://github.com/login/device');
+        expect(screen.getByText(modelStrings.model.deviceCodeInstructions)).toBeVisible();
+        const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+        screen.getByRole('link', { name: 'Open GitHub' }).dispatchEvent(click);
+        expect(click.defaultPrevented).toBe(false);
+        expect(open).not.toHaveBeenCalled();
     });
 
     it('cancels a late Copilot authorization start without touching the new provider', async () => {
@@ -576,8 +594,6 @@ describe('Model connection form', () => {
         ['ollama', 'http://inference.internal:11435/api', 'Ollama \u00b7 inference.internal:11435'],
         ['ollama', 'http://[::1]:11434', 'Ollama \u00b7 [::1]:11434'],
         ['openai', 'https://api.openai.com/v1/', 'OpenAI'],
-        ['anthropic', 'https://api.anthropic.com', 'Anthropic'],
-        ['gemini', 'https://generativelanguage.googleapis.com', 'Google Gemini'],
         ['openai', 'https://api.openai.com:8443/v1', 'OpenAI \u00b7 api.openai.com:8443'],
         ['openai', 'https://user:secret@proxy.example:8443/v1?token=secret', 'OpenAI \u00b7 proxy.example:8443'],
         ['openai', 'not a URL', 'OpenAI'],
@@ -626,7 +642,7 @@ describe('Model connection form', () => {
         expect(screen.queryByRole('button', { name: 'Use recent' })).not.toBeInTheDocument();
     });
 
-    it.each(['OpenAI', 'Anthropic', 'Google Gemini', 'Azure', 'Ollama', 'OrcaRouter', 'Cheaper Inference'])(
+    it.each(['OpenAI', 'Azure', 'Ollama'])(
         '%s does not treat a suggested model as a selected model', async provider => {
         openForm();
         await chooseProvider(provider);
@@ -753,9 +769,9 @@ describe('Model connection form', () => {
         expect(store.getState().models[0]).toMatchObject({ endpoint: 'ollama', model: 'llama3.2', api_key: '', api_base: '' });
     });
 
-    it.each(['OpenAI', 'Anthropic', 'Google Gemini', 'OrcaRouter', 'Cheaper Inference'])('%s keeps optional URL overrides under Advanced', async provider => {
+    it('keeps optional URL overrides under Advanced for hosted providers', async () => {
         openForm();
-        await chooseProvider(provider);
+        await chooseProvider('OpenAI');
         expect(screen.getByLabelText('Base URL')).not.toBeVisible();
         expect(screen.getByLabelText('API Key')).toBeVisible();
         fireEvent.click(screen.getByRole('button', { name: 'Advanced settings' }));

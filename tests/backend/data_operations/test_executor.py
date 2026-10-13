@@ -43,6 +43,7 @@ class _RemoteLoader:
         Event().wait(60)
 
 
+@pytest.mark.slow
 def test_query_worker_reuses_process_with_fresh_loaders_and_owned_results():
     with query_worker_scope(Event()) as worker:
         assert worker._process is None
@@ -56,6 +57,7 @@ def test_query_worker_reuses_process_with_fresh_loaders_and_owned_results():
     assert second.column("owner").to_pylist() == ["second"]
 
 
+@pytest.mark.slow
 def test_query_worker_scopes_do_not_share_processes():
     with query_worker_scope(Event()) as outer:
         first = execute_source_query(_RemoteLoader(), "query_data_as_arrow")
@@ -68,6 +70,7 @@ def test_query_worker_scopes_do_not_share_processes():
     assert outer._process is None
 
 
+@pytest.mark.slow
 def test_query_worker_recovers_from_errors_and_native_exit():
     with query_worker_scope(Event()) as worker:
         first = execute_source_query(_RemoteLoader(), "query_data_as_arrow")
@@ -82,6 +85,7 @@ def test_query_worker_recovers_from_errors_and_native_exit():
         assert first.column("pid").to_pylist() != third.column("pid").to_pylist()
 
 
+@pytest.mark.slow
 def test_query_worker_cancellation_kills_read_and_releases_capacity(tmp_path, monkeypatch):
     slots = BoundedSemaphore(1)
     monkeypatch.setattr(query_runtime, "_worker_slots", slots)
@@ -110,6 +114,7 @@ def test_query_worker_cancellation_kills_read_and_releases_capacity(tmp_path, mo
             watcher.join()
 
 
+@pytest.mark.slow
 def test_query_worker_deadline_kills_read_and_releases_capacity(tmp_path, monkeypatch):
     slots = BoundedSemaphore(1)
     monkeypatch.setattr(query_runtime, "_worker_slots", slots)
@@ -174,6 +179,7 @@ def test_query_worker_start_failure_releases_capacity(monkeypatch):
         slots.release()
 
 
+@pytest.mark.slow
 def test_stream_reuses_and_closes_query_worker_on_disconnect():
     from data_formulator.routes.agents import _cancellable_agent_stream
 
@@ -505,6 +511,19 @@ def test_query_failure_preserves_registered_source_and_reports_failure(tmp_path)
     assert completed.result_references[0]["displayName"] == "Events"
     assert not completed.result_table_ids
     assert completed.to_public_dict()["load_outcomes"][0]["compute_ready"] is False
+
+
+@pytest.mark.parametrize(("error", "message"), [
+    (RuntimeError("Out of Memory Error: failed to allocate data of size 4.0 KiB (493.7 MiB/488.2 MiB used)"),
+     "Recent events could not be loaded: the source query ran out of memory. Load fewer rows or columns, or aggregate in the query."),
+    (RuntimeError("internal connector detail"), "Recent events could not be loaded."),
+])
+def test_query_failure_explains_running_out_of_memory_only(tmp_path, error, message):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    step = ConnectorQueryStep(source_id="warehouse", table_key="Events", display_name="Recent events",
+                              source_table="Events", query=LoadQuery(limit=10))
+    result = DataOperationExecutor(workspace, lambda _: _Loader(error=error)).execute(_operation(step))
+    assert result.failed_steps[0].error.message == message
 
 
 def test_native_kql_diagnostic_reaches_failed_step(tmp_path):

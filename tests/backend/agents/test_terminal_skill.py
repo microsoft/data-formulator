@@ -45,7 +45,7 @@ def test_terminal_policy_controls_first_turn_prompt_and_tools(tmp_path, monkeypa
     tools = agent._current_tools()
     names = {spec["function"]["name"] for spec in tools}
     assert registry.has("terminal")
-    workspace_guidance = agent.registry.load_body("workspace")
+    workspace_guidance = agent.registry.load_body("connected_data")
     assert "## Choose an Acquisition Route" in workspace_guidance
     assert "{terminal_acquisition_route}" not in prompt
     if mode == "off":
@@ -79,7 +79,7 @@ def test_terminal_policy_controls_first_turn_prompt_and_tools(tmp_path, monkeypa
         assert ("Auto approval is enabled" in prompt) == (mode == "auto")
     history = [
         {"role": "user", "content": "[SKILL LOADED: terminal]\nOld Ask-only instructions"},
-        {"role": "user", "content": "[SKILL LOADED: workspace]\nOld connector-only instructions"},
+        {"role": "user", "content": "[SKILL LOADED: connected_data]\nOld connector-only instructions"},
     ]
     agent._rehydrate_loaded_skills(history)
     assert "Old Ask-only" not in history[0]["content"]
@@ -89,6 +89,7 @@ def test_terminal_policy_controls_first_turn_prompt_and_tools(tmp_path, monkeypa
     assert ("terminal" in agent._loaded_skills) == (mode != "off")
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("ignore_interrupt", [False, True])
 def test_terminal_pause_retains_partial_output_and_stops_process(tmp_path, ignore_interrupt):
     from threading import Event
@@ -111,6 +112,7 @@ def test_terminal_pause_retains_partial_output_and_stops_process(tmp_path, ignor
     assert "partial output" in result["output"]
 
 
+@pytest.mark.slow
 def test_terminal_acquired_data_can_be_analyzed_and_published_without_connector(tmp_path):
     from data_formulator.analyst.agent import AnalystAgent
     from data_formulator.analyst.skills.analysis.skill import get_skill as analysis_skill
@@ -561,6 +563,42 @@ def test_linux_terminal_mounts_host_read_only_and_scratch_writable(tmp_path, mon
     assert command.count("--bind") == 2
     assert command[command.index(str(state.resolve())) - 1:command.index(str(state.resolve())) + 2] == [
         "--bind", str(state.resolve()), str(state.resolve())]
+
+
+def test_terminal_hides_df_secrets_and_api_port(tmp_path, monkeypatch):
+    secret = tmp_path / ".vault_key"
+    secret.write_text("key")
+    monkeypatch.setattr(terminal.sys, "platform", "darwin")
+    monkeypatch.setattr(terminal.Path, "is_file", lambda self: True)
+    command = terminal.confined_command(["ls"], tmp_path, protected_files=[str(secret)], protected_ports=[5567])
+    profile = command[2]
+    assert f'(deny file-read* file-write* (literal "{secret}"))' in profile
+    assert '(deny network-outbound (remote ip "localhost:5567"))' in profile
+    # Everything else stays open: reads, other local ports, and the network.
+    assert "(allow file-read* sysctl-read mach-lookup network*)" in profile
+    monkeypatch.setattr(terminal.sys, "platform", "linux")
+    monkeypatch.setattr(terminal.shutil, "which", lambda name: "/usr/bin/bwrap")
+    command = terminal.confined_command(["ls"], tmp_path, protected_files=[str(secret)], protected_ports=[5567])
+    assert command[command.index(str(secret)) - 2:command.index(str(secret)) + 1] == ["--ro-bind", "/dev/null", str(secret)]
+    assert "--share-net" in command
+
+
+def test_terminal_protects_existing_df_secret_files(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_FORMULATOR_HOME", str(tmp_path))
+    (tmp_path / ".vault_key").write_text("key")
+    (tmp_path / "configuration.json").write_text("{}")
+    assert terminal.protected_files() == [str((tmp_path / ".vault_key").resolve()),
+                                          str((tmp_path / "configuration.json").resolve())]
+
+
+def test_vault_key_is_owner_only(tmp_path):
+    from data_formulator.auth.vault import _resolve_key
+
+    created = _resolve_key(tmp_path)
+    assert created and (tmp_path / ".vault_key").stat().st_mode & 0o777 == 0o600
+    (tmp_path / ".vault_key").chmod(0o644)
+    assert _resolve_key(tmp_path) == created
+    assert (tmp_path / ".vault_key").stat().st_mode & 0o777 == 0o600
 
 
 def test_terminal_approval_is_exact_owned_and_single_use(tmp_path):

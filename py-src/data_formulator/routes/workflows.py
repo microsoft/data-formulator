@@ -387,7 +387,8 @@ def run_instance():
 
         try:
             yield state_event(public_run(state))
-            agent = WorkflowAgent(client, workspace, state, checkpoint, cancellation, identity)
+            agent = WorkflowAgent(client, workspace, state, checkpoint, cancellation, identity,
+                                  workspace_id=get_active_workspace_id())
             agent.read_messages = lambda: read_messages(path)
             if terminal_proposal is not None:
                 from data_formulator.analyst.skills.terminal.skill import run_command

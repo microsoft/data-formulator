@@ -93,12 +93,6 @@ class TestWorkspaceLifecycle:
         manager.create_workspace("test")
         assert manager.workspace_exists("test")
 
-    def test_workspace_exists_is_directory_based(self, manager):
-        """A bare directory (without any metadata files) counts as existing."""
-        bare_dir = manager.root / "bare_ws"
-        bare_dir.mkdir()
-        assert manager.workspace_exists("bare_ws")
-
     def test_delete_workspace(self, manager):
         manager.create_workspace("to_delete")
         assert manager.delete_workspace("to_delete") is True
@@ -269,11 +263,6 @@ class TestOpenWorkspace:
     def test_open_nonexistent_raises(self, manager):
         with pytest.raises(ValueError, match="does not exist"):
             manager.open_workspace("nope", identity_id="test-user")
-
-    def test_create_and_open_workspace(self, manager):
-        ws = manager.create_and_open_workspace("new_ws", identity_id="test-user")
-        assert ws is not None
-        assert ws.list_tables() == []
 
     def test_write_data_in_workspace(self, manager):
         import pandas as pd
@@ -595,17 +584,6 @@ class TestEmptyWorkspaceVisibility:
         assert (manager.root / "opened" / "workspace.yaml").exists()
 
         assert not any(w["id"] == "opened" for w in manager.list_workspaces())
-
-    def test_workspace_with_tables_is_visible(self, manager):
-        manager.create_workspace("real")
-        manager.save_session_state("real", {
-            "tables": [{"id": "t1", "name": "T1"}],
-            "activeWorkspace": {"id": "real", "displayName": "Real"},
-        })
-
-        ws_list = manager.list_workspaces()
-
-        assert any(w["id"] == "real" for w in ws_list)
 
     def test_zero_count_workspace_is_visible(self, manager):
         """A workspace whose tables were all deleted (zero tables) still

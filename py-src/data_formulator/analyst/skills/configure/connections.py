@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from typing import Any, Generator
 
 from data_formulator.analyst.skills.base import Event, SkillContext
@@ -19,9 +21,19 @@ def connectors_disabled() -> bool:
     return user_connectors_disabled()
 
 
-def list_connectors() -> dict[str, Any]:
+def list_connectors(args: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Connector types, and with ``source_type`` (a type key or name) the matching type's setup fields."""
     if connectors_disabled():
         return {"connectors": [], "unavailable": [], "note": CONNECTORS_DISABLED_NOTE}
+    wanted = str((args or {}).get("source_type") or "").strip()
+    if wanted:
+        listed = list_connectors()
+        details = describe_connector({"source_type": _match_connector_type(wanted, listed["connectors"])})
+        if "error" not in details:
+            return {"connector": details, "connectors": [{"type": item["type"], "name": item["name"]}
+                                                         for item in listed["connectors"]]}
+        listed["note"] = f"No connector type matches {wanted!r}; choose a type from this list."
+        return listed
 
     from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
 
@@ -54,6 +66,20 @@ def list_connectors() -> dict[str, Any]:
     }
 
 
+def _match_connector_type(wanted: str, connectors: list[dict[str, Any]]) -> str:
+    """The connector type ``wanted`` names: its key or display name, exactly or as the only partial match."""
+    def norm(text: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", text.lower())
+    target = norm(wanted)
+    for item in connectors:
+        if target in (norm(item["type"]), norm(item["name"])):
+            return item["type"]
+    partial = [item["type"] for item in connectors
+               if target and (target in norm(item["type"]) or target in norm(item["name"])
+                              or norm(item["type"]) in target)]
+    return partial[0] if len(partial) == 1 else wanted
+
+
 def describe_connector(args: dict[str, Any]) -> dict[str, Any]:
     if connectors_disabled():
         return {"error": CONNECTORS_DISABLED_NOTE}
@@ -65,7 +91,7 @@ def describe_connector(args: dict[str, Any]) -> dict[str, Any]:
     if loader_class is None:
         hint = DISABLED_LOADERS.get(source_type)
         detail = f" (needs: {hint})" if hint else ""
-        return {"error": f"Connector {source_type!r} is unavailable{detail}. Call list_connectors."}
+        return {"error": f"Connector {source_type!r} is unavailable{detail}. Call list_connectors without source_type."}
 
     def safe(callable_):
         try:

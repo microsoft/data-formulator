@@ -205,17 +205,21 @@ class MSSQLDataLoader(ExternalDataLoader):
 
     # SQL Server types that may need special handling
     _CX_SPATIAL_TYPES = {'geometry', 'geography'}  # use .STAsText()
-    _CX_OTHER_UNSUPPORTED = {'hierarchyid', 'xml', 'sql_variant', 'image', 'timestamp'}
-    _CX_UNSUPPORTED_TYPES = _CX_SPATIAL_TYPES | _CX_OTHER_UNSUPPORTED
+    # timestamp (rowversion) and image refuse a direct cast to text; read them as 0x-prefixed hex.
+    _CX_BINARY_TYPES = {'timestamp', 'rowversion', 'image'}
+    _CX_OTHER_UNSUPPORTED = {'hierarchyid', 'xml', 'sql_variant'}
+    _CX_UNSUPPORTED_TYPES = _CX_SPATIAL_TYPES | _CX_BINARY_TYPES | _CX_OTHER_UNSUPPORTED
 
-    def _safe_select_list(self, schema: str, table_name: str) -> str:
+    def _safe_select_list(self, schema: str, table_name: str, database: str | None = None) -> str:
         """Build a SELECT column list that converts unsupported types to text.
-        Uses .STAsText() for spatial types, CAST(... AS NVARCHAR(MAX)) for others.
-        Returns '*' if no unsupported columns are found."""
+        Uses .STAsText() for spatial types, hex for binary row versions and images,
+        and CAST(... AS NVARCHAR(MAX)) for others. Returns '*' if no unsupported
+        columns are found."""
         try:
+            catalog = f"{_quote_mssql(database)}." if database else ""
             columns_query = f"""
                 SELECT COLUMN_NAME, DATA_TYPE
-                FROM INFORMATION_SCHEMA.COLUMNS
+                FROM {catalog}INFORMATION_SCHEMA.COLUMNS
                 WHERE TABLE_SCHEMA = '{_esc_str(schema)}' AND TABLE_NAME = '{_esc_str(table_name)}'
                 ORDER BY ORDINAL_POSITION
             """
@@ -229,6 +233,8 @@ class MSSQLDataLoader(ExternalDataLoader):
                 qcol = _quote_mssql(str(col))
                 if dtype in self._CX_SPATIAL_TYPES:
                     parts.append(f"{qcol}.STAsText() AS {qcol}")
+                elif dtype in self._CX_BINARY_TYPES:
+                    parts.append(f"CONVERT(VARCHAR(MAX), CAST({qcol} AS VARBINARY(MAX)), 1) AS {qcol}")
                 elif dtype in self._CX_OTHER_UNSUPPORTED:
                     parts.append(f"CAST({qcol} AS NVARCHAR(MAX)) AS {qcol}")
                 else:
@@ -790,11 +796,11 @@ class MSSQLDataLoader(ExternalDataLoader):
                 f"SELECT COUNT(*) AS cnt FROM [{db}].[{schema}].[{table_name}]"
             ).to_pandas()
             row_count = int(count_df["cnt"].iloc[0])
-            col_list = self._safe_select_list(schema, table_name)
+            col_list = self._safe_select_list(schema, table_name, db)
             sample_df = self._execute_query(
                 f"SELECT TOP 5 {col_list} FROM [{db}].[{schema}].[{table_name}]"
             ).to_pandas()
-            sample_rows = df_to_safe_records(sample_df.fillna(value=None))
+            sample_rows = df_to_safe_records(sample_df)
             result: dict[str, Any] = {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}
             if table_description:
                 result["description"] = table_description

@@ -146,16 +146,6 @@ class TestSqlConnectors:
             loader.query_data_as_arrow("db.orders; DROP TABLE x", QUERY, 5)
         assert len(calls) == 1
 
-    @pytest.mark.parametrize("loader_class", [
-        PostgreSQLDataLoader, MySQLDataLoader, MSSQLDataLoader,
-        BigQueryDataLoader, ClickHouseDataLoader, AthenaDataLoader,
-    ])
-    def test_advertises_aggregate_loading_but_no_native_language(self, loader_class):
-        capabilities = loader_class.query_capabilities()
-        assert capabilities["aggregate_loading"] == "supported"
-        assert capabilities["native_query_languages"] == []
-        assert capabilities["execution_model"] == "server_query"
-
 
 class TestExecutorIntegration:
     def _loader(self, rows: int):

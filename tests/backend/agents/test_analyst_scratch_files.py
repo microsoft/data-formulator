@@ -8,6 +8,8 @@ bytes. See design-docs/40-analyst-scratch-file-attachments.md.
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 from unittest.mock import MagicMock
 
@@ -45,40 +47,46 @@ class TestScratchFileInjection:
 
         agent._get_next_action = next_action
         trajectory = [{"role": "user", "content": "Earlier context had no files."}] if resume else None
-        events = list(agent.run([], "visualize this data", trajectory=trajectory, focused_file="scratch/sample.csv"))
+        events = list(agent.run([], "visualize this data", trajectory=trajectory,
+                                session_state={"focusedId": {"type": "file", "fileName": "scratch/sample.csv"}}))
         assert events[-1]["type"] == "completion"
         assert events[-1]["status"] == "success"
-        # The external-reference inventory follows the file context as the last message.
-        file_context = observed[-2]["content"]
-        assert file_context.startswith("[CURRENT WORKSPACE FILE CONTEXT]")
-        assert '"selected_file": {"path": "scratch/sample.csv"' in file_context
-        assert '"scratch_files": ["scratch/sample.csv"]' in file_context
-        assert "promotion or another upload is not required" in file_context
+        context = json.dumps(observed)
+        if resume:
+            # A resumed run hears what changed: the file is now on the canvas.
+            assert observed[-1]["content"].startswith("[SESSION CHANGES]")
+            assert "Focus: `scratch/sample.csv` is now on the canvas" in observed[-1]["content"]
+        else:
+            # A new request shows the index, with the scratch file, and the file on the canvas.
+            user = observed[-1]["content"]
+            assert "Focus: `scratch/sample.csv` is on the canvas" in user
+            assert "## Scratch files (1)\n- `scratch/sample.csv`" in user
+            assert "[ON THE CANVAS] `scratch/sample.csv`" in user and "category,value" in user
+        assert "[CURRENT WORKSPACE FILE CONTEXT]" not in context
 
-    def test_file_context_includes_prior_scratch_and_current_selection(self, tmp_path):
-        agent = _agent()
-        agent.workspace = Workspace("test-user", root_dir=tmp_path)
-        agent.workspace.confined_scratch.write("computed.parquet", b"binary not for prompt")
-        agent.workspace.confined_scratch.write("_explore_ns/private.txt", b"private")
-        agent.workspace.save_workspace_file(b"private content", "notes.md")
-        for name, path in [("scratch/computed.parquet", "scratch/computed.parquet"), ("notes.md", "files/notes.md")]:
-            context = agent._build_file_selection_context(name)
-            assert '"path": "' + path + '"' in context
-            assert "visualize them directly" in context
-            assert "binary not for prompt" not in context
-            assert "private content" not in context
-            assert "_explore_ns" not in context
-        context = agent._build_file_selection_context(None)
-        assert "No file is currently selected" in context
-        assert "scratch/computed.parquet" in context
-        for name in ["scratch/missing.parquet", "scratch/../data/private.parquet", "missing.md"]:
-            assert "unavailable or expired" in agent._build_file_selection_context(name)
+    def test_the_index_says_whether_the_file_on_the_canvas_exists_and_who_may_edit_it(self, tmp_path):
+        from data_formulator.analyst.session_layer import SessionLayer
+        workspace = Workspace("test-user", root_dir=tmp_path)
+        workspace.confined_scratch.write("computed.parquet", b"binary not for prompt")
+        workspace.confined_scratch.write("_explore_ns/private.txt", b"private")
+        workspace.save_workspace_file(b"private content", "notes.md")
+        workspace.save_workspace_file(b"app", "dash.app.jsx", agent_managed=True)
+
+        def index(name):
+            return SessionLayer({"focusedId": {"type": "file", "fileName": name}}, workspace).index()
+
+        assert "Focus: `scratch/computed.parquet` is on the canvas\n" in index("scratch/computed.parquet")
+        assert "Focus: `files/notes.md` is on the canvas (the user's: copy it to change it)" in index("notes.md")
+        assert "Focus: `files/dash.app.jsx` is on the canvas (yours: edit it in place with edit_file)" in index("dash.app.jsx")
+        for missing in ("scratch/missing.parquet", "missing.md"):
+            assert "(no longer exists)" in index(missing)
+        text = index("notes.md")
+        assert "binary not for prompt" not in text and "private content" not in text and "_explore_ns" not in text
 
     def test_scratch_note_injected(self):
         agent = _agent()
         msgs = agent._build_initial_messages(
-            [{"name": "t"}], "what's the ROI trend?",
-            scratch_files=["scratch/sales_a1b2c3d4.xlsx"],
+            "what's the ROI trend?", scratch_files=["scratch/sales_a1b2c3d4.xlsx"],
         )
         user = msgs[1]["content"]
         assert "[ATTACHED FILES]" in user
@@ -94,17 +102,14 @@ class TestScratchFileInjection:
 
     def test_no_note_without_files(self):
         agent = _agent()
-        msgs = agent._build_initial_messages([{"name": "t"}], "q")
+        msgs = agent._build_initial_messages("q")
         assert "[ATTACHED FILES]" not in msgs[1]["content"]
-        assert msgs[1]["content"].startswith("[WORKSPACE INPUTS]")
-        assert "[AVAILABLE TABLES]" not in msgs[1]["content"]
+        assert msgs[1]["content"].endswith("[USER QUESTION]\n\nq")
 
     def test_file_bytes_not_inlined(self):
         """Only the path is passed — the note must not contain file contents."""
         agent = _agent()
-        msgs = agent._build_initial_messages(
-            [{"name": "t"}], "q", scratch_files=["scratch/data_deadbeef.csv"],
-        )
+        msgs = agent._build_initial_messages("q", scratch_files=["scratch/data_deadbeef.csv"])
         user = msgs[1]["content"]
         # Reference by path only; nothing resembling raw CSV rows.
         assert "scratch/data_deadbeef.csv" in user

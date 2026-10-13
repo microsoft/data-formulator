@@ -4,11 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from data_formulator.agents.context import (
-    build_focused_thread_context,
-    build_lightweight_table_context,
-    handle_read_catalog_metadata,
-)
+from data_formulator.agents.context import handle_read_catalog_metadata
 
 
 def test_catalog_inspection_exposes_limits_and_bounded_examples(tmp_path):
@@ -139,79 +135,3 @@ def test_catalog_pagination_preserves_progress_with_long_metadata(tmp_path, rela
         assert offset == len(items)
         empty = handle_read_catalog_metadata("source", "model", MagicMock(user_home=tmp_path), **{cursor: offset})
         assert f"at {cursor}={offset}" in empty and "Next:" not in empty
-
-
-def test_focused_context_includes_text_turn_and_loading_decision() -> None:
-    context = build_focused_thread_context([{
-        "user_question": "I want to load data",
-        "agent_response": "Choose an engagement dataset.",
-        "user_answer": "Use movies",
-        "data_operation": {
-            "reason": "Which dataset?",
-            "status": "loaded",
-            "options": ["Movies", "Shows"],
-            "selected_plan": "Movies",
-            "result_tables": ["netflix_movies"],
-            "result_references": [{"displayName": "All shows", "connectorId": "warehouse", "tableKey": "shows"}],
-        },
-    }])
-
-    assert "User: I want to load data" in context
-    assert "Analyst: Choose an engagement dataset." in context
-    assert "User reply: Use movies" in context
-    assert "Selected loading option: Movies" in context
-    assert "Loaded workspace tables: netflix_movies" in context
-    assert "Virtual workspace sources (not compute-ready; rows remain remote)" in context
-    assert '"tableKey": "shows"' in context
-
-
-def test_focused_context_preserves_workflow_definition_for_revision() -> None:
-    definition = "version: 1\nname: Daily trips\noverview: Compare the previous day\ndeliverables: [Hourly chart]"
-    context = build_focused_thread_context([{
-        "user_question": "Create a workflow",
-        "agent_response": "Review this proposal.",
-        "workflow_definition": definition,
-    }])
-    assert definition in context
-    assert "not execution state" in context
-    assert "Workflow status and outputs" not in context
-
-
-def test_focused_context_includes_workflow_status_and_outputs() -> None:
-    context = build_focused_thread_context([{
-        "workflow": {
-            "run_id": "native", "status": "completed",
-            "steps": [{"id": "analyze", "description": "Compare prices", "status": "passed"}],
-            "checks": [{"id": "coverage", "status": "passed"}],
-            "output_ids": ["prices", "brief"],
-            "reports": [{"id": "brief", "content": "# Price comparison"}],
-        },
-    }])
-
-    assert '"status": "completed"' in context
-    assert '"description": "Compare prices"' in context
-    assert '"id": "coverage", "status": "passed"' in context
-    assert '"output_ids": ["prices", "brief"]' in context
-    assert "# Price comparison" in context
-
-
-def test_table_context_uses_analysis_input_headings() -> None:
-    workspace = MagicMock()
-    workspace.user_home = None
-    workspace.get_metadata.return_value = None
-    workspace.read_data_as_df.side_effect = FileNotFoundError
-    tables = [
-        {"name": "orders", "columns": [{"name": "amount", "type": "number"}]},
-        {"name": "customers", "columns": [{"name": "name", "type": "string"}]},
-    ]
-
-    context = build_lightweight_table_context(
-        tables,
-        workspace,
-        primary_tables=["orders"],
-    )
-
-    assert "[PRIMARY ANALYSIS INPUTS]" in context
-    assert "[OTHER ANALYSIS INPUTS]" in context
-    assert "[PRIMARY TABLE" not in context
-    assert "[OTHER AVAILABLE TABLES]" not in context

@@ -84,7 +84,8 @@ def test_workspace_owns_discovery_and_loading_without_an_extra_skill_gate() -> N
     assert meta.always_on is False
     assert meta.action_names == ("propose_data_operation",)
     assert set(meta.tool_names) == {
-        "create_file", "edit_file", "create_data", "update_data", "list_workspace_items",
+        "create_file", "edit_file", "delete_items", "list_files", "read_file", "search_files", "move_file",
+        "create_data", "update_data", "list_workspace_items",
         "read_workspace_item", "search_workspace_items",
         "summarize_data_sources", "list_data", "find_data", "describe_data", "probe_data",
     }
@@ -123,11 +124,15 @@ def test_workspace_baseline_includes_loading_guidance(tmp_path: Path) -> None:
             capabilities=("read",),
         ),
     ))
-    agent._loaded_skills = agent._initial_loaded_skills(empty_inputs)
+    preloads = agent._initial_loaded_skills(empty_inputs)
+    agent._loaded_skills = {"meta"}
 
-    prompt = agent._build_system_prompt()
+    # Preloaded guidance arrives as a skill message, so the system prompt stays the same across requests.
+    prompt = agent._build_system_prompt() + "\n" + "\n".join(message["content"] for message in agent._preload_messages(preloads))
 
-    assert agent._loaded_skills == {"meta"}
+    # An empty session starts by finding data, so the acquisition guidance is preloaded;
+    # with data, it loads on demand. The data tools are available either way.
+    assert agent._loaded_skills == {"meta", "connected_data"} and preloads == {"meta", "connected_data"}
     assert agent._initial_loaded_skills(data_inputs) == {"meta"}
     assert prompt.count("# Workspace\n") == 1
     assert "load-data" not in prompt
@@ -148,13 +153,12 @@ def test_workspace_baseline_includes_loading_guidance(tmp_path: Path) -> None:
     assert "Do not ask which source to inspect for a broad availability question" in prompt
 
 
-@pytest.mark.parametrize("has_charts", [False, True])
-def test_baseline_prioritizes_informative_charts_for_comparative_answers(tmp_path: Path, has_charts: bool) -> None:
+def test_baseline_prioritizes_informative_charts_for_comparative_answers(tmp_path: Path) -> None:
     from data_formulator.analyst.agent import AnalystAgent
 
     agent = AnalystAgent(client=None, workspace=_Workspace(tmp_path))
     agent._loaded_skills = {"meta"}
-    prompt = " ".join(agent._build_system_prompt(has_charts=has_charts).split())
+    prompt = " ".join(agent._build_system_prompt().split())
 
     assert "use `visualize` by default for comparisons, rankings, trends, distributions, and relationships" in prompt
     assert "including an informative chart when supported, not merely prose" in prompt
@@ -169,17 +173,19 @@ def test_workflow_guidance_matches_tool_effects(tmp_path: Path) -> None:
 
     agent = AnalystAgent(client=None, workspace=_Workspace(tmp_path))
     agent._loaded_skills = {"meta"}
-    prompt = " ".join(agent._build_system_prompt(has_charts=True).split())
+    prompt = " ".join(agent._build_system_prompt().split())
     for rule in (
         "File and data tools also return results, but create or revise durable workspace outputs",
         "all sibling calls, including non-action tools, are discarded",
         "Plain text with no tool calls ends the run",
         "The namespace persists within an inspection cycle",
         "Visualization code must be standalone",
-        "Discovery does not load data or make catalog paths readable",
         "Never write directly to `data/`, `files/`, `memory/`, or hidden runtime files",
     ):
         assert rule in prompt
+    # Discovery rules load with the connected_data skill.
+    assert "Discovery does not load data or make catalog paths readable" in " ".join(
+        agent.registry.load_body("connected_data").split())
     assert "Each call has a fresh namespace" not in prompt
     report = " ".join(agent.registry.load_body("report").split())
     assert "returns an observation; it does not end the run" in report
@@ -191,7 +197,7 @@ def test_workflow_guidance_matches_tool_effects(tmp_path: Path) -> None:
     assert "An ordinary summary can be answered directly without report delivery" in prompt
     assert "write up / summarize / report" not in prompt
     assert "successful `visualize` result" in report
-    assert "other threads only when relevant" in report
+    assert "read other threads (session/threads) only when relevant" in report
     assert "Reuse verified findings and charts" in report
     assert "Embed every chart you discuss" not in report
     assert "make the one `write_report` call" not in report
@@ -228,20 +234,20 @@ def test_discovery_to_import_policy_preserves_confirmation_and_optional_question
 
     agent = AnalystAgent(client=None, workspace=_Workspace(tmp_path))
     agent._loaded_skills = {"meta"}
-    prompt = agent._build_system_prompt()
+    prompt = agent._build_system_prompt() + "\n" + agent.registry.load_body("connected_data")
     assert "search connected catalogs with `find_data` before asking the user" in prompt
     assert "need not block a bounded catalog search" in prompt
     assert "Use one option with `user_review_needed: false` for a clear load" in prompt
     assert "multiple alternatives always require review" in prompt
     assert "A discovery-only request does not require loading" in prompt
-    assert "A statement of intended work is not completion" in prompt
+    assert "Nothing runs after your final text, so a statement of intended work is not completion" in prompt
     assert "prefer `ask_user` for a necessary choice or missing intent" in prompt
     specs = {
         spec["function"]["name"]: spec["function"]
         for spec in agent.registry.tools_for(["meta"]) + agent.registry.action_tools_for(["meta"])
     }
     assert "Search results are not loaded data" in specs["find_data"]["description"]
-    assert "workspace Data Access Paths" in specs["propose_data_operation"]["description"]
+    assert "following the connected_data skill" in specs["propose_data_operation"]["description"]
     assert "user_review_needed=false" in specs["propose_data_operation"]["description"]
     assert "user_review_needed" not in specs["propose_data_operation"]["parameters"]["required"]
     assert "user_review_needed" not in agent.registry.action_required_fields("propose_data_operation")
@@ -260,7 +266,7 @@ def test_tool_progress_args_are_useful_and_credential_safe() -> None:
         "source_id": "warehouse",
         "path": ["public"],
     }
-    assert _tool_progress_args("describe_connector", {
+    assert _tool_progress_args("list_connectors", {
         "source_type": "databricks",
         "prefilled": {"token": "secret"},
     }) == {"source_type": "databricks"}
@@ -291,18 +297,19 @@ def test_resume_keeps_workspace_loading_available_without_a_separate_gate(tmp_pa
     from data_formulator.analyst.agent import AnalystAgent
 
     agent = AnalystAgent(client=None, workspace=_Workspace(tmp_path))
-    agent._loaded_skills = agent._initial_loaded_skills(
-        WorkspaceInputManifest(inputs=()),
-    )
+    agent._loaded_skills = {"meta"}
+    # An empty session's run starts with the loading guidance as a skill message.
+    preloaded = agent._preload_messages(agent._initial_loaded_skills(WorkspaceInputManifest(inputs=())))
     system_prompt = agent._build_system_prompt()
     agent._loaded_skills = {"meta"}
 
     agent._rehydrate_loaded_skills([
         {"role": "system", "content": system_prompt},
+        *preloaded,
         {"role": "user", "content": legacy_body},
     ])
 
-    assert agent._loaded_skills == {"meta"}
+    assert agent._loaded_skills == {"meta", "connected_data"}
     assert "propose_data_operation" in agent._legal_actions()
     assert "find_data" in agent._loaded_skill_tool_map()
 
@@ -340,15 +347,22 @@ def test_resume_refreshes_instructions_and_preserves_conversation(tmp_path: Path
                  "connectorId": "warehouse", "tableKey": "reviews", "displayName": "Reviews",
                  "summary": {"columns": []}}
     events = list(agent.run([], "Please find available data first", trajectory=trajectory,
-                           external_references=[reference], focused_external_reference=reference["id"]))
+                           external_references=[reference],
+                           session_state={"externalTableReferences": [reference],
+                                          "focusedId": {"type": "external-table", "referenceId": reference["id"]}}))
     assert events[-1]["type"] == "completion"
-    assert observed[:-2] == [{"role": "system", "content": "CURRENT BASELINE INSTRUCTIONS"}, *history]
-    assert observed[-2]["content"].startswith("[CURRENT WORKSPACE FILE CONTEXT]")
-    assert observed[-1]["content"].startswith("[EXTERNAL TABLE REFERENCES]")
-    assert json.loads(observed[-1]["content"].splitlines()[-1])["focused_reference"] == reference["id"]
+    # What changed in the session goes after the agent's last call and its result, before the user's messages.
+    # The empty session's loading guidance comes with it, as a skill message (the system prompt stays as is).
+    preloaded, changes = observed[4], {"role": "user", "content": observed[5]["content"]}
+    assert preloaded["content"].startswith("[SKILL LOADED: connected_data]")
+    assert observed == [{"role": "system", "content": "CURRENT BASELINE INSTRUCTIONS"}, *history[:3], preloaded, changes,
+                        *history[3:]]
+    assert changes["content"].startswith("[SESSION CHANGES]")
+    assert f"Focus: `session/references/{reference['id']}.json` is now on the canvas" in changes["content"]
+    assert f"- added `session/references/{reference['id']}.json`" in changes["content"]
     assert agent._run_payload["external_references"] == [reference]
     agent._build_system_prompt.assert_called_once()
-    assert agent._loaded_skills == {"meta", "report"}
+    assert agent._loaded_skills == {"meta", "report", "connected_data"}
     assert "find_data" in agent._loaded_skill_tool_map()
     assert "write_report" in agent._legal_actions()
 
@@ -441,6 +455,8 @@ def test_unambiguous_load_executes_without_review_or_narration(
     assert [event["type"] for event in events] == ["tool_start", "tool_result", "data_operation_result"]
     operation = events[-1]["operation"]
     assert operation["status"] == "loaded"
+    # The progress names what each step loads, not the source it reads from.
+    assert events[0]["args"]["tables"] == [step["display_name"] for step in operation["plans"][0]["steps"]]
     assert operation["result_table_ids"]
     assert workspace.list_tables()
     loader.fetch_data_as_arrow.assert_called_once()
@@ -748,6 +764,25 @@ def test_skill_uses_shared_catalog_discovery(tmp_path: Path) -> None:
     assert payload["results"][0]["table_key"] == "public.orders"
 
 
+def test_phrase_search_falls_back_to_its_words_best_match_first(tmp_path: Path) -> None:
+    save_catalog(tmp_path, "warehouse", [
+        {"name": "aapl_stock.csv", "table_key": "aapl_stock.csv", "metadata": {"description": "Daily stock prices"}},
+        {"name": "fuel.csv", "table_key": "fuel.csv", "metadata": {"description": "Weekly fuel prices"}},
+        {"name": "weather.csv", "table_key": "weather.csv"},
+    ])
+    skill = build_registry().get_skill("workspace")
+
+    def find(query: str) -> dict:
+        return json.loads(skill.handle_tool("find_data", {"query": query}, _context(_Workspace(tmp_path))).text)
+
+    payload = find("historical stock prices")
+    assert [hit["name"] for hit in payload["results"]] == ["aapl_stock.csv", "fuel.csv"]
+    assert payload["query"] == "historical stock prices"
+    assert "match any of its words" in payload["note"]
+    assert find("stock|nothing")["results"][0]["name"] == "aapl_stock.csv"
+    assert find("historical (records)")["results"] == []
+
+
 def test_native_probe_is_validated_by_loader_and_bounded(tmp_path: Path) -> None:
     from data_formulator.data_loader.external_data_loader import ExternalDataLoader
 
@@ -832,3 +867,52 @@ def test_probe_budget_is_shared_within_run_and_isolated_between_runs(tmp_path: P
         )
         isolated_budget = next(iter(isolated_state.values()))
         assert isolated_budget.remaining == 19
+
+def test_search_hits_carry_a_preview_and_uncached_ones_are_fetched_once(tmp_path: Path, monkeypatch) -> None:
+    import time
+    import data_formulator.data_operations.discovery as discovery
+    from data_formulator.datalake.catalog_cache import load_catalog
+
+    save_catalog(tmp_path, "warehouse", [
+        {"name": "sales_2024", "table_key": "sales_2024", "path": ["sales_2024"],
+         "metadata": {"columns": [{"name": "region", "type": "str"}, {"name": "amount", "type": "float"}],
+                      "row_count": 120, "sample_rows": [{"region": "N", "amount": 5.0, "note": "x" * 500}]}},
+        {"name": "sales_2025", "table_key": "sales_2025", "path": ["sales_2025"], "metadata": {}},
+        {"name": "sales_slow", "table_key": "sales_slow", "path": ["sales_slow"], "metadata": {}},
+    ])
+
+    class Loader:
+        calls: list = []
+
+        def get_metadata(self, path):
+            self.calls.append(path)
+            if path == ["sales_slow"]:
+                time.sleep(1)
+            return {"columns": [{"name": "region", "type": "string"}], "row_count": 3,
+                    "sample_rows": [{"region": "S"}]}
+
+    loader = Loader()
+    monkeypatch.setattr("data_formulator.data_connector.resolve_live_loader", lambda source_id: loader)
+    monkeypatch.setattr(discovery, "PREVIEW_LIVE_SECONDS", 0.3)
+    skill = build_registry().get_skill("workspace")
+
+    def find() -> dict:
+        found = json.loads(skill.handle_tool("find_data", {"query": "sales"}, _context(_Workspace(tmp_path))).text)
+        return {hit["name"]: hit.get("preview") for hit in found["results"]}
+
+    previews = find()
+    assert previews["sales_2024"]["columns"] == [{"name": "region", "type": "str"}, {"name": "amount", "type": "float"}]
+    assert previews["sales_2024"]["row_count"] == 120 and previews["sales_2024"]["sample_rows"][0]["note"].endswith("…")
+    assert previews["sales_2025"] == {"columns": [{"name": "region", "type": "string"}], "row_count": 3,
+                                      "sample_rows": [{"region": "S"}]}
+    # Too slow for the search: no preview, and the search did not wait for it.
+    assert previews["sales_slow"] is None
+    cached = {table["name"]: table["metadata"] for table in load_catalog(tmp_path, "warehouse")}
+    assert cached["sales_2025"]["columns"] == [{"name": "region", "type": "string"}] and "columns" not in cached["sales_slow"]
+    # What was fetched is cached, so the next search fetches only what is still missing.
+    loader.calls.clear()
+    find()
+    assert loader.calls == [["sales_slow"]]
+
+    monkeypatch.setattr(discovery, "PREVIEW_CHARS", 120)
+    assert find()["sales_2025"] == "omitted for size; use describe_data"

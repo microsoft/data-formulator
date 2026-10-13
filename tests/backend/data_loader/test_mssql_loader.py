@@ -124,3 +124,30 @@ def test_concurrent_queries_do_not_collide():
 
     assert errors == []
     assert len(conn.queries) == 8
+
+
+@pytest.mark.parametrize("database,catalog", [(None, "FROM INFORMATION_SCHEMA.COLUMNS"),
+                                              ("sales", "FROM [sales].INFORMATION_SCHEMA.COLUMNS")])
+def test_rowversion_and_image_columns_are_read_as_hex(database, catalog):
+    """SQL Server refuses to cast timestamp/rowversion or image directly to text."""
+    import pyarrow as pa
+
+    loader, _ = build_loader()
+    queries = []
+
+    def columns(query):
+        queries.append(query)
+        return pa.table({"COLUMN_NAME": ["Id", "RowVersionColumn", "Photo", "Shape", "Doc"],
+                         "DATA_TYPE": ["int", "timestamp", "image", "geography", "xml"]})
+
+    loader._execute_query_raw = columns
+    select = loader._safe_select_list("dbo", "Repro", database)
+
+    assert catalog in queries[0]
+    assert select == ", ".join([
+        "[Id]",
+        "CONVERT(VARCHAR(MAX), CAST([RowVersionColumn] AS VARBINARY(MAX)), 1) AS [RowVersionColumn]",
+        "CONVERT(VARCHAR(MAX), CAST([Photo] AS VARBINARY(MAX)), 1) AS [Photo]",
+        "[Shape].STAsText() AS [Shape]",
+        "CAST([Doc] AS NVARCHAR(MAX)) AS [Doc]",
+    ])

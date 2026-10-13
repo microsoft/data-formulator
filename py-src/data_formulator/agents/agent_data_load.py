@@ -114,10 +114,10 @@ table_0 (table_0) sample:
 
 ```json
 {
-    "suggested_table_name": "income",
+    "suggested_table_name": "Income",
     "fields": {
         "name": {"type": "string", "semantic_type": "State"},
-        "region": {"type": "string", "semantic_type": "Region", "sort_order": ["northeast", "midwest", "south", "west", "other"]},
+        "region": {"type": "string", "semantic_type": "Region"},
         "state_id": {"type": "number", "semantic_type": "ID"},
         "pct": {"type": "number", "semantic_type": "Percentage", "intrinsic_domain": [0, 1]},
         "total": {"type": "number", "semantic_type": "Count"},

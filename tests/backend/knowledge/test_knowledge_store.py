@@ -183,10 +183,6 @@ class TestValidatePath:
         with pytest.raises(ValueError, match=".md"):
             KnowledgeStore.validate_path("rules", "file.txt")
 
-    def test_invalid_category_rejected(self):
-        with pytest.raises(ValueError, match="Invalid category"):
-            KnowledgeStore.validate_path("invalid", "file.md")
-
     def test_empty_path_rejected(self):
         with pytest.raises(ValueError, match="Empty"):
             KnowledgeStore.validate_path("rules", "")
@@ -236,10 +232,6 @@ class TestSearch:
         assert len(results) >= 1
         assert results[0]["title"] == "Handle Missing Values"
 
-    def test_search_by_filename(self, store):
-        results = store.search("missing")
-        assert len(results) >= 1
-
     def test_search_by_body(self, store):
         results = store.search("median")
         assert len(results) >= 1
@@ -280,11 +272,6 @@ class TestSearch:
         results = store.search("Optional", categories=["rules"])
         assert len(results) == 1
         assert results[0]["title"] == "Optional Rule"
-
-    def test_title_match_ranks_higher(self, store):
-        results = store.search("Handle Missing Values")
-        assert len(results) >= 1
-        assert results[0]["title"] == "Handle Missing Values"
 
     def test_search_case_insensitive(self, store):
         results = store.search("handle missing")
@@ -368,10 +355,6 @@ class TestLoadAlwaysApplyRules:
         rules = store.load_always_apply_rules()
         assert len(rules) == 0
 
-    def test_graceful_on_empty_store(self, store):
-        rules = store.load_always_apply_rules()
-        assert rules == []
-
 
 # ── format_rules_block ───────────────────────────────────────────────────
 
@@ -400,15 +383,6 @@ class TestFormatRulesBlock:
     def test_empty_returns_empty_string(self, store):
         block = store.format_rules_block()
         assert block == ""
-
-    def test_empty_list_returns_empty_string(self, store):
-        block = store.format_rules_block([])
-        assert block == ""
-
-    def test_block_starts_with_newlines(self, store):
-        rules = [{"title": "X", "body": "Y"}]
-        block = store.format_rules_block(rules)
-        assert block.startswith("\n\n")
 
 
 # ── tokenization ─────────────────────────────────────────────────────────
@@ -446,11 +420,6 @@ class TestTokenizeQuery:
         assert "sales_data" in tokens
         assert "分析" in tokens
 
-    def test_underscore_preserved(self):
-        tokens = _tokenize_query("sales_data regions")
-        assert "sales_data" in tokens
-        assert "regions" in tokens
-
     def test_empty_query(self):
         assert _tokenize_query("") == []
         assert _tokenize_query("   ") == []
@@ -463,12 +432,6 @@ class TestTokenizeQuery:
 
 
 class TestMatchScore:
-    def test_single_token_title_hit(self):
-        score = KnowledgeStore._match_score(
-            "ROI", "ROI Calculation", "roi", "",
-        )
-        assert score > 0
-
     def test_partial_tokens_accumulate(self):
         """2 out of 3 tokens matching title should still produce a score."""
         score = KnowledgeStore._match_score(

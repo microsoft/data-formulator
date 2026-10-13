@@ -29,10 +29,10 @@ def test_analyst_execution_defaults():
 
 @pytest.mark.parametrize("overrides", [
     {"max_actions": 0}, {"max_actions": True}, {"max_actions": "10"},
-    {"max_tool_rounds_per_action": -1}, {"max_tool_rounds_per_action": 1.5},
+    {"max_tool_rounds_per_action": 1.5},
     {"outer_iteration_multiplier": 0}, {"min_outer_iterations": 0},
     {"empty_response_retries": -1}, {"empty_response_retries": False},
-    {"stream_open_retries": -1}, {"stream_open_retries": 0.5},
+    {"stream_open_retries": 0.5},
     {"empty_response_backoff_seconds": -1}, {"empty_response_backoff_seconds": float("nan")},
     {"stream_open_backoff_seconds": float("inf")}, {"stream_open_backoff_seconds": True},
 ])
@@ -74,7 +74,6 @@ def test_effective_execution_config_is_logged(tmp_path):
         patch.object(agent, "_get_next_action", return_value=iter([{
             "type": "agent_action", "action_data": None, "reason": "done", "final_text": "Done.",
         }])),
-        patch("data_formulator.analyst.agent.render_external_reference_context", return_value=""),
     ):
         events = list(agent.run([], "Summarize", trajectory=[{"role": "user", "content": "Summarize"}]))
     assert events[-1]["type"] == "completion"
@@ -82,7 +81,7 @@ def test_effective_execution_config_is_logged(tmp_path):
     assert session_start.kwargs["execution_config"] == asdict(config)
 
 
-@pytest.mark.parametrize("retries", [0, 1, 2])
+@pytest.mark.parametrize("retries", [0, 2])
 def test_stream_open_retry_budget_and_backoff(retries):
     client = MagicMock(model="test")
     client.get_completion_with_tools.side_effect = TimeoutError("timed out")

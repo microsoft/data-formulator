@@ -91,6 +91,13 @@ multiple server processes or replicas, multiply this limit by their count when
 budgeting memory; this is not an instance-wide or distributed quota. DuckDB's
 query memory limit is not a cap on the entire worker process.
 
+`DF_QUERY_MEMORY_LIMIT_MB` sets the DuckDB memory limit of one file-scan query
+(Azure Blob, S3, local folders). By default each query gets half of physical
+memory divided by `DF_QUERY_MAX_WORKERS`, kept between 512 MB and 4 GB. Sorts,
+aggregates, and joins spill to a temp directory instead of failing, but the
+loaded result must fit. The agent is told the budget in the source's query
+capabilities, so it narrows columns, rows, or aggregates to stay within it.
+
 `DF_QUERY_QUEUE_TIMEOUT_SECONDS` limits waiting for capacity (default `300`).
 `DF_QUERY_TIMEOUT_SECONDS` limits worker startup and query response time after
 capacity is acquired (default `300`). Cancellation, disconnect, or a query timeout

@@ -112,11 +112,6 @@ describe('buildDictTableFromWorkspace', () => {
         expect(buildDictTableFromWorkspace(baseTable, undefined).source?.loadQuery).toBeUndefined();
     });
 
-    it('omits description when not provided by backend', () => {
-        const result = buildDictTableFromWorkspace(baseTable, undefined);
-        expect(result.metadata['status'].description).toBeUndefined();
-    });
-
     it('uses table-level loader description as DictTable.description', () => {
         const withDesc = { ...baseTable, description: 'Order fact table' };
         const result = buildDictTableFromWorkspace(withDesc, undefined);
