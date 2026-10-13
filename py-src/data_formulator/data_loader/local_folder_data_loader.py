@@ -90,6 +90,12 @@ class LocalFolderDataLoader(ExternalDataLoader):
         self.file_pattern = params.get("file_pattern", "")
         self._jail: ConfinedDir | None = None
 
+    def _root_jail(self) -> ConfinedDir:
+        """The root folder as a jail, built on first use: callers may skip ``test_connection``."""
+        if self._jail is None:
+            self._jail = ConfinedDir(self.root_dir, mkdir=False)
+        return self._jail
+
     def test_connection(self) -> bool:
         """Validate the root directory exists and is readable."""
         try:
@@ -122,7 +128,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
         # Navigate to the target directory
         if path:
             try:
-                target = self._jail / "/".join(path)
+                target = self._root_jail() / "/".join(path)
             except ValueError:
                 return []
             if not target.is_dir():
@@ -152,7 +158,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
                 ))
             elif child.is_file():
                 try:
-                    self._jail / "/".join(rel_parts)
+                    self._root_jail() / "/".join(rel_parts)
                 except ValueError:
                     continue
                 if self.file_pattern and not child.match(self.file_pattern):
@@ -173,7 +179,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
         if not path:
             return {}
         try:
-            resolved = self._jail / "/".join(path)
+            resolved = self._root_jail() / "/".join(path)
         except ValueError:
             return {}
         if not resolved.is_file():
@@ -199,9 +205,6 @@ class LocalFolderDataLoader(ExternalDataLoader):
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """Return catalog entries with file artifacts identified in metadata."""
-        if self._jail is None:
-            self._jail = ConfinedDir(self.root_dir, mkdir=False)
-
         results: list[dict[str, Any]] = []
         pattern = self.file_pattern or "*"
 
@@ -218,7 +221,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
                 continue
             name = str(rel)
             try:
-                self._jail / name
+                self._root_jail() / name
             except ValueError:
                 continue
 
@@ -235,9 +238,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
         return results
 
     def read_file(self, source_path: str, max_bytes: int = 128 * 1024 * 1024) -> bytes:
-        if self._jail is None:
-            self._jail = ConfinedDir(self.root_dir, mkdir=False)
-        resolved = self._jail / source_path
+        resolved = self._root_jail() / source_path
         if any(part.startswith(".") for part in Path(source_path).parts):
             raise ValueError("Hidden files are not available")
         if not resolved.is_file():
@@ -250,9 +251,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
 
     def preview_data(self, source_table: str, import_options: dict[str, Any] | None = None,
                      *, purpose: str = "ui") -> dict[str, Any]:
-        if self._jail is None:
-            self._jail = ConfinedDir(self.root_dir, mkdir=False)
-        resolved = self._jail / source_table
+        resolved = self._root_jail() / source_table
         if not resolved.is_file():
             raise ValueError("Source is not a file")
         if resolved.suffix.lower() not in SUPPORTED_EXTENSIONS - {".xlsx", ".xls"}:
@@ -272,9 +271,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
     def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
         import duckdb
 
-        if self._jail is None:
-            self._jail = ConfinedDir(self.root_dir, mkdir=False)
-        resolved = self._jail / source_table
+        resolved = self._root_jail() / source_table
         if not resolved.is_file():
             raise ValueError("Source is not a file")
         if resolved.suffix.lower() in (".xlsx", ".xls"):

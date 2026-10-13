@@ -423,3 +423,32 @@ class TestLocalFolderDataLoader:
         names = {n.name for n in nodes}
         assert "numbers.parquet" in names
         assert "people.csv" not in names
+
+    # ── Lazy jail init ───────────────────────────────────────────────
+    # ``_jail`` is None until ``test_connection`` runs; every method builds
+    # it on first use through ``_root_jail()``. Without that, ``ls`` and
+    # ``get_metadata`` raised TypeError ("unsupported operand type(s) for /:
+    # 'NoneType' and 'str'") instead of the confined lookup their own
+    # ValueError handlers assume.
+
+    def test_ls_subdirectory_without_test_connection(self, data_dir: Path) -> None:
+        loader = LocalFolderDataLoader({"root_dir": str(data_dir)})
+        assert loader._jail is None
+        nodes = loader.ls(path=["reports"])
+        assert "q1.csv" in {n.name for n in nodes}
+
+    def test_get_metadata_without_test_connection(self, data_dir: Path) -> None:
+        loader = LocalFolderDataLoader({"root_dir": str(data_dir)})
+        assert loader._jail is None
+        meta = loader.get_metadata(["people.csv"])
+        assert [c["name"] for c in meta["columns"]] == ["name", "age", "city"]
+
+    def test_ls_traversal_rejected_without_test_connection(self, data_dir: Path) -> None:
+        loader = LocalFolderDataLoader({"root_dir": str(data_dir)})
+        assert loader.ls(path=[".."]) == []
+
+    def test_get_metadata_traversal_rejected_without_test_connection(
+        self, data_dir: Path,
+    ) -> None:
+        loader = LocalFolderDataLoader({"root_dir": str(data_dir)})
+        assert loader.get_metadata(["..", "people.csv"]) == {}
