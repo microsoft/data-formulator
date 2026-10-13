@@ -50,7 +50,7 @@ def scheduled_checkpoint(manager, workspace_id: str, identity_id: str) -> dict |
     try:
         workspace = manager.open_workspace(workspace_id, identity_id)
         path = run_path(workspace, workspace_id.removeprefix("scheduled-"))
-        return public_run(json.loads(path.read_text())) if path.exists() else None
+        return public_run(json.loads(path.read_text(encoding="utf-8"))) if path.exists() else None
     except (OSError, ValueError, AppError):
         logger.warning("Scheduled checkpoint unavailable for %s", workspace_id)
         return None

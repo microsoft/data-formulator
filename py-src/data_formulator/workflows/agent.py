@@ -78,7 +78,7 @@ RUN_EXCLUDED_TOOLS = {"long_response", "propose_workflow", "read_connector_form"
                       "list_workflows", "list_sessions", "propose_schedule", "propose_session_changes"}
 for skill_name, names in (("workspace", WORKSPACE_TOOLS), ("visualization", {"visualize"})):
     schema_path = Path(__file__).parents[1] / "analyst" / "skills" / skill_name / "tools.json"
-    TOOLS.extend(item for item in json.loads(schema_path.read_text()) if item["function"]["name"] in names)
+    TOOLS.extend(item for item in json.loads(schema_path.read_text(encoding="utf-8")) if item["function"]["name"] in names)
 
 INSTRUCTIONS = """You are WorkflowAgent, executing a concrete business analysis workflow instance.
 There is no template adaptation phase. The user approved this instance by pressing Run.
