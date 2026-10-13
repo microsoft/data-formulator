@@ -274,9 +274,11 @@ def _register_blueprints():
     from data_formulator.routes.logs import logs_bp
     from data_formulator.routes.model_endpoints import model_endpoints_bp
     from data_formulator.routes.workspace_files import workspace_files_bp
+    from data_formulator.routes.apps import apps_bp
 
     # Register blueprints
     app.register_blueprint(tables_bp)
+    app.register_blueprint(apps_bp)
     app.register_blueprint(agent_bp)
     app.register_blueprint(session_bp)
     app.register_blueprint(demo_stream_bp)

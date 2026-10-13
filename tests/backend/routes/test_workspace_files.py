@@ -309,3 +309,24 @@ def test_preview_uploaded_docx_without_persisting(client, tmp_workspace):
 
     assert response.get_json()["data"]["content"] == "Staged document"
     assert tmp_workspace.list_workspace_files() == []
+
+def test_files_in_folders_are_created_moved_and_deleted_with_their_folder(client, tmp_workspace):
+    created = client.post("/api/workspace/files/text", json={"name": "notes/plan.md"}).get_json()["data"]
+    assert created["name"] == "notes/plan.md"
+    for invalid in ("notes//plan.md", "notes/../plan.md", "/plan.md", "a/b/c/d/e.md", "notes\\plan.md", "notes/.write-x"):
+        assert client.post("/api/workspace/files/text", json={"name": invalid}).get_json()["status"] == "error", invalid
+    # Encoded or not, the name addresses the file in its folder.
+    saved = client.put("/api/workspace/files/notes%2Fplan.md/text", json={
+        "content": "Plan", "content_hash": created["content_hash"]}).get_json()
+    assert saved["status"] == "success"
+    assert client.get("/api/workspace/files/notes/plan.md").data == b"Plan"
+    files_root = tmp_workspace._confined_files.root
+    assert (files_root / "notes" / "plan.md").read_bytes() == b"Plan"
+
+    moved = client.patch("/api/workspace/files/notes%2Fplan.md", json={"name": "archive/2026/plan.md"}).get_json()["data"]
+    assert moved["name"] == "archive/2026/plan.md"
+    assert not (files_root / "notes").exists()
+    assert [item["name"] for item in client.get("/api/workspace/files").get_json()["data"]["files"]
+            if not item.get("temporary")] == ["archive/2026/plan.md"]
+    assert client.delete("/api/workspace/files/archive%2F2026%2Fplan.md").get_json()["status"] == "success"
+    assert not (files_root / "archive").exists()

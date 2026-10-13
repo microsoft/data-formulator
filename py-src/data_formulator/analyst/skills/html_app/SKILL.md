@@ -23,14 +23,16 @@ actions:
 Ground the app in workspace data before writing it. Confirm the tables and
 exact column names and types it needs; load, create, or derive missing tables
 first (for example a cleaned or pre-aggregated table from `create_data`).
-Declare every table the app reads in `tables`. Build one focused app around the
+Declare every table the app reads in `tables`, and every connected source it
+queries live in `sources`. Build one focused app around the
 user's question: a headline, a few linked views, and only the controls that
 change them.
 
 Use what the session already shows, as ideas rather than rules:
 
-- Continue the analysis: earlier questions, findings, and [AVAILABLE CHARTS]
-  show what the user cares about. Reuse the tables behind those charts.
+- Continue the analysis: earlier questions, findings, and the session's charts
+  ([SESSION INDEX], session/charts) show what the user cares about. Reuse the
+  tables behind those charts.
 - Dimensions, metrics, and periods the user switched between make natural
   controls; default them to what was discussed.
 - Field semantics (units, percentages, date granularity) decide formats;
@@ -48,9 +50,11 @@ dialogs, or navigation; keep state in React. Import only from these modules:
 
 - `react`: hooks (`useState`, `useMemo`, …).
 - `@df/ui`, `@df/data`, `@df/chart`, `@df/format`, `@df/icons` (below).
+- `d3`, `lodash`, `@df/geo`: for custom visuals and data shaping (below).
 - `@mui/material`: rarely needed; DF components already match the DF theme.
 
-Never hardcode colors or fonts. Read data only with `@df/data`; do not embed it.
+Never hardcode colors or fonts. Read data only with `@df/data`; do not embed it,
+including map boundaries (use `@df/geo` or Flint's Map charts).
 
 ## `@df/data`
 
@@ -68,7 +72,23 @@ Never hardcode colors or fonts. Read data only with `@df/data`; do not embed it.
   `values` (sorted distinct values), e.g. for a `Select`.
 - `useTable(table, {limit})` → all rows of a small table.
 
-Aggregate and filter in the query for large tables instead of loading all rows.
+- `useSql(sql, params, {limit})` → the same result shape, from read-only DuckDB
+  SQL over the declared tables, referred to by name: joins, window functions,
+  date bucketing, percentiles, `CASE`. Use `?` placeholders bound from `params`
+  (for filter values); never splice values into the text. One `SELECT` (CTEs
+  allowed); no table functions. Rows are capped at `limit` (default 5000,
+  max 50000); `truncated` says more matched. Pass `null` as sql to skip it.
+- `useSourceQuery(source, query, {limit})` → the same result shape, read live
+  from a connected source declared in `sources` (its reference id), each time
+  the app runs. `query` is the data-loading shape: `filters`
+  (`[{column, op, value}]`), `columns`, `group_by`, `aggregates`
+  (`[{op, column, as}]`, op `count`/`count_distinct`/`sum`/`avg`/`min`/`max`),
+  `order_by` (`[{column, dir}]`), `limit`, or `native: {language, text}` where
+  the source allows it. Use it when the app must show current source data;
+  prefer workspace tables for data already loaded.
+
+Aggregate and filter in the query (`useSql` or `useQuery` options) instead of
+loading all rows and computing in JavaScript.
 
 ## `@df/ui`
 
@@ -98,13 +118,17 @@ error states itself; `children` may then be a function of the rows.
 ## `@df/chart`, `@df/format`, `@df/icons`
 
 - `FlintChart {chartType, encodings, data | query, table, labels, title,
-  subtitle, height = 260}` is the same chart engine as the DF canvas. `encodings` maps
+  subtitle, theme, height = 260}` is the same chart engine as the DF canvas. `encodings` maps
   channels (`x`, `y`, `color`, `size`, `column`, …) to a column name or
   `{field, type, aggregate, sortBy, sortOrder}`; leave out `type` unless needed.
   Pass `table` when the rows keep that table's columns so its semantic types
-  apply, and `labels` (`{field: "Axis title"}`) for computed columns. Chart types include Bar Chart, Grouped Bar Chart, Stacked Bar Chart,
+  apply, and `labels` (`{field: "Axis title"}`) for computed columns. `theme` is
+  a Flint theme id (e.g. `"economist"`); when the session's charts use one (the
+  `theme` in `session/charts/<id>.json`), pass the same so the app matches. Chart types include Bar Chart, Grouped Bar Chart, Stacked Bar Chart,
   Line Chart, Area Chart, Scatter Plot, Heatmap, Histogram, Boxplot, Pie Chart,
-  Donut Chart, Lollipop Chart, Slope Chart, Bump Chart, Range Area Chart.
+  Donut Chart, Lollipop Chart, Slope Chart, Bump Chart, Range Area Chart, Map
+  (`latitude`/`longitude`, with `size`/`color`), Choropleth (country or US state
+  names or codes as `id`). Maps draw world or US boundaries offline.
 - `VegaChart {spec, data | query, height}`: a raw Vega-Lite spec for custom
   visuals; `width` defaults to the container.
 - `Sparkline {data, x, y}`.
@@ -112,6 +136,21 @@ error states itself; `children` may then be a function of the rows.
   0–1), `.delta(v)` (+1.2 / −0.4), `.date(v)`; each returns "—" for missing values.
 - `Icon {name}`: `trend-up`, `trend-down`, `info`, `warning`, `money`, `people`,
   `globe`, `calendar`, `time`, `chart`, `table`, `search`, `filter`, `star`, …
+
+## `d3`, `lodash`, `@df/geo`
+
+Prefer `FlintChart`; reach for d3 only for visuals Flint lacks (custom maps,
+networks, trees, annotated diagrams).
+
+- `d3`: the full d3 v7 API. Compute scales, shapes, layouts, and projections in
+  `useMemo` and render SVG with React; size from the container.
+- `lodash`: `import _ from 'lodash'` or named imports (`groupBy`, `sumBy`,
+  `orderBy`, …) for shaping query results. Only the `lodash` module path.
+- `@df/geo`: boundaries for d3 maps. `countries()` and `states()` return GeoJSON
+  features (`id`: ISO 3166-1 numeric or FIPS; `properties.name`); also `land()`,
+  `nation()`, `countryBorders()`, `stateBorders()`, the `world` and `us`
+  TopoJSON, and `feature` / `mesh` from topojson-client. Project US states with
+  `d3.geoAlbersUsa()`.
 
 ## Starter app
 
@@ -184,13 +223,11 @@ to use it.
 ## Revising an app
 
 When the user asks to change an app, including the selected one or one marked
-agent-editable in the inventory, revise that app. A revision is saved as a new
-version of it (`sales.app.jsx` becomes `sales_2.app.jsx`) and the original stays
-as it was; the result gives the new `path` and `content_hash`. Further revisions
-in the same run update that new version, so make them against its path. When the
-user wants a broken or unwanted app fixed (including errors from its banner),
-pass `replaces` with the app's path: the fix is saved in place under the same
-filename instead of as a new version.
+agent-editable in the inventory, revise that app: the revision rewrites it in
+place under the same path, and the result gives its new `content_hash`. Make a
+separate app with a new filename only when the user asks for a new or another
+app. When the user wants a broken or unwanted app fixed (including errors from
+its banner), also pass `replaces` with the app's path.
 
 - Small changes (a chart, a control, a label, a query): `edit_file` with the
   app's path, `expected_content_hash`, and targeted `replacements`. Keep the
@@ -199,9 +236,12 @@ filename instead of as a new version.
 - Larger restructuring: `write_app` with `path` and `expected_content_hash`
   instead of `filename`, plus the new `title`, `tables`, and complete `code`.
 
-Revisions are validated like new apps, so a broken edit is refused and the
-previous version is kept. Runtime errors appear in the app's banner, and the
-user can ask you to fix them.
+Apps are saved as written: the server checks only imports, the manifest, and the
+default export, so check the code before writing. Close every brace (a JSX
+object attribute such as `encodings={{x: 'month'}}` closes both), make a
+`QueryView` child a function `{rows => ...}`, and give `query` to a `Card`,
+`ChartCard`, or `KpiGrid` with a function child. An app that fails to render
+shows its error, and the user can ask you to fix it.
 
 Use `write_html_app` only when the user explicitly asks for plain HTML: one
 self-contained `.html` document with inline CSS/JS, styled with the `df-*` kit

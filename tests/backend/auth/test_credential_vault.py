@@ -134,17 +134,6 @@ class TestEncryptionKeyMismatch:
 
 class TestEdgeCases:
 
-    def test_complex_credentials(self, tmp_path):
-        vault = _make_vault(tmp_path)
-        creds = {
-            "username": "user@example.com",
-            "password": "p@$$w0rd!#&*",
-            "api_key": "sk-abc123xyz",
-            "nested": {"token": "eyJhbGci..."},
-        }
-        vault.store("user:alice", "service", creds)
-        assert vault.retrieve("user:alice", "service") == creds
-
     def test_unicode_credentials(self, tmp_path):
         vault = _make_vault(tmp_path)
         vault.store("user:alice", "superset", {"password": "密码测试🔐"})

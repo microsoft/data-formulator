@@ -49,3 +49,23 @@ def _isolate_saved_configuration(tmp_path_factory, monkeypatch):
     isolated = tmp_path_factory.mktemp("configuration") / "configuration.json"
     original = configuration.configuration_path
     monkeypatch.setattr(configuration, "configuration_path", lambda: isolated if original() == default else original())
+
+
+def pytest_addoption(parser):
+    parser.addoption("--run-slow", action="store_true", default=False,
+                     help="Also run tests marked slow in files not named on the command line.")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip slow tests in a broad run; a file named on the command line runs all of its tests."""
+    if config.getoption("--run-slow") or os.environ.get("DF_RUN_SLOW_TESTS") == "1":
+        return
+    named = set()
+    for arg in config.args:
+        path = Path(arg.split("::", 1)[0]).resolve()
+        if path.is_file():
+            named.add(path)
+    skip = pytest.mark.skip(reason="slow; run with --run-slow or name the file")
+    for item in items:
+        if "slow" in item.keywords and Path(item.path).resolve() not in named:
+            item.add_marker(skip)

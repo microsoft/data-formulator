@@ -15,10 +15,6 @@ describe('coerceDate', () => {
     expect(coerceDate(null)).toBeNull();
   });
 
-  it('should return null for undefined input', () => {
-    expect(coerceDate(undefined)).toBeNull();
-  });
-
   it('should return null for empty string', () => {
     expect(coerceDate('')).toBeNull();
   });

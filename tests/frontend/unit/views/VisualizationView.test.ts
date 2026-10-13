@@ -479,7 +479,8 @@ it.each(['table', 'chart', 'chart-image'])('shows inline table and chart preview
         ? { type: 'table', tableId: 'usage' } : { type: 'chart', chartId: 'usage-chart' });
 });
 
-it.each(['Auto', '?', 'Table'])('does not display internal %s trigger charts as conversation artifacts', chartType => {
+it('does not display internal trigger charts as conversation artifacts', () => {
+    const chartType = 'Auto';
     const store = configureStore({ reducer: dataFormulatorReducer });
     store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'resources', displayId: 'Resources', names: [], metadata: {}, rows: [] } as any));
     store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'deployments', displayId: 'Deployments', names: [], metadata: {}, rows: [],

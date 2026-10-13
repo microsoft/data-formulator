@@ -10,7 +10,7 @@ actions: []
 
 # Analysis
 
-Follow the workspace Data Access Paths when inputs need loading. Python reads
+When inputs need loading, load the `connected_data` skill and follow its Data Access Paths. Python reads
 actual workspace paths, not external reference IDs or connector addresses.
 Only `compute_ready: true` load outcomes are local computation inputs; follow
 the workspace policy to materialize a working dataset from a virtual outcome.

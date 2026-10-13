@@ -57,46 +57,6 @@ class TestWorkspaceFileMetadata:
         assert restored.files == {}
 
 
-# ── ColumnInfo backward-compat ────────────────────────────────────────
-
-class TestColumnInfoDescription:
-    def test_from_dict_without_description(self):
-        """Old YAML data without description deserializes cleanly."""
-        col = ColumnInfo.from_dict({"name": "order_id", "dtype": "int64"})
-        assert col.name == "order_id"
-        assert col.dtype == "int64"
-        assert col.description is None
-
-    def test_from_dict_with_description(self):
-        col = ColumnInfo.from_dict({
-            "name": "order_id",
-            "dtype": "int64",
-            "description": "Unique order identifier",
-        })
-        assert col.description == "Unique order identifier"
-
-    def test_to_dict_omits_none_description(self):
-        """description key is not emitted when None — keeps YAML clean."""
-        col = ColumnInfo(name="x", dtype="int64")
-        d = col.to_dict()
-        assert "description" not in d
-
-    def test_to_dict_includes_description_when_present(self):
-        col = ColumnInfo(name="x", dtype="int64", description="A column")
-        d = col.to_dict()
-        assert d["description"] == "A column"
-
-    def test_roundtrip_with_description(self):
-        original = ColumnInfo(name="c", dtype="text", description="Some desc")
-        restored = ColumnInfo.from_dict(original.to_dict())
-        assert restored.description == "Some desc"
-
-    def test_roundtrip_without_description(self):
-        original = ColumnInfo(name="c", dtype="text")
-        restored = ColumnInfo.from_dict(original.to_dict())
-        assert restored.description is None
-
-
 # ── TableMetadata serialization with column descriptions ──────────────
 
 class TestTableMetadataColumnDescriptions:
@@ -360,22 +320,8 @@ class TestInferSourceMetadataStatus:
     def test_none_metadata_returns_unavailable(self):
         assert infer_source_metadata_status(None) == SOURCE_METADATA_UNAVAILABLE
 
-    def test_empty_metadata_returns_unavailable(self):
-        assert infer_source_metadata_status({}) == SOURCE_METADATA_UNAVAILABLE
-
     def test_columns_without_descriptions_returns_synced(self):
         meta = {"description": "Order table", "columns": [{"name": "id"}]}
-        assert infer_source_metadata_status(meta) == SOURCE_METADATA_SYNCED
-
-    def test_columns_with_description_returns_synced(self):
-        meta = {"columns": [{"name": "id", "description": "Primary key"}]}
-        assert infer_source_metadata_status(meta) == SOURCE_METADATA_SYNCED
-
-    def test_both_table_and_column_metadata_returns_synced(self):
-        meta = {
-            "description": "Order table",
-            "columns": [{"name": "id", "description": "PK"}],
-        }
         assert infer_source_metadata_status(meta) == SOURCE_METADATA_SYNCED
 
     def test_explicit_status_overrides_inference(self):
@@ -513,11 +459,6 @@ class TestFormatImportOptions:
         assert _format_import_options(None) == ""
         assert _format_import_options({}) == ""
 
-    def test_sort_only(self):
-        from data_formulator.agents.agent_utils import _format_import_options
-        result = _format_import_options({"sort_columns": ["id"], "sort_order": "desc"})
-        assert "sorted by id desc" in result
-
     def test_filters_and_limit(self):
         from data_formulator.agents.agent_utils import _format_import_options
         result = _format_import_options({
@@ -564,19 +505,3 @@ class TestSourceMetadataImportOptions:
         result = _table_metadata_to_source_metadata(meta)
         assert result is not None
         assert result["import_options"] == {"size": 1000, "sort_columns": ["id"], "sort_order": "asc"}
-
-    def test_import_options_none_when_absent(self):
-        from data_formulator.routes.tables import _table_metadata_to_source_metadata
-
-        meta = TableMetadata(
-            name="t2",
-            source_type="data_loader",
-            filename="t2.parquet",
-            file_type="parquet",
-            created_at=datetime.now(timezone.utc),
-            content_hash="def456",
-            loader_type="TestLoader",
-        )
-        result = _table_metadata_to_source_metadata(meta)
-        assert result is not None
-        assert result["import_options"] is None

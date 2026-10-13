@@ -3,29 +3,15 @@
     "type": "function",
     "function": {
       "name": "list_connectors",
-      "description": "List connector types available in this deployment when you need to look up a type key or answer a question about supported sources. Not required to open the connection form: propose_connection can show the selector directly.",
-      "parameters": {
-        "type": "object",
-        "properties": {}
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "describe_connector",
-      "description": "Return setup fields and authentication choices for one source_type returned by list_connectors. After this, call propose_connection in the same turn; describing fields does not open the form.",
+      "description": "List connector types available in this deployment. With source_type (a type key or name such as postgres or S3), also return that type's setup fields and authentication choices; then call propose_connection in the same turn, since describing fields does not open the form. Not required to open the connection form: propose_connection can show the selector directly.",
       "parameters": {
         "type": "object",
         "properties": {
           "source_type": {
             "type": "string",
-            "description": "Connector type key returned by list_connectors."
+            "description": "Optional connector type key or name to describe."
           }
-        },
-        "required": [
-          "source_type"
-        ]
+        }
       }
     }
   },
@@ -45,20 +31,7 @@
     "type": "function",
     "function": {
       "name": "list_workflows",
-      "description": "List saved and built-in workflows with their paths, overviews, and run parameters. Use before scheduling or when the user asks which workflows exist.",
-      "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": [],
-        "additionalProperties": false
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "list_schedules",
-      "description": "List workflow schedules with cadence, status, next run, recent run outcomes, and the server model connections a schedule can use. Reports when scheduling is unavailable.",
+      "description": "List saved and built-in workflows with their paths, overviews, run parameters, and schedules (cadence, status, next run, recent outcomes), plus whether scheduling is available and the server model connections a schedule can use. Use before scheduling or when the user asks which workflows or schedules exist.",
       "parameters": {
         "type": "object",
         "properties": {},
@@ -193,7 +166,7 @@
               },
               "model_id": {
                 "type": "string",
-                "description": "Server model connection ID from list_schedules."
+                "description": "Server model connection ID from list_workflows (scheduling.server_models)."
               },
               "setup": {
                 "type": "object",
@@ -242,7 +215,7 @@
         "properties": {
           "schedule_id": {
             "type": "string",
-            "description": "Existing schedule ID from list_schedules to revise. The form then lets the user update it or save a new schedule. Omit to create."
+            "description": "Existing schedule ID from list_workflows to revise. The form then lets the user update it or save a new schedule. Omit to create."
           },
           "name": {
             "type": "string",
@@ -271,7 +244,7 @@
           },
           "model_id": {
             "type": "string",
-            "description": "Server model connection ID from list_schedules."
+            "description": "Server model connection ID from list_workflows (scheduling.server_models)."
           },
           "setup": {
             "type": "object",

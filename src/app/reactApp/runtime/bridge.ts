@@ -21,6 +21,17 @@ export interface QueryOptions {
     offset?: number;
 }
 
+/** A live connected-source query, in the data-loading shape (see data_operations/models.py LoadQuery). */
+export interface SourceQuery {
+    filters?: { column: string; op: string; value?: unknown }[];
+    columns?: string[];
+    group_by?: string[];
+    aggregates?: { op: 'count' | 'count_distinct' | 'sum' | 'avg' | 'min' | 'max'; column?: string; as: string }[];
+    order_by?: { column: string; dir?: 'asc' | 'desc' }[];
+    limit?: number;
+    native?: { language: string; text: string };
+}
+
 export interface DfFormat {
     number(value: unknown, digits?: number): string;
     compact(value: unknown, digits?: number): string;
@@ -31,13 +42,16 @@ export interface DfFormat {
 
 export interface DfBridge {
     ready: Promise<void>;
-    manifest: { version: number; title: string; tables: string[] };
+    manifest: { version: number; title: string; tables: string[]; sources?: string[] };
     theme: { palette: string[]; primary: string; [key: string]: unknown };
     query(table: string, options?: QueryOptions): Promise<{ rows: Row[]; totalRowCount: number }>;
+    sql(sql: string, params?: unknown[], options?: { limit?: number }): Promise<{ rows: Row[]; totalRowCount: number; truncated: boolean }>;
+    sourceQuery(source: string, query?: SourceQuery, options?: { limit?: number }): Promise<{ rows: Row[]; totalRowCount: number; truncated: boolean }>;
     chart(target: Element, spec: Record<string, unknown>): Promise<{ finalize(): void }>;
     sparkline(target: Element, rows: Row[], options: { x: string; y: string; color?: string; height?: number }): Promise<{ finalize(): void }>;
     format: DfFormat;
-    reportError(message: unknown): void;
+    /** `fatal`: the app cannot render at all (it failed to start or crashed). */
+    reportError(message: unknown, fatal?: boolean): void;
 }
 
 export interface ReactAppConfig {
@@ -52,9 +66,9 @@ export const bridge = (): DfBridge => {
     return df;
 };
 
-/** Report an error to the host banner; never throws (reporting must not cause a second error). */
-export const reportError = (message: unknown) => {
-    try { (window as unknown as { DF?: DfBridge }).DF?.reportError(message); } catch { /* the host is gone */ }
+/** Report an error to the host; never throws (reporting must not cause a second error). */
+export const reportError = (message: unknown, fatal = false) => {
+    try { (window as unknown as { DF?: DfBridge }).DF?.reportError(message, fatal); } catch { /* the host is gone */ }
 };
 
 export const appConfig = (): ReactAppConfig =>

@@ -12,6 +12,7 @@
         version: 1,
         title: (config.manifest && config.manifest.title) || '',
         tables: Object.freeze(((config.manifest && config.manifest.tables) || []).slice()),
+        sources: Object.freeze(((config.manifest && config.manifest.sources) || []).slice()),
     });
     var theme = config.theme || {};
     var pending = new Map();
@@ -38,7 +39,12 @@
             var request = pending.get(data.id);
             pending.delete(data.id);
             if (data.error) request.reject(new Error(data.error));
-            else request.resolve({ rows: data.rows || [], totalRowCount: data.totalRowCount || 0 });
+            else {
+                var result = { rows: data.rows || [], totalRowCount: data.totalRowCount || 0 };
+                // SQL and source queries say whether their row cap cut the result.
+                if (data.truncated !== undefined) result.truncated = !!data.truncated;
+                request.resolve(result);
+            }
         }
     });
 
@@ -67,6 +73,31 @@
                 send('query', { id: id, table: table, options: options || {} });
             });
         });
+    }
+
+    function request(type, payload) {
+        return ready.then(function () {
+            return new Promise(function (resolve, reject) {
+                var id = ++sequence;
+                pending.set(id, { resolve: resolve, reject: reject });
+                send(type, Object.assign({ id: id }, payload));
+            });
+        });
+    }
+
+    // Read-only SQL over the declared tables (DuckDB on the host).
+    function sql(text, params, options) {
+        return request('sql', { sql: String(text || ''), params: params || [], options: options || {} });
+    }
+
+    // A live query against a connected source declared in the manifest's `sources`.
+    function sourceQuery(source, query, options) {
+        if ((manifest.sources || []).indexOf(source) < 0) {
+            var message = 'Source "' + source + '" is not declared in the app manifest.';
+            send('error', { message: 'DF.sourceQuery: ' + message });
+            return Promise.reject(new Error(message));
+        }
+        return request('source', { source: source, query: query || {}, options: options || {} });
     }
 
     function table(name, options) {
@@ -219,13 +250,15 @@
         manifest: manifest,
         theme: Object.freeze(Object.assign({}, theme)),
         query: query,
+        sql: sql,
+        sourceQuery: sourceQuery,
         table: table,
         chart: chart,
         sparkline: sparkline,
         format: format,
         // For errors the app catches itself (e.g. a React error boundary), which
-        // never reach window.onerror.
-        reportError: function (message) { send('error', { message: describe(message) }); },
+        // never reach window.onerror. `fatal`: the app cannot render at all.
+        reportError: function (message, fatal) { send('error', { message: describe(message), fatal: fatal === true }); },
         vega: vega,
         vegaLite: vegaLite,
     });

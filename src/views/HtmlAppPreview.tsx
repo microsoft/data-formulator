@@ -8,7 +8,7 @@ import vegaLiteSource from '../../node_modules/vega-lite/build/vega-lite.min.js?
 import runtimeSource from '../app/htmlApp/dfAppRuntime.js?raw';
 import kitStylesheet from '../app/htmlApp/dfAppKit.css?raw';
 import { buildAppDocument, parseAppManifest } from '../app/htmlApp/htmlAppDocument';
-import { AppSandbox, useAppTheme } from './AppSandbox';
+import { AppSandbox, useAppSourceResolver, useAppTheme } from './AppSandbox';
 
 /** A sandboxed HTML app artifact. */
 export const HtmlAppPreview: FC<{
@@ -16,6 +16,7 @@ export const HtmlAppPreview: FC<{
 }> = ({ html, title, reloadKey = 0, reserveTopRight = false, onAskFix }) => {
     const manifest = useMemo(() => parseAppManifest(html), [html]);
     const theme = useAppTheme();
+    const resolveSource = useAppSourceResolver();
     const buildDocument = useCallback((channel: string) => buildAppDocument(html, {
         runtimeScripts: [vegaSource, vegaLiteSource, runtimeSource],
         theme,
@@ -23,7 +24,7 @@ export const HtmlAppPreview: FC<{
         config: { channel, hostOrigin: window.location.origin, manifest, theme },
     }), [html, manifest, theme]);
     return <AppSandbox title={title} manifest={manifest} buildDocument={buildDocument} reloadKey={reloadKey}
-        reserveTopRight={reserveTopRight} onAskFix={onAskFix} />;
+        reserveTopRight={reserveTopRight} onAskFix={onAskFix} resolveSource={resolveSource} />;
 };
 
 export default HtmlAppPreview;

@@ -8,6 +8,7 @@ import Box from '@mui/material/Box';
 import { assembleVegaLite } from 'flint-chart';
 
 import { appConfig, bridge, errorMessage, reportError, type Row } from './bridge';
+import { optionalModule } from './optional/register';
 import type { QueryResult } from './data';
 import { ErrorState, QueryView, useStable } from './states';
 
@@ -29,6 +30,24 @@ function useWidth(ref: React.RefObject<HTMLElement | null>) {
     return width;
 }
 
+/** Flint's map basemaps load from vega.github.io, which the sandbox blocks; `@df/geo` vendors the same boundaries. */
+const BASEMAP_URL = /\/(world-110m|us-10m)\.json$/;
+
+/** Replace basemap URLs in a spec with the vendored topologies (Flint joins on the same numeric ids). */
+export function resolveBasemaps(spec: unknown): unknown {
+    if (Array.isArray(spec)) return spec.map(resolveBasemaps);
+    if (!spec || typeof spec !== 'object') return spec;
+    const node = spec as Record<string, unknown>;
+    const data = node.data as { url?: unknown; format?: unknown } | undefined;
+    const match = typeof data?.url === 'string' ? BASEMAP_URL.exec(data.url) : null;
+    const resolved = Object.fromEntries(Object.entries(node).map(([key, value]) => [key, key === 'data' ? value : resolveBasemaps(value)]));
+    if (!match) return resolved;
+    const geo = optionalModule('@df/geo') as { world: unknown; us: unknown } | undefined;
+    if (!geo) throw new Error('Map boundaries did not load in this app. Reload the app to try again.');
+    const { url: _url, ...rest } = data!;
+    return { ...resolved, data: { ...rest, values: match[1] === 'world-110m' ? geo.world : geo.us } };
+}
+
 /** Render a Vega/Vega-Lite spec into a div; finalize the view on change and unmount. */
 function useVegaView(ref: React.RefObject<HTMLDivElement | null>, spec: Record<string, unknown> | null) {
     const [error, setError] = useState<string | null>(null);
@@ -38,7 +57,15 @@ function useVegaView(ref: React.RefObject<HTMLDivElement | null>, spec: Record<s
         let disposed = false;
         let view: { finalize(): void } | undefined;
         setError(null);
-        bridge().chart(element, spec).then(
+        let resolved: Record<string, unknown>;
+        try {
+            resolved = resolveBasemaps(spec) as Record<string, unknown>;
+        } catch (failure) {
+            setError(errorMessage(failure));
+            reportError(`Chart: ${errorMessage(failure)}`);
+            return;
+        }
+        bridge().chart(element, resolved).then(
             result => { view = result; if (disposed) result.finalize(); },
             failure => {
                 if (disposed) return;
@@ -104,6 +131,8 @@ export interface FlintChartProps {
     subtitle?: string;
     height?: number;
     chartProperties?: Record<string, unknown>;
+    /** A Flint theme preset id (e.g. "economist"), the same themes as the DF canvas. */
+    theme?: string;
 }
 
 /** A chart compiled by Flint from semantic encodings, matching the DF canvas. */
@@ -114,7 +143,7 @@ export function FlintChart(props: FlintChartProps) {
 }
 
 function FlintChartBody(props: FlintChartProps) {
-    const { chartType, table, title, subtitle, height = 260 } = props;
+    const { chartType, table, title, subtitle, height = 260, theme } = props;
     const encodings = useStable(props.encodings);
     const data = useStable(props.data ?? []);
     const semanticTypes = useStable(props.semanticTypes);
@@ -154,6 +183,7 @@ function FlintChartBody(props: FlintChartProps) {
                     ...(chartProperties ? { chartProperties } : {}),
                 } as any,
                 options: { addTooltips: true },
+                ...(theme ? { theme_spec: theme } : {}),
                 ...(Object.keys(field_display_names).length ? { field_display_names } : {}),
             } as any) as Record<string, any>;
             // Flint sizes the plot area; fit the whole chart, legend included, to the card.
@@ -170,7 +200,7 @@ function FlintChartBody(props: FlintChartProps) {
             setBuildError(errorMessage(failure));
             reportError(`FlintChart: ${errorMessage(failure)}`);
         }
-    }, [chartType, encodings, data, table, semanticTypes, labels, title, subtitle, height, chartProperties, width]);
+    }, [chartType, encodings, data, table, semanticTypes, labels, title, subtitle, height, chartProperties, theme, width]);
 
     const renderError = useVegaView(ref, spec);
     const error = buildError ?? renderError;

@@ -43,6 +43,8 @@ export function getUrls() {
         DELETE_TABLE: `/api/tables/delete-table`,
         GET_COLUMN_STATS: `/api/tables/analyze`,
         SAMPLE_TABLE: `/api/tables/sample-table`,
+        APP_SQL: `/api/apps/sql`,
+        APP_SOURCE_QUERY: `/api/apps/source-query`,
         SYNC_TABLE_DATA: `/api/tables/sync-table-data`,
         EXPORT_TABLE_CSV: `/api/tables/export-table-csv`,
 

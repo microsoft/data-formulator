@@ -331,6 +331,8 @@ class WorkspaceFileMetadata:
     display_name: str | None = None
     origin: str | None = None
     edit_policy: str | None = None
+    # HMAC of a Python helper's content when the agent wrote it (design-docs/60); only signed helpers are importable.
+    code_signature: str | None = None
 
     def to_dict(self) -> dict:
         result = {
@@ -347,6 +349,8 @@ class WorkspaceFileMetadata:
             result["origin"] = self.origin
         if self.edit_policy is not None:
             result["edit_policy"] = self.edit_policy
+        if self.code_signature is not None:
+            result["code_signature"] = self.code_signature
         return result
 
     @classmethod
@@ -364,6 +368,7 @@ class WorkspaceFileMetadata:
             display_name=data.get("display_name"),
             origin=data.get("origin"),
             edit_policy=data.get("edit_policy"),
+            code_signature=data.get("code_signature"),
         )
 
 

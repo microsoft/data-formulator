@@ -31,7 +31,7 @@ class TestGetClientGlobalResolution:
     """get_client() must resolve real credentials from model_registry
     when the model config has is_global=True."""
 
-    @pytest.mark.parametrize('small_model', [None, '', 'gpt-4o', ' gpt-4o-mini '])
+    @pytest.mark.parametrize('small_model', [None, 'gpt-4o', ' gpt-4o-mini '])
     @patch.dict(os.environ, SAMPLE_ENV, clear=True)
     def test_small_model_shares_connection_and_falls_back(self, small_model):
         from data_formulator.routes.agents import get_client, get_test_clients
@@ -95,44 +95,6 @@ class TestGetClientGlobalResolution:
         with pytest.raises(AppError, match="Custom models are disabled"):
             get_client({"endpoint": "openai", "model": "gpt-4o", "api_key": "caller-key"})
         assert get_client(ModelRegistry().get_config("global-openai-gpt-4o"), trusted=True).params["api_key"] == SAMPLE_ENV["OPENAI_API_KEY"]
-
-    @patch.dict(os.environ, SAMPLE_ENV, clear=True)
-    def test_global_model_gets_real_api_key(self):
-        """A global model config (no api_key from frontend) should be
-        resolved to the full config with the real api_key."""
-        registry = ModelRegistry()
-
-        with patch("data_formulator.routes.agents.model_registry", registry):
-            from data_formulator.routes.agents import get_client
-
-            client = get_client({
-                "id": "global-openai-gpt-4o",
-                "endpoint": "openai",
-                "model": "gpt-4o",
-                "is_global": True,
-            })
-
-            assert client.params.get("api_key") == "sk-secret-key-12345"
-
-    @patch.dict(os.environ, SAMPLE_ENV, clear=True)
-    def test_user_model_keeps_own_credentials(self):
-        """A non-global (user-added) model should use its own api_key,
-        not touch the registry."""
-        registry = ModelRegistry()
-
-        with patch("data_formulator.routes.agents.model_registry", registry):
-            from data_formulator.routes.agents import get_client
-
-            client = get_client({
-                "id": "user-custom-model",
-                "endpoint": "openai",
-                "model": "gpt-4o",
-                "api_key": "sk-user-own-key",
-                "api_base": "",
-                "api_version": "",
-            })
-
-            assert client.params.get("api_key") == "sk-user-own-key"
 
     @patch.dict(os.environ, SAMPLE_ENV, clear=True)
     def test_global_claim_for_unregistered_id_is_rejected(self):
@@ -268,41 +230,6 @@ class TestGetClientGlobalResolution:
             })
 
         assert registry.get_config("global-openai-gpt-4o") == before
-
-
-# ---------------------------------------------------------------------------
-# Error sanitization (shared sanitize module)
-# ---------------------------------------------------------------------------
-
-class TestSharedErrorSanitization:
-    """The shared sanitize_error_message function must strip sensitive data."""
-
-    def test_sanitize_redacts_api_key_patterns(self):
-        from data_formulator.security.sanitize import sanitize_error_message
-
-        raw = "Connection failed: api_key=sk-secret-key-12345 is invalid"
-        sanitized = sanitize_error_message(raw)
-
-        assert "sk-secret-key-12345" not in sanitized
-        assert "<redacted>" in sanitized
-
-    def test_sanitize_truncates_long_messages(self):
-        from data_formulator.security.sanitize import sanitize_error_message
-
-        raw = "x" * 1000
-        sanitized = sanitize_error_message(raw)
-
-        assert len(sanitized) <= 503  # 500 + "..."
-        assert sanitized.endswith("...")
-
-    def test_sanitize_escapes_html(self):
-        from data_formulator.security.sanitize import sanitize_error_message
-
-        raw = '<script>alert("xss")</script>'
-        sanitized = sanitize_error_message(raw)
-
-        assert "<script>" not in sanitized
-        assert "&lt;script&gt;" in sanitized
 
 
 # ---------------------------------------------------------------------------

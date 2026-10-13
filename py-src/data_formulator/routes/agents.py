@@ -577,9 +577,6 @@ def analyst_streaming():
         return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, str(exc)))
     agent_exploration_rules = content.get("agent_exploration_rules", "")
     agent_coding_rules = content.get("agent_coding_rules", "")
-    focused_thread = content.get("focused_thread", None)
-    other_threads = content.get("other_threads", None)
-    primary_tables = content.get("primary_tables", None)
     attached_images = content.get("attached_images", None)
     scratch_files = content.get("scratch_files", None)
     charts = content.get("charts", None)
@@ -808,18 +805,13 @@ def analyst_streaming():
             for event in agent.run(
                 input_tables=input_tables,
                 user_question=user_question,
-                focused_thread=focused_thread,
-                other_threads=other_threads,
                 trajectory=trajectory,
                 completed_step_count=completed_step_count,
-                primary_tables=primary_tables,
                 attached_images=attached_images,
                 charts=charts,
                 scratch_files=scratch_files,
-                focused_file=content.get("focused_file"),
                 external_references=external_references,
-                focused_external_reference=content.get("focused_external_reference"),
-                replaceable_artifacts=content.get("replaceable_artifacts"),
+                session_state=content.get("session_state"),
                 conversation_id=conversation_id,
                 connector_form=content.get("connector_form"),
             ):

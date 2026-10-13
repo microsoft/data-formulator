@@ -187,7 +187,9 @@ class SkillRegistry:
             for included_name in self.metas[name].includes:
                 visit(included_name)
 
-        for name in names:
+        # Sets have no stable order; tool specs follow from this order, and a provider caches the
+        # prompt only up to the first difference, so unordered input is sorted (lists keep their order).
+        for name in (sorted(names) if isinstance(names, (set, frozenset)) else names):
             visit(name)
         return expanded
 
@@ -243,7 +245,7 @@ class SkillRegistry:
             if not path or not path.exists():
                 continue
             _, body = _parse_front_matter(path.read_text(encoding="utf-8"))
-            if expanded_name == "workspace":
+            if expanded_name == "connected_data":
                 terminal_route = (
                     "| Existing CLI access or local files | Use `run_terminal` to acquire a bounded dataset "
                     "into scratch without requiring a new connector. Register the working dataset with "

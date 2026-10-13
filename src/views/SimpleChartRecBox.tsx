@@ -27,7 +27,6 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, explanationContent, fetchCodeExpl, fetchColumnStats, fetchFieldSemanticType, generateFreshChart, generateStarterQuestions, GeneratedReport } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, translateBackend } from '../app/utils';
-import { buildThreads } from '../app/threadGraph';
 import { authoredFieldSemantics } from '../app/fieldSemantics';
 import { streamRequest, apiRequest } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
@@ -35,7 +34,7 @@ import { Chart, ClarificationResponse, ComputationInputSource, DictTable, DraftN
 import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clarification';
 import { parseDataOperation } from '../dataOperations/models';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
-import { toAnalystTableRef, workspaceTableIdOf } from '../app/tableResolution';
+import { toAnalystTableRef } from '../app/tableResolution';
 
 import { alpha } from '@mui/material/styles';
 import { WritingPencil } from '../components/FunComponents';
@@ -54,7 +53,8 @@ import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutl
 import { borderColor, transition, conversationWidth } from '../app/tokens';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
-import { listReplaceableArtifacts } from '../app/artifactReplacement';
+import { applySessionDeletion, type DeletionPlan } from '../app/sessionDeletion';
+import { agentSessionState, applySessionUpdate, type SessionUpdate } from '../app/sessionFiles';
 import { resolveConversationParentNodeId, resolveDerivedTriggerTableId, resolveRunParentNodeId, shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
 import { ClarificationPanel, ExplanationPanel, ToolActivityPanel, FailedDraftPanel } from './AgentPausePanel';
 import { CARD_WIDTH } from './threadLayout';
@@ -529,134 +529,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             && (!focusNodeId || threadGraph.rootOf(draft.id) === threadGraph.rootOf(focusNodeId));
     };
 
-    // ── Shared structured thread context builder (Tier 2 + Tier 3) ──
-    // Produces the focused/peripheral thread context used by the analyst
-    // (exploreFromChat), so the report has the actual exploration narrative —
-    // user questions, agent thinking, findings — instead of just a flat list
-    // of charts.
-    const buildThreadContext = useCallback((targetNodeId: string | undefined): {
-        focusedThread: any[] | undefined;
-        otherThreads: any[] | undefined;
-    } => {
-        // Nothing loaded yet — there's no thread to summarize.
-        if (!targetNodeId) return { focusedThread: undefined, otherThreads: undefined };
-        const turnById = new Map(textTurns.map(turn => [turn.id, turn]));
-        const tableById = new Map(tables.map(table => [table.id, table]));
-        const chartSummary = (tableId: string) => {
-            // The resolved chart, not the trigger's "Auto" stub.
-            const chart = charts.find(c => c.tableRef === tableId && c.source === 'trigger')
-                || charts.find(c => c.tableRef === tableId);
-            const encodings = chart?.encodingMap
-                ? Object.fromEntries(Object.entries(chart.encodingMap)
-                    .filter(([, v]: [string, any]) => v?.fieldID)
-                    .map(([k, v]: [string, any]) => [k, conceptShelfItems.find(f => f.id === v.fieldID)?.name || v.fieldID]))
-                : {};
-            return { chartType: chart?.chartType || '', encodings: encodings as Record<string, string>,
-                chartId: charts.find(c => c.tableRef === tableId && c.source !== 'trigger')?.id };
-        };
-        const workflowContext = (turn: TextTurn) => {
-            const workflow = turn.workflow;
-            return workflow ? {
-                run_id: workflow.runId, status: workflow.status, step_id: workflow.stepId,
-                calls: workflow.calls, steps: workflow.steps, checks: workflow.checks || [],
-                output_ids: turn.outputIds || [],
-                reports: generatedReports.filter(report => turn.outputIds?.includes(report.id)).map(report => ({
-                    id: report.id, title: report.title, content: report.content.slice(0, 12000),
-                    truncated: report.content.length > 12000,
-                })),
-            } : undefined;
-        };
-
-        // Tier 2: the focused thread is the chain above the focused node, oldest
-        // first. User messages are folded into the next step; the agent message
-        // right before a derived table is that table's instruction.
-        const path = threadGraph.ancestors(targetNodeId, { includeSelf: true }).reverse();
-        const focusedSteps: any[] = [];
-        let pendingQuestion = '';
-        path.forEach((nodeId, index) => {
-            const turn = turnById.get(nodeId);
-            const table = tableById.get(nodeId);
-            if (turn) {
-                if (turn.prompt) pendingQuestion = [pendingQuestion, turn.prompt].filter(Boolean).join('\n');
-                const nextIsTable = !!tableById.get(path[index + 1])?.derive;
-                if (!turn.content && !turn.form && !turn.dataOperation && !turn.workflow) return;
-                if (nextIsTable) return;
-                focusedSteps.push({
-                    user_question: pendingQuestion,
-                    agent_response: turn.content || '',
-                    workflow_definition: turn.form?.kind === 'workflow' ? turn.form.workflow.content : undefined,
-                    workflow: workflowContext(turn),
-                    data_operation: turn.dataOperation ? {
-                        reason: turn.dataOperation.reason,
-                        status: turn.dataOperation.status,
-                        options: turn.dataOperation.plans.map(plan => plan.label),
-                        selected_plan: turn.dataOperation.plans.find(plan => plan.id === turn.dataOperation?.selectedPlanId)?.label || '',
-                        result_tables: turn.dataOperation.resultTableIds,
-                        result_references: turn.dataOperation.resultReferences,
-                    } : undefined,
-                });
-                pendingQuestion = '';
-            } else if (table?.derive) {
-                const instruction = turnById.get(path[index - 1] || '');
-                const { chartType, encodings, chartId } = chartSummary(table.id);
-                focusedSteps.push({
-                    table_name: table.virtual?.tableId || table.id,
-                    chart_id: chartId,
-                    columns: table.names,
-                    row_count: table.virtual?.rowCount ?? table.rows.length,
-                    user_question: pendingQuestion,
-                    agent_thinking: (instruction?.progressSteps || []).filter(step => step.kind === 'thought').map(step => step.label).join('\n'),
-                    display_instruction: instruction?.content || '',
-                    chart_type: chartType,
-                    encodings,
-                });
-                pendingQuestion = '';
-            } else {
-                // Apps, files, and reports on the chain, by the id the agent can revise or replace them with.
-                const file = fileNodes.find(item => item.id === nodeId);
-                const report = generatedReports.find(item => item.id === nodeId);
-                if (!file && !report) return;
-                focusedSteps.push({
-                    user_question: pendingQuestion,
-                    created_artifact: file ? { kind: file.path.match(/\.(app\.jsx|html?)$/i) ? 'app' : 'file', id: `files/${file.path}`, name: file.displayName }
-                        : { kind: 'report', id: report!.id, name: report!.title || report!.id },
-                });
-                pendingQuestion = '';
-            }
-        });
-        if (pendingQuestion) focusedSteps.push({ user_question: pendingQuestion });
-        const focusedThread = focusedSteps.length > 0 ? focusedSteps : undefined;
-
-        // Tier 3: other threads — one line per derived table.
-        const STEP_FINDING_CHAR_LIMIT = 200;
-        const focusedPath = new Set(path);
-        const peripheralThreads: any[] = [];
-        for (const thread of buildThreads(threadGraph)) {
-            if (thread.nodeIds.some(id => focusedPath.has(id))) continue;
-            const derived = thread.nodeIds.map(id => tableById.get(id)).filter((table): table is DictTable => !!table?.derive);
-            if (!derived.length) continue;
-            const steps = derived.map(table => {
-                const label = turnById.get(threadGraph.parentOf(table.id) || '')?.content || '';
-                const { chartType, encodings } = chartSummary(table.id);
-                const encStr = Object.entries(encodings).map(([k, v]) => `${k}: ${v}`).join(', ');
-                let finding = threadGraph.followersOf(table.id).map(node => turnById.get(node.id)?.content?.trim()).find(Boolean) || '';
-                if (finding.length > STEP_FINDING_CHAR_LIMIT) finding = finding.slice(0, STEP_FINDING_CHAR_LIMIT - 1).trimEnd() + '…';
-                const head = `${label}${chartType ? ` → ${chartType}` : ''}${encStr ? ` (${encStr})` : ''}`;
-                return finding ? `${head} — finding: ${finding}` : head;
-            });
-            const sourceTable = tableById.get(thread.rootId);
-            const leaf = derived[derived.length - 1];
-            peripheralThreads.push({
-                source_table: sourceTable?.virtual?.tableId || thread.rootId,
-                leaf_table: leaf.virtual?.tableId || leaf.id,
-                step_count: steps.length,
-                steps,
-            });
-        }
-        const otherThreads = peripheralThreads.length > 0 ? peripheralThreads : undefined;
-
-        return { focusedThread, otherThreads };
-    }, [tables, charts, conceptShelfItems, textTurns, generatedReports, fileNodes, threadGraph]);
 
     const exploreFromChat = useCallback((prompt: string, clarificationContext?: {
         authorWorkflow?: boolean;
@@ -666,6 +538,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         lastCreatedTableId?: string | null;
         parentNodeId?: string;
         sourceTableIds?: string[];
+        // Re-run a failed step in place: the message is already in the thread at
+        // `parentNodeId`, and the new draft replaces the failed one there.
+        retry?: boolean;
         terminalResponse?: { request_id: string; decision: 'approve' | 'reject' };
         interactionResponse?: {
             operation_id: string;
@@ -791,7 +666,31 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             focusedConversationNodeId,
             createConversationRootId(),
         );
-        const askedFromNode = requestedParentNode;
+        // A message a stopped or failed run left unanswered is replaced by the next one
+        // sent from the same place, rather than kept beside it as a branch (a new thread).
+        const failedDraftIds = (nodeId: string) => threadGraph.childrenOf(nodeId)
+            .filter(node => node.kind === 'draft'
+                && ['error', 'interrupted'].includes(draftNodes.find(draft => draft.id === node.id)?.derive.status || ''))
+            .map(node => node.id);
+        const isUnanswered = (nodeId: string) => {
+            const turn = textTurns.find(item => item.id === nodeId);
+            if (!turn?.prompt || turn.workflowMessage) return false;
+            const parent = textTurns.find(item => item.id === turn.parentNodeId);
+            // An answer to a question or form stays: removing it would reopen the question.
+            if (parent?.answered !== undefined) return false;
+            return threadGraph.childrenOf(nodeId).length === failedDraftIds(nodeId).length;
+        };
+        const replacesUnanswered = !clarificationContext?.terminalResponse && !clarificationContext?.retry && !isResume;
+        const askedFromNode = replacesUnanswered && isUnanswered(requestedParentNode)
+            ? threadGraph.parentOf(requestedParentNode) ?? requestedParentNode
+            : requestedParentNode;
+        if (replacesUnanswered) {
+            for (const node of threadGraph.childrenOf(askedFromNode)) {
+                if (!isUnanswered(node.id)) continue;
+                failedDraftIds(node.id).forEach(draftId => dispatch(dfActions.removeDraftNode(draftId)));
+                dispatch(dfActions.removeTextTurn(node.id));
+            }
+        }
         runLastNodeRef.current = askedFromNode;
         // The TABLE the pending draft anchors to (drafts are table-keyed): the
         // asked-from node resolved to its thread table, so the "working…" banner
@@ -800,18 +699,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
         setIsChatFormulating(true);
 
-        // ── Build structured thread context (Tier 2 + Tier 3) ──
-        // Skip on resume — the trajectory already carries the prior context.
-        const { focusedThread, otherThreads } = isResume
-            ? { focusedThread: undefined, otherThreads: undefined }
-            : buildThreadContext(askedFromNode ?? focusedTableId);
-
-        // Analyst references resolve against the persisted input tables (durable
-        // workspace id + snapshot schema), not the preview rows held for display.
-        const primaryTableNames = primaryTableIds.map(id => {
-            const input = inputTableById.get(id);
-            return input ? workspaceTableIdOf(input) : id.replace(/\.[^/.]+$/, "");
-        });
         const externalReferences = (currentStore.getState() as DataFormulatorState).externalTableReferences || [];
         const externalReferenceId = (() => {
             const exists = (id: string | undefined) => externalReferences.some(reference => reference.id === id);
@@ -833,15 +720,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             conversation_id: actionId,
             input_tables: actionTables.map(toAnalystTableRef),
             external_references: externalReferences,
-            focused_external_reference: externalReferenceId,
-            // What the agent may replace to fix an artifact the user wants fixed.
-            replaceable_artifacts: listReplaceableArtifacts({ tables, charts, fileNodes, reports: generatedReports,
-                graph: threadGraph, focusNodeId: askedFromNode }),
-            primary_tables: primaryTableNames,
+            // The session state the agent's session layer is built from (design-docs/61).
+            session_state: agentSessionState(currentStore.getState() as DataFormulatorState, focusedId),
             ...(images.length > 0 ? { attached_images: images } : {}),
             ...(scratchPaths.length > 0 ? { scratch_files: scratchPaths } : {}),
-            ...(focusedId?.type === 'file' ? { focused_file: focusedId.fileName }
-                : focusedReference?.kind === 'file' ? { focused_file: focusedReference.path } : {}),
             model: activeModel,
         };
 
@@ -905,8 +787,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             }
         } else {
             requestBody.user_question = agentPrompt;
-            if (focusedThread) requestBody.focused_thread = focusedThread;
-            if (otherThreads) requestBody.other_threads = otherThreads;
         }
 
         const messageBody = JSON.stringify(requestBody);
@@ -945,9 +825,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         };
 
         // The user's message is its own node, following the node they asked
-        // from (design-docs/58). Approving a pending command is not a message.
+        // from (design-docs/58). Approving a pending command is not a message,
+        // and a retry re-runs a message that is already in the thread.
         let draftParentId = askedFromNode;
-        if (!clarificationContext?.terminalResponse) {
+        if (!clarificationContext?.terminalResponse && !clarificationContext?.retry) {
             const promptId = `textTurn_${runKey}_prompt`;
             dispatch(dfActions.addTextTurn({
                 kind: 'text', id: promptId, displayId: promptId, textKind: 'explain', content: '',
@@ -1657,6 +1538,56 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         }
                     }
                 }
+                if (result.tool === 'delete_items' && !isError) {
+                    let plan: DeletionPlan | undefined;
+                    try {
+                        plan = JSON.parse(result.stdout || '{}').deleted;
+                    } catch {
+                        plan = undefined;
+                    }
+                    if (plan) {
+                        const goneTables = new Set(plan.tables.map(table => table.node_id));
+                        const goneCharts = new Set(plan.charts.map(chart => chart.id));
+                        const names = applySessionDeletion(plan, dispatch, () => currentStore.getState() as DataFormulatorState);
+                        goneTables.forEach(tableId => runSourceTables.delete(tableId));
+                        createdCharts = createdCharts.filter(chart => !goneCharts.has(chart.id) && !goneTables.has(chart.tableRef));
+                        runCreatedChartIds.splice(0, runCreatedChartIds.length, ...runCreatedChartIds.filter(id => !goneCharts.has(id)));
+                        if (plan.files?.length) notifyWorkspaceFilesChanged();
+                        if (names.length) {
+                            addProgressStep(t('dataThread.deletedItems', { defaultValue: 'Deleted {{names}}', names: names.join(', ') }), 'info');
+                        }
+                    }
+                }
+                if (result.tool === 'edit_file' && !isError) {
+                    let update: SessionUpdate | undefined;
+                    try {
+                        update = JSON.parse(result.stdout || '{}').session_update;
+                    } catch {
+                        update = undefined;
+                    }
+                    const applied = update && applySessionUpdate(update, dispatch, () => currentStore.getState() as DataFormulatorState);
+                    if (update && applied?.applied) {
+                        addProgressStep(t(update.kind === 'chart' ? 'dataThread.editedChart' : 'dataThread.editedReport',
+                            { defaultValue: update.kind === 'chart' ? 'Edited chart {{name}}' : 'Edited report {{name}}', name: applied.name }), 'info');
+                    } else if (update && applied && !applied.applied && applied.reason === 'changed') {
+                        addProgressStep(t('dataThread.editSkippedChanged', {
+                            defaultValue: 'Did not apply the agent\'s edit to {{name}}: it changed while the agent was working',
+                            name: applied.name }), 'warning');
+                    }
+                }
+                if (result.tool === 'move_file' && !isError) {
+                    let moved: { from?: string; to?: string } | undefined;
+                    try {
+                        moved = JSON.parse(result.stdout || '{}').moved;
+                    } catch {
+                        moved = undefined;
+                    }
+                    if (moved?.from?.startsWith('files/') && moved.to?.startsWith('files/')) {
+                        dispatch(dfActions.renameFileNodes({ from: moved.from.slice('files/'.length), to: moved.to.slice('files/'.length) }));
+                        notifyWorkspaceFilesChanged();
+                        addProgressStep(t('dataThread.movedFile', { defaultValue: 'Moved {{from}} to {{to}}', from: moved.from, to: moved.to }), 'info');
+                    }
+                }
                 if (isError && result.error) {
                     const errPreview = String(result.error).split('\n').pop()?.trim() || String(result.error).slice(0, 120);
                     addProgressStep(errPreview, 'warning');
@@ -2104,7 +2035,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             focusedTurn?.id,
             focusedItemId,
             threadGraph,
-            turnId => !textTurns.some(turn => turn.id === turnId && (turn.workflow || turn.workflowMessage)),
+            // A finished workflow run's record closes its chain and is followed like any reply;
+            // a live run's record and its steering messages belong to the run.
+            turnId => !textTurns.some(turn => turn.id === turnId && (turn.workflowMessage
+                || (turn.workflow && ['running', 'paused'].includes(turn.workflow.status)))),
         );
         if (focusedTurn) {
             // A workflow run's record is the open end of its chain; a follow-up continues from it.
@@ -2121,7 +2055,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         }
         if (conversationParentId) {
             const conversationParent = textTurns.find(turn => turn.id === conversationParentId);
-            if (conversationParent && !conversationParent.answered) {
+            if (conversationParent && !conversationParent.answered && !conversationParent.workflow) {
                 dispatch(dfActions.updateTextTurn({ id: conversationParent.id, answered: true }));
             }
             exploreFromChat(prompt, { parentNodeId: conversationParentId }, displayPrompt, explicitAttachments);
@@ -2217,7 +2151,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     files: attachments.map(name => ({ name, scratchPath: `scratch/${name}` })) });
                 return;
             }
-            submitChat(text, undefined, {
+            submitChat(text, analystChatPending.displayText, {
                 images,
                 files: attachments.map(name => ({ name, scratchPath: `scratch/${name}` })),
             });
@@ -2474,6 +2408,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     onRetry={() => exploreFromChat(focusedDraftPrompt, {
                         parentNodeId: focusedDraft.parentNodeId,
                         sourceTableIds: focusedDraft.derive.source,
+                        retry: true,
                     })}
                 />
             )}

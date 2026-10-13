@@ -165,9 +165,13 @@ def test_ask_user_keeps_multi_choice_only_with_options() -> None:
 def test_schedule_edits_merge_existing_config(scheduling) -> None:
     saved = scheduling.save(IDENTITY, {"name": "Fuel", "workflow": "demo/gas-price-review.yaml", "model_id": "server-model",
                                        "time": "08:00", "timezone": "UTC", "weekdays": [0]})
-    listed = json.loads(ConfigureSkill().handle_tool("list_schedules", {}, _context()).text)
-    assert listed["schedules"][0]["cadence"] == "Mon at 08:00 (UTC)"
-    assert listed["server_models"] == [{"id": "server-model", "model": "gpt", "provider": "openai"}]
+    listed = json.loads(ConfigureSkill().handle_tool("list_workflows", {}, _context()).text)
+    fuel = next(item for item in listed["workflows"] if item["path"] == "demo/gas-price-review.yaml")
+    # Each workflow lists its schedules; scheduling itself is described once.
+    assert [schedule["cadence"] for schedule in fuel["schedules"]] == ["Mon at 08:00 (UTC)"]
+    assert all(not item["schedules"] for item in listed["workflows"] if item is not fuel)
+    assert listed["scheduling"]["available"] is True
+    assert listed["scheduling"]["server_models"] == [{"id": "server-model", "model": "gpt", "provider": "openai"}]
 
     events, _ = _action("propose_schedule", {"schedule_id": saved["id"], "enabled": False})
     form = events[0]["form"]
@@ -199,10 +203,11 @@ def test_workflow_revision_targets_only_saved_user_workflows(scheduling) -> None
 
 def test_scheduling_unavailable_is_reported_without_a_form(monkeypatch) -> None:
     monkeypatch.setattr("data_formulator.workflows.scheduler.scheduling_available", lambda: False)
-    listed = json.loads(ConfigureSkill().handle_tool("list_schedules", {}, _context()).text)
+    monkeypatch.setattr("data_formulator.analyst.skills.configure.automation.workflows_unavailable", lambda: None)
+    listed = json.loads(ConfigureSkill().handle_tool("list_workflows", {}, _context()).text)
     events, observation = _action("propose_schedule", {"workflow": "demo/gas-price-review.yaml"})
 
-    assert listed["available"] is False
+    assert listed["scheduling"]["available"] is False and listed["workflows"]
     assert events == [] and "only available in the local Data Formulator app" in observation
 
 

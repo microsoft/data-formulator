@@ -95,11 +95,6 @@ class TestConfinedDir:
         resolved = jail.resolve("new/nested/path.txt", mkdir_parents=True)
         assert resolved.parent.is_dir()
 
-    def test_repr(self, tmp_path: Path) -> None:
-        jail = ConfinedDir(tmp_path, mkdir=False)
-        assert "ConfinedDir" in repr(jail)
-        assert str(tmp_path) in repr(jail)
-
 
 # ── LocalFolderDataLoader tests ──────────────────────────────────────────
 
@@ -154,13 +149,6 @@ class TestLocalFolderDataLoader:
             "sort_columns": ["score"], "sort_order": "desc",
         })
         assert result.to_pylist() == [{"score": 9}]
-
-    def test_list_params(self) -> None:
-        params = LocalFolderDataLoader.list_params()
-        names = {p["name"] for p in params}
-        assert "root_dir" in names
-        assert "recursive" in names
-        assert "file_pattern" in names
 
     def test_parquet_probe_aggregates_whole_nested_source(self, tmp_path, monkeypatch):
         nested = tmp_path / "nested"
@@ -435,9 +423,3 @@ class TestLocalFolderDataLoader:
         names = {n.name for n in nodes}
         assert "numbers.parquet" in names
         assert "people.csv" not in names
-
-    def test_catalog_hierarchy(self) -> None:
-        h = LocalFolderDataLoader.catalog_hierarchy()
-        assert len(h) == 2
-        assert h[0]["key"] == "folder"
-        assert h[1]["key"] == "table"

@@ -267,7 +267,8 @@ export interface DataFormulatorState {
     cleanInProgress: boolean;
 
     /** Seeded prompt for the analyst (data-thread) chat, e.g. from the landing box. */
-    analystChatPending: { text: string; images: string[]; attachments: string[]; intent?: 'workflow-authoring' } | null;
+    /** A request to send to the agent; `displayText` is a short label shown in the thread instead of `text`. */
+    analystChatPending: { text: string; displayText?: string; images: string[]; attachments: string[]; intent?: 'workflow-authoring' } | null;
     /**
      * Monotonic counter bumped whenever a connector is created/changed from a
      * surface that is not the sidebar itself (e.g. the inline connection form
@@ -1346,6 +1347,14 @@ export const dataFormulatorSlice = createSlice({
             existing.contentHash = node.contentHash;
             if (node.replaced) existing.replaced = node.replaced;
         },
+        /** A workspace file was renamed or moved: its thread nodes, focus, and shelf place follow it. */
+        renameFileNodes: (state, action: PayloadAction<{ from: string; to: string }>) => {
+            const { from, to } = action.payload;
+            if (from === to) return;
+            state.fileNodes.forEach(node => { if (node.path === from) node.path = to; });
+            state.workspaceItemOrder = state.workspaceItemOrder.map(key => key === `workspace-file-${from}` ? `workspace-file-${to}` : key);
+            if (state.focusedId?.type === 'file' && state.focusedId.fileName === from) state.focusedId = { type: 'file', fileName: to };
+        },
         removeFileNodes: (state, action: PayloadAction<string>) => {
             const removed = state.fileNodes.filter(node => node.path === action.payload);
             const removedIds = new Set(removed.map(node => node.id));
@@ -1693,6 +1702,25 @@ export const dataFormulatorSlice = createSlice({
             if (chart) {
                 chart.scaleFactor = action.payload.scaleFactor === 1 ? undefined : action.payload.scaleFactor;
             }
+        },
+        /** A chart the agent edited as a file (design-docs/60): its validated spec, resolved to fields. */
+        replaceChartSpec: (state, action: PayloadAction<{ chart: Chart; concepts: FieldItem[] }>) => {
+            const { chart: next, concepts } = action.payload;
+            const chart = collectAllCharts(state).find(item => item.id === next.id);
+            if (!chart) return;
+            for (const concept of concepts) {
+                if (!state.conceptShelfItems.some(item => item.name === concept.name)) state.conceptShelfItems.push(concept);
+            }
+            const restyled = chart.chartType !== next.chartType || JSON.stringify(chart.encodingMap) !== JSON.stringify(next.encodingMap)
+                || JSON.stringify(chart.config || {}) !== JSON.stringify(next.config || {}) || chart.themeId !== next.themeId;
+            chart.chartType = next.chartType;
+            chart.encodingMap = next.encodingMap;
+            chart.config = next.config;
+            chart.title = next.title;
+            chart.subtitle = next.subtitle;
+            chart.titleKey = next.titleKey;
+            chart.themeId = next.themeId;
+            if (restyled) chart.activeVariantId = undefined;
         },
         setChartTheme: (state, action: PayloadAction<{chartId: string, themeId: string | undefined}>) => {
             const chart = collectAllCharts(state).find(c => c.id === action.payload.chartId);
@@ -2178,7 +2206,7 @@ export const dataFormulatorSlice = createSlice({
         },
         queueAnalystTask: (
             state,
-            action: PayloadAction<{ text: string; images: string[]; attachments: string[]; intent?: 'workflow-authoring' }>,
+            action: PayloadAction<{ text: string; displayText?: string; images: string[]; attachments: string[]; intent?: 'workflow-authoring' }>,
         ) => {
             state.analystChatPending = action.payload;
         },

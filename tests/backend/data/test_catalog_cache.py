@@ -353,10 +353,6 @@ class TestStructuredFieldSearch:
         )
         assert all(r["name"] != "public.orders" for r in results)
 
-    def test_finder_end_to_end(self) -> None:
-        results = self._run("product")
-        assert any(r["name"] == "public.products" for r in results)
-
     def test_regex_query_alternation(self) -> None:
         results = self._run("orders|products")
         names = {r["name"] for r in results}

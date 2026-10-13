@@ -5,17 +5,11 @@ import {
   resolveDerivedTriggerTableId,
   resolveRunParentNodeId,
   shouldShowInputSourceTransition,
-  shouldAutoFocusGeneratedChart,
 } from '../../../../src/app/agentInteractionPolicy';
 import { ThreadGraph } from '../../../../src/app/threadGraph';
 const CONVERSATION_ROOT_ID = 'conversation-root:test';
 
 describe('agent interaction policy', () => {
-  it('keeps generated chart auto-focus disabled while the user is viewing a chart', () => {
-    expect(shouldAutoFocusGeneratedChart(false)).toBe(true);
-    expect(shouldAutoFocusGeneratedChart(true)).toBe(false);
-  });
-
   it('introduces a table only when a derived result uses one', () => {
     expect(resolveDerivedTriggerTableId(null, undefined, CONVERSATION_ROOT_ID)).toBe(CONVERSATION_ROOT_ID);
     expect(resolveDerivedTriggerTableId(null, 'orders', CONVERSATION_ROOT_ID)).toBe('orders');

@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableRow } from '@mui/material'
 
 import {
     downloadWorkspaceFile,
+    isInvalidWorkspaceFileName,
     onWorkspaceFilesChanged,
     previewWorkspaceFile,
     previewUploadedWorkspaceFile,
@@ -74,6 +75,9 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
         return onWorkspaceFilesChanged(() => setFileRevision(current => current + 1));
     }, [temporary, sourceFile]);
     const [textFile, setTextFile] = useState<{ content: string; savedContent: string; hash: string } | null>(null);
+    // A new translation function (e.g. once i18n finishes loading) must not refetch the file.
+    const tRef = useRef(t);
+    tRef.current = t;
     // A file rewritten under the same name (an agent fix with `replaces`, or any in-place edit)
     // reaches the thread as a new content hash: reload it once per hash, unless it is our own save.
     const storedHash = useSelector((state: DataFormulatorState) => state.fileNodes.find(node => node.path === fileName)?.contentHash);
@@ -94,7 +98,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
     const [renaming, setRenaming] = useState(false);
     const [renameError, setRenameError] = useState('');
     const trimmedName = newName.trim();
-    const invalidName = !trimmedName || /[\\/]/.test(trimmedName) || Array.from(trimmedName).some(character => character.charCodeAt(0) < 32) || trimmedName === '.' || trimmedName === '..';
+    const invalidName = !trimmedName || isInvalidWorkspaceFileName(trimmedName);
     const [saveError, setSaveError] = useState('');
     const isMarkdown = /\.(md|markdown)$/i.test(fileName);
     const isHtml = /\.html?$/i.test(fileName);
@@ -107,11 +111,12 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
     // for source editing or whenever there is something to save.
     const appChromeless = floatingAppControls && isApp && mode === 'preview' && textFile !== null && !sourceFile && !dirty && !saveError;
     // Only agent-editable workspace apps can be repaired with edit_file.
+    const repairRequest = (errors: string[], hash: string) =>
+        `The app files/${fileName} shows these errors:\n${errors.map(error => `- ${error}`).join('\n')}\n`
+        + `Fix it in place with edit_file (path "files/${fileName}", expected_content_hash "${hash}", `
+        + `replaces "files/${fileName}"), preferably with targeted replacements; keep its df-app manifest and do not create a copy.`;
     const askAgentToFix = !readOnly && textFile && !dirty ? (errors: string[]) => dispatch(dfActions.queueAnalystTask({
-        text: `The app files/${fileName} shows these errors:\n${errors.map(error => `- ${error}`).join('\n')}\n`
-            + `Fix it in place with edit_file (path "files/${fileName}", expected_content_hash "${textFile.hash}", `
-            + `replaces "files/${fileName}"), preferably with targeted replacements; keep its df-app manifest and do not create a copy.`,
-        images: [], attachments: [],
+        text: repairRequest(errors, textFile.hash), images: [], attachments: [],
     })) : undefined;
     const [preview, setPreview] = useState<WorkspaceFilePreview | null>(null);
     const [pdfFile, setPdfFile] = useState<Blob | null>(null);
@@ -183,7 +188,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 else setPreview(result);
             })
             .catch(() => {
-                if (!cancelled) setError(t('dataThread.previewUnavailable', {
+                if (!cancelled) setError(tRef.current('dataThread.previewUnavailable', {
                     defaultValue: 'A quick preview is not available for this file type.',
                 }));
             })
@@ -192,7 +197,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
             cancelled = true;
             if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
-    }, [fileName, isPdf, isMarkdown, hasPreview, draftKey, t, fileRevision, temporary, sourceFile]);
+    }, [fileName, isPdf, isMarkdown, hasPreview, draftKey, fileRevision, temporary, sourceFile]);
 
     const save = async () => {
         if (!textFile || readOnly || saving || discardOpen || renameOpen || renaming) return;
@@ -231,6 +236,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 textDrafts.set(renamedKey, draft);
                 textDrafts.delete(draftKey);
             }
+            dispatch(dfActions.renameFileNodes({ from: fileName, to: renamed.name }));
             if (mounted.current) {
                 setRenameOpen(false);
                 dispatch(dfActions.setFocused({ type: 'file', fileName: renamed.name }));

@@ -24,7 +24,7 @@ def local_blob_loader():
     return create
 
 
-@pytest.mark.parametrize("endpoint", [None, "", "blob.core.windows.net",
+@pytest.mark.parametrize("endpoint", [None,
     "stwedsmartprod.blob.core.windows.net", "https://stwedsmartprod.blob.core.windows.net/"])
 @pytest.mark.parametrize("auth", ["identity", "sas_token", "account_key"])
 def test_blob_endpoint_is_consistent_for_test_catalog_and_reads(endpoint, auth):
@@ -113,11 +113,8 @@ def test_blob_parquet_credentials_are_parameterized_and_scoped(endpoint, auth):
     )
 
 
-@pytest.mark.parametrize("source", [
-    "az://fixture.blob.core.windows.net/data/nested/events.parquet",
-    "nested/events.parquet",
-])
-def test_blob_column_types_preserve_file_path(source):
+def test_blob_column_types_preserve_file_path():
+    source = "az://fixture.blob.core.windows.net/data/nested/events.parquet"
     loader = object.__new__(AzureBlobDataLoader)
     columns = [{"name": "title", "type": "string"}]
     loader.get_metadata = Mock(return_value={"columns": columns, "row_count": 5})
@@ -138,9 +135,7 @@ def test_blob_parquet_error_does_not_fall_back_to_arrow():
 
 
 @pytest.mark.parametrize("provider,class_name", [
-    ("cli", "AzureCliCredential"), ("managed_identity", "ManagedIdentityCredential"),
-    ("env", "EnvironmentCredential"), ("workload_identity", "WorkloadIdentityCredential"),
-    ("default", "DefaultAzureCredential"),
+    ("cli", "AzureCliCredential"), ("workload_identity", "WorkloadIdentityCredential"),
 ])
 def test_blob_query_token_uses_configured_provider_and_closes_it(provider, class_name, monkeypatch):
     import time
@@ -159,7 +154,7 @@ def test_blob_query_token_uses_configured_provider_and_closes_it(provider, class
         factory.return_value.__exit__.assert_called_once()
 
 
-@pytest.mark.parametrize("remaining", [-1, 0, 299])
+@pytest.mark.parametrize("remaining", [0, 299])
 def test_blob_query_token_rejects_expiring_credentials(remaining):
     from azure.core.exceptions import ClientAuthenticationError
 

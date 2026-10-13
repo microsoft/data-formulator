@@ -36,6 +36,7 @@ import { alpha } from '@mui/material/styles';
 
 import AddIcon from '@mui/icons-material/Add';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
@@ -416,6 +417,7 @@ export const SourceTableShelf: FC<{
     const [sectionExpanded, setSectionExpanded] = useState(true);
     const [expanded, setExpanded] = useState(false);
     const [importGroupExpansion, setImportGroupExpansion] = useState<Record<string, boolean>>({});
+    const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
     const importGroupSizesRef = useRef<Record<string, number>>({});
     const [importProvenanceChecked, setImportProvenanceChecked] = useState<string>();
     const [addDataDialogOpen, setAddDataDialogOpen] = useState(false);
@@ -791,10 +793,16 @@ export const SourceTableShelf: FC<{
         </Box>;
     }), [visibleTables, tables, highlightedTableIds, focusedTableId, theme, t]);
 
+    // Files in folders are grouped under their top-level folder.
+    const fileFolder = (workspaceFile: WorkspaceFile) => !workspaceFile.temporary && workspaceFile.name.includes('/')
+        ? workspaceFile.name.split('/')[0] : undefined;
     const workspaceArtifacts = [...workspaceFiles.map(workspaceFile => {
-        const fileName = workspaceFile.temporary ? workspaceFile.name.replace(/^scratch\//, '') : workspaceFile.name;
+        const folder = fileFolder(workspaceFile);
+        const fileName = workspaceFile.temporary ? workspaceFile.name.replace(/^scratch\//, '')
+            : folder ? workspaceFile.name.slice(folder.length + 1) : workspaceFile.name;
         return {
             key: `workspace-file-${workspaceFile.name}`,
+            folder,
             artifactType: 'file' as const,
             title: workspaceFile.display_name || fileName,
             notes: workspaceFile.display_name && workspaceFile.display_name !== fileName ? fileName : undefined,
@@ -808,6 +816,7 @@ export const SourceTableShelf: FC<{
         const title = externalReferenceTitle(reference);
         return {
             key: reference.id,
+            folder: undefined as string | undefined,
             artifactType: 'table' as const,
             title,
             notes: reference.sourceTable.name !== title ? reference.sourceTable.name : undefined,
@@ -819,7 +828,7 @@ export const SourceTableShelf: FC<{
         };
     })];
 
-    const artifactCards = workspaceArtifacts.map(artifact => {
+    const renderArtifactCard = (artifact: typeof workspaceArtifacts[number]) => {
         const importedTables = importsByReference.get(artifact.key) || [];
         const importsCollapsible = importedTables.length > IMPORT_GROUP_OPEN_LIMIT;
         const importsExpanded = !importsCollapsible || (importGroupExpansion[artifact.key] ?? false);
@@ -915,11 +924,43 @@ export const SourceTableShelf: FC<{
             </Box>
         </Box>
     );
-    });
+    };
+    const folders = [...new Set(workspaceArtifacts.map(artifact => artifact.folder).filter((folder): folder is string => !!folder))];
+    const artifactCards = [
+        ...workspaceArtifacts.filter(artifact => !artifact.folder).map(renderArtifactCard),
+        ...folders.map(folder => {
+            const members = workspaceArtifacts.filter(artifact => artifact.folder === folder)
+                .sort((first, second) => first.key.localeCompare(second.key));
+            // A folder holding the open file stays open.
+            const expanded = !collapsedFolders[folder] || members.some(member => member.selected);
+            return <Box key={`workspace-folder-${folder}`} data-workspace-folder={folder}>
+                <Box sx={{ display: 'flex', flexDirection: 'row' }}>
+                    <Box aria-hidden sx={{ width: GUTTER_WIDTH, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: RAIL_LINE }} />
+                        <Box sx={{ flexShrink: 0, zIndex: 1, bgcolor: 'white', display: 'flex' }}>
+                            <FolderOutlinedIcon sx={{ width: 14, height: 14, color: 'rgba(0,0,0,0.35)' }} />
+                        </Box>
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: RAIL_LINE }} />
+                    </Box>
+                    <ButtonBase aria-expanded={expanded} onClick={() => setCollapsedFolders(previous => ({ ...previous, [folder]: expanded }))}
+                        sx={{ flex: 1, minWidth: 0, justifyContent: 'flex-start', gap: 0.5, py: CARD_PY, pl: GUTTER_GAP, pr: CARD_INSET_RIGHT,
+                            color: 'text.secondary', fontSize: textVar.sm, '&:hover': { color: 'text.primary' } }}>
+                        <Typography component="span" sx={{ minWidth: 0, fontSize: textVar.sm, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folder}</Typography>
+                        <Typography component="span" sx={{ fontSize: textVar.xs, opacity: 0.75 }}>{members.length}</Typography>
+                        {expanded ? <KeyboardArrowUpIcon sx={{ fontSize: iconVar.sm }} /> : <KeyboardArrowDownIcon sx={{ fontSize: iconVar.sm }} />}
+                    </ButtonBase>
+                </Box>
+                <Collapse in={expanded} unmountOnExit>
+                    <Box role="group" aria-label={folder} sx={{ pl: 1.5 }}>{members.map(renderArtifactCard)}</Box>
+                </Collapse>
+            </Box>;
+        }),
+    ];
 
     const currentItemKeys = [
         ...(externalReferences || []).map(reference => reference.id),
-        ...workspaceFiles.map(file => `workspace-file-${file.name}`),
+        ...workspaceFiles.filter(file => !fileFolder(file)).map(file => `workspace-file-${file.name}`),
+        ...[...new Set(workspaceFiles.map(fileFolder).filter(Boolean))].map(folder => `workspace-folder-${folder}`),
         ...inputTables.map(table => `shelf-card-${table.id}`),
     ];
     const itemOrder = [...new Set([...workspaceItemOrder, ...currentItemKeys])];

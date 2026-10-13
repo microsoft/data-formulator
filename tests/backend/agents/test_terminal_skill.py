@@ -45,7 +45,7 @@ def test_terminal_policy_controls_first_turn_prompt_and_tools(tmp_path, monkeypa
     tools = agent._current_tools()
     names = {spec["function"]["name"] for spec in tools}
     assert registry.has("terminal")
-    workspace_guidance = agent.registry.load_body("workspace")
+    workspace_guidance = agent.registry.load_body("connected_data")
     assert "## Choose an Acquisition Route" in workspace_guidance
     assert "{terminal_acquisition_route}" not in prompt
     if mode == "off":
@@ -79,7 +79,7 @@ def test_terminal_policy_controls_first_turn_prompt_and_tools(tmp_path, monkeypa
         assert ("Auto approval is enabled" in prompt) == (mode == "auto")
     history = [
         {"role": "user", "content": "[SKILL LOADED: terminal]\nOld Ask-only instructions"},
-        {"role": "user", "content": "[SKILL LOADED: workspace]\nOld connector-only instructions"},
+        {"role": "user", "content": "[SKILL LOADED: connected_data]\nOld connector-only instructions"},
     ]
     agent._rehydrate_loaded_skills(history)
     assert "Old Ask-only" not in history[0]["content"]
@@ -89,6 +89,7 @@ def test_terminal_policy_controls_first_turn_prompt_and_tools(tmp_path, monkeypa
     assert ("terminal" in agent._loaded_skills) == (mode != "off")
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("ignore_interrupt", [False, True])
 def test_terminal_pause_retains_partial_output_and_stops_process(tmp_path, ignore_interrupt):
     from threading import Event
@@ -111,6 +112,7 @@ def test_terminal_pause_retains_partial_output_and_stops_process(tmp_path, ignor
     assert "partial output" in result["output"]
 
 
+@pytest.mark.slow
 def test_terminal_acquired_data_can_be_analyzed_and_published_without_connector(tmp_path):
     from data_formulator.analyst.agent import AnalystAgent
     from data_formulator.analyst.skills.analysis.skill import get_skill as analysis_skill

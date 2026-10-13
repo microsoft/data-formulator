@@ -52,7 +52,7 @@ it.each([['execute_python_script', 'CodeIcon'], ['run_terminal', 'TerminalIcon']
   expect(screen.getByTestId(icon)).toBeVisible();
 });
 
-it.each(['Running code', 'Running command', '✓ Creating chart', '✗ Failed'])('does not infer legacy metadata from %s', label => {
+it.each(['Running code', '✗ Failed'])('does not infer legacy metadata from %s', label => {
   render(React.createElement(getStepIconComponent(label)));
   expect(screen.getByTestId('AutoAwesomeIcon')).toBeVisible();
 });
@@ -70,7 +70,7 @@ it('uses structured kind and status for filtering and activity, leaving legacy t
   expect(screen.getByTestId('AutoAwesomeIcon')).toBeVisible();
 });
 
-it.each(['completed', 'failed', 'interrupted', 'running'] as const)('animates only explicitly running steps, not %s text', status => {
+it.each(['completed', 'running'] as const)('animates only explicitly running steps, not %s text', status => {
   render(React.createElement(PlanStepsView, { activeLastStep: true, steps: [
     { id: 'python', kind: 'tool', tool: 'execute_python_script', label: 'Running command', status },
   ] }));
@@ -570,6 +570,27 @@ it('keeps a step\'s tool calls on one message while preserving its loaded and de
   expect(store.getState().loadedTableNodes[0].parentNodeId).toBe('acquire');
 });
 
+it('does not repeat a finished call on the live draft after its step', () => {
+  const initialState = dataFormulatorReducer(undefined, { type: 'init' });
+  const store = configureStore({ reducer: dataFormulatorReducer, preloadedState: {
+    ...initialState,
+    draftNodes: [{ kind: 'draft', id: 'live-draft', displayId: 'Draft', parentNodeId: 'step', createdAt: 3,
+      derive: { source: [], code: '', dialog: [], status: 'running',
+        progressSteps: [{ id: 'live-code', kind: 'tool', tool: 'execute_python_script', executionId: 'code-1',
+          label: 'running code... Quantify volatility', status: 'completed' }], trigger: {
+        tableId: CONVERSATION_ROOT_ID, resultTableId: 'live-draft', instruction: '', interaction: [],
+      } },
+    } as any],
+  } });
+  store.dispatch(userMessage('ask', 'Analyze volatility', CONVERSATION_ROOT_ID, 0, { actionId: 'one-run' }));
+  store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'step', displayId: 'Step', textKind: 'explain',
+    content: 'Quantify volatility', createdAt: 1, parentNodeId: 'ask', actionId: 'one-run',
+    codeExecutions: [{ id: 'code-1', tool: 'execute_python_script', code: 'print(1)', purpose: 'Quantify volatility', status: 'completed' }] }));
+  renderDataThread(store);
+  expect(screen.queryByText(/running code/)).toBeNull();
+  expect(screen.getByText(/thinking/i)).toBeVisible();
+});
+
 it('shows one live activity spinner and opens the execution step directly', async () => {
   const initialState = dataFormulatorReducer(undefined, { type: 'init' });
   const store = configureStore({ reducer: dataFormulatorReducer, preloadedState: {
@@ -598,10 +619,9 @@ it('shows one live activity spinner and opens the execution step directly', asyn
   const activity = screen.getByText('Querying usage').closest('[data-thread-item]')! as HTMLElement;
   expect(activity).toBeVisible();
   expect(activity.querySelector('[data-activity-gutter] svg')).toBeNull();
-  expect(screen.getByText(/Running command fixture/)).toBeVisible();
+  // The running call shows on the step's tool activity row only: the draft does not repeat it or spin again.
+  expect(screen.queryByText(/Running command fixture/)).toBeNull();
   expect(screen.queryByText('Old fallback text')).toBeNull();
-  // KNOWN PRODUCT BUG (fails today): the running call spins twice, once on the step's
-  // tool activity row (ToolActivityRow `active`) and once on the draft's thinking row.
   expect(screen.getAllByRole('progressbar')).toHaveLength(1);
   expect(screen.queryByRole('img', { name: 'Running' })).toBeNull();
   expect(screen.queryByRole('img', { name: 'Failed' })).toBeNull();

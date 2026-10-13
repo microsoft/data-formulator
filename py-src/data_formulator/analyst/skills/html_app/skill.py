@@ -9,9 +9,8 @@ handler validates the request, stamps a manifest declaring which workspace
 tables the app may read (a ``// @df-app`` header line or a ``df-app-manifest``
 script), and saves an agent-managed workspace file. A revision (a full rewrite
 passing ``path`` and ``expected_content_hash``, or targeted ``edit_file``
-patches validated by ``check_app_revision``) is saved as a new version of the
-app, leaving the original as it was; later revisions in the same run update
-that version (design-docs/58, rule 8).
+patches validated by ``check_app_revision``) rewrites the app in place
+(design-docs/58, rule 8).
 
 The frontend renders the file in an opaque-origin sandboxed iframe with a
 restrictive CSP and injects the DF runtime; the app reads declared tables through
@@ -43,7 +42,8 @@ MAX_APP_BYTES = 500_000
 
 REACT_APP_SUFFIX = ".app.jsx"
 # Modules the sandboxed React runtime provides (src/app/reactApp/compile.ts ALLOWED_IMPORTS).
-ALLOWED_IMPORTS = ("react", "react/jsx-runtime", "@df/ui", "@df/data", "@df/chart", "@df/format", "@df/icons", "@mui/material")
+ALLOWED_IMPORTS = ("react", "react/jsx-runtime", "@df/ui", "@df/data", "@df/chart", "@df/format", "@df/icons", "@mui/material",
+                   "d3", "lodash", "@df/geo")
 _REACT_MANIFEST_RE = re.compile(r"^[ \t]*//[ \t]*@df-app\b.*(?:\r?\n|$)", re.MULTILINE)
 _IMPORT_FROM_RE = re.compile(r"^\s*(?:import|export)\s[^'\";]*?\bfrom\s*['\"]([^'\"]+)['\"]", re.MULTILINE)
 _BARE_IMPORT_RE = re.compile(r"^\s*import\s*['\"]([^'\"]+)['\"]", re.MULTILINE)
@@ -85,10 +85,9 @@ MAX_COLOR_LITERALS = 3
 
 
 def _invalid_filename(filename: Any, suffix: str = ".html") -> str | None:
-    if (not isinstance(filename, str) or not filename.strip() or filename != filename.strip()
-            or len(filename.encode("utf-8")) > 255 or filename.startswith((".", "_"))
-            or any(character in "/\\" or ord(character) < 32 for character in filename)):
-        return "filename must be a visible filename without directories"
+    from data_formulator.datalake.workspace import agent_file_path_error
+    if problem := agent_file_path_error(filename):
+        return problem
     if not filename.lower().endswith(suffix):
         return f"filename must end with {suffix}"
     return None
@@ -101,8 +100,8 @@ def _invalid_title(title: Any) -> str | None:
     return None
 
 
-def build_manifest(title: str, tables: list[str]) -> dict[str, Any]:
-    return {"version": 1, "title": title, "tables": tables}
+def build_manifest(title: str, tables: list[str], sources: list[str] | None = None) -> dict[str, Any]:
+    return {"version": 1, "title": title, "tables": tables, **({"sources": sources} if sources else {})}
 
 
 def inject_manifest(html: str, manifest: dict[str, Any]) -> str:
@@ -153,7 +152,10 @@ def react_imports(code: str) -> list[str]:
 
 
 def validate_react_app(code: str) -> None:
-    """Reject code the sandboxed runtime cannot run: unknown imports or no default export."""
+    """Reject apps the runtime cannot load: unknown imports or no default export.
+
+    Syntax and runtime errors show when the app renders, with a button to ask the agent to fix them.
+    """
     disallowed = [name for name in react_imports(code) if name not in ALLOWED_IMPORTS]
     if disallowed:
         allowed = ", ".join(name for name in ALLOWED_IMPORTS if name != "react/jsx-runtime")
@@ -164,8 +166,8 @@ def validate_react_app(code: str) -> None:
 
 def lint_react_app(code: str, tables: list[str]) -> list[str]:
     warnings = [message for pattern, message in _LINT_RULES if pattern.search(code)]
-    if tables and not re.search(r"\b(?:useQuery|useDistinct|useTable)\s*\(", code):
-        warnings.append("The app declares tables but never reads them; use useQuery, useDistinct, or useTable from @df/data.")
+    if tables and not re.search(r"\b(?:useQuery|useDistinct|useTable|useSql)\s*\(", code):
+        warnings.append("The app declares tables but never reads them; use useQuery, useSql, useDistinct, or useTable from @df/data.")
     colors = sorted({color.strip("'\"").lower() for color in _HEX_COLOR_RE.findall(code)})
     if len(colors) > MAX_COLOR_LITERALS:
         warnings.append(
@@ -173,6 +175,28 @@ def lint_react_app(code: str, tables: list[str]) -> list[str]:
             "'primary.main' or 'text.secondary', and the Kpi/Callout tones, so the app matches Data Formulator."
         )
     return warnings
+
+
+MAX_SOURCES = 10
+
+
+def _declared_sources(spec: dict[str, Any], ctx: SkillContext) -> list[str]:
+    """Connected sources (session external reference ids) the app queries live with useSourceQuery."""
+    sources = spec.get("sources") or []
+    if not isinstance(sources, list) or not all(isinstance(source, str) and source for source in sources):
+        raise ValueError("sources must be a list of connected-source reference ids")
+    sources = list(dict.fromkeys(sources))
+    if len(sources) > MAX_SOURCES:
+        raise ValueError(f"declare at most {MAX_SOURCES} sources")
+    references = {item["id"]: item for item in (ctx.payload or {}).get("external_references") or [] if isinstance(item, dict) and item.get("id")}
+    missing = [source for source in sources if source not in references]
+    if missing:
+        listed = ", ".join(sorted(references)[:20]) or "none"
+        raise ValueError(
+            f"Unknown sources: {', '.join(missing)}. Declare connected sources by their reference id in this session "
+            f"(add one with propose_data_operation first). Available: {listed}"
+        )
+    return sources
 
 
 def _declared_tables(spec: dict[str, Any], ctx: SkillContext) -> list[str]:
@@ -246,38 +270,6 @@ def read_html_manifest(html: str) -> dict[str, Any] | None:
     return manifest if isinstance(manifest, dict) else None
 
 
-_VERSION_SUFFIX_RE = re.compile(r"^(?P<stem>.*?)(?:_(?P<version>\d+))?$")
-
-
-def app_revision_target(filename: str, ctx: SkillContext) -> str:
-    """The file a revision of the app ``filename`` is saved to.
-
-    Editing an app makes a new app (design-docs/58, rule 8): the revision goes
-    to the next free ``<stem>_<n>`` name and the original stays as it was. An
-    app this run already created or versioned is updated in place, so several
-    edits in one run make one new version.
-    """
-    created = ctx.payload.get("apps_written")
-    if isinstance(created, set) and filename in created:
-        return filename
-    suffix = REACT_APP_SUFFIX if filename.lower().endswith(REACT_APP_SUFFIX) else "." + filename.rsplit(".", 1)[-1]
-    base = filename[: -len(suffix)]
-    match = _VERSION_SUFFIX_RE.match(base)
-    stem = match.group("stem") if match and match.group("stem") else base
-    taken = {item.name for item in ctx.workspace.list_workspace_files()} if ctx.workspace is not None else set()
-    version = int(match.group("version")) + 1 if match and match.group("version") else 2
-    while f"{stem}_{version}{suffix}" in taken:
-        version += 1
-    return f"{stem}_{version}{suffix}"
-
-
-def record_app_written(filename: str, ctx: SkillContext) -> None:
-    """Remember an app this run created, so its later revisions update it in place."""
-    created = ctx.payload.get("apps_written")
-    if isinstance(created, set):
-        created.add(filename)
-
-
 def check_app_revision(filename: str, original: str | None, content: Any, ctx: SkillContext) -> dict[str, Any] | None:
     """Validate an ``edit_file`` revision of an app like ``write_app`` validates a new one.
 
@@ -313,6 +305,7 @@ def check_app_revision(filename: str, original: str | None, content: Any, ctx: S
         if problem:
             raise ValueError(f"manifest {problem}")
         tables = _declared_tables({"tables": manifest.get("tables", [])}, ctx)
+        _declared_sources({"sources": manifest.get("sources", [])}, ctx)
         size = len(content.encode("utf-8"))
         if size > limit:
             raise ValueError(f"The app is {size:,} bytes; keep it under {limit:,} bytes")
@@ -323,7 +316,7 @@ def check_app_revision(filename: str, original: str | None, content: Any, ctx: S
 
 
 def replace_file_in_place(spec: dict[str, Any], ctx: SkillContext) -> dict[str, Any] | None:
-    """Check ``replaces`` on a revision; a replaced app or file is rewritten in place, not versioned.
+    """Check ``replaces`` on a revision of the app or file at ``path``.
 
     ``replaces`` must name the file being revised (``path``): the fixed file keeps its
     filename, and the application moves it to after the request that fixed it.
@@ -334,15 +327,13 @@ def replace_file_in_place(spec: dict[str, Any], ctx: SkillContext) -> dict[str, 
     path = spec.get("path")
     if not isinstance(path, str) or replaced["id"] != (path if path.startswith("files/") else f"files/{path}"):
         raise ValueError(f"replaces must name the file being revised; pass path {replaced['id']} with its content_hash")
-    # Apps this run already wrote are saved in place (see app_revision_target).
-    record_app_written(replaced["id"][len("files/"):], ctx)
     return replaced
 
 
 def _save_app(ctx: SkillContext, encoded: bytes, filename: str, media_type: str, title: str,
               expected_hash: str | None = None) -> dict[str, Any]:
     if expected_hash is not None:
-        # A revision checks the hash of the app it revises, then becomes a new version.
+        # A revision checks the hash of the app it revises, then rewrites it in place.
         current = ctx.workspace.get_metadata().files.get(filename)
         if current is None:
             raise ValueError(f"files/{filename} does not exist; create a new app with filename instead")
@@ -350,9 +341,6 @@ def _save_app(ctx: SkillContext, encoded: bytes, filename: str, media_type: str,
             raise ValueError("This workspace file is protected; create a new app with filename instead")
         if current.content_hash != expected_hash:
             raise ValueError("File changed; read it again before revising it")
-        target = app_revision_target(filename, ctx)
-        if target != filename:
-            filename, expected_hash = target, None
     try:
         metadata = ctx.workspace.save_workspace_file(
             encoded, filename, media_type, display_name=title, agent_managed=True,
@@ -360,7 +348,6 @@ def _save_app(ctx: SkillContext, encoded: bytes, filename: str, media_type: str,
         )
     except FileNotFoundError as error:
         raise ValueError(f"files/{filename} does not exist; create a new app with filename instead") from error
-    record_app_written(metadata.name, ctx)
     try:
         from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine
         ctx.payload["workspace_inputs"] = WorkspaceInputEngine(
@@ -404,15 +391,12 @@ class HtmlAppSkill:
             yield {"type": "error", "message": message, "message_code": "agent.parseActionFailed"}
             return f"[{'APP' if react else 'HTML APP'} NOT {'UPDATED' if updating else 'CREATED'}] {error}"
 
-        versioned = updating and file["path"] != spec.get("path")
         record_run_artifact(ctx, "file", file["path"], file.get("display_name") or file["name"])
-        yield {"type": "action", "action": action, "file": file, "updated": updating and not versioned,
+        yield {"type": "action", "action": action, "file": file, "updated": updating,
                **({"replaces": replaces} if replaces else {})}
         return json.dumps({
-            "status": "versioned" if versioned else "updated" if updating else "delivered",
-            "message": (f"The revision was saved as a new version, {file['path']}, and opened on the canvas; "
-                        f"{spec.get('path')} is unchanged. Revise {file['path']} from now on.") if versioned
-                       else f"The app was {'updated' if updating else 'saved'} and opened on the canvas.",
+            "status": "updated" if updating else "delivered",
+            "message": f"The app was {'updated' if updating else 'saved'} and opened on the canvas.",
             **{key: file[key] for key in ("name", "path", "display_name", "content_hash")},
             "tables": tables,
             "warnings": warnings,
@@ -436,8 +420,10 @@ class HtmlAppSkill:
             raise ValueError("code must not contain null bytes")
         validate_react_app(code)
         tables = _declared_tables(spec, ctx)
+        sources = _declared_sources(spec, ctx)
         title = title.strip()
-        encoded = stamp_react_manifest(code, {"version": 2, "title": title, "tables": tables}).encode("utf-8")
+        encoded = stamp_react_manifest(code, {"version": 2, "title": title, "tables": tables,
+                                              **({"sources": sources} if sources else {})}).encode("utf-8")
         if len(encoded) > MAX_APP_BYTES:
             raise ValueError(
                 f"The app is {len(encoded):,} bytes; keep it under {MAX_APP_BYTES:,} bytes and read data with useQuery instead of embedding it"
@@ -457,8 +443,9 @@ class HtmlAppSkill:
         if "\x00" in html:
             raise ValueError("html must not contain null bytes")
         tables = _declared_tables(spec, ctx)
+        sources = _declared_sources(spec, ctx)
         title = title.strip()
-        document = inject_manifest(html, build_manifest(title, tables))
+        document = inject_manifest(html, build_manifest(title, tables, sources))
         encoded = document.encode("utf-8")
         if len(encoded) > MAX_HTML_BYTES:
             raise ValueError(

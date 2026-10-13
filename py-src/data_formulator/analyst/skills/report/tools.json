@@ -10,7 +10,7 @@
           "chart_ids": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "List of chart IDs from [AVAILABLE CHARTS] to inspect."
+            "description": "List of chart IDs to inspect (session/charts/<id>.json in the index)."
           }
         },
         "required": ["chart_ids"]
@@ -31,7 +31,7 @@
           },
           "report": {
             "type": "string",
-            "description": "The full Markdown report text. Embed charts with ![caption](chart://chart_id) using IDs from [AVAILABLE CHARTS] or successful visualize results."
+            "description": "The full Markdown report text. Embed charts with ![caption](chart://chart_id) using IDs of session charts (session/charts/<id>.json) or successful visualize results."
           }
         },
         "required": ["report"]

@@ -38,7 +38,7 @@ def test_expose_azure_cli_adds_executable_directory_to_path(monkeypatch, tmp_pat
     assert os.environ["PATH"].split(os.pathsep)[0] == str(tmp_path)
 
 
-@pytest.mark.parametrize("platform", ["win32", "darwin", "linux"])
+@pytest.mark.parametrize("platform", ["win32", "linux"])
 def test_token_fetch_hides_only_windows_console(monkeypatch, platform):
     monkeypatch.setattr(azure_cli.sys, "platform", platform)
     monkeypatch.setattr(azure_cli, "find_azure_cli", lambda: "/trusted/path/az.cmd")
@@ -128,7 +128,7 @@ def test_missing_cli_has_actionable_error(monkeypatch):
         azure_cli.DesktopAzureCliCredential(None).get_token(azure_cli._COGNITIVE_SERVICES_SCOPE)
 
 
-@pytest.mark.parametrize("platform", ["win32", "darwin", "linux"])
+@pytest.mark.parametrize("platform", ["win32", "linux"])
 def test_account_status_hides_only_windows_console(monkeypatch, platform):
     import sys
 

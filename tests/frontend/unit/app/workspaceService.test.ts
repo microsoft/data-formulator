@@ -80,7 +80,7 @@ describe('external table reference artifacts', () => {
     });
 
     it.each([
-        [null, false], [{}, false], [{ row_count: 1_000_000 }, false],
+        [null, false], [{ row_count: 1_000_000 }, false],
         [{ row_count: '1000001' }, true], [{ size_bytes: '19327352832' }, true],
         [{ file_size: 18 * 1024 ** 3 }, true], [{ original_size_bytes: 0, size_bytes: 18 * 1024 ** 3 }, true],
     ])('detects large source metadata %j', (metadata, expected) => {

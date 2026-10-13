@@ -17,11 +17,9 @@ from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
 from . import automation, connections, sessions
 
 _TOOLS: dict[str, Callable[[dict[str, Any], SkillContext], dict[str, Any]]] = {
-    "list_connectors": lambda args, ctx: connections.list_connectors(),
-    "describe_connector": lambda args, ctx: connections.describe_connector(args),
+    "list_connectors": lambda args, ctx: connections.list_connectors(args),
     "read_connector_form": lambda args, ctx: connections.read_connector_form(ctx),
     "list_workflows": lambda args, ctx: automation.list_workflows(ctx),
-    "list_schedules": lambda args, ctx: automation.list_schedules(ctx),
     "list_sessions": sessions.list_sessions,
 }
 

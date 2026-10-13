@@ -3,7 +3,7 @@
     "type": "function",
     "function": {
       "name": "visualize",
-      "description": "Run a Python transform and publish its derived table and chart, returning an observation. Choose inputs using the workspace Data Access Paths. No separate create_data call is needed to prepare or publish chart data. Retain supporting columns in the output DataFrame.",
+      "description": "Run a Python transform and publish its derived table and chart, returning an observation. Choose inputs from the session (load more by following the connected_data skill). No separate create_data call is needed to prepare or publish chart data. Retain supporting columns in the output DataFrame.",
       "parameters": {
         "type": "object",
         "properties": {

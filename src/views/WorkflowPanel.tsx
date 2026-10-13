@@ -35,6 +35,8 @@ import { authoredFieldSemantics } from '../app/fieldSemantics';
 import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
 import { store } from '../app/store';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
+import { applySessionDeletion, type DeletionPlan } from '../app/sessionDeletion';
+import { applySessionUpdate } from '../app/sessionFiles';
 import { loadWorkspace, notifyWorkspaceFilesChanged, WorkspaceLoadSupersededError } from '../app/workspaceService';
 import { createConversationRootId, createDictTable, computeInsightKey, DictTable, FieldItem, TextTurn, ClarificationResponse } from '../components/ComponentType';
 import { MarkdownEditor } from '../components/MarkdownEditor';
@@ -80,6 +82,9 @@ export interface Run {
     outputs?: { id: string; version?: string; type: string; step_id?: string; plan_revision?: number; tool?: string; stdout?: string; content?: any; input_sources?: { id: string; kind: 'data' | 'file'; display_name?: string }[] }[];
 }
 
+/** Tools whose output is a workspace file the run publishes; apps are files too. */
+const FILE_OUTPUT_TOOLS = ['create_file', 'edit_file', 'write_app', 'write_html_app'];
+
 function workflowOutputIds(run: Run): string[] {
     return [...new Set((run.outputs || []).flatMap(output => {
         if (output.type === 'report') return [`workflow-report-${run.id}`];
@@ -87,7 +92,7 @@ function workflowOutputIds(run: Run): string[] {
         if (output.type !== 'tool_result') return [];
         const metadata = JSON.parse(output.stdout || '{}');
         if (['create_data', 'update_data'].includes(output.tool || '') && metadata.table_name) return [`workflow-data-${run.id}-${metadata.table_name}`];
-        if (['create_file', 'edit_file'].includes(output.tool || '') && metadata.available_in_workspace && metadata.path?.startsWith('files/')) {
+        if (FILE_OUTPUT_TOOLS.includes(output.tool || '') && metadata.available_in_workspace && metadata.path?.startsWith('files/')) {
             return [`file-${metadata.path.slice('files/'.length)}`];
         }
         return [];
@@ -368,7 +373,22 @@ export async function publishWorkflowRun(run: Run, workspaceId: string, focus = 
             if (placed) {
                 store.dispatch(dfActions.addLoadedTableNode({ kind: 'loaded-table', id: nodeId, tableId: table.id, parentNodeId: placed, createdAt }));
             } else addImportedTable(nodeId, table.id);
-        } else if (output.type === 'tool_result' && ['create_file', 'edit_file'].includes(output.tool || '')) {
+        } else if (output.type === 'tool_result' && output.tool === 'edit_file' && JSON.parse(output.stdout || '{}').session_update) {
+            // A chart or report the run edited, applied as an analyst edit is (unless it changed meanwhile).
+            applySessionUpdate(JSON.parse(output.stdout || '{}').session_update, store.dispatch, () => store.getState());
+        } else if (output.type === 'tool_result' && output.tool === 'delete_items') {
+            const plan: DeletionPlan | undefined = JSON.parse(output.stdout || '{}').deleted;
+            if (plan) {
+                applySessionDeletion(plan, store.dispatch, () => store.getState());
+                if (plan.files?.length) notifyWorkspaceFilesChanged();
+            }
+        } else if (output.type === 'tool_result' && output.tool === 'move_file') {
+            const moved: { from?: string; to?: string } | undefined = JSON.parse(output.stdout || '{}').moved;
+            if (moved?.from?.startsWith('files/') && moved.to?.startsWith('files/')) {
+                store.dispatch(dfActions.renameFileNodes({ from: moved.from.slice('files/'.length), to: moved.to.slice('files/'.length) }));
+                notifyWorkspaceFilesChanged();
+            }
+        } else if (output.type === 'tool_result' && FILE_OUTPUT_TOOLS.includes(output.tool || '')) {
             const metadata = JSON.parse(output.stdout || '{}');
             if (!metadata.available_in_workspace || !metadata.path?.startsWith('files/')) continue;
             const path = metadata.path.slice('files/'.length);

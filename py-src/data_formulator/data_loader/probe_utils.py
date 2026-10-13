@@ -283,6 +283,9 @@ def _compile_where(filters: list[dict[str, Any]], dialect: SqlDialect,
                 skip(f"BETWEEN filter on {col!r} requires a [low, high] value")
         elif op == "ILIKE" and dialect.ilike == "lower_like":
             parts.append(f"LOWER({qcol}) LIKE LOWER({_contains_lit(val)})")
+        elif op == "ILIKE" and dialect == DUCKDB:
+            # DuckDB has no ILIKE for dates or numbers; a text match there means their text form.
+            parts.append(f"CAST({qcol} AS VARCHAR) ILIKE {_contains_lit(val)}")
         elif op == "ILIKE":
             parts.append(f"{qcol} ILIKE {_contains_lit(val)}")
         else:

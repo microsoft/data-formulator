@@ -50,6 +50,8 @@ export interface HtmlAppManifest {
     version: number;
     title: string;
     tables: string[];
+    /** Connected sources (session external reference ids) the app may query live. */
+    sources?: string[];
 }
 
 /** Design tokens exposed to apps as `--df-*` CSS variables and `DF.theme`. */
@@ -98,10 +100,11 @@ export function parseAppManifest(html: string): HtmlAppManifest {
     try {
         const parsed = JSON.parse(node.textContent || '{}');
         if (!isRecord(parsed)) return empty;
-        const tables = Array.isArray(parsed.tables)
-            ? Array.from(new Set(parsed.tables.filter((table): table is string => typeof table === 'string' && table.length > 0)))
+        const names = (value: unknown): string[] => Array.isArray(value)
+            ? Array.from(new Set(value.filter((item): item is string => typeof item === 'string' && item.length > 0)))
             : [];
-        return { version: 1, title: typeof parsed.title === 'string' ? parsed.title : '', tables };
+        const sources = names(parsed.sources);
+        return { version: 1, title: typeof parsed.title === 'string' ? parsed.title : '', tables: names(parsed.tables), ...(sources.length ? { sources } : {}) };
     } catch {
         return empty;
     }

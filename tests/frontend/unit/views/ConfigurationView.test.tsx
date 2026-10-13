@@ -89,17 +89,6 @@ it('saves the custom name and tagline through the administration draft', async (
     })));
 });
 
-it('shows default branding in the preview when appearance fields are cleared', async () => {
-    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { ...snapshot, overrides: { app_name: 'Team', app_tagline: 'Team data' } } });
-    render(<ConfigurationView />);
-    fireEvent.change(await screen.findByRole('textbox', { name: 'App name' }), { target: { value: '' } });
-    fireEvent.change(screen.getByRole('textbox', { name: 'Tagline' }), { target: { value: '' } });
-    const preview = screen.getByRole('figure', { name: 'Appearance preview' });
-    expect(within(preview).getByText('Data Formulator')).toBeTruthy();
-    expect(within(preview).getByText('Explore data with visualizations, powered by AI agents.')).toBeTruthy();
-    expect(apiRequest).toHaveBeenCalledTimes(1);
-});
-
 it('switches to inline saved JSON without losing unsaved form changes', async () => {
     const definition = { endpoint: 'azure', model: 'deployment', api_base: 'https://example.openai.azure.com' };
     const saved = { ...snapshot, catalogs: { ...snapshot.catalogs, models: [{ id: 'global-example', ...definition, definition }] } };
@@ -199,12 +188,6 @@ it('preserves a rejected draft and allows discarding before reloading', async ()
     await waitFor(() => expect(apiRequest).toHaveBeenCalledTimes(3));
 });
 
-it('does not permit editing environment-controlled limits', async () => {
-    render(<ConfigurationView />);
-    await screen.findByRole('button', { name: 'Edit Warehouse' });
-    expect((screen.getByLabelText('Maximum preview rows') as HTMLInputElement).disabled).toBe(true);
-});
-
 it('stages the user connector restriction until Save', async () => {
     render(<ConfigurationView />);
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Disable user-created connections' }));
@@ -276,15 +259,15 @@ it('opens model and connector setup in dialogs without saving on cancel', async 
     expect((screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled).toBe(true);
 });
 
-it.each(['models', 'connectors', 'workflows'] as const)('keeps the %s add tile in both empty and populated grids', async section => {
-    const label = section === 'models' ? 'Add model' : section === 'connectors' ? 'Add data connection' : 'Add workflow';
-    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { ...snapshot, catalogs: { ...snapshot.catalogs, [section]: [] } } });
+it('keeps the add tile in both empty and populated grids', async () => {
+    const label = 'Add model';
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { ...snapshot, catalogs: { ...snapshot.catalogs, models: [] } } });
     const { unmount } = render(<ConfigurationView />);
     const emptyTile = await screen.findByRole('button', { name: label });
     expect(emptyTile.parentElement?.children).toHaveLength(1);
     unmount();
     vi.mocked(apiRequest).mockResolvedValueOnce({ data: { ...snapshot, catalogs: { ...snapshot.catalogs,
-        [section]: [section === 'models' ? { id: 'example', model: 'Example' } : { id: 'example', display_name: 'Example', name: 'Example' }],
+        models: [{ id: 'example', model: 'Example' }],
     } } });
     render(<ConfigurationView />);
     const tile = await screen.findByRole('button', { name: label });

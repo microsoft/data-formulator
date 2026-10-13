@@ -33,11 +33,19 @@ def list_workflows(ctx: SkillContext) -> dict[str, Any]:
     if error := workflows_unavailable():
         return {"error": error}
     items = _workflow_store(ctx).list_all()
+    scheduling = list_schedules(ctx)
+    schedules = scheduling.pop("schedules", [])
+    paths = {item["path"] for item in items}
+    workflows = []
+    for item in items:
+        workflow = {key: item[key] for key in ("path", "name", "overview", "origin", "parameters", "error") if key in item}
+        workflow["schedules"] = [schedule for schedule in schedules if schedule["workflow"] == item["path"]]
+        workflows.append(workflow)
+    orphaned = [schedule for schedule in schedules if schedule["workflow"] not in paths]
     return {
-        "workflows": [
-            {key: item[key] for key in ("path", "name", "overview", "origin", "parameters", "error") if key in item}
-            for item in items
-        ],
+        "workflows": workflows,
+        **({"schedules_without_workflow": orphaned} if orphaned else {}),
+        "scheduling": scheduling,
         "note": "Schedules and runs reference a workflow by its path. Built-in examples use demo/ paths.",
     }
 
@@ -219,7 +227,7 @@ def propose_schedule(spec: dict[str, Any], ctx: SkillContext) -> Generator[Event
     if schedule_id:
         existing = next((item for item in schedule_store().list(owner) if item["id"] == schedule_id), None)
         if existing is None:
-            return f"Schedule {schedule_id!r} was not found. Call list_schedules for current IDs."
+            return f"Schedule {schedule_id!r} was not found. Call list_workflows for current schedule IDs."
         config = dict(existing["config"])
         target = {"id": schedule_id, "name": existing["config"].get("name") or schedule_id}
     config.update(patch)

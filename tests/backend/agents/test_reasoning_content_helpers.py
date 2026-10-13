@@ -81,19 +81,6 @@ class TestAttachReasoningContent:
 # ---------------------------------------------------------------------------
 
 class TestAccumulateReasoningContent:
-    def test_first_chunk(self):
-        result = accumulate_reasoning_content(None, _FakeDelta(reasoning_content="a"))
-        assert result == "a"
-
-    def test_subsequent_chunks(self):
-        acc = "ab"
-        result = accumulate_reasoning_content(acc, _FakeDelta(reasoning_content="c"))
-        assert result == "abc"
-
-    def test_no_attr(self):
-        result = accumulate_reasoning_content(None, _FakeDelta())
-        assert result is None
-
     def test_no_attr_preserves_accumulator(self):
         result = accumulate_reasoning_content("existing", _FakeDelta())
         assert result == "existing"

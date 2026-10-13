@@ -15,6 +15,8 @@ beautifulsoup4
 scikit-learn
 pyyaml
 jsonschema>=4.18
+tree-sitter>=0.23
+tree-sitter-typescript>=0.23
 pyarrow>=13.0.0
 xlrd
 openpyxl>=3.1.0

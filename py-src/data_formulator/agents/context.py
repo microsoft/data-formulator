@@ -1,31 +1,25 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-"""Shared context builders for agent prompts.
-
-Extracted from DataAgent so that both DataAgent and InteractiveExploreAgent
-can construct tiered context (primary/other tables, focused thread,
-peripheral threads) from the same code.
-"""
+"""Shared context helpers for agents: workspace metadata lookups, source inspection,
+and catalog metadata. The analyst's view of the session is the session layer
+(analyst/session_layer, design-docs/61)."""
 
 import json
 import logging
 from typing import Any
 
 from data_formulator.agents.agent_utils import (
-    build_catalog_metadata_lookups,
-    format_dataframe_sample_with_budget,
     generate_data_summary,
-    get_field_summary,
     _format_import_options,
 )
-from data_formulator.datalake.parquet_utils import normalize_dtype_to_app_type
 from data_formulator.data_operations.discovery import ensure_no_auth_catalogs_cached
 
 logger = logging.getLogger(__name__)
 
 TABLE_SAMPLE_MAX_ROWS = 5
 TABLE_SAMPLE_CHAR_LIMIT = 1000
+
 
 
 def _get_workspace_metadata_lookups(workspace: Any) -> tuple[dict[str, str], dict[str, dict[str, str]], dict[str, str]]:
@@ -52,255 +46,6 @@ def _get_workspace_metadata_lookups(workspace: Any) -> tuple[dict[str, str], dic
     except Exception:
         logger.debug("Could not read workspace metadata for agent context", exc_info=True)
     return table_descs, col_descs, import_opts
-
-
-def build_focused_thread_context(focused_thread: list[dict[str, Any]]) -> str:
-    """Build Tier 2: detailed focused thread context.
-
-    Each step includes user question, agent reasoning, chart type +
-    encodings, created table metadata, and agent summary.
-    """
-    lines = ["[FOCUSED THREAD]"]
-    for i, step in enumerate(focused_thread, 1):
-        lines.append(f"\nStep {i}:")
-        if step.get("user_question"):
-            lines.append(f"  User: {step['user_question']}")
-        if step.get("agent_response"):
-            lines.append(f"  Analyst: {step['agent_response']}")
-        if step.get("user_answer"):
-            lines.append(f"  User reply: {step['user_answer']}")
-        if step.get("workflow"):
-            lines.append("  Workflow status and outputs: " + json.dumps(step["workflow"], ensure_ascii=False))
-        definition = step.get("workflow_definition")
-        if isinstance(definition, str) and definition:
-            lines.append("  Proposed workflow definition (conversation context, not execution state):\n" + definition[:48000])
-        operation = step.get("data_operation")
-        if operation:
-            options = ", ".join(operation.get("options") or [])
-            lines.append(
-                f"  Data discovery decision: {operation.get('reason', '')} "
-                f"(status: {operation.get('status', 'unknown')}; options: {options})"
-            )
-            if operation.get("selected_plan"):
-                lines.append(f"  Selected loading option: {operation['selected_plan']}")
-            if operation.get("result_tables"):
-                lines.append(
-                    "  Loaded workspace tables: "
-                    + ", ".join(operation["result_tables"])
-                )
-            if operation.get("result_references"):
-                lines.append("  Virtual workspace sources (not compute-ready; rows remain remote): "
-                             + json.dumps(operation["result_references"], ensure_ascii=False))
-        if step.get("agent_thinking"):
-            lines.append(f"  Agent thinking: {step['agent_thinking']}")
-        if step.get("display_instruction"):
-            lines.append(f"  Visualization: {step['display_instruction']}")
-        # Table info
-        table_name = step.get("table_name", "")
-        columns = step.get("columns", [])
-        row_count = step.get("row_count", 0)
-        if table_name:
-            col_str = ", ".join(columns[:15])
-            if len(columns) > 15:
-                col_str += f", ... ({len(columns)} total)"
-            lines.append(f"  Created: {table_name} ({row_count:,} rows: {col_str})")
-        if step.get("chart_id"):
-            lines.append(f"  Chart id: {step['chart_id']}")
-        artifact = step.get("created_artifact")
-        if isinstance(artifact, dict) and artifact.get("id"):
-            lines.append(f"  Created {artifact.get('kind') or 'artifact'}: {artifact['id']} ({artifact.get('name') or ''})")
-        # Chart info — skip empty or "Auto" (unresolved trigger stub)
-        chart_type = step.get("chart_type", "")
-        encodings = step.get("encodings", {})
-        if chart_type and chart_type != "Auto":
-            enc_str = ", ".join(f"{k}: {v}" for k, v in encodings.items() if v)
-            lines.append(f"  Chart: {chart_type}" + (f" ({enc_str})" if enc_str else ""))
-        elif encodings:
-            enc_str = ", ".join(f"{k}: {v}" for k, v in encodings.items() if v)
-            if enc_str:
-                lines.append(f"  Encodings: {enc_str}")
-        if step.get("agent_summary"):
-            lines.append(f"  Summary: {step['agent_summary']}")
-    return "\n".join(lines)
-
-
-def build_peripheral_thread_context(other_threads: list[dict[str, Any]]) -> str:
-    """Build Tier 3: minimal peripheral thread context.
-
-    One line per step, just display_instruction + chart type.
-    """
-    lines = ["[OTHER THREADS]"]
-    for thread in other_threads:
-        source = thread.get("source_table", "")
-        leaf = thread.get("leaf_table", "")
-        step_count = thread.get("step_count", 0)
-        steps = thread.get("steps", [])
-        lines.append(f"\nThread from {source} → {leaf} ({step_count} steps):")
-        for step_line in steps:
-            lines.append(f"  - {step_line}")
-    return "\n".join(lines)
-
-
-def _table_label(table: dict[str, Any]) -> str:
-    """``Table: <workspace id>``, plus the name the user sees when it differs."""
-    table_name = table["name"]
-    display_name = str(table.get("display_name") or "").strip()
-    if display_name and display_name != table_name:
-        return f'Table: {table_name} (shown to the user as "{display_name}")'
-    return f"Table: {table_name}"
-
-
-def _client_schema_section(table: dict[str, Any], label: str) -> str:
-    """Fall back to the client-sent schema when the workspace file can't be read."""
-    columns = [c for c in (table.get("columns") or []) if isinstance(c, dict) and c.get("name")]
-    if not columns:
-        return f"{label} (error reading schema)"
-    col_info = ", ".join(f"{c['name']}({c.get('type', 'unknown')})" for c in columns)
-    row_count = table.get("row_count")
-    rows_text = f", {row_count:,} rows" if isinstance(row_count, int) else ""
-    return (
-        f"{label} (schema reported by the app{rows_text}; "
-        "the workspace file could not be read just now)\n"
-        f"  Columns: {col_info}"
-    )
-
-
-def build_lightweight_table_context(
-    input_tables: list[dict[str, Any]],
-    workspace: Any,
-    primary_tables: list[str] | None = None,
-) -> str:
-    """Build compact table context with schema, metadata, value samples, and rows.
-
-    When ``primary_tables`` is provided, tables are grouped into
-    [PRIMARY ANALYSIS INPUTS] and [OTHER ANALYSIS INPUTS] sections.
-    """
-    table_desc_cache, col_desc_cache, import_opts_cache = _get_workspace_metadata_lookups(workspace)
-    table_extra_cache: dict[str, list[str]] = {}
-    col_meta_cache: dict[str, dict[str, dict]] = {}
-    catalog_table_descs, catalog_col_descs, catalog_extras, catalog_col_metas = build_catalog_metadata_lookups(
-        workspace,
-    )
-    table_desc_cache.update(catalog_table_descs)
-    for table_name, descs in catalog_col_descs.items():
-        col_desc_cache.setdefault(table_name, {}).update(descs)
-    table_extra_cache.update(catalog_extras)
-    col_meta_cache.update(catalog_col_metas)
-
-    def _table_section(table: dict[str, Any]) -> str:
-        table_name = table['name']
-        label = _table_label(table)
-        try:
-            df = workspace.read_data_as_df(table_name)
-            data_file_path = workspace.get_relative_data_file_path(table_name)
-            num_rows = len(df)
-            description = table_desc_cache.get(table_name, "")
-            column_descriptions = col_desc_cache.get(table_name, {})
-
-            col_metas = col_meta_cache.get(table_name, {})
-            col_info = []
-            for col in df.columns:
-                dtype = normalize_dtype_to_app_type(str(df[col].dtype))
-                vn = col_metas.get(col, {}).get("verbose_name")
-                col_text = f"{col}"
-                if vn:
-                    col_text += f"[{vn}]"
-                col_text += f"({dtype})"
-                if column_descriptions.get(col):
-                    col_text += f": {column_descriptions[col]}"
-                col_info.append(col_text)
-
-            lines = [
-                f"{label} (file: {data_file_path}, {num_rows:,} rows)",
-                f"  Columns: {', '.join(col_info)}",
-            ]
-
-            if description:
-                lines.append(f"  Description: {description}")
-            load_provenance = import_opts_cache.get(table_name, "")
-            if load_provenance:
-                lines.append(f"  {load_provenance}")
-            extra_lines = table_extra_cache.get(table_name, [])
-            for extra in extra_lines:
-                lines.append(f"  {extra}")
-
-            if len(df.columns) > 0:
-                field_lines = [
-                    "    " + get_field_summary(
-                        col,
-                        df,
-                        field_sample_size=7,
-                        max_val_chars=80,
-                        column_description=column_descriptions.get(col),
-                        verbose_name=col_metas.get(col, {}).get("verbose_name"),
-                        expression=col_metas.get(col, {}).get("expression"),
-                    )
-                    for col in df.columns
-                ]
-                lines.append("  Field value samples:\n" + "\n".join(field_lines))
-
-            # Sample rows so LLM can see actual data without calling tools
-            try:
-                sample, displayed_rows, sample_truncated = format_dataframe_sample_with_budget(
-                    df,
-                    max_rows=TABLE_SAMPLE_MAX_ROWS,
-                    max_chars=TABLE_SAMPLE_CHAR_LIMIT,
-                    index=False,
-                    max_colwidth=40,
-                )
-                if sample:
-                    suffix = " (truncated to fit context budget)" if sample_truncated else ""
-                    lines.append(f"  Sample (first {displayed_rows} rows{suffix}):\n{sample}")
-            except Exception:
-                pass
-
-            # Basic numeric stats to reduce exploratory tool calls
-            numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
-            if numeric_cols:
-                stats_parts = []
-                for col in numeric_cols[:8]:
-                    stats_parts.append(
-                        f"    {col}: min={df[col].min()}, max={df[col].max()}, "
-                        f"mean={df[col].mean():.2f}"
-                    )
-                lines.append("  Numeric stats:\n" + "\n".join(stats_parts))
-
-            return "\n".join(lines)
-        except Exception as e:
-            logger.warning("Could not read table %s: %s", table_name, type(e).__name__)
-            from data_formulator.error_handler import collect_stream_warning
-            collect_stream_warning(
-                f"Table '{table_name}' schema unavailable",
-                detail=str(e),
-                message_code="TABLE_SCHEMA_FAILED",
-            )
-            return _client_schema_section(table, label)
-
-    load_hint = (
-        "\nThe analysis input tables above are already materialized and are the "
-        "only data you can read directly. Anything not listed here has not been loaded "
-        "yet: find it in a connected source and propose loading it before relying on it.\n"
-        "To load a table in code: pd.read_parquet('file.parquet') or "
-        "duckdb.sql(\"SELECT * FROM read_parquet('file.parquet')\")\n"
-        "Use the exact filename shown above."
-    )
-
-    if primary_tables:
-        primary_names = set(primary_tables)
-        primary_tables_list = [t for t in input_tables if t['name'] in primary_names]
-        other_tables_list = [t for t in input_tables if t['name'] not in primary_names]
-
-        sections = []
-        if primary_tables_list:
-            primary_parts = [_table_section(t) for t in primary_tables_list]
-            sections.append("[PRIMARY ANALYSIS INPUTS]\n\n" + "\n\n".join(primary_parts))
-        if other_tables_list:
-            other_parts = [_table_section(t) for t in other_tables_list]
-            sections.append("[OTHER ANALYSIS INPUTS]\n\n" + "\n\n".join(other_parts))
-        return "\n\n".join(sections) + "\n" + load_hint
-
-    sections = [_table_section(table) for table in input_tables]
-    return "\n\n".join(sections) + "\n" + load_hint
 
 
 def handle_inspect_source_data(

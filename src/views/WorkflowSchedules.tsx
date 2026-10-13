@@ -272,7 +272,8 @@ export const WorkflowSchedules: React.FC<{ items: WorkflowLibraryItem[]; onClose
             muted: !schedule.config.enabled }))}
         onSubmit={event => {
             event.preventDefault();
-            void act(async () => select(await persist(config)), t('schedule.saveFailed'));
+            // A saved schedule is done; the panel behind lists it. A failed save keeps the form open.
+            void act(async () => { await saveSchedule(config, identifier || undefined); onClose(); }, t('schedule.saveFailed'));
         }}
         footer={available && <>
             {current && <Button color="error" disabled={saving} sx={{ mr: 'auto' }} onClick={() => setConfirmDelete(true)}>{t('app.delete')}</Button>}

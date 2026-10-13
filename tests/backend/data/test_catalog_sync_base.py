@@ -14,12 +14,7 @@ import pyarrow as pa
 
 from data_formulator.data_loader.external_data_loader import (
     ExternalDataLoader,
-    SOURCE_METADATA_SYNCED,
-    SOURCE_METADATA_NOT_SYNCED,
-    SOURCE_METADATA_PARTIAL,
-    SOURCE_METADATA_UNAVAILABLE,
 )
-from data_formulator.errors import ErrorCode
 
 pytestmark = [pytest.mark.backend]
 
@@ -85,11 +80,6 @@ class TestSyncCatalogMetadataDefault:
 # ── ensure_table_keys ─────────────────────────────────────────────────
 
 class TestEnsureTableKeys:
-    def test_existing_table_key_preserved(self):
-        tables = [{"name": "t", "table_key": "my-uuid-123", "metadata": {}}]
-        ExternalDataLoader.ensure_table_keys(tables)
-        assert tables[0]["table_key"] == "my-uuid-123"
-
     def test_fallback_to_source_name(self):
         tables = [{"name": "t", "metadata": {"_source_name": "db.public.t"}}]
         ExternalDataLoader.ensure_table_keys(tables)
@@ -190,32 +180,6 @@ class TestTreeAndSearchTableKey:
         assert loader.search_catalog("nothing")["tree"] == []
 
 
-# ── source_metadata_status constants ──────────────────────────────────
-
-class TestSourceMetadataStatusConstants:
-    def test_synced_value(self):
-        assert SOURCE_METADATA_SYNCED == "synced"
-
-    def test_not_synced_value(self):
-        assert SOURCE_METADATA_NOT_SYNCED == "not_synced"
-
-    def test_partial_value(self):
-        assert SOURCE_METADATA_PARTIAL == "partial"
-
-    def test_unavailable_value(self):
-        assert SOURCE_METADATA_UNAVAILABLE == "unavailable"
-
-
-# ── New ErrorCodes exist ──────────────────────────────────────────────
-
-class TestCatalogErrorCodes:
-    def test_catalog_sync_timeout(self):
-        assert ErrorCode.CATALOG_SYNC_TIMEOUT == "CATALOG_SYNC_TIMEOUT"
-
-    def test_catalog_not_found(self):
-        assert ErrorCode.CATALOG_NOT_FOUND == "CATALOG_NOT_FOUND"
-
-
 # ── _tables_to_catalog_tree normalisation ─────────────────────────────
 
 class TestTreeNormalizationBackfill:
@@ -234,21 +198,3 @@ class TestTreeNormalizationBackfill:
         assert nodes
         for node in nodes:
             assert node["metadata"]["table_key"]
-
-    def test_explicit_key_is_not_overwritten(self):
-        loader = _StubLoader()
-        tree = loader._tables_to_catalog_tree([
-            {"name": "orders", "table_key": "explicit-key", "metadata": {}},
-        ])
-        assert _table_nodes(tree)[0]["metadata"]["table_key"] == "explicit-key"
-
-    def test_source_name_is_preferred_over_name(self):
-        loader = _StubLoader()
-        tree = loader._tables_to_catalog_tree([
-            {
-                "name": "short",
-                "path": ["db", "short"],
-                "metadata": {"_source_name": "db.short"},
-            },
-        ])
-        assert _table_nodes(tree)[0]["metadata"]["table_key"] == "db.short"

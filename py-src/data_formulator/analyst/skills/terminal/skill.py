@@ -271,6 +271,11 @@ def _run_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir: Pa
                             "http_proxy", "https_proxy", "all_proxy", "no_proxy",
                             "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
                             "NODE_EXTRA_CA_CERTS"}}
+    # Packages installed into DF_SITE_PACKAGES with Data Formulator's Python are importable in its sandbox.
+    from data_formulator.sandbox.session_imports import PACKAGES_DIR
+    environment["DF_SITE_PACKAGES"] = str(scratch_dir / PACKAGES_DIR)
+    if not getattr(sys, "frozen", False):
+        environment["DF_PYTHON"] = sys.executable
     environment.update({"DF_SCRATCH_DIR": str(scratch_dir), "DF_RUNTIME_DIR": str(runtime_dir.resolve()),
                         "TMPDIR": str(temporary_dir),
                         "TMP": str(temporary_dir), "TEMP": str(temporary_dir),

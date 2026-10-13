@@ -380,6 +380,14 @@ export function isWorkspaceReadOnly(workspace: { readOnly?: boolean } | null | u
     return workspace?.readOnly === true;
 }
 
+/** Whether a workspace file name is invalid; names may sit in folders (`notes/plan.md`), up to 4 levels. */
+export function isInvalidWorkspaceFileName(name: string): boolean {
+    const segments = name.split('/');
+    return !name || name.includes('\\') || name.length > 255 || segments.length > 4
+        || segments.some(segment => !segment || segment !== segment.trim() || segment === '.' || segment === '..'
+            || segment.startsWith('.write-') || Array.from(segment).some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127));
+}
+
 export async function listWorkspaceFiles(): Promise<WorkspaceFile[]> {
     const { data } = await apiRequest<{ files: WorkspaceFile[] }>('/api/workspace/files');
     return data.files;

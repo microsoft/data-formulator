@@ -4,18 +4,6 @@ from data_formulator.data_loader.mysql_data_loader import MySQLDataLoader
 from data_formulator.data_loader.mssql_data_loader import MSSQLDataLoader
 
 
-def test_mysql_declares_password_auth_path() -> None:
-    assert MySQLDataLoader.auth_paths() == [{
-        "id": "password",
-        "label": "Username and password",
-        "description": "Connect with a MySQL user. Password may be blank.",
-        "fields": ["user", "password"],
-        "required_fields": ["user"],
-        "kind": "credentials",
-        "default": True,
-    }]
-
-
 def test_mysql_validation_materializes_defaults() -> None:
     params: dict = {}
 

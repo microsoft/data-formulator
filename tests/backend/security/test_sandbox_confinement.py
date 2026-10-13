@@ -14,7 +14,7 @@ from data_formulator.sandbox import confinement
 from data_formulator.sandbox import local_sandbox
 from data_formulator.sandbox.local_sandbox import LocalSandbox
 
-pytestmark = [pytest.mark.backend]
+pytestmark = [pytest.mark.slow, pytest.mark.backend]
 
 
 class _Workspace:

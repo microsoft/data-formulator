@@ -37,3 +37,7 @@ declare module "virtual:df-react-runtime" {
     const source: string;
     export default source;
 }
+declare module "virtual:df-react-runtime/*" {
+    const source: string;
+    export default source;
+}

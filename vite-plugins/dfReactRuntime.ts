@@ -5,6 +5,9 @@
  * Serves `virtual:df-react-runtime`: the sandboxed React app runtime
  * (src/app/reactApp/runtime) bundled by esbuild into one IIFE script and exported
  * as a string, so the host can inline it into the app frame (like vega.min.js?raw).
+ *
+ * Optional app modules are separate virtual modules, `virtual:df-react-runtime/<name>`
+ * (d3, lodash, geo), so the host loads and injects them only for apps that use them.
  */
 
 import path from 'path';
@@ -13,6 +16,8 @@ import type { Plugin } from 'vite';
 
 const VIRTUAL_ID = 'virtual:df-react-runtime';
 const RESOLVED_ID = `\0${VIRTUAL_ID}`;
+/** Optional module bundles by virtual-id suffix. */
+const OPTIONAL_ENTRIES: Record<string, string> = { d3: 'd3.ts', lodash: 'lodash.ts', geo: 'geo.ts' };
 
 export function dfReactRuntime(options: { root: string; flintChartLocal?: string }): Plugin {
     let production = false;
@@ -22,12 +27,18 @@ export function dfReactRuntime(options: { root: string; flintChartLocal?: string
             production = config.command === 'build' && config.mode === 'production';
         },
         resolveId(id) {
-            return id === VIRTUAL_ID ? RESOLVED_ID : undefined;
+            if (id === VIRTUAL_ID) return RESOLVED_ID;
+            const optional = id.startsWith(`${VIRTUAL_ID}/`) ? id.slice(VIRTUAL_ID.length + 1) : '';
+            return optional && OPTIONAL_ENTRIES[optional] ? `\0${id}` : undefined;
         },
         async load(id) {
-            if (id !== RESOLVED_ID) return undefined;
+            const optional = id.startsWith(`${RESOLVED_ID}/`) ? id.slice(RESOLVED_ID.length + 1) : '';
+            if (id !== RESOLVED_ID && !OPTIONAL_ENTRIES[optional]) return undefined;
+            const entry = optional
+                ? path.join(options.root, 'src/app/reactApp/runtime/optional', OPTIONAL_ENTRIES[optional])
+                : path.join(options.root, 'src/app/reactApp/runtime/index.tsx');
             const result = await build({
-                entryPoints: [path.join(options.root, 'src/app/reactApp/runtime/index.tsx')],
+                entryPoints: [entry],
                 bundle: true,
                 write: false,
                 format: 'iife',

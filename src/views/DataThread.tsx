@@ -1024,9 +1024,20 @@ let SingleThreadGroupView: FC<{
             return;
         }
         if (!turn.content && !isWidget) {
+            const banner = ThinkingStepsBanner(turn.progressSteps || [], { px: 1, py: 0.5 }, false);
+            // A step a stopped or failed run left behind can be removed once nothing follows it.
             if (turn.progressSteps?.length) timelineItems.push({
                 key: `textturn-${turn.id}`, type: 'trigger', highlighted,
-                element: ThinkingStepsBanner(turn.progressSteps, { px: 1, py: 0.5 }, false),
+                element: threadGraph.childrenOf(turn.id).length ? banner : <Box sx={{ position: 'relative', minWidth: 0,
+                    '& [data-step-delete]': { opacity: 0, transition: transition.fast },
+                    '&:hover [data-step-delete], &:focus-within [data-step-delete]': { opacity: 1 } }}>
+                    {banner}
+                    <Box data-step-delete sx={{ position: 'absolute', top: 2, right: 2, borderRadius: '50%',
+                        bgcolor: alpha(theme.palette.background.paper, 0.75), '& .MuiIconButton-root': { p: '2px' }, '& svg': { fontSize: 14 } }}>
+                        <ArtifactDeleteButton label={t('dataThread.deleteStep', { defaultValue: 'Delete step' })}
+                            onClick={() => dispatch(dfActions.removeTextTurn(turn.id))} />
+                    </Box>
+                </Box>,
             });
             return;
         }
@@ -1040,15 +1051,21 @@ let SingleThreadGroupView: FC<{
             // A report being written shows its own live card.
             const parent = threadGraph.parentOf(draft.id);
             if (generatedReports.some(report => report.id === parent && report.status === 'generating')) return;
-            const planLines = draft.derive.progressSteps?.length ? draft.derive.progressSteps
-                : (draft.derive.runningPlan || t('dataThread.thinking')).split('\x1E').filter((line: string) => line.trim());
-            // A call already spinning on the message before the draft is not animated twice.
-            const lastStep = planLines.at(-1);
+            const steps: (ProgressStep | string)[] = draft.derive.progressSteps?.length ? draft.derive.progressSteps
+                : (draft.derive.runningPlan || '').split('\x1E').filter((line: string) => line.trim());
+            // Steps and calls the message before the draft already lists are not repeated here.
             const parentTurn = turnById.get(parent || '');
-            const shownOnParent = typeof lastStep !== 'string' && !!lastStep?.executionId
-                && [...(parentTurn?.executions || []), ...(parentTurn?.codeExecutions || [])]
-                    .some(call => call.id === lastStep.executionId && call.status === 'running');
-            const animated = status === 'running' && !shownOnParent;
+            const parentCalls = [...(parentTurn?.executions || []), ...(parentTurn?.codeExecutions || [])];
+            const parentStepIds = new Set((parentTurn?.progressSteps || []).map(step => step.id));
+            const shownOnParent = (step: ProgressStep | string) => typeof step !== 'string' && (parentStepIds.has(step.id)
+                || (!!step.executionId && parentCalls.some(call => call.id === step.executionId)));
+            const planLines = steps.filter(step => !shownOnParent(step));
+            if (!planLines.length) {
+                // A call still spinning on that message already shows the run is working.
+                if (parentCalls.some(call => call.status === 'running')) return;
+                planLines.push(t('dataThread.thinking'));
+            }
+            const animated = status === 'running';
             timelineItems.push({
                 key: `agent-thinking-${draft.id}`, type: 'trigger', highlighted, isRunning: animated,
                 element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }, animated),
@@ -1244,22 +1261,27 @@ let SingleThreadGroupView: FC<{
     // A branch starts with a pointer to where it split off.
     if (thread.branchFromId && !isConversationRootId(thread.branchFromId)) {
         const from = thread.branchFromId;
-        const fromItem = threadGraph.nearestItem(from);
         const fromTurn = turnById.get(from);
+        const fromReport = generatedReports.find(report => report.id === from);
+        const fromFile = fileNodes.find(file => file.id === from);
+        // Only a table branch point shows the table's chip; a report or app names itself.
+        const fromTableId = !fromTurn && !fromReport && !fromFile ? threadGraph.tableOf(from) : undefined;
         const label = fromTurn
             ? (fromTurn.prompt || fromTurn.content || '').replace(/\s+/g, ' ').trim()
-            : tableById.get(threadGraph.tableOf(from) || '')?.displayId || fileNodes.find(file => file.id === from)?.displayName
-                || generatedReports.find(report => report.id === from)?.title || from;
+            : fromReport?.title || fromFile?.displayName || tableById.get(fromTableId || '')?.displayId || from;
+        const focusFrom = fromTurn ? { type: 'text' as const, textId: from }
+            : fromReport ? { type: 'report' as const, reportId: from }
+            : fromFile ? { type: 'file' as const, fileName: fromFile.path }
+            : { type: 'reference' as const, referenceId: from };
         timelineItems.push({
             key: `branch-from-${thread.key}`, type: 'used-table', highlighted: isHL(from),
-            element: fromTurn || !fromItem || !tableById.has(threadGraph.tableOf(from) || '')
-                ? <Button size="small" color="inherit" onClick={() => dispatch(dfActions.setFocused(fromTurn
-                        ? { type: 'text', textId: from } : { type: 'reference', referenceId: from }))}
+            element: !fromTableId || !tableById.has(fromTableId)
+                ? <Button size="small" color="inherit" onClick={() => dispatch(dfActions.setFocused(focusFrom))}
                     sx={{ textTransform: 'none', fontSize: textVar.xs, color: 'text.secondary', minWidth: 0, maxWidth: '100%',
                         justifyContent: 'flex-start', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
                     {t('dataThread.branchedFrom', { defaultValue: 'Continues from: {{label}}', label })}
                 </Button>
-                : _buildRefChip(threadGraph.tableOf(from)!),
+                : _buildRefChip(fromTableId),
         });
     }
 

@@ -20,6 +20,7 @@ import { appConfig, bridge, errorMessage, reportError } from './bridge';
 import * as chart from './chart';
 import * as data from './data';
 import * as icons from './icons';
+import { optionalModule } from './optional/register';
 import { ErrorState } from './states';
 import * as ui from './ui';
 
@@ -27,7 +28,8 @@ export const MODULES: Record<string, unknown> = {
     'react': React,
     'react/jsx-runtime': ReactJsxRuntime,
     '@df/ui': ui,
-    '@df/data': { useQuery: data.useQuery, useDistinct: data.useDistinct, useTable: data.useTable },
+    '@df/data': { useQuery: data.useQuery, useDistinct: data.useDistinct, useTable: data.useTable,
+        useSql: data.useSql, useSourceQuery: data.useSourceQuery },
     '@df/chart': chart,
     '@df/format': {
         get format() { return bridge().format; },
@@ -38,17 +40,25 @@ export const MODULES: Record<string, unknown> = {
     '@mui/material': MUI,
 };
 
-export const ALLOWED_MODULES = Object.keys(MODULES);
+/** Modules in their own bundles, injected only into apps that import them (see optional/). */
+export const OPTIONAL_MODULES = ['d3', 'lodash', '@df/geo'];
+
+export const ALLOWED_MODULES = [...Object.keys(MODULES), ...OPTIONAL_MODULES];
 
 export function requireModule(name: string): unknown {
     if (Object.prototype.hasOwnProperty.call(MODULES, name)) return MODULES[name];
+    if (OPTIONAL_MODULES.includes(name)) {
+        const module = optionalModule(name);
+        if (module !== undefined) return module;
+        throw new Error(`"${name}" did not load in this app. Reload the app to try again.`);
+    }
     throw new Error(`Cannot import "${name}". Apps can import only: ${ALLOWED_MODULES.join(', ')}.`);
 }
 
 class ErrorBoundary extends React.Component<{ children?: React.ReactNode }, { error: string | null }> {
     state = { error: null as string | null };
     static getDerivedStateFromError(error: unknown) { return { error: errorMessage(error) }; }
-    componentDidCatch(error: unknown) { reportError(`App crashed: ${errorMessage(error)}`); }
+    componentDidCatch(error: unknown) { reportError(`App crashed: ${errorMessage(error)}`, true); }
     render() {
         if (this.state.error) return <MUI.Box sx={{ p: 2 }}><ErrorState error={this.state.error} /></MUI.Box>;
         return this.props.children;
@@ -75,7 +85,7 @@ export function mount(factory: (require: (name: string) => unknown, module: { ex
         App = module.exports.default ?? module.exports.App;
         if (!isComponent(App)) throw new Error('The app must `export default` a React component.');
     } catch (error) {
-        reportError(errorMessage(error));
+        reportError(errorMessage(error), true);
         App = () => <MUI.Box sx={{ p: 2 }}><ErrorState error={errorMessage(error)} /></MUI.Box>;
     }
     const AppComponent = App as React.ComponentType;

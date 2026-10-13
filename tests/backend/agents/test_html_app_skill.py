@@ -97,7 +97,7 @@ def test_write_html_app_saves_agent_managed_file_with_manifest(workspace) -> Non
 
 @pytest.mark.parametrize(("overrides", "message"), [
     ({"filename": "app.htm"}, "must end with .html"),
-    ({"filename": "nested/app.html"}, "without directories"),
+    ({"filename": "nested/../app.html"}, "visible file name"),
     ({"title": ""}, "title"),
     ({"title": "x" * 81}, "title"),
     ({"html": "   "}, "non-empty"),
@@ -205,7 +205,7 @@ def test_write_app_saves_react_app_with_manifest_header(workspace) -> None:
 
 @pytest.mark.parametrize(("overrides", "message"), [
     ({"filename": "sales.jsx"}, "must end with .app.jsx"),
-    ({"code": "import _ from 'lodash';\nexport default () => null;"}, "Cannot import lodash"),
+    ({"code": "import moment from 'moment';\nexport default () => null;"}, "Cannot import moment"),
     ({"code": "export default () => import('https://example.com/x.js');"}, "Cannot import https://example.com/x.js"),
     ({"code": "function App() { return null; }"}, "export default"),
     ({"code": "  "}, "complete app source"),
@@ -255,37 +255,24 @@ def _hash(workspace, name):
     return workspace.read_workspace_file(name)[0].content_hash
 
 
-def test_write_app_saves_a_rewrite_as_a_new_version_then_updates_it_within_the_run(workspace) -> None:
+def test_write_app_rewrites_an_app_in_place(workspace) -> None:
     workspace.write_parquet(pd.DataFrame({"region": ["a"], "units": [3]}), "units")
     _run(workspace, _react_spec(), action="write_app")
-    original = workspace.read_workspace_file("sales.app.jsx")[1]
     code = REACT_APP.replace("'sales'", "'units'").replace("amount", "units")
-    run = {"input_tables": [], "apps_written": set()}
     events, observation, _ = _run(workspace, {
         "path": "files/sales.app.jsx", "expected_content_hash": _hash(workspace, "sales.app.jsx"),
         "title": "Units explorer", "tables": ["units"], "code": code,
-    }, payload=run, action="write_app")
+    }, action="write_app")
 
-    # Editing an app makes a new app; the original stays as it was (design-docs/58, rule 8).
+    # Editing an app rewrites it under the same filename (design-docs/58, rule 8).
     assert [event["type"] for event in events] == ["action"]
-    assert events[0]["updated"] is False and events[0]["file"]["path"] == "files/sales_2.app.jsx"
+    assert events[0]["updated"] is True and events[0]["file"]["path"] == "files/sales.app.jsx"
     result = json.loads(observation)
-    assert result["status"] == "versioned" and result["path"] == "files/sales_2.app.jsx"
-    assert sorted(item.name for item in workspace.list_workspace_files()) == ["sales.app.jsx", "sales_2.app.jsx"]
-    assert workspace.read_workspace_file("sales.app.jsx")[1] == original
-    metadata, content = workspace.read_workspace_file("sales_2.app.jsx")
+    assert result["status"] == "updated" and result["path"] == "files/sales.app.jsx"
+    assert [item.name for item in workspace.list_workspace_files() if item.name.endswith(".app.jsx")] == ["sales.app.jsx"]
+    metadata, content = workspace.read_workspace_file("sales.app.jsx")
     assert metadata.display_name == "Units explorer"
     assert content.decode().startswith('// @df-app {"version": 2, "title": "Units explorer", "tables": ["units"]}\n')
-
-    # A later revision in the same run updates the version it made.
-    events, observation, _ = _run(workspace, {
-        "path": "files/sales_2.app.jsx", "expected_content_hash": _hash(workspace, "sales_2.app.jsx"),
-        "title": "Units by region", "tables": ["units"], "code": code,
-    }, payload=run, action="write_app")
-    assert events[0]["updated"] is True and events[0]["file"]["path"] == "files/sales_2.app.jsx"
-    assert json.loads(observation)["status"] == "updated"
-    assert sorted(item.name for item in workspace.list_workspace_files()) == ["sales.app.jsx", "sales_2.app.jsx"]
-    assert workspace.read_workspace_file("sales_2.app.jsx")[0].display_name == "Units by region"
 
 
 @pytest.mark.parametrize(("spec", "message"), [
@@ -294,7 +281,7 @@ def test_write_app_saves_a_rewrite_as_a_new_version_then_updates_it_within_the_r
     ({"filename": "other.app.jsx"}, "not both"),
     ({"path": "files/missing.app.jsx"}, "does not exist"),
     ({"path": "sales.app.jsx"}, "files/... path"),
-    ({"code": "import x from 'lodash';\nexport default () => null;"}, "Cannot import lodash"),
+    ({"code": "import x from 'moment';\nexport default () => null;"}, "Cannot import moment"),
 ])
 def test_write_app_rewrite_errors_keep_the_previous_version(workspace, spec, message) -> None:
     _run(workspace, _react_spec(), action="write_app")
@@ -331,7 +318,7 @@ def test_edit_file_validates_app_revisions(workspace) -> None:
     manifest_line = original.split("\n", 1)[0]
     for replacements, message in [
         ([{"old_text": manifest_line + "\n", "new_text": ""}], "first-line `// @df-app"),
-        ([{"old_text": "import { useState } from 'react';", "new_text": "import _ from 'lodash';"}], "Cannot import lodash"),
+        ([{"old_text": "import { useState } from 'react';", "new_text": "import moment from 'moment';"}], "Cannot import moment"),
         ([{"old_text": "export default function App", "new_text": "function App"}], "export default"),
         ([{"old_text": '"tables": ["sales"]', "new_text": '"tables": ["nope"]'}], "Unknown workspace tables: nope"),
     ]:
@@ -346,11 +333,12 @@ def test_edit_file_validates_app_revisions(workspace) -> None:
     ]).text)
     assert result["app"] is True and result["tables"] == ["sales"] and result["warnings"] == []
     assert result["display_name"] == "Regional sales"
-    # The edit is a new version of the app; the original is unchanged.
-    assert result["path"] == "files/sales_2.app.jsx"
-    assert workspace.read_workspace_file("sales.app.jsx")[1].decode() == original
-    metadata = workspace.read_workspace_file("sales_2.app.jsx")[0]
+    # The edit rewrites the app in place.
+    assert result["path"] == "files/sales.app.jsx"
+    assert [item.name for item in workspace.list_workspace_files()] == ["sales.app.jsx"]
+    metadata, content = workspace.read_workspace_file("sales.app.jsx")
     assert (metadata.media_type, metadata.display_name) == ("text/jsx", "Regional sales")
+    assert '<Page title="Regional sales">' in content.decode()
 
 
 def test_edit_file_keeps_html_app_manifest_and_ignores_plain_files(workspace) -> None:
@@ -376,31 +364,25 @@ def test_create_file_points_apps_to_write_app(workspace) -> None:
         WorkspaceSkill().handle_tool("create_file", {"filename": "x.app.jsx", "content": REACT_APP}, ctx)
 
 
-def test_input_inventory_marks_agent_editable_files(workspace) -> None:
-    from data_formulator.analyst.workspace_inputs import (
-        WorkspaceInputEngine, build_workspace_input_preview, render_workspace_input_context,
-    )
+def test_file_listing_marks_agent_editable_files(workspace) -> None:
+    from data_formulator.analyst.session_files import SessionFiles
     _run(workspace, _react_spec(), action="write_app")
     workspace.save_workspace_file(b"user notes", "notes.md")
-    manifest = WorkspaceInputEngine(workspace, []).manifest
-    text = render_workspace_input_context(manifest, build_workspace_input_preview(manifest, workspace), "")
-    app_line = next(line for line in text.splitlines() if "sales.app.jsx (" in line)
-    notes_line = next(line for line in text.splitlines() if "notes.md (" in line)
-    assert "agent-editable at files/sales.app.jsx" in app_line
-    assert "agent-editable" not in notes_line
-    assert "Revise agent-editable files in place" in text
+    listed = {item["path"]: item for item in SessionFiles(SkillContext(client=None, workspace=workspace, payload={})).list("files/")["files"]}
+    assert listed["files/sales.app.jsx"].get("editable") is True
+    assert "editable" not in listed["files/notes.md"]
 
 
 def test_replacing_an_app_rewrites_it_in_place(workspace) -> None:
     _run(workspace, _react_spec(), action="write_app")
     listed = [{"id": "files/sales.app.jsx", "node_id": "file-sales.app.jsx", "kind": "file", "name": "Sales explorer"}]
-    run = {"input_tables": [], "apps_written": set(), "replaceable_artifacts": listed, "run_artifacts": {}}
+    run = {"input_tables": [], "replaceable_artifacts": listed, "run_artifacts": {}}
     events, observation, _ = _run(workspace, {
         "path": "files/sales.app.jsx", "expected_content_hash": _hash(workspace, "sales.app.jsx"),
         "title": "Sales explorer", "tables": ["sales"], "code": REACT_APP.replace("Sales", "Fixed sales"),
         "replaces": "files/sales.app.jsx",
     }, payload=run, action="write_app")
-    # No new version: the fix keeps the filename, and the event tells the app which node it replaced.
+    # The fix keeps the filename, and the event tells the app which node it replaced.
     assert events[0]["file"]["path"] == "files/sales.app.jsx" and events[0]["updated"] is True
     assert events[0]["replaces"] == {"id": "files/sales.app.jsx", "node_id": "file-sales.app.jsx", "kind": "file", "name": "Sales explorer"}
     assert json.loads(observation)["status"] == "updated"
@@ -418,7 +400,7 @@ def test_replacing_an_app_rewrites_it_in_place(workspace) -> None:
 def test_edit_file_replacing_an_app_fixes_it_in_place(workspace) -> None:
     from data_formulator.analyst.skills.workspace.skill import WorkspaceSkill
     _run(workspace, _react_spec(), action="write_app")
-    ctx = SkillContext(client=None, workspace=workspace, payload={"input_tables": [], "apps_written": set(), "run_artifacts": {},
+    ctx = SkillContext(client=None, workspace=workspace, payload={"input_tables": [], "run_artifacts": {},
         "replaceable_artifacts": [{"id": "files/sales.app.jsx", "node_id": "file-sales.app.jsx", "kind": "file", "name": "Sales explorer"}]})
     result = json.loads(WorkspaceSkill().handle_tool("edit_file", {
         "path": "files/sales.app.jsx", "expected_content_hash": _hash(workspace, "sales.app.jsx"), "replaces": "files/sales.app.jsx",
@@ -428,3 +410,32 @@ def test_edit_file_replacing_an_app_fixes_it_in_place(workspace) -> None:
     assert [item.name for item in workspace.list_workspace_files()] == ["sales.app.jsx"]
     with pytest.raises(ValueError, match="revise it with edit_file"):
         WorkspaceSkill().handle_tool("create_file", {"filename": "notes.md", "content": "x", "replaces": "files/sales.app.jsx"}, ctx)
+
+
+def test_app_code_is_saved_as_written_and_errors_show_when_it_renders(workspace) -> None:
+    # The server does not parse app code: a syntax error shows when the app renders, and
+    # the user can ask the agent to fix it from there.
+    broken = REACT_APP.replace("</Page>", "</Pag")
+    events, observation, _ = _run(workspace, _react_spec(code=broken), action="write_app")
+    assert events[0]["type"] == "action", observation
+    assert workspace.read_workspace_file("sales.app.jsx")[1].decode().endswith(broken)
+    edited = json.loads(_edit(workspace, replacements=[{"old_text": "</Pag", "new_text": "</Page>"}]).text)
+    assert edited["path"] == "files/sales.app.jsx"
+
+
+def test_write_app_declares_live_sources_and_optional_modules(workspace) -> None:
+    reference = {"kind": "external-table-reference", "id": "external:kusto:Events", "connectorId": "kusto",
+                 "tableKey": "Events", "displayName": "Events"}
+    code = ("import _ from 'lodash';\nimport * as d3 from 'd3';\nimport { countries } from '@df/geo';\n"
+            + REACT_APP.replace("export default function App() {",
+                                "export default function App() {\n  const count = _.size(countries()) + d3.max([1]);"))
+    events, observation, _ = _run(workspace, _react_spec(code=code, sources=["external:kusto:Events"]),
+                                  payload={"input_tables": [], "external_references": [reference]}, action="write_app")
+    assert events[0]["type"] == "action", observation
+    header = workspace.read_workspace_file("sales.app.jsx")[1].decode().split("\n", 1)[0]
+    assert '"sources": ["external:kusto:Events"]' in header
+
+    # A source must be one of the session's connected-source references.
+    events, observation, _ = _run(workspace, _react_spec(filename="other.app.jsx", sources=["external:kusto:Nope"]),
+                                  payload={"input_tables": [], "external_references": [reference]}, action="write_app")
+    assert events[0]["type"] == "error" and "Unknown sources: external:kusto:Nope" in observation

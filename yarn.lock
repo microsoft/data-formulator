@@ -2177,6 +2177,21 @@
     "@types/prop-types" "*"
     csstype "^3.2.2"
 
+"@types/topojson-client@^3.1.5":
+  version "3.1.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@types/topojson-client/-/topojson-client-3.1.5.tgz#3fdbcd52161db8747a071b1d0f635ac700cf599d"
+  integrity sha1-P9vNUhYduHR6BxsdD2NaxwDPWZ0=
+  dependencies:
+    "@types/geojson" "*"
+    "@types/topojson-specification" "*"
+
+"@types/topojson-specification@*":
+  version "1.0.5"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@types/topojson-specification/-/topojson-specification-1.0.5.tgz#bf0009b2e0debb2d97237b124c00b9ea92570375"
+  integrity sha1-vwAJsuDeuy2XI3sSTAC56pJXA3U=
+  dependencies:
+    "@types/geojson" "*"
+
 "@types/trusted-types@^2.0.7":
   version "2.0.7"
   resolved "https://registry.npmjs.org/@types/trusted-types/-/trusted-types-2.0.7.tgz"
@@ -7182,6 +7197,11 @@ uri-js@^4.2.2:
   dependencies:
     punycode "^2.1.0"
 
+us-atlas@^3.0.1:
+  version "3.0.1"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/us-atlas/-/us-atlas-3.0.1.tgz#367d64e4b31d3f945827710f1a43813c38e17d6b"
+  integrity sha1-Nn1k5LMdP5RYJ3EPGkOBPDjhfWs=
+
 use-sync-external-store@^1.0.0, use-sync-external-store@^1.2.0, use-sync-external-store@^1.4.0, use-sync-external-store@^1.6.0:
   version "1.6.0"
   resolved "https://registry.npmjs.org/use-sync-external-store/-/use-sync-external-store-1.6.0.tgz"
@@ -7789,6 +7809,11 @@ word-wrap@^1.2.5:
   version "1.2.5"
   resolved "https://registry.npmjs.org/word-wrap/-/word-wrap-1.2.5.tgz"
   integrity sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==
+
+world-atlas@^2.0.2:
+  version "2.0.2"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/world-atlas/-/world-atlas-2.0.2.tgz#4bca4a578f3a413bd409c3f07f2054fe7375824f"
+  integrity sha1-S8pKV486QTvUCcPwfyBU/nN1gk8=
 
 wrap-ansi@^9.0.0:
   version "9.0.2"

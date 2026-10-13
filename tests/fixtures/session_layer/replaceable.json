@@ -1,0 +1,314 @@
+{
+  "focusNodeId": "d_trend",
+  "input": {
+    "tables": [
+      {
+        "kind": "table",
+        "id": "orders",
+        "displayId": "Orders",
+        "names": [],
+        "metadata": {}
+      },
+      {
+        "kind": "table",
+        "id": "d_base",
+        "displayId": "D_BASE",
+        "names": [],
+        "metadata": {},
+        "parentNodeId": "ask",
+        "createdAt": 1,
+        "derive": {
+          "source": [
+            "orders"
+          ],
+          "code": "",
+          "trigger": {
+            "tableId": "root"
+          }
+        }
+      },
+      {
+        "kind": "table",
+        "id": "d_trend",
+        "displayId": "D_TREND",
+        "names": [],
+        "metadata": {},
+        "parentNodeId": "d_base",
+        "createdAt": 1,
+        "virtual": {
+          "tableId": "trend_tbl",
+          "rowCount": 1
+        },
+        "derive": {
+          "source": [
+            "d_base"
+          ],
+          "code": "",
+          "trigger": {
+            "tableId": "root"
+          }
+        }
+      },
+      {
+        "kind": "table",
+        "id": "d_edited",
+        "displayId": "D_EDITED",
+        "names": [],
+        "metadata": {},
+        "parentNodeId": "ask",
+        "createdAt": 1,
+        "derive": {
+          "source": [],
+          "code": "",
+          "trigger": {
+            "tableId": "root"
+          }
+        }
+      },
+      {
+        "kind": "table",
+        "id": "d_retitled",
+        "displayId": "D_RETITLED",
+        "names": [],
+        "metadata": {},
+        "parentNodeId": "ask",
+        "createdAt": 3,
+        "derive": {
+          "source": [],
+          "code": "",
+          "trigger": {
+            "tableId": "root"
+          }
+        }
+      },
+      {
+        "kind": "table",
+        "id": "d_more",
+        "displayId": "D_MORE",
+        "names": [],
+        "metadata": {},
+        "parentNodeId": "ask",
+        "createdAt": 2,
+        "derive": {
+          "source": [],
+          "code": "",
+          "trigger": {
+            "tableId": "root"
+          }
+        }
+      },
+      {
+        "kind": "table",
+        "id": "d_from_file",
+        "displayId": "From file",
+        "names": [],
+        "metadata": {},
+        "parentNodeId": "ask",
+        "createdAt": 4,
+        "derive": {
+          "source": [],
+          "code": "",
+          "trigger": {
+            "tableId": "root"
+          },
+          "inputSources": [
+            {
+              "id": "file:abc:notes%20(v1).csv",
+              "kind": "file",
+              "displayName": "x"
+            }
+          ]
+        }
+      }
+    ],
+    "charts": [
+      {
+        "id": "chart-trend",
+        "chartType": "Bar Chart",
+        "encodingMap": {},
+        "tableRef": "d_trend",
+        "source": "user"
+      },
+      {
+        "id": "chart-base",
+        "chartType": "Bar Chart",
+        "encodingMap": {},
+        "tableRef": "d_base",
+        "source": "user"
+      },
+      {
+        "id": "chart-edited",
+        "chartType": "Bar Chart",
+        "encodingMap": {},
+        "tableRef": "d_edited",
+        "source": "user",
+        "styleVariants": [
+          {
+            "id": "v"
+          }
+        ]
+      },
+      {
+        "id": "chart-retitled",
+        "chartType": "Line Chart",
+        "tableRef": "d_retitled",
+        "source": "user",
+        "titleKey": "stale",
+        "encodingMap": {
+          "y": {
+            "fieldID": "f2",
+            "aggregate": "sum"
+          },
+          "x": {
+            "fieldID": "f1"
+          }
+        }
+      },
+      {
+        "id": "chart-trigger",
+        "chartType": "Auto",
+        "encodingMap": {},
+        "tableRef": "d_more",
+        "source": "trigger"
+      },
+      {
+        "id": "chart-more",
+        "chartType": "Bar Chart",
+        "encodingMap": {},
+        "tableRef": "d_more",
+        "source": "user"
+      },
+      {
+        "id": "chart-more-2",
+        "chartType": "Bar Chart",
+        "encodingMap": {},
+        "tableRef": "d_more",
+        "source": "user"
+      }
+    ],
+    "reports": [
+      {
+        "id": "report-1",
+        "title": "Findings",
+        "content": "![x](chart://chart-base)",
+        "selectedChartIds": [],
+        "createdAt": 2,
+        "parentNodeId": "d_trend"
+      },
+      {
+        "id": "report-2",
+        "content": "",
+        "selectedChartIds": [],
+        "createdAt": 5,
+        "status": "generating",
+        "triggerTableId": "d_retitled"
+      }
+    ],
+    "fileNodes": [
+      {
+        "kind": "file",
+        "id": "file-app",
+        "path": "app.app.jsx",
+        "displayName": "App",
+        "contentHash": "h",
+        "parentNodeId": "ask",
+        "createdAt": 3
+      },
+      {
+        "kind": "file",
+        "id": "file-notes",
+        "path": "notes (v1).csv",
+        "displayName": "",
+        "contentHash": "h",
+        "parentNodeId": "ask",
+        "createdAt": 0
+      }
+    ],
+    "turns": [
+      {
+        "id": "ask",
+        "parentNodeId": "conversation-root:a",
+        "createdAt": 0
+      }
+    ]
+  },
+  "expected": [
+    {
+      "id": "trend_tbl",
+      "node_id": "d_trend",
+      "kind": "table",
+      "name": "D_TREND",
+      "aliases": [
+        "d_trend",
+        "chart-trend"
+      ]
+    },
+    {
+      "id": "d_base",
+      "node_id": "d_base",
+      "kind": "table",
+      "name": "D_BASE",
+      "aliases": [
+        "chart-base"
+      ],
+      "blocked": "the table D_TREND was computed from it"
+    },
+    {
+      "id": "d_from_file",
+      "node_id": "d_from_file",
+      "kind": "table",
+      "name": "From file"
+    },
+    {
+      "id": "d_retitled",
+      "node_id": "d_retitled",
+      "kind": "table",
+      "name": "D_RETITLED",
+      "aliases": [
+        "chart-retitled"
+      ],
+      "blocked": "the user edited its chart"
+    },
+    {
+      "id": "files/app.app.jsx",
+      "node_id": "file-app",
+      "kind": "file",
+      "name": "App"
+    },
+    {
+      "id": "d_more",
+      "node_id": "d_more",
+      "kind": "table",
+      "name": "D_MORE",
+      "aliases": [
+        "chart-trigger",
+        "chart-more",
+        "chart-more-2"
+      ],
+      "blocked": "another chart was made from it"
+    },
+    {
+      "id": "report-1",
+      "node_id": "report-1",
+      "kind": "report",
+      "name": "Findings"
+    },
+    {
+      "id": "d_edited",
+      "node_id": "d_edited",
+      "kind": "table",
+      "name": "D_EDITED",
+      "aliases": [
+        "chart-edited"
+      ],
+      "blocked": "the user edited its chart"
+    },
+    {
+      "id": "files/notes (v1).csv",
+      "node_id": "file-notes",
+      "kind": "file",
+      "name": "notes (v1).csv",
+      "blocked": "the table From file was computed from it"
+    }
+  ]
+}

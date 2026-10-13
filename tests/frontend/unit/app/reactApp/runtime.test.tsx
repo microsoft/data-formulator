@@ -138,11 +138,24 @@ describe('FlintChart', () => {
         expect(spec).toMatchObject({ width: 800, autosize: { type: 'fit-x', contains: 'padding' } });
     });
 
+    it('applies a Flint theme like the DF canvas', async () => {
+        const bridge = installBridge();
+        const data = [{ year: 2000, value: 3 }, { year: 2001, value: 5 }];
+        renderThemed(<>
+            <FlintChart chartType="Line Chart" data={data} encodings={{ x: 'year', y: 'value' }} />
+            <FlintChart chartType="Line Chart" data={data} encodings={{ x: 'year', y: 'value' }} theme="economist" />
+        </>);
+        await waitFor(() => expect(bridge.chart).toHaveBeenCalledTimes(2));
+        const [plain, themed] = bridge.chart.mock.calls.map(call => call[1] as any);
+        expect(themed.config).toBeDefined();
+        expect(JSON.stringify(themed.config)).not.toBe(JSON.stringify(plain.config));
+    });
+
     it('shows and reports an unknown chart type', async () => {
         const bridge = installBridge();
         renderThemed(<FlintChart chartType="Nope Chart" data={[{ a: 1 }]} encodings={{ x: 'a' }} />);
         await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Chart unavailable'));
-        expect(bridge.reportError).toHaveBeenCalledWith(expect.stringContaining('FlintChart'));
+        expect(bridge.reportError).toHaveBeenCalledWith(expect.stringContaining('FlintChart'), false);
     });
 });
 
@@ -161,9 +174,9 @@ describe('mount', () => {
 
         const broken = document.createElement('div');
         document.body.appendChild(broken);
-        await act(async () => { mount(require => { require('lodash'); }, broken); });
-        expect(broken).toHaveTextContent('Cannot import "lodash"');
-        expect(bridge.reportError).toHaveBeenCalledWith(expect.stringContaining('Cannot import "lodash"'));
+        await act(async () => { mount(require => { require('moment'); }, broken); });
+        expect(broken).toHaveTextContent('Cannot import "moment"');
+        expect(bridge.reportError).toHaveBeenCalledWith(expect.stringContaining('Cannot import "moment"'), true);
     });
 
     it('catches render errors in an error boundary', async () => {
@@ -175,6 +188,6 @@ describe('mount', () => {
             mount((_require, module) => { module.exports.default = () => { throw new Error('bad render'); }; }, container);
         });
         expect(container).toHaveTextContent('bad render');
-        expect(bridge.reportError).toHaveBeenCalledWith('App crashed: bad render');
+        expect(bridge.reportError).toHaveBeenCalledWith('App crashed: bad render', true);
     });
 });

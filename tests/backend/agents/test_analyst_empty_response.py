@@ -36,7 +36,7 @@ class _Log:
         pass
 
 
-def _run(streams, *, max_tool_rounds=12, retries=2, backoff=0, include_progress=False, messages=None):
+def _run(streams, *, max_tool_rounds=12, retries=2, backoff=0, include_progress=False, messages=None, delivered=False):
     client = _Client(streams)
     agent = AnalystAgent(client=client, workspace=SimpleNamespace(user_home=None),
                          skill_registry=build_registry(), identity_id=None,
@@ -45,6 +45,7 @@ def _run(streams, *, max_tool_rounds=12, retries=2, backoff=0, include_progress=
                              empty_response_retries=retries, empty_response_backoff_seconds=backoff))
     agent._loaded_skills = {"meta"}
     agent._run_payload = {}
+    agent._delivered = delivered
     messages = messages if messages is not None else []
     events = list(agent._tool_loop(messages,
                                    llm_calls_in_cycle=0, rlog=_Log(), input_tables=[], outer_iteration=0))
@@ -82,6 +83,15 @@ def test_repeated_empty_streams_surface_an_llm_error():
     client, actions, messages = _run([empty, empty, empty])
     assert client.calls == 3
     assert actions[-1]["reason"] == "llm_error" and "empty response" in actions[-1]["error_message"]
+    assert messages == []
+
+
+def test_an_empty_reply_after_a_delivery_ends_the_run():
+    empty = [_chunk(finish_reason="stop")]
+    client, actions, messages = _run([empty], delivered=True)
+    # The chart, report, or app was the answer; nothing more to say is not a provider failure.
+    assert client.calls == 1
+    assert actions[-1]["reason"] == "done" and actions[-1]["final_text"] == ""
     assert messages == []
 
 
@@ -217,3 +227,19 @@ def test_analyst_run_resets_progress_reminder_for_each_request(tmp_path, monkeyp
     events = list(agent.run([], "Analyze data", trajectory=trajectory))
     assert events[-1]["type"] == "completion"
     assert not any(str(message.get("content", "")).startswith("[Automatic message]") for message in trajectory)
+
+
+def test_a_stream_that_stalls_partway_is_asked_again(monkeypatch):
+    import threading
+    monkeypatch.setenv("DF_MODEL_IDLE_SECONDS", "0.2")
+    release = threading.Event()
+
+    def stalls_after_one_chunk():
+        yield _chunk("Partial")
+        release.wait(5)
+        yield _chunk(finish_reason="stop")
+
+    client, actions, messages = _run([stalls_after_one_chunk(), [_chunk("Done."), _chunk(finish_reason="stop")]])
+    release.set()
+    assert client.calls == 2
+    assert actions[-1]["reason"] == "done" and actions[-1]["final_text"] == "Done."

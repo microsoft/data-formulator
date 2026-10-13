@@ -68,6 +68,18 @@ server API keys. Install needed packages only in an isolated scratch/runtime
 environment, never the application's environment. Leave interactive login,
 password prompts, and privilege escalation to the user outside the agent.
 
+## Python packages for analysis
+
+Sandboxed Python (execute_python_script, visualize, create_data) can import any
+package already installed with Data Formulator; check with `importlib.util.find_spec`
+before installing. To add one for this session, install it with Data Formulator's
+Python into `DF_SITE_PACKAGES` (in scratch), which sandboxed Python imports from:
+`["sh", "-c", "uv pip install --python \"$DF_PYTHON\" --target \"$DF_SITE_PACKAGES\" <package>"]`
+(or `"$DF_PYTHON" -m pip install --target "$DF_SITE_PACKAGES" <package>` where pip is
+available). Without `DF_PYTHON` (the desktop app), session packages are unavailable.
+Sandboxed Python still has no network, no subprocesses, and no writes; a package
+that needs them will not work there. The Docker sandbox does not see session packages.
+
 ## Data workflow
 
 CLI acquisition -> scratch dataset -> workspace input -> analysis and delivery.

@@ -30,7 +30,7 @@ To fix a chart the user says is wrong or unwanted, publish the corrected one wit
 `replaces` set to the old table or chart id; the old pair is deleted. Variations
 and follow-ups add new charts instead.
 
-Follow the workspace Data Access Paths to choose or load inputs. Compute
+Choose inputs from the session; to load more, load the `connected_data` skill and follow its Data Access Paths. Compute
 chart-specific filters, grouping, and ranking from their listed paths. No
 separate `create_data` call is needed to prepare or publish chart data.
 Virtual load outcomes are not local chart inputs; follow the workspace policy

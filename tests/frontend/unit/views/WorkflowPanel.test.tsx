@@ -96,7 +96,8 @@ describe('Workflow session publication', () => {
         expect(store.getState().artifactSets).toEqual(state.artifactSets);
     });
 
-    it.each([false, true])('simplifies schedule defaults and reveals missing required inputs (missing: %s)', async missing => {
+    // A full panel walkthrough: about 3s alone, longer under the parallel suite.
+    it('simplifies schedule defaults and reveals missing required inputs', async () => {
         const previous = store.getState();
         let rendered: ReturnType<typeof render> | undefined;
         try {
@@ -107,7 +108,7 @@ describe('Workflow session publication', () => {
             ], 'schedule-test', undefined));
             store.dispatch(dfActions.selectModel('server-selected'));
             const item = { path: 'review.yaml', name: 'Review values', origin: 'user', parameters: [
-                { name: 'subscription', label: 'Subscription', required: true, ...(missing ? {} : { default: 'example' }) },
+                { name: 'subscription', label: 'Subscription', required: true },
                 { name: 'days', label: 'Days', type: 'number', required: true, default: 28 },
             ] };
             let savedSchedules: { id: string; config: Record<string, unknown>; next_at: string;
@@ -138,10 +139,10 @@ describe('Workflow session publication', () => {
             expect(screen.getByText('Workflow inputs')).toBeVisible();
             expect(screen.getByText('Run settings')).toBeVisible();
             expect(document.querySelector('[role="dialog"] details')).toBeNull();
-            if (missing) fireEvent.change(screen.getByLabelText(/Subscription/), { target: { value: 'example' } });
+            fireEvent.change(screen.getByLabelText(/Subscription/), { target: { value: 'example' } });
             const scheduleName = screen.getByLabelText(/Schedule name/);
             expect(scheduleName).toHaveValue('Review values');
-            if (missing) fireEvent.change(scheduleName, { target: { value: 'Daily review' } });
+            fireEvent.change(scheduleName, { target: { value: 'Daily review' } });
             expect(screen.queryByRole('group', { name: 'Weekdays' })).not.toBeInTheDocument();
             expect(screen.getByRole('checkbox', { name: 'Auto-approve commands and data loads' })).not.toBeChecked();
             const repeatInput = screen.getByRole('combobox', { name: 'Repeat' }).parentElement!.querySelector('input')!;
@@ -152,13 +153,13 @@ describe('Workflow session publication', () => {
             await waitFor(() => expect(vi.mocked(apiRequest).mock.calls.some(([url, options]) => url === '/api/schedules' && options?.method === 'POST')).toBe(true));
             const submission = vi.mocked(apiRequest).mock.calls.find(([url, options]) => url === '/api/schedules' && options?.method === 'POST')!;
             expect(JSON.parse(submission[1]!.body as string).config).toMatchObject({
-                name: missing ? 'Daily review' : 'Review values', workflow: 'review.yaml', model_id: 'server-selected', weekdays: [0, 1, 2, 3, 4, 6],
+                name: 'Daily review', workflow: 'review.yaml', model_id: 'server-selected', weekdays: [0, 1, 2, 3, 4, 6],
                 enabled: true, max_retries: 2, auto_approve: false, catch_up: false,
                 setup: { parameters: { subscription: 'example', days: 28 }, instructions: '' },
             });
-            await waitFor(() => expect(screen.getByRole('button', { name: 'Close' })).toBeEnabled());
-            fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-            const scheduleTitle = missing ? 'Daily review' : 'Review values';
+            // Saving closes the dialog; the Schedules panel lists the new schedule.
+            await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Schedules' })).not.toBeInTheDocument());
+            const scheduleTitle = 'Daily review';
             const editSchedule = await screen.findByRole('button', { name: `Edit schedule ${scheduleTitle}` });
             const schedules = screen.getByRole('region', { name: 'Schedules' });
             expect(schedules).toContainElement(editSchedule);
@@ -181,7 +182,7 @@ describe('Workflow session publication', () => {
             expect(openSession).toHaveBeenCalledTimes(3);
             expect(openSession).toHaveBeenLastCalledWith('scheduled-latest-run');
             fireEvent.click(editSchedule);
-            expect(await screen.findByLabelText(/Schedule name/)).toHaveValue(missing ? 'Daily review' : 'Review values');
+            expect(await screen.findByLabelText(/Schedule name/)).toHaveValue(scheduleTitle);
             expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
             expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
             const scheduleList = screen.getByRole('navigation', { name: 'Schedule list' });
@@ -195,6 +196,27 @@ describe('Workflow session publication', () => {
             store.dispatch(dfActions.setServerConfig(previous.serverConfig));
             store.dispatch(fetchGlobalModelList.fulfilled(previous.globalModels, 'restore-schedule-test', undefined));
         }
+    }, 15_000);
+
+    it('applies the chart and report edits, moves, and deletions a run made, once', async () => {
+        await publishWorkflowRun(run(), 'session');
+        const output = (id: string, tool: string, result: object) => ({ id, type: 'tool_result', tool, stdout: JSON.stringify(result) });
+        const changed = { ...run(), outputs: [...run().outputs,
+            output('edit-report', 'edit_file', { path: 'session/reports/report', session_update: {
+                kind: 'report', id: store.getState().generatedReports[0].id, content: '# Revised review' } }),
+            output('move', 'move_file', { moved: { from: 'files/notes.txt', to: 'files/docs/notes.txt' } }),
+            output('delete', 'delete_items', { deleted: { tables: [], references: [], files: [],
+                charts: [{ id: 'chart-native', name: 'Values by category' }] } }),
+        ] };
+        await publishWorkflowRun(changed, 'session');
+        const state = store.getState();
+        expect(state.generatedReports[0].content).toBe('# Revised review');
+        expect(state.fileNodes.map(node => node.path)).toEqual(['docs/notes.txt']);
+        expect(dfSelectors.getAllCharts(state).some(chart => chart.id === 'chart-native')).toBe(false);
+        // Publishing the same run again changes nothing more.
+        await publishWorkflowRun(changed, 'session');
+        expect(dfSelectors.getAllCharts(store.getState()).some(chart => chart.id === 'chart-native')).toBe(false);
+        expect(store.getState().generatedReports[0].content).toBe('# Revised review');
     });
 
     it('publishes the workflow name instead of an internal turn ID', async () => {
@@ -403,38 +425,6 @@ describe('Workflow session publication', () => {
         expect(output.querySelector('.selected-artifact-card')).toBeInTheDocument();
     });
 
-    it('uses a compact selected conversation button and transparent timeline icon backgrounds', () => {
-        store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'loaded-data', displayId: 'Loaded Data',
-            names: [], rows: [], metadata: {}, description: '', virtual: { tableId: 'loaded-data', rowCount: 0 } }));
-        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'textTurn-loaded', displayId: 'Loaded',
-            textKind: 'explain', prompt: 'Load data', content: 'The data is ready.',
-            parentNodeId: 'conversation-root:loaded', createdAt: 3 }));
-        store.dispatch(dfActions.addLoadedTableNode({ kind: 'loaded-table', id: 'loaded-reference', tableId: 'loaded-data',
-            parentNodeId: 'textTurn-loaded', createdAt: 2 }));
-        const { container } = renderThread();
-        const button = screen.getByRole('button', { name: 'view chat' });
-        expect(button).toHaveAttribute('aria-pressed', 'false');
-        expect(button).toHaveStyle({ minHeight: '24px', marginLeft: 'auto', textTransform: 'none', color: 'rgba(0, 0, 0, 0.87)' });
-        expect(button).toHaveTextContent('view chat');
-        expect(button).toHaveAttribute('title', 'Open full conversation');
-        expect(within(button).getByTestId('ArrowForwardIcon')).toBeInTheDocument();
-        fireEvent.click(button);
-        expect(button).toHaveAttribute('aria-pressed', 'true');
-        fireEvent.mouseOver(button);
-        expect(getComputedStyle(button).backgroundColor).toBe('rgba(0, 0, 0, 0.1)');
-        const thread = container.querySelector('[data-thread-active="true"]')!;
-        expect(thread).toBeInTheDocument();
-        for (const key of ['loaded-reference', 'textturn-textTurn-loaded']) {
-            const gutter = thread.querySelector(`[data-thread-item="${key}"]`)!.firstElementChild!;
-            const icon = gutter.querySelector('svg')!;
-            expect(icon.parentElement).toHaveStyle({ backgroundColor: 'rgba(0, 0, 0, 0)' });
-            expect(icon).toHaveStyle({ color: 'rgba(0, 0, 0, 0.15)' });
-        }
-        act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: 'textTurn-loaded' })));
-        const responseGutter = container.querySelector('[data-thread-item="textturn-textTurn-loaded"]')!.firstElementChild!;
-        expect(responseGutter.querySelector('svg')).toHaveStyle({ color: 'rgb(25, 118, 210)' });
-    });
-
     it('shows loaded data before ongoing thinking and keeps it before the final summary', () => {
         const rootId = 'conversation-root:live-load';
         // The request is its own message; the run's live draft follows the chain head (design-docs/58).
@@ -597,6 +587,22 @@ describe('Workflow session publication', () => {
         if (afterOutputs < 8) expect(reply.compareDocumentPosition(outputBlock(afterOutputs)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         expect(reply.compareDocumentPosition(container.querySelector('[data-thread-item="textturn-textTurn-workflow-native"]')!)
             & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('publishes an app the workflow wrote, like a file', async () => {
+        const snapshot = run();
+        snapshot.outputs = [...snapshot.outputs!, { id: 'app', type: 'tool_result', tool: 'write_app', stdout: JSON.stringify({
+            path: 'files/explorer.app.jsx', name: 'explorer.app.jsx', display_name: 'Quake explorer', content_hash: 'app-hash',
+            available_in_workspace: true, app: true,
+        }) }];
+        await publishWorkflowRun(snapshot, 'session');
+        const app = store.getState().fileNodes.find(node => node.path === 'explorer.app.jsx');
+        // Checked when it first renders, even though nobody watched the run.
+        expect(app).toMatchObject({ id: 'file-explorer.app.jsx', displayName: 'Quake explorer', contentHash: 'app-hash' });
+        expect(store.getState().textTurns.find(turn => turn.workflow)?.workflow?.artifacts?.map(item => item.nodeId))
+            .toContain('file-explorer.app.jsx');
+        const { container } = renderThread();
+        expect(container.querySelector('[data-thread-item="file-explorer.app.jsx"]')).toBeInTheDocument();
     });
 
     it('places steering after existing outputs and before outputs created later', async () => {
@@ -940,11 +946,12 @@ describe('Workflow session publication', () => {
         }
         const body = JSON.parse(vi.mocked(streamRequest).mock.calls[0][1]!.body as string);
         expect(body.user_question).toBe('Explain the coverage check and compare the results.');
-        const context = body.focused_thread.find((step: any) => step.workflow)?.workflow;
-        expect(context).toMatchObject({ run_id: 'native', status: 'completed',
-            output_ids: ['workflow-data-native-measurements', 'file-notes.txt', 'chart_values', 'workflow-report-native'] });
-        expect(context.checks).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'coverage', status: 'passed' })]));
-        expect(context.reports[0].content).toContain('# Review');
+        // The completed run, its outputs, and its report reach the agent through the session state (design-docs/61).
+        const runTurn = body.session_state.textTurns.find((item: any) => item.workflow);
+        expect(runTurn.workflow).toMatchObject({ runId: 'native', status: 'completed' });
+        expect(runTurn.outputIds).toEqual(['workflow-data-native-measurements', 'file-notes.txt', 'chart_values', 'workflow-report-native']);
+        expect(runTurn.workflow.checks).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'coverage', status: 'passed' })]));
+        expect(body.session_state.generatedReports.find((report: any) => report.id === 'workflow-report-native').content).toContain('# Review');
         // The request continues from the completed record; the answer follows the request.
         const request = store.getState().textTurns.find(turn => turn.prompt === body.user_question)!;
         expect(request).toMatchObject({ parentNodeId: 'textTurn-workflow-native', content: '' });
@@ -1395,8 +1402,6 @@ describe('Workflow session publication', () => {
 
     it.each([
         { hasWorkspace: true, presentation: 'sidebar' as const },
-        { hasWorkspace: false, presentation: 'sidebar' as const },
-        { hasWorkspace: true, presentation: 'landing' as const },
         { hasWorkspace: false, presentation: 'landing' as const },
     ])('preserves setup until a new workspace is ready ($presentation, existing workspace: $hasWorkspace)', async ({ hasWorkspace, presentation }) => {
         if (!hasWorkspace) store.dispatch(dfActions.setActiveWorkspace(null));

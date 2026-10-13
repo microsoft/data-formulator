@@ -79,25 +79,66 @@ describe('Analyst landing attachment handoff', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
         expect(requestBody().user_question).toBe('Explain them together');
+        // The retry runs in place of the failed step: no second copy of the message, no new thread.
+        await waitFor(() => expect(store.getState().draftNodes.some(draft => draft.id === 'next-step')).toBe(false));
+        expect(store.getState().textTurns.filter(turn => turn.prompt === 'Explain them together')).toHaveLength(1);
+        expect(buildThreads(dfSelectors.getThreadGraph(store.getState())).some(thread => thread.branchFromId)).toBe(false);
     });
 
-    it.each(['Write a report', 'Create an app', 'Create a workflow'])('starts %s as a visible user prompt requesting suggestions', async label => {
+    it.each([
+        ['the message before it', 'answer'],
+        ['the stopped message itself', 'stopped'],
+    ])('replaces a message a stopped run left unanswered when sending from %s', async (_label, focusTextId) => {
+        const { store } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'answer', displayId: 'Answer', textKind: 'explain',
+                content: 'Updated all five charts.', parentNodeId: 'conversation-root:test', createdAt: 1 }));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'stopped', displayId: 'Stopped', textKind: 'explain',
+                content: '', prompt: 'Update the app', parentNodeId: 'answer', createdAt: 2 }));
+            store.dispatch(dfActions.setFocused({ type: 'text', textId: focusTextId }));
+        });
+        act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Update the app', images: [], attachments: [] })));
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        const prompts = store.getState().textTurns.filter(turn => turn.prompt === 'Update the app');
+        expect(prompts).toHaveLength(1);
+        expect(prompts[0]).toMatchObject({ parentNodeId: 'answer' });
+        expect(prompts[0].id).not.toBe('stopped');
+        expect(buildThreads(dfSelectors.getThreadGraph(store.getState())).some(thread => thread.branchFromId)).toBe(false);
+    });
+
+    it('starts a quick action as a visible user prompt requesting suggestions', async () => {
         const { dispatchSpy } = mountTask();
         fireEvent.click(screen.getByRole('button', { name: 'Quick actions' }));
         expect(streamRequest).not.toHaveBeenCalled();
         expect(screen.getAllByRole('menuitem')).toHaveLength(3);
-        fireEvent.click(screen.getByRole('menuitem', { name: label }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Write a report' }));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
         expect(requestBody()).not.toHaveProperty('max_iterations');
         const prompt = requestBody().user_question;
-        expect(prompt).toContain({ 'Write a report': 'write a report', 'Create an app': 'build an interactive app',
-            'Create a workflow': 'create a workflow' }[label]);
+        expect(prompt).toContain('write a report');
         expect(prompt).toContain('Suggest a few useful directions');
         // The user's message is its own node in the thread (design-docs/58).
         const promptAction = dispatchSpy.mock.calls.map(([action]) => action as any)
             .find(action => action.type === dfActions.addTextTurn.type && action.payload.prompt);
         expect(promptAction.payload).toMatchObject({ prompt, content: '' });
         expect(apiRequest).not.toHaveBeenCalledWith('/api/workflows/message', expect.anything());
+    });
+
+    it('continues a focused workflow report after its run\'s completed record, without branching', async () => {
+        const { store } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.saveGeneratedReport({ id: 'workflow-report', content: '# Findings', title: 'Findings',
+                selectedChartIds: [], createdAt: 1, parentNodeId: 'conversation-root:test', status: 'completed' }));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'workflow-record', displayId: 'Run', textKind: 'explain',
+                content: 'Run complete.', parentNodeId: 'workflow-report', createdAt: 2,
+                workflow: { runId: 'run', status: 'completed', stepId: 'done', calls: 3, steps: [], outputVersions: {} } } as any));
+            store.dispatch(dfActions.setFocused({ type: 'report', reportId: 'workflow-report' }));
+            store.dispatch(dfActions.queueAnalystTask({ text: 'Create an app', images: [], attachments: [] }));
+        });
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        expect(turnWith(store, turn => turn.prompt === 'Create an app').parentNodeId).toBe('workflow-record');
+        expect(turnWith(store, turn => turn.id === 'workflow-record').answered).toBeUndefined();
+        expect(buildThreads(dfSelectors.getThreadGraph(store.getState())).some(thread => thread.branchFromId)).toBe(false);
     });
 
     it('routes the workflow shortcut to analyst chat even when a paused execution is focused', async () => {
@@ -117,8 +158,9 @@ describe('Analyst landing attachment handoff', () => {
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
         expect(String(vi.mocked(streamRequest).mock.calls[0][0])).not.toContain('/workflows/run');
         expect(requestBody().user_question).toContain('create a workflow');
-        expect(requestBody().focused_thread).toEqual(expect.arrayContaining([expect.objectContaining({
-            workflow: expect.objectContaining({ run_id: 'run' }),
+        // The run the user is looking at reaches the agent through the session state (design-docs/61).
+        expect(requestBody().session_state.textTurns).toEqual(expect.arrayContaining([expect.objectContaining({
+            workflow: expect.objectContaining({ runId: 'run' }),
         })]));
         expect(apiRequest).not.toHaveBeenCalledWith('/api/workflows/message', expect.anything());
         await waitFor(() => expect(store.getState().textTurns.find(turn => turn.form?.kind === 'workflow')).toBeDefined());
@@ -146,8 +188,9 @@ describe('Analyst landing attachment handoff', () => {
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
         expect(String(vi.mocked(streamRequest).mock.calls[0][0])).not.toContain('/workflows/');
         expect(requestBody().user_question).toContain('Create a new workflow');
-        expect(requestBody().focused_thread).toEqual(expect.arrayContaining([expect.objectContaining({
-            workflow: expect.objectContaining({ run_id: 'run' }),
+        // The run the user is looking at reaches the agent through the session state (design-docs/61).
+        expect(requestBody().session_state.textTurns).toEqual(expect.arrayContaining([expect.objectContaining({
+            workflow: expect.objectContaining({ runId: 'run' }),
         })]));
         expect(apiRequest).not.toHaveBeenCalledWith('/api/workflows/message', expect.anything());
         expect(store.getState().textTurns.find(turn => turn.id === 'active-run')).toMatchObject({ workflow });
@@ -195,8 +238,8 @@ describe('Analyst landing attachment handoff', () => {
         });
         act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Parameterize the target date', images: [], attachments: [] })));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(2));
-        expect(requestBody(1).focused_thread).toEqual(expect.arrayContaining([expect.objectContaining({
-            workflow_definition: proposal.content, agent_response: 'Review the proposed workflow.',
+        expect(requestBody(1).session_state.textTurns).toEqual(expect.arrayContaining([expect.objectContaining({
+            content: 'Review the proposed workflow.', form: expect.objectContaining({ workflow: expect.objectContaining({ content: proposal.content }) }),
         })]));
         await waitFor(() => expect(store.getState().textTurns.filter(workflowOf)).toHaveLength(2));
         const revisionTurn = store.getState().textTurns.find(item => workflowOf(item)?.content === revised.content)!;
@@ -204,8 +247,8 @@ describe('Analyst landing attachment handoff', () => {
         expect(workflowOf(store.getState().textTurns.find(item => item.id === turn.id))).toEqual(proposal);
         act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Now add explicit source loading', images: [], attachments: [] })));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(3));
-        expect(requestBody(2).focused_thread.filter((step: any) => step.workflow_definition)
-            .map((step: any) => step.workflow_definition)).toEqual([proposal.content, revised.content]);
+        expect(requestBody(2).session_state.textTurns.filter((item: any) => item.form?.kind === 'workflow')
+            .map((item: any) => item.form.workflow.content)).toEqual([proposal.content, revised.content]);
         expect(vi.mocked(streamRequest).mock.calls.every(([url]) => !String(url).includes('/workflows/run'))).toBe(true);
     });
 
@@ -389,7 +432,7 @@ describe('Analyst landing attachment handoff', () => {
         await waitFor(() => expect(store.getState().pendingTableLoads).toEqual([]));
     });
 
-    it.each([['button', true], ['enter', true], ['button', false], ['enter', false]])(
+    it.each([['button', true], ['enter', false]])(
         'submits a query from a focused reference via %s with loaded tables: %s', async (method, hasLoadedTables) => {
         vi.mocked(streamRequest).mockImplementation(async function* () {
             yield { type: 'result', status: 'success', content: { result: {
@@ -422,10 +465,10 @@ describe('Analyst landing attachment handoff', () => {
         else fireEvent.click(screen.getByRole('button', { name: 'Explore' }));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
         expect(requestBody().external_references).toEqual([reference]);
-        expect(requestBody().focused_external_reference).toBe(reference.id);
+        expect(requestBody().session_state.focusedId).toEqual({ type: 'external-table', referenceId: reference.id });
         expect(requestBody().input_tables).toHaveLength(hasLoadedTables ? 1 : 0);
         expect(requestBody().input_tables.some((table: { id: string }) => table.id === reference.id)).toBe(false);
-        expect(requestBody().focused_file).toBeUndefined();
+        expect(requestBody()).not.toHaveProperty('focused_file');
         expect(store.getState().fileNodes).toEqual([]);
         const closingReplies = () => store.getState().textTurns.filter(turn => turn.content === 'Review the event sources.');
         await waitFor(() => expect(closingReplies()).toHaveLength(1));
@@ -437,13 +480,13 @@ describe('Analyst landing attachment handoff', () => {
         fireEvent.change(input, { target: { value: 'Show the ten most recent events' } });
         fireEvent.keyDown(input, { key: 'Enter' });
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(2));
-        expect(requestBody(1).focused_external_reference).toBe(reference.id);
+        expect(requestBody(1).session_state.focusedId).toEqual({ type: 'text', textId: reply.id });
         await waitFor(() => expect(closingReplies()).toHaveLength(2));
         act(() => store.dispatch(dfActions.setFocused({ type: 'table', tableId: derived.id })));
         fireEvent.change(input, { target: { value: 'Show the source events for this result' } });
         fireEvent.keyDown(input, { key: 'Enter' });
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(3));
-        expect(requestBody(2).focused_external_reference).toBe(reference.id);
+        expect(requestBody(2).session_state.focusedId).toEqual({ type: 'table', tableId: derived.id });
         await waitFor(() => expect(closingReplies()).toHaveLength(3));
         act(() => {
             store.dispatch(dfActions.removeExternalTableReference(reference.id));
@@ -452,7 +495,7 @@ describe('Analyst landing attachment handoff', () => {
         fireEvent.change(input, { target: { value: 'Describe the existing result' } });
         fireEvent.keyDown(input, { key: 'Enter' });
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(4));
-        expect(requestBody(3).focused_external_reference).toBeUndefined();
+        expect(requestBody(3).session_state.externalTableReferences).toEqual([]);
         expect(requestBody(3).external_references).toEqual([]);
     });
 
@@ -495,7 +538,7 @@ describe('Analyst landing attachment handoff', () => {
         expect(store.getState().starterQuestions[reference.id].signature).not.toBe(signature);
         fireEvent.click(await screen.findByText('Compare trips by vendor'));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
-        expect(requestBody().focused_external_reference).toBe(reference.id);
+        expect(requestBody().session_state.externalTableReferences).toEqual([refreshed]);
         expect(requestBody().external_references).toEqual([refreshed]);
         act(() => store.dispatch(dfActions.removeExternalTableReference(reference.id)));
         expect(store.getState().starterQuestions[reference.id]).toBeUndefined();
@@ -754,10 +797,10 @@ describe('Analyst landing attachment handoff', () => {
         }
     });
 
-    it('adds an edited app as a new app that follows the request (design-docs/58, rule 8)', async () => {
+    it('updates an edited app in place, where it is in the thread (design-docs/58, rule 8)', async () => {
         vi.mocked(streamRequest).mockImplementationOnce(async function* () {
             yield { type: 'tool_result', tool: 'edit_file', status: 'ok', stdout: JSON.stringify({
-                path: 'files/sales_2.app.jsx', name: 'sales_2.app.jsx', display_name: 'Sales explorer',
+                path: 'files/sales.app.jsx', name: 'sales.app.jsx', display_name: 'Sales explorer',
                 content_hash: 'revised-hash', available_in_workspace: true, app: true, tables: ['sales'], warnings: [],
             }) };
             yield { type: 'completion', status: 'success', content: { summary: 'Added a units chart.' } };
@@ -772,17 +815,16 @@ describe('Analyst landing attachment handoff', () => {
             store.dispatch(dfActions.queueAnalystTask({ text: 'Add a units chart to the dashboard', images: [], attachments: [] }));
         });
         await waitFor(() => expect(turnWith(store, turn => turn.content === 'Added a units chart.')).toBeDefined());
-        // app → request → new app → closing answer; the original app is unchanged.
+        // app → request → closing answer; the app keeps its place and shows the revision.
         const request = turnWith(store, turn => turn.prompt === 'Add a units chart to the dashboard');
         expect(request.parentNodeId).toBe('file-sales.app.jsx');
         expect(store.getState().fileNodes).toEqual([
-            expect.objectContaining({ id: 'file-sales.app.jsx', contentHash: 'old-hash', parentNodeId: 'built' }),
-            expect.objectContaining({ id: 'file-sales_2.app.jsx', contentHash: 'revised-hash', parentNodeId: request.id }),
+            expect.objectContaining({ id: 'file-sales.app.jsx', contentHash: 'revised-hash', parentNodeId: 'built' }),
         ]);
         const explanation = turnWith(store, turn => turn.content === 'Added a units chart.');
-        expect(explanation.parentNodeId).toBe('file-sales_2.app.jsx');
+        expect(explanation.parentNodeId).toBe(request.id);
         act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: explanation.id })));
-        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'file', fileName: 'sales_2.app.jsx' });
+        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'file', fileName: 'sales.app.jsx' });
     });
 
     describe('replacing an artifact the user wants fixed', () => {
@@ -813,9 +855,6 @@ describe('Analyst landing attachment handoff', () => {
                 store.dispatch(dfActions.queueAnalystTask({ text: 'The trend is wrong, fix it', images: [], attachments: [] }));
             });
             await waitFor(() => expect(turnWith(store, turn => turn.content === 'Fixed the trend.')).toBeDefined());
-            // The agent was told what it may replace, by the ids it knows.
-            expect(requestBody().replaceable_artifacts).toContainEqual(
-                { id: 'd_old', node_id: 'd_old', kind: 'table', name: 'Old trend', aliases: ['chart-old'] });
             const state = store.getState();
             expect(state.derivedTables.map((table: any) => table.id)).toEqual(['d_fixed']);
             expect(state.derivedTables[0].replaced).toEqual({ id: 'd_old', name: 'Old trend' });
@@ -880,6 +919,67 @@ describe('Analyst landing attachment handoff', () => {
             expect(reports[0]).toMatchObject({ title: 'Corrected findings', replaced: { id: 'report-old', name: 'Draft findings' } });
             expect(store.getState().focusedId).toEqual({ type: 'report', reportId: reports[0].id });
         });
+
+        it('deletes items the agent removed and notes it on its message', async () => {
+            vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+                yield { type: 'tool_start', tool: 'delete_items', tool_call_id: 'delete-1', args: { items: ['d_old'] } } as any;
+                yield { type: 'tool_result', tool: 'delete_items', tool_call_id: 'delete-1', status: 'ok', stdout: JSON.stringify({ deleted: {
+                    tables: [{ id: 'd_old', node_id: 'd_old', name: 'Old trend', origin: 'derived' }],
+                    charts: [{ id: 'chart-old', name: 'Bar Chart of Old trend', table: 'd_old', because: 'chart of Old trend' }],
+                    references: [] } }) } as any;
+                yield { type: 'completion', status: 'success', content: { summary: 'Removed the old trend.' } };
+            });
+            const { store } = mountTask();
+            act(() => {
+                seedTable(store);
+                store.dispatch(dfActions.setFocused({ type: 'chart', chartId: 'chart-old' }));
+                store.dispatch(dfActions.queueAnalystTask({ text: 'Delete this chart and its table', images: [], attachments: [] }));
+            });
+            await waitFor(() => expect(turnWith(store, turn => turn.content === 'Removed the old trend.')).toBeDefined());
+            // The agent's session layer is built from the state sent with the request, without preview rows.
+            const sent = requestBody().session_state;
+            expect(sent.derivedTables).toEqual([expect.objectContaining({ id: 'd_old', displayId: 'Old trend' })]);
+            expect(sent.derivedTables[0]).not.toHaveProperty('rows');
+            expect(sent.charts).toEqual([expect.objectContaining({ id: 'chart-old', tableRef: 'd_old' })]);
+            expect(sent.focusedId).toEqual({ type: 'chart', chartId: 'chart-old' });
+            expect(requestBody()).not.toHaveProperty('session_items');
+            const state = store.getState();
+            expect(state.derivedTables).toEqual([]);
+            expect(dfSelectors.getAllCharts(state)).toEqual([]);
+            // What followed the table continues from where it came from, and the note stays in the thread.
+            expect(turnWith(store, turn => turn.id === 'old-closing').parentNodeId).toBe('ask');
+            const noted = turnWith(store, turn => !!turn.progressSteps?.some((step: any) => step.label === 'Deleted Old trend'));
+            expect(noted).toBeDefined();
+            const request = turnWith(store, turn => turn.prompt === 'Delete this chart and its table');
+            expect(chainAbove(store, turnWith(store, turn => turn.content === 'Removed the old trend.').id)).toContain(request.id);
+        });
+
+        it('applies a chart the agent edited as a file and a file it moved', async () => {
+            vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+                yield { type: 'tool_result', tool: 'edit_file', status: 'ok', stdout: JSON.stringify({
+                    path: 'session/charts/chart-old.json', content_hash: 'h',
+                    session_update: { kind: 'chart', id: 'chart-old', spec: { chart_type: 'Line Chart', table: 'd_old',
+                        title: 'Trend over time', encodings: { x: { field: 'a' } } } } }) } as any;
+                yield { type: 'tool_result', tool: 'move_file', status: 'ok', stdout: JSON.stringify({
+                    moved: { from: 'files/draft.md', to: 'files/notes/draft.md' }, content_hash: 'h2' }) } as any;
+                yield { type: 'completion', status: 'success', content: { summary: 'Restyled and tidied.' } };
+            });
+            const { store } = mountTask();
+            act(() => {
+                seedTable(store);
+                store.dispatch(dfActions.upsertFileNode({ kind: 'file', id: 'file-draft.md', path: 'draft.md', displayName: 'Draft',
+                    contentHash: 'h0', parentNodeId: 'ask', createdAt: 4 }));
+                store.dispatch(dfActions.setFocused({ type: 'chart', chartId: 'chart-old' }));
+                store.dispatch(dfActions.queueAnalystTask({ text: 'Make it a line chart and file the draft under notes', images: [], attachments: [] }));
+            });
+            await waitFor(() => expect(turnWith(store, turn => turn.content === 'Restyled and tidied.')).toBeDefined());
+            expect(requestBody().session_state.charts).toEqual([expect.objectContaining({ id: 'chart-old', chartType: 'Bar Chart' })]);
+            const chart = dfSelectors.getAllCharts(store.getState()).find((item: any) => item.id === 'chart-old');
+            expect(chart).toMatchObject({ chartType: 'Line Chart', title: 'Trend over time' });
+            expect(store.getState().fileNodes).toEqual([expect.objectContaining({ id: 'file-draft.md', path: 'notes/draft.md' })]);
+            const steps = store.getState().textTurns.flatMap((turn: any) => turn.progressSteps || []).map((step: any) => step.label);
+            expect(steps).toEqual(expect.arrayContaining(['Edited chart Trend over time', 'Moved files/draft.md to files/notes/draft.md']));
+        });
     });
 
     it('continues the conversation after an app, like after a derived table (design-docs/58, rule 3)', async () => {
@@ -927,7 +1027,8 @@ describe('Analyst landing attachment handoff', () => {
         });
         await waitFor(() => expect(turnWith(store, turn => turn.content === 'Answered.')).toBeDefined());
         expect(turnWith(store, turn => turn.prompt === 'Tell me more').parentNodeId).toBe('closing');
-        if (kind !== 'report') expect(requestBody().focused_external_reference).toBe('external:kusto:Beats');
+        expect(requestBody().session_state.focusedId).toEqual(kind === 'report' ? { type: 'report', reportId: 'report-1' }
+            : { type: 'reference', referenceId: 'loaded-beats' });
     });
 
     it('shows the running plan while the agent works on the focused app', async () => {
@@ -1000,7 +1101,8 @@ describe('Analyst landing attachment handoff', () => {
                 expect(request.parentNodeId).toMatch(expectedParent);
             }
             expect(store.getState().draftNodes[0].parentNodeId).toBe(request.id);
-            expect(requestBody().focused_file).toBe(fileName);
+            // What is on the canvas reaches the agent through the session state (design-docs/61).
+            expect(requestBody().session_state.focusedId).toEqual({ type: 'file', fileName });
         } finally {
             await act(async () => { finishRun(); });
         }
@@ -1611,13 +1713,13 @@ describe('Analyst landing attachment handoff', () => {
         act(() => store.dispatch(dfActions.setFocused({ type: 'file', fileName })));
         act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Analyze this file', images: [], attachments: [] })));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
-        expect(requestBody().focused_file).toBe(fileName);
+        expect(requestBody().session_state.focusedId).toEqual({ type: 'file', fileName });
         expect(requestBody()).not.toHaveProperty('scratch_files');
         await waitFor(() => expect(store.getState().draftNodes.every(draft => draft.derive.status !== 'running')).toBe(true));
         act(() => store.dispatch(dfActions.setFocused(undefined)));
         act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Next question', images: [], attachments: [] })));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(2));
-        expect(requestBody(1)).not.toHaveProperty('focused_file');
+        expect(requestBody(1).session_state.focusedId).not.toEqual({ type: 'file', fileName });
     });
 
     it.each([

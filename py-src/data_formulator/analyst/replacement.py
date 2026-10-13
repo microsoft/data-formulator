@@ -31,8 +31,13 @@ def _canonical(target: str, kind: str) -> str:
 
 
 def _entries(ctx: Any) -> list[dict[str, Any]]:
+    from data_formulator.analyst.session_layer import session_layer
+
     payload = ctx.payload or {}
-    listed = [item for item in payload.get("replaceable_artifacts") or [] if isinstance(item, dict)]
+    layer = session_layer(payload)
+    # The session layer knows the session; a run without one uses the list the application sent.
+    listed = layer.replaceable(layer.focus_node(), limit=10_000) if layer is not None else \
+        [item for item in payload.get("replaceable_artifacts") or [] if isinstance(item, dict)]
     run = list((payload.get("run_artifacts") or {}).values())
     # This run's artifacts come last so a fresh record wins over the request's list.
     return [*listed, *run]
@@ -117,22 +122,3 @@ def _app_reading_table(entry: dict[str, Any], ctx: Any) -> str | None:
     return None
 
 
-def render_replaceable_context(artifacts: list[dict[str, Any]] | None, limit: int = 40) -> str:
-    """The ``[REPLACEABLE ARTIFACTS]`` block: ids the agent may pass as ``replaces``."""
-    items = [item for item in artifacts or [] if isinstance(item, dict) and item.get("kind") in ARTIFACT_KINDS]
-    if not items:
-        return ""
-    lines = ["[REPLACEABLE ARTIFACTS]",
-             "Agent-created artifacts, focused thread first. Pass an id as `replaces` only to fix one the user "
-             "says is wrong or unwanted; never to explore."]
-    for item in items[:limit]:
-        aliases = [alias for alias in item.get("aliases") or [] if alias != item.get("id")]
-        line = f"- {item.get('id')} ({_KIND_NOUNS[item['kind']]}): {item.get('name') or ''}"
-        if aliases:
-            line += f" [also: {', '.join(map(str, aliases))}]"
-        if item.get("blocked"):
-            line += f" — cannot replace: {item['blocked']}"
-        lines.append(line)
-    if len(items) > limit:
-        lines.append(f"- … {len(items) - limit} more not shown")
-    return "\n".join(lines)

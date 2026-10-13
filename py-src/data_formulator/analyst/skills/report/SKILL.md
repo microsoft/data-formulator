@@ -19,8 +19,8 @@ actions:
 ## Scope and structure
 
 Match the report's scope, audience, format, and length to the user's request;
-do not force a fixed template. Use the focused thread for context and include
-other threads only when relevant. Cover the requested findings, not automatically
+do not force a fixed template. Use the focused thread for context and read other
+threads (session/threads) only when relevant. Cover the requested findings, not automatically
 every chart or step in the exploration.
 
 Default to a descriptive title and concise sections organized around findings.
@@ -44,6 +44,6 @@ needed charts already created. A successful call delivers the report as-is and
 returns an observation; it does not end the run. Follow the baseline completion rules.
 
 Embed supporting charts using `![caption](chart://chart_id)` on its own line.
-The ID must come from [AVAILABLE CHARTS] or a successful `visualize` result.
+The ID must be a chart in the session ([SESSION INDEX], session/charts) or from a successful `visualize` result.
 Use concise captions and explain the relevant takeaway; avoid duplicate embeds.
 Use standard Markdown tables for tabular results.

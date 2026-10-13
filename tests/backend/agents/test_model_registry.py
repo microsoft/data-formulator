@@ -172,15 +172,6 @@ class TestCustomProvider:
         assert config["endpoint"] == "orcarouter"
         assert config["api_base"] == "https://api.orcarouter.ai/v1"
 
-    @patch.dict(os.environ, SAMPLE_ENV, clear=True)
-    def test_cheaperinference_builtin_uses_own_name_as_endpoint(self):
-        """cheaperinference is in BUILTIN_PROVIDERS, so it uses itself as endpoint."""
-        registry = ModelRegistry()
-        config = registry.get_config("global-cheaperinference-gpt-5.4-mini")
-        assert config is not None
-        assert config["endpoint"] == "cheaperinference"
-        assert config["api_base"] == "https://api.cheaperinference.com/v1"
-
     @patch.dict(os.environ, {
         "MYVENDOR_API_KEY": "key123",
         "MYVENDOR_MODELS": "my-model",

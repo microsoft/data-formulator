@@ -27,8 +27,3 @@ def test_duckdb_notes_mentions_non_ascii_double_quoting() -> None:
     lower = _ANALYSIS_SKILL_BODY.lower()
     assert "non-ascii" in lower or "non ascii" in lower
     assert '"' in _ANALYSIS_SKILL_BODY
-
-
-def test_duckdb_notes_mentions_identifier_quoting_rule() -> None:
-    """The prompt should contain an explicit quoting rule for identifiers."""
-    assert "identifier" in _ANALYSIS_SKILL_BODY.lower()

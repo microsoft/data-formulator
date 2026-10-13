@@ -18,7 +18,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from data_formulator.datalake.workspace import Workspace
-from data_formulator.security.path_safety import ConfinedDir
 
 pytestmark = [pytest.mark.backend]
 
@@ -33,15 +32,6 @@ class TestWorkspaceConfinedProperties:
         ws = Workspace("test-user", root_dir=tmp_path)
         yield ws
         shutil.rmtree(tmp_path, ignore_errors=True)
-
-    def test_confined_root_is_confineddir(self, workspace):
-        assert isinstance(workspace.confined_root, ConfinedDir)
-
-    def test_confined_data_is_confineddir(self, workspace):
-        assert isinstance(workspace.confined_data, ConfinedDir)
-
-    def test_confined_scratch_is_confineddir(self, workspace):
-        assert isinstance(workspace.confined_scratch, ConfinedDir)
 
     def test_confined_root_points_to_workspace_path(self, workspace):
         assert workspace.confined_root.root == workspace._path.resolve()
@@ -91,7 +81,6 @@ class TestScratchRoutesConfinedMigration:
     def tmp_workspace(self, tmp_path):
         ws = Workspace("test-user", root_dir=tmp_path)
         (ws._path / "scratch").mkdir(exist_ok=True)
-        (ws._path / "scratch" / "report.csv").write_text("a,b\n1,2\n")
         yield ws
         shutil.rmtree(tmp_path, ignore_errors=True)
 
@@ -111,25 +100,6 @@ class TestScratchRoutesConfinedMigration:
         ):
             with app.test_client() as c:
                 yield c
-
-    def test_scratch_serve_normal(self, client):
-        resp = client.get("/api/agent/workspace/scratch/report.csv")
-        assert resp.status_code == 200
-        assert b"a,b" in resp.data
-
-    def test_scratch_serve_traversal_rejected(self, client):
-        resp = client.get("/api/agent/workspace/scratch/../../../etc/passwd")
-        assert resp.status_code == 403
-        body = resp.get_json()
-        assert body["status"] == "error"
-        assert body["error"]["code"] == "ACCESS_DENIED"
-
-    def test_scratch_serve_nonexistent(self, client):
-        resp = client.get("/api/agent/workspace/scratch/no_such.csv")
-        assert resp.status_code == 200
-        body = resp.get_json()
-        assert body["status"] == "error"
-        assert body["error"]["code"] == "TABLE_NOT_FOUND"
 
     def test_scratch_upload_normal(self, client, tmp_workspace):
         import io

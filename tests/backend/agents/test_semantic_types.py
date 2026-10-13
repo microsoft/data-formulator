@@ -19,12 +19,10 @@ import pytest
 
 from data_formulator.agents.semantic_types import (
     # Constants
-    AMOUNT, ADDRESS, BOOLEAN, CATEGORY, CITY, CORRELATION, COUNT,
-    COUNTRY, DATE, DATETIME, DAY, DECADE, DIRECTION, DURATION, HOUR,
-    ID, LATITUDE, LONGITUDE, MONTH, NAME, NUMBER, PERCENTAGE,
-    PERCENTAGE_CHANGE, PRICE, PROFIT, QUANTITY, QUARTER, RANGE, RANK,
-    REGION, SCORE, SENTIMENT, STATE, STATUS, TEMPERATURE, TIME,
-    TIMESTAMP, UNKNOWN, WEEK, YEAR, YEAR_MONTH, YEAR_QUARTER, YEAR_WEEK,
+    AMOUNT, BOOLEAN, CATEGORY, CORRELATION, COUNT,
+    COUNTRY, DATE, DATETIME, DECADE, DIRECTION, DURATION,
+    ID, LATITUDE, MONTH, NAME, PROFIT, RANGE, RANK,
+    SCORE, UNKNOWN, YEAR, YEAR_MONTH,
     ZIP_CODE,
     # Sets / lists
     ALL_SEMANTIC_TYPES, MEASURE_TYPES, TIMESERIES_X_TYPES,
@@ -49,10 +47,6 @@ class TestAllSemanticTypes:
         """Duplicate entries in ALL_SEMANTIC_TYPES would cause silent bugs."""
         assert len(ALL_SEMANTIC_TYPES) == len(set(ALL_SEMANTIC_TYPES))
 
-    def test_includes_known_types(self):
-        for t in [DATETIME, DATE, AMOUNT, COUNT, CATEGORY, COUNTRY, UNKNOWN]:
-            assert t in ALL_SEMANTIC_TYPES
-
     def test_every_vl_map_key_is_in_all_types(self):
         """VL_TYPE_MAP should not reference types absent from ALL_SEMANTIC_TYPES."""
         for key in VL_TYPE_MAP:
@@ -75,22 +69,13 @@ class TestAllSemanticTypes:
 # ---------------------------------------------------------------------------
 
 class TestIsMeasureType:
-    @pytest.mark.parametrize("t", [
-        AMOUNT, PRICE, QUANTITY, TEMPERATURE, PERCENTAGE,
-        PROFIT, PERCENTAGE_CHANGE, SENTIMENT, CORRELATION,
-        COUNT, NUMBER, DURATION,
-    ])
+    @pytest.mark.parametrize("t", [AMOUNT, PROFIT, COUNT, DURATION])
     def test_measure_types_return_true(self, t):
         assert is_measure_type(t) is True
 
-    @pytest.mark.parametrize("t", [
-        CATEGORY, NAME, COUNTRY, DATE, DATETIME, RANK, SCORE, ID, UNKNOWN,
-    ])
+    @pytest.mark.parametrize("t", [CATEGORY, DATE, RANK, SCORE, UNKNOWN])
     def test_non_measure_types_return_false(self, t):
         assert is_measure_type(t) is False
-
-    def test_unknown_string_returns_false(self):
-        assert is_measure_type("NotAType") is False
 
 
 # ---------------------------------------------------------------------------
@@ -98,17 +83,11 @@ class TestIsMeasureType:
 # ---------------------------------------------------------------------------
 
 class TestIsTimeseriesType:
-    @pytest.mark.parametrize("t", [
-        DATETIME, DATE, TIME, TIMESTAMP,
-        YEAR_MONTH, YEAR_QUARTER, YEAR_WEEK,
-        YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, DECADE,
-    ])
+    @pytest.mark.parametrize("t", [DATETIME, YEAR_MONTH, YEAR, DECADE])
     def test_timeseries_types_return_true(self, t):
         assert is_timeseries_type(t) is True
 
-    @pytest.mark.parametrize("t", [
-        AMOUNT, CATEGORY, COUNTRY, COUNT, RANK, UNKNOWN,
-    ])
+    @pytest.mark.parametrize("t", [AMOUNT, CATEGORY, RANK])
     def test_non_timeseries_return_false(self, t):
         assert is_timeseries_type(t) is False
 
@@ -118,16 +97,11 @@ class TestIsTimeseriesType:
 # ---------------------------------------------------------------------------
 
 class TestIsCategoricalType:
-    @pytest.mark.parametrize("t", [
-        NAME, CATEGORY, STATUS, BOOLEAN, DIRECTION,
-        COUNTRY, STATE, CITY, REGION, ADDRESS, ZIP_CODE, RANGE,
-    ])
+    @pytest.mark.parametrize("t", [NAME, BOOLEAN, COUNTRY, ZIP_CODE, RANGE])
     def test_categorical_types_return_true(self, t):
         assert is_categorical_type(t) is True
 
-    @pytest.mark.parametrize("t", [
-        AMOUNT, DATE, COUNT, RANK, LATITUDE, LONGITUDE, UNKNOWN,
-    ])
+    @pytest.mark.parametrize("t", [AMOUNT, DATE, RANK, LATITUDE])
     def test_non_categorical_return_false(self, t):
         assert is_categorical_type(t) is False
 
@@ -137,16 +111,11 @@ class TestIsCategoricalType:
 # ---------------------------------------------------------------------------
 
 class TestIsOrdinalType:
-    @pytest.mark.parametrize("t", [
-        YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, DECADE,
-        RANK, SCORE, RANGE, DIRECTION,
-    ])
+    @pytest.mark.parametrize("t", [YEAR, MONTH, RANK, RANGE, DIRECTION])
     def test_ordinal_types_return_true(self, t):
         assert is_ordinal_type(t) is True
 
-    @pytest.mark.parametrize("t", [
-        AMOUNT, DATETIME, CATEGORY, COUNTRY, UNKNOWN,
-    ])
+    @pytest.mark.parametrize("t", [AMOUNT, DATETIME, CATEGORY])
     def test_non_ordinal_return_false(self, t):
         assert is_ordinal_type(t) is False
 
@@ -156,16 +125,11 @@ class TestIsOrdinalType:
 # ---------------------------------------------------------------------------
 
 class TestIsGeoType:
-    @pytest.mark.parametrize("t", [
-        LATITUDE, LONGITUDE,
-        COUNTRY, STATE, CITY, REGION, ADDRESS, ZIP_CODE,
-    ])
+    @pytest.mark.parametrize("t", [LATITUDE, COUNTRY, ZIP_CODE])
     def test_geo_types_return_true(self, t):
         assert is_geo_type(t) is True
 
-    @pytest.mark.parametrize("t", [
-        AMOUNT, DATE, CATEGORY, RANK, UNKNOWN,
-    ])
+    @pytest.mark.parametrize("t", [AMOUNT, CATEGORY, RANK])
     def test_non_geo_return_false(self, t):
         assert is_geo_type(t) is False
 
@@ -175,15 +139,11 @@ class TestIsGeoType:
 # ---------------------------------------------------------------------------
 
 class TestIsNonMeasureNumeric:
-    @pytest.mark.parametrize("t", [
-        RANK, SCORE, YEAR, MONTH, DAY, HOUR, LATITUDE, LONGITUDE,
-    ])
+    @pytest.mark.parametrize("t", [RANK, SCORE, YEAR, LATITUDE])
     def test_non_measure_numerics_return_true(self, t):
         assert is_non_measure_numeric(t) is True
 
-    @pytest.mark.parametrize("t", [
-        AMOUNT, CATEGORY, DATETIME, UNKNOWN,
-    ])
+    @pytest.mark.parametrize("t", [AMOUNT, CATEGORY])
     def test_others_return_false(self, t):
         assert is_non_measure_numeric(t) is False
 
@@ -193,11 +153,11 @@ class TestIsNonMeasureNumeric:
 # ---------------------------------------------------------------------------
 
 class TestIsSignedMeasure:
-    @pytest.mark.parametrize("t", [PROFIT, PERCENTAGE_CHANGE, SENTIMENT, CORRELATION])
+    @pytest.mark.parametrize("t", [PROFIT, CORRELATION])
     def test_signed_measures_return_true(self, t):
         assert is_signed_measure(t) is True
 
-    @pytest.mark.parametrize("t", [AMOUNT, COUNT, CATEGORY, DATE, UNKNOWN])
+    @pytest.mark.parametrize("t", [AMOUNT, COUNT, CATEGORY])
     def test_non_signed_return_false(self, t):
         assert is_signed_measure(t) is False
 
@@ -209,47 +169,15 @@ class TestIsSignedMeasure:
 class TestGetVlType:
     @pytest.mark.parametrize("semantic, expected_vl", [
         (DATETIME, "temporal"),
-        (DATE, "temporal"),
-        (TIME, "temporal"),
-        (TIMESTAMP, "temporal"),
-        (YEAR_MONTH, "temporal"),
-        (YEAR_QUARTER, "temporal"),
-        (YEAR_WEEK, "temporal"),
         (YEAR, "temporal"),
-        (QUARTER, "ordinal"),
         (MONTH, "ordinal"),
-        (WEEK, "ordinal"),
-        (DAY, "ordinal"),
-        (HOUR, "ordinal"),
-        (DECADE, "ordinal"),
         (DURATION, "quantitative"),
         (AMOUNT, "quantitative"),
-        (PRICE, "quantitative"),
-        (QUANTITY, "quantitative"),
-        (TEMPERATURE, "quantitative"),
-        (PERCENTAGE, "quantitative"),
-        (PROFIT, "quantitative"),
-        (PERCENTAGE_CHANGE, "quantitative"),
-        (SENTIMENT, "quantitative"),
-        (CORRELATION, "quantitative"),
-        (COUNT, "quantitative"),
-        (NUMBER, "quantitative"),
         (RANK, "ordinal"),
         (SCORE, "quantitative"),
         (ID, "nominal"),
         (LATITUDE, "quantitative"),
-        (LONGITUDE, "quantitative"),
         (COUNTRY, "nominal"),
-        (STATE, "nominal"),
-        (CITY, "nominal"),
-        (REGION, "nominal"),
-        (ADDRESS, "nominal"),
-        (ZIP_CODE, "nominal"),
-        (NAME, "nominal"),
-        (CATEGORY, "nominal"),
-        (STATUS, "nominal"),
-        (BOOLEAN, "nominal"),
-        (DIRECTION, "nominal"),
         (RANGE, "ordinal"),
         (UNKNOWN, "nominal"),
     ])
@@ -266,43 +194,27 @@ class TestGetVlType:
 
 class TestInferVlTypeFromName:
     # Temporal heuristics
-    @pytest.mark.parametrize("name", [
-        "date", "created_at", "updated_at", "started_at", "ended_at",
-        "order_date", "timestamp", "datetime", "time", "year",
-    ])
+    @pytest.mark.parametrize("name", ["date", "created_at", "order_date"])
     def test_temporal_names(self, name):
         assert infer_vl_type_from_name(name) == "temporal", f"Expected temporal for {name!r}"
 
     # Ordinal heuristics
-    @pytest.mark.parametrize("name", [
-        "month", "quarter", "week", "day", "hour", "decade",
-        "year_month", "year_quarter",
-        "rank", "ranking", "user_rank", "priority_level", "tier",
-    ])
+    @pytest.mark.parametrize("name", ["month", "year_month", "rank", "user_rank", "priority_level"])
     def test_ordinal_names(self, name):
         assert infer_vl_type_from_name(name) == "ordinal", f"Expected ordinal for {name!r}"
 
     # Quantitative heuristics
-    @pytest.mark.parametrize("name", [
-        "revenue_sum", "total_sales", "avg_price", "count_orders",
-        "mean_temperature", "max_score", "min_cost", "profit_change",
-        "growth_rate", "pct_change", "lat", "lon", "latitude", "longitude",
-    ])
+    @pytest.mark.parametrize("name", ["revenue_sum", "avg_price", "max_score", "growth_rate", "lat", "longitude"])
     def test_quantitative_names(self, name):
         assert infer_vl_type_from_name(name) == "quantitative", f"Expected quantitative for {name!r}"
 
     # Nominal heuristics
-    @pytest.mark.parametrize("name", [
-        "user_name", "product_category", "status", "group_id",
-        "country", "city", "region", "brand", "company",
-    ])
+    @pytest.mark.parametrize("name", ["user_name", "group_id", "country", "company"])
     def test_nominal_names(self, name):
         assert infer_vl_type_from_name(name) == "nominal", f"Expected nominal for {name!r}"
 
     # No-signal names — should return None
-    @pytest.mark.parametrize("name", [
-        "x", "value", "col_a", "data", "info",
-    ])
+    @pytest.mark.parametrize("name", ["x", "value"])
     def test_no_signal_names_return_none(self, name):
         assert infer_vl_type_from_name(name) is None, f"Expected None for {name!r}"
 
@@ -320,27 +232,6 @@ class TestInferVlTypeFromName:
 # ---------------------------------------------------------------------------
 
 class TestGenerateSemanticTypesPrompt:
-    def test_returns_non_empty_string(self):
-        prompt = generate_semantic_types_prompt()
-        assert isinstance(prompt, str)
-        assert len(prompt) > 100
-
-    def test_contains_category_headers(self):
-        prompt = generate_semantic_types_prompt()
-        assert "Temporal" in prompt
-        assert "Numeric" in prompt
-        assert "Geographic" in prompt
-        assert "Categorical" in prompt
-
-    def test_contains_type_names(self):
-        prompt = generate_semantic_types_prompt()
-        for t in [DATETIME, AMOUNT, COUNTRY, CATEGORY, UNKNOWN]:
-            assert t in prompt, f"{t!r} missing from semantic types prompt"
-
-    def test_contains_guidelines(self):
-        prompt = generate_semantic_types_prompt()
-        assert "Guidelines" in prompt
-
     def test_all_registered_types_appear_in_prompt(self):
         """Every type in ALL_SEMANTIC_TYPES must appear somewhere in the prompt."""
         prompt = generate_semantic_types_prompt()

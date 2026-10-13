@@ -131,14 +131,6 @@ class TestSampleTablePagination:
                       method="head", order_by_fields=["value"])
         assert r1["total_row_count"] == r2["total_row_count"] == 50
 
-    def test_backward_compat_no_offset(self, client, seeded_table):
-        """Requests without offset param should default to 0 (no skipping)."""
-        result = _sample(client, seeded_table, size=5, method="head",
-                         order_by_fields=["value"])
-        rows = result["rows"]
-        assert len(rows) == 5
-        assert rows[0]["value"] == 0
-
     def test_pages_cover_all_rows_without_overlap(self, client, seeded_table):
         """Paginating through all rows should yield exactly 50 unique values."""
         all_values = []

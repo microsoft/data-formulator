@@ -713,6 +713,8 @@ class LocalSandbox(Sandbox):
                 logger.warning(f"[LocalSandbox] failed to list workspace dir: {e}")
             try:
                 allowed_objects = {output_variable: None}
+                from .session_imports import with_session_imports
+                code = with_session_imports(code, workspace, workspace_path)
                 result = self._run_in_warm_subprocess(code, allowed_objects, workspace_path)
 
                 if result["status"] == "ok":

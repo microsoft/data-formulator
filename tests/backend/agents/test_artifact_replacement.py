@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from data_formulator.analyst.replacement import (
-    mark_run_artifacts_used, record_run_artifact, render_replaceable_context, resolve_replacement,
+    mark_run_artifacts_used, record_run_artifact, resolve_replacement,
 )
 from data_formulator.analyst.skills import SkillContext, build_registry
 from data_formulator.datalake.workspace import Workspace
@@ -57,14 +57,6 @@ def test_refuses_a_table_an_app_reads(tmp_path) -> None:
                                   "trend.app.jsx", "text/jsx", agent_managed=True)
     with pytest.raises(ValueError, match="the app files/trend.app.jsx reads it"):
         resolve_replacement("d_trend", "table", _ctx(workspace))
-
-
-def test_context_lists_ids_and_why_some_cannot_be_replaced() -> None:
-    block = render_replaceable_context(LISTED)
-    assert block.startswith("[REPLACEABLE ARTIFACTS]")
-    assert "- d_trend (table or chart): Trend [also: chart-trend]" in block
-    assert "- d_base (table or chart): Base — cannot replace: the table Trend was computed from it" in block
-    assert render_replaceable_context([]) == ""
 
 
 def test_write_report_names_the_report_it_replaces() -> None:

@@ -16,9 +16,17 @@ import type { HtmlAppManifest } from '../htmlApp/htmlAppDocument';
 export const REACT_APP_FILE = /\.app\.jsx$/i;
 
 /** Modules the runtime provides; must match `MODULES` in runtime/index.tsx. */
+/** Modules in their own runtime bundles, injected only into apps that use them. */
+export const OPTIONAL_IMPORTS = ['d3', 'lodash', '@df/geo'] as const;
+export type OptionalImport = typeof OPTIONAL_IMPORTS[number];
+
 export const ALLOWED_IMPORTS = [
     'react', 'react/jsx-runtime', '@df/ui', '@df/data', '@df/chart', '@df/format', '@df/icons', '@mui/material',
+    ...OPTIONAL_IMPORTS,
 ];
+
+/** A Flint map draws vendored boundaries from `@df/geo`. */
+const FLINT_MAP_CHART = /(['"])(?:Map|Choropleth)\1/;
 
 const MANIFEST_LINE = /^\s*\/\/\s*@df-app\s+(\{.*\})\s*$/m;
 
@@ -30,17 +38,19 @@ export function parseReactAppManifest(source: string): HtmlAppManifest {
     try {
         const parsed = JSON.parse(match[1]);
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return empty;
-        const tables: string[] = Array.isArray(parsed.tables)
-            ? Array.from(new Set<string>(parsed.tables.filter((table: unknown): table is string => typeof table === 'string' && table.length > 0)))
+        const names = (value: unknown): string[] => Array.isArray(value)
+            ? Array.from(new Set<string>(value.filter((item: unknown): item is string => typeof item === 'string' && item.length > 0)))
             : [];
-        return { version: 2, title: typeof parsed.title === 'string' ? parsed.title : '', tables };
+        const tables = names(parsed.tables);
+        const sources = names(parsed.sources);
+        return { version: 2, title: typeof parsed.title === 'string' ? parsed.title : '', tables, ...(sources.length ? { sources } : {}) };
     } catch {
         return empty;
     }
 }
 
 export type CompileResult =
-    | { ok: true; code: string; manifest: HtmlAppManifest }
+    | { ok: true; code: string; manifest: HtmlAppManifest; optionalModules: OptionalImport[] }
     | { ok: false; error: string; manifest: HtmlAppManifest };
 
 /** Compile app source to a CommonJS module body, or explain why it cannot run. */
@@ -73,7 +83,9 @@ export function compileReactApp(source: string): CompileResult {
     if (!/\bexports\.\s*default\s*=/.test(code)) {
         return { ok: false, manifest, error: 'The app must `export default` a React component.' };
     }
-    return { ok: true, code, manifest };
+    const optionalModules = OPTIONAL_IMPORTS.filter(name => imports.includes(name)
+        || (name === '@df/geo' && FLINT_MAP_CHART.test(source)));
+    return { ok: true, code, manifest, optionalModules };
 }
 
 /** The script that evaluates the compiled module and mounts it in the app frame. */

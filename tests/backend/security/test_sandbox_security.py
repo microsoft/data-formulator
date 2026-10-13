@@ -17,7 +17,7 @@ import pytest
 from data_formulator.sandbox import LocalSandbox, DockerSandbox
 from data_formulator.sandbox.docker_sandbox import docker_run_command
 
-pytestmark = [pytest.mark.backend]
+pytestmark = [pytest.mark.slow, pytest.mark.backend]
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ALLOWED_IMPORTS, compileReactApp, mountScript, parseReactAppManifest } from '../../../../../src/app/reactApp/compile';
-import { MODULES } from '../../../../../src/app/reactApp/runtime/index';
+import { MODULES, OPTIONAL_MODULES } from '../../../../../src/app/reactApp/runtime/index';
 
 const APP = `// @df-app {"version": 2, "title": "Sales", "tables": ["sales", 3, "sales"]}
 import { useState } from 'react';
@@ -46,12 +46,41 @@ describe('compileReactApp', () => {
     });
 
     it('rejects imports the runtime does not provide and a missing default export', () => {
-        const imported = compileReactApp("import _ from 'lodash';\nimport x from 'https://cdn.example/x.js';\nexport default () => null;");
-        expect(imported).toMatchObject({ ok: false, error: expect.stringContaining('Cannot import "lodash", "https://cdn.example/x.js"') });
+        const imported = compileReactApp("import moment from 'moment';\nimport x from 'https://cdn.example/x.js';\nexport default () => null;");
+        expect(imported).toMatchObject({ ok: false, error: expect.stringContaining('Cannot import "moment", "https://cdn.example/x.js"') });
         expect(compileReactApp('function App() { return null; }')).toMatchObject({ ok: false, error: expect.stringContaining('export default') });
     });
 
-    it('allows exactly the modules the runtime provides', () => {
-        expect([...ALLOWED_IMPORTS].sort()).toEqual(Object.keys(MODULES).sort());
+    it('allows exactly the modules the runtime provides, core and optional', () => {
+        expect([...ALLOWED_IMPORTS].sort()).toEqual([...Object.keys(MODULES), ...OPTIONAL_MODULES].sort());
+    });
+});
+
+describe('optional modules', () => {
+    const optional = (source: string) => {
+        const result = compileReactApp(source);
+        return result.ok ? result.optionalModules : result.error;
+    };
+
+    it('loads only the optional bundles an app uses', () => {
+        expect(optional("import _ from 'lodash';\nexport default function App() { return <b>{_.sum([1])}</b>; }")).toEqual(['lodash']);
+        expect(optional("import * as d3 from 'd3';\nimport { countries } from '@df/geo';\nexport default function App() { return <b>{countries().length}{d3.max([1])}</b>; }"))
+            .toEqual(['d3', '@df/geo']);
+        expect(optional("export default function App() { return <b>plain</b>; }")).toEqual([]);
+    });
+
+    it('loads map boundaries for a Flint map', () => {
+        expect(optional("import { FlintChart } from '@df/chart';\nexport default function App() { return <FlintChart chartType=\"Choropleth\" encodings={{}} />; }"))
+            .toEqual(['@df/geo']);
+    });
+
+    it('still refuses other packages', () => {
+        expect(optional("import { groupBy } from 'lodash/groupBy';\nexport default function App() { return null; }"))
+            .toMatch(/Cannot import "lodash\/groupBy"/);
+    });
+
+    it('reads declared sources from the manifest', () => {
+        expect(parseReactAppManifest('// @df-app {"version": 2, "title": "Live", "tables": [], "sources": ["external:kusto:Events", 1]}\nexport default 1'))
+            .toEqual({ version: 2, title: 'Live', tables: [], sources: ['external:kusto:Events'] });
     });
 });

@@ -138,6 +138,9 @@ class DockerSandbox(Sandbox):
         # (no-op for local workspaces, downloads blobs for Azure).
         with workspace.local_dir() as local_path:
             workspace_path = str(local_path)
+            # Workspace helpers work here too; session packages are built for the host, not the container.
+            from .session_imports import with_session_imports
+            code = with_session_imports(code, workspace)
 
             tmpdir = tempfile.mkdtemp(prefix="df_docker_")
             output_dir = os.path.join(tmpdir, "outputs")

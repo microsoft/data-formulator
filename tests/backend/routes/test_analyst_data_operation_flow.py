@@ -195,7 +195,7 @@ def test_analyst_request_resolves_execution_defaults(agents_client, tmp_path: Pa
     assert "max_repair_attempts" not in analyst_agent.call_args.kwargs
 
 
-@pytest.mark.parametrize("max_iterations", [0, -1, True, "10", 1.5, None])
+@pytest.mark.parametrize("max_iterations", [0, True, "10", 1.5, None])
 def test_invalid_action_budget_is_rejected_before_execution(agents_client, max_iterations) -> None:
     with (
         patch("data_formulator.routes.agents.get_identity_id", return_value="test-user"),

@@ -18,16 +18,21 @@ const renderPreview = (source: string, onAskFix = vi.fn()) => {
 };
 
 describe('ReactAppPreview', () => {
-    it('shows compile errors without running the app and offers a fix', () => {
+    it('shows a crash page for an app that cannot compile, with a button to ask the agent once', () => {
         const onAskFix = renderPreview('// @df-app {"version": 2, "title": "Sales", "tables": []}\nexport default function App() {\n  return <div>;\n}');
-        expect(screen.getByRole('alert')).toHaveTextContent(/Syntax error at line 3/);
+        const crash = screen.getByRole('alert');
+        expect(crash).toHaveAttribute('data-app-crash');
+        expect(crash).toHaveTextContent("This app couldn't be displayed");
+        expect(crash).toHaveTextContent(/Syntax error at line 3/);
         fireEvent.click(screen.getByRole('button', { name: /ask agent to fix/i }));
         expect(onAskFix).toHaveBeenCalledWith([expect.stringMatching(/^Syntax error at line 3/)]);
+        expect(screen.getByRole('button', { name: /sent to the agent/i })).toBeDisabled();
+        expect(onAskFix).toHaveBeenCalledTimes(1);
     });
 
     it('explains disallowed imports', () => {
-        renderPreview("import _ from 'lodash';\nexport default () => null;");
-        expect(screen.getByRole('alert')).toHaveTextContent('Cannot import "lodash"');
+        renderPreview("import moment from 'moment';\nexport default () => null;");
+        expect(screen.getByRole('alert')).toHaveTextContent('Cannot import "moment"');
     });
 
     it('renders a valid app without errors', () => {
