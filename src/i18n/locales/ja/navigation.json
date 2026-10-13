@@ -1,8 +1,8 @@
 {
   "navigation": {
-    "startExploration": "探索を開始します",
-    "installLocally": "ローカルにインストールします",
-    "tryOnlineDemo": "オンラインデモを試します",
+    "startExploration": "探索を開始",
+    "installLocally": "ローカルにインストール",
+    "tryOnlineDemo": "オンラインデモを試す",
     "video": "動画",
     "github": "GitHub",
     "contactUs": "お問い合わせ",

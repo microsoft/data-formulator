@@ -5,6 +5,9 @@ import zh from "../../../../src/i18n/locales/zh";
 import hi from "../../../../src/i18n/locales/hi";
 import id from "../../../../src/i18n/locales/id";
 import ja from "../../../../src/i18n/locales/ja";
+import de from "../../../../src/i18n/locales/de";
+import fr from "../../../../src/i18n/locales/fr";
+import ko from "../../../../src/i18n/locales/ko";
 
 type TranslationValue = string | string[] | { [key: string]: TranslationValue };
 type TranslationMap = Record<string, TranslationValue>;
@@ -41,5 +44,17 @@ describe("i18n locale bundles", () => {
 
   it("keeps Japanese translation keys aligned with English", () => {
     expect(collectKeys(ja)).toEqual(collectKeys(en));
+  });
+
+  it("keeps German translation keys aligned with English", () => {
+    expect(collectKeys(de)).toEqual(collectKeys(en));
+  });
+
+  it("keeps French translation keys aligned with English", () => {
+    expect(collectKeys(fr)).toEqual(collectKeys(en));
+  });
+
+  it("keeps Korean translation keys aligned with English", () => {
+    expect(collectKeys(ko)).toEqual(collectKeys(en));
   });
 });

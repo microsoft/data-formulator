@@ -1449,6 +1449,8 @@
   },
   "htmlApp": {
     "askAgentToFix": "Minta agen memperbaiki",
+    "askedAgentToFix": "Terkirim ke agen",
+    "crashTitle": "Aplikasi ini tidak dapat ditampilkan",
     "reload": "Muat ulang aplikasi",
     "appError": "Kesalahan aplikasi",
     "navigationBlocked": "Aplikasi mencoba berpindah ke halaman lain dan dihentikan. Muat ulang untuk mencoba lagi.",

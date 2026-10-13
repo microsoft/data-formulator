@@ -1449,6 +1449,8 @@
   },
   "htmlApp": {
     "askAgentToFix": "让智能体修复",
+    "askedAgentToFix": "已发送给智能体",
+    "crashTitle": "无法显示此应用",
     "reload": "重新加载应用",
     "appError": "应用错误",
     "navigationBlocked": "应用尝试跳转到其他页面，已被阻止。请重新加载后重试。",

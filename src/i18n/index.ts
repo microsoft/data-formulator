@@ -4,7 +4,7 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
-import { en, zh, hi, id, ja } from './locales';
+import { en, zh, hi, id, ja, de, fr, ko } from './locales';
 
 // NOTE: locale JSON is ingested into the i18next store once, here, at init().
 // Adding keys to a locale file requires a full page reload (not just HMR) for
@@ -15,6 +15,9 @@ const resources = {
   hi: { translation: hi },
   id: { translation: id },
   ja: { translation: ja },
+  de: { translation: de },
+  fr: { translation: fr },
+  ko: { translation: ko },
 };
 
 export const SUPPORTED_UI_LANGUAGES: readonly string[] = Object.keys(resources);
