@@ -1,7 +1,7 @@
 # 统一错误处理开发规范
 
 > **维护者**: DF 核心团队
-> **最后更新**: 2026-05-01
+> **最后更新**: 2026-10-13
 > **适用范围**: 后端 API route、流式端点、前端 API 调用、错误码/i18n、错误相关测试
 > **核心原则**: 业务/校验错误一律 HTTP 200，仅认证/授权和不可控传输错误使用非 200
 
@@ -332,7 +332,7 @@ try {
 |------|------|
 | 用户主动操作失败 | 必须通知用户，例如 `addMessages` 或 `handleApiError()` |
 | 后台 best-effort 加载 | 可以静默，但要加注释说明为何可忽略 |
-| RTK thunk rejected | 必须有 `.rejected` handler，按 `error.name` 区分 `AbortError`（静默）、`TimeoutError`（超时提示）和业务错误（通用提示），参见 `fetchChartInsight` |
+| RTK thunk rejected | 必须有 `.rejected` handler，按 `action.error.name` 区分 `AbortError`（静默）和其他错误（提示），参见 `dfSlice.tsx` 中 `fetchCodeExpl` / `fetchAvailableModels` 的 rejected handler |
 | `AbortError` | 可直接忽略 |
 
 ### 4.5 RTK `createAsyncThunk` 序列化边界
@@ -435,14 +435,14 @@ LLM / Agent 请求不要硬编码短 timeout。timeout 来源必须可解释：
 | 数据库 / connector connect | 独立连接 timeout，并显示连接超时文案 |
 | best-effort preview / debounce | 可短超时或无提示，但必须注释说明 |
 
-系统 timeout 应与用户取消区分。推荐使用 `AbortController.abort(reason)` 传入
-`DOMException(..., "TimeoutError")`，rejected reducer 通过 `action.error.name`
-区分：
+系统 timeout 应与用户取消区分。当前做法（参见 `src/views/SimpleChartRecBox.tsx`
+的 Agent 请求）是在 timeout 回调中先设置本地 `timedOut` 标记再调用
+`controller.abort()`，catch 中按以下方式区分：
 
-| `action.error.name` | 含义 | 处理 |
+| 条件 | 含义 | 处理 |
 |---|---|---|
-| `TimeoutError` | 系统超时 | 显示 warning，文案包含配置秒数或任务名称 |
-| `AbortError` | 用户取消或组件卸载 | 可静默 |
+| `AbortError` 且 `timedOut` | 系统超时 | 显示 warning，文案包含配置秒数（如 `messages.agent.requestTimedOut`） |
+| `AbortError` 且非 `timedOut` | 用户取消或组件卸载 | 可静默或显示“已取消” |
 | 其他错误 | API / 业务错误 | 使用 `getErrorMessage()` 或本地 i18n 文案提示 |
 
 `fetchCodeExpl` 和 `fetchFieldSemanticType` 不设置前端硬编码 timeout；新增同类后台
@@ -455,7 +455,8 @@ metadata 请求不要复制短客户端 abort 模式。
 1. `py-src/data_formulator/errors.py`: 添加 `ErrorCode` 常量（无需添加 HTTP 映射，默认 200）
 2. `src/app/errorCodes.ts`: 添加 `ERROR_CODE_I18N_MAP`
 3. `src/i18n/locales/en/errors.json`: 添加英文文案
-4. `src/i18n/locales/zh/errors.json`: 添加中文文案
+4. 其他 locale（`zh`、`de`、`fr`、`hi`、`id`、`ja`、`ko`）的 `errors.json`: 同步添加对应 key；
+   `tests/frontend/unit/app/i18nLocales.test.ts` 会校验各 locale 与英文 key 对齐
 
 前端通过 `getErrorMessage(apiError)` 优先使用本地 i18n，缺失时回退到后端英文 `message`。
 
@@ -530,12 +531,12 @@ DataLoader/connector 只做简单实用分类，不为每个 SDK 维护专门错
 
 ### 7.1 自动化护栏现状
 
-当前已有后端协议合约测试、前端 `apiClient` 测试和轻量 ESLint 护栏。其他尚未
-落地的自动化护栏不要在设计文档或评审中标记为已完成：
+当前的自动化护栏只有以下几类，没有独立的 API error 静态扫描脚本：
 
-- `scripts/check_api_error_guardrails.py` 静态扫描脚本暂不实现；只有在误用反复出现时再考虑。
-- CI 暂不强制接入 API error guardrail 扫描，避免维护复杂扫描器和误报。
-- ESLint 已禁止业务代码新增直接 `fetchWithIdentity().json()` / `(await fetchWithIdentity()).json()`；
+- 后端协议合约测试：`tests/backend/errors/test_api_error_protocol_contract.py`、
+  `tests/backend/errors/test_error_handler.py`、`tests/backend/errors/test_errors.py`。
+- 前端测试：`tests/frontend/unit/app/apiClient.test.ts`、`errorHandler.test.ts`、`errorCodes.test.ts`。
+- ESLint（`eslint.config.js`）已禁止业务代码新增直接 `fetchWithIdentity().json()` / `(await fetchWithIdentity()).json()`；
   更复杂的 `fetchWithIdentity` 用法仍按人工评审和统一 API 规范判断。
 
 ## 8. 新 endpoint checklist
@@ -553,7 +554,7 @@ DataLoader/connector 只做简单实用分类，不为每个 SDK 维护专门错
 ### 流式 endpoint
 
 - [ ] `mimetype='application/x-ndjson'`
-- [ ] 使用 `stream_with_context(_with_warnings(generate()))` 包裹
+- [ ] 使用 `stream_with_context(_with_warnings(generate()))` 包裹（`_with_warnings` 定义在 `routes/agents.py`）
 - [ ] 预检失败使用 `stream_preflight_error(AppError(...))`
 - [ ] 流内错误使用 `stream_error_event(classify_and_wrap_llm_error(e))`
 - [ ] 前端消费代码处理 `type: "error"` 和 `type: "warning"`
