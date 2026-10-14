@@ -216,19 +216,15 @@ All streaming endpoints are now on the unified protocol:
 
 | Endpoint | Format | Notes |
 |----------|--------|-------|
-| `/data-agent-streaming` | NDJSON + `stream_error_event()` | Emits top-level `type` events; errors use `{type:"error", error:{...}}` |
-| `/get-recommendation-questions` | NDJSON + `stream_error_event()` | Was `error: {json}` prefix |
-| `/generate-report-chat` | Pure NDJSON + `stream_error_event()` | Was SSE `data: {json}` prefix |
-| `/data-loading-chat` | NDJSON + `stream_error_event()` | `str(e)` removed |
-| `/clean-data-stream` | NDJSON + `stream_error_event()` | Was `\n{json}\n` format |
+| `/api/agent/analyst-streaming` | NDJSON + `stream_error_event()` | Emits top-level `type` events; errors use `{type:"error", error:{...}}`. Preflight failures return `stream_preflight_error()` |
+| `/api/workflows/run` | NDJSON + `stream_error_event()` | Emits `type` events plus heartbeats; errors use `{type:"error", error:{...}}` |
 
 Non-streaming endpoints:
 
 | Endpoint | Error Format | Notes |
 |----------|-------------|-------|
-| `/chart-insight` | `AppError` → HTTP 200 + `{status:"error", error:{code,message,retry}}` | Fully migrated. Frontend uses `fetchChartInsight` rejected reducer. |
 | All migrated endpoints | `AppError` → HTTP 200 + unified error body | credentials, knowledge, sessions, tables, agents |
-| `/derive-data`, `/refine-data`, `/sort-data`, `/process-data-on-load`, `/test-model` | `json_ok()` / `AppError` | Migrated to new format |
+| `/sort-data`, `/process-data-on-load`, `/test-model` | `json_ok()` / `AppError` | Migrated to new format |
 
 ## Empty Catch Policy
 
