@@ -93,29 +93,36 @@ Play with Data Formulator with one of the following options.
 ### Desktop downloads
 
 CI builds self-contained Windows and macOS applications for pull requests and
-every update to `main`. Download the latest archives from the **Artifacts**
+every update to `main`. Download the latest files from the **Artifacts**
 section of the most recent
 [desktop builds workflow](https://github.com/microsoft/data-formulator/actions/workflows/desktop-build.yml).
-Workflow artifacts are retained for 30 days. Tagged builds are also attached
-as permanent downloads to the corresponding
-[GitHub Release](https://github.com/microsoft/data-formulator/releases).
+Workflow artifacts are retained for 30 days. The `data-formulator-windows-x64`
+artifact holds the unsigned Windows installer
+(`Data-Formulator-<version>-Windows-x64-Setup-unsigned.exe`), and
+`data-formulator-macos` holds an unsigned disk image and a portable
+`Data-Formulator-macOS.zip`. Tagged builds attach only the macOS portable zip to
+the corresponding [GitHub Release](https://github.com/microsoft/data-formulator/releases);
+the Windows installer is not published there. See
+[Desktop installer validation](DEVELOPMENT.md#desktop-installer-validation)
+for details.
 
-Extract the archive, then launch Data Formulator using the instructions for
-your operating system:
+Launch Data Formulator using the instructions for your operating system:
 
-- **Windows:** Run `Data Formulator.exe`. If Microsoft Defender SmartScreen
-  appears, select **More info**, verify that you downloaded the archive from
-  this repository, and then select **Run anyway**.
-- **macOS:** Move `Data Formulator.app` to **Applications**. The first time you
-  open it, macOS may report that Apple could not verify the app. Open
-  **System Settings → Privacy & Security**, scroll to **Security**, and select
-  **Open Anyway** for Data Formulator. Confirm by selecting **Open** when
-  prompted.
+- **Windows:** Extract the `data-formulator-windows-x64` artifact and run the
+  `*-Setup-unsigned.exe` installer, which installs for the current user without
+  administrator rights. Then start Data Formulator from the Start menu. If
+  Microsoft Defender SmartScreen appears, select **More info**, verify that you
+  downloaded the installer from this repository, and then select **Run anyway**.
+- **macOS:** Extract `Data-Formulator-macOS.zip` and move `Data Formulator.app`
+  to **Applications**. The first time you open it, macOS may report that Apple
+  could not verify the app. Open **System Settings → Privacy & Security**,
+  scroll to **Security**, and select **Open Anyway** for Data Formulator.
+  Confirm by selecting **Open** when prompted.
 
 > [!WARNING]
 > These are automated preview builds and are not currently code-signed or
-> notarized. Only bypass the operating-system warning when the archive was
-> downloaded directly from this repository's workflow artifacts or releases.
+> notarized. Only bypass the operating-system warning when the download
+> came directly from this repository's workflow artifacts or releases.
 
 - **Option 1: Install via uv (recommended)**
   
