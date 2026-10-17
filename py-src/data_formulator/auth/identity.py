@@ -21,6 +21,7 @@ import getpass
 import logging
 import os
 import re
+from contextvars import ContextVar
 from typing import Optional
 
 from flask import Flask, g, request
@@ -54,6 +55,7 @@ _allow_anonymous: bool = True
 # Single-user localhost mode: use fixed OS-derived identity instead of
 # trusting the client-provided X-Identity-Id header.
 _localhost_identity: Optional[str] = None
+_scheduled_identity: ContextVar[str | None] = ContextVar("scheduled_identity", default=None)
 
 
 def is_local_mode() -> bool:
@@ -178,6 +180,9 @@ def get_identity_id() -> str:
     Raises:
         ValueError: when no identity can be determined.
     """
+    scheduled = _scheduled_identity.get()
+    if scheduled is not None:
+        return scheduled
     # --- try the configured provider -----------------------------------
     if _provider:
         try:

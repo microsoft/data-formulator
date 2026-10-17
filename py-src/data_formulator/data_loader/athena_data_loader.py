@@ -8,6 +8,7 @@ import botocore.exceptions
 from pyarrow import fs as pa_fs
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
+from data_formulator.data_loader import probe_utils
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -59,6 +60,7 @@ class AthenaDataLoader(ExternalDataLoader):
 
     DISPLAY_NAME = "Athena"
     DESCRIPTION = "Query data in Amazon S3 using AWS Athena (Presto SQL)."
+    QUERY_EXECUTION = "server_query"
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
@@ -347,26 +349,29 @@ class AthenaDataLoader(ExternalDataLoader):
         """
         opts = import_options or {}
         size = min(opts.get("size", MAX_IMPORT_ROWS), MAX_IMPORT_ROWS)
-        sort_columns = opts.get("sort_columns")
-        sort_order = opts.get("sort_order", "asc")
 
         if not source_table:
             raise ValueError("source_table must be provided")
         
         _validate_athena_table_name(source_table)
-        base_query = f"SELECT * FROM {source_table}"
-        
-        # Add ORDER BY if sort columns specified
-        order_by_clause = ""
-        if sort_columns and len(sort_columns) > 0:
-            for col in sort_columns:
-                _validate_column_name(col)
-            order_direction = "DESC" if sort_order == 'desc' else "ASC"
-            sanitized_cols = [f'"{col}" {order_direction}' for col in sort_columns]
-            order_by_clause = f" ORDER BY {', '.join(sanitized_cols)}"
-        
-        query = f"{base_query}{order_by_clause} LIMIT {size}"
-        
+        for column in opts.get("sort_columns") or []:
+            _validate_column_name(column)
+        query = probe_utils.compile_probe_sql(
+            probe_utils.query_from_import_options(opts), size,
+            relation=source_table, dialect=probe_utils.ATHENA,
+        )
+        return self._run_query_arrow(query)
+
+    def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
+        """Run a structured filter/group/aggregate load on Athena."""
+        _validate_athena_table_name(source_table)
+        return probe_utils.query_via_native_sql(
+            query, limit, relation=source_table, dialect=probe_utils.ATHENA,
+            execute=self._run_query_arrow,
+        )
+
+    def _run_query_arrow(self, query: str) -> pa.Table:
+        """Execute ``query`` on Athena and read its CSV result from S3."""
         log.info(f"Executing Athena query: {query[:200]}...")
         
         # Execute query and get result location

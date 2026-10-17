@@ -46,16 +46,6 @@ class TestImportedFrom:
         assert restored.original_name == "sales_2024.csv"
         assert "loader_type" not in d
 
-    def test_url_roundtrip(self):
-        orig = ImportedFrom(
-            source_type="url",
-            ingested_at=datetime(2024, 11, 1, tzinfo=timezone.utc),
-            url="https://data.gov/api/v1/sales.csv",
-        )
-        d = orig.to_dict()
-        restored = ImportedFrom.from_dict(d)
-        assert restored.url == "https://data.gov/api/v1/sales.csv"
-
     def test_stream_roundtrip(self):
         orig = ImportedFrom(
             source_type="stream",

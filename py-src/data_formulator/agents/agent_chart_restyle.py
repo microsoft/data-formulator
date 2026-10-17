@@ -28,10 +28,17 @@ logger = logging.getLogger(__name__)
 
 _AGENT_ID = "chart_restyle"
 
-from data_formulator.agents.agent_utils import extract_json_objects
+from data_formulator.agents.agent_utils import extract_json_objects, json_response_format
 from data_formulator.agents.agent_language import inject_language_instruction
 
 logger = logging.getLogger(__name__)
+
+# Open-ended: vlSpec and configUI values are arbitrary JSON, and refusals use a different shape.
+_RESPONSE_FORMAT = json_response_format("chart_restyle", {
+    "type": "object",
+    "properties": {"vlSpec": {"type": "object"}, "label": {"type": "string"}, "rationale": {"type": "string"},
+                   "configUI": {"type": "array", "items": {"type": "object"}}, "out_of_scope": {"type": "boolean"}},
+}, strict=False)
 
 
 SYSTEM_PROMPT = r'''You are a Vega-Lite chart-edit assistant.
@@ -174,7 +181,8 @@ class ChartRestyleAgent(object):
 
         logger.info("[ChartRestyleAgent] run start | chart_type=%s", chart_type)
 
-        response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
+        response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model),
+                                              response_format=_RESPONSE_FORMAT)
 
         for choice in response.choices:
             content = choice.message.content or ""

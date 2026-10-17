@@ -18,6 +18,7 @@ permissions:
 jobs:
   build-desktop:
     name: ${{ matrix.name }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -54,8 +55,8 @@ jobs:
       - name: Install desktop dependencies
         run: uv sync --extra desktop --frozen
 
-      - name: Test desktop startup output
-        run: uv run pytest tests/backend/test_startup_spinner.py -q
+      - name: Test desktop packaging and startup
+        run: uv run pytest tests/backend/test_startup_spinner.py tests/backend/test_desktop_packaging.py tests/backend/test_desktop_single_instance.py -q
 
       - name: Build desktop application
         run: uv run pyinstaller --noconfirm --clean packaging/data_formulator_desktop.spec
@@ -76,49 +77,79 @@ jobs:
         run: |
           './dist/Data Formulator.app/Contents/MacOS/Data Formulator'
 
-      - name: Archive Windows application
+      - name: Record bundle inventory
+        run: uv run python packaging/desktop_metadata.py --inventory "dist/Data Formulator/_internal" --output release/bundle-inventory.json
+
+      - name: Build unsigned Windows installer
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force release | Out-Null
-          Compress-Archive -Path 'dist/Data Formulator' -DestinationPath 'release/Data-Formulator-Windows-x64.zip'
+          New-Item -ItemType Directory -Force build/installer-test | Out-Null
+          Start-Transcript -Path build/installer-test/compiler.log
+          & packaging/windows/build-installer.ps1 -PayloadDir 'dist/Data Formulator' -OutputDir release -Unsigned
+          Stop-Transcript
 
-      - name: Archive macOS application
+      - name: Test installed Windows application
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem release -Filter '*-Setup-unsigned.exe')
+          if ($installers.Count -ne 1) { throw 'Expected exactly one unsigned installer' }
+          & packaging/windows/test-installer.ps1 -Installer $installers[0].FullName -Reports build/installer-test
+
+      - name: Build unsigned macOS disk image
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          mkdir -p release
+          version=$(uv run python packaging/desktop_metadata.py | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+          bash packaging/macos/build-dmg.sh 'dist/Data Formulator.app' \
+            "release/Data-Formulator-${version}-macOS-$(uname -m)-unsigned.dmg"
+
+      - name: Test copied macOS application
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          uv run python packaging/test_desktop.py --dmg release/*.dmg --reports build/dmg-test
+
+      - name: Upload installation test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}-test-reports
+          path: |
+            build/installer-test/
+            build/dmg-test/
+          if-no-files-found: ignore
+
+      - name: Preserve existing macOS portable download
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
           ditto -c -k --sequesterRsrc --keepParent \
-            'dist/Data Formulator.app' \
-            'release/Data-Formulator-macOS.zip'
+            'dist/Data Formulator.app' 'release/Data-Formulator-macOS.zip'
 
       - name: Upload desktop artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
-          path: release/*.zip
+          path: release/*
           if-no-files-found: error
           retention-days: 30
 
-  attach-to-release:
-    name: Attach desktop downloads to release
+  attach-macos-to-release:
+    name: Preserve macOS portable release
     if: github.ref_type == 'tag'
     needs: build-desktop
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
-      - name: Download desktop artifacts
-        uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v8
         with:
-          pattern: data-formulator-*
+          name: data-formulator-macos
           path: release
-          merge-multiple: true
-
-      - name: Attach archives to GitHub Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
-          files: release/*.zip
+          files: release/Data-Formulator-macOS.zip
           fail_on_unmatched_files: true
           generate_release_notes: true

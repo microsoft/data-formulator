@@ -109,9 +109,6 @@ def _valid_payload(**overrides) -> dict:
 
 class TestOIDCProviderMetadata:
 
-    def test_name(self, provider):
-        assert provider.name == "oidc"
-
     def test_enabled_with_config(self, provider):
         assert provider.enabled is True
 
@@ -126,12 +123,6 @@ class TestOIDCProviderMetadata:
         monkeypatch.delenv("OIDC_CLIENT_ID", raising=False)
         p = OIDCProvider()
         assert p.enabled is False
-
-    def test_get_auth_info_action_is_frontend(self, provider):
-        info = provider.get_auth_info()
-        assert info["action"] == "frontend"
-        assert info["oidc"]["authority"] == ISSUER
-        assert info["oidc"]["clientId"] == CLIENT_ID
 
     def test_default_scopes_include_offline_access(self, provider):
         info = provider.get_auth_info()

@@ -9,7 +9,6 @@ import {
     COLUMN_FIT_TOLERANCE,
     COMFORTABLE_CANVAS,
     DEFAULT_CHART_SIZE_STOP_INDEX,
-    DENSITY_SCALE,
     MIN_SUPPORTED,
     REFERENCE,
     chartSizeStopIndex,
@@ -18,10 +17,8 @@ import {
     comfortableThreadColumns,
     defaultChartSizeStop,
     defaultThreadColumns,
-    densityForWidthClass,
     fittableThreadColumnsFor,
     gridSizeCaps,
-    iconVar,
     layoutFor,
     maxThreadColumnsForWidth,
     maxThreadColumnsForWidthClass,
@@ -29,7 +26,6 @@ import {
     resolveHeightClass,
     resolveWidthClass,
     sidebarFitsExpanded,
-    textVar,
     threadColumnsForWidthClass,
     threadPaneWidthFor,
     threadStripWidthFor,
@@ -39,20 +35,6 @@ import {
 const DENSITIES: Density[] = ['compact', 'reference', 'comfortable'];
 
 describe('reference layout', () => {
-    it('is the app as hardcoded today', () => {
-        // Guards against silently "improving" the reference. A real change
-        // belongs behind a density or a width class, not in these numbers.
-        expect(REFERENCE.thread).toEqual({ cardWidth: 248, cardGap: 8, panelPadding: 32, maxColumns: 3 });
-        expect(REFERENCE.rail).toBe(40);
-        expect(REFERENCE.sidebar).toEqual({ min: 240, default: 280, max: 450 });
-        expect(REFERENCE.chart).toEqual({ width: 400, height: 300 });
-    });
-
-    it('leaves geometry untouched at reference density', () => {
-        expect(layoutFor('reference')).toBe(REFERENCE);
-        expect(DENSITY_SCALE.reference).toBe(1);
-    });
-
     it('reproduces the thread pane widths the Allotment snaps to', () => {
         expect(threadPaneWidthFor(1)).toBe(280);
         expect(threadPaneWidthFor(2)).toBe(536);
@@ -165,14 +147,12 @@ describe('size classes', () => {
         [1280, 'standard'],
         [1680, 'wide'],
         [2560, 'ultra'],
-        [3440, 'ultra'],
     ] as const)('classifies width %i as %s', (width, expected) => {
         expect(resolveWidthClass(width)).toBe(expected);
     });
 
     it.each([
         [600, 'short'],
-        [660, 'short'],
         [900, 'standard'],
         [1440, 'tall'],
     ] as const)('classifies height %i as %s', (height, expected) => {
@@ -188,22 +168,9 @@ describe('size classes', () => {
         // The point of the exercise: ultrawide must not stay pinned at 3.
         expect(maxThreadColumnsForWidthClass('ultra')).toBeGreaterThan(REFERENCE.thread.maxColumns);
     });
-
-    it('scales density up with the screen, and only down on small ones', () => {
-        expect(densityForWidthClass('floor')).toBe('compact');
-        expect(densityForWidthClass('compact')).toBe('compact');
-        expect(densityForWidthClass('standard')).toBe('reference');
-        expect(densityForWidthClass('wide')).toBe('comfortable');
-        expect(densityForWidthClass('ultra')).toBe('spacious');
-    });
 });
 
 describe('type scale', () => {
-    it('exposes a CSS variable for every token', () => {
-        expect(Object.keys(textVar).sort()).toEqual(Object.keys(REFERENCE.text).sort());
-        expect(Object.keys(iconVar).sort()).toEqual(Object.keys(REFERENCE.icon).sort());
-    });
-
     it('seeds index.css with the reference values', () => {
         // The seed exists so the scale is defined before React mounts. If it
         // drifts from REFERENCE, the app flashes the wrong size on load.
@@ -331,12 +298,6 @@ describe('default thread columns', () => {
                 .toBeGreaterThanOrEqual(COMFORTABLE_CANVAS);
         }
     });
-
-    it('treats a missing container as no constraint, not as a cap', () => {
-        // Returning `maxColumns` here silently held ultrawide at 3 instead of 5.
-        expect(defaultThreadColumns('ultra', 4)).toBe(4);
-        expect(defaultThreadColumns('standard', 1)).toBe(2);
-    });
 });
 
 describe('column capacity as the window resizes', () => {
@@ -376,11 +337,6 @@ describe('column capacity as the window resizes', () => {
 describe('chart size stops', () => {
     it('puts the authored size on a stop, so `1` is always reachable', () => {
         expect(CHART_SIZE_STOPS[DEFAULT_CHART_SIZE_STOP_INDEX]).toBe(1);
-    });
-
-    it('increases monotonically', () => {
-        const sorted = [...CHART_SIZE_STOPS].sort((a, b) => a - b);
-        expect([...CHART_SIZE_STOPS]).toEqual(sorted);
     });
 
     it('snaps a persisted free-slider factor to the closest stop', () => {

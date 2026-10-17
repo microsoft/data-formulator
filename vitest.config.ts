@@ -1,9 +1,10 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react-swc';
 import path from 'path';
+import { dfReactRuntime } from './vite-plugins/dfReactRuntime';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), dfReactRuntime({ root: __dirname, flintChartLocal: process.env.FLINT_CHART_LOCAL })],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

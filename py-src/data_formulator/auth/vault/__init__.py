@@ -48,6 +48,7 @@ def _resolve_key(home: Path) -> Optional[str]:
 
     key_file = home / ".vault_key"
     if key_file.exists():
+        _restrict_to_owner(key_file)
         stored = key_file.read_text(encoding="utf-8").strip()
         if stored:
             return stored
@@ -58,7 +59,10 @@ def _resolve_key(home: Path) -> Optional[str]:
 
         new_key = Fernet.generate_key().decode()
         key_file.parent.mkdir(parents=True, exist_ok=True)
-        key_file.write_text(new_key + "\n", encoding="utf-8")
+        descriptor = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(new_key + "\n")
+        _restrict_to_owner(key_file)
         logger.info("Generated new vault key: %s", key_file)
         return new_key
     except Exception as exc:
@@ -66,11 +70,21 @@ def _resolve_key(home: Path) -> Optional[str]:
         return None
 
 
+def _restrict_to_owner(path: Path) -> None:
+    """Keep the vault key unreadable by other accounts (it decrypts every stored credential)."""
+    if os.name != "posix":
+        return
+    try:
+        if path.stat().st_mode & 0o077:
+            path.chmod(0o600)
+    except OSError as exc:
+        logger.warning("Could not restrict permissions of %s: %s", path, exc)
+
+
 def get_credential_vault() -> Optional[CredentialVault]:
     """Return the global :class:`CredentialVault` singleton.
 
     Returns ``None`` when:
-    - Data connectors are disabled (nothing needs credentials)
     - Key resolution fails
     """
     global _vault, _initialized
@@ -78,16 +92,6 @@ def get_credential_vault() -> Optional[CredentialVault]:
         return _vault
 
     _initialized = True
-
-    # Skip vault creation when data connectors are disabled (e.g. ephemeral
-    # demo deployments).  No connectors → no credentials to store.
-    try:
-        from flask import current_app
-        if current_app.config.get('CLI_ARGS', {}).get('disable_data_connectors'):
-            logger.info("Credential vault skipped (data connectors disabled)")
-            return None
-    except RuntimeError:
-        pass  # Outside Flask request context — continue normally
 
     home = get_data_formulator_home()
     key = _resolve_key(home)

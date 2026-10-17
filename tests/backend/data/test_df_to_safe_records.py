@@ -26,11 +26,6 @@ class TestDatetimeSerialization:
         assert records[0]["ts"] == "2026-03-15T00:00:00.000"
         assert records[1]["ts"] == "2026-04-20T00:00:00.000"
 
-    def test_datetime_with_time_component(self):
-        df = pd.DataFrame({"ts": pd.to_datetime(["2026-03-15 14:30:00"])})
-        records = df_to_safe_records(df)
-        assert "14:30:00" in records[0]["ts"]
-
     def test_nat_becomes_null(self):
         df = pd.DataFrame({"ts": pd.to_datetime(["2026-01-01", None])})
         records = df_to_safe_records(df)

@@ -49,6 +49,7 @@ export const materializeInputTablePreview = (table: InputTable): DictTable => ({
   description: table.description,
   source: table.sourceConfig,
   contentHash: table.snapshot.contentHash,
+  ...(table.dataProvenance ? { dataProvenance: table.dataProvenance } : {}),
 });
 
 export const materializeTables = (

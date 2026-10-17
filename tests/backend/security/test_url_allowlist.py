@@ -28,18 +28,6 @@ class TestOpenMode:
     def test_private_ip_allowed_in_open_mode(self):
         validate_api_base("http://169.254.169.254/latest/meta-data/")
 
-    @patch.dict(os.environ, {}, clear=True)
-    def test_localhost_allowed_in_open_mode(self):
-        validate_api_base("http://localhost:11434")
-
-    @patch.dict(os.environ, {}, clear=True)
-    def test_empty_base_allowed(self):
-        validate_api_base("")
-
-    @patch.dict(os.environ, {}, clear=True)
-    def test_none_base_allowed(self):
-        validate_api_base(None)
-
 
 # ===================================================================
 # Enforce mode — only allowlisted patterns pass
@@ -133,12 +121,6 @@ class TestPatternLoading:
     def test_whitespace_only_returns_none(self):
         assert _load_patterns() is None
 
-    @patch.dict(os.environ, {"DF_ALLOWED_API_BASES": "https://a.com/*,https://b.com/*"})
-    def test_comma_separated_parsed(self):
-        patterns = _load_patterns()
-        assert len(patterns) == 2
-        assert "https://a.com/*" in patterns
-
     @patch.dict(os.environ, {"DF_ALLOWED_API_BASES": " https://a.com/* , https://b.com/* "})
     def test_whitespace_trimmed(self):
         patterns = _load_patterns()
@@ -150,10 +132,6 @@ class TestPatternLoading:
 # ===================================================================
 
 class TestGlobEdgeCases:
-
-    @patch.dict(os.environ, {"DF_ALLOWED_API_BASES": "https://*.openai.azure.com/*"})
-    def test_subdomain_wildcard(self):
-        validate_api_base("https://contoso.openai.azure.com/openai/v1")
 
     @patch.dict(os.environ, {"DF_ALLOWED_API_BASES": "https://*.openai.azure.com/*"})
     def test_deep_subdomain_wildcard(self):

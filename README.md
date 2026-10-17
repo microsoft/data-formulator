@@ -76,7 +76,7 @@ Here are milestones that lead to the current design:
 - **v0.2** ([Demos](https://github.com/microsoft/data-formulator/releases/tag/0.2)): Large data support with DuckDB integration
 - **v0.1.7** ([Demos](https://github.com/microsoft/data-formulator/releases/tag/0.1.7)): Dataset anchoring for cleaner workflows
 - **v0.1.6** ([Demo](https://github.com/microsoft/data-formulator/releases/tag/0.1.6)): Multi-table support with automatic joins
-- **Model Support**: OpenAI, Azure, Ollama, Anthropic via [LiteLLM](https://github.com/BerriAI/litellm) ([feedback](https://github.com/microsoft/data-formulator/issues/49))
+- **Model Support**: OpenAI, Azure, Ollama, Anthropic, [OrcaRouter](https://www.orcarouter.ai), [Cheaper Inference](https://cheaperinference.com) via [LiteLLM](https://github.com/BerriAI/litellm) ([feedback](https://github.com/microsoft/data-formulator/issues/49))
 - **Python Package**: Easy local installation ([try it](#get-started))
 - **Visualization Challenges**: Test your skills ([challenges](https://github.com/microsoft/data-formulator/issues/53))
 - **Data Extraction**: Parse data from images and text ([demo](https://github.com/microsoft/data-formulator/pull/31#issuecomment-2403652717))
@@ -145,6 +145,22 @@ your operating system:
   ```
 
   Open [http://localhost:5567](http://localhost:5567) in your browser. To stop, press `Ctrl+C` or run `docker compose down`.
+
+- **Try the latest development build**
+
+  The `dev` branch has fixes that are not released yet (and may be less stable). With Docker, build it straight from GitHub, no checkout needed:
+
+  ```bash
+  docker build -t data-formulator:dev "https://github.com/microsoft/data-formulator.git#dev"
+  docker run --rm -p 5567:5567 --env-file .env -v data_formulator_home:/home/appuser/.data_formulator data-formulator:dev
+  ```
+
+  Or from source (requires Node.js 20, yarn, and [uv](https://docs.astral.sh/uv/)):
+
+  ```bash
+  git clone -b dev https://github.com/microsoft/data-formulator.git && cd data-formulator
+  yarn install --frozen-lockfile && yarn build && uv run data_formulator
+  ```
 
 - **Option 4: Working as developer**
   

@@ -5,6 +5,12 @@ import React from 'react';
 
 import { SvgIcon, SvgIconProps } from '@mui/material';
 import { Box, SxProps } from '@mui/material';
+import BarChartIcon from '@mui/icons-material/BarChart';
+import ShowChartIcon from '@mui/icons-material/ShowChart';
+import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
+import PieChartOutlineIcon from '@mui/icons-material/PieChartOutline';
+import GridOnIcon from '@mui/icons-material/GridOn';
+import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined';
 
 // ── MUI domain icon re-exports ──────────────────────────────────────────
 // Centralized so every file imports domain icons from one place.
@@ -15,6 +21,18 @@ export { default as AgentIcon } from '@mui/icons-material/PrecisionManufacturing
 export { default as InsightIcon } from '@mui/icons-material/Insights';
 export { default as AnchorIcon } from '@mui/icons-material/Anchor';
 export { default as FolderOpenIcon } from '@mui/icons-material/FolderOpen';
+
+/** The chart family glyph for a chart type (thread rail, canvas tabs). */
+export const chartFamilyIcon = (chartType: string): React.ElementType => {
+    const ct = chartType.toLowerCase();
+    if (ct.includes('scatter') || ct.includes('point') || ct.includes('dot') || ct.includes('boxplot')) return ScatterPlotIcon;
+    if (ct.includes('line') || ct.includes('regression')) return ShowChartIcon;
+    if (ct.includes('pie')) return PieChartOutlineIcon;
+    if (ct.includes('heatmap')) return GridOnIcon;
+    if (ct.includes('table')) return TableRowsOutlinedIcon;
+    // Bar, histogram, stacked, grouped, pyramid, and default
+    return BarChartIcon;
+};
 
 // ── Data-loader / connector category icons ──────────────────────────────
 // Generic icons representing data source *categories*, not brand logos.
@@ -95,8 +113,10 @@ const CONNECTOR_ICON_MAP: Record<string, React.FC<SvgIconProps>> = {
     kusto: QueryEngineIcon,
     athena: QueryEngineIcon,
     databricks: QueryEngineIcon,
-    // BI / dashboards
+    // BI / dashboards / semantic layers
     superset: DashboardIcon,
+    cube: DashboardIcon,
+    powerbi: DashboardIcon,
     // Local
     local_folder: FolderOpenIconMui,
 };
@@ -112,25 +132,28 @@ const CONNECTOR_ICON_MAP: Record<string, React.FC<SvgIconProps>> = {
 const CONNECTOR_CATEGORY_ORDER: Record<string, number> = {
     // Example Datasets (always top)
     sample_datasets: -100, SampleDatasetsLoader: -100,
-    // Local
+    // Files: local folder, then cloud storage
     local_folder: -1, LocalFolderDataLoader: -1,
+    s3: -0.5, S3DataLoader: -0.5,
+    azure_blob: -0.5, AzureBlobDataLoader: -0.5,
     // Relational DB
     mysql: 0, MySQLDataLoader: 0,
     mssql: 0, MSSQLDataLoader: 0,
     postgresql: 0, PostgreSQLDataLoader: 0,
+    clickhouse: 0, ClickHouseDataLoader: 0,
+    sqlite: 0, SQLiteDataLoader: 0,
     // Document Store
     mongodb: 1, MongoDBDataLoader: 1,
     cosmosdb: 1, CosmosDBDataLoader: 1,
-    // Cloud Storage
-    s3: 2, S3DataLoader: 2,
-    azure_blob: 2, AzureBlobDataLoader: 2,
     // Query Engine
     bigquery: 3, BigQueryDataLoader: 3,
     kusto: 3, KustoDataLoader: 3,
     athena: 3, AthenaDataLoader: 3,
     databricks: 3, DatabricksDataLoader: 3,
-    // Dashboard
+    // Dashboard / semantic layer
     superset: 4, SupersetLoader: 4,
+    cube: 4, CubeDataLoader: 4,
+    powerbi: 4, PowerBIDataLoader: 4,
 };
 
 /** Sort comparator: group by category, then alphabetical within each group. */
@@ -140,6 +163,14 @@ export const connectorSortOrder = (a: string, b: string): number => {
     if (catA !== catB) return catA - catB;
     return a.localeCompare(b);
 };
+
+const CONNECTOR_CATEGORY_KEYS: Record<number, string> = {
+    [-100]: 'samples', [-1]: 'files', [-0.5]: 'files', 0: 'databases', 1: 'databases', 3: 'warehouses', 4: 'semantic',
+};
+
+/** Group key for a connector type, matching the order used by `connectorSortOrder`. */
+export const connectorCategory = (type: string): string =>
+    CONNECTOR_CATEGORY_KEYS[CONNECTOR_CATEGORY_ORDER[type]] ?? 'other';
 
 /**
  * Return a React element for the given data-loader source type.

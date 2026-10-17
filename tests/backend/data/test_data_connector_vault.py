@@ -323,6 +323,7 @@ class TestAutoReconnect:
             # Should now be in memory too
             assert source._get_loader(IDENTITY) is not None
 
+    @pytest.mark.slow
     def test_auto_reconnect_cleans_stale_creds(self, source, vault):
         """If stored credentials fail to connect, delete them."""
         with patch.object(DataConnector, "_get_identity", return_value=IDENTITY), \
@@ -340,6 +341,7 @@ class TestAutoReconnect:
                 # Stale credentials should be deleted
                 assert vault.retrieve(IDENTITY, "test_db") is None
 
+    @pytest.mark.slow
     def test_auto_reconnect_exception_cleans_stale_creds(self, source, vault):
         """If auto-reconnect raises, delete stale creds."""
         with patch.object(DataConnector, "_get_identity", return_value=IDENTITY), \

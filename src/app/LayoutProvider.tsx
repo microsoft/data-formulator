@@ -12,7 +12,8 @@
 // component never needs a token added on its behalf just to participate.
 // ════════════════════════════════════════════════════════════════════════
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import type { MenuProps } from '@mui/material/Menu';
 
 import {
     DENSITY_SCALE,
@@ -28,6 +29,17 @@ import {
 } from './layout';
 
 const DENSITY_STORAGE_KEY = 'df_density';
+
+export const menuPaperSlotProps = ({ anchorEl, open }: Pick<MenuProps, 'anchorEl' | 'open'>) => {
+    const anchor = open ? (typeof anchorEl === 'function' ? anchorEl() : anchorEl) : null;
+    const element = anchor && 'nodeType' in anchor ? anchor as HTMLElement : null;
+    const surface = element?.closest('button, [role="button"], .MuiButtonBase-root')?.parentElement ?? element;
+    const fontSize = surface?.ownerDocument.defaultView?.getComputedStyle(surface).fontSize;
+    const contextSize = fontSize && Number.parseFloat(fontSize) > 0 ? fontSize : '0px';
+    return {
+        style: { '--df-menu-font-size': `max(0.875rem, var(--df-text-md, 13px), ${contextSize})` } as React.CSSProperties,
+    };
+};
 
 export type DensityPreference = Density | 'auto';
 
@@ -176,6 +188,9 @@ const FALLBACK: LayoutContextValue = {
  */
 export const useContainerSize = (ref: React.RefObject<HTMLElement | null>) => {
     const [size, setSize] = useState({ width: 0, height: 0 });
+    // Bumped when the ref points at a different node than the one observed.
+    const [generation, setGeneration] = useState(0);
+    const observedRef = useRef<HTMLElement | null>(null);
 
     useEffect(() => {
         if (typeof ResizeObserver === 'undefined') return;
@@ -191,6 +206,7 @@ export const useContainerSize = (ref: React.RefObject<HTMLElement | null>) => {
                 frame = requestAnimationFrame(attach);
                 return;
             }
+            observedRef.current = element;
             const update = () => {
                 const rect = element.getBoundingClientRect();
                 setSize(prev => (prev.width === rect.width && prev.height === rect.height
@@ -205,8 +221,16 @@ export const useContainerSize = (ref: React.RefObject<HTMLElement | null>) => {
         return () => {
             cancelAnimationFrame(frame);
             observer?.disconnect();
+            observedRef.current = null;
         };
-    }, [ref]);
+    }, [ref, generation]);
+
+    // The node can also be replaced later (workspace → landing → another
+    // workspace). Without re-attaching, the observer keeps measuring the
+    // detached node and the size stays 0 until a reload.
+    useEffect(() => {
+        if (ref.current && observedRef.current && ref.current !== observedRef.current) setGeneration(value => value + 1);
+    });
 
     return useMemo(() => ({
         ...size,

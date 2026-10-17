@@ -36,6 +36,7 @@ from typing import Any, Generator
 
 import pandas as pd
 
+from data_formulator.analyst.replacement import resolve_replacement
 from data_formulator.analyst.skills.base import (
     Event,
     SkillContext,
@@ -136,10 +137,19 @@ class ReportWritingSkill:
             }
             return msg
 
+        replaces = None
+        if spec.get("replaces") is not None:
+            try:
+                replaces = resolve_replacement(spec["replaces"], "report", ctx)
+            except ValueError as exc:
+                yield {"type": "error", "message": str(exc), "message_code": "agent.parseActionFailed"}
+                return f"[REPORT NOT DELIVERED] {exc}"
+
         # Announce the commitment (mirrors how visualize emits an action event).
         yield {
             "type": "action",
             "action": "write_report",
+            **({"replaces": replaces} if replaces else {}),
         }
 
         # Buffered delivery: emit the whole report as a single ``report``-channel
@@ -150,7 +160,8 @@ class ReportWritingSkill:
             "content": _strip_leaked_tool_syntax(report),
         }
 
-        return "[REPORT DELIVERED] The report was written and shown to the user."
+        return "[REPORT DELIVERED] The report was written and shown to the user." + (
+            f" It replaced {replaces['name']} ({replaces['id']}), which is deleted." if replaces else "")
 
 
     def _handle_inspect_chart(

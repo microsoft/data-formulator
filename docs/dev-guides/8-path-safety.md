@@ -175,7 +175,6 @@ def _enforce_deployment_restrictions():
 
 - `tests/backend/data/test_local_folder_loader.py`
 - `tests/backend/security/test_scratch_serve.py`
-- `tests/backend/agents/test_tool_path_safety.py`
 - `tests/backend/security/test_local_folder_deployment.py`
 - `tests/backend/security/test_startup_safety.py`
 - `tests/backend/security/test_confined_dir_extended.py`
@@ -201,12 +200,6 @@ def _enforce_deployment_restrictions():
 | `datalake/workspace.py` | `__init__` | 创建 `_confined_root` / `_confined_data` / `_confined_scratch`，暴露属性 |
 | `datalake/workspace.py` | `get_file_path` | `self._confined_data.resolve(basename)` |
 | `datalake/workspace.py` | `__init__` (legacy root) | `ConfinedDir(root).resolve(safe_id)` |
-| `agent_data_loading_chat.py` | `_execute_tool` | `workspace.confined_root` + `workspace.confined_scratch` |
-| `agent_data_loading_chat.py` | `_tool_read_file` | `workspace_jail.resolve(rel_path)` |
-| `agent_data_loading_chat.py` | `_tool_list_directory` | `workspace_jail.resolve(rel_path)` |
-| `agent_data_loading_chat.py` | `_tool_write_file` | `scratch_jail.resolve(filename)` |
-| `agent_data_loading_chat.py` | `_tool_execute_python` | `workspace.confined_scratch.resolve(safe_name + ".csv")` |
-| `agent_data_loading_chat.py` | `_preview_scratch_files` | `workspace.confined_root.resolve(file_path)` |
 | `routes/agents.py` | `scratch_serve` | `workspace.confined_scratch.resolve(filename)` |
 | `routes/agents.py` | `scratch_upload` | `workspace.confined_scratch.resolve(final_name)` |
 | `cached_azure_blob_workspace.py` | `_cache_path` | `self._cache_jail.resolve(filename)` |

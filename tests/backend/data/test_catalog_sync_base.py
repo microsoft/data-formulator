@@ -14,12 +14,7 @@ import pyarrow as pa
 
 from data_formulator.data_loader.external_data_loader import (
     ExternalDataLoader,
-    SOURCE_METADATA_SYNCED,
-    SOURCE_METADATA_NOT_SYNCED,
-    SOURCE_METADATA_PARTIAL,
-    SOURCE_METADATA_UNAVAILABLE,
 )
-from data_formulator.errors import ErrorCode
 
 pytestmark = [pytest.mark.backend]
 
@@ -31,7 +26,7 @@ class _StubLoader(ExternalDataLoader):
 
     def __init__(self, params=None, tables=None):
         self.params = params or {}
-        self._tables = tables or []
+        self._tables = tables if tables is not None else []
 
     @staticmethod
     def list_params():
@@ -41,8 +36,16 @@ class _StubLoader(ExternalDataLoader):
     def auth_instructions():
         return ""
 
+    @staticmethod
+    def catalog_hierarchy():
+        return [
+            {"key": "database", "label": "Database"},
+            {"key": "table", "label": "Table"},
+        ]
+
     def list_tables(self, table_filter=None):
-        return list(self._tables)
+        # Return fresh dicts so ensure_table_keys does not leak between tests.
+        return [dict(t) for t in self._tables]
 
     def fetch_data_as_arrow(self, source_table, import_options=None):
         return pa.table({"x": [1]})
@@ -77,11 +80,6 @@ class TestSyncCatalogMetadataDefault:
 # ── ensure_table_keys ─────────────────────────────────────────────────
 
 class TestEnsureTableKeys:
-    def test_existing_table_key_preserved(self):
-        tables = [{"name": "t", "table_key": "my-uuid-123", "metadata": {}}]
-        ExternalDataLoader.ensure_table_keys(tables)
-        assert tables[0]["table_key"] == "my-uuid-123"
-
     def test_fallback_to_source_name(self):
         tables = [{"name": "t", "metadata": {"_source_name": "db.public.t"}}]
         ExternalDataLoader.ensure_table_keys(tables)
@@ -110,27 +108,93 @@ class TestEnsureTableKeys:
         assert tables[0]["table_key"] == "explicit"
 
 
-# ── source_metadata_status constants ──────────────────────────────────
+# ── table_key on tree / search responses ──────────────────────────────
+#
+# ``sync_catalog_metadata()`` backfills ``table_key`` before returning.  The
+# tree and search responses must carry the same field, otherwise a loader that
+# does not set it in ``list_tables()`` (athena, bigquery, s3, mongodb, ...)
+# produces tree nodes without a stable identity.
 
-class TestSourceMetadataStatusConstants:
-    def test_synced_value(self):
-        assert SOURCE_METADATA_SYNCED == "synced"
-
-    def test_not_synced_value(self):
-        assert SOURCE_METADATA_NOT_SYNCED == "not_synced"
-
-    def test_partial_value(self):
-        assert SOURCE_METADATA_PARTIAL == "partial"
-
-    def test_unavailable_value(self):
-        assert SOURCE_METADATA_UNAVAILABLE == "unavailable"
+def _table_nodes(tree):
+    """Flatten the nested catalog tree down to its table nodes."""
+    out = []
+    for node in tree:
+        if node.get("node_type") == "table" or node.get("metadata"):
+            out.append(node)
+        out.extend(_table_nodes(node.get("children") or []))
+    return out
 
 
-# ── New ErrorCodes exist ──────────────────────────────────────────────
+_DEFAULT_TABLES = [
+    {"name": "orders", "path": ["shop", "orders"], "metadata": {"columns": []}},
+    {"name": "users", "path": ["shop", "users"], "metadata": {"columns": []}},
+]
 
-class TestCatalogErrorCodes:
-    def test_catalog_sync_timeout(self):
-        assert ErrorCode.CATALOG_SYNC_TIMEOUT == "CATALOG_SYNC_TIMEOUT"
 
-    def test_catalog_not_found(self):
-        assert ErrorCode.CATALOG_NOT_FOUND == "CATALOG_NOT_FOUND"
+class TestTreeAndSearchTableKey:
+    def test_list_tables_tree_backfills_table_key(self):
+        loader = _StubLoader(tables=_DEFAULT_TABLES)
+        nodes = _table_nodes(loader.list_tables_tree()["tree"])
+        assert nodes, "expected at least one table node"
+        missing = [n["name"] for n in nodes if not (n.get("metadata") or {}).get("table_key")]
+        assert missing == [], f"table nodes missing table_key: {missing}"
+
+    def test_search_catalog_backfills_table_key(self):
+        loader = _StubLoader(tables=_DEFAULT_TABLES)
+        nodes = _table_nodes(loader.search_catalog("ord", limit=10)["tree"])
+        assert nodes, "expected at least one table node"
+        missing = [n["name"] for n in nodes if not (n.get("metadata") or {}).get("table_key")]
+        assert missing == [], f"table nodes missing table_key: {missing}"
+
+    def test_explicit_table_key_survives_tree(self):
+        loader = _StubLoader(tables=[
+            {"name": "orders", "path": ["shop", "orders"], "table_key": "uuid-123",
+             "metadata": {"columns": []}},
+        ])
+        nodes = _table_nodes(loader.list_tables_tree()["tree"])
+        assert nodes[0]["metadata"]["table_key"] == "uuid-123"
+
+    def test_tree_and_sync_report_the_same_key(self):
+        loader = _StubLoader(tables=_DEFAULT_TABLES)
+        from_tree = {
+            n["name"]: (n.get("metadata") or {}).get("table_key")
+            for n in _table_nodes(loader.list_tables_tree()["tree"])
+        }
+        from_sync = {
+            t["name"]: t.get("table_key")
+            for t in loader.sync_catalog_metadata()
+        }
+        assert from_tree == from_sync
+
+    def test_source_name_is_preferred_over_name(self):
+        loader = _StubLoader(tables=[
+            {"name": "orders", "path": ["shop", "orders"],
+             "metadata": {"_source_name": "shop.orders", "columns": []}},
+        ])
+        nodes = _table_nodes(loader.list_tables_tree()["tree"])
+        assert nodes[0]["metadata"]["table_key"] == "shop.orders"
+
+    def test_empty_catalog_is_fine(self):
+        loader = _StubLoader(tables=[])
+        assert _table_nodes(loader.list_tables_tree()["tree"]) == []
+        assert loader.search_catalog("nothing")["tree"] == []
+
+
+# ── _tables_to_catalog_tree normalisation ─────────────────────────────
+
+class TestTreeNormalizationBackfill:
+    """``_tables_to_catalog_tree`` is the shared exit for every tree builder.
+
+    Loaders that override ``list_tables_tree``/``search_catalog`` construct
+    nodes without routing through the base methods, so backfilling at the call
+    sites is not enough: the invariant has to hold inside the normalisation
+    step itself.
+    """
+
+    def test_backfills_key_when_record_has_none(self):
+        loader = _StubLoader(tables=_DEFAULT_TABLES)
+        tree = loader._tables_to_catalog_tree([dict(t) for t in _DEFAULT_TABLES])
+        nodes = _table_nodes(tree)
+        assert nodes
+        for node in nodes:
+            assert node["metadata"]["table_key"]

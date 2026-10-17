@@ -53,6 +53,27 @@ class TestSaveSessionRoute:
         assert "No space left on device" not in body["error"]["message"]
 
 
+class TestListSessionRoute:
+    def test_list_includes_source_summary(self, client):
+        manager = MagicMock()
+        manager.list_workspaces.return_value = [{
+            "id": "sales",
+            "display_name": "Sales",
+            "created_at": "2026-08-17T10:00:00Z",
+            "updated_at": "2026-08-17T11:00:00Z",
+            "source_ids": ["sample_datasets", "warehouse"],
+        }]
+
+        with (
+            patch("data_formulator.routes.sessions.get_identity_id", return_value="browser:abc"),
+            patch("data_formulator.routes.sessions.get_workspace_manager", return_value=manager),
+        ):
+            resp = client.get("/api/sessions/list")
+
+        assert resp.status_code == 200
+        session = resp.get_json()["data"]["sessions"][0]
+        assert session["source_ids"] == ["sample_datasets", "warehouse"]
+
 class TestMigrateRoute:
     def test_migrate_moves_and_cleans_source(self, client):
         source_mgr = MagicMock()
