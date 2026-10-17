@@ -5,6 +5,12 @@ import React from 'react';
 
 import { SvgIcon, SvgIconProps } from '@mui/material';
 import { Box, SxProps } from '@mui/material';
+import BarChartIcon from '@mui/icons-material/BarChart';
+import ShowChartIcon from '@mui/icons-material/ShowChart';
+import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
+import PieChartOutlineIcon from '@mui/icons-material/PieChartOutline';
+import GridOnIcon from '@mui/icons-material/GridOn';
+import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined';
 
 // ── MUI domain icon re-exports ──────────────────────────────────────────
 // Centralized so every file imports domain icons from one place.
@@ -15,6 +21,18 @@ export { default as AgentIcon } from '@mui/icons-material/PrecisionManufacturing
 export { default as InsightIcon } from '@mui/icons-material/Insights';
 export { default as AnchorIcon } from '@mui/icons-material/Anchor';
 export { default as FolderOpenIcon } from '@mui/icons-material/FolderOpen';
+
+/** The chart family glyph for a chart type (thread rail, canvas tabs). */
+export const chartFamilyIcon = (chartType: string): React.ElementType => {
+    const ct = chartType.toLowerCase();
+    if (ct.includes('scatter') || ct.includes('point') || ct.includes('dot') || ct.includes('boxplot')) return ScatterPlotIcon;
+    if (ct.includes('line') || ct.includes('regression')) return ShowChartIcon;
+    if (ct.includes('pie')) return PieChartOutlineIcon;
+    if (ct.includes('heatmap')) return GridOnIcon;
+    if (ct.includes('table')) return TableRowsOutlinedIcon;
+    // Bar, histogram, stacked, grouped, pyramid, and default
+    return BarChartIcon;
+};
 
 // ── Data-loader / connector category icons ──────────────────────────────
 // Generic icons representing data source *categories*, not brand logos.

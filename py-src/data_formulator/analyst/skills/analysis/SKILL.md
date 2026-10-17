@@ -43,3 +43,5 @@ Prefer pandas for ordinary work. Use DuckDB for large aggregations, joins,
 filters, or window functions. Quote SQL identifiers containing spaces,
 punctuation, or non-ASCII characters with double quotes, for example
 `"customer name"`, and escape SQL string literals by doubling single quotes.
+Name computed columns with `AS`, and double-quote names that are SQL keywords
+(`first`, `last`, `order`, `group`, `default`): `min(year) AS "first"`.

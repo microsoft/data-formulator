@@ -100,6 +100,15 @@ export interface ProgressStep {
     executionId?: string;
 }
 
+/** One step of the checklist plan the analyst writes in its narration. */
+export interface PlanItem {
+    text: string;
+    status: 'open' | 'done' | 'dropped';
+    note?: string;
+    /** Ids of the charts delivered for this step (or 'write_report' / 'write_app' for other results). */
+    results?: string[];
+}
+
 export interface InteractionEntry {
     from: Actor;
     to: Actor;
@@ -277,6 +286,10 @@ export interface WorkflowDefinition {
 
 export interface TextTurn {
     progressSteps?: ProgressStep[];
+    /** The run's checklist plan as last written on this agent message (design-docs/64). */
+    plan?: PlanItem[];
+    /** The plan's short title (the agent's `Plan:` line). */
+    planTitle?: string;
     externalReferenceId?: string;
     /** A user message sent to a workflow run (steering while running, or a reply that resumes it). */
     workflowMessage?: { runId: string; messageId: string; status: 'queued' | 'received'; kind?: 'steering' | 'reply' };

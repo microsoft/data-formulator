@@ -105,6 +105,7 @@ include = ["data_formulator*"]
 "*" = ["SKILL.md", "tools.json"]
 "data_formulator.data_loader.guides" = ["*.md"]
 "data_formulator.workflows" = ["*.yaml", "*.md"]
+"data_formulator.sites" = ["*/profile.yaml"]
 "data_formulator.analyst" = ["chart_catalog.json"]
 
 [project.scripts]

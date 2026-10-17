@@ -19,6 +19,7 @@
  * with lightweight <img src={thumbnail}> elements.
  */
 
+import { computeInsightKey } from '../components/ComponentType';
 import { FC, useEffect, useRef, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
@@ -189,6 +190,8 @@ export const ChartRenderService: FC = () => {
             const activeVariant = chart.activeVariantId
                 ? chart.styleVariants?.find(v => v.id === chart.activeVariantId)
                 : undefined;
+            // The chart's title and subtitle, when still current for its encodings (as on the canvas).
+            const titled = !!chart.title && chart.titleKey === computeInsightKey(chart);
 
             let fullSpec: any;
             if (activeVariant) {
@@ -201,6 +204,11 @@ export const ChartRenderService: FC = () => {
                     chart, visTableRows, table.metadata, items,
                 );
                 fullSpec.data = { values: variantValues };
+                // Same as the canvas: a variant without its own title takes the chart's.
+                if (titled && !fullSpec.title) fullSpec.title = {
+                    text: chart.title, ...(chart.subtitle ? { subtitle: chart.subtitle } : {}),
+                    anchor: 'middle', fontWeight: 500, fontSize: 13, color: '#555', offset: 12,
+                };
             } else {
                 fullSpec = assembleVegaChart(
                     chart.chartType,
@@ -216,8 +224,8 @@ export const ChartRenderService: FC = () => {
                     maxStretchFactor,
                     undefined,
                     fieldSemantics,
-                    undefined,
-                    undefined,
+                    titled ? chart.title : undefined,
+                    titled ? chart.subtitle : undefined,
                     chart.themeId,
                 );
             }
@@ -310,7 +318,7 @@ export const ChartRenderService: FC = () => {
                 activeVariant?.id,
                 activeVariant?.vlSpec,
                 fieldSemantics,
-                chart.themeId,
+                `${chart.themeId || ''}|${chart.title && chart.titleKey === computeInsightKey(chart) ? `${chart.title}|${chart.subtitle || ''}` : ''}`,
             );
 
             const cached = getCachedChart(chart.id);

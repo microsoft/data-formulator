@@ -33,7 +33,7 @@ import {
     Tabs,
     Tab,
 } from '@mui/material';
-import { borderColor, floatingAppControlsRight, floatingPillSx, radius, transition } from '../app/tokens';
+import { borderColor, radius, transition } from '../app/tokens';
 
 
 import { VisualizationViewFC } from './VisualizationView';
@@ -59,10 +59,14 @@ import { ModelSelectionButton } from './ModelSelectionDialog';
 import { UnifiedDataUploadDialog, UploadTabType, ConnectorInstance } from './UnifiedDataUploadDialog';
 import { LandingDataEntry } from './LandingDataEntry';
 import { ReportView } from './ReportView';
+import { CanvasChromeContext, useCanvasHeaderClaim } from './CanvasHeader';
+import { CanvasTabs } from './CanvasTabs';
 import { DataSourceSidebar, SessionsDialog } from './DataSourceSidebar';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions, publishExampleSession, usePublishedExamples } from './ExampleSessions';
 import { WorkflowPanel, WorkflowRunObserver } from './WorkflowPanel';
+import { SiteLanding, hasSiteLanding } from '../sites/SiteLanding';
+import type { SiteStarter } from '../sites/types';
 import { listWorkflowLibrary, SchedulesPanel, useScheduleLibrary } from './WorkflowSchedules';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import { useTranslation } from 'react-i18next';
@@ -82,7 +86,6 @@ import PublishOutlinedIcon from '@mui/icons-material/PublishOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import CloseIcon from '@mui/icons-material/Close';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -90,6 +93,8 @@ import DialogActions from '@mui/material/DialogActions';
 
 /** Quick enough not to feel like waiting, slow enough to read as a movement. */
 const CANVAS_TRANSITION_MS = 140;
+/** A thread-pane drag at least this far moves a whole column in its direction. */
+const DRAG_INTENT_PX = 24;
 const INITIAL_SESSION_COUNT = 12;
 
 type LibraryTab = 'sessions' | 'workflows' | 'schedules';
@@ -436,7 +441,7 @@ export const DataFormulatorFC = ({ }) => {
         dispatch(dfActions.queueAnalystTask({ text, images, attachments }));
     };
 
-    const handleLoadExampleSession = async (session: ExampleSession) => {
+    const handleLoadExampleSession = async (session: ExampleSession): Promise<boolean> => {
         dispatch(dfActions.setSessionLoading({ loading: true, label: t('messages.loadingExample', { title: session.title }) }));
 
         dispatch(dfActions.addMessages({
@@ -467,6 +472,7 @@ export const DataFormulatorFC = ({ }) => {
                 component: 'data formulator',
                 value: t('messages.loadSuccess', { title: session.title }),
             }));
+            return true;
         } catch (error: any) {
             console.error('Error loading session:', error);
             dispatch(dfActions.addMessages({
@@ -475,8 +481,19 @@ export const DataFormulatorFC = ({ }) => {
                 component: 'data formulator',
                 value: t('messages.loadFailed', { title: session.title, error: error.message }),
             }));
+            return false;
         } finally {
             dispatch(dfActions.setSessionLoading({ loading: false }));
+        }
+    };
+
+    /** A site's starter session; with a question, the analyst starts on it once the session is open. */
+    const handleOpenStarter = async (starter: SiteStarter, question?: string) => {
+        const opened = await handleLoadExampleSession({ id: starter.id, title: starter.title,
+            description: starter.description || '', previewImage: '', workspace: starter.workspace, live: false });
+        if (opened && question) {
+            dispatch(ensureActiveWorkspace());
+            dispatch(dfActions.queueAnalystTask({ text: question, images: [], attachments: [] }));
         }
     };
 
@@ -537,6 +554,7 @@ export const DataFormulatorFC = ({ }) => {
     const allotmentRef = useRef<AllotmentHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const paneSizesRef = useRef<number[]>([]);
+    const dragStartWidthRef = useRef(0);
 
     const { widthClass, tokens } = useLayout();
     const isPhone = useMediaQuery('(max-width:699px)');
@@ -571,7 +589,13 @@ export const DataFormulatorFC = ({ }) => {
 
     const snapToColumns = useCallback((sizes: number[]) => {
         if (sizes.length < 2) return;
-        const columns = nearestColumnCount(sizes[0]);
+        // A deliberate drag moves at least one column its way; only a small nudge springs back.
+        const startColumns = nearestColumnCount(dragStartWidthRef.current);
+        const delta = sizes[0] - dragStartWidthRef.current;
+        let columns = nearestColumnCount(sizes[0]);
+        if (columns === startColumns && Math.abs(delta) >= DRAG_INTENT_PX) {
+            columns = Math.min(columnCapRef.current, Math.max(1, startColumns + Math.sign(delta)));
+        }
         const target = paneWidth(columns);
         setUserColumns(columns);
 
@@ -699,31 +723,28 @@ export const DataFormulatorFC = ({ }) => {
         }}/>
     );
 
-    // Apps (HTML or React) preview full-bleed; their close button matches the app's floating controls.
-    const floatingCanvasClose = viewMode === 'editor' && canvasTarget?.type === 'file' && /\.(html?|app\.jsx)$/i.test(canvasTarget.fileName);
+    const { claimClose } = useCanvasHeaderClaim();
+    // Under the tab strip, view headers carry neither the title (the tab has it) nor close.
+    const canvasChrome = useMemo(() => ({ claimClose, tabbed: true }), [claimClose]);
 
+    // Browser-style: the tabs sit above the canvas box and the active tab opens into it. Under an active
+    // tab at either end, the box's corner squares off so the tab's edge runs straight down.
     const canvasPanel = (
         <Box sx={{
-            ...(isPhone ? {} : borderBoxStyle),
-            height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column',
-            boxSizing: 'border-box', position: 'relative',
+            height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0,
+            '&:has([data-canvas-tabs] [role="tab"]:first-of-type[aria-selected="true"]) > [data-canvas-pane]': { borderTopLeftRadius: 0 },
+            '&:has([data-canvas-tabs][data-flush-end] [role="tab"]:last-of-type[aria-selected="true"]) > [data-canvas-pane]': { borderTopRightRadius: 0 },
         }}>
-            <Tooltip title={t('canvas.close', { defaultValue: 'Close canvas' })}>
-                <IconButton
-                    size="small"
-                    onClick={closeCanvas}
-                    sx={floatingCanvasClose ? {
-                        ...floatingPillSx, position: 'absolute', top: 8, right: floatingAppControlsRight, zIndex: 20,
-                    } : {
-                        position: 'absolute', top: 8, right: 8, zIndex: 20,
-                        color: 'text.secondary',
-                        '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' },
-                    }}
-                >
-                    <CloseIcon sx={{ fontSize: floatingCanvasClose ? iconVar.lg : iconVar.md }} />
-                </IconButton>
-            </Tooltip>
-            {viewMode === 'editor' ? visPane : <ReportView />}
+            <CanvasTabs target={canvasTarget} viewMode={viewMode} onCloseCanvas={closeCanvas} />
+            <Box data-canvas-pane sx={{
+                ...(isPhone ? {} : borderBoxStyle),
+                flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column',
+                boxSizing: 'border-box', position: 'relative', bgcolor: 'background.paper',
+            }}>
+                <CanvasChromeContext.Provider value={canvasChrome}>
+                    {viewMode === 'editor' ? visPane : <ReportView />}
+                </CanvasChromeContext.Provider>
+            </Box>
         </Box>
     );
 
@@ -794,7 +815,7 @@ export const DataFormulatorFC = ({ }) => {
                 <Allotment
                     ref={allotmentRef}
                     onChange={(sizes) => { paneSizesRef.current = sizes; }}
-                    onDragStart={() => setSashDragging(true)}
+                    onDragStart={() => { dragStartWidthRef.current = paneSizesRef.current[0] ?? 0; setSashDragging(true); }}
                     onDragEnd={(sizes) => { setSashDragging(false); snapToColumns(sizes); }}
                     proportionalLayout={false}
                 >
@@ -1096,7 +1117,11 @@ export const DataFormulatorFC = ({ }) => {
                 groupTime={wsSort === 'name_asc' ? undefined
                     : wsSort === 'updated_desc' ? (w => w.saved_at || w.created_at) : (w => w.created_at)}
                 renderCard={w => workspaceCard(w, () => setAllSessionsOpen(false))} />
-            {/* ── Delete workspace confirmation ────────────────────── */}
+        </Box>
+        {footer}
+    </Box>;
+
+    const deleteWorkspaceDialog = (
             <Dialog open={confirmDeleteWs !== null} onClose={() => setConfirmDeleteWs(null)}>
                 <DialogTitle>{t('workspace.deleteTitle')}</DialogTitle>
                 <DialogContent>
@@ -1114,10 +1139,15 @@ export const DataFormulatorFC = ({ }) => {
                         {t('workspace.delete')}
                     </Button>
                 </DialogActions>
-            </Dialog>
-        </Box>
-        {footer}
-    </Box>;
+            </Dialog>);
+
+    const site = serverConfig.SITE && hasSiteLanding(serverConfig.SITE.id) ? serverConfig.SITE : undefined;
+    const siteSessions = sortedSavedWorkspaces.filter(w => !w.scheduled_run);
+    const siteLanding = site && <SiteLanding site={site} disabled={sessionLoading || activeWorkspace?.readOnly}
+        onOpenStarter={(starter, question) => void handleOpenStarter(starter, question)} footer={footer}
+        sessions={siteSessions.length > 0 && <Box sx={itemCardGridSx}>
+            {siteSessions.slice(0, INITIAL_SESSION_COUNT).map(w => workspaceCard(w))}
+        </Box>} />;
     
     return (
         <Box sx={{ display: 'block', width: "100%", height: '100%', position: 'relative' }}>
@@ -1134,7 +1164,7 @@ export const DataFormulatorFC = ({ }) => {
                 </Alert>
             )}
             <DndProvider backend={HTML5Backend}>
-                {inSession ? (isPhone ? phoneWorkspace : fixedSplitPane) : (
+                {inSession ? (isPhone ? phoneWorkspace : fixedSplitPane) : siteLanding || (
                     <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
                         <DataSourceSidebar
                             onOpenUploadDialog={(tab, tablePath) => openUploadDialog((tab ?? 'menu') as UploadTabType, tablePath)}
@@ -1145,6 +1175,7 @@ export const DataFormulatorFC = ({ }) => {
                         {dataUploadRequestBox}
                     </Box>
                 )}
+                {deleteWorkspaceDialog}
                 <UnifiedDataUploadDialog 
                     open={uploadDialogOpen}
                     onClose={closeUploadDialog}

@@ -598,6 +598,12 @@ class SessionLayer:
                     if isinstance(step, dict) and step.get("kind") == "thought" and step.get("label")]
         if thoughts:
             lines.append(f"  - *Agent thinking:* {_clip(' '.join(thoughts), 1500)}")
+        plan = [item for item in turn.get("plan") or [] if isinstance(item, dict) and item.get("text")]
+        if plan:
+            marks = {"done": "[x]", "dropped": "[dropped]"}
+            title = f"{_clip(str(turn['planTitle']), 120)}: " if turn.get("planTitle") else ""
+            lines.append(f"  - *Plan:* {title}" + "; ".join(
+                f"{marks.get(item.get('status'), '[ ]')} {_clip(str(item['text']), 200)}" for item in plan))
         if turn.get("content"):
             # The agent message right before a derived table is that table's instruction.
             follower = next(iter(self.graph.followers_of(turn["id"])), None)

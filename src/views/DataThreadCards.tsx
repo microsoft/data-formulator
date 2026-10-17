@@ -121,11 +121,12 @@ export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, a
     onClick: () => void;
     notes?: string;
     actions?: React.ReactNode;
-    artifactType: 'table' | 'file' | 'report' | 'workflow';
+    artifactType: 'table' | 'file' | 'report' | 'app' | 'workflow';
     warning?: boolean;
     children?: React.ReactNode;
 }) => {
-    const tone = artifactType === 'report' ? 'secondary' : 'primary';
+    // Reports and apps are the agent's authored outputs: both purple, told apart by their icons.
+    const tone = artifactType === 'report' || artifactType === 'app' ? 'secondary' : 'primary';
     return <Card
     className={`data-thread-card ${selected ? 'selected-artifact-card' : ''}`} elevation={0}
     sx={{ width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', position: 'relative',
@@ -143,7 +144,9 @@ export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, a
         '&.Mui-focusVisible': { outline: '2px solid', outlineColor: `${tone}.main`, outlineOffset: -2 },
     }}>
         {children || <Typography component="span" sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: 500,
-            display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</Typography>}
+            // The title wraps (to two lines) rather than cutting a name short.
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            overflowWrap: 'anywhere', lineHeight: 1.35 }} title={title}>{title}</Typography>}
         {notes && <Typography component="span" sx={{ display: 'block', fontSize: textVar.xs,
             color: 'text.secondary', overflowWrap: 'anywhere' }}>{notes}</Typography>}
     </ButtonBase>

@@ -1,0 +1,101 @@
+# Site profile for unesco.data-formulator.ai (prototype).
+# Starter-session ZIPs are content, not code: build them with
+# scripts/sites/unesco/build_sessions.py into DF_SITES_DIR/unesco/<release>/.
+
+name: UIS Data Explorer
+tagline: Explore UNESCO Institute for Statistics data on education, science and culture with AI.
+intro: >-
+  Each starter session holds a full UIS bulk dataset (national and regional
+  values, indicator labels, data sources) together with its README and the
+  UIS background notes. Pick an analysis below and the agent will work through
+  it step by step, or open a dataset and ask your own question.
+release: "2026-02"
+attribution: >-
+  Data: UNESCO Institute for Statistics (UIS), Bulk Data Download Service,
+  February 2026 release. Licensed under CC BY-SA 3.0 IGO.
+links:
+  - label: UIS data browser
+    url: https://databrowser.uis.unesco.org/
+  - label: Bulk data downloads
+    url: https://uis.unesco.org/bdds
+  - label: License (CC BY-SA 3.0 IGO)
+    url: https://creativecommons.org/licenses/by-sa/3.0/igo/
+
+starters:
+  - id: education-sdg4
+    title: "Education: SDG 4"
+    subtitle: Global and thematic indicators
+    description: >-
+      Access, completion, out-of-school children, learning outcomes, teachers
+      and education finance for SDG 4, by country and region.
+    file: education-sdg4.zip
+    questions:
+      - >-
+        Analyse out-of-school children in sub-Saharan Africa: trace the primary
+        out-of-school rate since 2000 against the world, compare girls and boys,
+        then find the countries with the highest rates today and summarise what
+        stands out.
+      - >-
+        Who is being left behind in finishing school? Compare upper secondary
+        completion rates across regions, break them down by sex and for the
+        poorest wealth quintile, and highlight the countries with the widest gaps.
+      - >-
+        How much do governments invest in education? Compare government education
+        spending as a share of GDP across countries and how it changed since 2010,
+        check it against the 4–6% benchmark, and see whether higher spending goes
+        with higher completion.
+  - id: education-opri
+    title: "Education: Other policy-relevant indicators"
+    subtitle: Enrolment, teachers, finance and more
+    description: >-
+      Enrolment, gross and net ratios, teachers, education expenditure and
+      other policy-relevant education indicators.
+    file: education-opri.zip
+    questions:
+      - >-
+        Profile the primary teaching workforce in the ten most populous
+        countries: compute pupil-teacher ratios from enrolment and teacher
+        counts, show how they changed over the last decade, and compare the
+        share of female teachers.
+      - >-
+        Where does government education money go? Compare spending on each level
+        from pre-primary to tertiary as a share of GDP across countries, show how
+        the mix has shifted over time, and highlight countries that stand out.
+      - >-
+        Map out-of-school children in absolute numbers: which countries account
+        for most out-of-school primary-age children, how has that changed since
+        2000, and what share of them are girls?
+  - id: science
+    title: "Science: Research and development"
+    subtitle: SDG 9.5 and other R&D indicators
+    description: >-
+      R&D expenditure (GERD) and researchers, including SDG 9.5 indicators,
+      by country and region.
+    file: science.zip
+    questions:
+      - >-
+        Give me an overview of research capacity: compare R&D spending as a share
+        of GDP across regions over time, relate it to researchers per million
+        inhabitants, and identify countries with many researchers for their
+        spending, or few.
+      - >-
+        Analyse gender balance in research: compare the share of female
+        researchers across countries and regions, break it down by sector
+        (business, government, higher education), and check whether it relates
+        to R&D intensity.
+  - id: culture
+    title: "Culture: SDG 11.4"
+    subtitle: Spending on cultural and natural heritage
+    description: >-
+      Public and private expenditure per capita on the preservation of
+      cultural and natural heritage.
+    file: culture.zip
+    questions:
+      - >-
+        Give me an overview of heritage spending: compare total spending per
+        capita across countries, split it into public and private and into
+        cultural and natural heritage, and note where coverage is thin.
+      - >-
+        Who pays for heritage? Compare public spending at national, regional and
+        local levels across countries, see how it has changed in recent years,
+        and relate it to GDP per capita.

@@ -23,6 +23,7 @@ import { REHYDRATE } from 'redux-persist';
 import { setInputTablePreview } from './inputTablePreviewCache';
 import { materializeInputTablePreview, materializeTables } from './tableResolution';
 import { buildThreadGraph } from './threadGraph';
+import type { SiteConfig } from '../sites/types';
 
 enableMapSet();
 
@@ -73,6 +74,8 @@ export interface SSEMessage {
 export interface ServerConfig {
     APP_NAME?: string;
     APP_TAGLINE?: string;
+    /** Set when this hostname serves a site profile (py-src/data_formulator/sites). */
+    SITE?: SiteConfig;
     MANAGED_MODE?: boolean;
     CAN_CONFIGURE?: boolean;
     TERMINAL_MODE?: 'off' | 'ask' | 'auto';
@@ -144,6 +147,45 @@ export type FocusedId =
     | { type: 'text'; textId: string }
     | { type: 'draft'; draftId: string }
     | undefined;
+
+/**
+ * A tab over the canvas (design: browser-like). Whatever the canvas shows gets a tab; results an
+ * agent run adds get one too, `unseen` until the user visits them. Pinned tabs come first and stay.
+ */
+export type CanvasTab = { key: string; target: Exclude<NonNullable<FocusedId>, { type: 'draft' } | { type: 'reference' }>; pinned?: boolean; unseen?: boolean };
+export const MAX_CANVAS_TABS = 40;
+
+export const canvasTabKey = (target: NonNullable<FocusedId>): string => {
+    switch (target.type) {
+        case 'chart': return `chart:${target.chartId}`;
+        case 'table': return `table:${target.tableId}`;
+        case 'file': return `file:${target.fileName}`;
+        case 'report': return `report:${target.reportId}`;
+        case 'external-table': return `external:${target.referenceId}`;
+        case 'conversation': return `conversation:${target.tableId}`;
+        case 'text': return `text:${target.textId}`;
+        case 'reference': return `reference:${target.referenceId}`;
+        case 'draft': return `draft:${target.draftId}`;
+    }
+};
+
+const isTabTarget = (target: FocusedId): target is CanvasTab['target'] =>
+    !!target && target.type !== 'draft' && target.type !== 'reference';
+
+/** Add a tab (at the end) unless one is open; past the cap, the oldest unpinned, inactive tab goes. */
+const ensureCanvasTab = (state: DataFormulatorState, target: CanvasTab['target'], unseen: boolean): CanvasTab => {
+    const key = canvasTabKey(target);
+    let tab = state.canvasTabs.find(item => item.key === key);
+    if (tab) { tab.target = target; return tab; }
+    tab = { key, target, ...(unseen ? { unseen: true } : {}) };
+    state.canvasTabs.push(tab);
+    while (state.canvasTabs.length > MAX_CANVAS_TABS) {
+        const drop = state.canvasTabs.findIndex(item => !item.pinned && item.key !== key && item.key !== state.canvasTabActive);
+        if (drop < 0) break;
+        state.canvasTabs.splice(drop, 1);
+    }
+    return state.canvasTabs.find(item => item.key === key)!;
+};
 
 export const explanationContent = (content: string) => content;
 
@@ -227,6 +269,12 @@ export interface DataFormulatorState {
     focusedDataCleanBlockId: {blockId: string, itemId: number} | undefined;
 
     focusedId: FocusedId;
+
+    /** Tabs over the canvas, in opening order; `canvasTabActive` is the one in view. */
+    canvasTabs: CanvasTab[];
+    canvasTabActive?: string;
+    /** The last focus change came from an agent run following its results, not from the user. */
+    canvasFollow?: boolean;
 
     viewMode: 'editor' | 'report';
 
@@ -360,6 +408,10 @@ const initialState: DataFormulatorState = {
 
     focusedDataCleanBlockId: undefined,
     focusedId: undefined,
+
+    canvasTabs: [],
+    canvasTabActive: undefined,
+    canvasFollow: false,
 
     viewMode: 'editor',
 
@@ -987,6 +1039,13 @@ const interruptTurnProgress = (turn: TextTurn): TextTurn => ({
     codeExecutions: turn.codeExecutions?.map(execution => execution.status === 'running' ? { ...execution, status: 'interrupted' } : execution),
 });
 
+/** A run cut off by the reload takes the focus, so its retry is at hand. */
+const focusAfterInterruption = (drafts: DraftNode[] | undefined, focusedId: FocusedId | undefined): FocusedId | undefined => {
+    const interrupted = (drafts || []).filter(node => node.derive?.status === 'running' || node.derive?.status === 'clarifying')
+        .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))[0];
+    return interrupted ? { type: 'draft', draftId: interrupted.id } : focusedId;
+};
+
 /** The connector form owned by a text turn, if that turn holds one. */
 const connectorFormOf = (state: DataFormulatorState, turnId: string) => {
     const form = state.textTurns.find(turn => turn.id === turnId)?.form;
@@ -1201,7 +1260,10 @@ export const dataFormulatorSlice = createSlice({
                 }),
                 conceptShelfItems: saved.conceptShelfItems || [],
                 focusedDataCleanBlockId: saved.focusedDataCleanBlockId || undefined,
-                focusedId: saved.focusedId || undefined,
+                focusedId: focusAfterInterruption(saved.draftNodes, saved.focusedId || undefined),
+                canvasTabs: Array.isArray(saved.canvasTabs) ? saved.canvasTabs.filter((tab: CanvasTab) => tab && typeof tab.key === 'string' && isTabTarget(tab.target)) : [],
+                canvasTabActive: typeof saved.canvasTabActive === 'string' ? saved.canvasTabActive : undefined,
+                canvasFollow: false,
                 config: { ...initialState.config, ...savedConfig },
                 dataCleanBlocks: saved.dataCleanBlocks || [],
                 analystChatPending: null,
@@ -1354,6 +1416,10 @@ export const dataFormulatorSlice = createSlice({
             state.fileNodes.forEach(node => { if (node.path === from) node.path = to; });
             state.workspaceItemOrder = state.workspaceItemOrder.map(key => key === `workspace-file-${from}` ? `workspace-file-${to}` : key);
             if (state.focusedId?.type === 'file' && state.focusedId.fileName === from) state.focusedId = { type: 'file', fileName: to };
+            const fromKey = canvasTabKey({ type: 'file', fileName: from });
+            const toKey = canvasTabKey({ type: 'file', fileName: to });
+            state.canvasTabs.forEach(tab => { if (tab.key === fromKey) { tab.key = toKey; tab.target = { type: 'file', fileName: to }; } });
+            if (state.canvasTabActive === fromKey) state.canvasTabActive = toKey;
         },
         removeFileNodes: (state, action: PayloadAction<string>) => {
             const removed = state.fileNodes.filter(node => node.path === action.payload);
@@ -1361,6 +1427,8 @@ export const dataFormulatorSlice = createSlice({
             state.fileNodes = state.fileNodes.filter(node => node.path !== action.payload);
             repairThreadEdges(state, removed);
             state.workspaceItemOrder = state.workspaceItemOrder.filter(key => key !== `workspace-file-${action.payload}`);
+            const fileTab = canvasTabKey({ type: 'file', fileName: action.payload });
+            state.canvasTabs = state.canvasTabs.filter(tab => tab.key !== fileTab);
             if (state.focusedId?.type === 'file' && state.focusedId.fileName === action.payload) {
                 state.focusedId = undefined;
             } else if (state.focusedId?.type === 'reference' && removedIds.has(state.focusedId.referenceId)) {
@@ -2120,9 +2188,57 @@ export const dataFormulatorSlice = createSlice({
         setDisplayedMessageIndex: (state, action: PayloadAction<number>) => {
             state.displayedMessageIdx = action.payload
         },
+        /** An agent run shows its newest result: like setFocused, but the result's tab stays unseen. */
+        followFocused: (state, action: PayloadAction<NonNullable<FocusedId>>) => {
+            const payload = action.payload;
+            state.focusedId = payload;
+            state.canvasFollow = true;
+            if (payload.type === 'chart' && state.viewMode === 'report') state.viewMode = 'editor';
+            if (payload.type === 'report') state.viewMode = 'report';
+            if (isTabTarget(payload)) ensureCanvasTab(state, payload, true);
+        },
+        /** A result an agent run added while the user was elsewhere: a new, unseen tab, not focused. */
+        noteCanvasResult: (state, action: PayloadAction<NonNullable<FocusedId>>) => {
+            if (isTabTarget(action.payload)) ensureCanvasTab(state, action.payload, true);
+        },
+        /**
+         * The canvas now shows `target`. It gets a tab and becomes active. When the user moved focus,
+         * both the tab they left and the one they opened count as seen.
+         */
+        syncCanvasTab: (state, action: PayloadAction<FocusedId>) => {
+            const target = action.payload;
+            if (!isTabTarget(target)) { state.canvasTabActive = undefined; return; }
+            const byUser = !state.canvasFollow;
+            if (byUser) {
+                const left = state.canvasTabs.find(item => item.key === state.canvasTabActive);
+                if (left) delete left.unseen;
+            }
+            const tab = ensureCanvasTab(state, target, !byUser);
+            if (byUser) delete tab.unseen;
+            state.canvasTabActive = tab.key;
+        },
+        /** Move a tab to the end, among the latest. */
+        touchCanvasTab: (state, action: PayloadAction<string>) => {
+            const index = state.canvasTabs.findIndex(tab => tab.key === action.payload);
+            if (index < 0 || index === state.canvasTabs.length - 1) return;
+            const [tab] = state.canvasTabs.splice(index, 1);
+            state.canvasTabs.push(tab);
+        },
+        closeCanvasTabs: (state, action: PayloadAction<string[]>) => {
+            const keys = new Set(action.payload);
+            state.canvasTabs = state.canvasTabs.filter(tab => !keys.has(tab.key));
+            if (state.canvasTabActive && keys.has(state.canvasTabActive)) state.canvasTabActive = undefined;
+        },
+        setCanvasTabPinned: (state, action: PayloadAction<{ key: string; pinned: boolean }>) => {
+            const tab = state.canvasTabs.find(item => item.key === action.payload.key);
+            if (!tab) return;
+            if (action.payload.pinned) tab.pinned = true;
+            else delete tab.pinned;
+        },
         setFocused: (state, action: PayloadAction<FocusedId>) => {
             const payload = action.payload;
             state.focusedId = payload;
+            state.canvasFollow = false;
 
             if (payload?.type === 'chart' && state.viewMode == 'report') {
                 state.viewMode = 'editor';
@@ -2436,6 +2552,7 @@ export const dataFormulatorSlice = createSlice({
             }
             if (!(incoming.__stateVersion > DF_STATE_VERSION)) incoming.__stateVersion = DF_STATE_VERSION;
             if (Array.isArray(incoming.draftNodes)) {
+                incoming.focusedId = focusAfterInterruption(incoming.draftNodes, incoming.focusedId);
                 incoming.draftNodes = incoming.draftNodes.map((node: DraftNode) => {
                     if (node.derive?.status === 'running' || node.derive?.status === 'clarifying') {
                         return {
@@ -2915,8 +3032,10 @@ export const dfSelectors = {
             const tableCanvas = (tableId: string): FocusedId => {
                 const sourceChart = turn?.sourceChartId ? allCharts.find(chart => chart.id === turn.sourceChartId) : undefined;
                 if (sourceChart?.tableRef === tableId) return { type: 'chart', chartId: sourceChart.id };
-                const tableCharts = allCharts.filter(chart => chart.tableRef === tableId);
-                const nearest = tableCharts[tableCharts.length - 1];
+                // The table's own latest chart, else a chart a derivation was asked from; an empty
+                // placeholder ("Auto") shows nothing, so the table itself is the better view.
+                const onTable = (charts: Chart[]) => charts.filter(chart => chart.tableRef === tableId && chart.chartType !== 'Auto');
+                const nearest = onTable(userCharts).at(-1) ?? onTable(triggerCharts).at(-1);
                 return nearest ? { type: 'chart', chartId: nearest.id } : { type: 'table', tableId };
             };
             const itemCanvas = (itemId: string | undefined, seen = new Set<string>()): FocusedId => {

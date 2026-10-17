@@ -7,10 +7,11 @@ import { ThemeProvider, createTheme } from '@mui/material';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
 import { DataThread } from '../../../../src/views/DataThread';
+import { splitThreadRuns } from '../../../../src/views/threadLayout';
 import { FreeDataViewFC } from '../../../../src/views/DataView';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { InteractionEntryCard, getStepIconComponent, PlanStepsView } from '../../../../src/views/InteractionEntryCard';
+import { InteractionEntryCard, getStepIconComponent, PlanStepsView, RunPlanChecklist } from '../../../../src/views/InteractionEntryCard';
 import { LayoutProvider } from '../../../../src/app/LayoutProvider';
 const CONVERSATION_ROOT_ID = 'conversation-root:test';
 import * as workspaceService from '../../../../src/app/workspaceService';
@@ -192,7 +193,7 @@ it.each([
   { producesTable: false, hasReport: false },
   { producesTable: true, hasReport: false },
   { producesTable: false, hasReport: true },
-])('opens the full thread only from its icon or collapsed shortcut (table: $producesTable, report: $hasReport)', ({ producesTable, hasReport }) => {
+])('opens the full thread from its header and shows every round (table: $producesTable, report: $hasReport)', ({ producesTable, hasReport }) => {
   const store = configureStore({ reducer: dataFormulatorReducer });
   // Six rounds, each a user message followed by the agent's reply.
   const rounds = [['first', 'Analyze token usage'], ['second', 'Use azure command'], ['third', 'Check third'],
@@ -257,51 +258,24 @@ it.each([
     expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'latest' });
     return;
   }
-  expect(screen.getByText('first response')).toBeTruthy();
-  expect(screen.getByText('Analyze token usage')).toBeTruthy();
-  expect(screen.queryByText('Use azure command')).toBeNull();
-  expect(!!screen.queryByText('latest response')).toBe(!producesTable);
+  // Every round shows; nothing folds.
+  for (const id of ['first', 'second', 'third', 'fourth', 'fifth', 'latest']) expect(screen.getByText(`${id} response`)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Show earlier turns' })).toBeNull();
   if (producesTable) {
-    expect(screen.queryByText('second response')).toBeNull();
     expect(screen.getByText('Visualize this result')).toBeTruthy();
     expect(screen.getByText('Inspecting resource usage')).toBeTruthy();
     expect(screen.getByText('Creation completed')).toBeTruthy();
     expect(screen.getByText('Response after the result')).toBeTruthy();
   }
-  fireEvent.click(screen.getByRole('button', { name: 'Open full conversation' }));
-  expect(store.getState().focusedId).toEqual(segmentFocus);
-  expect(screen.getByText('first response')).toBeTruthy();
-  expect(screen.queryByText('second response')).toBeNull();
-  const conversationLabel = `${producesTable ? 5 : 4} earlier turns`;
-  const gutterToggle = screen.getByRole('button', { name: 'Show earlier turns' });
-  const labelToggle = screen.getByRole('button', { name: conversationLabel });
-  expect(gutterToggle.contains(labelToggle)).toBe(false);
-  fireEvent.click(screen.getByText(conversationLabel));
-  expect(screen.getByRole('button', { name: 'Hide earlier turns' })).toBeEnabled();
-  expect(screen.getByText('first response')).toBeTruthy();
-  expect(screen.getByText('Use azure command')).toBeTruthy();
-  expect(screen.getByText('second response')).toBeVisible();
-  if (producesTable) {
-    expect(screen.getByText('latest response')).toBeTruthy();
-    expect(screen.getByText('Visualize this result')).toBeTruthy();
-    expect(screen.getByText('Inspecting resource usage')).toBeTruthy();
-  }
-  expect(store.getState().focusedId).toEqual(segmentFocus);
   fireEvent.click(screen.getByText('second response'));
   expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'second' });
-  fireEvent.click(screen.getByRole('button', { name: 'Hide earlier turns' }));
-  expect(screen.getByRole('button', { name: 'Show earlier turns' })).toBeEnabled();
-  expect(screen.getByText('first response')).toBeTruthy();
-  expect(screen.queryByText('Use azure command')).toBeNull();
-  expect(screen.queryByText('second response')).toBeNull();
-  if (producesTable) fireEvent.click(screen.getByRole('button', { name: 'Show earlier turns' }));
   fireEvent.click(screen.getByText('latest response'));
   expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'latest' });
   expect(container.querySelector('[data-thread-active="true"]')).toBeNull();
 });
 
 it.each(['pending', 'loaded', 'live-draft', 'interrupted-draft'] as const)(
-  'folds through results without hiding active work: %s', scenario => {
+  'shows every round through results and active work: %s', scenario => {
     const hasDraft = scenario === 'live-draft' || scenario === 'interrupted-draft';
     const pending = scenario === 'pending';
     const initialState = dataFormulatorReducer(undefined, { type: 'init' });
@@ -329,21 +303,14 @@ it.each(['pending', 'loaded', 'live-draft', 'interrupted-draft'] as const)(
       store.dispatch(dfActions.addTableToStore(derivedTable('result', 'Result', 'creating')));
     }
     renderDataThread(store);
-    // A round awaiting approval stays out of the fold; settled middle rounds fold away.
-    expect(!!screen.queryByText('second response')).toBe(pending);
+    // Every round shows alongside the results and active work; nothing folds.
     expect(screen.queryByRole('button', { name: 'Terminal execution details' })).toBeNull();
-    expect(screen.getByText('first response')).toBeTruthy();
-    expect(screen.getByText('latest response')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Show earlier turns' })).toBeNull();
+    for (const id of ids) expect(screen.getAllByText(`${id} response`).length).toBeGreaterThan(0);
     if (hasDraft) expect(screen.getByText('Creating result')).toBeTruthy();
     if (scenario === 'live-draft') expect(screen.getByText(/Checking the result/)).toBeTruthy();
     if (scenario === 'interrupted-draft') expect(screen.getByText(/Interrupted by page refresh/)).toBeTruthy();
-    expect(screen.getByText(`${pending ? 4 : 5} earlier turns`)).toBeTruthy();
     if (!pending) expect(screen.getAllByText('Result').length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole('button', { name: 'Show earlier turns' }));
-    for (const id of ids) expect(screen.getByText(`${id} response`)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Hide earlier turns' }));
-    expect(!!screen.queryByText('second response')).toBe(pending);
-    expect(screen.getByText('latest response')).toBeTruthy();
     expect(store.getState().textTurns.find(turn => turn.id === 'second')?.executions?.[0].status)
       .toBe(pending ? 'awaiting_approval' : 'completed');
   },
@@ -445,7 +412,7 @@ it.each(['derived', 'loaded'] as const)('leaves a single %s result lead-up visib
 });
 
 it.each(['derived', 'loaded', 'ongoing'].flatMap(scenario => [5, 6].map(count => ({ scenario, count }))))(
-  'keeps complete endpoint exchanges and folds only more than three middle turns: $scenario, $count turns', ({ scenario, count }) => {
+  'keeps complete exchanges together and shows every turn: $scenario, $count turns', ({ scenario, count }) => {
     const store = configureStore({ reducer: dataFormulatorReducer });
     for (let index = 0; index < count; index++) {
       store.dispatch(userMessage(`request-${index}`, `Request ${index}`, index ? `response-${index - 1}` : CONVERSATION_ROOT_ID, index * 2));
@@ -471,24 +438,11 @@ it.each(['derived', 'loaded', 'ongoing'].flatMap(scenario => [5, 6].map(count =>
       expect(result).toBeTruthy();
       expect(screen.getByText(`Response ${count - 1}`).compareDocumentPosition(result) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }
-    if (count === 5) {
-      expect(screen.queryByRole('button', { name: 'Show earlier turns' })).toBeNull();
-      for (let index = 1; index < count - 1; index++) {
-        expect(screen.getByText(`Request ${index}`)).toBeTruthy();
-        expect(screen.getByText(`Response ${index}`)).toBeTruthy();
-      }
-    } else {
-      const toggle = screen.getByRole('button', { name: 'Show earlier turns' });
-      expect(screen.getByText('4 earlier turns')).toBeTruthy();
-      expect(screen.getByText('Response 0').compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(toggle.compareDocumentPosition(screen.getByText(`Request ${count - 1}`)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(screen.queryByText('Request 1')).toBeNull();
-      expect(screen.queryByText('Response 1')).toBeNull();
-      fireEvent.click(toggle);
-      expect(screen.getByText('Request 1')).toBeTruthy();
-      expect(screen.getByText('Response 1')).toBeTruthy();
-      fireEvent.click(screen.getByRole('button', { name: 'Hide earlier turns' }));
-      expect(screen.queryByText('Request 1')).toBeNull();
+    // The middle rounds show in order; nothing folds.
+    expect(screen.queryByRole('button', { name: 'Show earlier turns' })).toBeNull();
+    for (let index = 1; index < count - 1; index++) {
+      expect(screen.getByText(`Request ${index}`)).toBeTruthy();
+      expect(screen.getByText(`Response ${index}`)).toBeTruthy();
     }
   },
 );
@@ -508,8 +462,11 @@ it.each(['none', 'user', 'pending', 'new-run'] as const)(
     const owner = separate ? 'list' : 'inspect';
     store.dispatch(agentMessage('findings', 'Final findings', owner, 3, { actionId: 'same-run' }));
     const { container } = renderDataThread(store);
+    // A finished step that said what it did is its message, and its calls open from it; a call
+    // still waiting for approval keeps the step's rows.
+    const rowsKept = boundary === 'pending';
     expect(container.querySelectorAll('[data-agent-work-group]')).toHaveLength(0);
-    expect(container.querySelectorAll('[data-tool-activity-row]')).toHaveLength(separate ? 2 : 1);
+    expect(container.querySelectorAll('[data-tool-activity-row]')).toHaveLength(rowsKept ? 1 : 0);
     expect(screen.queryByText('az inspect')).toBeNull();
     expect(screen.getByText('inspect resource details')).toBeVisible();
     expect(!!screen.queryByText('list resource details')).toBe(separate);
@@ -519,13 +476,16 @@ it.each(['none', 'user', 'pending', 'new-run'] as const)(
     const onActivity = vi.fn();
     window.addEventListener('df-view-tool-activity', onActivity, { once: true });
     const label = `${owner} resource details`;
-    fireEvent.click(screen.getByText(label));
-    expect(onActivity).not.toHaveBeenCalled();
-    const group = screen.getByText(label).closest('[data-tool-activity-row]')! as HTMLElement;
-    fireEvent.click(within(group).getByRole('button', { name: 'list' }));
+    if (rowsKept) {
+      fireEvent.click(screen.getByText(label));
+      expect(onActivity).not.toHaveBeenCalled();
+      const group = screen.getByText(label).closest('[data-tool-activity-row]')! as HTMLElement;
+      fireEvent.click(within(group).getByRole('button', { name: 'list' }));
+    } else fireEvent.click(screen.getByText(label));
     const detail = (onActivity.mock.calls[0][0] as CustomEvent).detail;
     expect(detail.nodeId).toBe(owner);
-    expect(detail.execution).toMatchObject({ id: 'list-command', status: boundary === 'pending' ? 'awaiting_approval' : 'completed' });
+    expect(detail.execution).toMatchObject(rowsKept ? { id: 'list-command', status: 'awaiting_approval' }
+      : { id: `${owner}-command`, status: 'completed' });
     expect(store.getState().focusedId).toEqual(focus);
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Terminal execution details' })).toBeNull();
@@ -547,17 +507,15 @@ it('keeps a step\'s tool calls on one message while preserving its loaded and de
   const { container } = renderDataThread(store);
   expect(container.querySelectorAll('[data-agent-work-group]')).toHaveLength(0);
   expect(screen.getByText('Analyze daily usage')).toBeVisible();
-  expect(container.querySelectorAll('[data-tool-activity-row]')).toHaveLength(1);
+  // The finished step is its message; its six calls open from it, starting with the first.
+  expect(container.querySelectorAll('[data-tool-activity-row]')).toHaveLength(0);
   expect(screen.queryByRole('img', { name: 'Failed' })).toBeNull();
   const focus = store.getState().focusedId;
   const onActivity = vi.fn();
   window.addEventListener('df-view-tool-activity', onActivity, { once: true });
-  fireEvent.click(screen.getByText('Acquiring usage'));
-  expect(onActivity).not.toHaveBeenCalled();
-  const group = screen.getByText('Acquiring usage').closest('[data-tool-activity-row]')! as HTMLElement;
-  for (let index = 0; index < 6; index++) expect(within(group).getByRole('button', { name: `Acquire ${index}` })).toBeVisible();
-  fireEvent.click(within(group).getByRole('button', { name: 'Acquire 5' }));
-  expect((onActivity.mock.calls[0][0] as CustomEvent).detail.nodeId).toBe('acquire');
+  const group = screen.getByText('Acquiring usage');
+  fireEvent.click(group);
+  expect((onActivity.mock.calls[0][0] as CustomEvent).detail).toMatchObject({ nodeId: 'acquire', execution: { id: 'terminal-0' } });
   expect(store.getState().focusedId).toEqual(focus);
   const output = container.querySelector('[data-thread-item="usage-reference"]')!;
   expect(output).toBeVisible();
@@ -649,42 +607,39 @@ it('shows one live activity spinner and opens the execution step directly', asyn
   act(() => store.dispatch(dfActions.removeDraftNode('live-draft')));
   expect(screen.queryByText(/Running command fixture/)).toBeNull();
   expect(screen.queryByRole('progressbar')).toBeNull();
+  // Once the run is over, the step is its message and its calls open from it.
+  expect(container.querySelectorAll('[data-tool-activity-row]')).toHaveLength(0);
   window.addEventListener('df-view-tool-activity', onActivity, { once: true });
-  // The selected call keeps its step's row open across re-renders.
-  const completedGroup = screen.getByText('Querying usage').closest('[data-tool-activity-row]')! as HTMLElement;
-  expect(within(within(completedGroup).getByRole('button', { name: 'Query 6' })).getByTestId('CheckCircleOutlineIcon')).toBeVisible();
-  fireEvent.click(within(completedGroup).getByRole('button', { name: 'Query 6' }));
-  expect((onActivity.mock.calls[1][0] as CustomEvent).detail.nodeId).toBe('command');
+  fireEvent.click(screen.getByText('Querying usage'));
+  expect((onActivity.mock.calls[1][0] as CustomEvent).detail).toMatchObject({ nodeId: 'command', execution: { id: 'execution-0' } });
   expect(store.getState().focusedId).toEqual(focus);
   expect(screen.queryByRole('button', { name: 'Terminal execution details' })).toBeNull();
   expect(store.getState().textTurns).toHaveLength(2);
   expect(store.getState().textTurns[1].executions![5].status).toBe('failed');
 });
 
-it('opens terminal and Python calls from their chart step with aligned tool icons', () => {
+it('opens terminal and Python calls from their chart step with aligned tool icons while the run is live', () => {
   const store = configureStore({ reducer: dataFormulatorReducer });
-  store.dispatch(agentMessage('unrelated-call', 'Other task', 'conversation-root:other', 0, { actionId: 'other-run',
+  store.dispatch(agentMessage('unrelated-call', '', 'conversation-root:other', 0, { actionId: 'other-run',
     executions: [{ id: 'unrelated', argv: ['pwd'], cwd: '.', purpose: 'Other task', status: 'completed' }] }));
-  // The step that made the table holds both of its tool calls.
-  store.dispatch(agentMessage('analysis-step', 'Compare storage accounts', CONVERSATION_ROOT_ID, 1, { actionId: 'analysis',
+  // A step that made the table without saying anything keeps its tool calls as rows.
+  store.dispatch(agentMessage('analysis-step', '', CONVERSATION_ROOT_ID, 1, { actionId: 'analysis',
     executions: [{ id: 'terminal', argv: ['az', 'query'], cwd: '.', purpose: 'Fetch input', status: 'completed', createdAt: 1 }],
     codeExecutions: [{ id: 'python', tool: 'execute_python_script', code: 'print(42)', purpose: 'Inspect input',
       status: 'completed', createdAt: 2 }] } as Partial<TextTurn>));
   store.dispatch(dfActions.addTableToStore(derivedTable('chart-result', 'Chart result', 'analysis-step')));
+  // While the run is live its steps show their tool calls as rows.
+  store.dispatch(dfActions.createDraftNode({ id: 'live', displayId: 'Live', parentNodeId: 'chart-result', parentTableId: 'chart-result',
+    source: [], interaction: [], actionId: 'analysis' }));
   const onOpen = vi.fn();
   window.addEventListener('df-view-tool-activity', onOpen);
   try {
     const { container } = renderDataThread(store);
-    const step = container.querySelector('[data-thread-item="textturn-analysis-step"]')! as HTMLElement;
     const group = container.querySelector('[data-thread-item="textturn-analysis-step-activity"]')! as HTMLElement;
-    expect(step).toBeTruthy();
     expect(group).toHaveAttribute('data-secondary-activity');
     const activity = within(group).getByRole('button', { name: 'View step tool calls' });
-    expect(document.querySelectorAll('[data-tool-activity-row]')).toHaveLength(1);
-    expect(within(step).queryByTestId('CodeIcon')).toBeNull();
     expect(group.querySelector('[data-activity-gutter] svg')).toBeNull();
     expect(within(group).queryByTestId('CodeIcon')).toBeNull();
-    expect(activity.compareDocumentPosition(step) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     fireEvent.click(activity);
     expect(onOpen).not.toHaveBeenCalled();
     const call = within(group).getByRole('button', { name: 'Inspect input' });
@@ -707,23 +662,36 @@ it('opens terminal and Python calls from their chart step with aligned tool icon
     expect(within(group).getByRole('button', { name: 'Fetch input' })).toHaveAttribute('aria-pressed', 'true');
     act(() => { window.dispatchEvent(new Event('df-tool-activity-closed')); });
     expect(within(group).getByRole('button', { name: 'Fetch input' })).toHaveAttribute('aria-pressed', 'false');
-    const focus = store.getState().focusedId;
-    const onExplanation = vi.fn();
-    window.addEventListener('df-view-explanation', onExplanation);
-    try {
-      const instruction = within(step).getByText('Compare storage accounts');
-      expect(instruction.closest('button, [role="button"]')).toBeNull();
-      expect(instruction).toHaveStyle({ overflowWrap: 'anywhere' });
-      expect(getComputedStyle(instruction).getPropertyValue('-webkit-line-clamp')).toBe('');
-      expect(getComputedStyle(instruction.parentElement!).cursor).toBe('default');
-      fireEvent.click(instruction);
-      expect(onExplanation).not.toHaveBeenCalled();
-      expect(store.getState().focusedId).toEqual(focus);
-    } finally {
-      window.removeEventListener('df-view-explanation', onExplanation);
-    }
     expect(onOpen).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole('button', { name: 'Terminal execution details' })).toBeNull();
+  } finally {
+    window.removeEventListener('df-view-tool-activity', onOpen);
+  }
+});
+
+it('opens a finished step\'s tool calls from its message instead of listing them', () => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  const instruction = 'Measure the spending–researcher relationship.';
+  store.dispatch(userMessage('ask', 'Go deeper', CONVERSATION_ROOT_ID, 1));
+  store.dispatch(agentMessage('step', instruction, 'ask', 2, { codeExecutions: [
+    { id: 'second', tool: 'execute_python_script', purpose: instruction, code: 'print(2)', status: 'completed', createdAt: 2 },
+    { id: 'first', tool: 'execute_python_script', purpose: 'Check coverage', code: 'print(1)', status: 'completed', createdAt: 1 }] }));
+  store.dispatch(dfActions.addTableToStore(derivedTable('result', 'Result', 'step') as any));
+  const onOpen = vi.fn();
+  window.addEventListener('df-view-tool-activity', onOpen);
+  try {
+    const { container } = renderDataThread(store);
+    expect(container.querySelectorAll('[data-tool-activity-row]')).toHaveLength(0);
+    expect(screen.getAllByText(instruction)).toHaveLength(1);
+    const focus = store.getState().focusedId;
+    const message = container.querySelector('[data-step-calls="step"]')! as HTMLElement;
+    expect(message).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(screen.getByText(instruction));
+    expect((onOpen.mock.calls[0][0] as CustomEvent).detail).toMatchObject({ nodeId: 'step', execution: { id: 'first' } });
+    expect(message).toHaveAttribute('aria-pressed', 'true');
+    expect(store.getState().focusedId).toEqual(focus);
+    act(() => { window.dispatchEvent(new Event('df-tool-activity-closed')); });
+    expect(message).toHaveAttribute('aria-pressed', 'false');
   } finally {
     window.removeEventListener('df-view-tool-activity', onOpen);
   }
@@ -961,7 +929,7 @@ it('names the connected source a loaded table was queried from in its table view
 
 
 it.each([['gave an instruction', 'Compare alert severity by scenario'], ['gave none', '']])(
-  'shows the step before a derived table as its tool calls, plus its instruction only when the agent %s', (_label, content) => {
+  'shows a live step before a derived table as its instruction, or as its tool calls when the agent %s', (_label, content) => {
   const store = configureStore({ reducer: dataFormulatorReducer });
   store.dispatch(userMessage('ask', 'Compare all three', CONVERSATION_ROOT_ID, 1));
   store.dispatch(agentMessage('step', content, 'ask', 2, { codeExecutions: [{ id: 'check', tool: 'execute_python_script',
@@ -970,16 +938,21 @@ it.each([['gave an instruction', 'Compare alert severity by scenario'], ['gave n
   store.dispatch(dfActions.addTableToStore(derivedTable('result', 'Scenario Severity Comparison', 'step') as any));
   store.dispatch(dfActions.addChart({ id: 'chart', chartType: 'Bar Chart', tableRef: 'result', source: 'user', encodingMap: {},
     title: 'Security alert volume by scenario and severity' } as any));
+  // Live: a step's calls show as rows; settled, the step is a message they open from.
+  store.dispatch(dfActions.createDraftNode({ id: 'live', displayId: 'Live', parentNodeId: 'result', parentTableId: 'result',
+    source: [], interaction: [] }));
   const { container } = renderDataThread(store);
   const items = [...container.querySelectorAll('[data-thread-item]')].map(item => item.getAttribute('data-thread-item'));
-  // request → the step's one tool call → (its instruction) → the table; the chart title is not a message
+  // request → the step's tool call → (its instruction) → the table;
+  // the chart title is not a message
   expect(items.slice(0, content ? 4 : 3)).toEqual(['textturn-prompt-ask-0', 'textturn-step-activity',
     ...(content ? ['textturn-step'] : []), 'regular-table-box-result']);
   if (content) {
     expect(container.querySelector('[data-thread-item="textturn-step"]')!.textContent).toContain(content);
     expect(container.querySelector('[data-thread-item="textturn-step"]')!.textContent).not.toContain('Check coverage');
   }
-  expect(container.querySelector('[data-thread-item="textturn-step-activity"]')!.textContent).toContain('1');
+  // A single call is shown as itself, not folded.
+  expect(container.querySelector('[data-thread-item="textturn-step-activity"]')!.textContent).toContain('Check coverage');
 });
 
 it('highlights every member of a set on the focused chain', () => {
@@ -1129,7 +1102,7 @@ it('deletes a stranded tool step, then the reply nothing answers, reopening the 
   expect(store.getState().textTurns.find((turn: TextTurn) => turn.id === 'question')?.answered).toBe(false);
 });
 
-it('notes what a fixed artifact replaced', () => {
+it('notes what a fixed artifact replaced only while its run is live', () => {
   const store = configureStore({ reducer: dataFormulatorReducer });
   store.dispatch(userMessage('ask', 'Fix the trend', CONVERSATION_ROOT_ID, 0));
   store.dispatch(agentMessage('step', 'Recompute the trend', 'ask', 1));
@@ -1137,7 +1110,116 @@ it('notes what a fixed artifact replaced', () => {
   store.dispatch(agentMessage('app-step', '', 'd_fixed', 2));
   store.dispatch(dfActions.upsertFileNode({ kind: 'file', id: 'file-app.app.jsx', path: 'app.app.jsx', displayName: 'Trend app',
     contentHash: 'h', parentNodeId: 'app-step', createdAt: 3, replaced: { id: 'file-app.app.jsx', name: 'Trend app' } }));
+  const notes = (container: HTMLElement) => [...container.querySelectorAll('[data-replaced-note]')].map(note => note.textContent);
+  const settled = renderDataThread(store);
+  expect(notes(settled.container)).toEqual([]);
+  settled.unmount();
+  store.dispatch(dfActions.createDraftNode({ id: 'live', displayId: 'Live', parentNodeId: 'file-app.app.jsx',
+    parentTableId: 'd_fixed', source: [], interaction: [] }));
   const { container } = renderDataThread(store);
-  const notes = [...container.querySelectorAll('[data-replaced-note]')].map(note => note.textContent);
-  expect(notes).toEqual(['Replaced Old trend', 'Replaced the earlier version']);
+  expect(notes(container)).toEqual(['Replaced Old trend', 'Replaced the earlier version']);
+});
+
+it('shows a settled wordless step as a message labelled by its first call, which opens its calls', () => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  const call = (id: string, createdAt: number) => ({ id: `${id}-code`, tool: 'run_code', code: 'x = 1', purpose: `Check ${id}`, status: 'completed' as const, createdAt });
+  store.dispatch(agentMessage('first', '', CONVERSATION_ROOT_ID, 0, { actionId: 'run', codeExecutions: [call('samples', 2), call('coverage', 1)] }));
+  store.dispatch(agentMessage('findings', 'Final findings', 'first', 3, { actionId: 'run' }));
+  const { container } = renderDataThread(store);
+  expect(container.querySelectorAll('[data-tool-activity-row]')).toHaveLength(0);
+  const onActivity = vi.fn();
+  window.addEventListener('df-view-tool-activity', onActivity, { once: true });
+  fireEvent.click(screen.getByText('Check coverage'));
+  expect((onActivity.mock.calls[0][0] as CustomEvent).detail).toMatchObject({ nodeId: 'first', execution: { id: 'coverage-code' } });
+});
+
+it('shows the chart that led to a conclusion, not an empty placeholder a later derivation left on its table', () => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  store.dispatch(dfActions.addTableToStore(derivedTable('adjusted', 'Adjusted', CONVERSATION_ROOT_ID)));
+  store.dispatch(dfActions.addChart({ id: 'real', chartType: 'Grouped Bar Chart', tableRef: 'adjusted', source: 'user', encodingMap: {} } as any));
+  const next = derivedTable('next', 'Next', 'adjusted');
+  next.derive.trigger.chart = { id: 'placeholder', chartType: 'Auto', tableRef: 'adjusted', encodingMap: {} };
+  store.dispatch(dfActions.addTableToStore(next));
+  store.dispatch(agentMessage('conclusion', 'Combined conclusion', 'adjusted', 5));
+  store.dispatch(dfActions.setFocused({ type: 'text', textId: 'conclusion' }));
+  expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'chart', chartId: 'real' });
+});
+
+it('breaks a long thread into sub-threads at its runs, and keeps one that fits about a screen whole', () => {
+  expect(splitThreadRuns([300, 300], 500)).toEqual([0]);
+  expect(splitThreadRuns([300, 300, 300, 300], 500)).toEqual([0, 1, 2, 3]);
+  expect(splitThreadRuns([200, 200, 200, 200, 200], 500)).toEqual([0, 2, 4]);
+  // A short tail stays with the part before it; a run taller than a screen is a part of its own.
+  expect(splitThreadRuns([200, 200, 200, 200, 50], 500)).toEqual([0, 2]);
+  expect(splitThreadRuns([100, 900, 100], 500)).toEqual([0, 1]);
+
+  const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
+  const offset = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+    return this.hasAttribute('data-thread-run-of') ? 450 : 0;
+  });
+  try {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    let parent = CONVERSATION_ROOT_ID;
+    for (let index = 0; index < 4; index++) {
+      store.dispatch(userMessage(`ask-${index}`, `Request ${index}`, parent, index * 3));
+      store.dispatch(agentMessage(`reply-${index}`, `Response ${index}`, `ask-${index}`, index * 3 + 1));
+      store.dispatch(dfActions.addTableToStore(derivedTable(`result-${index}`, `Result ${index}`, `reply-${index}`)));
+      parent = `result-${index}`;
+    }
+    const { container } = renderDataThread(store);
+    const runs = container.querySelectorAll('[data-thread-run-of]');
+    expect(Array.from(runs, run => run.getAttribute('data-thread-run-index'))).toEqual(['0', '1', '2', '3']);
+    // Each run is its own sub-thread here, in order, numbered under the thread and continuing its line.
+    const entries = Array.from(runs, run => run.closest('[data-thread-entry]'));
+    expect(new Set(entries).size).toBe(4);
+    expect(container.querySelectorAll('[data-thread-continued]')).toHaveLength(3);
+    expect(['thread - 1.2', 'thread - 1.3', 'thread - 1.4'].every(label => screen.getByText(label))).toBe(true);
+    for (let index = 0; index < 4; index++) expect(screen.getAllByText(`Request ${index}`)).toHaveLength(1);
+  } finally {
+    height.mockRestore();
+    offset.mockRestore();
+  }
+});
+
+it('leads the plan label with where it stands', () => {
+  const items = (done: number) => ['Overview', 'Gaps', 'Summary'].map((text, index) => ({ text, status: index < done ? 'done' as const : 'open' as const }));
+  const { rerender } = render(React.createElement(RunPlanChecklist, { items: items(1), title: 'Who is left behind' }));
+  expect(screen.getByRole('button', { name: 'Plan 1/3: Who is left behind' })).toBeVisible();
+  rerender(React.createElement(RunPlanChecklist, { items: items(3), title: 'Who is left behind' }));
+  expect(screen.getByRole('button', { name: 'Completed 3/3: Who is left behind' })).toBeVisible();
+});
+
+it('drops a finished "creating chart" row that has nothing else to say', () => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  store.dispatch(userMessage('ask', 'One more round', CONVERSATION_ROOT_ID, 1));
+  store.dispatch(agentMessage('chart-step', '', 'ask', 2, { progressSteps: [
+    { id: 'chart', kind: 'chart', label: 'creating chart...', status: 'completed' }] }));
+  store.dispatch(dfActions.addTableToStore(derivedTable('result', 'Result', 'chart-step') as any));
+  renderDataThread(store);
+  expect(screen.queryByText('creating chart...')).toBeNull();
+  expect(screen.getByText('Result')).toBeVisible();
+});
+
+it('draws apps in the report purple, with their own icons', () => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  store.dispatch(dfActions.upsertFileNode({ kind: 'file', id: 'file-app', path: 'quakes.app.jsx', displayName: 'Earthquake explorer',
+    contentHash: 'h', parentNodeId: CONVERSATION_ROOT_ID, createdAt: 1 }));
+  store.dispatch(dfActions.upsertFileNode({ kind: 'file', id: 'file-notes', path: 'notes.md', displayName: 'Notes',
+    contentHash: 'h2', parentNodeId: 'file-app', createdAt: 2 }));
+  const { container } = renderDataThread(store);
+  const card = (id: string) => container.querySelector(`[data-thread-item="${id}"] .data-thread-card`) as HTMLElement;
+  expect(getComputedStyle(card('file-app')).backgroundColor).not.toBe(getComputedStyle(card('file-notes')).backgroundColor);
+  expect(container.querySelector('[data-thread-item="file-app"] [data-testid="DashboardOutlinedIcon"]')).toBeTruthy();
+});
+
+it('leaves a settled step\'s thinking out of the thread', () => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  store.dispatch(userMessage('ask', 'Extend the trend', CONVERSATION_ROOT_ID, 1));
+  store.dispatch(agentMessage('step', '', 'ask', 2, { progressSteps: [
+    { id: 'thought', kind: 'thought', label: 'I will expand the trend to 2005.', status: 'completed' }] }));
+  store.dispatch(dfActions.addTableToStore(derivedTable('result', 'Result', 'step') as any));
+  const { container } = renderDataThread(store);
+  expect(container.querySelector('[data-thread-item="textturn-step"]')).toBeNull();
+  expect(screen.queryByText(/expand the trend to 2005/)).toBeNull();
+  expect(screen.getByText('Result')).toBeTruthy();
 });

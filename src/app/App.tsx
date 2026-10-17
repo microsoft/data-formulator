@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ScrollFadeEdge, useScrollFade } from '../components/ScrollFade';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux";
@@ -50,6 +51,7 @@ import {
     ListItemText,
     CircularProgress,
     LinearProgress,
+    GlobalStyles,
 } from '@mui/material';
 
 
@@ -60,7 +62,7 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
 
 import { DataFormulatorFC } from '../views/DataFormulator';
-import { LayoutProvider } from './LayoutProvider';
+import { LayoutProvider, useLayout, type DensityPreference } from './LayoutProvider';
 import { createDfTheme } from './theme';
 import { MIN_SUPPORTED } from './layout';
 import { useAutoSave } from './useAutoSave';
@@ -721,13 +723,17 @@ const ConfigDialog: React.FC<{
     const [paletteKey, setPaletteKey] = useState(
         (config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey
     );
+    // UI size is a per-browser preference: Auto follows the window width, the others pin it.
+    const { densityPreference, setDensityPreference } = useLayout();
+    const [displaySize, setDisplaySize] = useState<DensityPreference>(densityPreference);
 
     const hasChanges = formulateTimeoutSeconds !== config.formulateTimeoutSeconds || 
                       defaultChartWidth !== config.defaultChartWidth ||
                       defaultChartHeight !== config.defaultChartHeight ||
                       maxStretchFactor !== config.maxStretchFactor ||
                       frontendRowLimit !== config.frontendRowLimit ||
-                      paletteKey !== ((config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey);
+                      paletteKey !== ((config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey) ||
+                      displaySize !== densityPreference;
 
     return (
         <>
@@ -793,6 +799,24 @@ const ConfigDialog: React.FC<{
                                     );
                                 })}
                             </Select>
+                        </FormControl>
+                        <FormControl fullWidth size="small">
+                            <InputLabel id="display-size-label" sx={{ fontSize: textVar.md }}>{t('config.displaySize')}</InputLabel>
+                            <Select
+                                labelId="display-size-label"
+                                value={displaySize}
+                                label={t('config.displaySize')}
+                                onChange={(e) => setDisplaySize(e.target.value as DensityPreference)}
+                                sx={{ fontSize: textVar.md }}
+                            >
+                                {([['auto', 'displaySizeAuto'], ['compact', 'displaySizeSmall'], ['reference', 'displaySizeMedium'],
+                                    ['comfortable', 'displaySizeLarge']] as const).map(([value, key]) => (
+                                    <MenuItem key={value} value={value} sx={{ fontSize: textVar.md }}>{t(`config.${key}`)}</MenuItem>
+                                ))}
+                            </Select>
+                            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                                {t('config.displaySizeHint')}
+                            </Typography>
                         </FormControl>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                             <Box sx={{ flex: 1 }}>
@@ -947,6 +971,7 @@ const ConfigDialog: React.FC<{
                         setMaxStretchFactor(2.0);
                         setFrontendRowLimit(rowLimitDefault);
                         setPaletteKey(defaultPaletteKey);
+                        setDisplaySize('auto');
                     }}>{t('session.resetToDefault')}</Button>
                     <Button onClick={() => setOpen(false)}>{t('app.cancel')}</Button>
                     <Button 
@@ -958,6 +983,7 @@ const ConfigDialog: React.FC<{
                             || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > rowLimitMax}
                         onClick={() => {
                             dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey}));
+                            setDensityPreference(displaySize);
                             setOpen(false);
                         }}
                     >
@@ -1050,6 +1076,7 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
     missing_token_endpoint: 'auth.ssoErrorMissingEndpoint',
 };
 
+
 const AppShell: FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const { t } = useTranslation();
@@ -1102,9 +1129,15 @@ const AppShell: FC = () => {
     const [logsOpen, setLogsOpen] = useState(false);
     const exitSession = useExitSession();
     const inSession = isAppPage && inWorkspaceSession;
+    const shellScrollRef = useRef<HTMLDivElement | null>(null);
+    const { moreAbove, moreBelow, moreLeft, moreRight, update: updateShellFade } = useScrollFade(shellScrollRef, location.pathname);
+    const shellFade = { top: moreAbove, bottom: moreBelow, left: moreLeft, right: moreRight };
 
     return (
-        <Box sx={{
+        // The shell scrolls when the window is below the supported size; the
+        // fades mark the hidden side like other scrolling surfaces.
+        <Box sx={{ position: 'absolute', inset: 0 }}>
+        <Box ref={shellScrollRef} onScroll={updateShellFade} sx={{
             position: 'absolute',
             backgroundColor: 'rgba(255, 255, 255, 0.3)',
             top: 0,
@@ -1377,6 +1410,8 @@ const AppShell: FC = () => {
                 <ChartRenderService />
             </Box>
         </Box>
+        {(['top', 'bottom', 'left', 'right'] as const).map(edge => <ScrollFadeEdge key={edge} edge={edge} visible={shellFade[edge]} />)}
+        </Box>
     );
 }
 
@@ -1580,6 +1615,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     return (
         <ThemeProvider theme={theme}>
+            {/* Plain elements (buttons, links, spans outside Typography) take the theme font, not the browser serif. */}
+            <GlobalStyles styles={theme => ({ 'html, body': { fontFamily: theme.typography.fontFamily } })} />
             <LayoutProvider>
                 {configLoaded && authChecked ? (
                     <RouterProvider router={router} />

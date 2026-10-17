@@ -1,12 +1,12 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { memo, useState } from 'react';
+import React, { memo, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '../i18n';
 import Markdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Box, Collapse, Tooltip, Typography, useTheme } from '@mui/material';
+import { Box, CircularProgress, Collapse, Tooltip, Typography, useTheme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import PersonIcon from '@mui/icons-material/Person';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
@@ -20,9 +20,12 @@ import CheckIcon from '@mui/icons-material/Check';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import WbIncandescentIcon from '@mui/icons-material/WbIncandescent';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
-import { InteractionEntry, ProgressStep } from '../components/ComponentType';
+import { InteractionEntry, PlanItem, ProgressStep } from '../components/ComponentType';
 import { ShimmerText } from '../components/FunComponents';
 import { AgentIcon } from '../icons';
 import { radius, borderColor } from '../app/tokens';
@@ -157,6 +160,73 @@ export const PlanStepsView: React.FC<{
                 const showShimmer = activeLastStep && isLast && typeof step !== 'string' && step.status === 'running';
                 return <PlanStepItem key={typeof step === 'string' ? idx : step.id} step={step} showShimmer={showShimmer} trailing={isLast ? trailing : undefined} />;
             })}
+        </Box>
+    );
+};
+
+/**
+ * The analyst's checklist plan for a longer request (design-docs/64). Open by default
+ * while it is the latest request's plan (`defaultExpanded`), one line once the conversation
+ * moves on; a manual toggle holds until then. While its run is live it is the run's status row (the thread draws the
+ * spinner in the gutter): the current step is marked and `activity` shows what the
+ * agent is doing now.
+ */
+export const RunPlanChecklist: React.FC<{ items: PlanItem[]; title?: string; active?: boolean; activity?: React.ReactNode; defaultExpanded?: boolean }> = ({
+    items, title, active = false, activity, defaultExpanded = false,
+}) => {
+    const { t } = useTranslation();
+    const [toggled, setToggled] = useState<boolean | null>(null);
+    useEffect(() => setToggled(null), [defaultExpanded]);
+    const expanded = toggled ?? defaultExpanded;
+    const done = items.filter(item => item.status === 'done').length;
+    const counted = items.filter(item => item.status !== 'dropped').length;
+    const currentIndex = items.findIndex(item => item.status === 'open');
+    const current = items[currentIndex];
+    // The label leads with where the plan stands: "Plan 1/3: …" while steps are open, "Completed 3/3: …" after.
+    const stage = done < counted
+        ? t('dataThread.planStage', { defaultValue: 'Plan {{done}}/{{total}}', done, total: counted })
+        : t('dataThread.planCompletedStage', { defaultValue: 'Completed {{done}}/{{total}}', done, total: counted });
+    const name = title ? `${stage}: ${title}` : stage;
+    const stepIcon = (item: PlanItem, index: number) => item.status === 'done'
+        ? <FiberManualRecordIcon aria-hidden sx={{ fontSize: 9, color: 'success.main' }} />
+        : active && index === currentIndex
+            ? <FiberManualRecordIcon aria-label={t('workflow.currentStepRunning', { defaultValue: 'Current step running' })} sx={{ fontSize: 9, color: 'primary.main' }} />
+            : <RadioButtonUncheckedIcon aria-hidden sx={{ fontSize: 13, color: 'text.disabled' }} />;
+    return (
+        <Box component="section" aria-label={t('dataThread.plan', { defaultValue: 'Plan' })} sx={{
+            minWidth: 0, px: 1, py: 0.5, borderRadius: '6px', bgcolor: 'rgba(0,0,0,0.035)',
+        }}>
+            <Box component="button" type="button" aria-expanded={expanded} onClick={() => setToggled(!expanded)} sx={{
+                display: 'flex', alignItems: 'center', gap: '5px', width: '100%', m: 0, p: 0, border: 0,
+                bgcolor: 'transparent', cursor: 'pointer', textAlign: 'left', font: 'inherit',
+                color: 'text.secondary', fontSize: textVar.xs, lineHeight: 1.4,
+                '&:hover': { color: 'text.primary' },
+                '&:focus': { outline: 'none' },
+                '&:focus-visible': { textDecoration: 'underline' },
+            }}>
+                <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {name}{!title && !expanded && current ? ` · ${current.text}` : ''}
+                </Box>
+                <ExpandMoreIcon aria-hidden sx={{ width: 14, height: 14, flexShrink: 0, ml: 'auto',
+                    transform: expanded ? 'rotate(180deg)' : 'none' }} />
+            </Box>
+            {activity}
+            {expanded && <Box component="ul" sx={{ listStyle: 'none', m: 0, mt: 0.5, p: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                {items.map((item, index) => <Box component="li" key={index} sx={{ display: 'flex', alignItems: 'flex-start', gap: '5px' }}>
+                    {/* One text line tall, so the icon centers on the step's first line. */}
+                    <Box component="span" sx={{ display: 'flex', flexShrink: 0, width: 13, height: '1.4em', alignItems: 'center',
+                        justifyContent: 'center', fontSize: textVar.xs }}>{stepIcon(item, index)}</Box>
+                    <Box sx={{ minWidth: 0 }}>
+                        <Typography component="div" sx={{ fontSize: textVar.xs, lineHeight: 1.4, overflowWrap: 'anywhere',
+                            color: item.status === 'open' ? 'text.primary' : 'text.secondary' }}>
+                            <Box component="span" sx={item.status === 'dropped' ? { textDecoration: 'line-through' } : undefined}>
+                                {item.text}
+                            </Box>
+                            {item.status === 'dropped' && item.note && <Box component="span" sx={{ fontStyle: 'italic' }}> ({item.note})</Box>}
+                        </Typography>
+                    </Box>
+                </Box>)}
+            </Box>}
         </Box>
     );
 };
@@ -301,19 +371,24 @@ export const CompactMarkdown: React.FC<{
                         </Box>
                     </Box>
                 ),
+                // Documents read tables like prose: hairline rows, no grid, a quiet header.
                 th: ({ children }) => (
-                    <Box component="th" sx={{
-                        border: `1px solid ${theme.palette.divider}`,
-                        px: isDocument ? 1 : '5px', py: isDocument ? 0.5 : '2px',
+                    <Box component="th" sx={isDocument ? {
+                        borderBottom: `1px solid ${theme.palette.divider}`, px: 1, py: 0.75, pl: 0,
+                        textAlign: 'left', fontWeight: 600, fontSize: '0.9em', color: 'text.secondary',
+                    } : {
+                        border: `1px solid ${theme.palette.divider}`, px: '5px', py: '2px',
                         textAlign: 'left', fontWeight: 600, bgcolor: 'action.hover',
                     }}>
                         {children}
                     </Box>
                 ),
                 td: ({ children }) => (
-                    <Box component="td" sx={{
-                        border: `1px solid ${theme.palette.divider}`,
-                        px: isDocument ? 1 : '5px', py: isDocument ? 0.5 : '2px', verticalAlign: 'top',
+                    <Box component="td" sx={isDocument ? {
+                        borderBottom: `1px solid ${theme.palette.divider}`, px: 1, py: 0.75, pl: 0, verticalAlign: 'top',
+                        '& strong': { fontWeight: 'inherit' },
+                    } : {
+                        border: `1px solid ${theme.palette.divider}`, px: '5px', py: '2px', verticalAlign: 'top',
                     }}>
                         {children}
                     </Box>
@@ -718,17 +793,8 @@ export function getEntryGutterIcon(entry: InteractionEntry, color: string): Reac
     if (entry.from === 'user') {
         return <PersonIcon sx={iconSx} />;
     }
-    // Pick a role-specific variant of the agent toy so the gutter conveys
-    // state at a glance (thinking / summary / clarify / explain).
-    const variant: AgentToyVariant = (() => {
-        switch (entry.role) {
-            case 'clarify': return 'clarify';
-            case 'explain': return 'explain';
-            case 'delegate': return 'explain';
-            case 'instruction': return 'thinking';
-            default: return 'default';
-        }
-    })();
+    // One agent face; only a question waiting for the user's answer gets its own.
+    const variant: AgentToyVariant = entry.role === 'clarify' ? 'clarify' : 'default';
     return <AgentToyIcon variant={variant} sx={iconSx} />;
 }
 

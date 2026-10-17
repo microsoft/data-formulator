@@ -53,3 +53,28 @@ export const threadPaneWidth = (n: number): number => threadPaneWidthFor(n);
  */
 export const fittableThreadColumns = (containerWidth: number): number =>
     fittableThreadColumnsFor(containerWidth);
+
+/**
+ * Where a long thread breaks into sub-threads: the run indices each part starts at.
+ *
+ * A run is one request and everything it produced, through its plan or closing
+ * answer, so runs are the thread's natural break points, as words are for text.
+ * A thread that fits in about one screen (`limit`) stays whole; a longer one wraps
+ * greedily at run boundaries, a run taller than `limit` gets a part to itself, and
+ * a short tail stays with the part before it.
+ */
+export const splitThreadRuns = (runHeights: number[], limit: number): number[] => {
+    const total = runHeights.reduce((sum, height) => sum + height, 0);
+    if (limit <= 0 || runHeights.length < 2 || total <= limit * 1.25) return [0];
+    const starts = [0];
+    let current = 0;
+    runHeights.forEach((height, index) => {
+        if (current > 0 && current + height > limit) {
+            starts.push(index);
+            current = 0;
+        }
+        current += height;
+    });
+    if (starts.length > 1 && current < limit * 0.25) starts.pop();
+    return starts;
+};

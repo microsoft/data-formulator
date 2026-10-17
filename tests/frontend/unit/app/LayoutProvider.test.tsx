@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import { createTheme, Menu, MenuItem, ThemeProvider } from '@mui/material';
 
-import { LayoutProvider, menuPaperSlotProps, useLayout } from '../../../../src/app/LayoutProvider';
+import React from 'react';
+import { LayoutProvider, menuPaperSlotProps, useContainerSize, useLayout } from '../../../../src/app/LayoutProvider';
 import { MIN_SUPPORTED, REFERENCE, maxThreadColumnsForWidth, threadPaneWidthFor } from '../../../../src/app/layout';
 
 const Probe: React.FC = () => {
@@ -112,5 +113,41 @@ describe('shell allocation at the floor', () => {
         const columns = maxThreadColumnsForWidth(width);
         expect(columns).toBeGreaterThan(1);
         expect(width - threadPaneWidthFor(columns)).toBeGreaterThanOrEqual(REFERENCE.canvas.min);
+    });
+});
+
+describe('useContainerSize', () => {
+    it('follows the measured element when it is replaced (workspace → landing → workspace)', () => {
+        const observed: Element[] = [];
+        class FakeResizeObserver {
+            constructor(private readonly callback: () => void) {}
+            observe(element: Element) { observed.push(element); }
+            disconnect() {}
+            unobserve() {}
+        }
+        vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+        const widths = new Map<string, number>([['first', 900], ['second', 1300]]);
+        const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+            return { width: widths.get(this.dataset.pane || '') ?? 0, height: 100 } as DOMRect;
+        });
+        const Measured: React.FC<{ pane?: string }> = ({ pane }) => {
+            const ref = React.useRef<HTMLDivElement>(null);
+            const { width } = useContainerSize(ref);
+            return <>
+                <output data-testid="width">{width}</output>
+                {pane && <div key={pane} ref={ref} data-pane={pane} />}
+            </>;
+        };
+        try {
+            const view = render(<Measured pane="first" />);
+            expect(screen.getByTestId('width')).toHaveTextContent('900');
+            view.rerender(<Measured />);
+            view.rerender(<Measured pane="second" />);
+            expect(screen.getByTestId('width')).toHaveTextContent('1300');
+            expect(observed.map(element => (element as HTMLElement).dataset.pane)).toEqual(['first', 'second']);
+        } finally {
+            rect.mockRestore();
+            vi.unstubAllGlobals();
+        }
     });
 });

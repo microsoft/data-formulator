@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assembleVegaChart, extractFieldsFromEncodingMap } from "../../../../src/app/utils";
+import { FLINT_INPUT, assembleVegaChart, extractFieldsFromEncodingMap } from "../../../../src/app/utils";
 import { Chart, computeInsightKey } from "../../../../src/components/ComponentType";
 
 
@@ -94,6 +94,20 @@ describe("chart insight contract", () => {
 
     expect(spec.title?.text).toBe("Revenue Concentrated in Product A");
     expect([spec.title?.subtitle].flat().join(" ")).toBe("US revenue by product, USD");
+  });
+
+  it("keeps the complete Flint input behind the chart for copying, off the Vega-Lite spec", () => {
+    const spec = assembleVegaChart("Bar Chart", chart.encodingMap,
+      [{ id: "category", name: "category", source: "original", tableRef: "table-1" },
+        { id: "value", name: "value", source: "original", tableRef: "table-1" }] as any,
+      [{ category: "A", value: 10 }],
+      { category: { type: "string", levels: [] }, value: { type: "number", levels: [] } } as any,
+      400, 300) as any;
+    const input = spec[FLINT_INPUT];
+    expect(input.data.values).toEqual([{ category: "A", value: 10 }]);
+    expect(input.chart_spec.chartType).toBe("Bar Chart");
+    expect(Object.keys(spec)).not.toContain(FLINT_INPUT);
+    expect(JSON.parse(JSON.stringify(input))).toEqual(input);
   });
 
   it("applies a Flint theme preset to the assembled base chart", () => {

@@ -34,6 +34,7 @@ import { classifyInputSourceTransition, shouldShowInputSourceTransition } from '
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
 import { ScrollFadeEdge, useScrollFade } from '../components/ScrollFade';
+import { splitThreadRuns } from './threadLayout';
 import { loadTable } from '../app/tableThunks';
 import { AppDispatch } from '../app/store';
 import { WorkflowProgress } from './WorkflowPanel';
@@ -46,7 +47,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import PersonIcon from '@mui/icons-material/Person';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
-import { TableIcon, InsightIcon, StreamIcon, AgentIcon } from '../icons';
+import { TableIcon, InsightIcon, StreamIcon, AgentIcon, chartFamilyIcon } from '../icons';
 
 
 import _ from 'lodash';
@@ -72,16 +73,12 @@ import CodeIcon from '@mui/icons-material/Code';
 
 import { alpha } from '@mui/material/styles';
 
-import BarChartIcon from '@mui/icons-material/BarChart';
-import ShowChartIcon from '@mui/icons-material/ShowChart';
-import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
-import PieChartOutlineIcon from '@mui/icons-material/PieChartOutline';
-import GridOnIcon from '@mui/icons-material/GridOn';
 import { buildTableCard, buildTableRefChip, buildChartCards, BuildTableCardProps, ThreadArtifactCard, ArtifactDeleteButton } from './DataThreadCards';
-import { SourceTableShelf, SHELF_VISIBLE_LIMIT } from './SourceTableShelf';
+import { SourceTableShelf } from './SourceTableShelf';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { AgentRulesDialog } from './AgentRulesDialog';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import ChecklistIcon from '@mui/icons-material/Checklist';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
@@ -99,7 +96,7 @@ import CallMergeIcon from '@mui/icons-material/CallMerge';
 import { transition, radius, borderColor, conversationWidth } from '../app/tokens';
 
 import { SimpleChartRecBox } from './SimpleChartRecBox';
-import { InteractionEntryCard, getEntryGutterIcon, getDefaultGutterIcon, PlanStepsView } from './InteractionEntryCard';
+import { InteractionEntryCard, getEntryGutterIcon, getDefaultGutterIcon, PlanStepsView, RunPlanChecklist } from './InteractionEntryCard';
 import { fittableThreadColumnsFor, iconVar, textVar } from '../app/layout';
 import { useLayout } from '../app/LayoutProvider';
 
@@ -112,20 +109,56 @@ const openToolActivity = (nodeId: string, execution: NonNullable<TextTurn['execu
 
 const ToolActivitySelectionContext = React.createContext<{ nodeId: string; executionId: string } | null>(null);
 
-const ToolActivityRow: React.FC<{ nodeId: string; label: string; executions: NonNullable<TextTurn['executions']>;
-    codeExecutions: NonNullable<TextTurn['codeExecutions']>; active?: boolean;
-    onSelect: (execution: NonNullable<TextTurn['executions']>[number] | NonNullable<TextTurn['codeExecutions']>[number]) => void;
-    // Removes the step; offered when nothing follows it.
+type ToolCall = NonNullable<TextTurn['executions']>[number] | NonNullable<TextTurn['codeExecutions']>[number];
+/** The tool calls of one agent step. */
+type ToolStep = { nodeId: string; executions: NonNullable<TextTurn['executions']>; codeExecutions: NonNullable<TextTurn['codeExecutions']> };
+
+/** Tool calls folded into one row; consecutive tool-only steps share a row. */
+const ToolActivityRow: React.FC<{ steps: ToolStep[]; label: string; active?: boolean;
+    onSelect: (nodeId: string, execution: ToolCall) => void;
+    // Removes the steps; offered when nothing follows them.
     onDelete?: () => void;
-}> = ({ nodeId, label, executions, codeExecutions, active = false, onSelect, onDelete }) => {
+}> = ({ steps, label, active = false, onSelect, onDelete }) => {
     const { t } = useTranslation();
     const selection = React.useContext(ToolActivitySelectionContext);
-    const [expanded, setExpanded] = useState(selection?.nodeId === nodeId);
-    const calls = [...executions, ...codeExecutions].sort((left, right) => (left.createdAt ?? 0) - (right.createdAt ?? 0));
+    const [expanded, setExpanded] = useState(steps.some(step => step.nodeId === selection?.nodeId));
+    const calls = steps.flatMap(step => [...step.executions, ...step.codeExecutions].map(execution => ({ nodeId: step.nodeId, execution })))
+        .sort((left, right) => (left.execution.createdAt ?? 0) - (right.execution.createdAt ?? 0));
+    const callRow = (nodeId: string, execution: ToolCall, text: string, sx?: object) => {
+        const selected = selection?.nodeId === nodeId && selection.executionId === execution.id;
+        const statusLabel = t(`terminal.status.${execution.status}`, { defaultValue: execution.status });
+        const StatusIcon = execution.status === 'completed' ? CheckCircleOutlineIcon
+            : execution.status === 'failed' || execution.status === 'rejected' ? ErrorOutlineIcon
+            : execution.status === 'interrupted' ? PauseCircleOutlineIcon : HelpOutlineIcon;
+        return <ButtonBase key={execution.id} aria-label={execution.purpose} aria-pressed={selected}
+            title={text} onClick={() => onSelect(nodeId, execution)}
+            sx={{ display: 'flex', width: '100%', minWidth: 0, justifyContent: 'flex-start', gap: 0.5, py: '2px',
+                pl: 0, pr: 0.5, borderRadius: 0.5, bgcolor: selected ? 'action.selected' : 'transparent',
+                color: selected ? 'text.primary' : 'text.secondary', textAlign: 'left',
+                '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
+                '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' }, ...sx }}>
+            {'code' in execution ? <CodeIcon sx={{ width: 10, height: 10, flexShrink: 0 }} />
+                : <TerminalIcon sx={{ width: 10, height: 10, flexShrink: 0 }} />}
+            <Typography component="span" sx={{ flex: 1, minWidth: 0, fontSize: textVar.xxs, fontStyle: 'italic',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</Typography>
+            <Tooltip title={statusLabel}>
+                <Box component="span" role={execution.status === 'running' ? undefined : 'img'}
+                    aria-label={execution.status === 'running' ? undefined : statusLabel}
+                    sx={{ width: 12, height: 12, flexShrink: 0, display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', color: 'text.secondary' }}>
+                    {execution.status === 'running'
+                        ? <CircularProgress size={8} color="inherit" aria-label={statusLabel} />
+                        : <StatusIcon sx={{ width: 10, height: 10 }} />}
+                </Box>
+            </Tooltip>
+        </ButtonBase>;
+    };
+    const single = calls.length === 1 ? calls[0] : undefined;
     return <Box data-tool-activity-row sx={{ width: '100%', minWidth: 0,
         '& [data-tool-activity-delete]': { opacity: 0 }, '&:hover [data-tool-activity-delete], &:focus-within [data-tool-activity-delete]': { opacity: 1 } }}>
         <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-        <ButtonBase onClick={() => setExpanded(previous => !previous)} aria-expanded={expanded}
+        {/* One call has nothing to fold: it is the row. */}
+        {single ? callRow(single.nodeId, single.execution, label, { flex: 1, width: 'auto' }) : <ButtonBase onClick={() => setExpanded(previous => !previous)} aria-expanded={expanded}
         aria-label={t('dataThread.viewStepActivity', { defaultValue: 'View step tool calls' })}
         title={label} sx={{ flex: 1, minWidth: 0, justifyContent: 'flex-start', gap: 0.5,
             py: '2px', color: 'text.secondary', textAlign: 'left', '&:hover': { bgcolor: 'action.hover' },
@@ -137,47 +170,22 @@ const ToolActivityRow: React.FC<{ nodeId: string; label: string; executions: Non
         <Typography component="span" sx={{ flexShrink: 0, fontSize: textVar.xxs, color: 'text.disabled', whiteSpace: 'nowrap' }}>
             {t('dataThread.toolCallCount', { count: calls.length, defaultValue: '{{count}} calls' })}
         </Typography>
-        </ButtonBase>
+        </ButtonBase>}
         {onDelete && <Box data-tool-activity-delete sx={{ flexShrink: 0, transition: transition.fast,
             '& .MuiIconButton-root': { p: '2px' }, '& svg': { fontSize: 14 } }}>
             <ArtifactDeleteButton label={t('dataThread.deleteStep', { defaultValue: 'Delete step' })} onClick={onDelete} />
         </Box>}
         </Box>
-        <Collapse in={expanded} unmountOnExit>
+        {!single && <Collapse in={expanded} unmountOnExit>
             <Box sx={{ pl: 0, minWidth: 0 }}>
-                {calls.map(execution => {
-                    const selected = selection?.nodeId === nodeId && selection.executionId === execution.id;
-                    const statusLabel = t(`terminal.status.${execution.status}`, { defaultValue: execution.status });
-                    const StatusIcon = execution.status === 'completed' ? CheckCircleOutlineIcon
-                        : execution.status === 'failed' || execution.status === 'rejected' ? ErrorOutlineIcon
-                        : execution.status === 'interrupted' ? PauseCircleOutlineIcon : HelpOutlineIcon;
-                    return <ButtonBase key={execution.id} aria-label={execution.purpose} aria-pressed={selected}
-                    title={execution.purpose} onClick={() => onSelect(execution)}
-                    sx={{ display: 'flex', width: '100%', minWidth: 0, justifyContent: 'flex-start', gap: 0.5, py: '2px',
-                        pl: 0, pr: 0.5, borderRadius: 0.5, bgcolor: selected ? 'action.selected' : 'transparent',
-                        color: selected ? 'text.primary' : 'text.secondary', textAlign: 'left',
-                        '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
-                        '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
-                    {'code' in execution ? <CodeIcon sx={{ width: 10, height: 10, flexShrink: 0 }} />
-                        : <TerminalIcon sx={{ width: 10, height: 10, flexShrink: 0 }} />}
-                    <Typography component="span" sx={{ flex: 1, minWidth: 0, fontSize: textVar.xxs, fontStyle: 'italic',
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{execution.purpose}</Typography>
-                    <Tooltip title={statusLabel}>
-                        <Box component="span" role={execution.status === 'running' ? undefined : 'img'}
-                            aria-label={execution.status === 'running' ? undefined : statusLabel}
-                            sx={{ width: 12, height: 12, flexShrink: 0, display: 'flex', alignItems: 'center',
-                                justifyContent: 'center', color: 'text.secondary' }}>
-                            {execution.status === 'running'
-                                ? <CircularProgress size={8} color="inherit" aria-label={statusLabel} />
-                                : <StatusIcon sx={{ width: 10, height: 10 }} />}
-                        </Box>
-                    </Tooltip>
-                </ButtonBase>;
-                })}
+                {calls.map(({ nodeId, execution }) => callRow(nodeId, execution, execution.purpose))}
             </Box>
-        </Collapse>
+        </Collapse>}
     </Box>;
 };
+
+/** A completed plan's gutter mark; keeps its color when the timeline recolors gutter icons. */
+const PlanCompletedIcon: FC<{ sx?: unknown }> = () => <CheckCircleOutlineIcon sx={{ width: 14, height: 14, color: 'success.main' }} />;
 
 /** The active step of a run's progress; shimmers while the run works on it. */
 export const ThinkingStepsBanner = (steps: (ProgressStep | string)[], sx?: SxProps, active: boolean = true) => {
@@ -617,6 +625,8 @@ let SingleThreadGroupView: FC<{
     historyCollapsed?: boolean,
     onToggleHistory?: () => void,
     layoutKey?: string,
+    // A sub-thread shows only these runs [start, end) of its thread; runs are tagged for measuring.
+    runRange?: [number, number],
     chartElements: { tableId: string, chartId: string, element: any }[];
     // The focused node and everything above it.
     highlightedNodeIds: Set<string>;
@@ -630,6 +640,7 @@ let SingleThreadGroupView: FC<{
     historyCollapsed = false,
     onToggleHistory,
     layoutKey,
+    runRange = [0, Infinity],
     chartElements,
     highlightedNodeIds,
     sx
@@ -637,6 +648,7 @@ let SingleThreadGroupView: FC<{
 
     let tables = useSelector(dfSelectors.getAllTables);
     const { t } = useTranslation();
+    const toolSelection = React.useContext(ToolActivitySelectionContext);
     const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
     let textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
     const turnById = useMemo(() => new Map(textTurns.map(tt => [tt.id, tt])), [textTurns]);
@@ -653,7 +665,6 @@ let SingleThreadGroupView: FC<{
     const theme = useTheme();
     const dispatch = useDispatch();
     // Conversation chains keyed by their first message; folded until opened.
-    const [expandedTurnChains, setExpandedTurnChains] = useState<Set<string>>(new Set());
     const [deletingFiles, setDeletingFiles] = useState<Set<string>>(new Set());
     const deleteFile = async (path: string) => {
         if (deletingFiles.has(path)) return;
@@ -702,7 +713,9 @@ let SingleThreadGroupView: FC<{
     });
 
     type TimelineItem = { outputNodeId?: string; key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'artifact' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; gutterIcon?: React.ReactNode; artifactTone?: 'agent' | 'error'; secondaryActivity?: boolean };
-    let timelineItems: (TimelineItem & { exchangeId?: string; expandedHistory?: boolean })[] = [];
+    let timelineItems: (TimelineItem & { exchangeId?: string })[] = [];
+    // The open row of consecutive tool-only steps (see activityRow).
+    let toolGroup: { item: TimelineItem; steps: ToolStep[]; labels: TextTurn[] } | null = null;
 
     // ── Data lineage: the "Using sources" note before a derived table ──
     const computationSourcesOf = (table: DictTable | undefined): ComputationInputSource[] => {
@@ -871,14 +884,16 @@ let SingleThreadGroupView: FC<{
         const selected = focusedId?.type === 'reference' ? focusedId.referenceId === file.id
             : canvasTarget?.type === 'file' && canvasTarget.fileName === file.path;
         const isHtmlApp = /\.html?$/i.test(file.path);
-        const FileGlyph = isHtmlApp ? HtmlIcon : /\.app\.jsx$/i.test(file.path) ? DashboardOutlinedIcon : InsertDriveFileOutlinedIcon;
+        const isApp = isHtmlApp || /\.app\.jsx$/i.test(file.path);
+        const FileGlyph = isHtmlApp ? HtmlIcon : isApp ? DashboardOutlinedIcon : InsertDriveFileOutlinedIcon;
+        const accent = isApp ? 'secondary.main' : 'primary.main';
         timelineItems.push({
             key: file.id, outputNodeId: file.id, type: 'artifact', highlighted: highlighted || selected,
             // The HTML wordmark is short and wide; enlarge it without moving the gutter.
             gutterIcon: <FileGlyph sx={{ width: isHtmlApp ? 22 : 14, height: isHtmlApp ? 22 : 14, m: isHtmlApp ? '-4px' : 0,
-                color: selected ? 'primary.main' : 'text.secondary' }} />,
+                color: selected ? accent : 'text.secondary' }} />,
             element: <Box className="data-thread-card-wrapper" sx={{ display: 'flex', width: '100%', minWidth: 0 }}>
-                    <ThreadArtifactCard artifactType="file" title={file.displayName} selected={selected} notes={file.notes}
+                    <ThreadArtifactCard artifactType={isApp ? 'app' : 'file'} title={file.displayName} selected={selected} notes={file.notes}
                         onClick={() => dispatch(dfActions.setFocused({ type: 'file', fileName: file.path }))}
                         actions={<ArtifactDeleteButton label={t('dataThread.deleteFile', { defaultValue: 'Delete file' })}
                             disabled={deletingFiles.has(file.path)} onClick={() => void deleteFile(file.path)} />} />
@@ -887,17 +902,19 @@ let SingleThreadGroupView: FC<{
     };
 
     // ── Messages ──
-    const isTurnActive = (turn: TextTurn) => (!!turn.form && turn.form.kind !== 'workflow' && !turn.answered)
-        || (!!turn.dataOperation && !turn.answered && turn.dataOperation.status !== 'loaded')
-        || (turn.textKind === 'clarify' && !turn.answered)
-        || !!turn.executions?.some(execution => execution.status === 'awaiting_approval' || execution.status === 'running')
-        || !!turn.codeExecutions?.some(execution => execution.status === 'running')
-        || threadGraph.followersOf(turn.id).some(node => node.kind === 'draft'
-            && ['running', 'clarifying'].includes(draftNodes.find(draft => draft.id === node.id)?.derive.status || ''));
-    const keepTurnVisible = (turn: TextTurn) => isTurnActive(turn)
-        || !!turn.workflow
-        || turn.form?.kind === 'workflow'
-        || !!turn.workflowMessage;
+    // The plan the running request wrote (after the thread's latest user message) is live while
+    // the run goes on; it is drawn at the run's open end rather than where it was written.
+    const threadRunning = thread.nodeIds.some(id => ['running', 'clarifying'].includes(draftNodes.find(draft => draft.id === id)?.derive.status || ''));
+    const planTurnIds = thread.nodeIds.filter(id => turnById.get(id)?.plan?.length);
+    const lastPromptIndex = thread.nodeIds.reduce((last, id, index) => turnById.get(id)?.prompt ? index : last, -1);
+    const latestPlanTurnId = planTurnIds[planTurnIds.length - 1];
+    // The latest request's plan stays open until a follow-up message starts a new request.
+    const currentPlanTurnId = latestPlanTurnId && thread.nodeIds.indexOf(latestPlanTurnId) > lastPromptIndex
+        ? latestPlanTurnId : undefined;
+    const livePlanTurnId = threadRunning ? currentPlanTurnId : undefined;
+    // An unfinished plan followed by a newer one (the run was resumed or redone) is superseded.
+    const supersededPlanTurnIds = new Set(planTurnIds.slice(0, -1)
+        .filter(id => turnById.get(id)!.plan!.some(item => item.status === 'open')));
 
     const pushUserMessage = (turn: TextTurn, highlighted: boolean) => {
         const content = turn.workflowMessage?.kind === 'steering' ? `(steering) ${turn.prompt}` : turn.prompt!;
@@ -920,12 +937,13 @@ let SingleThreadGroupView: FC<{
         });
     };
 
-    const buildTextTurnTimelineItem = (turn: TextTurn, highlighted: boolean) => {
+    // `open` replaces what selecting the message does (e.g. a step's message opens its tool calls).
+    const buildTextTurnTimelineItem = (turn: TextTurn, highlighted: boolean, open?: { onSelect: () => void; selected: boolean }) => {
         const workflow = turn.workflow;
-        const isFocused = focusedId?.type === 'text' && focusedId.textId === turn.id;
-        const openTurn = () => {
+        const isFocused = open ? open.selected : focusedId?.type === 'text' && focusedId.textId === turn.id;
+        const openTurn = open?.onSelect ?? (() => {
             dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }));
-        };
+        });
         const rowHL = highlighted || isFocused;
         const formStatus = turn.form ? formArtifactStatus(turn.form) : undefined;
         const preview = (formStatus || turn.content || '')
@@ -944,17 +962,13 @@ let SingleThreadGroupView: FC<{
             : turn.form
             ? <InsertDriveFileOutlinedIcon sx={{ width: 14, height: 14, color: iconColor }} />
             : getEntryGutterIcon(
-                { from: 'data-agent', to: 'user', role: turn.textKind, content: '' },
+                { from: 'data-agent', to: 'user', role: turn.textKind === 'clarify' && turn.answered ? 'explain' : turn.textKind, content: '' },
                 iconColor,
             );
-        // A completed run's record is its closing message: the run's status, then its answer.
-        const card = workflow ? <>
-            <WorkflowProgress turn={turn} selected={isFocused} />
-            {workflow.status === 'completed' && preview && <Box sx={{ mt: 0.5 }}>
-                <ThreadResponseCard responseKind="agent" selected={isFocused}
-                    highlighted={focusedId?.type !== 'conversation' && rowHL} content={preview} onSelect={openTurn} />
-            </Box>}
-        </> : turn.form?.kind === 'workflow' ? (
+        // A completed run's record is its closing message: one card with the run's steps, then its answer.
+        const card = workflow ? <WorkflowProgress turn={turn} selected={isFocused}
+            answer={workflow.status === 'completed' && preview ? preview : undefined} />
+        : turn.form?.kind === 'workflow' ? (
             <ThreadArtifactCard artifactType="workflow" title={turn.form.workflow.definition.name}
                 notes={turn.form.workflow.saved ? formStatus : 'Workflow definition'} selected={isFocused} onClick={openTurn}
                 actions={hasDependents ? undefined : <ArtifactDeleteButton label="Delete workflow definition"
@@ -981,53 +995,109 @@ let SingleThreadGroupView: FC<{
 
     /** An agent message: the step before a table, a run of tool calls, settled thinking, or a response. */
     const pushAgentMessage = (turn: TextTurn, highlighted: boolean, nextNodeId: string | undefined) => {
+        pushAgentMessageContent(turn, highlighted, nextNodeId);
+        // A settled plan follows its message — after the final answer, it is the run's completion
+        // record. While the run is live it is drawn at the run's open end instead (see pushDraft).
+        if (turn.plan?.length && !supersededPlanTurnIds.has(turn.id) && turn.id !== livePlanTurnId) {
+            const completed = turn.plan.every(item => item.status !== 'open');
+            timelineItems.push({
+                key: `textturn-${turn.id}-plan`, type: 'trigger', highlighted: false,
+                gutterIcon: completed ? <PlanCompletedIcon /> : <ChecklistIcon sx={{ width: 14, height: 14 }} />,
+                element: <RunPlanChecklist items={turn.plan} title={turn.planTitle} defaultExpanded={turn.id === currentPlanTurnId} />,
+            });
+        }
+    };
+    const pushAgentMessageContent = (turn: TextTurn, highlighted: boolean, nextNodeId: string | undefined) => {
         const executions = turn.executions || [];
         const codeExecutions = turn.codeExecutions || [];
         const hasToolCalls = executions.length > 0 || codeExecutions.length > 0;
         const isWidget = !!(turn.form || turn.dataOperation || turn.workflow || turn.options?.length);
         // Before a derived table, the message's text shows as the table's instruction card.
         const instructionFollows = !!tableById.get(nextNodeId || '')?.derive && !isWidget;
-        const activityRow = (key: string) => timelineItems.push({
-            key, type: 'trigger', highlighted, secondaryActivity: true,
-            isRunning: [...executions, ...codeExecutions].some(call => call.status === 'running'),
-            element: <ToolActivityRow nodeId={turn.id}
-                active={[...executions, ...codeExecutions].some(call => call.status === 'running')}
-                label={(!instructionFollows && turn.content)
-                    || turn.progressSteps?.filter(step => step.kind === 'tool').at(-1)?.label
-                    || t('dataThread.toolActivity', { defaultValue: 'Tool activity' })}
-                executions={executions} codeExecutions={codeExecutions}
-                onSelect={execution => openToolActivity(turn.id, execution)}
-                onDelete={threadGraph.childrenOf(turn.id).length ? undefined : () => dispatch(dfActions.removeTextTurn(turn.id))} />,
-        });
+        // Once its run is over the thread keeps only conversation and results: a step with tool calls is
+        // a message (what the agent said, else what its first call did) and its calls open from it; its
+        // thinking and progress lines leave the thread. While the run is live, everything shows.
+        const stepCalls = [...executions, ...codeExecutions].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
+        const runLive = threadRunning && thread.nodeIds.indexOf(turn.id) > lastPromptIndex;
+        const settled = !runLive && !stepCalls.some(call => call.status === 'running' || call.status === 'awaiting_approval');
+        const callsInMessage = hasToolCalls && settled;
+        const stepLabel = turn.content || stepCalls[0]?.purpose || '';
+        const openCalls = () => openToolActivity(turn.id, stepCalls[0]);
+        const callsOpen = toolSelection?.nodeId === turn.id;
+        const activityRow = (key: string, merge = false) => {
+            const step: ToolStep = { nodeId: turn.id, executions, codeExecutions };
+            const last = timelineItems[timelineItems.length - 1];
+            // A step joins the row above when it is the same run's next step and has nothing of its own to say.
+            const group = merge && !turn.content && toolGroup && toolGroup.item === last
+                && toolGroup.labels[toolGroup.labels.length - 1].actionId === turn.actionId ? toolGroup : null;
+            const steps = group ? [...group.steps, step] : [step];
+            const labels = group ? [...group.labels, turn] : [turn];
+            const calls = steps.flatMap(item => [...item.executions, ...item.codeExecutions]);
+            const running = calls.some(call => call.status === 'running');
+            // What the agent said it was doing (unless that is the next table's instruction), else
+            // what its latest call did.
+            const label = (instructionFollows ? undefined : labels.map(item => item.content).find(Boolean))
+                || [...calls].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)).at(-1)?.purpose
+                || t('dataThread.toolActivity', { defaultValue: 'Tool activity' });
+            const lastId = steps[steps.length - 1].nodeId;
+            const element = <ToolActivityRow key={steps[0].nodeId} steps={steps} active={running} label={label}
+                onSelect={openToolActivity}
+                onDelete={threadGraph.childrenOf(lastId).length ? undefined
+                    : () => [...steps].reverse().forEach(item => dispatch(dfActions.removeTextTurn(item.nodeId)))} />;
+            if (group) {
+                Object.assign(group.item, { element, isRunning: running, highlighted: group.item.highlighted || highlighted });
+                group.steps = steps;
+                group.labels = labels;
+                return;
+            }
+            const item = { key, type: 'trigger' as const, highlighted, secondaryActivity: true, isRunning: running, element };
+            timelineItems.push(item);
+            toolGroup = merge ? { item, steps, labels } : null;
+        };
         if (instructionFollows) {
             // The step that made the next table: its instruction, thinking and code.
-            if (hasToolCalls) activityRow(`textturn-${turn.id}-activity`);
-            // The instruction is only what the agent wrote; the table's own title is on its card.
-            const instruction = turn.content;
+            if (hasToolCalls && !callsInMessage) activityRow(`textturn-${turn.id}-activity`);
+            // The instruction is what the agent wrote (or, settled, what its step did); the table's own
+            // title is on its card.
+            const instruction = callsInMessage ? stepLabel : turn.content;
             if (!instruction) {
+                if (settled) return;
                 const thinking = (turn.progressSteps || []).filter(step => step.kind !== 'tool' && step.kind !== 'chart');
-                if (thinking.length) timelineItems.push({ key: `textturn-${turn.id}`, type: 'trigger', highlighted,
+                // Thinking alone is ambient, like a tool-call row: no gutter icon of its own.
+                if (thinking.length) timelineItems.push({ key: `textturn-${turn.id}`, type: 'trigger', highlighted, secondaryActivity: true,
                     element: ThinkingStepsBanner(thinking, { px: 1, py: 0.5 }, false) });
                 return;
             }
             // Tool calls have their own row above; the card keeps the step's thinking.
             const entry: InteractionEntry = { from: 'data-agent', to: 'datarec-agent', role: 'instruction', content: instruction,
-                progressSteps: turn.progressSteps?.filter(step => step.kind !== 'tool'), timestamp: turn.createdAt };
+                progressSteps: settled ? undefined : turn.progressSteps?.filter(step => step.kind !== 'tool'), timestamp: turn.createdAt };
+            const card = <InteractionEntryCard entry={entry} highlighted={focusedId?.type !== 'conversation' && highlighted} />;
             timelineItems.push({
                 key: `textturn-${turn.id}`, type: 'trigger', highlighted, interactionEntry: entry,
-                element: <InteractionEntryCard entry={entry} highlighted={focusedId?.type !== 'conversation' && highlighted} />,
+                element: callsInMessage ? <Box data-step-calls={turn.id} role="button" tabIndex={0} onClickCapture={openCalls}
+                    onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openCalls(); } }}
+                    aria-label={t('dataThread.viewStepActivity', { defaultValue: 'View step tool calls' })} aria-pressed={callsOpen}
+                    sx={{ cursor: 'pointer', borderRadius: radius.sm, '&:hover': { bgcolor: 'action.hover' },
+                        ...(callsOpen ? { bgcolor: 'action.selected' } : {}),
+                        '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' } }}>{card}</Box> : card,
             });
             return;
         }
         if (hasToolCalls && !isWidget) {
-            activityRow(`textturn-${turn.id}`);
+            if (callsInMessage) timelineItems.push(buildTextTurnTimelineItem({ ...turn, content: stepLabel }, highlighted,
+                { onSelect: openCalls, selected: callsOpen }));
+            else activityRow(`textturn-${turn.id}`, true);
             return;
         }
         if (!turn.content && !isWidget) {
-            const banner = ThinkingStepsBanner(turn.progressSteps || [], { px: 1, py: 0.5 }, false);
+            // Settled thinking and progress lines leave the thread; what followed them stays.
+            if (settled && threadGraph.childrenOf(turn.id).length) return;
+            const shown = (turn.progressSteps || []).filter(step => step.kind !== 'chart' || step.status === 'running');
+            if (!shown.length && turn.progressSteps?.length && threadGraph.childrenOf(turn.id).length) return;
+            const banner = ThinkingStepsBanner(shown.length ? shown : turn.progressSteps || [], { px: 1, py: 0.5 }, false);
             // A step a stopped or failed run left behind can be removed once nothing follows it.
             if (turn.progressSteps?.length) timelineItems.push({
-                key: `textturn-${turn.id}`, type: 'trigger', highlighted,
+                key: `textturn-${turn.id}`, type: 'trigger', highlighted, secondaryActivity: true,
                 element: threadGraph.childrenOf(turn.id).length ? banner : <Box sx={{ position: 'relative', minWidth: 0,
                     '& [data-step-delete]': { opacity: 0, transition: transition.fast },
                     '&:hover [data-step-delete], &:focus-within [data-step-delete]': { opacity: 1 } }}>
@@ -1060,12 +1130,24 @@ let SingleThreadGroupView: FC<{
             const shownOnParent = (step: ProgressStep | string) => typeof step !== 'string' && (parentStepIds.has(step.id)
                 || (!!step.executionId && parentCalls.some(call => call.id === step.executionId)));
             const planLines = steps.filter(step => !shownOnParent(step));
+            const animated = status === 'running';
+            // A run with a plan shows it here as its one live row (like a workflow run's card):
+            // the spinner in the gutter, the current step, and the latest activity under it.
+            const livePlanTurn = livePlanTurnId ? turnById.get(livePlanTurnId) : undefined;
+            const livePlan = livePlanTurn?.plan;
+            if (livePlan?.length) {
+                const activity = planLines.length ? ThinkingStepsBanner(planLines, { pt: 0.5 }, animated) : undefined;
+                timelineItems.push({
+                    key: `agent-thinking-${draft.id}`, type: 'trigger', highlighted: false, isRunning: animated,
+                    element: <RunPlanChecklist items={livePlan} title={livePlanTurn?.planTitle} active activity={activity} defaultExpanded />,
+                });
+                return;
+            }
             if (!planLines.length) {
                 // A call still spinning on that message already shows the run is working.
                 if (parentCalls.some(call => call.status === 'running')) return;
                 planLines.push(t('dataThread.thinking'));
             }
-            const animated = status === 'running';
             timelineItems.push({
                 key: `agent-thinking-${draft.id}`, type: 'trigger', highlighted, isRunning: animated,
                 element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }, animated),
@@ -1095,97 +1177,28 @@ let SingleThreadGroupView: FC<{
             nodeIds: thread.nodeIds.flatMap(id => [id, ...threadGraph.membersOf(id)]) }));
     };
 
-    const pushTurnChainToggle = (chainId: string, count: number, expanded: boolean) => {
-        const toggleLabel = expanded
-            ? t('dataThread.hideEarlierTurns', { defaultValue: 'Hide earlier turns' })
-            : t('dataThread.showEarlierTurns', { defaultValue: 'Show earlier turns' });
-        const toggle = () => setExpandedTurnChains(prev => {
-            const next = new Set(prev);
-            if (next.has(chainId)) next.delete(chainId); else next.add(chainId);
-            return next;
-        });
-        timelineItems.push({
-            key: `turn-chain-toggle-${chainId}`,
-            type: 'artifact' as const,
-            highlighted: false,
-            gutterIcon: (
-                <Tooltip title={toggleLabel}>
-                    <IconButton size="small" aria-label={toggleLabel}
-                        aria-expanded={expanded} onClick={toggle} sx={{ width: 24, height: 24, p: 0,
-                            color: expanded ? 'primary.main' : 'text.secondary',
-                            bgcolor: 'transparent',
-                            '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.08) },
-                        }}>
-                        {expanded
-                            ? <KeyboardArrowDownIcon sx={{ fontSize: iconVar.sm }} />
-                            : <ChevronRightIcon sx={{ fontSize: iconVar.sm }} />}
-                    </IconButton>
-                </Tooltip>
-            ),
-            element: (
-                <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0, gap: 0.25 }}>
-                    <Button size="small" color="inherit"
-                        aria-expanded={expanded}
-                        sx={{ textTransform: 'none', fontSize: textVar.xs, minWidth: 0, textAlign: 'left',
-                            color: expanded ? 'primary.main' : 'text.secondary',
-                            bgcolor: expanded ? alpha(theme.palette.primary.main, 0.08) : 'transparent',
-                            '&:hover': { bgcolor: alpha(theme.palette.primary.main, expanded ? 0.12 : 0.04) },
-                        }}
-                        onClick={toggle}>
-                        {t('dataThread.conversationSegment', { defaultValue: '{{count}} earlier turns', count })}
-                    </Button>
-                    <Tooltip title={t('dataThread.openConversation', { defaultValue: 'Open full conversation' })}>
-                        <IconButton size="small" aria-label={t('dataThread.openConversation', { defaultValue: 'Open full conversation' })}
-                            sx={{ flexShrink: 0 }} onClick={openThreadConversation}>
-                            <OpenInNewIcon sx={{ fontSize: iconVar.sm }} />
-                        </IconButton>
-                    </Tooltip>
-                </Box>
-            ),
-        });
-    };
-
-    /**
-     * Render one edge: a run of messages between items. Each user message
-     * starts a round; settled middle rounds fold away behind a toggle once
-     * there are more than three of them.
-     */
+    /** Render one edge: a run of messages between items. Each user message starts a round. */
     const pushEdge = (messageIds: string[], nextNodeId: string | undefined) => {
-        type Part = { startsRound: boolean; keepVisible: boolean; render: () => void };
-        const parts: Part[] = messageIds.map((id, index) => {
+        let round = -1;
+        messageIds.forEach((id, index) => {
             const next = messageIds[index + 1] ?? nextNodeId;
             const draft = draftNodes.find(item => item.id === id);
-            if (draft) return { startsRound: false, keepVisible: true, render: () => pushDraft(draft, isHL(id)) };
-            const turn = turnById.get(id)!;
-            return { startsRound: !!turn.prompt, keepVisible: keepTurnVisible(turn), render: () => {
-                if (turn.prompt) pushUserMessage(turn, isHL(id));
-                pushAgentMessage(turn, isHL(id), next);
-            } };
-        });
-        const rounds: Part[][] = [];
-        for (const part of parts) {
-            if (part.startsRound || rounds.length === 0) rounds.push([]);
-            rounds[rounds.length - 1].push(part);
-        }
-        const chainId = messageIds[0];
-        const hiddenRounds = rounds.slice(1, -1).filter(round => !round.some(part => part.keepVisible));
-        const foldable = hiddenRounds.length > 3;
-        const expanded = expandedTurnChains.has(chainId);
-        rounds.forEach((round, index) => {
-            if (foldable && round === hiddenRounds[0]) pushTurnChainToggle(chainId, hiddenRounds.length, expanded);
-            if (foldable && !expanded && hiddenRounds.includes(round)) return;
+            const turn = draft ? undefined : turnById.get(id)!;
+            if (turn?.prompt || round < 0) round++;
             const startIndex = timelineItems.length;
-            for (const part of round) part.render();
-            for (const item of timelineItems.slice(startIndex)) {
-                item.exchangeId ??= `${chainId}-${index}`;
-                if (foldable && expanded && hiddenRounds.includes(round)) item.expandedHistory = true;
+            if (draft) pushDraft(draft, isHL(id));
+            else {
+                if (turn!.prompt) pushUserMessage(turn!, isHL(id));
+                pushAgentMessage(turn!, isHL(id), next);
             }
+            for (const item of timelineItems.slice(startIndex)) item.exchangeId ??= `${messageIds[0]}-${round}`;
         });
     };
 
     /** A muted line before an artifact the agent made to fix (replace) an earlier one, which is gone. */
     const pushReplacedNote = (id: string, replaced: { name: string } | undefined, inPlace: boolean, highlighted: boolean) => {
-        if (!replaced) return;
+        // A fix shows as its result; the note about what it replaced is kept only while the run is live.
+        if (!replaced || !threadRunning) return;
         timelineItems.push({
             key: `replaced-${id}`, type: 'trigger', highlighted, secondaryActivity: true,
             element: <Typography data-replaced-note sx={{ fontSize: textVar.xxs, fontStyle: 'italic', color: 'text.disabled', py: '1px',
@@ -1391,24 +1404,8 @@ let SingleThreadGroupView: FC<{
         // For chart items, show a chart-type-specific icon
         if (item.type === 'chart' && item.chartType) {
             const iconSx = { width: 14, height: 14, color };
-            const ct = item.chartType.toLowerCase();
-            if (ct.includes('scatter') || ct.includes('point') || ct.includes('dot') || ct.includes('boxplot')) {
-                return <ScatterPlotIcon sx={iconSx} />;
-            }
-            if (ct.includes('line') || ct.includes('regression')) {
-                return <ShowChartIcon sx={iconSx} />;
-            }
-            if (ct.includes('pie')) {
-                return <PieChartOutlineIcon sx={iconSx} />;
-            }
-            if (ct.includes('heatmap')) {
-                return <GridOnIcon sx={iconSx} />;
-            }
-            if (ct.includes('table')) {
-                return <TableIcon sx={iconSx} />;
-            }
-            // Bar, histogram, stacked, grouped, pyramid, and default
-            return <BarChartIcon sx={iconSx} />;
+            const FamilyIcon = chartFamilyIcon(item.chartType);
+            return <FamilyIcon sx={iconSx} />;
         }
 
         return <Box sx={{ 
@@ -1446,14 +1443,12 @@ let SingleThreadGroupView: FC<{
         const isMerge = item.type === 'merge';
         const dashedColor = item.highlighted ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
         const dashedWidth = '2px';
-        const dashedStyle = item.expandedHistory ? 'dotted' : 'solid';
+        const dashedStyle = 'solid';
         // Bottom connector uses unhighlighted style if next item isn't highlighted
         const bottomHighlighted = item.highlighted && nextHighlighted;
         const bottomDashedColor = bottomHighlighted ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
         const bottomDashedWidth = '2px';
-        const bottomDashedStyle = item.expandedHistory
-            || (item.key.startsWith('turn-chain-toggle-') && timelineItems[index + 1]?.expandedHistory)
-            ? 'dotted' : 'solid';
+        const bottomDashedStyle = 'solid';
         // No dimming or background — rely on timeline color + card border for highlighting
         const rowHighlightSx = {};
 
@@ -1624,6 +1619,15 @@ let SingleThreadGroupView: FC<{
             }
         } else flowBlocks.push({ key, indices: [index], exchangeId: item.exchangeId, outputNodeId: item.outputNodeId });
     });
+    // A request and everything it produced, through its plan or closing answer, is one run. Columns
+    // prefer to break between runs, as text wraps between words: a run that fits in a column moves
+    // whole to the next one, and only a run taller than a column breaks inside.
+    const flowRuns: { key: string; blocks: typeof flowBlocks }[] = [];
+    for (const block of flowBlocks) {
+        const startsRun = timelineItems[block.indices[0]].key.startsWith('textturn-prompt-');
+        if (startsRun || flowRuns.length === 0) flowRuns.push({ key: block.key, blocks: [] });
+        flowRuns[flowRuns.length - 1].blocks.push(block);
+    }
 
     return <Box data-thread-active={threadActive ? 'true' : 'false'} data-thread-highlighted={shouldHighlightThread ? 'true' : 'false'}
         data-thread-entry={layoutKey} sx={{ ...sx,
@@ -1649,31 +1653,39 @@ let SingleThreadGroupView: FC<{
                 const connColor = showItemFocus && timelineHL ? alpha(hlColor, 0.6) : 'rgba(0,0,0,0.1)';
                 const connWidth = '2px';
                 const connStyle = 'solid';
+                // A sub-thread continues its thread: the line runs in from above (dashed) instead of
+                // starting at a circle, and its label is quieter.
+                const continued = runRange[0] > 0;
                 return (
-                <Box data-thread-flow-header sx={{ display: 'flex', flexDirection: 'row', breakAfter: 'avoid' }}>
+                <Box data-thread-flow-header data-thread-continued={continued || undefined} sx={{ display: 'flex', flexDirection: 'row', breakAfter: 'avoid' }}>
                     <Box sx={{ 
                         width: TIMELINE_WIDTH, flexShrink: 0, 
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                     }}>
-                        <Box sx={{ flex: '1 1 0', minHeight: 6 }} />
-                        <Box aria-hidden="true" sx={{ width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            color: showItemFocus && timelineHL ? hlColor : 'rgba(0,0,0,0.15)' }}>
-                            <Box component="span" sx={{ width: 8, height: 8, borderRadius: '50%',
-                                border: '1.5px solid currentColor', boxSizing: 'content-box' }} />
-                        </Box>
+                        {continued
+                            ? <Box aria-hidden="true" sx={{ width: 0, flex: '1 1 0', minHeight: 14, borderLeft: `${connWidth} dashed ${connColor}` }} />
+                            : <>
+                                <Box sx={{ flex: '1 1 0', minHeight: 6 }} />
+                                <Box aria-hidden="true" sx={{ width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    color: showItemFocus && timelineHL ? hlColor : 'rgba(0,0,0,0.15)' }}>
+                                    <Box component="span" sx={{ width: 8, height: 8, borderRadius: '50%',
+                                        border: '1.5px solid currentColor', boxSizing: 'content-box' }} />
+                                </Box>
+                            </>}
                         <Box sx={{ width: 0, flex: '1 1 0', minHeight: 10, borderLeft: `${connWidth} ${connStyle} ${connColor}` }} />
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', pl: 0.5, gap: 0.5 }}>
                         <ButtonBase disabled={!onToggleHistory} onClick={onToggleHistory} aria-expanded={!historyCollapsed}
                             aria-label={historyCollapsed ? t('dataThread.expandThread', { defaultValue: 'Expand thread' }) : t('dataThread.collapseThread', { defaultValue: 'Collapse thread' })}
                             sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.25, borderRadius: 0.5, px: 0.25, ml: -0.25,
-                                color: showItemFocus && timelineHL ? hlColor : 'text.secondary',
+                                color: showItemFocus && timelineHL ? hlColor : continued ? 'text.disabled' : 'text.secondary',
                                 '& .thread-chevron': { color: 'text.disabled' },
                                 '&:hover, &:hover .thread-chevron': { color: 'text.primary' },
                                 '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
                             <Typography component="span" sx={{ minWidth: 0, color: 'inherit',
-                                fontSize: textVar.xs, fontWeight: 700,
+                                fontSize: textVar.xs, fontWeight: continued ? 600 : 700,
                                 textTransform: 'uppercase', letterSpacing: 0,
+                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                             }}>
                                 {threadLabel}
                             </Typography>
@@ -1735,13 +1747,17 @@ let SingleThreadGroupView: FC<{
                     </Box>
                 </Box>;
             })()}
-            {!historyCollapsed && flowBlocks.map((block, blockIndex) => <Box key={block.key} data-thread-flow-block={block.key}
-                sx={{ breakInside: 'avoid', breakBefore: blockIndex === 0 ? 'avoid' : 'auto', minWidth: 0 }}>
-                {block.indices.map(index => {
-                    const item = timelineItems[index];
-                    return renderTimelineItem(showItemFocus ? item : { ...item, highlighted: false },
-                        index, index === timelineItems.length - 1, showItemFocus && (timelineItems[index + 1]?.highlighted ?? false));
-                })}
+            {!historyCollapsed && flowRuns.map((run, runIndex) => runIndex < runRange[0] || runIndex >= runRange[1] ? null
+                : <Box key={run.key} data-thread-flow-run={run.key} data-thread-run-of={thread.key} data-thread-run-index={runIndex}
+                sx={{ breakInside: 'avoid', breakBefore: runIndex === runRange[0] ? 'avoid' : 'auto', minWidth: 0 }}>
+                {run.blocks.map(block => <Box key={block.key} data-thread-flow-block={block.key}
+                    sx={{ breakInside: 'avoid', minWidth: 0 }}>
+                    {block.indices.map(index => {
+                        const item = timelineItems[index];
+                        return renderTimelineItem(showItemFocus ? item : { ...item, highlighted: false },
+                            index, index === timelineItems.length - 1, showItemFocus && (timelineItems[index + 1]?.highlighted ?? false));
+                    })}
+                </Box>)}
             </Box>)}
         </div>
     </Box>
@@ -2132,6 +2148,8 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     const [threadPanelHeight, setThreadPanelHeight] = useState(600);
     const [measuredShelfHeight, setMeasuredShelfHeight] = useState<number>();
     const [measuredEntryHeights, setMeasuredEntryHeights] = useState<Record<string, number>>({});
+    // Each thread's run heights, in order; where a long thread may break into sub-threads.
+    const [measuredRunHeights, setMeasuredRunHeights] = useState<Record<string, number[]>>({});
     const layoutSignatureRef = useRef<string>();
     const [isDragOver, setIsDragOver] = useState(false);
 
@@ -2305,6 +2323,8 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         threadLines?: ThreadPreviewLine[];
         threadLabel?: string;
         containsFocus?: boolean;
+        // A sub-thread of a long thread: the runs it shows (see splitThreadRuns).
+        runRange?: [number, number];
     };
     const threadSummaryOf = (thread: ThreadSpec) => {
         for (const id of thread.nodeIds) {
@@ -2370,14 +2390,21 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         const containsFocus = !!focusNodeId && thread.nodeIds.some(id => id === focusNodeId || threadGraph.membersOf(id).includes(focusNodeId));
         if (containsFocus) focusedThreadKeyRef.current = expansionKey;
         const expanded = threadExpansion[expansionKey] ?? isLatest;
-        allThreadEntries.push({
+        const entry: ThreadEntry = {
             key: thread.key, thread, expansionKey,
             historyCollapsed: !expanded,
             threadSummary: threadSummaryOf(thread).replace(/\s+/g, ' ').trim(),
             threadLines: threadLinesOf(thread),
             containsFocus,
             threadLabel: t('dataThread.threadIndex', { index: String(index + 1) }),
-        });
+        };
+        // A long open thread breaks into sub-threads at its runs, each with its own header, and
+        // they pack into columns like threads do.
+        const starts = expanded ? splitThreadRuns(measuredRunHeights[thread.key] || [], segmentHeight) : [0];
+        starts.forEach((start, part) => allThreadEntries.push(part === 0
+            ? { ...entry, ...(starts.length > 1 ? { runRange: [0, starts[1]] as [number, number] } : {}) }
+            : { ...entry, key: `${thread.key}#${start}`, runRange: [start, starts[part + 1] ?? Infinity],
+                threadLabel: t('dataThread.threadIndex', { index: `${index + 1}.${part + 1}` }) }));
     });
     const entryLayoutKey = (entry: ThreadEntry) => `${entry.key}:${entry.historyCollapsed ? 'collapsed' : 'expanded'}`;
 
@@ -2428,6 +2455,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             historyCollapsed={entry.historyCollapsed}
             onToggleHistory={() => setThreadExpansion(previous => ({ ...previous, [entry.expansionKey!]: !!entry.historyCollapsed }))}
             layoutKey={entryLayoutKey(entry)}
+            runRange={entry.runRange}
             chartElements={chartElements}
             highlightedNodeIds={highlightedNodeIds}
             sx={entrySx} />;
@@ -2459,6 +2487,17 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             if (measuredEntryHeights[key] !== height) entryHeightUpdates[key] = height;
         }
         if (Object.keys(entryHeightUpdates).length) setMeasuredEntryHeights(previous => ({ ...previous, ...entryHeightUpdates }));
+        if (relayout) {
+            const runs: Record<string, number[]> = {};
+            for (const element of threadScrollRef.current?.querySelectorAll<HTMLElement>('[data-thread-run-of]') || []) {
+                if (element.offsetHeight <= 0) continue;
+                (runs[element.dataset.threadRunOf!] ??= [])[Number(element.dataset.threadRunIndex)] = element.offsetHeight;
+            }
+            const runUpdates = Object.fromEntries(Object.entries(runs)
+                .map(([key, heights]) => [key, Array.from(heights, height => height ?? 0)] as const)
+                .filter(([key, heights]) => heights.join() !== (measuredRunHeights[key] || []).join()));
+            if (Object.keys(runUpdates).length) setMeasuredRunHeights(previous => ({ ...previous, ...runUpdates }));
+        }
     });
 
     useEffect(() => {
@@ -2478,6 +2517,9 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         const measured = measuredEntryHeights[entryLayoutKey(entry)];
         if (measured !== undefined) return measured;
         if (entry.historyCollapsed) return 42 + Math.min(3, entry.threadLines?.length ?? 0) * 20 + 22;
+        // A sub-thread is its runs plus a header.
+        if (entry.runRange) return (measuredRunHeights[entry.thread!.key] || []).slice(...entry.runRange)
+            .reduce((sum, height) => sum + height, 48);
         const ids = entry.thread!.nodeIds.flatMap(id => [id, ...threadGraph.membersOf(id)]);
         const chartCount = ids.reduce((sum, id) => {
             const tableId = tableById.has(id) ? id : threadGraph.nodes.get(id)?.tableId;

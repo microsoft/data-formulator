@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -97,22 +97,18 @@ it('uses a centered track for empty grid requests and retains rows with inline r
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
 });
 
-it('preserves the timeline rail beside both shelf expansion controls', () => {
+it('lists every item in a capped scrolling box, with no fold or Show all', () => {
     const store = configureStore({ reducer: dataFormulatorReducer });
-    const tables = Array.from({ length: 7 }, (_, index) => ({ kind: 'table' as const,
+    const tables = Array.from({ length: 14 }, (_, index) => ({ kind: 'table' as const,
         id: `table-${index}`, displayId: `Table ${index}`, names: [], rows: [], metadata: {}, description: '',
         virtual: { tableId: `table-${index}`, rowCount: 0 } }));
-    render(<Provider store={store}><SourceTableShelf inputTables={tables} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
-    const showAll = screen.getByRole('button', { name: 'Show all 7' });
-    expect(showAll.parentElement?.querySelector('[aria-hidden="true"]')).toHaveStyle({
-        position: 'absolute', top: '0px', bottom: '0px', borderLeft: '2px solid rgba(0,0,0,0.1)',
-    });
-    fireEvent.click(showAll);
-    const showFewer = screen.getByRole('button', { name: 'Show fewer' });
-    expect(showFewer.parentElement?.querySelector('[aria-hidden="true"]')).toHaveStyle({
-        position: 'absolute', top: '0px', bottom: '0px', borderLeft: '2px solid rgba(0,0,0,0.1)',
-    });
+    const { container } = render(<Provider store={store}><SourceTableShelf inputTables={tables} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
+    expect(container.querySelectorAll('[data-table-id]')).toHaveLength(14);
+    expect(screen.queryByRole('button', { name: /Show all|Show fewer/ })).toBeNull();
+    // A long list scrolls inside a capped box.
+    expect(container.querySelector('[data-shelf-list]')).toHaveStyle({ overflowY: 'auto' });
 });
+
 
 it('shows pending loads in an empty workspace without creating selectable tables', () => {
     const store = configureStore({ reducer: dataFormulatorReducer });
@@ -125,13 +121,7 @@ it('shows pending loads in an empty workspace without creating selectable tables
     expect(spinner).toHaveAttribute('aria-hidden', 'true');
     expect(spinner).toHaveStyle({ width: '1em', height: '1em' });
     expect(spinner?.parentElement).toHaveStyle({ fontSize: 'var(--df-text-xs)', gap: '4px' });
-    expect(spinner?.parentElement?.parentElement).toHaveStyle({ padding: '4px 6px' });
     expect(screen.getByRole('status', { name: 'Loading Orders' }).querySelector('.MuiSkeleton-root')).toBeNull();
-    const loadingRail = screen.getByRole('status', { name: 'Loading Orders' }).firstElementChild;
-    expect(loadingRail).toHaveAttribute('aria-hidden', 'true');
-    expect(loadingRail).toHaveStyle({ width: '14px', flexShrink: '0' });
-    expect(loadingRail?.firstElementChild).toHaveStyle({ borderLeft: '2px solid rgba(0,0,0,0.1)' });
-    expect(loadingRail?.lastElementChild).toHaveStyle({ borderLeft: '2px solid rgba(0,0,0,0.1)' });
     expect(screen.getByRole('status', { name: 'Loading Customers' })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Orders' })).not.toBeInTheDocument();
     expect(store.getState().inputTables).toEqual([]);
@@ -178,20 +168,21 @@ it('uses the standard table card for references and keeps their information in t
     }]} /></Provider>);
     const tableCard = screen.getByRole('button', { name: 'Local events' });
     const referenceCard = screen.getByRole('button', { name: 'Events' });
-    expect(referenceCard.closest('.data-thread-card')?.className).toBe(tableCard.closest('.data-thread-card')?.className);
+    expect(tableCard.closest('[data-table-id]')).toHaveAttribute('data-table-id', table.id);
+    expect(referenceCard.closest('[data-workspace-item]')).toHaveAttribute('data-workspace-item', reference.id);
     expect(screen.getAllByTestId('InsertDriveFileOutlinedIcon')).toHaveLength(1);
     expect(screen.getByText('(virtual)')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Remove reference' })).not.toBeInTheDocument();
-    const referenceIcon = container.querySelector(`[data-workspace-item="${reference.id}"] > div:first-child svg`)!;
+    const referenceIcon = container.querySelector(`[data-workspace-item="${reference.id}"] svg`)!;
     const fileIcon = screen.getByTestId('InsertDriveFileOutlinedIcon');
-    expect(referenceIcon).toHaveStyle({ color: 'rgba(0, 0, 0, 0.15)' });
+    expect(referenceIcon).toHaveStyle({ color: 'rgba(0, 0, 0, 0.4)' });
     fireEvent.click(referenceCard);
     expect(store.getState().focusedId).toEqual({ type: 'external-table', referenceId: reference.id });
     expect(referenceIcon).toHaveStyle({ color: 'rgb(25, 118, 210)' });
-    expect(fileIcon).toHaveStyle({ color: 'rgba(0, 0, 0, 0.35)' });
+    expect(fileIcon).toHaveStyle({ color: 'rgba(0, 0, 0, 0.4)' });
     fireEvent.click(screen.getByRole('button', { name: 'notes.txt' }));
     expect(fileIcon).toHaveStyle({ color: 'rgb(25, 118, 210)' });
-    expect(referenceIcon).toHaveStyle({ color: 'rgba(0, 0, 0, 0.15)' });
+    expect(referenceIcon).toHaveStyle({ color: 'rgba(0, 0, 0, 0.4)' });
     fireEvent.click(referenceCard);
     fireEvent.click(screen.getByRole('button', { name: 'Actions for Events' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Remove reference' }));
@@ -234,12 +225,12 @@ it('nests exact single-source imports as compact rows and keeps ambiguous tables
     tables.forEach(table => store.dispatch(dfActions.addTableToStore(table)));
     render(<Provider store={store}><SourceTableShelf inputTables={tables} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
     for (const name of ['Joined events', 'Other events', 'Legacy events']) {
-        expect(screen.getByRole('button', { name }).closest('.data-thread-card')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name }).closest('[data-table-id]')).toBeInTheDocument();
     }
     expect(screen.queryByText('1 imported table')).not.toBeInTheDocument();
     const child = screen.getByRole('button', { name: 'Loaded events' });
     expect(child.closest('ul')).toHaveAttribute('aria-label', 'Imports from Events');
-    expect(child.closest('.data-thread-card')).toBeNull();
+    expect(child.closest('[data-table-id]')).toBeNull();
     fireEvent.click(child);
     expect(store.getState().focusedId).toEqual({ type: 'table', tableId: imported.id });
     expect(child).toHaveAttribute('aria-current', 'true');
@@ -247,7 +238,7 @@ it('nests exact single-source imports as compact rows and keeps ambiguous tables
     expect(await screen.findByRole('menuitem', { name: /Rename/ })).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
     act(() => store.dispatch(dfActions.removeExternalTableReference(reference.id)));
-    expect(screen.getByRole('button', { name: 'Loaded events' }).closest('.data-thread-card')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Loaded events' }).closest('[data-table-id]')).toBeInTheDocument();
     expect(dfSelectors.getAllTables(store.getState()).map(table => table.id)).toContain(imported.id);
 });
 
@@ -290,10 +281,10 @@ it('groups single-input workflow tables through manifest provenance but not join
     for (const name of ['Imported events', 'Hourly counts', 'Daily summary']) {
         const child = screen.getByRole('button', { name });
         expect(child.closest('ul')).toHaveAttribute('aria-label', 'Imports from Events');
-        expect(child.closest('.data-thread-card')).toBeNull();
+        expect(child.closest('[data-table-id]')).toBeNull();
     }
     for (const name of ['Joined comparison', 'Missing input', 'Cycle first', 'Cycle second', 'Summary of join']) {
-        expect(screen.getByRole('button', { name }).closest('.data-thread-card')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name }).closest('[data-table-id]')).toBeInTheDocument();
     }
 });
 
@@ -315,15 +306,15 @@ it('only follows version-matched lineage and keeps durable workflow identity wit
     [parent, ...tables].forEach(table => store.dispatch(dfActions.addTableToStore(table)));
     const view = render(<Provider store={store}><SourceTableShelf inputTables={tables} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
     for (const name of ['Changed input', 'Unversioned input']) {
-        expect(screen.getByRole('button', { name: new RegExp(`^${name}`) }).closest('.data-thread-card')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: new RegExp(`^${name}`) }).closest('[data-table-id]')).toBeInTheDocument();
     }
-    expect(screen.getByRole('button', { name: 'Durable identity' }).closest('.data-thread-card')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Durable identity' }).closest('[data-table-id]')).toBeNull();
     view.unmount();
     const restored = configureStore({ reducer: dataFormulatorReducer });
     restored.dispatch(dfActions.upsertExternalTableReference(reference));
     restored.dispatch(dfActions.addTableToStore(durable));
     render(<Provider store={restored}><SourceTableShelf inputTables={[durable]} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
-    expect(screen.getByRole('button', { name: 'Durable identity' }).closest('.data-thread-card')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Durable identity' }).closest('[data-table-id]')).toBeNull();
 });
 
 it('recovers saved import provenance from workspace metadata and preserves it on reload', async () => {
@@ -349,7 +340,7 @@ it('recovers saved import provenance from workspace metadata and preserves it on
     store.dispatch(dfActions.loadState(store.getState()));
     render(shelf());
     expect(screen.getByRole('list', { name: 'Imports from Events' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Saved events' }).closest('.data-thread-card')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Saved events' }).closest('[data-table-id]')).toBeNull();
     expect(apiRequest).toHaveBeenCalledTimes(1);
 });
 
@@ -823,9 +814,27 @@ it('groups workspace files in folders and opens the folder holding the open file
     expect(notes).toHaveTextContent('decisions.md');
     expect(notes).not.toHaveTextContent('notes/');
     expect(screen.getByRole('group', { name: 'lib' })).toHaveTextContent('cleaning.py');
-    fireEvent.click(screen.getByRole('button', { name: /^notes\s*2/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'notes' }));
     return waitFor(() => expect(screen.queryByRole('group', { name: 'notes' })).not.toBeInTheDocument()).then(() => {
         act(() => store.dispatch(dfActions.setFocused({ type: 'file', fileName: 'notes/plan.md' })));
         expect(screen.getByRole('group', { name: 'notes' })).toHaveTextContent('Plan');
     });
+});
+
+
+it('lists folders first, then tables and files in the order they were added, and keeps an app\'s file name in its tooltip', () => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    const file = (name: string, display_name?: string) => ({ name, filename: name.split('/').pop()!, display_name,
+        created_at: '', content_hash: name, file_size: 1, media_type: null });
+    const table = { kind: 'table' as const, id: 'orders', displayId: 'orders', names: [], rows: [], metadata: {}, description: '',
+        virtual: { tableId: 'orders', rowCount: 0 } };
+    const { container } = render(<Provider store={store}><SourceTableShelf inputTables={[table]} highlightedTableIds={[]}
+        workspaceFiles={[file('guide.md'), file('quake.app.jsx', 'California earthquake explorer'), file('docs/a.md')]} /></Provider>);
+    const rows = Array.from(container.querySelectorAll('[data-shelf-list] > *')).map(row =>
+        row.getAttribute('data-workspace-folder') || row.querySelector('[data-workspace-item], [data-table-id]')?.getAttribute('data-workspace-item')
+        || row.getAttribute('data-workspace-item') || row.getAttribute('data-table-id'));
+    expect(rows[0]).toBe('docs');
+    const app = screen.getByRole('button', { name: 'California earthquake explorer' });
+    expect(app).not.toHaveTextContent('quake.app.jsx');
+    expect(within(app).getByText('California earthquake explorer')).toHaveAttribute('title', 'California earthquake explorer (quake.app.jsx)');
 });

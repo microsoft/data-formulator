@@ -1,7 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useEffect, useMemo, useCallback } from 'react';
+import React, { FC, useEffect, useMemo, useCallback, useContext } from 'react';
+import { CanvasChromeContext } from './CanvasHeader';
 import ReactDOM from 'react-dom';
 
 import _ from 'lodash';
@@ -199,13 +200,15 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
     // Sort & filter remain in the column headers/kebab menus.
     const headerRowCount = targetTable?.virtual?.rowCount || targetTable?.rows.length || 0;
     const headerColCount = targetTable?.names.length || 0;
+    const { tabbed } = useContext(CanvasChromeContext);
     const headerBar = showHeaderBar ? (
         <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.5, px: 0.5, pt: 1, pb: 1 }}>
             <Box sx={{ minWidth: 0 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontSize: textVar.xl, fontWeight: 600, color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+                    {/* Under the canvas tabs the tab names the table; elsewhere the view does. */}
+                    {!tabbed && <Typography sx={{ fontSize: textVar.xl, fontWeight: 600, color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
                         {displayName}
-                    </Typography>
+                    </Typography>}
                     {targetTable?.derive && (
                         <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary', flexShrink: 0 }}>
                             {t('chart.derivedTable', { defaultValue: 'Derived table' })}

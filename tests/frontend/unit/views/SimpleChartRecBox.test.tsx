@@ -85,6 +85,27 @@ describe('Analyst landing attachment handoff', () => {
         expect(buildThreads(dfSelectors.getThreadGraph(store.getState())).some(thread => thread.branchFromId)).toBe(false);
     });
 
+    it('drops the tool steps a cut-off attempt left behind when retrying', async () => {
+        const { store } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'ask', displayId: 'Ask', textKind: 'explain',
+                content: '', prompt: 'Compare regions', parentNodeId: 'conversation-root:test', createdAt: 1 }));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'leftover', displayId: 'Step', textKind: 'explain',
+                content: '', parentNodeId: 'ask', actionId: 'cut-off', createdAt: 2,
+                codeExecutions: [{ id: 'check', tool: 'execute_python_script', code: 'print(1)', purpose: 'Check coverage', status: 'completed' }] }));
+            store.dispatch(dfActions.createDraftNode({ id: 'failed', displayId: 'Failed', parentNodeId: 'leftover',
+                parentTableId: 'leftover', source: [], interaction: [], actionId: 'cut-off' }));
+            store.dispatch(dfActions.updateDeriveStatus({ nodeId: 'failed', status: 'interrupted' }));
+            store.dispatch(dfActions.setFocused({ type: 'draft', draftId: 'failed' }));
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        expect(requestBody().user_question).toBe('Compare regions');
+        expect(store.getState().textTurns.some(turn => turn.id === 'leftover')).toBe(false);
+        await waitFor(() => expect(store.getState().draftNodes.some(draft => draft.id === 'failed')).toBe(false));
+        expect(store.getState().draftNodes.every(draft => draft.parentNodeId === 'ask')).toBe(true);
+    });
+
     it.each([
         ['the message before it', 'answer'],
         ['the stopped message itself', 'stopped'],
@@ -409,6 +430,18 @@ describe('Analyst landing attachment handoff', () => {
             .toBe(store.getState().loadedTableNodes[0].id);
         expect(vi.mocked(apiRequest).mock.calls.some(([url]) => String(url).includes('list-tables'))).toBe(false);
         expect(store.getState().pendingTableLoads).toEqual([]);
+    });
+
+    it.each(['error', 'disconnect'])('focuses a run that fails by %s, so its retry is at hand', async outcome => {
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'thinking_text', content: 'Looking' };
+            if (outcome === 'error') yield { type: 'error', message: 'LLM API error' };
+            else throw new Error('Connection lost');
+        });
+        const { store } = mountTask({ text: 'Compare regions', images: [], attachments: [] });
+        await waitFor(() => expect(store.getState().draftNodes.some(draft => draft.derive.status === 'error')).toBe(true));
+        const failed = store.getState().draftNodes.find(draft => draft.derive.status === 'error')!;
+        expect(store.getState().focusedId).toEqual({ type: 'draft', draftId: failed.id });
     });
 
     it.each(['cancel', 'error', 'disconnect'])('clears pending agent loads on %s', async outcome => {
@@ -1467,6 +1500,23 @@ describe('Analyst landing attachment handoff', () => {
         }
         await waitFor(() => expect(store.getState().draftNodes).toHaveLength(0));
         expect(store.getState().textTurns.filter(turn => turn.prompt === 'Analyze Azure usage')).toHaveLength(1);
+    });
+
+    it('labels a step by its first call even when its plan opened it, and keeps the agent\'s words as thinking', async () => {
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'plan', revised: true, items: [{ text: 'Check robustness', status: 'open' }, { text: 'Summarize', status: 'open' }] } as any;
+            yield { type: 'thinking_text', content: 'I will check whether the earlier patterns hold.' } as any;
+            yield { type: 'tool_start', tool: 'execute_python_script', code: 'print(1)', purpose: 'Find PPP measures' } as any;
+            yield { type: 'tool_result', tool: 'execute_python_script', status: 'ok', stdout: '1' } as any;
+            yield { type: 'completion', content: { summary: 'Done.' } } as any;
+        });
+        const { store } = mountTask({ text: 'Go deeper', images: [], attachments: [] });
+        await waitFor(() => expect(store.getState().textTurns.some(turn => turn.content === 'Done.')).toBe(true));
+        const step = store.getState().textTurns.find(turn => turn.codeExecutions?.length)!;
+        expect(step.content).toBe('Find PPP measures');
+        expect(store.getState().textTurns.some(turn => turn.content === 'I will check whether the earlier patterns hold.')).toBe(false);
+        expect(store.getState().textTurns.flatMap(turn => turn.progressSteps || []).filter(item => item.kind === 'thought')
+            .map(item => item.label)).toEqual(['I will check whether the earlier patterns hold.']);
     });
 
     it.each(['completed', 'failed', 'interrupted'] as const)('retains Python code and its %s result on a clickable step', async outcome => {

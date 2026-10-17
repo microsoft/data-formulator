@@ -280,7 +280,7 @@ it('uses read-only artifact Markdown controls before import without workspace re
     }
 });
 
-it('uses file display names with filename bylines and legacy fallback', () => {
+it('uses file display names with the filename in the tooltip, and a legacy fallback', () => {
     const store = configureStore({ reducer: dataFormulatorReducer });
     const file = { name: 'scratch/unesco_education_summary.md', filename: 'unesco_education_summary.md',
         temporary: true, created_at: '', content_hash: '', file_size: 10, media_type: 'text/markdown' };
@@ -291,7 +291,8 @@ it('uses file display names with filename bylines and legacy fallback', () => {
     });
     const { rerender } = render(shelf('UNESCO Education'));
     const label = screen.getByText('UNESCO Education');
-    expect(screen.getByText(file.filename)).toBeTruthy();
+    expect(screen.queryByText(file.filename)).toBeNull();
+    expect(label).toHaveAttribute('title', `UNESCO Education (${file.filename})`);
     fireEvent.click(label);
     expect(store.getState().focusedId).toEqual({ type: 'file', fileName: file.name });
     expect(screen.getByRole('button', { name: 'Actions for UNESCO Education' })).toBeTruthy();
@@ -368,8 +369,9 @@ it.each(['conversation', 'long_response'] as const)('normalizes mixed legacy com
         expect(screen.queryByRole('button', { name: /az account show/ })).toBeNull();
         return;
     }
-    expect(screen.getAllByRole('button', { name: /az account show Completed/ })).toHaveLength(1);
-    fireEvent.click(screen.getByRole('button', { name: /az account show Completed/ }));
+    // The command is the message's work: its own box, which opens its details.
+    expect(screen.getAllByRole('button', { name: /Inspect/ })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: /Inspect/ }));
     expect(screen.getByText('Account result')).toBeTruthy();
     expect(container.querySelector('details pre')?.textContent).toBe(JSON.stringify(execution.argv, null, 2));
 });
@@ -409,7 +411,7 @@ it('shows command-only migrated table history in conversation', () => {
     expect(store.getState().textTurns.find(turn => turn.id === history)?.executions?.[0].argv).toEqual(['pwd']);
     store.dispatch(dfActions.setFocused({ type: 'conversation', tableId: 'legacy-table', nodeIds: [history!, 'legacy-table'] }));
     render(React.createElement(Provider, { store, children: React.createElement(VisualizationViewFC) }));
-    expect(screen.getByRole('button', { name: /pwd Status unavailable/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /pwd/ })).toBeTruthy();
 });
 
 it('renders a conversation canvas with full messages and collapsed command results', () => {
@@ -433,12 +435,13 @@ it('renders a conversation canvas with full messages and collapsed command resul
     expect(screen.queryByRole('img', { name: 'Agent' })).toBeNull();
     expect(screen.getByText('Analyze usage').closest('[data-conversation-role="user"]')).toBeTruthy();
     expect(screen.getByText('Here are the findings.').closest('[data-conversation-role="agent"]')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /az account show Completed/ }).closest('[data-conversation-role="agent"]')).toBeTruthy();
+    const work = screen.getByRole('button', { name: /Inspect/ });
+    expect(work.closest('[data-conversation-role="agent"]')).toBeTruthy();
     expect(screen.queryByText('Outside this segment.')).toBeNull();
     expect(screen.queryByText('Agent', { exact: true })).toBeNull();
     expect(screen.queryByText('You', { exact: true })).toBeNull();
     expect(screen.queryByText('Account result')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /az account show Completed/ }));
+    fireEvent.click(work);
     expect(screen.getByText('Account result')).toBeTruthy();
 });
 
@@ -474,7 +477,7 @@ it.each(['table', 'chart', 'chart-image'])('shows inline table and chart preview
     expect(screen.getByText('resource-4')).toBeTruthy();
     expect(screen.queryByText('resource-5')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: target === 'table' ? 'Open table: Usage'
-        : target === 'chart' ? 'Open chart: Bar Chart - Usage' : 'Bar Chart - Usage' }));
+        : 'Open chart: Bar Chart - Usage' }));
     expect(store.getState().focusedId).toEqual(target === 'table'
         ? { type: 'table', tableId: 'usage' } : { type: 'chart', chartId: 'usage-chart' });
 });
@@ -509,7 +512,8 @@ it.each([true, false])('opens a chart from its labeled preview with or without a
         specKey: 'narrow', naturalWidth: 120, naturalHeight: 300 });
     try {
         render(React.createElement(Provider, { store, children: React.createElement(ConversationCanvas, { textTurnId: 'deployment-table' }) }));
-        expect(screen.getAllByText(label)).toHaveLength(1);
+        // Drawn, the chart is its image; not yet drawn, a line with its label. Either opens it.
+        if (!cached) expect(screen.getAllByText(label)).toHaveLength(1);
         if (cached) expect(screen.getByRole('img', { name: label })).toHaveAttribute('src', 'data:image/png;base64,narrow');
         else expect(screen.queryByRole('img', { name: label })).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: `Open chart: ${label}` }));

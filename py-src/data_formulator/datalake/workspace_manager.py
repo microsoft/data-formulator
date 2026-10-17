@@ -450,7 +450,9 @@ class WorkspaceManager:
         if not ws_dir.exists():
             raise ValueError(f"Workspace '{workspace_id}' does not exist")
 
-        return Workspace(identity_id, workspace_path=ws_dir)
+        workspace = Workspace(identity_id, workspace_path=ws_dir)
+        workspace.repair_legacy_file_names()
+        return workspace
 
     def create_and_open_workspace(self, workspace_id: str, identity_id: str) -> Workspace:
         """Create a new workspace and return an open Workspace instance."""

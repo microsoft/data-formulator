@@ -25,6 +25,7 @@
       "parameters": {
         "type": "object",
         "properties": {
+          "plan_step": {"type": "integer", "minimum": 1, "description": "When working through a checklist plan: the number (1-based) of the plan step this result serves. Several results can serve one step; a step is checked off once you move on to a later step or finish."},
           "replaces": {
             "type": "string",
             "description": "Id of the report to replace, from [REPLACEABLE ARTIFACTS]. Only to fix an artifact the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the old one is deleted and this takes its place after the latest request. Never when exploring something new; a new artifact keeps the analysis history."

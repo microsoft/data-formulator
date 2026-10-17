@@ -583,6 +583,9 @@ export function prepVisTable(table: any[], allFields: FieldItem[], encodingMap: 
     return result;
 }
 
+/** Key of the non-enumerable Flint input attached to an assembled spec (see assembleVegaChart). */
+export const FLINT_INPUT = '__flintInput';
+
 export const assembleVegaChart = (
     chartType: string, 
     encodingMap: { [key in Channel]: EncodingItem; }, 
@@ -657,7 +660,7 @@ export const assembleVegaChart = (
         if (info.displayName) fieldDisplayNames[name] = info.displayName;
     }
 
-    const spec = assembleVegaLite({
+    const flintInput = {
         data: { values: workingTable },
         semantic_types: semanticTypes,
         chart_spec: {
@@ -682,7 +685,10 @@ export const assembleVegaChart = (
         },
         ...(themeId ? { theme_spec: themeId } : {}),
         ...(Object.keys(fieldDisplayNames).length > 0 ? { field_display_names: fieldDisplayNames } : {}),
-    });
+    };
+    const spec = assembleVegaLite(flintInput);
+    // The complete Flint input behind the chart, for copying; not part of the Vega-Lite spec.
+    Object.defineProperty(spec, FLINT_INPUT, { value: flintInput, enumerable: false });
 
     // Published flint-chart 0.4.1 ignores chart-level title/subtitle fields;
     // live Flint consumes them above and owns fitting. Keep this fallback until

@@ -49,7 +49,7 @@ import '../scss/VisualizationView.scss';
 import '../scss/DataView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, explanationContent } from '../app/dfSlice';
-import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
+import { FLINT_INPUT, assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
 import { displayRowsCache } from '../app/displayRowsCache';
 import { buildEmbeddedDataForChart, applyVariantConfigUI } from '../app/restyle';
 import { apiRequest } from '../app/apiClient';
@@ -65,6 +65,7 @@ import TerminalIcon from '@mui/icons-material/Terminal';
 import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
 import TuneIcon from '@mui/icons-material/Tune';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import CheckIcon from '@mui/icons-material/Check';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import CasinoIcon from '@mui/icons-material/Casino';
@@ -849,6 +850,17 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const [renderedSpec, setRenderedSpec] = useState<any | null>(null);
     const handleSpecReady = useCallback((spec: any | null) => { setRenderedSpec(spec); }, []);
 
+    // The Flint input behind the chart: its data, chart spec, semantic types and theme.
+    const [flintCopied, setFlintCopied] = useState(false);
+    const handleCopyFlintSpec = useCallback(() => {
+        const input = renderedSpec?.[FLINT_INPUT];
+        if (!input) return;
+        void navigator.clipboard?.writeText(JSON.stringify(input, null, 2)).then(() => {
+            setFlintCopied(true);
+            setTimeout(() => setFlintCopied(false), 1500);
+        });
+    }, [renderedSpec]);
+
     const handleOpenInVegaEditor = useCallback(() => {
         if (!renderedSpec) return;
         const editorUrl = 'https://vega.github.io/editor/';
@@ -1406,7 +1418,16 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     <EncodingShelfCard chartId={focusedChart.id} />
                     {/* Footer: low-emphasis link to inspect the assembled
                         Vega-Lite spec in the external Vega editor. */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', px: 1.5, pb: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1, px: 1.5, pb: 1 }}>
+                        <Button
+                            size="small"
+                            startIcon={flintCopied ? <CheckIcon sx={{ fontSize: iconVar.sm }} /> : <ContentCopyIcon sx={{ fontSize: iconVar.sm }} />}
+                            disabled={!renderedSpec?.[FLINT_INPUT] || focusedChart.chartType === "Table" || focusedChart.chartType === "Auto"}
+                            onClick={handleCopyFlintSpec}
+                            sx={{ textTransform: 'none', fontSize: '0.65rem', color: 'text.disabled', minWidth: 'auto', py: 0, '&:hover': { color: 'text.secondary', backgroundColor: 'transparent' } }}
+                        >
+                            {flintCopied ? t('chart.flintSpecCopied', { defaultValue: 'Copied' }) : t('chart.copyFlintSpec', { defaultValue: 'Copy Flint spec' })}
+                        </Button>
                         <Button
                             size="small"
                             startIcon={<OpenInNewIcon sx={{ fontSize: iconVar.sm }} />}
@@ -1510,9 +1531,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 edit this chart" controls grouped together (agent log + code +
                 encoding shelf). Chart deletion lives in the chart property-config
                 bar below the chart. */}
-            {/* `mr` leaves room for the pane's close-canvas button, which floats
-                above this bar at the same corner. */}
-            <Box sx={{ ml: 'auto', mr: '40px', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 {hasDerived && (
                     <Tooltip title={t('chart.log')} placement="bottom">
                         <IconButton
