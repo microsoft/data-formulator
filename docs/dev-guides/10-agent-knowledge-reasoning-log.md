@@ -1,10 +1,12 @@
 # Agent 知识系统与推理日志开发规范
 
 > **维护者**: DF 核心团队  
-> **最后更新**: 2026-10-12  
+> **最后更新**: 2026-10-13  
 > **适用范围**: 后端 Agent、知识库路由、推理日志、前端知识面板、工作流提炼流程
 
 本规范记录已经落地的 Agent 知识系统、推理日志和工作流提炼实现。设计背景和历史计划见 `design-docs/15-agent-knowledge-reasoning-log.md`；仍未完成的后续优化见 `design-docs/15.2-knowledge-system-followup-improvements.md`。
+
+> **当前状态**：Agent 运行时已统一为 `AnalystAgent`（`py-src/data_formulator/analyst/`）。重构后知识库（rules / workflows）**尚未重新接入 Agent prompt 或工具**，详见 §6。知识存储、API、推理日志和工作流提炼本身仍然可用。
 
 ## 1. 架构概览
 
@@ -13,7 +15,7 @@ Agent 知识系统由三部分组成：
 | 组件 | 位置 | 职责 |
 |---|---|---|
 | `KnowledgeStore` | `py-src/data_formulator/knowledge/store.py` | 用户知识文件的 CRUD、搜索、front matter 解析、路径安全和内容长度限制 |
-| `ReasoningLogger` | `py-src/data_formulator/agents/reasoning_log.py` | DataAgent 会话的结构化 JSONL 调试日志 |
+| `ReasoningLogger` | `py-src/data_formulator/agents/reasoning_log.py` | `AnalystAgent`（及继承它的 `WorkflowAgent`）会话的结构化 JSONL 调试日志 |
 | `WorkflowDistillAgent` | `py-src/data_formulator/agents/agent_workflow_distill.py` | 从前端传入的 `workflow_context` 提炼可复用工作流文档 |
 
 知识库存储在当前用户 home 下：
@@ -25,7 +27,7 @@ Agent 知识系统由三部分组成：
     └── workflows/
 ```
 
-`rules` 只允许扁平 `.md` 文件；`workflows` 最多允许一级子目录。所有知识文件访问必须通过 `KnowledgeStore`，不要在调用方直接拼接 `Path(user_home) / "knowledge" / user_input`。旧版本留下的 `knowledge/experiences/` 文件会在 `KnowledgeStore` 初始化时一次性迁移到 `workflows/`。
+`rules` 只允许扁平 `.md` 文件；`workflows` 的路径校验允许一级子目录（`folder/file.md`），但 `KnowledgeStore` 每次初始化都会执行 `_migrate_flat()`，把子目录中的 workflow 移到 `workflows/` 根目录（重名时追加 `-N` 后缀），因此磁盘上实际是扁平的。所有知识文件访问必须通过 `KnowledgeStore`，不要在调用方直接拼接 `Path(user_home) / "knowledge" / user_input`。旧版本留下的 `knowledge/experiences/` 文件会在 `KnowledgeStore` 初始化时一次性迁移到 `workflows/`。
 
 ## 2. 知识文件格式
 
@@ -34,7 +36,8 @@ Agent 知识系统由三部分组成：
 ```markdown
 ---
 title: ROI 计算标准
-tags: [finance, computation]
+description: ROI 统一口径
+alwaysApply: true
 created: 2026-04-27
 updated: 2026-04-27
 source: manual
@@ -48,19 +51,19 @@ ROI = (revenue - cost) / cost
 | 字段 | 说明 |
 |---|---|
 | `title` | 标题。缺失时列表和搜索会退回文件名 stem |
-| `tags` | 搜索标签。应使用数组 |
 | `created` / `updated` | 日期或时间戳 |
-| `source` | `manual` 或 `agent_summarized` |
-| `source_context` | 工作流提炼来源上下文 ID，可选 |
+| `source` | `manual`（默认）或 `distill`（工作流提炼写入） |
 
 Rules 额外支持：
 
 | 字段 | 说明 |
 |---|---|
-| `description` | 规则短描述，最多 `KNOWLEDGE_LIMITS["rule_description_max"]` 字符 |
-| `alwaysApply` | `true` 时总是注入 Agent prompt；`false` 时只通过相关知识搜索注入 |
+| `description` | 规则短描述，最多 `KNOWLEDGE_LIMITS["rule_description_max"]`（100）字符 |
+| `alwaysApply` | 缺省为 `true`。`load_always_apply_rules()` 只返回 `alwaysApply=true` 的 rules；`search()` 只搜索 `alwaysApply=false` 的 rules |
 
-`KnowledgeStore.write()` 会在缺少 front matter 时补一个最小头部，并按 `KNOWLEDGE_LIMITS` 校验正文长度。
+工作流提炼写入的 workflows 额外带有 `source_context`（提炼上下文 ID）、`source_workspace_id`、`source_workspace_name`；后两者用于同一会话重复提炼时 upsert，`list_all("workflows")` 以 `sourceWorkspaceId` / `sourceWorkspaceName` 返回。
+
+`KnowledgeStore.write()` 会在缺少 front matter 时补一个最小头部（rules 默认 `alwaysApply: true`），并校验长度：rules 正文超过 `KNOWLEDGE_LIMITS["rules"]`（350）字符直接拒绝；workflows 的 `KNOWLEDGE_LIMITS["workflows"]`（6000）只是提炼目标长度，超过 `WORKFLOW_HARD_MAX`（24000）才拒绝。
 
 ## 3. KnowledgeStore
 
@@ -81,9 +84,9 @@ results = store.search("missing values", categories=["workflows"])
 
 - 只使用 `rules`、`workflows` 两个 category。
 - 所有知识文件必须是 `.md`。
-- `rules` 路径只能是 `file.md`；`workflows` 路径最多是 `folder/file.md`。
+- `rules` 路径只能是 `file.md`；`workflows` 路径最多是 `folder/file.md`（初始化时会被扁平化，见 §1）。
 - 路径穿越、绝对路径和 symlink 逃逸由 `ConfinedDir` 拦截。
-- 搜索结果只返回摘要，完整内容通过 `read()` 读取。
+- 搜索结果只返回摘要（`category`、`title`、`path`、`snippet`、`source`），完整内容通过 `read()` 读取。
 
 ### 搜索算法
 
@@ -91,7 +94,7 @@ results = store.search("missing values", categories=["workflows"])
 
 **分词规则**（`_tokenize_query`）：
 
-- 空格分词后过滤英文停用词和长度 ≤ 2 的 ASCII 短词。
+- 小写后按空格分词，过滤英文停用词和长度 ≤ 2 的 ASCII 短词。
 - 中英混合 token（如 `"帮我分析ROI"`）自动拆分为 CJK 段和 ASCII 段，各自独立参与匹配。
 - 纯中文 token 保持整串，以子串方式匹配（暂不做中文分词，后续可引入 jieba）。
 
@@ -102,7 +105,6 @@ results = store.search("missing values", categories=["workflows"])
 | 字段 | 权重 |
 |------|------|
 | title | 100 / N |
-| tags | 50 / N |
 | filename stem | 30 / N |
 | body[:200] | 10 / N |
 
@@ -111,8 +113,7 @@ results = store.search("missing values", categories=["workflows"])
 | 条件 | 加分 |
 |------|------|
 | 完整 query 是 title 的子串 | +50 |
-| 完整 query 是某个 tag 的子串 | +50 |
-| 会话 table_name 出现在 tags 中 | 每个 +30 |
+| 传入的 table_name 出现在 title 或 body[:200] 中 | 每个 +30 |
 | `source != "manual"` | 总分 ×0.9 |
 
 **调用方式**：
@@ -121,25 +122,25 @@ results = store.search("missing values", categories=["workflows"])
 results = store.search(
     "分析各区域的ROI",
     categories=["rules", "workflows"],
-    max_results=5,
-    table_names=["sales_data", "regions"],  # 可选，用于 tag 加分
+    max_results=5,                          # 默认 10
+    table_names=["sales_data", "regions"],  # 可选，用于加分
 )
 ```
 
-`alwaysApply=true` 的 rules 始终被搜索跳过（它们通过 system prompt 注入）。
+`alwaysApply=true` 的 rules 始终被搜索跳过（它们设计为通过 system prompt 注入）。
 
 ## 4. Knowledge API
 
-所有知识 API 在 `py-src/data_formulator/routes/knowledge.py`，Blueprint 前缀为 `/api/knowledge`。所有 application error 遵循统一错误协议：HTTP 200 + `status: "error"`。
+所有知识 API 在 `py-src/data_formulator/routes/knowledge.py`，Blueprint 前缀为 `/api/knowledge`。成功响应为 `json_ok()` 信封 `{ status: "success", data }`；application error 遵循统一错误协议：`AppError` → HTTP 200 + `status: "error"`（仅认证类错误码返回非 200）。
 
 | 端点 | 方法 | 请求体 | 说明 |
 |---|---|---|---|
-| `/api/knowledge/limits` | POST | `{}` | 返回知识正文和 rule 描述长度限制 |
+| `/api/knowledge/limits` | POST | `{}` | 返回 `KNOWLEDGE_LIMITS` |
 | `/api/knowledge/list` | POST | `{ category }` | 列出某类知识条目 |
 | `/api/knowledge/read` | POST | `{ category, path }` | 读取单个知识文件完整内容 |
 | `/api/knowledge/write` | POST | `{ category, path, content }` | 创建或更新知识文件 |
 | `/api/knowledge/delete` | POST | `{ category, path }` | 删除知识文件 |
-| `/api/knowledge/search` | POST | `{ query, categories? }` | 跨类别搜索知识 |
+| `/api/knowledge/search` | POST | `{ query, categories? }` | 跨类别搜索知识（不传 `table_names`，默认最多 10 条） |
 | `/api/knowledge/distill-workflow` | POST | `{ workflow_context, model, user_instruction?, category_hint?, timeout_seconds? }` | 提炼并保存工作流 |
 
 路由通过 `get_identity_id()` 和 `get_user_home(identity_id)` 定位当前用户目录。不要让前端传入用户目录、workspace 目录或绝对路径。
@@ -156,7 +157,7 @@ DATA_FORMULATOR_HOME/
             └── <session_id>-<agent_type>.jsonl
 ```
 
-开关由 `DF_AGENT_LOG` 控制：
+开关由 `DF_AGENT_LOG` 控制（无法识别的值按 `on` 处理）：
 
 | 值 | 行为 |
 |---|---|
@@ -164,72 +165,50 @@ DATA_FORMULATOR_HOME/
 | `on` | 写结构化摘要，防御性剥离 `messages` 字段 |
 | `verbose` | 写更完整的 kwargs，并通过 `log_sanitizer.sanitize_params()` 脱敏 |
 
-DataAgent 当前记录的主要事件：
+非 `off` 时，`ReasoningLogger` 初始化会在后台线程清理超过 30 天（`_LOG_RETENTION_DAYS`）的日期目录。
+
+当前只有 `AnalystAgent.__init__` 创建 `ReasoningLogger`（`agent_type="AnalystAgent"`；无 `identity_id` 或初始化失败时使用 `_NullReasoningLogger`），`WorkflowAgent` 继承该初始化逻辑。主要事件：
 
 | 事件 | 说明 |
 |---|---|
-| `session_start` | 会话开始，包含问题、表名、模型和文本 rules 摘要 |
-| `context_built` | 初始上下文构建完成，包含 token 估算和注入知识摘要 |
-| `knowledge_search` | 自动知识注入或工具搜索 |
+| `session_start` | 会话开始，包含问题、输入表名、模型、`execution_config` 和请求传入的 rules 文本 |
+| `context_built` | 初始上下文构建完成（续接会话或全新开始），包含 token 估算和 `knowledge_injected` |
 | `llm_request` | 发送 LLM 请求前的计数和工具列表 |
 | `llm_response` | LLM 响应延迟、finish_reason 和工具调用摘要 |
-| `tool_execution` | Agent 内部工具执行结果摘要 |
-| `action_execution` | 用户可见 action 执行结果 |
-| `repair_attempt` | 代码修复尝试摘要 |
+| `progress_reminder` | 注入进度提醒（`WorkflowAgent` 也会记录） |
+| `tool_execution` | 工具执行结果摘要；action 提交也以 `input_summary="action_committed"` / `"action_missing_fields"` 记录在此 |
+| `action_gated` | action 所属 skill 未加载而被拦截 |
+| `action_execution` | 用户可见 action 执行结果（`ok` / `no_handler`） |
 | `session_end` | 会话结束状态、迭代次数、LLM 调用次数和耗时 |
 
-注意：当前 `on` 模式仍会记录 `user_question` / `query` 等问题文本；如果新增埋点涉及 credentials、连接串、tokens 或原始数据正文，必须先脱敏或只记录摘要。
+注意：当前 `on` 模式仍会记录 `user_question` 等问题文本；如果新增埋点涉及 credentials、连接串、tokens 或原始数据正文，必须先脱敏或只记录摘要。
 
 ## 6. Agent 知识集成
 
-路由层通过 `routes/agents.py` 的 `_get_knowledge_store(identity_id)` 创建 `KnowledgeStore`，并传给对应 Agent。知识不可用时必须优雅降级，不能影响原有 Agent 流程。
+### 当前状态
 
-### 模式 A：Rules 系统提示词注入
+统一 `AnalystAgent` 重构后，旧的按 Agent 区分的三种集成模式（rules 注入、知识上下文注入、`search_knowledge` / `read_knowledge` 工具）已随旧 Agent 一起移除，尚未在新运行时重新接入。现状如下：
 
-适用于**所有 Agent**（DataAgent、DataTransformationAgent、DataRecAgent、DataLoadingAgent、InteractiveExploreAgent、ChartInsightAgent）。只把 `alwaysApply != false` 的 rules 注入系统提示词；非 always-apply rules 通过搜索注入。
+- `AnalystAgent.__init__` 会用 `workspace.user_home` 创建 `self._knowledge_store = KnowledgeStore(...)`（失败时记录 warning 并保持 `None`），但运行时不读取它。
+- `_build_system_prompt()` 只拼接请求体传入的 `agent_exploration_rules`（替换 `SYSTEM_PROMPT` 中的 `{agent_exploration_rules}` 槽位）和 `agent_coding_rules`（追加为 `## Agent Coding Rules`）。`/api/agent/analyst-streaming` 接受这两个字段，但当前前端（`SimpleChartRecBox.tsx`）不发送它们。
+- `self._injected_knowledge` 在 `_build_initial_messages()` 中重置为空且不会被填充，因此 `context_info` 事件不会发出；前端 `SimpleChartRecBox.tsx` 仍保留对 `context_info`（`rules_injected` / `knowledge_injected`）的展示逻辑。
+- 所有 skill 的 `tools.json` 中都没有知识工具；`analyst/agent.py` 的 `_TOOL_PROGRESS_ARG_KEYS` 和 `tool_start` 事件中残留的 `search_knowledge` 名称没有对应实现。
+- `routes/agents.py` 的 `_get_knowledge_store(identity_id)` 仍然定义，但没有调用方。
+- 辅助 Agent（`agents/` 下的 `SimpleAgents`、`DataLoadAgent`、`ChartRestyleAgent`、`CodeExplanationAgent`、`SortDataAgent`、`StarterQuestionsAgent`）和 `workflows/agent.py` 的 `WorkflowAgent` 都不使用知识库；`WorkflowDistillAgent` 只负责生成 workflow 文档。
 
-所有 Agent 统一通过 `KnowledgeStore` 的两个方法完成规则注入：
+### 可复用的 KnowledgeStore 接口
 
-- **`load_always_apply_rules()`** — 返回 `[{"title":..., "body":...}]` 列表，适用于需要额外处理原始数据的场景（如 DataAgent 需追踪 `_injected_rules` 标题）。
-- **`format_rules_block(rules=None)`** — 直接返回格式化好的 prompt 块（`## User Rules` + `### {title}\n{body}`），内部自动加载规则并处理异常；也可传入 `load_always_apply_rules()` 预加载结果避免二次读取。
+重新接入时应复用 `KnowledgeStore` 已有的接口（目前只有测试调用）：
 
-各 Agent 典型用法：
+- **`load_always_apply_rules()`** — 返回 `[{"title":..., "body":...}]` 列表（只含 `alwaysApply=true` 且正文非空的 rules），失败时返回空列表。
+- **`format_rules_block(rules=None)`** — 返回格式化好的 prompt 块（`## ⚠ User Rules (MANDATORY — override defaults)` 标题 + 每条 `### {title}\n{body}`），内部处理异常；无 rules 时返回空字符串。可传入 `load_always_apply_rules()` 的结果避免二次读取。
+- **`search(query, categories, max_results, table_names)`** — 用于非 always-apply rules 和 workflows 的按需检索，见 §3。
 
-```python
-# 简单场景（大多数 Agent）—— 一行搞定
-if self._knowledge_store:
-    prompt += self._knowledge_store.format_rules_block()
-
-# 需要追踪注入了哪些规则（DataAgent）
-if self._knowledge_store:
-    rules = self._knowledge_store.load_always_apply_rules()
-    self._injected_rules = [r["title"] for r in rules]
-    prompt += self._knowledge_store.format_rules_block(rules)
-
-# 需要与 agent_coding_rules 合并（DataRecAgent / DataTransformationAgent）
-knowledge_rules = knowledge_store.load_always_apply_rules() if knowledge_store else []
-combined_rules = _combine_rules(agent_coding_rules, knowledge_rules)
-```
-
-### 模式 B：Library 知识上下文注入
-
-适用于 DataAgent、DataLoadingAgent、InteractiveExploreAgent、ChartInsightAgent。运行时搜索相关 `workflows` 条目，把摘要注入上下文。`KnowledgeStore.search()` 自动跳过 `alwaysApply=true` 的 rules，避免与 system prompt 重复注入。
-
-- **DataAgent** 使用 `_search_relevant_knowledge(user_question, table_names)` 搜索，user question 作为 query，table_names 通过 `search()` 的 `table_names` 参数独立传入以获得 tag 加分。
-- **DataLoadingAgent** 使用最近一条用户消息作为搜索 query；无用户消息时回退到 `"data loading cleaning preparation"`。
-
-### 模式 C：DataAgent 工具调用
-
-DataAgent 提供两个内部工具：
-
-- `search_knowledge(query, categories?)`：返回匹配条目的 category、title、path、snippet。
-- `read_knowledge(category, path)`：读取完整 Markdown 内容。
-
-工具错误应返回安全、简短的文本结果，并在服务端日志中记录异常类型；不要把 traceback 或内部路径返回给 LLM/用户。
+知识不可用时必须优雅降级，不能影响原有 Agent 流程。工具错误应返回安全、简短的文本结果，并在服务端日志中记录异常类型；不要把 traceback 或内部路径返回给 LLM/用户。
 
 ## 7. 工作流提炼
 
-提炼以会话（workspace）为单位。`KnowledgePanel` 中的提炼入口打开 `SessionDistillDialog`（`src/views/SessionDistill.tsx`）。`collectSessionThreads()` 找出当前会话里所有 leaf derived table，每个 leaf 对应一个 thread。leaf table 的判断标准是：该表是 derived table，且没有其他 derived table 从它继续派生。
+提炼以会话（workspace）为单位。`KnowledgePanel` 中的提炼入口打开 `SessionDistillDialog`（`src/views/SessionDistill.tsx`）；注意 `KnowledgePanel` 当前没有挂载到任何界面（见 §8），因此这条前端入口暂时不可达，后端端点仍可用。`collectSessionThreads()` 找出当前会话里所有 leaf derived table，每个 leaf 对应一个 thread。leaf table 的判断标准（`isLeafDerivedTable()`）是：该表是 derived table，且没有其他 derived table 从它继续派生。
 
 `buildLeafEvents()`（`src/views/workflowContext.ts`）从 leaf table 沿当前 Redux 中仍存在的链向上回溯到 root，按时间顺序生成 `events`，类型包括：
 
@@ -239,7 +218,9 @@ DataAgent 提供两个内部工具：
 
 用户已删除的中间节点不会进入工作流上下文，没有用户消息的 thread 会被丢弃。`buildSessionWorkflowContext()` 把各 thread 组装为 `workflow_context`（`context_id`、`workspace_id`、`workspace_name`、`threads`、可选 `payload_notes`）。超出长度预算时依次丢弃 tool call 事件、把 `sample_rows` 缩减到 1 行、丢弃最早的 thread。
 
-后端 `/api/knowledge/distill-workflow` 要求 `workflow_context`（含非空 `threads`、`workspace_id`、`workspace_name`）和 `model`，使用 `WorkflowDistillAgent` 提炼后写入 `knowledge/workflows/`，响应为 `{ path, category: "workflows" }`。同一个 workspace 重复提炼时按 `source_workspace_id` 更新同一个文件。`WorkflowDistillAgent` 的 prompt 引导提取可复用的通用方法论，而非特定案例细节。这个端点不读取管理员推理日志。
+后端 `/api/knowledge/distill-workflow` 要求 `workflow_context`（含非空 `threads`、`workspace_id`、`workspace_name`）和 `model`，使用 `WorkflowDistillAgent` 提炼后由 `_apply_session_front_matter()` 设置 `title`、`source: distill`、`source_workspace_id` / `source_workspace_name`，写入 `knowledge/workflows/`（传入 `category_hint` 时写到对应子目录），响应为 `{ path, category: "workflows" }`。同一个 workspace 重复提炼时通过 `find_workflow_by_workspace_id()` 按 `source_workspace_id` upsert：路径变化时写入新文件后删除旧文件。`WorkflowDistillAgent` 的 prompt 引导提取可复用的通用方法论，而非特定案例细节。这个端点不读取管理员推理日志。
+
+`KnowledgePanel` 还提供 workflow「重放」：读取 workflow 正文，用 `knowledge.replayPrompt` 模板拼成提示，通过 `df-replay-workflow` 事件交给 `SimpleChartRecBox`，作为普通用户问题发给 `AnalystAgent`。
 
 ## 8. 前端实现约定
 
@@ -249,13 +230,14 @@ DataAgent 提供两个内部工具：
 |---|---|
 | `src/api/knowledgeApi.ts` | Knowledge API client，使用 `fetchWithIdentity` |
 | `src/app/useKnowledgeStore.ts` | 知识面板状态管理，使用 React hooks，不走 Redux |
-| `src/views/KnowledgePanel.tsx` | 知识树、搜索、编辑、删除 |
-| `src/views/AgentRulesDialog.tsx` | knowledge-backed rules 快捷编辑器 |
+| `src/views/KnowledgePanel.tsx` | 知识树、搜索、编辑、删除、提炼入口、workflow 重放（**当前未被任何组件挂载**） |
+| `src/views/AgentRulesDialog.tsx` | knowledge-backed rules 快捷编辑器（挂载在 `DataThread.tsx`，但当前没有代码把 `agentRulesOpen` 置为 `true`，界面上无法打开） |
 | `src/views/SessionDistill.tsx` | 会话级工作流提炼对话框和 `workflow_context` 构建 |
 | `src/views/workflowContext.ts` | leaf table 事件构建和提炼 payload 辅助函数 |
-| `src/views/DataSourceSidebar.tsx` | 知识库侧栏入口 |
 
-所有用户可见文本必须走 i18n。知识系统当前使用 `common.json` 的 `knowledge.*` key，新增 key 时必须同步更新 `src/i18n/locales/en/common.json` 和 `src/i18n/locales/zh/common.json`。
+`DataSourceSidebar.tsx` 中的 `knowledge` 标签页当前渲染的是 `WorkflowPanel`（自动化工作流，对应 `py-src/data_formulator/workflows/`），不是 `KnowledgePanel`。
+
+所有用户可见文本必须走 i18n。知识系统当前使用 `common.json` 的 `knowledge.*` key，新增 key 时必须同步更新 `src/i18n/locales/*/common.json` 中的所有语言（de、en、fr、hi、id、ja、ko、zh）。
 
 跨组件刷新使用自定义事件：
 
@@ -269,16 +251,16 @@ window.dispatchEvent(new CustomEvent('knowledge-changed', {
 
 ## 9. 新模块清单
 
-添加新 Agent 或修改知识集成时：
+重新接入 Agent 知识集成或修改知识模块时：
 
-- [ ] 明确该 Agent 需要 `rules`、`workflows` 中哪些类别。
-- [ ] 在 Agent 构造函数中添加可选 `knowledge_store` 参数。
-- [ ] 在 `routes/agents.py` 对应路由中传入 `_get_knowledge_store(identity_id)`。
-- [ ] 选择集成模式：Rules 注入、上下文注入或 DataAgent 工具调用。
+- [ ] 明确需要 `rules`、`workflows` 中哪些类别，以及是注入 system prompt、注入初始上下文还是作为工具按需读取。
+- [ ] 在 `AnalystAgent` 中复用已创建的 `self._knowledge_store`，不要另起一套路径解析；路由层 `_get_knowledge_store()` 目前无调用方。
+- [ ] rules 注入优先用 `load_always_apply_rules()` + `format_rules_block()`；注入内容同步记录到 `rules_injected` / `self._injected_knowledge`，让 `session_start`、`context_built` 日志和 `context_info` 事件如实反映。
+- [ ] 作为工具暴露时，在对应 skill 的 `tools.json` 中声明，并在该 skill 的 `skill.py` 中实现（参考 `analyst/skills/*/`），同时检查 `_TOOL_PROGRESS_ARG_KEYS` 中已有的 `search_knowledge` 条目。
 - [ ] 搜索失败时优雅降级，并用 `logger.warning(..., exc_info=True)` 记录。
 - [ ] 通过 `KnowledgeStore` 访问知识文件，不直接操作 `knowledge/` 文件系统。
 - [ ] 涉及推理日志时尊重 `DF_AGENT_LOG` 开关，并避免记录敏感信息。
-- [ ] 涉及前端文本时同步 i18n key。
+- [ ] 涉及前端文本时同步所有语言的 i18n key。
 - [ ] 为新行为添加聚焦测试；后端至少运行相关 `pytest`。
 
 ## 10. 测试
@@ -286,18 +268,19 @@ window.dispatchEvent(new CustomEvent('knowledge-changed', {
 后端相关测试：
 
 ```bash
-python -m pytest \
+uv run pytest \
   tests/backend/agents/test_reasoning_logger.py \
   tests/backend/knowledge/test_knowledge_store.py \
   tests/backend/routes/test_knowledge_routes.py \
-  tests/backend/agents/test_agent_knowledge_integration.py -q
+  tests/backend/routes/test_knowledge_contract.py \
+  tests/backend/agents/test_workflow_distill.py -q
 ```
 
-前端相关流程当前主要依赖手动验证和通用 `yarn test`。修改 `KnowledgePanel`、`SessionDistill` 或 leaf-table 逻辑时，至少手动覆盖：
+前端：`tests/frontend/unit/views/SessionDistill.test.tsx` 覆盖 `buildSessionWorkflowContext` 等纯函数，通过 `yarn test`（vitest）运行。修改 `KnowledgePanel`、`SessionDistill` 或 leaf-table 逻辑时（`KnowledgePanel` 需先挂载到界面），至少手动覆盖：
 
 - 创建、编辑、删除 rules / workflows。
 - 搜索知识条目。
-- 多步 DataAgent 分析后，会话中存在 leaf table 时才可以在知识面板打开工作流提炼对话框。
+- 多步 `AnalystAgent` 分析后，会话中存在 leaf table 时才可以在知识面板打开工作流提炼对话框。
 - 删除中间 table 后，工作流上下文不包含已删除节点。
 - 工作流保存成功后知识面板自动刷新。
 
@@ -305,9 +288,9 @@ python -m pytest \
 
 以下事项尚未完全落地，不应在新代码中假定已经完成：
 
-- ~~`KnowledgeStore.search()` 仍是整串子串匹配~~ → 已改为分词 + 多字段加权匹配（2026-05-03）。
-- `test_relevant_knowledge_injected` 仍允许无命中兜底，搜索注入效果需要加强测试。
+- 统一 `AnalystAgent` 尚未重新接入知识库（rules 注入、相关 workflows 检索、知识工具），见 §6。
+- 前端 `KnowledgePanel` 未挂载、`AgentRulesDialog` 无打开入口，见 §8。
 - `KnowledgeStore.list_all()` / `search()` 内部仍有 `Path.read_text()` 风格不统一问题，安全影响低但建议改成 `jail.read_text(rel)`。
 - 中文搜索目前保持整串子串匹配（CJK/ASCII 混合文本中的 ASCII 部分会独立拆出），后续可引入 `jieba` 做中文分词。
-- 知识预加载（后台线程 + 0.5s 超时 + 降级）尚未实现，当前仍为同步搜索。见 `design-docs/21` §4。
+- 知识预加载（后台线程 + 0.5s 超时 + 降级）尚未实现。见 `design-docs/21` §4。
 - 上下文预算管理（分块 token 预算 + trajectory 压缩）尚未实现。见 `design-docs/21` §6。

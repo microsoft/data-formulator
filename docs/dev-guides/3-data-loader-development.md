@@ -1,7 +1,7 @@
 # 数据加载器（ExternalDataLoader）开发规范
 
 > **维护者**: DF 核心团队
-> **最后更新**: 2026-04-28
+> **最后更新**: 2026-10-13
 > **适用范围**: `py-src/data_formulator/data_loader/` 下的所有 Loader 实现
 
 ---
@@ -22,7 +22,7 @@ Data Loader 模块负责从外部数据源加载数据到 Workspace（parquet �
 ```
 
 - **存储格式**：数据以 **parquet** 写入 Workspace。DuckDB 仅作为计算引擎，不参与存储。
-- **内存格式**：统一使用 **PyArrow** 作为中间表示。各 Loader 可按源系统 SDK 读取后转换为 `pyarrow.Table`；PostgreSQL、MySQL、MSSQL 当前分别使用 `psycopg2`、`pymysql`、`pyodbc`。
+- **内存格式**：统一使用 **PyArrow** 作为中间表示。各 Loader 可按源系统 SDK 读取后转换为 `pyarrow.Table`；PostgreSQL、MySQL、MSSQL 当前分别使用 `psycopg2`、`pymysql`、`mssql-python`。
 - **扩展边界**：新增数据源通常只实现 `ExternalDataLoader`，由
   `DataConnector.from_loader(...)` 自动包装；不要为每个数据源新增专有 Flask
   Blueprint 或 per-instance route。
@@ -43,7 +43,6 @@ Data Loader 模块负责从外部数据源加载数据到 Workspace（parquet �
 |------|------|------|
 | `__init__(self, params)` | 实例 | 保存并验证连接参数；可建立客户端或延迟到首次调用时连接 |
 | `list_params()` | static | 连接参数定义；用于 `/api/data-loaders` 和前端创建连接表单 |
-| `auth_instructions()` | static | 获取凭证或配置连接的简要说明文本 |
 | `list_tables(table_filter=None)` | 实例 | 返回当前 pinned scope 下可导入表/文件/数据集列表 |
 | `fetch_data_as_arrow(source_table, import_options=None)` | 实例 | 从数据源获取数据，返回 `pyarrow.Table` |
 
@@ -51,12 +50,15 @@ Data Loader 模块负责从外部数据源加载数据到 Workspace（parquet �
 
 | 方法 | 类型 | 说明 |
 |------|------|------|
+| `DISPLAY_NAME` / `DESCRIPTION` | 类属性 | UI 显示名（未设置时由注册 key 标题化）和给 Agent 的一句话用途说明（未设置时回退到 `DISPLAY_NAME`） |
+| `AUTH_GUIDE` / `auth_instructions()` | 类属性 / classmethod | 连接说明 Markdown。内置 loader 用 `AUTH_GUIDE` 指向 `data_loader/guides/<name>.md`；插件可直接覆盖 `auth_instructions()` |
 | `catalog_hierarchy()` | static | 声明完整 catalog 层级，如 `database -> schema -> table` |
-| `ls(path=None, filter=None, limit=None, offset=0)` | 实例 | 按层级懒加载 catalog 节点；大目录应支持源端分页 |
+| `ls(path=None, filter=None)` | 实例 | 按层级懒加载 catalog 节点；默认只在根层级回退到 `list_tables()`。大目录可在签名中额外加 `limit`/`offset` 做源端分页 |
 | `sync_catalog_metadata(table_filter=None)` | 实例 | 全量 metadata sync；默认调用 `list_tables()` + `ensure_table_keys()`。若 `list_tables()` 已包含列信息（如 Superset），则无需 override |
 | `search_catalog(query, limit=100)` | 实例 | 跨层级搜索；默认回退到 `list_tables(table_filter=query)` |
 | `get_metadata(path)` | 实例 | 返回指定 catalog 节点的表/列元数据和样例；源系统描述字段可选 |
-| `get_column_types(source_table)` | 实例 | 返回源系统列类型，供预览和筛选控件使用 |
+| `get_column_types(source_table)` | 实例 | 返回源系统列类型和描述；导入/刷新在 catalog cache 缺少该表 metadata 时用它补充 |
+| `preview_data(source_table, import_options=None)` | 实例 | 返回有界预览；默认基于 `fetch_data_as_arrow()`，文件类 loader 可覆盖以先投影再扫描 |
 | `get_column_values(source_table, column_name, keyword, limit, offset)` | 实例 | 返回列值枚举，供智能筛选自动补全使用 |
 | `test_connection()` | 实例 | 用轻量请求验证连接是否可用；默认会调用 `list_tables("__ping__")` |
 
@@ -65,6 +67,8 @@ Data Loader 模块负责从外部数据源加载数据到 Workspace（parquet �
 | 方法 | 类型 | 说明 |
 |------|------|------|
 | `auth_config()` | static | 声明 credentials、sso_exchange、delegated、oauth2 等认证模式 |
+| `auth_paths()` | classmethod | 声明互斥的认证方式（表单分组）；默认把 `tier="auth"` 字段合成一个 credentials path |
+| `discover_param_options(param_name, params)` | classmethod | 用户显式触发时为某个参数列出可选值（`/api/data-loaders/discover-options`） |
 | `auth_mode()` | static | 旧接口；新 loader 优先实现 `auth_config()` |
 | `delegated_login_config()` | static | 声明 popup/delegated login 配置，如 Superset SSO bridge |
 
@@ -73,11 +77,11 @@ Data Loader 模块负责从外部数据源加载数据到 Workspace（parquet �
 - `fetch_data_as_arrow` 只接受 `source_table`（表/集合/文件/数据集标识符），**不接受原始 SQL 查询**，以确保安全性和方言一致性。
 - `list_tables` 返回 catalog metadata（含列信息为佳）。部分 Loader（如 Superset）在 `list_tables()` 中并行拉取列信息，使首次连接即写入完整 cache。不要为了列表页或 Agent 缓存读取样本行或逐表计数。
 - 新增或修改层级型 Loader 时，优先实现 `ls()`。`path=[]` 返回第一层，展开节点时返回下一层；`filter` 只作用于当前层级。
-- 对可能返回大量节点的层级（例如 database/schema 下有几千张表），`ls()` 应支持 `limit`/`offset`，由 `/api/connectors/get-catalog` 透传。
+- 对可能返回大量节点的层级（例如 database/schema 下有几千张表），`ls()` 应支持 `limit`/`offset`；`/api/connectors/get-catalog` 仅在 `ls()` 签名包含 `limit` 时透传，否则在内存中切片。
 - 大目录应覆盖 `search_catalog()`，只返回轻量搜索结果；前端只在 Enter/search button 时调用 `/api/connectors/search-catalog`。
 - table 节点如果显示名不足以唯一定位源对象，应在 `metadata["_source_name"]` 中放入稳定源标识符。例如 PostgreSQL 使用 `database.schema.table`，用于 preview/import/refresh。
 - 基类提供 `ingest_to_workspace(workspace, ...)`，自动调用 `fetch_data_as_arrow()` 并写入 Workspace。Loader 无需实现 ingest 逻辑。
-- 表/列描述是接口层可承载的可选元数据。导入和 refresh 链路会 best-effort 合并 `get_column_types()` 返回的表/列描述到 Workspace。
+- 表/列描述是接口层可承载的可选元数据。导入和 refresh 链路会 best-effort 把源描述合并到 Workspace：优先使用 catalog cache 中的 metadata，缺失时调用 `get_column_types()`。
 
 能力映射：
 
@@ -89,7 +93,7 @@ Data Loader 模块负责从外部数据源加载数据到 Workspace（parquet �
 | 跨层级搜索表/数据集 | `search_catalog(query)` |
 | 表/列元数据和样例；描述为可选扩展 | `get_metadata(path)`、`get_column_types(source_table)`、`CatalogNode.metadata` |
 | 筛选控件的列值枚举 | `get_column_values(...)` |
-| 预览、导入、刷新源数据 | `fetch_data_as_arrow()` + 基类 `ingest_to_workspace()` |
+| 预览、导入、刷新源数据 | `fetch_data_as_arrow()` + 基类 `preview_data()` / `ingest_to_workspace()` |
 
 最小示例：
 
@@ -173,7 +177,7 @@ class MyReportDataLoader(ExternalDataLoader):
 }
 ```
 
-`get_metadata(path)` 用于单个 catalog 节点的详细元数据，`get_column_types(source_table)` 用于 preview/import/refresh 阶段的源类型和描述增强。二者应尽量保持字段一致：
+`get_metadata(path)` 用于单个 catalog 节点的详细元数据，`get_column_types(source_table)` 用于 import/refresh 阶段的源类型和描述增强（基类默认实现即通过 `get_metadata()` 获取）。二者应尽量保持字段一致：
 
 ```python
 {
@@ -192,14 +196,14 @@ class MyReportDataLoader(ExternalDataLoader):
 
 内置合并语义由 `ExternalDataLoader.ingest_to_workspace()` 和 refresh 路由统一处理：
 
-- 导入和刷新会 best-effort 调用 `get_column_types(source_table)`。
+- 导入和刷新优先使用 catalog cache 中该表的 metadata；缺失时 best-effort 调用 `get_column_types(source_table)`。
 - `description` 合并到 `TableMetadata.description`。
 - `columns[].description` 按列名合并到 `ColumnInfo.description`。
 - metadata 增强失败时保留数据导入/刷新结果。
 
 ### 2.1.2 Catalog 浏览规范
 
-`DataConnector` 的 `/api/connectors/get-catalog` 是前端推荐使用的懒加载 catalog API。请求体：
+`DataConnector` 的 `/api/connectors/get-catalog` 是按层级懒加载 catalog 的 API（前端数据源面板目前通过 `get-catalog-tree` 加载整棵树，见 `docs/dev-guides/5-data-connector-api.md` §10）。请求体：
 
 ```json
 {
@@ -248,22 +252,24 @@ Loader type 注册后，`DataConnector` 会自动把它包装成 connector insta
 
 1. **内置 loader**：修改源码，在 `data_loader/__init__.py` 的 `_LOADER_SPECS`
    列表中添加 `(registry_key, module_path, class_name, pip_package)` 条目。
-2. **外部 loader 插件**：不修改仓库源码，把 `*_data_loader.py` 放到
-   `DF_PLUGIN_DIR` 指向的目录。默认目录是 `~/.data_formulator/plugins/`。
+2. **外部 loader 插件**：不修改仓库源码，把 `*_data_loader.py` 放到插件目录。目录按
+   `DF_PLUGIN_DIR` > `DATA_FORMULATOR_HOME/plugins` > `~/.data_formulator/plugins/` 解析。
 
 内置 loader 当前**不是**包内自动发现；新增内置 loader 必须显式更新 `_LOADER_SPECS`。
-零源码修改只适用于外部 `DF_PLUGIN_DIR` 插件。
+零源码修改只适用于外部插件。
 
-外部 loader 文件会在服务启动时被扫描。系统会导入每个匹配 `*_data_loader.py` 的文件，
-找到其中公开的 `ExternalDataLoader` 子类，并注册到 `DATA_LOADERS`。注册 key 来自文件名：
+外部 loader 文件会在服务启动时被扫描（仅当 `WORKSPACE_BACKEND=local`（默认）或设置
+`DF_ALLOW_PLUGINS=1` 时）。系统会导入每个匹配 `*_data_loader.py` 的文件，找到其中定义的
+`ExternalDataLoader` 子类（有多个时取第一个），并注册到 `DATA_LOADERS`。注册 key 来自文件名：
 
 ```text
 my_report_data_loader.py -> my_report
 ```
 
-如果外部 loader 的 key 与内置 loader 相同，外部 loader 会覆盖内置实现。这个机制适合
-管理员或部署方在不改源码的情况下接入新的报表系统、数据库或文件系统；它不是普通浏览器
-终端用户上传任意代码的自助插件机制。
+插件 key 不能与内置 loader（即使该内置 loader 因缺依赖未加载）或更早加载的插件相同；
+冲突的插件会被拒绝并记录到 `PLUGIN_ERRORS`，在 `/api/data-loaders` 的 `plugins.errors`
+中返回。导入失败的插件记录在 `DISABLED_LOADERS`。这个机制适合管理员或部署方在不改源码的
+情况下接入新的报表系统、数据库或文件系统；它不是普通浏览器终端用户上传任意代码的自助插件机制。
 
 注册完成后：
 
@@ -278,14 +284,21 @@ my_report_data_loader.py -> my_report
 |--------|--------|---------|
 | `PostgreSQLDataLoader` | PostgreSQL | `psycopg2` |
 | `MySQLDataLoader` | MySQL | `pymysql` |
-| `MSSQLDataLoader` | SQL Server | `pyodbc` |
+| `MSSQLDataLoader` | SQL Server | `mssql-python` |
+| `ClickHouseDataLoader` | ClickHouse | `clickhouse-connect` |
+| `DatabricksDataLoader` | Databricks | `databricks-sql-connector` |
 | `BigQueryDataLoader` | Google BigQuery | `google-cloud-bigquery`，查询结果可直接 `to_arrow()` |
 | `AthenaDataLoader` | AWS Athena | SQL on S3 |
 | `KustoDataLoader` | Azure Data Explorer | `azure-kusto-data`，KQL 结果转 Arrow |
-| `S3DataLoader` | Amazon S3 文件 | PyArrow S3 filesystem |
-| `AzureBlobDataLoader` | Azure Blob Storage | PyArrow |
-| `MongoDBDataLoader` | MongoDB | |
-| `LocalFolderDataLoader` | 本机目录 | 仅桌面模式可用，见 §3 |
+| `S3DataLoader` | Amazon S3 文件 | `boto3` |
+| `AzureBlobDataLoader` | Azure Blob Storage | `azure-storage-blob` |
+| `MongoDBDataLoader` | MongoDB | `pymongo` |
+| `CosmosDBDataLoader` | Azure Cosmos DB | `azure-cosmos` |
+| `SupersetLoader` | Apache Superset | REST API；dashboard 以 `table_group` 返回 |
+| `CubeDataLoader` | Cube 语义层 | REST API；semantic 模型 |
+| `PowerBIDataLoader` | Power BI 语义模型 | `azure-identity` |
+| `SampleDatasetsLoader` | 内置示例数据集 | 始终注册为 `sample_datasets` admin connector |
+| `LocalFolderDataLoader` | 本机目录 | 仅 `WORKSPACE_BACKEND=local` 时可用，见 §3 |
 
 ### 2.4 新 Loader 检查清单
 
@@ -295,7 +308,7 @@ my_report_data_loader.py -> my_report
 
 - [ ] 内置 loader 文件放在 `py-src/data_formulator/data_loader/`，命名为 `<type>_data_loader.py`。
 - [ ] 内置 loader 已加入 `data_loader/__init__.py` 的 `_LOADER_SPECS`，并填写缺失依赖的 pip 包名。
-- [ ] 外部 loader 放在 `DF_PLUGIN_DIR` 指向的目录，文件名匹配 `*_data_loader.py`，并定义公开的 `ExternalDataLoader` 子类。
+- [ ] 外部 loader 放在插件目录，文件名匹配 `*_data_loader.py`，定义 `ExternalDataLoader` 子类，且 key 不与内置 loader 冲突。
 - [ ] 若 loader 访问用户可控的宿主文件路径，已在 `_enforce_deployment_restrictions()` 中添加多用户部署禁用规则。
 
 **认证与参数**
@@ -303,7 +316,7 @@ my_report_data_loader.py -> my_report
 - [ ] 实现 `auth_config()`；旧 loader 可保留 `auth_mode()`，但新代码以 `auth_config()` 为准。
 - [ ] `auth_config()` 不包含明文密钥；client id、client secret、token URL 等可部署差异通过环境变量或非敏感 params 注入。
 - [ ] `list_params()` 中密码、token、access key、connection string 等字段标记 `sensitive=True` 或 `type="password"`；认证专用字段标记 `tier="auth"`。
-- [ ] 连接成功后需要复用的敏感凭据只进入 vault，不写入 `connectors.yaml`，也不作为 `pinned_params` 返回前端。
+- [ ] 连接成功后需要复用的敏感凭据只进入 vault，不写入 connector 配置文件，也不作为 `pinned_params` 返回前端。
 - [ ] `delegated` 或 `sso_exchange` loader 已在 `__init__` 中真正消费 `access_token` / `sso_access_token`，不能只声明 `auth_config()`。
 
 **数据与 catalog**
@@ -325,7 +338,7 @@ my_report_data_loader.py -> my_report
 - [ ] 缺少可选依赖时只禁用该 loader，不让整个应用启动失败。
 - [ ] `test_connection()` 做轻量真实验证，用于连接创建和 vault 自动重连校验。
 - [ ] 覆盖连接成功/失败、凭据持久化、vault 自动重连、source filters、metadata best-effort 失败不阻断等关键路径。
-- [ ] 数据库类 loader 的集成测试放在 `tests/database-dockers/`，普通行为测试放在 `tests/backend/`。
+- [ ] 数据库类 loader 的集成测试放在 `tests/database-dockers/`，普通行为测试放在 `tests/backend/data_loader/` 或 `tests/backend/data/`。
 
 ---
 
@@ -337,7 +350,7 @@ my_report_data_loader.py -> my_report
 
 - 在 `data_loader/__init__.py` 的 `_enforce_deployment_restrictions()` 中注册禁用规则
 - 当 `WORKSPACE_BACKEND != "local"` 时，该 Loader 自动从 `DATA_LOADERS` 移入 `DISABLED_LOADERS`
-- `create_connector()` 会拒绝已禁用的类型
+- `create_connector()` 找不到已禁用的类型，会以 `Unknown loader type` 拒绝；`/api/data-loaders` 在非本地模式下也不会返回 `local_folder`
 
 **判断标准**：如果 Loader 的构造函数接受一个用户可控的本机路径（如 `root_dir`），它就需要部署守卫。
 
@@ -351,7 +364,7 @@ my_report_data_loader.py -> my_report
 
 ### 4.1 `get_column_types(source_table)` — 列类型与描述查询
 
-当 Loader 能提供比 pandas dtype 更精确的列类型信息，或能读取源系统表/列描述时，应实现此方法。`DataConnector` 的 `preview-data` 路由会在返回预览数据时调用它，将 `source_type` 和 `description` 注入到列元数据中；导入和 refresh 流程也会用它更新 Workspace 中的只读源描述。
+当 Loader 能提供比 pandas dtype 更精确的列类型信息，或能读取源系统表/列描述时，应实现此方法。导入和 refresh 流程在 catalog cache 中没有该表 metadata 时会调用它，更新 Workspace 中的只读源描述。`preview-data` 路由不调用它：预览只返回内容，前端把 catalog 中已有的列 metadata 合并到预览列上。
 
 **返回格式**:
 ```python
@@ -400,7 +413,7 @@ my_report_data_loader.py -> my_report
 
 | 路由 | 方法 | 说明 |
 |------|------|------|
-| `/api/connectors/preview-data` | POST | 返回预览数据，自动附带 `source_type`、表描述和列描述 |
+| `/api/connectors/preview-data` | POST | 返回预览数据（调用 `loader.preview_data()`），不实时查询源 metadata |
 | `/api/connectors/column-values` | POST | 返回列的可选值（智能筛选自动补全） |
 | `/api/connectors/import-group` | POST | 批量导入，支持 `source_filters` 参数 |
 | `/api/connectors/disconnect` | POST | 断开当前 identity 下的 connector，清除该连接的 in-memory loader、vault 凭据和 session service token，但保留 connector 定义 |
@@ -419,7 +432,7 @@ my_report_data_loader.py -> my_report
 
 **合法运算符**: `EQ`, `NEQ`, `GT`, `GTE`, `LT`, `LTE`, `IN`, `NOT_IN`, `LIKE`, `ILIKE`, `IS_NULL`, `IS_NOT_NULL`, `BETWEEN`。
 
-Loader 应在 SQL 构建时使用参数化或白名单校验运算符（参考 `SupersetLoader._build_source_filter_clauses`）。
+Loader 应在 SQL 构建时使用参数化或白名单校验运算符。SQL 类 loader 可复用 `external_data_loader.build_source_filter_where_clause_inline()`（MySQL、PostgreSQL 已使用；按 `_SOURCE_FILTER_OPERATOR_MAP` 映射运算符并转义标识符）；Superset 通过 `SupersetLoader._build_chart_data_filters()` 转为 Chart Data API filters。
 
 ---
 
@@ -433,11 +446,13 @@ Loader 应在 SQL 构建时使用参数化或白名单校验运算符（参考 `
 
 连接参数分为两类：
 
-- **Connector metadata**：可持久化到 `users/<identity>/connectors.yaml`，例如 host、
-  port、database、bucket、root_dir 等非敏感、非 auth-tier 参数。
-- **Credentials**：用户名、密码、token、access key、connection string、auth-tier 参数等。
-  这些只能用于本次连接并通过 vault 按 `identity + source_id` 保存，不能写入
-  `connectors.yaml`，也不能作为 `pinned_params` 返回前端。
+- **Connector metadata**：持久化到 `users/<identity>/connectors/<source_id>.json` 的
+  `default_params`，例如 host、port、database、bucket、root_dir，以及非敏感的 auth-tier
+  标识（如 `user`）。
+- **Credentials**：`list_params()` 中标记 `sensitive=True` / `type="password"` 的字段，以及
+  `SENSITIVE_PARAMS` 中的名称（password、token、access_key 等）。这些只能用于本次连接并通过
+  vault 按 `identity + source_id` 保存，不能写入 connector 配置文件，也不能作为
+  `pinned_params` 返回前端。
 
 匿名用户登录后不会自动继承匿名 identity 下的 connector 或 vault 凭据。若产品需要
 迁移匿名 connector，必须像 workspace migration 一样提供显式确认流程。
@@ -455,11 +470,15 @@ Loader 应在 SQL 构建时使用参数化或白名单校验运算符（参考 `
 - `list_tables()` 返回值必须包含统一的轻量 metadata 字段（至少稳定源标识、列名/类型；有低成本来源时包含表/列描述）
 - 覆盖 `get_column_types()` 或 `get_metadata()` 时，测试表级 `description`、列级 `description`、空描述清空、缺 key 保留和 metadata 失败不阻断导入/预览
 
-数据库类 Loader 的集成测试使用 Docker 容器，位于 `tests/database-dockers/`：
+数据库类 Loader 的集成测试使用 Docker 容器，位于 `tests/database-dockers/`（不在默认
+pytest 路径中，需显式运行，详见该目录的 `README.md`）：
 
-```bash
-./tests/database-dockers/run_test_dbs.sh start    # 启动所有测试数据库
-./tests/database-dockers/run_test_dbs.sh test      # 运行全部 Loader 测试
-./tests/database-dockers/run_test_dbs.sh test mysql # 单独测试 MySQL
-./tests/database-dockers/run_test_dbs.sh stop      # 关闭
+```powershell
+.\tests\database-dockers\test-dbs.ps1 start core     # 启动常用测试数据库
+.\tests\database-dockers\test-dbs.ps1 test mysql     # 单独测试 MySQL
+.\tests\database-dockers\test-dbs.ps1 test all       # 运行全部 Loader 测试
+.\tests\database-dockers\test-dbs.ps1 stop core      # 关闭
 ```
+
+macOS / Linux 可在各服务子目录中直接使用 `docker compose`，例如
+`cd tests/database-dockers/mysql && docker compose up -d --build --wait`。
