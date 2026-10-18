@@ -159,6 +159,16 @@ load the data you need. The analyst can discover sources, clarify your request,
 propose a loading plan, and let you review the data before adding it to the
 workspace.
 
+The data-loading chat can also find public dataset sources with
+[Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp).
+Public web search and page excerpts work without an account or API key; anonymous
+search uses Fast mode. Ask for public data, review the cited sources, then have
+the assistant download a dataset for preview. Web search sends its search terms
+and page URLs to Parallel, so keep private data and credentials out of requests.
+Operators can set `DF_WEB_SEARCH_ENABLED=false` to disable these discovery tools,
+or optionally set `PARALLEL_API_KEY` for higher service limits. Existing catalog
+search and raw dataset downloads remain available.
+
 Continue the conversation in the **Data Thread**. Ask questions in
 natural language and follow the reasoning through explanations, tables, and
 editable charts in one history. Refine a result directly, branch from any

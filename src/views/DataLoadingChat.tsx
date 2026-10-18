@@ -733,6 +733,8 @@ const ChatBubble = React.memo<{
 // ---------------------------------------------------------------------------
 
 const TOOL_LABEL_KEYS: Record<string, string> = {
+    web_search: 'dataLoading.toolLabels.searchingWeb',
+    web_fetch: 'dataLoading.toolLabels.readingWebPage',
     read_file: 'dataLoading.toolLabels.readingFile',
     write_file: 'dataLoading.toolLabels.writingFile',
     list_directory: 'dataLoading.toolLabels.listingFiles',

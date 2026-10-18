@@ -40,5 +40,7 @@ databricks-sql-connector
 # SSO / Auth deps
 PyJWT[crypto]>=2.8.0
 requests
+mcp>=1.30,<2
+httpx>=0.28.1,<1
 flask-session>=0.8.0
 -e .
