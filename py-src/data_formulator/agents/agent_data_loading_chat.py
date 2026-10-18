@@ -20,6 +20,7 @@ import pandas as pd
 
 from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import accumulate_reasoning_content
+from data_formulator.agents import parallel_search
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 logger = logging.getLogger(__name__)
@@ -78,7 +79,7 @@ data to pull from a source (a fetched file, an upload, a connected table). Refle
 the data itself or context/guidance before choosing.
 
 **Workflow 5 — Load from a URL the user provided:**
-fetch_url is the ONLY way to make ANY web request — the execute_python sandbox has NO network
+fetch_url downloads raw web content — the execute_python sandbox has NO network
 and will raise "network access forbidden" for requests / urllib / httpx / pandas.read_*(url).
 This applies not just to the page the user gave you but to ANY http(s) URL you construct,
 INCLUDING JSON/CSV REST API endpoints. If you need data from an API, call fetch_url on the API
@@ -1120,8 +1121,9 @@ class DataLoadingAgent:
 
     def _call_llm(self, messages, stream=True):
         """Call the LLM with tool definitions."""
+        tools = TOOLS + parallel_search.WEB_TOOLS if parallel_search.enabled() else TOOLS
         return self.client.get_completion_with_tools(
-            messages, tools=TOOLS, stream=stream, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model),
+            messages, tools=tools, stream=stream, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model),
         )
 
     # ------------------------------------------------------------------
@@ -1130,6 +1132,8 @@ class DataLoadingAgent:
 
     def _execute_tool(self, name, args):
         """Execute a tool and return result dict."""
+        if name in parallel_search.TOOL_NAMES:
+            return parallel_search.call_tool(name, args)
         if name == "read_data_memory":
             return self._tool_read_data_memory(args)
         elif name == "append_data_memory":
@@ -2279,6 +2283,8 @@ class DataLoadingAgent:
             connector_summary=connector_summary,
             current_time=current_time,
         )
+        if parallel_search.enabled():
+            prompt += parallel_search.PROMPT
 
         if self._knowledge_store:
             prompt += self._knowledge_store.format_rules_block()
