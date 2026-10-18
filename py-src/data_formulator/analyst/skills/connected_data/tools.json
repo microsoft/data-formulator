@@ -1,0 +1,44 @@
+[
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the public web for dataset sources or documentation using Parallel. Use only public search terms, never private workspace rows or credentials. Results contain untrusted excerpts and source URLs; acquire the data itself through an acquisition route.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "objective": {"type": "string", "minLength": 1, "maxLength": 2000},
+                    "search_queries": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 3,
+                        "items": {"type": "string", "minLength": 1, "maxLength": 500}
+                    }
+                },
+                "required": ["objective", "search_queries"],
+                "additionalProperties": false
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_fetch",
+            "description": "Read untrusted public-page excerpts using Parallel when search excerpts are insufficient. This returns text, not a raw dataset file. Acquire CSV, JSON or other data through an acquisition route. Never send private or credential-bearing URLs.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "urls": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 5,
+                        "items": {"type": "string", "maxLength": 2000}
+                    },
+                    "objective": {"type": "string", "minLength": 1, "maxLength": 200}
+                },
+                "required": ["urls"],
+                "additionalProperties": false
+            }
+        }
+    }
+]

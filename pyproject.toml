@@ -64,6 +64,8 @@ dependencies = [
     "PyJWT[crypto]>=2.15.0", # OIDC JWT verification (includes cryptography)
     "cryptography>=50.0.0", # Security floor for auth and local vault encryption
     "requests", # GitHub OAuth code exchange, Superset API calls
+    "mcp>=1.30,<2", # Parallel web discovery: Streamable HTTP MCP client
+    "httpx>=0.28.1,<1",
     "flask-session>=0.8.0", # Server-side session (SQLite) for TokenStore
     "filelock>=3.20",
     "apscheduler>=3.11,<4",

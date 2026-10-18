@@ -88,6 +88,8 @@
       "partialFailure_plural": "Sebagian data dimuat, tetapi {{count}} tabel gagal."
     },
     "toolLabels": {
+      "searchingWeb": "Mencari di web publik",
+      "readingWebPage": "Membaca halaman web publik",
       "readingFile": "Membaca berkas",
       "writingFile": "Menulis berkas",
       "listingFiles": "Mencantumkan berkas",

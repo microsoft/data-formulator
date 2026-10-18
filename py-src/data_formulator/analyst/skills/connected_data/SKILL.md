@@ -2,7 +2,7 @@
 name: connected_data
 description: Find, inspect, and load data beyond the session — connected sources, referenced tables, semantic models, the web, or local files.
 when_to_use: Before discovering, probing, or loading data that is not already a table in the session, or answering what data a connected source holds.
-tools: []
+tools: [web_search, web_fetch]
 actions: []
 ---
 
@@ -49,6 +49,7 @@ data is inaccessible.
 |---|---|
 | Relevant workspace data or files | Read the listed paths and analyze directly; resolve external references through Data Access Paths below. |
 | Connected source | Discover matching data, inspect unresolved metadata, and use `propose_data_operation` to load a suitable working dataset. |
+{web_discovery_route}
 {terminal_acquisition_route}
 | A new connection is needed or the user requests reusable connected access | Load the `configure` skill and use `propose_connection` with verified non-sensitive fields. The user supplies credentials and confirms Connect; do not claim access before success. |
 | No available authorized route can obtain required inputs | Explain the concrete blocker and request an upload, pasted data, image, or user-managed authentication as appropriate. Never request secrets in chat. |
@@ -234,7 +235,7 @@ Use structured queries, not generated source-specific SQL.
 Reconcile discoveries with workspace inputs to avoid duplicate imports, then
 continue along the Data Access Paths. If nothing suitable is accessible, explain
 what was checked and offer a concrete connection or upload next step.
-
+{public_web_discovery}
 ### Import Proposals
 
 Provide one to three complete alternatives, with one or more related tables per

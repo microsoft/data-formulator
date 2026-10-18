@@ -88,6 +88,8 @@
       "partialFailure_plural": "Einige Daten wurden geladen, aber {{count}} Tabellen sind fehlgeschlagen."
     },
     "toolLabels": {
+      "searchingWeb": "Öffentliches Web durchsuchen",
+      "readingWebPage": "Öffentliche Webseite lesen",
       "readingFile": "Datei lesen",
       "writingFile": "Datei schreiben",
       "listingFiles": "Dateien auflisten",

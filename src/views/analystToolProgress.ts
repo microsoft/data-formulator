@@ -35,6 +35,8 @@ const summarizeProbeQuery = (query: unknown): string => {
 };
 
 const toolLabelKeys: Record<string, string> = {
+    web_search: 'dataLoading.toolLabels.searchingWeb',
+    web_fetch: 'dataLoading.toolLabels.readingWebPage',
     summarize_data_sources: 'dataLoading.toolLabels.summarizingSources',
     list_data: 'dataLoading.toolLabels.browsingCatalog',
     find_data: 'dataLoading.toolLabels.searchingData',
@@ -63,6 +65,13 @@ export const formatAnalystToolProgress = (
     const values = args && typeof args === 'object' ? args : {};
     let detail = '';
     switch (tool) {
+        case 'web_search':
+            detail = Array.isArray(values.search_queries)
+                ? values.search_queries.map((query: unknown) => `“${String(query)}”`).join(', ') : '';
+            break;
+        case 'web_fetch':
+            detail = Array.isArray(values.urls) ? values.urls.map(String).join(', ') : '';
+            break;
         case 'list_data': {
             const path = Array.isArray(values.path) ? values.path.join('/') : values.path;
             detail = [shortSourceId(values.source_id), path].filter(Boolean).join('/');
