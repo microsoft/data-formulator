@@ -4560,10 +4560,17 @@ jwt-decode@^4.0.0:
   resolved "https://registry.npmjs.org/jwt-decode/-/jwt-decode-4.0.0.tgz"
   integrity sha512-+KJGIyHgkGuIq3IEBNftfhW/LfWhXUIY6OmyVWjliu5KH1y0fw7VQ8YndE2O4qZdMSd9SqbnC8GOcZEy0Om7sA==
 
-katex@^0.16.0, katex@^0.16.22:
+katex@^0.16.0:
   version "0.16.42"
   resolved "https://registry.npmjs.org/katex/-/katex-0.16.42.tgz"
   integrity sha512-sZ4jqyEXfHTLEFK+qsFYToa3UZ0rtFcPGwKpyiRYh2NJn8obPWOQ+/u7ux0F6CAU/y78+Mksh1YkxTPXTh47TQ==
+  dependencies:
+    commander "^8.3.0"
+
+katex@^0.18.2:
+  version "0.18.2"
+  resolved "https://registry.yarnpkg.com/katex/-/katex-0.18.2.tgz#7ab6ff83e21c097a59c9afd213b2d2955fa6c6ce"
+  integrity sha512-3snve4y0SXTMequLim1FMiPvLGElySam0blN5xQZBqEY3lOJz1TnuaaiugnBZBqHzlSAGmFTYL7MCQkORuLKCA==
   dependencies:
     commander "^8.3.0"
 
