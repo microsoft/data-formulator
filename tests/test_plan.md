@@ -14,65 +14,64 @@ in `py-src/tests/` — those have been consolidated here).
 
 ```
 tests/
-  conftest.py                          # adds py-src to sys.path
+  conftest.py                          # adds py-src to sys.path, --run-slow option
   test_plan.md                         # ← this file
-  run_test_dbs.sh                      # unified helper: start/stop/test all DBs
   backend/                             # included in default pytest (no Docker needed)
-    unit/                              # pure functions, no Flask/network
-    security/                          # security-focused tests
-      test_sandbox_security.py         # sandbox confinement (file write, process exec)
-      test_code_signing.py             # HMAC sign/verify for transformation code
-      test_sanitize.py                 # error message redaction
-      test_auth.py                     # identity extraction & namespace isolation
-      test_global_model_security.py    # credential isolation, error sanitization
-      test_url_allowlist.py            # SSRF protection for user-provided api_base
-    integration/                       # Flask routes, workspace, sandbox
-      test_sandbox.py                  # sandbox functional tests (transforms, errors)
-      ...
-    contract/                          # API boundary guarantees
-    benchmarks/                        # performance benchmarks (not in CI)
-  plugin/                              # data loader tests (requires Docker, run separately)
-    mysql/                             # MySQL loader (Dockerfile + init.sql)
-    mongodb/                           # MongoDB loader (Dockerfile + init_data.js)
-    postgres/                          # PostgreSQL loader (Dockerfile + init.sql)
-    bigquery/                          # BigQuery emulator (Dockerfile + init_data.yaml)
-    cosmosdb/                          # Cosmos DB emulator (Dockerfile + seed_data.py)
-    run_test_dbs.sh                    # unified script to start/stop/test databases
+    agents/                            # analyst skills, agents, model registry, workflows
+    auth/                              # identity, auth providers, vault, token store
+    data/                              # connectors, catalog, workspace, parquet, table names
+    data_loader/                       # individual loader tests (mocked connections)
+    data_operations/                   # structured data operations
+    errors/                            # AppError, error handler, API error contract
+    knowledge/                         # knowledge store
+    routes/                            # Flask endpoint tests
+    security/                          # sandbox, code signing, sanitization, URL allowlist, path safety
+    benchmarks/                        # performance benchmarks (manual, not collected)
+    fixtures/                          # shared Excel/CSV fixtures
+  database-dockers/                    # data loader integration tests (requires Docker, run separately)
+    mysql/ postgres/ mongodb/          # each with docker-compose.yml, setup files, test module
+    bigquery/ cosmosdb/ superset/
+    docker-compose.test.yml            # optional unified compose entry point
+    test-dbs.ps1                       # PowerShell helper: start/stop/test services
+  eval/                                # manual LLM evaluation harnesses (intent_routing)
   frontend/
     setup.ts                           # jest-dom matchers
     unit/                              # vitest tests for src/
 ```
 
+See `tests/backend/README.md` for per-directory details.
+
 ### Running tests
 
 ```bash
-# Default: backend + frontend (no Docker needed, fast)
+# Backend (default pytest paths; no Docker needed, fast)
 pytest
+pytest tests/backend --run-slow        # include tests marked slow
 
-# Plugin tests: data loader integrations (requires Docker)
-./tests/database-dockers/run_test_dbs.sh start    # start all test databases
-./tests/database-dockers/run_test_dbs.sh test      # run all loader tests
-./tests/database-dockers/run_test_dbs.sh stop      # tear down
+# Frontend
+npm test
 
-# Or one-shot per service
-./tests/database-dockers/run_test_dbs.sh test mysql
+# Data loader integrations (requires Docker; see tests/database-dockers/README.md)
+.\tests\database-dockers\test-dbs.ps1 start core   # PowerShell
+.\tests\database-dockers\test-dbs.ps1 test mysql
+.\tests\database-dockers\test-dbs.ps1 stop core
+
+# macOS / Linux: per-service compose
+cd tests/database-dockers/mysql && docker compose up -d --build --wait
 ```
 
 ### What exists today
 
-| Layer | Location | Runner | Count |
-|-------|----------|--------|-------|
-| Backend unit | `tests/backend/unit/` | pytest | 20 files |
-| Backend security | `tests/backend/security/` | pytest | 9 files |
-| Backend integration | `tests/backend/integration/` | pytest | 8 files (7 route tests + sandbox) |
-| Backend contract | `tests/backend/contract/` | pytest | 2 files |
-| Backend benchmarks | `tests/backend/benchmarks/` | manual | 2 files |
-| Plugin (data loaders) | `tests/plugin/` | pytest (manual) | 7 suites (requires Docker) |
-| Frontend unit | `tests/frontend/unit/` | vitest | 4 files |
+| Layer | Location | Runner |
+|-------|----------|--------|
+| Backend (unit, route, contract, security) | `tests/backend/` | pytest |
+| Backend benchmarks | `tests/backend/benchmarks/` | manual |
+| Data loader integrations | `tests/database-dockers/` | pytest (manual, requires Docker) |
+| Frontend unit | `tests/frontend/unit/` | vitest |
 
-`tests/backend/` runs by default with `pytest` — no Docker required.
-`tests/plugin/` is excluded from default runs and requires
-`./tests/run_test_dbs.sh` to start test databases first.
+`tests/backend/` runs by default with `pytest` (see `pytest.ini`) — no Docker
+required. `tests/database-dockers/` is excluded from
+default runs and requires the test services to be started first.
 
 ### Key gaps
 
@@ -102,7 +101,7 @@ whitespace sensitivity, Unicode, `sign_result()` helper.
 
 #### 2. Auth & identity (`auth.py`) ✅ covered
 
-Tests in `tests/backend/security/test_auth.py`:
+Tests in `tests/backend/auth/test_auth.py`:
 Azure principal → `user:` prefix, browser → `browser:` prefix, client
 cannot spoof `user:` namespace, Azure takes priority, missing headers,
 malformed values rejected, validation edge cases.
@@ -136,9 +135,9 @@ instead of `send_from_directory` (FINDING-1 from issue-002).
 
 #### 4d. Agent tool path confinement ✅ covered
 
-Tests in `tests/backend/agents/test_tool_path_safety.py`:
-`_tool_read_file` / `_tool_list_directory` / `_preview_scratch_files` reject
-traversal paths (`../../etc/passwd`), normal workspace paths work (FINDING-2 from issue-002).
+Tests in `tests/backend/agents/test_analyst_workspace_files.py`:
+agent workspace file tools (`create_file`, `edit_file`, scratch file listing) reject
+traversal and absolute paths, normal workspace paths work (FINDING-2 from issue-002).
 
 #### 4e. `local_folder` deployment restriction ✅ covered
 
@@ -159,7 +158,7 @@ Tests in `tests/backend/security/test_startup_safety.py`:
 multi-user + no sandbox → `logger.critical` warning, safe configs → no warning
 (FINDING-5 from issue-002).
 
-#### 5. Session sensitive-field stripping (`session_routes.py`)
+#### 5. Session sensitive-field stripping (`datalake/workspace_manager.py`)
 
 - `_strip_sensitive()` removes model credentials, identity, API keys
 - round-trip: save → load preserves data but strips secrets
@@ -183,14 +182,14 @@ multi-user + no sandbox → `logger.critical` warning, safe configs → no warni
 - file type validation (reject unsupported formats)
 - (some coverage already exists — extend, don't duplicate)
 
-#### 8. Metadata persistence (`datalake/metadata.py`)
+#### 8. Metadata persistence (`datalake/workspace_metadata.py`)
 
 - YAML save / load round-trip
 - cross-platform file locking
 - concurrent writers don't corrupt metadata
 - schema migration: old metadata format still loads
 
-#### 9. Table routes — end-to-end (`tables_routes.py`)
+#### 9. Table routes — end-to-end (`routes/tables.py`)
 
 - `/create-table` with JSON, CSV, Parquet payloads
 - `/parse-file` with Excel, CSV, TSV files
@@ -220,12 +219,11 @@ multi-user + no sandbox → `logger.critical` warning, safe configs → no warni
 
 #### 12. Individual agents (mock `Client` / LiteLLM)
 
-- `DataRecAgent` — given a mock LLM response, produces correct Vega-Lite spec + code
-- `DataTransformationAgent` — generates valid Python transformation code
+- `AnalystAgent` (`analyst/agent.py`) — tool loop terminates correctly, produces charts/tables
+- `WorkflowAgent` (`workflows/agent.py`) — workflow runs on top of the analyst loop
 - `DataLoadAgent` — infers semantic types and suggests table names from raw data
 - `CodeExplanationAgent` — produces explanation from code input
-- `ChartInsightAgent` — generates insight from chart spec
-- `DataAgent` — observe→think→act loop terminates correctly
+- `ChartRestyleAgent`, `SortDataAgent`, `StarterQuestionsAgent`, `WorkflowDistillAgent`
 
 Focus on: prompt assembly, response parsing, error recovery, repair loops.
 
@@ -233,7 +231,7 @@ Focus on: prompt assembly, response parsing, error recovery, repair loops.
 
 - type classification: temporal, categorical, measure sets are disjoint
 - type resolution from sample data (dates, currencies, percentages)
-- consistency with frontend `type-registry.ts` constants
+- consistency with `type-registry.ts` in the `flint-chart` package
 
 ### P3 — Visualization & workflows
 
@@ -255,11 +253,12 @@ Focus on: prompt assembly, response parsing, error recovery, repair loops.
 #### 16. Data loader framework ✅ partially covered
 
 Integration tests with Dockerized services exist for MySQL, MongoDB,
-PostgreSQL, and BigQuery (in `tests/backend/integration/test_*/`).
+PostgreSQL, BigQuery, Cosmos DB, and Superset (in `tests/database-dockers/`).
 A standalone MySQL-to-datalake round-trip test also exists
-(`test_mysql_datalake.py`). Still needed:
+(`tests/database-dockers/mysql/test_mysql_datalake.py`). Mocked loader tests
+live in `tests/backend/data_loader/` and `tests/backend/data/`. Still needed:
 
-- `BaseDataLoader` interface contract test (shared across all loaders)
+- `ExternalDataLoader` interface contract test (shared across all loaders)
 - Remaining loaders (require mocked connections or emulators):
   - MSSQL: SQL query → DataFrame
   - S3: file listing, download, Athena integration
@@ -324,8 +323,8 @@ These would likely use Playwright or Cypress and are out of scope initially.
 | Marker | Meaning |
 |--------|---------|
 | `@pytest.mark.backend` | Backend test (already configured) |
-| `@pytest.mark.contract` | API contract test (already configured) |
-| `@pytest.mark.slow` | Tests that take > 5s (DB, Docker sandbox) |
+| `@pytest.mark.slow` | Takes a second or more; skipped unless `--run-slow` (already configured) |
+| `@pytest.mark.live` | Hits a real external service; skipped without credentials (already configured) |
 | `@pytest.mark.requires_docker` | Needs Docker daemon running |
 | `@pytest.mark.requires_llm` | Needs real LLM API key (skip in CI by default) |
 
