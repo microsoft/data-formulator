@@ -23,6 +23,8 @@ export interface ExampleSession {
     previewImage: string;
     workspace: string;       // path to workspace zip (e.g. /demos/demo_movies.zip)
     live: boolean;
+    /** Questions offered for continuing the session once it is open. */
+    followUps?: string[];
 }
 
 // Loaded from /demos/demos.yaml at runtime; empty until fetched.
@@ -44,6 +46,7 @@ export async function fetchExampleSessions(): Promise<ExampleSession[]> {
             previewImage: e.preview || '',
             workspace: e.workspace || '',
             live: e.live === true || e.live === 'true',
+            followUps: Array.isArray(e.follow_ups) ? e.follow_ups.map(String) : [],
         }));
         return _cachedSessions;
     } catch {
@@ -51,30 +54,40 @@ export async function fetchExampleSessions(): Promise<ExampleSession[]> {
     }
 }
 
-/** Parse a simple YAML list of flat objects (no nested structures). */
-function parseSimpleYamlList(text: string): Record<string, any>[] {
+/** Parse a simple YAML list of objects whose values are scalars or, under a bare `key:`, a list of scalars. */
+export function parseSimpleYamlList(text: string): Record<string, any>[] {
     const items: Record<string, any>[] = [];
     let current: Record<string, any> | null = null;
+    let listKey: string | null = null;
+    const setPair = (kv: string) => {
+        const colonIdx = kv.indexOf(': ');
+        if (colonIdx > 0) {
+            current![kv.slice(0, colonIdx).trim()] = parseYamlValue(kv.slice(colonIdx + 2).trim());
+            listKey = null;
+        } else if (kv.endsWith(':')) {
+            listKey = kv.slice(0, -1).trim();
+            current![listKey] = [];
+        }
+    };
     for (const line of text.split('\n')) {
         const trimmed = line.trimEnd();
         if (trimmed.startsWith('- ')) {
             if (current) items.push(current);
             current = {};
-            const kv = trimmed.slice(2);
-            const colonIdx = kv.indexOf(': ');
-            if (colonIdx > 0) {
-                current[kv.slice(0, colonIdx).trim()] = parseYamlValue(kv.slice(colonIdx + 2).trim());
-            }
+            listKey = null;
+            setPair(trimmed.slice(2));
+        } else if (current && listKey && /^\s+- /.test(trimmed)) {
+            current[listKey].push(parseYamlValue(unquote(trimmed.trim().slice(2).trim())));
         } else if (trimmed.startsWith('  ') && current) {
-            const kv = trimmed.trim();
-            const colonIdx = kv.indexOf(': ');
-            if (colonIdx > 0) {
-                current[kv.slice(0, colonIdx).trim()] = parseYamlValue(kv.slice(colonIdx + 2).trim());
-            }
+            setPair(trimmed.trim());
         }
     }
     if (current) items.push(current);
     return items;
+}
+
+function unquote(v: string): string {
+    return v.length >= 2 && (v[0] === '"' || v[0] === "'") && v[v.length - 1] === v[0] ? v.slice(1, -1) : v;
 }
 
 function parseYamlValue(v: string): any {
@@ -95,6 +108,11 @@ export const exampleSessions: ExampleSession[] = [
         previewImage: '/demos/screenshot-stock-price-live-thumbnail.webp',
         workspace: '/demos/demo_stock-prices.zip',
         live: false,
+        followUps: [
+            'Which stock had the biggest one-day drop?',
+            'Compare trading volume for NVDA and MSFT over time.',
+            'Show weekly returns for each stock.',
+        ],
     },
     {
         id: 'gas-prices',
@@ -103,6 +121,11 @@ export const exampleSessions: ExampleSession[] = [
         previewImage: '/demos/gas_prices-thumbnail.webp',
         workspace: '/demos/demo_gas-prices.zip',
         live: false,
+        followUps: [
+            'How do diesel prices compare with regular gasoline?',
+            'When did gas prices peak?',
+            'Show the average price each year by grade.',
+        ],
     },
     {
         id: 'global-energy',
@@ -111,6 +134,11 @@ export const exampleSessions: ExampleSession[] = [
         previewImage: '/demos/global_energy-thumbnail.webp',
         workspace: '/demos/demo_global-energy.zip',
         live: false,
+        followUps: [
+            'Which countries grew renewable electricity the most?',
+            'How has nuclear power changed in France and Germany?',
+            'Which countries emitted the most CO2 in 2020?',
+        ],
     },
     {
         id: 'movies',
@@ -119,6 +147,11 @@ export const exampleSessions: ExampleSession[] = [
         previewImage: '/demos/movies-thumbnail.webp',
         workspace: '/demos/demo_movies.zip',
         live: false,
+        followUps: [
+            'Which genres earn the most worldwide?',
+            'Do higher IMDB ratings mean more box office?',
+            'Which directors have the most hits?',
+        ],
     },
     {
         id: 'unemployment',
@@ -127,6 +160,11 @@ export const exampleSessions: ExampleSession[] = [
         previewImage: '/demos/unemployment-thumbnail.webp',
         workspace: '/demos/demo_unemployment.zip',
         live: false,
+        followUps: [
+            'Which industries recovered first by 2010?',
+            'Is unemployment in construction seasonal?',
+            'Show the average yearly rate by industry.',
+        ],
     }
 ];
 

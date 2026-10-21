@@ -51,11 +51,10 @@ import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, explanationContent } from '../app/dfSlice';
 import { FLINT_INPUT, assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
 import { displayRowsCache } from '../app/displayRowsCache';
-import { buildEmbeddedDataForChart, applyVariantConfigUI } from '../app/restyle';
 import { apiRequest } from '../app/apiClient';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
 import embed from 'vega-embed';
-import { Chart, DictTable, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, FormArtifact, TextTurn, computeInsightKey } from '../components/ComponentType';
+import { Chart, DictTable, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, FormArtifact, TextTurn, chartTitleFits } from '../components/ComponentType';
 import { WorkflowProgress } from './WorkflowPanel';
 import { ScheduleFormArtifactView, SessionsFormArtifactView, WorkflowFormArtifactView } from './SetupFormArtifacts';
 import { ConnectorFormCard } from '../components/ConnectorFormCard';
@@ -90,10 +89,10 @@ import { useTranslation } from 'react-i18next';
 import { ChatDialog } from './ChatDialog';
 import { EncodingShelfCard } from './EncodingShelfCard';
 import { ChartQuickConfig } from './ChartQuickConfig';
-import { ChartVariantStrip } from './ChartVariantStrip';
+import { ChartThemePicker } from './ChartThemePicker';
 import { CustomReactTable } from './ReactTable';
 import { getConnectorIcon, InsightIcon } from '../icons';
-import { FreeDataViewFC } from './DataView';
+import { FreeDataViewFC, TableSearchField } from './DataView';
 import { formatCellValue } from './ViewUtils';
 
 
@@ -624,66 +623,35 @@ const VegaChartRenderer: FC<{
             return;
         }
 
-        // If a style variant is active, render its stored Vega-Lite spec instead of
-        // re-assembling from the encodingMap. Variants are user-authored "skins" of
-        // the chart (see ChartStyleVariant in components/ComponentType.tsx and
-        // design-docs/28-chart-style-refinement-agent.md). The variant spec was
-        // stored with the data block stripped — we re-attach live rows + override
-        // width/height here so the same variant works at any panel size.
-        const activeVariant = !themePreview?.active && chart.activeVariantId
-            ? chart.styleVariants?.find(v => v.id === chart.activeVariantId)
-            : undefined;
-
         let spec: any;
-        if (activeVariant) {
-            spec = JSON.parse(JSON.stringify(activeVariant.vlSpec));
-            // Re-attach data using the same conversion the assemble pipeline
-            // would apply (e.g. Year 1980 → "1980"). Variants store axis
-            // formats and timeUnit choices that were chosen against the
-            // converted data; plugging in raw rows here would mismatch
-            // those formats. See buildEmbeddedDataForChart.
-            const variantValues = buildEmbeddedDataForChart(
-                chart, visTableRows, tableMetadata, conceptShelfItems,
+        try {
+            spec = assembleVegaChart(
+                chart.chartType,
+                chart.encodingMap,
+                conceptShelfItems,
+                visTableRows,
+                tableMetadata,
+                chartWidth,
+                chartHeight,
+                true,
+                chart.config,
+                // Deliberately 1: pre-scaling the compiler's *input* re-runs
+                // flint's layout (band size scales with canvas, stretch caps
+                // are derived from it) and the factors compound. Scale the
+                // compiled output instead — see the uniform scale below.
+                1,
+                maxStretchFactor,
+                undefined,
+                fieldSemantics,
+                insightTitle,
+                insightSubtitle,
+                themePreview?.active ? themePreview.themeId : chart.themeId,
             );
-            spec.data = { values: variantValues };
-
-            // Apply the variant's generative-UI controls (agent-authored simple
-            // knobs) onto the spec using the user's current values. This is a
-            // pure "set value at path" transform (no code execution) and runs
-            // before size scaling so a control that touches width/height is
-            // still scaled by the resizer. See applyVariantConfigUI.
-            spec = applyVariantConfigUI(spec, activeVariant.configUI, activeVariant.configValues);
-
-        } else {
-            try {
-                spec = assembleVegaChart(
-                    chart.chartType,
-                    chart.encodingMap,
-                    conceptShelfItems,
-                    visTableRows,
-                    tableMetadata,
-                    chartWidth,
-                    chartHeight,
-                    true,
-                    chart.config,
-                    // Deliberately 1: pre-scaling the compiler's *input* re-runs
-                    // flint's layout (band size scales with canvas, stretch caps
-                    // are derived from it) and the factors compound. Scale the
-                    // compiled output instead — see the uniform scale below.
-                    1,
-                    maxStretchFactor,
-                    undefined,
-                    fieldSemantics,
-                    insightTitle,
-                    insightSubtitle,
-                    themePreview?.active ? themePreview.themeId : chart.themeId,
-                );
-            } catch (error) {
-                console.warn('VegaChartRenderer: chart assembly failed', error);
-                setAssemblyError(error instanceof Error ? error.message : String(error));
-                onSpecReady?.(null);
-                return;
-            }
+        } catch (error) {
+            console.warn('VegaChartRenderer: chart assembly failed', error);
+            setAssemblyError(error instanceof Error ? error.message : String(error));
+            onSpecReady?.(null);
+            return;
         }
 
         if (!spec || spec === "Table") {
@@ -700,23 +668,6 @@ const VegaChartRenderer: FC<{
             scaleSpecFonts(spec, scaleFactor);
         }
 
-        // Inject the insight title into the Vega-Lite spec instead of rendering
-        // it as outside HTML. Vega-Lite anchors the title against the plot group
-        // (frame: 'group'), so it stays centered over the actual chart area even
-        // when a legend pushes the embed wrapper off-center. We don't override a
-        // title already supplied by a style variant.
-        if (activeVariant && insightTitle && !spec.title) {
-            spec.title = {
-                text: insightTitle,
-            ...(insightSubtitle ? { subtitle: insightSubtitle } : {}),
-                anchor: 'middle',
-                fontWeight: 500,
-                fontSize: textVar.md,
-                color: '#555',
-                offset: 12,
-            };
-        }
-
         onSpecReady?.(spec);
 
         const el = document.getElementById(elementId);
@@ -725,11 +676,17 @@ const VegaChartRenderer: FC<{
         let cancelled = false;
         const embedResult: { current?: Awaited<ReturnType<typeof embed>> } = {};
 
+        // Each render draws into its own host. A superseded render (e.g. a quick run of theme previews)
+        // may still attach its canvas after a newer one has started; its host is removed with it, so only
+        // the latest render is ever on screen.
         el.innerHTML = '';
-        embed(el, { ...spec }, { actions: false, renderer: 'canvas' })
+        const host = document.createElement('div');
+        el.appendChild(host);
+        embed(host, { ...spec }, { actions: false, renderer: 'canvas' })
             .then((result) => {
                 if (cancelled) {
                     result.finalize();
+                    host.remove();
                     return;
                 }
                 embedResult.current = result;
@@ -752,10 +709,11 @@ const VegaChartRenderer: FC<{
             cancelled = true;
             embedResult.current?.finalize();
             embedResult.current = undefined;
+            host.remove();
             el.innerHTML = '';
         };
 
-    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, chart.themeId, chart.activeVariantId, chart.styleVariants, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, insightTitle, insightSubtitle, themePreview?.active, themePreview?.themeId, fieldSemantics, onSpecReady, elementId]);
+    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, chart.themeId, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, insightTitle, insightSubtitle, themePreview?.active, themePreview?.themeId, fieldSemantics, onSpecReady, elementId]);
 
     // Resize the drawn canvas instead of recompiling. Overriding Vega's inline
     // width (with `height: auto` from the wrapper) scales the chart uniformly
@@ -808,15 +766,13 @@ const VegaChartRenderer: FC<{
                 sx={{
                     maxWidth: '100%',
                     overflow: 'hidden',
-                    // vega-embed adds its `.vega-embed` class to THIS element (the
-                    // div we pass to embed()) and renders the <canvas>/<svg> as a
-                    // direct child. Vega writes explicit inline width/height (in CSS
-                    // px) on that canvas/svg, so we must override them with
-                    // !important to let the chart shrink to the panel width while
-                    // keeping its aspect ratio (height: auto). A descendant
-                    // `.vega-embed` selector would NOT match — the class is on this
-                    // element itself, not a child.
-                    '& > canvas, & > svg': {
+                    // Each render's host div (see the embed effect) gets the
+                    // `.vega-embed` class and holds the <canvas>/<svg> as a direct
+                    // child. Vega writes explicit inline width/height (in CSS px) on
+                    // that canvas/svg, so we override them with !important to let
+                    // the chart shrink to the panel width while keeping its aspect
+                    // ratio (height: auto).
+                    '& > div > canvas, & > div > svg': {
                         maxWidth: '100%',
                         height: 'auto !important',
                     },
@@ -925,6 +881,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const [codeDialogOpen, setCodeDialogOpen] = useState<boolean>(false);
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
     const [themePreview, setThemePreview] = useState<{ active: true; themeId: string | undefined } | undefined>();
+    // A preview never outlives a change of chart or of its chosen theme.
+    useEffect(() => { setThemePreview(undefined); }, [focusedChart?.id, focusedChart?.themeId]);
     const handleThemePreview = useCallback((themeId: string | undefined) => {
         setThemePreview({ active: true, themeId });
     }, []);
@@ -1157,7 +1115,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     // only while its key matches the chart's analytical encoding (chart type,
     // channels, fields, and aggregations), so it stays through cosmetic edits
     // but is dropped once the chart's meaning changes.
-    const titleFresh = !!focusedChart.title && focusedChart.titleKey === computeInsightKey(focusedChart);
+    const titleFresh = chartTitleFits(focusedChart);
     
     const actionBtnSx = {
         padding: '4px',
@@ -1205,8 +1163,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         chartMessage = t('chart.msgUnavailable');
     } else if (chartSynthesisInProgress.includes(focusedChart.id)) {
         chartMessage = t('chart.msgSynthesizing');
-    } else if (table.derive) {
-        chartMessage = t('chart.msgWarning');
     }
     let chartActionItems = isDataStale ? [] : (
         <Box sx={{display: "flex", flexDirection: "column", flex: 1, my: 1}}>
@@ -1235,9 +1191,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     </Tooltip>
                 </Box>
             ) : ""}
-            <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
+            {chartMessage && <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
                 {chartMessage}
-            </Typography>
+            </Typography>}
         </Box>
     )
     
@@ -1245,7 +1201,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     let focusedElement = <Fade key={`fade-${focusedChart.id}-${dataVersion}-${focusedChart.chartType}-${JSON.stringify(focusedChart.encodingMap)}`}
                             in={!isDataStale} timeout={600}>
-                            <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0, justifyContent: 'center', justifyItems: 'center', maxWidth: '100%', mt: 'max(120px, 4vh)', mb: 'max(120px, 4vh)'}} className="chart-box">
+                            <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0, justifyContent: 'center', justifyItems: 'center', maxWidth: '100%', minHeight: 320, mt: 'max(120px, 4vh)', mb: 'max(120px, 4vh)'}} className="chart-box">
                                 {/*
                                   Chart container chrome
                                   ──────────────────────
@@ -1255,13 +1211,14 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                     full-width charts like KPI grids run right up under the slider.
                                   - pr: 28  → reserves a strip on the right for the floating
                                     "edit chart" button overlay (see the focused-box in `content`).
-                                  - minHeight: 280 → guarantees the chart has vertical room to
-                                    render even when a chart's intrinsic height is very small
-                                    (e.g. one row of compact cards).
+                                  - minHeight (on .chart-box) → reserves vertical room even when a
+                                    chart's intrinsic height is very small (two bars, one row of
+                                    cards); the chart and its quick controls stay together and are
+                                    centred in it, so the space doesn't pool under a short chart.
                                   These are view-level concerns and intentionally NOT solved per
                                   chart template.
                                 */}
-                                <Box sx={{minHeight: 280, maxWidth: '100%', overflow: 'hidden', pt: '40px', pr: '28px'}}>
+                                <Box sx={{maxWidth: '100%', overflow: 'hidden', pt: '40px', pr: '28px'}}>
                                     <VegaChartRenderer
                                         key={focusedChart.id}
                                         chart={focusedChart}
@@ -1508,25 +1465,26 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         {/* No full-screen block while the agent works: the previous chart
             stays visible, and progress is signaled non-intrusively on the
             chat box + encoding shelf (see EncodingShelfCard). */}
-        {/* Floating top toolbar: zoom resizer + style-variant strip live
-            together here (NOT inside the scrolling chart content), so every
-            control stays pinned to the top of the panel instead of some
-            floating and some scrolling away. pointerEvents are disabled on the
-            empty bar area so it never blocks chart interaction underneath. */}
+        {/* Floating controls: the zoom resizer + theme picker on the left, the inspect/edit cluster on
+            the right, pinned to the top of the panel (NOT inside the scrolling chart content). There is no
+            band behind them, so the chart is never cropped; only the controls themselves have a surface.
+            pointerEvents are disabled on the empty bar area so it never blocks the chart underneath. */}
         <Box sx={{
             position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
-            display: 'flex', alignItems: 'center', gap: 0.5, px: 1, py: '8px',
-            backgroundColor: '#fff',
+            // pr clears the scroll area's scrollbar on the right.
+            display: 'flex', alignItems: 'center', gap: 0.5, pl: 1, pr: 2.5, py: '8px',
             pointerEvents: 'none', '& > *': { pointerEvents: 'auto' },
         }}>
-            {chartResizer}
-            {focusedChart && focusedChart.chartType !== 'Table' && focusedChart.chartType !== 'Auto' && (
-                <ChartVariantStrip
-                    chartId={focusedChart.id}
-                    onThemePreview={handleThemePreview}
-                    onThemePreviewEnd={handleThemePreviewEnd}
-                />
-            )}
+            <Box sx={{ display: 'flex', alignItems: 'center', borderRadius: '10px', bgcolor: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(2px)' }}>
+                {chartResizer}
+                {focusedChart && focusedChart.chartType !== 'Table' && focusedChart.chartType !== 'Auto' && (
+                    <ChartThemePicker
+                        chartId={focusedChart.id}
+                        onThemePreview={handleThemePreview}
+                        onThemePreviewEnd={handleThemePreviewEnd}
+                    />
+                )}
+            </Box>
             {/* Right-aligned floating cluster near the top-right: "inspect /
                 edit this chart" controls grouped together (agent log + code +
                 encoding shelf). Chart deletion lives in the chart property-config
@@ -1673,16 +1631,15 @@ const EmptyStateHero: FC<{ chartSelectionBox: React.ReactNode }> = ({ chartSelec
     );
 };
 
-// Content-first action dock shown when a *table* (not a chart) is focused.
-// The table becomes the primary content at the top of the canvas; this
-// sticky bottom bar keeps a lightweight "pick a chart" affordance and a
-// pointer to the chat available without a wall of buttons dominating the
-// page. The full CHART_TEMPLATES palette lives inside the popover.
+// The data actions under a table (focused, or below a chart): download, the
+// load query, and the row count with row sampling. The view actions (chat,
+// transformation, Quick chart) float at the canvas's top right, as on charts.
 // NOTE: designed to extend to multi-table selection — when several tables
 // are highlighted this dock can summarize the selection and offer actions
 // that span them (e.g. "combine", "chart each").
 const TableActionDock: FC<{
-    chartSelectionBox?: React.ReactNode;
+    // The table search box, for the focused table (the grid under a chart has none).
+    search?: { query: string; onSearch: (query: string) => void };
     tableId: string;
     tableName: string;
     rows: any[];
@@ -1692,11 +1649,9 @@ const TableActionDock: FC<{
     gridReport?: { loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean; isRandom: boolean } | null;
     onRandomize?: () => void;
     onResetOrder?: () => void;
-}> = ({ chartSelectionBox, tableId, tableName, rows, virtual, compact, gridReport, onRandomize, onResetOrder }) => {
+}> = ({ search, tableId, tableName, rows, virtual, compact, gridReport, onRandomize, onResetOrder }) => {
     const { t } = useTranslation();
-    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const [isDownloading, setIsDownloading] = useState(false);
-    const [transformationOpen, setTransformationOpen] = useState(false);
     const [loadQueryOpen, setLoadQueryOpen] = useState(false);
     const table = useSelector(dfSelectors.getAllTables).find(table => table.id === tableId);
     const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
@@ -1715,11 +1670,6 @@ const TableActionDock: FC<{
         }).catch(() => { if (!cancelled) setSavedQuery({ key: queryKey, query: undefined }); });
         return () => { cancelled = true; };
     }, [queryKey, workspaceId, table?.id, table?.virtual?.tableId, table?.source?.loadQuery, table?.source?.type, table?.derive]);
-    const hasTransformation = !!table?.derive && (!!table.derive.code?.trim() || extractConceptExplanations(table).length > 0);
-    const open = Boolean(anchorEl);
-    // The Quick chart action only renders when a template picker is supplied.
-    const showQuickChart = !!chartSelectionBox;
-
     const handleDownload = async () => {
         if (isDownloading) return;
         setIsDownloading(true);
@@ -1756,8 +1706,8 @@ const TableActionDock: FC<{
     return (
         <Box sx={{
             position: 'static',
-            display: 'flex', justifyContent: 'center',
-            px: 2, pt: compact ? 1.5 : 1.5, pb: compact ? 1 : 3,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.75,
+            px: 2, pt: compact ? 1.5 : 1.5, pb: compact ? 1 : 2,
             backgroundColor: 'background.paper',
         }}>
             <Box sx={{
@@ -1766,20 +1716,10 @@ const TableActionDock: FC<{
                 backgroundColor: 'background.paper',
                 border: '1px solid', borderColor: 'divider',
             }}>
-                {showQuickChart && (
-                    <>
-                        <Button
-                            size="small"
-                            variant="text"
-                            startIcon={<AddchartIcon />}
-                            onClick={(e) => setAnchorEl(e.currentTarget)}
-                            sx={{ textTransform: 'none', flexShrink: 0, color: 'primary.main' }}
-                        >
-                            {t('chart.quickChart', { defaultValue: 'Quick chart' })}
-                        </Button>
-                        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.75 }} />
-                    </>
-                )}
+                {search && <>
+                    <TableSearchField query={search.query} onSearch={search.onSearch} width={180} bare />
+                    <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.75 }} />
+                </>}
                 <Button
                     size="small"
                     variant="text"
@@ -1791,13 +1731,6 @@ const TableActionDock: FC<{
                     {t('dataGrid.downloadCsv', { defaultValue: 'Download CSV' })}
                 </Button>
                 <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.75 }} />
-                {hasTransformation && (
-                    <Button size="small" variant="text" startIcon={<TerminalIcon />}
-                        onClick={() => setTransformationOpen(true)}
-                        sx={{ textTransform: 'none', flexShrink: 0, color: 'text.secondary', ...(compact ? { fontSize: textVar.sm } : {}) }}>
-                        {t('chart.transformation', { defaultValue: 'Transformation' })}
-                    </Button>
-                )}
                 <Button size="small" variant="text" startIcon={<CodeIcon />} disabled={!loadQuery}
                     onClick={() => setLoadQueryOpen(true)}
                     sx={{ textTransform: 'none', flexShrink: 0, color: 'text.secondary', ...(compact ? { fontSize: textVar.sm } : {}) }}>
@@ -1830,29 +1763,58 @@ const TableActionDock: FC<{
                     </Tooltip>
                 )}
             </Box>
-            {hasTransformation && table && (
-                <TableTransformationDialog table={table} open={transformationOpen} onClose={() => setTransformationOpen(false)} />
-            )}
+            {/* An AI-derived table carries one quiet note at its foot, not a line in the middle of the canvas. */}
+            {table?.derive && <Typography sx={{ fontSize: '0.6875rem', lineHeight: 1.4, color: 'text.disabled', textAlign: 'center' }}>
+                {t('chart.aiDisclaimer', { defaultValue: 'AI can make mistakes. Check important results.' })}
+            </Typography>}
             {loadQueryOpen && loadQuery && table && <TableLoadQueryDialog key={queryKey} table={table} loadQuery={loadQuery} onClose={() => setLoadQueryOpen(false)} />}
-            {showQuickChart && (
-                <Popover
-                    open={open}
-                    anchorEl={anchorEl}
-                    onClose={() => setAnchorEl(null)}
-                    anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
-                    transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-                    slotProps={{ paper: { sx: { p: 2, maxWidth: 'min(90vw, 1140px)' } } }}
-                >
-                    {/* Clicking a template creates the chart and this whole
-                        empty-state unmounts; closing the popover here keeps
-                        things tidy in the transient frame. */}
-                    <Box onClickCapture={() => setAnchorEl(null)}>
-                        {chartSelectionBox}
-                    </Box>
-                </Popover>
-            )}
         </Box>
     );
+};
+
+/**
+ * A focused table's floating top-right buttons, matching the chart canvas: the conversation
+ * that made it, its transformation, and Quick chart (where a chart has its encoding shelf).
+ */
+const TableCanvasActions: FC<{ table: DictTable; chartSelectionBox: React.ReactNode }> = ({ table, chartSelectionBox }) => {
+    const { t } = useTranslation();
+    const [chatOpen, setChatOpen] = useState(false);
+    const [transformationOpen, setTransformationOpen] = useState(false);
+    const [chartAnchor, setChartAnchor] = useState<HTMLElement | null>(null);
+    const hasTransformation = !!table.derive && (!!table.derive.code?.trim() || extractConceptExplanations(table).length > 0);
+    const transformationLabel = t('chart.transformation', { defaultValue: 'Transformation' });
+    const quickChartLabel = t('chart.quickChart', { defaultValue: 'Quick chart' });
+    return <>
+        {/* Same spot as the chart's cluster, which sits centered in its 8px-padded toolbar row. */}
+        <Box sx={{ position: 'absolute', top: 10, right: 20, zIndex: 10, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            {table.derive && <Tooltip title={t('chart.log')} placement="bottom">
+                <IconButton size="small" aria-label={t('chart.log')} onClick={() => setChatOpen(true)} sx={floatingPillSx}>
+                    <QuestionAnswerIcon sx={{ fontSize: iconVar.lg }} />
+                </IconButton>
+            </Tooltip>}
+            {hasTransformation && <Tooltip title={transformationLabel} placement="bottom">
+                <IconButton size="small" aria-label={transformationLabel} onClick={() => setTransformationOpen(true)} sx={floatingPillSx}>
+                    <TerminalIcon sx={{ fontSize: iconVar.lg }} />
+                </IconButton>
+            </Tooltip>}
+            <Tooltip title={quickChartLabel} placement="left">
+                <IconButton size="small" aria-label={quickChartLabel} onClick={event => setChartAnchor(event.currentTarget)}
+                    sx={{ ...floatingPillSx, ...(chartAnchor ? { backgroundColor: 'primary.main', color: 'primary.contrastText',
+                        '&:hover': { backgroundColor: 'primary.dark', color: 'primary.contrastText' } } : {}) }}>
+                    <AddchartIcon sx={{ fontSize: iconVar.lg }} />
+                </IconButton>
+            </Tooltip>
+        </Box>
+        {table.derive && <ChatDialog open={chatOpen} handleCloseDialog={() => setChatOpen(false)}
+            code={table.derive.code || ''} dialog={table.derive.dialog as any[]} />}
+        {hasTransformation && <TableTransformationDialog table={table} open={transformationOpen} onClose={() => setTransformationOpen(false)} />}
+        <Popover open={!!chartAnchor} anchorEl={chartAnchor} onClose={() => setChartAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            slotProps={{ paper: { sx: { mt: 0.5, p: 2, maxWidth: 'min(90vw, 1140px)' } } }}>
+            {/* Picking a template creates the chart and the table view unmounts; closing first keeps the frame tidy. */}
+            <Box onClickCapture={() => setChartAnchor(null)}>{chartSelectionBox}</Box>
+        </Popover>
+    </>;
 };
 
 export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView({ }) {
@@ -1895,6 +1857,10 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     const [tableGridReport, setTableGridReport] = React.useState<{ loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean; isRandom: boolean } | null>(null);
     const [tableRandomizeToken, setTableRandomizeToken] = React.useState(0);
     const [tableResetOrderToken, setTableResetOrderToken] = React.useState(0);
+    // The focused table's search term, per table (switching tables starts fresh).
+    const [tableSearch, setTableSearch] = React.useState<{ tableId?: string; query: string }>({ query: '' });
+    const tableSearchQuery = tableSearch.tableId === focusedTableId ? tableSearch.query : '';
+    const searchTable = (query: string) => setTableSearch({ tableId: focusedTableId, query });
 
     if (focusedId?.type === 'external-table') {
         return <ExternalTableReferenceCanvas key={focusedId.referenceId} referenceId={focusedId.referenceId} />;
@@ -1903,7 +1869,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
         return <WorkspaceFileCanvas fileName={focusedId.fileName} floatingAppControls />;
     }
     if (focusedId?.type === 'conversation') {
-        return <ConversationCanvas textTurnId={focusedId.tableId} nodeIds={focusedId.nodeIds} />;
+        return <ConversationCanvas textTurnId={focusedId.tableId} nodeIds={focusedId.nodeIds} label={focusedId.label} />;
     }
     if (focusedWorkflowTurn) {
         if (focusedWorkflowTurn.workflow?.status === 'paused' && focusedWorkflowTurn.workflow.dataOperation) {
@@ -1975,6 +1941,10 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
         const isTableFocus = focusedId?.type === 'table' && !!focusedTableId;
         return (
             <Box id="vis-view-canvas" sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row", position: 'relative' }}>
+                {isTableFocus && focusedTableId && (() => {
+                    const ft = tables.find(t => t.id === focusedTableId);
+                    return ft ? <TableCanvasActions key={focusedTableId} table={ft} chartSelectionBox={chartSelectionBox} /> : null;
+                })()}
                 <Box sx={{ overflow: "hidden", display: 'flex', flex: 1 }}>
                     <Box className="vis-scroll" sx={{ display: 'flex', overflowY: 'auto', overflowX: 'hidden', flexDirection: 'column', flex: 1 }}>
                         {!isTableFocus && (
@@ -2052,7 +2022,8 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                                     px: 3, pt: 2, pb: 2, boxSizing: 'border-box',
                                 }}>
                                     <Box sx={{ width: '100%', minWidth: '80%', maxWidth: adaptiveWidth, flex: '1 1 auto', minHeight: MIN_TABLE_HEIGHT, maxHeight: maxCardHeight }}>
-                                        <FreeDataViewFC tableId={focusedTableId} maximizable showHeaderBar hideFooter randomizeToken={tableRandomizeToken} resetOrderToken={tableResetOrderToken} onStateReport={setTableGridReport} />
+                                        <FreeDataViewFC tableId={focusedTableId} maximizable showHeaderBar hideFooter randomizeToken={tableRandomizeToken} resetOrderToken={tableResetOrderToken} onStateReport={setTableGridReport}
+                                            searchQuery={tableSearchQuery} onSearchChange={searchTable} />
                                     </Box>
                                 </Box>
                             );
@@ -2062,7 +2033,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                             return (
                                 <TableActionDock
                                     key={focusedTableId}
-                                    chartSelectionBox={chartSelectionBox}
+                                    search={{ query: tableSearchQuery, onSearch: searchTable }}
                                     tableId={focusedTableId}
                                     tableName={ft?.displayId || ft?.id || 'table'}
                                     rows={ft?.rows || []}

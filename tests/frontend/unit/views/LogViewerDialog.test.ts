@@ -121,7 +121,6 @@ describe('saved-state auto folding', () => {
                     pendingClarification: { trajectory: [{ step: 1 }], completedStepCount: 1 },
                 },
             }],
-            charts: [{ styleVariants: [{ vlSpec: { mark: 'bar' } }] }],
             generatedReports: [{ inspectionSteps: [{ label: 'Inspect chart' }] }],
             textTurns: [{
                 options: [{ label: 'Use Movies' }],
@@ -136,12 +135,11 @@ describe('saved-state auto folding', () => {
         const foldedContents = getSavedStateAutoFoldRanges(state)
             .map(range => state.doc.sliceString(range.from, range.to));
 
-        expect(foldedContents).toHaveLength(15);
+        expect(foldedContents).toHaveLength(14);
         expect(foldedContents.some(content => content.includes('"columns"'))).toBe(true);
         expect(foldedContents.some(content => content.includes('"title": "Movie"'))).toBe(true);
         expect(foldedContents.some(content => content.includes('"role": "user"'))).toBe(true);
         expect(foldedContents.some(content => content.includes('"concepts"'))).toBe(true);
-        expect(foldedContents.some(content => content.includes('"vlSpec"'))).toBe(true);
         expect(foldedContents.some(content => content.includes('"Inspect chart"'))).toBe(true);
         expect(foldedContents.some(content => content.includes('"keep": "open"'))).toBe(false);
     });

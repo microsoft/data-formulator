@@ -112,7 +112,7 @@
     "msgEncodingEmpty": "Letakkan kolom data ke penyusun bagan atau jelaskan keinginan Anda!",
     "msgUnavailable": "Formulasikan data untuk membuat visualisasi!",
     "msgSynthesizing": "Sintesis sedang berlangsung...",
-    "msgWarning": "Hasil buatan AI bisa tidak akurat, periksalah!",
+    "aiDisclaimer": "AI bisa membuat kesalahan. Periksa hasil yang penting.",
     "templateGroups": {
       "table": "Tabel",
       "scatter": "Sebar",

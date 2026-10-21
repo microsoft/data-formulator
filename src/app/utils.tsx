@@ -10,6 +10,8 @@ import { Type } from "../data/types";
 import * as d3 from 'd3';
 
 import { assembleVegaLite, type ChartEncoding, type AssembleOptions } from "flint-chart";
+import { mergeableLayerSorts, resolveColumnSorts } from "./chartSort";
+import { choroplethRegion, keepUnmatchedRegions } from "./chartMaps";
 import { getBrowserId } from './identity';
 
 export function getUrls() {
@@ -54,8 +56,6 @@ export function getUrls() {
         // Workspace display name (auto-naming)
         WORKSPACE_NAME: `/api/agent/workspace-name`,
 
-        // Chart style refinement (restyle agent)
-        CHART_RESTYLE: `/api/agent/chart-restyle`,
 
         // Refresh data endpoint
         REFRESH_DERIVED_DATA: `/api/agent/refresh-derived-data`,
@@ -620,13 +620,13 @@ export const assembleVegaChart = (
     }
 
     // Flint rejects sort references it cannot resolve; an unusable sort hint must not block the chart.
-    const columns = new Set(Object.keys(workingTable[0] ?? {}));
+    Object.assign(encodings, resolveColumnSorts(encodings, workingTable));
     for (const encoding of Object.values(encodings)) {
         const sortBy = encoding.sortBy;
         if (sortBy === undefined) continue;
         if (sortBy === 'x' || sortBy === 'y' || sortBy === 'color') {
             if (!encodings[sortBy]?.field && encodings[sortBy]?.aggregate !== 'count') encoding.sortBy = undefined;
-        } else if (!columns.has(sortBy)) {
+        } else {
             let values: unknown;
             try { values = JSON.parse(sortBy); } catch { values = undefined; }
             const valid = Array.isArray(values) ? values.filter(value => typeof value === 'string'
@@ -676,7 +676,10 @@ export const assembleVegaChart = (
                 width: Math.round(effectiveW * stretch),
                 height: Math.round(effectiveH * stretch),
             },
-            chartProperties: chartProperties ? structuredClone(chartProperties) : undefined,
+            chartProperties: (() => {
+                const properties = choroplethRegion(chartType, encodings, workingTable, chartProperties);
+                return properties ? structuredClone(properties) : undefined;
+            })(),
         },
         options: {
             addTooltips,
@@ -686,7 +689,7 @@ export const assembleVegaChart = (
         ...(themeId ? { theme_spec: themeId } : {}),
         ...(Object.keys(fieldDisplayNames).length > 0 ? { field_display_names: fieldDisplayNames } : {}),
     };
-    const spec = assembleVegaLite(flintInput);
+    const spec = mergeableLayerSorts(keepUnmatchedRegions(assembleVegaLite(flintInput)));
     // The complete Flint input behind the chart, for copying; not part of the Vega-Lite spec.
     Object.defineProperty(spec, FLINT_INPUT, { value: flintInput, enumerable: false });
 

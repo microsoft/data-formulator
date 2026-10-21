@@ -75,9 +75,6 @@
     "autoSortServerError": "tidak dapat melakukan pengurutan otomatis karena masalah server.",
     "followUpChartPlaceholder": "perbarui gaya bagan atau analisis lanjutan",
     "refreshIdeas": "Segarkan ide",
-    "stylePresetsTooltip": "Ubah gaya bagan menjadi…",
-    "stylePresetsHeader": "Ubah gaya bagan menjadi",
-    "stylePresetsHint": "Atau jelaskan gaya di kotak masukan — misalnya \"gunakan palet teal\", \"tebalkan judul\", \"putar label sumbu\", \"anotasi titik puncak\".",
     "formulationSucceeded": "Perumusan data untuk {{fields}} berhasil.",
     "formulationFailed": "Perumusan data gagal."
   }

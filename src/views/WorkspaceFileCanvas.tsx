@@ -1,12 +1,10 @@
 import React, { FC, Suspense, useEffect, useRef, useState } from 'react';
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, IconButton, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
 import WrapTextIcon from '@mui/icons-material/WrapText';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import HtmlIcon from '@mui/icons-material/Html';
-import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
-import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined';
-import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
-import { CanvasHeader, CanvasHeaderAction } from './CanvasHeader';
+import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import { floatingPillSx } from '../app/tokens';
 import { useDispatch, useSelector } from 'react-redux';
 import { CompactMarkdown } from './InteractionEntryCard';
 import { MarkdownEditor } from '../components/MarkdownEditor';
@@ -95,6 +93,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
     const [saving, setSaving] = useState(false);
     const [discardOpen, setDiscardOpen] = useState(false);
     const [renameOpen, setRenameOpen] = useState(false);
+    const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
     const [newName, setNewName] = useState(fileName);
     const [renaming, setRenaming] = useState(false);
     const [renameError, setRenameError] = useState('');
@@ -195,7 +194,8 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
             cancelled = true;
             if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
-    }, [fileName, isPdf, isMarkdown, hasPreview, draftKey, fileRevision, temporary, sourceFile]);
+    // Reload once the workspace is known: a read sent before then fails and shows only a raw preview.
+    }, [fileName, isPdf, isMarkdown, hasPreview, draftKey, fileRevision, temporary, sourceFile, workspace?.id]);
 
     const save = async () => {
         if (!textFile || readOnly || saving || discardOpen || renameOpen || renaming) return;
@@ -251,7 +251,6 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
     const baseName = temporary ? fileName.slice('scratch/'.length) : fileName;
     const headerTitle = displayName && displayName !== baseName ? displayName : baseName;
     const headerMeta = [headerTitle !== baseName ? baseName : '', temporary ? 'Temporary' : ''].filter(Boolean).join(' · ');
-    const FileIcon = isHtml ? HtmlIcon : isReactApp ? DashboardOutlinedIcon : isPdf ? PictureAsPdfOutlinedIcon : InsertDriveFileOutlinedIcon;
 
     const handleDownload = async () => {
         const blob = sourceFile ?? await downloadWorkspaceFile(fileName);
@@ -270,36 +269,69 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 if (dirty) void save();
             }
         }} sx={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', bgcolor: 'background.default', display: 'flex', flexDirection: 'column' }}>
-            <CanvasHeader icon={<FileIcon />} title={headerTitle}
-                meta={<>{headerMeta}{dirty && <Box component="span" role="status" aria-label="Unsaved changes"
-                    sx={{ display: 'inline-block', width: 7, height: 7, ml: 0.75, borderRadius: '50%', bgcolor: 'text.secondary', verticalAlign: 'middle' }} />}</>}
-                onRequestRename={!temporary && !sourceFile ? () => { setNewName(fileName); setRenameError(''); setRenameOpen(true); } : undefined}
-                renameDisabled={workspace?.readOnly || saving || renaming}
-                actions={<>
-                    {textFile && hasPreview && <ToggleButtonGroup exclusive value={mode} size="small" aria-label="File view"
-                        onChange={(_, value) => { if (value) setMode(value); }}
-                        sx={{ mr: 0.5, '& .MuiToggleButton-root': { minHeight: 26, px: 1, py: 0, fontSize: '0.8125rem', textTransform: 'none',
-                            lineHeight: 1.4, border: 0, borderRadius: '4px !important' } }}>
-                        <ToggleButton value="edit" aria-label={readOnly ? 'View source' : 'Edit source'}>{readOnly ? 'Source' : 'Edit'}</ToggleButton>
-                        <ToggleButton value="preview" aria-label={isApp ? t('htmlApp.previewApp') : 'Preview Markdown'}>Preview</ToggleButton>
-                    </ToggleButtonGroup>}
-                    {textFile && dirty && !temporary && !sourceFile && <>
-                        <Button aria-label="Save file" size="small" onClick={save} disabled={saving || renaming || workspace?.readOnly}
-                            sx={{ position: 'relative', minWidth: 0, px: 1, fontSize: '0.8125rem', textTransform: 'none' }}>
-                            <Box component="span" sx={{ visibility: saving ? 'hidden' : 'visible' }}>Save</Box>
-                            {saving && <CircularProgress size={14} sx={{ position: 'absolute', top: '50%', left: '50%', mt: '-7px', ml: '-7px' }} />}
-                        </Button>
-                        <Button aria-label="Discard changes" size="small" color="inherit" onClick={() => setDiscardOpen(true)} disabled={saving || renaming}
-                            sx={{ minWidth: 0, px: 1, fontSize: '0.8125rem', textTransform: 'none' }}>Discard</Button>
-                    </>}
-                    {textFile && isApp && mode === 'preview' && <CanvasHeaderAction label={t('htmlApp.reload')} onClick={() => setAppReloadKey(value => value + 1)}>
-                        <RefreshIcon />
-                    </CanvasHeaderAction>}
-                    {textFile && (!hasPreview || mode === 'edit') && <CanvasHeaderAction label="Wrap lines" active={lineWrap} onClick={() => setLineWrap(value => !value)}>
-                        <WrapTextIcon />
-                    </CanvasHeaderAction>}
+            {/* The file's name at the top left, quiet, as in a code editor; a running app shows none. Its
+                tools float at the top right, as on charts; rename and download sit behind ⋯. */}
+            {!(textFile && isApp && mode === 'preview') && <Box data-file-title title={fileName} sx={{ position: 'absolute', top: 10, left: 20, right: 300,
+                zIndex: 9, height: 30, display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0, pointerEvents: 'none' }}>
+                <Typography component="span" sx={{ fontSize: '0.8125rem', fontWeight: 500, color: 'text.primary', flexShrink: 1, minWidth: 0,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{headerTitle}</Typography>
+                {headerMeta && <Typography component="span" sx={{ fontSize: '0.75rem', color: 'text.secondary', flexShrink: 100, minWidth: 0,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--df-font-mono)' }}>{headerMeta}</Typography>}
+            </Box>}
+            <Box data-file-actions sx={{ position: 'absolute', top: 10, right: 20, zIndex: 10, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                {dirty && <Box component="span" role="status" aria-label="Unsaved changes" title="Unsaved changes"
+                    sx={{ width: 7, height: 7, mr: 0.5, borderRadius: '50%', bgcolor: 'text.secondary' }} />}
+                {textFile && dirty && !temporary && !sourceFile && <>
+                    <Button aria-label="Save file" size="small" variant="contained" disableElevation onClick={save} disabled={saving || renaming || workspace?.readOnly}
+                        sx={{ position: 'relative', minWidth: 0, height: 30, px: 1.5, borderRadius: '15px', fontSize: '0.8125rem', textTransform: 'none' }}>
+                        <Box component="span" sx={{ visibility: saving ? 'hidden' : 'visible' }}>Save</Box>
+                        {saving && <CircularProgress size={14} sx={{ position: 'absolute', top: '50%', left: '50%', mt: '-7px', ml: '-7px' }} />}
+                    </Button>
+                    <Button aria-label="Discard changes" size="small" color="inherit" onClick={() => setDiscardOpen(true)} disabled={saving || renaming}
+                        sx={{ ...floatingPillSx, minWidth: 0, height: 30, px: 1.5, borderRadius: '15px', fontSize: '0.8125rem', textTransform: 'none' }}>Discard</Button>
                 </>}
-                menu={[{ label: t('dataThread.downloadFile', { defaultValue: 'Download file' }), icon: <DownloadIcon />, onClick: () => void handleDownload() }]} />
+                {textFile && hasPreview && <ToggleButtonGroup exclusive value={mode} size="small" aria-label="File view"
+                    onChange={(_, value) => { if (value) setMode(value); }}
+                    // Same height and pill as the round buttons beside it; the selected half is an inset chip.
+                    sx={{ ...floatingPillSx, boxSizing: 'border-box', height: 30, borderRadius: '15px', p: '3px', gap: '2px', alignItems: 'center',
+                        '&:hover': { backgroundColor: 'background.paper' },
+                        '& .MuiToggleButtonGroup-grouped': { m: 0, border: 0, borderRadius: '11px !important' },
+                        '& .MuiToggleButton-root': { minHeight: 0, height: 22, px: 1.25, py: 0, fontSize: '0.75rem', textTransform: 'none',
+                            lineHeight: '22px', color: 'text.secondary', '&:hover': { bgcolor: 'action.hover' } },
+                        '& .MuiToggleButton-root.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary',
+                            '&:hover': { bgcolor: 'action.selected' } } }}>
+                    <ToggleButton value="edit" aria-label={readOnly ? 'View source' : 'Edit source'}>{readOnly ? 'Source' : 'Edit'}</ToggleButton>
+                    <ToggleButton value="preview" aria-label={isApp ? t('htmlApp.previewApp') : 'Preview Markdown'}>Preview</ToggleButton>
+                </ToggleButtonGroup>}
+                {textFile && isApp && mode === 'preview' && <Tooltip title={t('htmlApp.reload')}>
+                    <IconButton size="small" aria-label={t('htmlApp.reload')} onClick={() => setAppReloadKey(value => value + 1)} sx={floatingPillSx}>
+                        <RefreshIcon sx={{ fontSize: iconVar.lg }} />
+                    </IconButton>
+                </Tooltip>}
+                {textFile && (!hasPreview || mode === 'edit') && <Tooltip title="Wrap lines">
+                    <IconButton size="small" aria-label="Wrap lines" aria-pressed={lineWrap} onClick={() => setLineWrap(value => !value)}
+                        sx={{ ...floatingPillSx, ...(lineWrap ? { color: 'primary.main' } : {}) }}>
+                        <WrapTextIcon sx={{ fontSize: iconVar.lg }} />
+                    </IconButton>
+                </Tooltip>}
+                <Tooltip title={t('canvas.more', { defaultValue: 'More' })}>
+                    <IconButton size="small" aria-label={t('canvas.more', { defaultValue: 'More' })} onClick={event => setMoreAnchor(event.currentTarget)} sx={floatingPillSx}>
+                        <MoreHorizIcon sx={{ fontSize: iconVar.lg }} />
+                    </IconButton>
+                </Tooltip>
+                <Menu anchorEl={moreAnchor} open={!!moreAnchor} onClose={() => setMoreAnchor(null)}
+                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
+                    {!temporary && !sourceFile && <MenuItem disabled={workspace?.readOnly || saving || renaming}
+                        onClick={() => { setMoreAnchor(null); setNewName(fileName); setRenameError(''); setRenameOpen(true); }}>
+                        <ListItemIcon><EditOutlinedIcon /></ListItemIcon>
+                        <ListItemText>{t('canvas.rename', { defaultValue: 'Rename' })}</ListItemText>
+                    </MenuItem>}
+                    <MenuItem onClick={() => { setMoreAnchor(null); void handleDownload(); }}>
+                        <ListItemIcon><DownloadIcon /></ListItemIcon>
+                        <ListItemText>{t('dataThread.downloadFile', { defaultValue: 'Download file' })}</ListItemText>
+                    </MenuItem>
+                </Menu>
+            </Box>
             {isPdf && !textFile && <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, flexShrink: 0,
                 py: 0.25, borderBottom: '1px solid', borderColor: 'divider' }}>
                 <Typography sx={{ minWidth: 72, textAlign: 'center', fontSize: textVar.sm, color: 'text.secondary' }}>
@@ -350,7 +382,9 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 </DialogActions>
             </Dialog>
             {saveError && <Alert severity="error">{saveError}</Alert>}
-            <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', bgcolor: '#fafafa' }}>
+            <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', bgcolor: '#fafafa',
+                // Room for the floating tools, except an app preview, which they float over.
+                pt: textFile && isApp && mode === 'preview' ? 0 : 6, boxSizing: 'border-box' }}>
                 {!loading && workbookFile && <Suspense fallback={<LoadingStatus label={t('dataThread.loadingFilePreview', { defaultValue: 'Loading file preview...' })} sx={{ height: '100%', p: 2 }} />}>
                     <WorkspaceWorkbookPreview file={workbookFile} fileName={fileName} errorLabel={t('dataThread.previewUnavailable', {
                         defaultValue: 'A quick preview is not available for this file type.',

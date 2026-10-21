@@ -1,8 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useEffect, useMemo, useCallback, useContext } from 'react';
-import { CanvasChromeContext } from './CanvasHeader';
+import React, { FC, useEffect, useMemo, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 
 import _ from 'lodash';
@@ -49,19 +48,71 @@ export interface FreeDataViewProps {
     // toolbar can undo a random sample.
     resetOrderToken?: number;
     onStateReport?: (s: { loadedCount: number; rowCount: number; virtual: boolean; canRandomize: boolean; isRandom: boolean }) => void;
+    // The committed search term (the box lives with the canvas's other table actions, see TableSearchField).
+    searchQuery?: string;
+    onSearchChange?: (query: string) => void;
 }
 
-export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximizable, tableId, showHeaderBar, hideFooter, randomizeToken, resetOrderToken, onStateReport }) {
+/**
+ * The table search box. Search runs only when the user submits (Enter or the search icon),
+ * never on every keystroke; Escape clears it.
+ */
+export const TableSearchField: FC<{ query: string; onSearch: (query: string) => void; width?: number;
+    /** Inside a toolbar: no outline of its own (a soft fill while focused), like the toolbar's text buttons. */
+    bare?: boolean }> = ({ query, onSearch, width = 200, bare }) => {
+    const { t } = useTranslation();
+    const [draft, setDraft] = React.useState(query);
+    useEffect(() => setDraft(query), [query]);
+    const submit = () => onSearch(draft.trim());
+    const clear = () => { setDraft(''); onSearch(''); };
+    return <TextField
+        size="small"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        autoComplete="off"
+        inputProps={{ autoComplete: 'off', autoCorrect: 'off', autoCapitalize: 'off', spellCheck: false,
+            'aria-label': t('dataGrid.search', { defaultValue: 'Search' }) }}
+        onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); submit(); }
+            else if (e.key === 'Escape' && draft) { e.preventDefault(); clear(); }
+        }}
+        placeholder={t('dataGrid.searchPlaceholder', { defaultValue: 'Search table…' })}
+        InputProps={{
+            startAdornment: (
+                <InputAdornment position="start">
+                    <Tooltip title={t('dataGrid.search', { defaultValue: 'Search' })}>
+                        <IconButton size="small" onClick={submit} sx={{ p: 0.25 }}>
+                            <SearchIcon sx={{ fontSize: iconVar.md, color: draft ? 'primary.main' : 'text.disabled' }} />
+                        </IconButton>
+                    </Tooltip>
+                </InputAdornment>
+            ),
+            endAdornment: (draft || query) ? (
+                <InputAdornment position="end">
+                    <IconButton size="small" onClick={clear} sx={{ p: 0.25 }}>
+                        <ClearIcon sx={{ fontSize: iconVar.sm }} />
+                    </IconButton>
+                </InputAdornment>
+            ) : undefined,
+        }}
+        sx={{
+            width,
+            '& .MuiOutlinedInput-root': { borderRadius: '8px', fontSize: textVar.sm, backgroundColor: 'background.paper' },
+            '& .MuiOutlinedInput-input': { py: '4px' },
+            ...(bare ? {
+                '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                '& .MuiOutlinedInput-root': { borderRadius: '6px', fontSize: textVar.sm, backgroundColor: 'transparent', transition: 'background-color 0.15s' },
+                '& .MuiOutlinedInput-root:hover, & .MuiOutlinedInput-root.Mui-focused': { backgroundColor: 'action.hover' },
+            } : {}),
+        }}
+    />;
+};
+
+export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximizable, tableId, showHeaderBar, hideFooter, randomizeToken, resetOrderToken, onStateReport, searchQuery = '', onSearchChange }) {
 
     const { t } = useTranslation();
     const [maximized, setMaximized] = React.useState(false);
-    // Draft holds the live input; query is the committed term the grid/server
-    // actually searches. Search runs only when the user submits (Enter or the
-    // search icon), never on every keystroke.
-    const [searchDraft, setSearchDraft] = React.useState('');
-    const [searchQuery, setSearchQuery] = React.useState('');
-    const submitSearch = React.useCallback(() => setSearchQuery(searchDraft.trim()), [searchDraft]);
-    const clearSearch = React.useCallback(() => { setSearchDraft(''); setSearchQuery(''); }, []);
+    const clearSearch = React.useCallback(() => onSearchChange?.(''), [onSearchChange]);
 
     const dispatch = useDispatch();
 
@@ -81,12 +132,6 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
         const chart = allCharts.find(c => c.id === canvasTarget.chartId);
         return chart?.tableRef;
     }, [canvasTarget, allCharts, tableId]);
-
-    // The search term is temporary/per-table: clear it when switching tables.
-    React.useEffect(() => {
-        setSearchDraft('');
-        setSearchQuery('');
-    }, [focusedTableId]);
 
     // Only subscribe to the focused table and table count — NOT the full tables array.
     // This prevents re-rendering the entire data grid when the agent adds unrelated tables.
@@ -195,20 +240,19 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
         </Box>
     );
 
-    // Numbers-style header rendered OUTSIDE the table card: table title +
-    // row/column metadata on the left, a quick search box on the right.
+    // Numbers-style header rendered OUTSIDE the table card: table title + row/column
+    // metadata on the left (the right stays clear for the canvas's floating buttons).
+    // The search box lives in the canvas's bottom bar; an active search shows here as a chip.
     // Sort & filter remain in the column headers/kebab menus.
     const headerRowCount = targetTable?.virtual?.rowCount || targetTable?.rows.length || 0;
     const headerColCount = targetTable?.names.length || 0;
-    const { tabbed } = useContext(CanvasChromeContext);
     const headerBar = showHeaderBar ? (
         <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.5, px: 0.5, pt: 1, pb: 1 }}>
             <Box sx={{ minWidth: 0 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, minWidth: 0 }}>
-                    {/* Under the canvas tabs the tab names the table; elsewhere the view does. */}
-                    {!tabbed && <Typography sx={{ fontSize: textVar.xl, fontWeight: 600, color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+                    <Typography sx={{ fontSize: textVar.xl, fontWeight: 600, color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
                         {displayName}
-                    </Typography>}
+                    </Typography>
                     {targetTable?.derive && (
                         <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary', flexShrink: 0 }}>
                             {t('chart.derivedTable', { defaultValue: 'Derived table' })}
@@ -253,41 +297,6 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                 </Box>
             </Box>
             <Box sx={{ flex: 1 }} />
-            <TextField
-                size="small"
-                value={searchDraft}
-                onChange={(e) => setSearchDraft(e.target.value)}
-                autoComplete="off"
-                inputProps={{ autoComplete: 'off', autoCorrect: 'off', autoCapitalize: 'off', spellCheck: false }}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter') { e.preventDefault(); submitSearch(); }
-                    else if (e.key === 'Escape' && searchDraft) { e.preventDefault(); clearSearch(); }
-                }}
-                placeholder={t('dataGrid.searchPlaceholder', { defaultValue: 'Search table…' })}
-                InputProps={{
-                    startAdornment: (
-                        <InputAdornment position="start">
-                            <Tooltip title={t('dataGrid.search', { defaultValue: 'Search' })}>
-                                <IconButton size="small" onClick={submitSearch} sx={{ p: 0.25 }}>
-                                    <SearchIcon sx={{ fontSize: iconVar.md, color: searchDraft ? 'primary.main' : 'text.disabled' }} />
-                                </IconButton>
-                            </Tooltip>
-                        </InputAdornment>
-                    ),
-                    endAdornment: (searchDraft || searchQuery) ? (
-                        <InputAdornment position="end">
-                            <IconButton size="small" onClick={clearSearch} sx={{ p: 0.25 }}>
-                                <ClearIcon sx={{ fontSize: iconVar.sm }} />
-                            </IconButton>
-                        </InputAdornment>
-                    ) : undefined,
-                }}
-                sx={{
-                    width: 220,
-                    '& .MuiOutlinedInput-root': { borderRadius: '8px', fontSize: textVar.sm, backgroundColor: 'background.paper' },
-                    '& .MuiOutlinedInput-input': { py: '6px' },
-                }}
-            />
         </Box>
     ) : null;
 

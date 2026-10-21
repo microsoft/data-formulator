@@ -111,8 +111,6 @@ export function computeCacheKey(
     tableContentHash: string | undefined,
     tableId: string,
     tableMetadata?: any,
-    activeVariantId?: string,
-    activeVariantSpec?: any,
     fieldSemantics?: any,
     themeId?: string,
 ): string {
@@ -123,10 +121,6 @@ export function computeCacheKey(
         tableRowCount,
         tableContentHash: tableContentHash || tableId,
         tableMetadata: tableMetadata || {},
-        // Variant fields are intentionally last so default-chart cache keys
-        // are stable across versions that didn't track variants.
-        activeVariantId: activeVariantId || null,
-        activeVariantSpec: activeVariantSpec || null,
         // Feeds field typing (and so the color scale) in the assembled spec,
         // and arrives asynchronously — a change here must re-render.
         fieldSemantics: fieldSemantics || null,

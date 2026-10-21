@@ -118,3 +118,18 @@ export const ScrollFadeContainer: React.FC<{
         </Box>
     );
 };
+
+/** A sideways scroller (a wide table) that fades its left and right edges while there is more. */
+export const HorizontalScrollFade: React.FC<{ children: React.ReactNode; sx?: object }> = ({ children, sx }) => {
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const { moreLeft, moreRight, update } = useScrollFade(scrollRef);
+    return (
+        <Box sx={{ position: 'relative', minWidth: 0 }}>
+            <Box ref={scrollRef} onScroll={update} sx={{ overflowX: 'auto', ...sx }}>
+                {children}
+            </Box>
+            <ScrollFadeEdge visible={moreLeft} edge="left" />
+            <ScrollFadeEdge visible={moreRight} edge="right" />
+        </Box>
+    );
+};

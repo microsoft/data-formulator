@@ -1,31 +1,56 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { alpha, Box, Button, ButtonBase, IconButton, Tooltip, Typography, useTheme } from '@mui/material';
-import RefreshIcon from '@mui/icons-material/Refresh';
+import { Box, Button, ButtonBase, Tooltip, Typography, useTheme } from '@mui/material';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import InsertChartOutlinedIcon from '@mui/icons-material/InsertChartOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { DataFormulatorState, dfActions, dfSelectors, explanationContent } from '../app/dfSlice';
-import { iconVar, textVar } from '../app/layout';
+import { textVar } from '../app/layout';
 import { readingTypography } from '../app/tokens';
 import { getCachedChart } from '../app/chartCache';
 import { TerminalMessageContent } from '../components/TerminalApprovalDialog';
 import { CompactMarkdown, RunPlanChecklist } from './InteractionEntryCard';
 import { ConversationWorkLog, workEntriesOf } from './ConversationWorkLog';
 import { DataFrameTable } from './DataFrameTable';
+import { HorizontalScrollFade } from '../components/ScrollFade';
+import { apiRequest } from '../app/apiClient';
+import { getUrls } from '../app/utils';
+import { DictTable } from '../components/ComponentType';
+
+/**
+ * A result's first rows, shown when opened. A workspace table may keep none of its rows in the
+ * session, so then they come from the server.
+ */
+const TableRowsPreview: React.FC<{ table: DictTable; rowCount: number; format: (row: Record<string, unknown>) => Record<string, unknown> }> = ({ table, rowCount, format }) => {
+    const [fetched, setFetched] = useState<{ key: string; rows: any[] }>();
+    const serverTable = table.rows.length === 0 && table.virtual ? table.virtual.tableId : undefined;
+    useEffect(() => {
+        if (!serverTable) return;
+        let cancelled = false;
+        apiRequest<{ rows: any[] }>(getUrls().SAMPLE_TABLE, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ table: serverTable, size: 5 }),
+        }).then(({ data }) => { if (!cancelled) setFetched({ key: serverTable, rows: data.rows || [] }); })
+            .catch(() => { if (!cancelled) setFetched({ key: serverTable, rows: [] }); });
+        return () => { cancelled = true; };
+    }, [serverTable]);
+    const rows = serverTable ? (fetched?.key === serverTable ? fetched.rows : []) : table.rows;
+    return <HorizontalScrollFade>
+        <DataFrameTable columns={table.names} rows={rows.map(format)} totalRows={rowCount}
+            maxRows={5} maxColumns={6} autoWidth simple truncationIndicator="caption" />
+    </HorizontalScrollFade>;
+};
 import { WorkflowFormArtifactView } from './SetupFormArtifacts';
-import { CanvasHeader, CanvasHeaderAction } from './CanvasHeader';
-import { computeInsightKey } from '../components/ComponentType';
+import { chartTitleFits } from '../components/ComponentType';
 
 /**
  * A thread read as one conversation (design-docs/58): its messages in order with
  * the items they produced inline. Without `nodeIds`, shows the one message and
  * the replies that branch from it.
  */
-export const ConversationCanvas = ({ textTurnId, nodeIds }: { textTurnId: string; nodeIds?: string[] }) => {
+export const ConversationCanvas = ({ textTurnId, nodeIds, label }: { textTurnId: string; nodeIds?: string[]; label?: string }) => {
     const dispatch = useDispatch();
     const theme = useTheme();
     const { t } = useTranslation();
@@ -39,12 +64,11 @@ export const ConversationCanvas = ({ textTurnId, nodeIds }: { textTurnId: string
     const reports = useSelector((state: DataFormulatorState) => state.generatedReports);
     const drafts = useSelector((state: DataFormulatorState) => state.draftNodes);
     const selectedRef = useRef<HTMLDivElement>(null);
-    // Refresh redraws the conversation from the current session state (and re-reads chart images).
-    const [revision, setRevision] = useState(0);
+    // Rows load only once a result's rows are opened.
+    const [rowsOpened, setRowsOpened] = useState<Set<string>>(new Set());
     const path = nodeIds ?? [textTurnId];
     const pathIds = new Set(path);
     const firstPromptId = path.find(id => turns.find(turn => turn.id === id)?.prompt);
-    const requestCount = path.filter(id => turns.find(turn => turn.id === id)?.prompt).length;
     const branchOptions = nodeIds ? [] : turns.filter(turn => turn.parentNodeId === path[path.length - 1] && !pathIds.has(turn.id));
 
     useEffect(() => {
@@ -52,7 +76,9 @@ export const ConversationCanvas = ({ textTurnId, nodeIds }: { textTurnId: string
     }, [textTurnId]);
 
     const artifactButtonSx = { textTransform: 'none', fontSize: '0.8125rem', justifyContent: 'flex-start' } as const;
-    const cardSx = { border: '1px solid', borderColor: 'divider', borderRadius: 1.5, bgcolor: 'background.paper' } as const;
+    // A soft raised surface rather than an outlined box.
+    const cardSx = { borderRadius: 2, bgcolor: 'background.paper',
+        boxShadow: '0 0 0 1px rgba(0,0,0,0.03), 0 1px 2px rgba(16,24,40,0.04), 0 2px 8px rgba(16,24,40,0.025)' } as const;
     // Working numbers read at four significant figures, as people quote them.
     const roundRow = (row: Record<string, unknown>) => Object.fromEntries(Object.entries(row).map(([key, value]) =>
         [key, typeof value === 'number' && !Number.isInteger(value) ? Number(value.toPrecision(4)) : value]));
@@ -71,12 +97,15 @@ export const ConversationCanvas = ({ textTurnId, nodeIds }: { textTurnId: string
     const userMessage = (content: string, key: string, first: boolean) => <Box key={key} data-conversation-role="user"
         sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-start', gap: 1, mt: first ? 0 : 4, mb: 2 }}>
         <Typography sx={{ maxWidth: '80%', minWidth: 0, px: 2, py: 1.25, borderRadius: '18px 18px 4px 18px',
-            bgcolor: alpha(theme.palette.primary.main, 0.08),
+            // The same tint as the user's cards in the thread.
+            bgcolor: theme.palette.custom?.bgcolor ?? 'action.hover',
             color: 'inherit', fontSize: 'inherit', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.6 }}>{content}</Typography>
     </Box>;
     const agentMessage = (children: React.ReactNode) => <Box data-conversation-role="agent"
-        sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1.25 }}>
-        <Box sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{children}</Box>
+        sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 2 }}>
+        <Box sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere',
+            // Sections within a message: a heading opens with room above it (not at the message's start).
+            '& :is(h1, h2, h3, h4):not(:first-child)': { mt: 3 } }}>{children}</Box>
     </Box>;
     // A result reads as a compact card: its title and size, its charts as images, and its rows only on request.
     const tableArtifacts = (tableId: string) => {
@@ -86,7 +115,7 @@ export const ConversationCanvas = ({ textTurnId, nodeIds }: { textTurnId: string
         const rowCount = table.virtual?.rowCount ?? table.rows.length;
         const tableCharts = charts.filter(chart => chart.tableRef === table.id && !['Auto', '?', 'Table'].includes(chart.chartType));
         return <Box key={table.id} ref={table.id === textTurnId ? selectedRef : undefined}
-            data-conversation-entry={table.id} sx={{ my: 1.5, scrollMarginTop: 12 }}>
+            data-conversation-entry={table.id} sx={{ my: 3, scrollMarginTop: 12 }}>
             <Box sx={{ ...cardSx, overflow: 'hidden' }}>
                 <ButtonBase onClick={() => dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }))}
                     aria-label={t('conversation.openTableNamed', { defaultValue: 'Open table: {{name}}', name })}
@@ -107,31 +136,30 @@ export const ConversationCanvas = ({ textTurnId, nodeIds }: { textTurnId: string
                     // A chart not yet drawn here is a line that opens it.
                     if (!image) return <ButtonBase key={chart.id} onClick={() => dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }))}
                         aria-label={t('conversation.openChartNamed', { defaultValue: 'Open chart: {{name}}', name: label })}
-                        sx={{ display: 'flex', width: '100%', justifyContent: 'flex-start', gap: 1, px: 1.5, py: 0.75, borderTop: '1px solid',
-                            borderColor: 'divider', fontSize: '0.8125rem', color: 'text.secondary', '&:hover': { bgcolor: 'action.hover', color: 'text.primary' } }}>
+                        sx={{ display: 'flex', width: '100%', justifyContent: 'flex-start', gap: 1, px: 1.5, py: 0.75,
+                            fontSize: '0.8125rem', color: 'text.secondary', '&:hover': { bgcolor: 'action.hover', color: 'text.primary' } }}>
                         <InsertChartOutlinedIcon sx={{ fontSize: 16 }} />{label}
                     </ButtonBase>;
                     // The image carries the chart's title; it also names the chart for screen readers.
-                    const titled = !!chart.title && chart.titleKey === computeInsightKey(chart);
+                    const titled = chartTitleFits(chart);
                     return <Box key={chart.id} component="button" type="button"
                         aria-label={t('conversation.openChartNamed', { defaultValue: 'Open chart: {{name}}', name: titled ? chart.title! : label })}
                         onClick={() => dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }))}
-                        sx={{ display: 'block', width: '100%', boxSizing: 'border-box', p: 2, border: 0, borderTop: '1px solid',
-                            borderColor: 'divider', bgcolor: 'transparent', cursor: 'pointer',
-                            '&:hover': { bgcolor: 'rgba(0,0,0,0.015)' },
+                        sx={{ display: 'block', width: '100%', boxSizing: 'border-box', px: 2, pt: 1, pb: 2, border: 0,
+                            bgcolor: 'transparent', cursor: 'pointer',
                             '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
                         <Box component="img" src={image} alt={label} sx={{ display: 'block', width: '100%', height: 'auto',
                             maxWidth: Math.min(cached?.naturalWidth || 480, 560), mx: 'auto', objectFit: 'contain',
                             ...(cached?.naturalWidth && cached?.naturalHeight ? { aspectRatio: `${cached.naturalWidth} / ${cached.naturalHeight}` } : {}) }} />
                     </Box>;
                 })}
-                <Box component="details" sx={{ borderTop: '1px solid', borderColor: 'divider',
+                <Box component="details" sx={{
                     '& > summary': { cursor: 'pointer', px: 1.5, py: 0.75, fontSize: '0.8125rem', color: 'text.secondary', listStyle: 'none',
                         '&::-webkit-details-marker': { display: 'none' }, '&:hover': { color: 'text.primary' } } }}>
-                    <Box component="summary">{t('conversation.showRows', { defaultValue: 'Show rows' })}</Box>
-                    <Box sx={{ px: 1.5, pb: 1.25, overflowX: 'auto' }}>
-                        <DataFrameTable columns={table.names} rows={table.rows.map(roundRow)} totalRows={rowCount}
-                            maxRows={5} maxColumns={6} autoWidth simple truncationIndicator="caption" />
+                    <Box component="summary" onClick={() => setRowsOpened(previous => new Set(previous).add(table.id))}>
+                        {t('conversation.showRows', { defaultValue: 'Show rows' })}</Box>
+                    <Box sx={{ px: 1.5, pb: 1.25 }}>
+                        {rowsOpened.has(table.id) && <TableRowsPreview table={table} rowCount={rowCount} format={roundRow} />}
                     </Box>
                 </Box>
             </Box>
@@ -139,17 +167,21 @@ export const ConversationCanvas = ({ textTurnId, nodeIds }: { textTurnId: string
     };
 
     return <Box id="vis-view-canvas" sx={{ height: '100%', width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', bgcolor: 'background.paper' }}>
-        <CanvasHeader icon={<ForumOutlinedIcon />} title={t('conversation.title', { defaultValue: 'Conversation' })}
-            meta={requestCount ? t('conversation.requestCount', { defaultValue: '{{count}} requests', count: requestCount }) : undefined}
-            actions={<CanvasHeaderAction label={t('conversation.refresh', { defaultValue: 'Refresh' })} onClick={() => setRevision(value => value + 1)}>
-                <RefreshIcon />
-            </CanvasHeaderAction>} />
-        <Box key={revision} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 3, pt: 3, pb: 6 }}>
-            {/* A reading column: 15px type, generous leading, about 75 characters a line. */}
-            <Box sx={{ maxWidth: 720, mx: 'auto', fontFamily: readingTypography.fontFamily, fontSize: '0.9375rem', lineHeight: 1.65,
+        {/* No header: the canvas tab names the conversation. */}
+        <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 3, pt: 3, pb: 6 }}>
+            {/* A reading column: 14px type, generous leading, about 80 characters a line. */}
+            <Box sx={{ maxWidth: 720, mx: 'auto', fontFamily: readingTypography.fontFamily, fontSize: '0.875rem', lineHeight: 1.65,
                 color: readingTypography.color, '& strong': { fontWeight: 600 },
-                '--df-text-xs': '0.8125rem', '--df-text-sm': '0.875rem', '--df-text-md': '0.9375rem',
+                '--df-text-xs': '0.75rem', '--df-text-sm': '0.8125rem', '--df-text-md': '0.875rem',
             }}>
+                {/* Where the thread starts, marked as in the thread list. */}
+                {label && <Box data-conversation-start sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 2, color: 'text.secondary' }}>
+                    <Box component="span" aria-hidden="true" sx={{ width: 8, height: 8, borderRadius: '50%', border: '1.5px solid', borderColor: 'text.disabled' }} />
+                    <Typography component="span" sx={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0 }}>
+                        {label}
+                    </Typography>
+                    <Box component="span" aria-hidden="true" sx={{ flex: 1, height: '1px', ml: 0.5, bgcolor: 'divider' }} />
+                </Box>}
                 {path.map(nodeId => {
                     switch (graph.kindOf(nodeId)) {
                         case 'report': {

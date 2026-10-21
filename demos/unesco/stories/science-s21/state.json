@@ -1,0 +1,543 @@
+{
+ "__stateVersion": 14,
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "d_result_2",
+   "displayId": "Countries with women forming half of researchers",
+   "names": [
+    "indicator_id",
+    "COUNTRY_ID",
+    "country",
+    "year",
+    "value",
+    "magnitude",
+    "qualifier",
+    "map_id"
+   ],
+   "rows": [
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "MMR",
+     "country": "Myanmar",
+     "year": 2023,
+     "value": 76.54059,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 104
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "KGZ",
+     "country": "Kyrgyzstan",
+     "year": 2024,
+     "value": 61.39082,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 417
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "AZE",
+     "country": "Azerbaijan",
+     "year": 2024,
+     "value": 60.61773,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 31
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "ALB",
+     "country": "Albania",
+     "year": 2022,
+     "value": 57.65331,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 8
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "MNG",
+     "country": "Mongolia",
+     "year": 2022,
+     "value": 57.41091,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 496
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "CUB",
+     "country": "Cuba",
+     "year": 2024,
+     "value": 56.00054,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 192
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "KAZ",
+     "country": "Kazakhstan",
+     "year": 2024,
+     "value": 55.68849,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 398
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "TUN",
+     "country": "Tunisia",
+     "year": 2024,
+     "value": 55.30826,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 788
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "GEO",
+     "country": "Georgia",
+     "year": 2024,
+     "value": 55.0477,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 268
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "MKD",
+     "country": "North Macedonia",
+     "year": 2024,
+     "value": 54.73448,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 807
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "ARG",
+     "country": "Argentina",
+     "year": 2023,
+     "value": 54.02728,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 32
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "PHL",
+     "country": "Philippines",
+     "year": 2020,
+     "value": 53.41367,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 608
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "MDA",
+     "country": "Moldova",
+     "year": 2024,
+     "value": 52.94592,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 498
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "SRB",
+     "country": "Serbia",
+     "year": 2024,
+     "value": 52.74026,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 688
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "LSO",
+     "country": "Lesotho",
+     "year": 2023,
+     "value": 52.5641,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 426
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "BIH",
+     "country": "Bosnia and Herzegovina",
+     "year": 2024,
+     "value": 52.49216,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 70
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "ARM",
+     "country": "Armenia",
+     "year": 2024,
+     "value": 52.35081,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 51
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "VEN",
+     "country": "Venezuela",
+     "year": 2023,
+     "value": 52.20249,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 862
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "MNE",
+     "country": "Montenegro",
+     "year": 2019,
+     "value": 52.08071,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 499
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "KWT",
+     "country": "Kuwait",
+     "year": 2024,
+     "value": 51.48515,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 414
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "PRY",
+     "country": "Paraguay",
+     "year": 2023,
+     "value": 51.25392,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 600
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "URY",
+     "country": "Uruguay",
+     "year": 2024,
+     "value": 51.0408,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 858
+    },
+    {
+     "indicator_id": "FRESP.THC",
+     "COUNTRY_ID": "DZA",
+     "country": "Algeria",
+     "year": 2024,
+     "value": 50.61841,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 12
+    }
+   ],
+   "metadata": {
+    "indicator_id": {
+     "type": "string",
+     "levels": []
+    },
+    "COUNTRY_ID": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "value": {
+     "type": "number",
+     "levels": []
+    },
+    "magnitude": {
+     "type": "boolean",
+     "levels": []
+    },
+    "qualifier": {
+     "type": "boolean",
+     "levels": []
+    },
+    "map_id": {
+     "type": "integer",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import pandas as pd\nn=pd.read_parquet('data/rd_opri_national.parquet')\nc=pd.read_parquet('data/countries.parquet')\na=n[(n.indicator_id=='FRESP.THC')&n.year.between(2019,2024)&n.value.notna()].sort_values('year').drop_duplicates('COUNTRY_ID',keep='last')\nresult=a[a.value>=50].merge(c[['COUNTRY_ID','map_id']],on='COUNTRY_ID',how='left')\nresult['country']=result.country.replace({'Republic of Moldova':'Moldova','Venezuela (Bolivarian Republic of)':'Venezuela'})\nresult=result.sort_values('value',ascending=False)",
+    "codeSignature": "c4c2fd01138dc8e6c0f86d1e87679e719b8debdfd9a64e1ea0f68cf5b2ff3071",
+    "outputVariable": "result",
+    "source": [
+     "rd_opri_national",
+     "countries"
+    ],
+    "inputSources": [
+     {
+      "id": "data:5fba7f49fc439dba173b1cf0eb4cc910:rd_opri_national",
+      "kind": "data",
+      "displayName": "rd_opri_national"
+     },
+     {
+      "id": "data:3bfeafe1536e0211b109193b1e492f81:countries",
+      "kind": "data",
+      "displayName": "countries"
+     }
+    ],
+    "trigger": {
+     "tableId": "rd_opri_national",
+     "resultTableId": "d_result_2",
+     "chart": {
+      "id": "chart-1792310961639",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "rd_opri_national",
+      "source": "trigger"
+     }
+    },
+    "explanation": {
+     "status": "ok",
+     "concepts": [],
+     "agent": "CodeExplanationAgent"
+    }
+   },
+   "virtual": {
+    "tableId": "d_result_2",
+    "rowCount": 23
+   },
+   "description": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792310955278_step_1",
+   "createdAt": 1792310969897
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-05bde999f79c",
+   "chartType": "Choropleth",
+   "encodingMap": {
+    "id": {
+     "fieldID": "concept-map_id-1792310969897-0.34983868322682377",
+     "dtype": "nominal"
+    },
+    "color": {
+     "fieldID": "concept-value-1792310969897-0.9414215960479985",
+     "dtype": "quantitative"
+    },
+    "detail": {
+     "channel": "detail",
+     "bin": false
+    }
+   },
+   "tableRef": "d_result_2",
+   "source": "user",
+   "title": "Countries where women are at least half of researchers",
+   "subtitle": "Latest reported headcount share, 2019–2024; unshaded countries are below half or lack recent data",
+   "titleKey": "Choropleth|color:concept-value-1792310969897-0.9414215960479985:|detail::|id:concept-map_id-1792310969897-0.34983868322682377:",
+   "unread": false,
+   "themeId": "datawrapper"
+  },
+  {
+   "id": "chart-4ec4dbbe3737",
+   "chartType": "Bar Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-value-1792310969897-0.9414215960479985",
+     "dtype": "quantitative"
+    },
+    "y": {
+     "fieldID": "concept-country-1792310969897-0.6065826840502297",
+     "dtype": "nominal",
+     "sortOrder": "descending",
+     "sortBy": "x"
+    },
+    "color": {
+     "channel": "color",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "d_result_2",
+   "source": "user",
+   "title": "Countries where women are at least half of researchers: highest first",
+   "subtitle": "Latest reported headcount share, 2019–2024; unshaded countries are below half or lack recent data",
+   "unread": false,
+   "themeId": "datawrapper",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-value-1792310969897-0.9414215960479985:|y:concept-country-1792310969897-0.6065826840502297:"
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-country-1792310969897-0.6065826840502297",
+   "name": "country",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-value-1792310969897-0.9414215960479985",
+   "name": "value",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-map_id-1792310969897-0.34983868322682377",
+   "name": "map_id",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792310955278_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1792310955278_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Where are women at least half of researchers?",
+   "parentNodeId": "conversation-root:8ecefd95-bf3f-40f3-9b46-5e62a479ee48",
+   "actionId": "exploreDataFromNL_1792310955278",
+   "createdAt": 1792310955278
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792310955278_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1792310955278_step_1",
+   "textKind": "explain",
+   "content": "Find countries where the latest reported share of women researchers reaches half, using 2019–2024 data.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792310955278_prompt",
+   "actionId": "exploreDataFromNL_1792310955278",
+   "createdAt": 1792310961304,
+   "startedAt": 1792310955279,
+   "codeExecutions": [
+    {
+     "id": "code_exploreDataFromNL_1792310955278_1",
+     "tool": "execute_python_script",
+     "purpose": "Find countries where the latest reported share of women researchers reaches half, using 2019–2024 data.",
+     "code": "import pandas as pd\nn=pd.read_parquet('data/rd_opri_national.parquet')\na=n[(n.indicator_id=='FRESP.THC')&n.year.between(2019,2024)&n.value.notna()].sort_values('year').drop_duplicates('COUNTRY_ID',keep='last')\nprint('coverage',len(a))\nprint(a[a.value>=50][['COUNTRY_ID','country','year','value','qualifier']].sort_values('value',ascending=False).to_string(index=False))",
+     "status": "completed",
+     "createdAt": 1792310961304,
+     "output": "coverage 107\nCOUNTRY_ID                            country  year    value qualifier\n       MMR                            Myanmar  2023 76.54059      None\n       KGZ                         Kyrgyzstan  2024 61.39082      None\n       AZE                         Azerbaijan  2024 60.61773      None\n       ALB                            Albania  2022 57.65331      None\n       MNG                           Mongolia  2022 57.41091      None\n       CUB                               Cuba  2024 56.00054      None\n       KAZ                         Kazakhstan  2024 55.68849      None\n       TUN                            Tunisia  2024 55.30826      None\n       GEO                            Georgia  2024 55.04770      None\n       MKD                    North Macedonia  2024 54.73448      None\n       ARG                          Argentina  2023 54.02728      None\n       PHL                        Philippines  2020 53.41367      None\n       MDA                Republic of Moldova  2024 52.94592      None\n       SRB                             Serbia  2024 52.74026      None\n       LSO                            Lesotho  2023 52.56410      None\n       BIH             Bosnia and Herzegovina  2024 52.49216      None\n       ARM                            Armenia  2024 52.35081      None\n       VEN Venezuela (Bolivarian Republic of)  2023 52.20249      None\n       MNE                         Montenegro  2019 52.08071      None\n       KWT                             Kuwait  2024 51.48515      None\n       PRY                           Paraguay  2023 51.25392      None\n       URY                            Uruguay  2024 51.04080      None\n       DZA                            Algeria  2024 50.61841      None\n"
+    }
+   ],
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1792310955278-1",
+     "kind": "tool",
+     "label": "running code... Find countries where the latest reported share of women researchers reaches half, using 2019–2024 data.",
+     "status": "completed",
+     "tool": "execute_python_script",
+     "toolCallId": "call_XgJnpPAqpt1gOuy2eaiw3B9y",
+     "executionId": "code_exploreDataFromNL_1792310955278_1"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792310955278-2",
+     "kind": "chart",
+     "label": "creating chart...",
+     "status": "completed"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792310955278_1792310977519",
+   "displayId": "textTurn_exploreDataFromNL_1792310955278_closing",
+   "textKind": "explain",
+   "content": "**Women are at least half of researchers in 23 countries**, using each country’s latest reported headcount share from **2019–2024**. Myanmar has the highest share at **76.5%**, followed by Kyrgyzstan (**61.4%**) and Azerbaijan (**60.6%**).\n\nThe countries highlighted on the map are:\n- **Europe and Central Asia:** Albania, Armenia, Azerbaijan, Bosnia and Herzegovina, Georgia, Kazakhstan, Kyrgyzstan, Moldova, Montenegro, North Macedonia and Serbia.\n- **Other parts of Asia:** Mongolia, Myanmar, the Philippines and Kuwait.\n- **Africa:** Algeria, Lesotho and Tunisia.\n- **Latin America:** Argentina, Cuba, Paraguay, Uruguay and Venezuela.\n\nRecent data cover 107 countries; unshaded countries either fall below half or lack recent data.",
+   "parentNodeId": "d_result_2",
+   "actionId": "exploreDataFromNL_1792310955278",
+   "createdAt": 1792310977519,
+   "startedAt": 1792310955279,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "d_result_2",
+   "fields": {
+    "indicator_id": {
+     "semanticType": "ID"
+    },
+    "COUNTRY_ID": {
+     "semanticType": "Country"
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "displayName": "Country"
+     }
+    },
+    "year": {
+     "semanticType": "Year",
+     "displayName": "Reporting year",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Reporting year"
+     }
+    },
+    "value": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "intrinsicDomain": [
+      0,
+      100
+     ],
+     "displayName": "Women researchers (%)",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "intrinsicDomain": [
+       0,
+       100
+      ],
+      "displayName": "Women researchers (%)"
+     }
+    },
+    "magnitude": {
+     "semanticType": "Unknown"
+    },
+    "qualifier": {
+     "semanticType": "Unknown"
+    },
+    "map_id": {
+     "semanticType": "ID"
+    }
+   }
+  }
+ ],
+ "activeWorkspace": {
+  "id": "science-s21",
+  "displayName": "Women are still only a third of researchers"
+ },
+ "focusedId": {
+  "type": "chart",
+  "chartId": "chart-05bde999f79c"
+ }
+}

@@ -712,63 +712,6 @@ export function createDictTable(
     }
 }
 
-/**
- * A user-authored "skin" of a chart: a Vega-Lite spec edited via the
- * style/restyle agent. Variants share the chart's encoding and data — they
- * only change visual presentation. See design-docs/28-chart-style-refinement-agent.md.
- *
- * Stored on `Chart` so they persist with the chart and don't pollute the data thread.
- * Currently rendered ONLY in the focused chart canvas (VisualizationView);
- * thumbnails and exports continue to use the assembled default spec.
- */
-export interface ChartStyleVariant {
-    id: string,                   // stable id, e.g. "v-<timestamp>"
-    label?: string,               // user-editable; defaults to "v1", "v2"…
-    prompt: string,               // the natural-language instruction that produced this spec
-    vlSpec: any,                  // full Vega-Lite spec (data block stripped — re-attached at render)
-    basedOnVariantId?: string,    // lineage for "edit v2 → v3"; undefined = derived from default
-    encodingFingerprint: string,  // see computeEncodingFingerprint(); used to detect staleness
-    createdAt: number,
-    rationale?: string,           // optional one-line explanation from the agent
-    // Generative UI: a few simple knobs the restyle agent attaches to the
-    // variant so the user can keep tweaking the agent-authored spec without
-    // re-prompting. While a variant is active these replace the chart-template
-    // config. See VariantConfigControl and applyVariantConfigUI in app/restyle.ts.
-    configUI?: VariantConfigControl[],
-    // Current value for each control, keyed by control.key. Missing key → use
-    // the control's defaultValue.
-    configValues?: Record<string, any>,
-}
-
-/**
- * A single generative-UI control authored by the restyle agent for a style
- * variant. Mirrors the shape of ChartPropertyDef (so it can reuse the same
- * renderers) but instead of arbitrary code it carries a `path`: the location
- * inside the Vega-Lite spec to write the chosen value to.
- *
- * Applying a control is a pure, declarative "set value at path" operation
- * (see applyVariantConfigUI / setAtPath). There is NO code execution — the
- * agent only chooses which knob, where it writes, and the allowed values.
- * The written value may be a scalar OR a whole object (e.g. a full mark/axis
- * sub-spec), which keeps the door open for richer restyle edits while staying
- * safe.
- */
-export type VariantConfigControl = {
-    key: string;
-    label: string;
-    /**
-     * Path into the vlSpec where the chosen value is written, as an array of
-     * object keys / array indices, e.g. ["mark","opacity"] or
-     * ["encoding","x","axis","labelAngle"]. Intermediate objects are created
-     * as needed. Prototype-polluting segments are rejected at apply time.
-     */
-    path: (string | number)[];
-} & (
-    | { type: 'continuous'; min: number; max: number; step?: number; defaultValue: number }
-    | { type: 'discrete';  options: { value: any; label: string }[]; defaultValue: any }
-    | { type: 'binary';    defaultValue: boolean }
-);
-
 export type Chart = { 
     id: string, 
     chartType: string, 
@@ -780,8 +723,6 @@ export type Chart = {
     subtitle?: string,  // factual scope, period, aggregation, and units for the title
     titleKey?: string,  // analytical encoding fingerprint captured when title/subtitle were set
     themeId?: string,  // Flint theme preset id; undefined = Flint default
-    styleVariants?: ChartStyleVariant[],  // user-authored style refinements (see ChartStyleVariant)
-    activeVariantId?: string,  // id of the variant currently rendered in the focused canvas; undefined = default
     scaleFactor?: number,  // zoom level applied by the resizer; undefined = 1 (no zoom)
     unread?: boolean,  // true for agent-generated charts the user hasn't focused yet; cleared on focus
 }
@@ -792,8 +733,19 @@ export function computeInsightKey(chart: Chart): string {
 }
 
 /**
- * Fingerprint of the chart's structural identity for variant staleness detection.
- * A variant is "stale" iff its stored encodingFingerprint != fingerprintOf(currentChart).
+ * Whether the chart's title and subtitle still describe it: written for this encoding, or for the same
+ * chart turned on its side (x and y swapped, e.g. vertical bars made horizontal), which shows the same thing.
+ */
+export function chartTitleFits(chart: Pick<Chart, 'chartType' | 'encodingMap' | 'title' | 'titleKey'>): boolean {
+    if (!chart.title || !chart.titleKey) return false;
+    if (chart.titleKey === computeEncodingFingerprint(chart)) return true;
+    const { x, y, ...rest } = chart.encodingMap;
+    const turned = { ...rest, ...(y ? { x: y } : {}), ...(x ? { y: x } : {}) } as EncodingMap;
+    return chart.titleKey === computeEncodingFingerprint({ chartType: chart.chartType, encodingMap: turned });
+}
+
+/**
+ * Fingerprint of the chart's structural identity (what the chart depicts).
  * Includes chartType + sorted (channel, fieldID, aggregate) tuples — anything that
  * meaningfully changes what the chart depicts. Excludes config (purely cosmetic).
  */
@@ -802,11 +754,6 @@ export function computeEncodingFingerprint(chart: Pick<Chart, 'chartType' | 'enc
         .map(([ch, enc]) => `${ch}:${enc?.fieldID ?? ''}:${enc?.aggregate ?? ''}`)
         .sort();
     return `${chart.chartType}|${tuples.join('|')}`;
-}
-
-/** True iff the variant was authored against an encoding that no longer matches the chart. */
-export function isVariantStale(chart: Chart, variant: ChartStyleVariant): boolean {
-    return variant.encodingFingerprint !== computeEncodingFingerprint(chart);
 }
 
 export let duplicateChart = (chart: Chart) : Chart => {
@@ -818,9 +765,6 @@ export let duplicateChart = (chart: Chart) : Chart => {
         source: chart.source,
         config: chart.config ? JSON.parse(JSON.stringify(chart.config)) : undefined,
         scaleFactor: chart.scaleFactor,
-        // styleVariants are intentionally NOT copied: they are user-authored
-        // refinements tied to the chart they were created on. A duplicate is a
-        // fresh canvas. (See design-docs/28-chart-style-refinement-agent.md.)
     }
 }
 

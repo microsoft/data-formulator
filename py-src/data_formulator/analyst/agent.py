@@ -2152,6 +2152,12 @@ class AnalystAgent:
         return True
 
     @staticmethod
+    def _is_rate_limit_error(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        return ("rate limit" in msg or "rate_limit" in msg or "429" in msg
+                or "ratelimit" in type(exc).__name__.lower())
+
+    @staticmethod
     def _is_transient_error(exc: Exception) -> bool:
         msg = str(exc).lower()
         if any(kw in msg for kw in (
@@ -2196,12 +2202,16 @@ class AnalystAgent:
                     logger.warning("[AnalystAgent] Context window exceeded; retrying with older tool output shortened")
                     continue
                 attempt += 1
-                if self._is_transient_error(e) and attempt < max_attempts:
-                    wait = self.execution_config.stream_open_backoff_seconds * 2 ** (attempt - 1)
+                rate_limited = self._is_rate_limit_error(e)
+                limit = self.execution_config.rate_limit_retries + 1 if rate_limited else max_attempts
+                if self._is_transient_error(e) and attempt < limit:
+                    backoff = (self.execution_config.rate_limit_backoff_seconds if rate_limited
+                               else self.execution_config.stream_open_backoff_seconds)
+                    wait = backoff * 2 ** (attempt - 1)
                     logger.warning(
                         "[AnalystAgent] Transient LLM error (attempt %d/%d), "
                         "retrying in %gs: %s",
-                        attempt, max_attempts, wait, e,
+                        attempt, limit, wait, e,
                     )
                     if cancel is not None:
                         cancel.wait(wait)

@@ -114,7 +114,7 @@ it('keeps a shown thread open when a new thread appears and only collapses on re
   expect(screen.getByRole('button', { name: 'Expand thread' }).querySelector('[data-testid="ChevronRightIcon"]')).toBeTruthy();
   expect(document.querySelector('[data-thread-item^="textturn-old"]')).toBeNull();
   expect(screen.getByText('Analyze old pickups').closest('[data-thread-summary]')).toBeTruthy();
-  expect(screen.getAllByRole('button', { name: 'view chat' })).toHaveLength(2);
+  expect(screen.getAllByRole('button', { name: 'Open as chat' })).toHaveLength(2);
   const previousFocus = store.getState().focusedId;
   // The collapsed thread is one button: its request, its dotted timeline, and a line to expand it.
   const summary = screen.getByRole('button', { name: /^Analyze old pickups/ });
@@ -222,7 +222,7 @@ it.each([
       source: 'user', encodingMap: {} } as any));
     nodeIds.push('visualize', 'inspect-step', 'result-chart-table', 'creation-done', 'after-result');
   }
-  const segmentFocus = { type: 'conversation', tableId: 'thread-first-ask', nodeIds };
+  const segmentFocus = { type: 'conversation', tableId: 'thread-first-ask', nodeIds, label: 'thread - 1' };
   const theme = THEME;
   const { container } = renderDataThread(store);
   if (producesTable) {
@@ -236,17 +236,16 @@ it.each([
   }
   const heading = screen.getByText(/thread.*1/i);
   expect(heading.closest('button')).toHaveAttribute('aria-label', 'Collapse thread');
-  fireEvent.click(screen.getByRole('button', { name: 'view chat' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Open as chat' }));
   expect(store.getState().focusedId).toEqual(segmentFocus);
   expect(container.querySelector('[data-thread-active="true"]')).toBeTruthy();
   if (producesTable) {
-    const instructionGutter = screen.getByText('Inspecting resource usage').closest('[data-thread-item]')!.firstElementChild!;
-    expect(instructionGutter.querySelector('svg')).toHaveStyle({ color: 'rgba(0, 0, 0, 0.15)' });
-    expect(container.querySelector('[data-thread-table-dot]')).toHaveStyle({ backgroundColor: 'rgba(0, 0, 0, 0.15)' });
+    // The open conversation shows on the timeline: the whole thread's line and dots turn blue.
+    expect(container.querySelector('[data-thread-table-dot]')).not.toHaveStyle({ backgroundColor: 'rgba(0, 0, 0, 0.15)' });
   }
   act(() => { store.dispatch(dfActions.setFocused(undefined)); });
   expect(container.querySelector('[data-thread-active="true"]')).toBeNull();
-  const openThreadButton = screen.getByRole('button', { name: 'view chat' });
+  const openThreadButton = screen.getByRole('button', { name: 'Open as chat' });
   expect(heading.contains(openThreadButton)).toBe(false);
   fireEvent.click(openThreadButton);
   expect(store.getState().focusedId).toEqual(segmentFocus);
@@ -781,9 +780,9 @@ it('keeps a long thread whole across dense columns and renders each output once'
     act(() => { store.dispatch(dfActions.setFocused({ type: 'table', tableId: 'segment-table-0' })); });
     expect(container.querySelectorAll('[data-thread-highlighted="true"]')).toHaveLength(1);
     expect(lastOutput.closest('[data-thread-highlighted]')).toHaveAttribute('data-thread-highlighted', 'true');
-    fireEvent.click(screen.getAllByRole('button', { name: 'view chat' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open as chat' })[0]);
     expect(store.getState().focusedId).toEqual({ type: 'conversation', tableId: 'thread-segment-step-0',
-      nodeIds: Array.from({ length: 10 }, (_, index) => [`segment-step-${index}`, `segment-table-${index}`]).flat() });
+      nodeIds: Array.from({ length: 10 }, (_, index) => [`segment-step-${index}`, `segment-table-${index}`]).flat(), label: 'thread - 1' });
     expect(container.querySelectorAll('[data-thread-active="true"]')).toHaveLength(1);
     rerender(threadElement(store, { denseColumns: false }));
     expect(container.querySelectorAll('[data-thread-segment]')).toHaveLength(1);
@@ -791,7 +790,7 @@ it('keeps a long thread whole across dense columns and renders each output once'
     expect(container.querySelectorAll('[data-thread-active]')).toHaveLength(2);
     expect(container.querySelectorAll('[data-thread-joined-above="true"]')).toHaveLength(0);
     expect(container.querySelectorAll('[data-thread-joined-below="true"]')).toHaveLength(0);
-    expect(screen.getAllByRole('button', { name: 'view chat' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Open as chat' })).toHaveLength(2);
     for (let index = 0; index < 10; index++) expect(outputBlock(`segment-table-${index}`)).toHaveLength(1);
     rerender(threadElement(store, { denseColumns: true }));
     expect(new Set(Array.from({ length: 10 }, (_, index) => segmentOf(index))).size).toBe(1);
@@ -1222,4 +1221,19 @@ it('leaves a settled step\'s thinking out of the thread', () => {
   expect(container.querySelector('[data-thread-item="textturn-step"]')).toBeNull();
   expect(screen.queryByText(/expand the trend to 2005/)).toBeNull();
   expect(screen.getByText('Result')).toBeTruthy();
+});
+
+it('selects only what the canvas shows on the shelf, not the table an open app came from', () => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  store.dispatch(dfActions.addTableToStore(sourceTable('quakes', 'USGS Earthquakes')));
+  store.dispatch(userMessage('ask', 'Build an explorer', 'quakes', 2));
+  store.dispatch(dfActions.upsertFileNode({ kind: 'file', id: 'file-explorer.app.jsx', path: 'explorer.app.jsx',
+    displayName: 'Global Earthquake Explorer', parentNodeId: 'ask', createdAt: 3, contentHash: 'app-hash' } as any));
+  const { container } = renderDataThread(store);
+  // The table itself is open: its shelf row is selected.
+  act(() => { store.dispatch(dfActions.setFocused({ type: 'table', tableId: 'quakes' })); });
+  expect(container.querySelector('[data-table-id="quakes"] [aria-current="true"]')).toBeTruthy();
+  // The app is open: the table it came from is no longer selected.
+  act(() => { store.dispatch(dfActions.setFocused({ type: 'file', fileName: 'explorer.app.jsx' })); });
+  expect(container.querySelector('[data-table-id="quakes"] [aria-current="true"]')).toBeNull();
 });

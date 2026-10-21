@@ -1,0 +1,1687 @@
+{
+ "__stateVersion": 14,
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "d_out",
+   "displayId": "Primary schools without electricity by country",
+   "names": [
+    "COUNTRY_ID",
+    "country",
+    "year",
+    "value",
+    "qualifier",
+    "map_id",
+    "without_power"
+   ],
+   "rows": [
+    {
+     "COUNTRY_ID": "TCD",
+     "country": "Chad",
+     "year": 2024,
+     "value": 1.246031746,
+     "qualifier": null,
+     "map_id": 148,
+     "without_power": 98.753968254
+    },
+    {
+     "COUNTRY_ID": "NER",
+     "country": "Niger",
+     "year": 2024,
+     "value": 7.5242047026,
+     "qualifier": null,
+     "map_id": 562,
+     "without_power": 92.4757952974
+    },
+    {
+     "COUNTRY_ID": "COD",
+     "country": "DR Congo",
+     "year": 2023,
+     "value": 9.9536895752,
+     "qualifier": null,
+     "map_id": 180,
+     "without_power": 90.0463104248
+    },
+    {
+     "COUNTRY_ID": "MDG",
+     "country": "Madagascar",
+     "year": 2024,
+     "value": 11.8608075202,
+     "qualifier": null,
+     "map_id": 450,
+     "without_power": 88.1391924798
+    },
+    {
+     "COUNTRY_ID": "SLE",
+     "country": "Sierra Leone",
+     "year": 2024,
+     "value": 16.8316831683,
+     "qualifier": null,
+     "map_id": 694,
+     "without_power": 83.1683168317
+    },
+    {
+     "COUNTRY_ID": "GIN",
+     "country": "Guinea",
+     "year": 2020,
+     "value": 17.0706596375,
+     "qualifier": null,
+     "map_id": 324,
+     "without_power": 82.9293403625
+    },
+    {
+     "COUNTRY_ID": "MLI",
+     "country": "Mali",
+     "year": 2023,
+     "value": 18.0041814088,
+     "qualifier": null,
+     "map_id": 466,
+     "without_power": 81.9958185912
+    },
+    {
+     "COUNTRY_ID": "LBR",
+     "country": "Liberia",
+     "year": 2022,
+     "value": 24.2575966851,
+     "qualifier": null,
+     "map_id": 430,
+     "without_power": 75.7424033149
+    },
+    {
+     "COUNTRY_ID": "ETH",
+     "country": "Ethiopia",
+     "year": 2023,
+     "value": 27.4270599984,
+     "qualifier": null,
+     "map_id": 231,
+     "without_power": 72.5729400016
+    },
+    {
+     "COUNTRY_ID": "BFA",
+     "country": "Burkina Faso",
+     "year": 2024,
+     "value": 28.4997787284,
+     "qualifier": null,
+     "map_id": 854,
+     "without_power": 71.5002212716
+    },
+    {
+     "COUNTRY_ID": "ERI",
+     "country": "Eritrea",
+     "year": 2022,
+     "value": 28.6259498596,
+     "qualifier": null,
+     "map_id": 232,
+     "without_power": 71.3740501404
+    },
+    {
+     "COUNTRY_ID": "NIC",
+     "country": "Nicaragua",
+     "year": 2022,
+     "value": 32.0331001282,
+     "qualifier": null,
+     "map_id": 558,
+     "without_power": 67.9668998718
+    },
+    {
+     "COUNTRY_ID": "BEN",
+     "country": "Benin",
+     "year": 2022,
+     "value": 33.6560516357,
+     "qualifier": null,
+     "map_id": 204,
+     "without_power": 66.3439483643
+    },
+    {
+     "COUNTRY_ID": "MWI",
+     "country": "Malawi",
+     "year": 2023,
+     "value": 33.9948231234,
+     "qualifier": null,
+     "map_id": 454,
+     "without_power": 66.0051768766
+    },
+    {
+     "COUNTRY_ID": "SLB",
+     "country": "Solomon Islands",
+     "year": 2023,
+     "value": 35.6350184957,
+     "qualifier": null,
+     "map_id": 90,
+     "without_power": 64.3649815043
+    },
+    {
+     "COUNTRY_ID": "CMR",
+     "country": "Cameroon",
+     "year": 2022,
+     "value": 35.7298178853,
+     "qualifier": null,
+     "map_id": 120,
+     "without_power": 64.2701821147
+    },
+    {
+     "COUNTRY_ID": "TGO",
+     "country": "Togo",
+     "year": 2024,
+     "value": 38.2705373687,
+     "qualifier": null,
+     "map_id": 768,
+     "without_power": 61.7294626313
+    },
+    {
+     "COUNTRY_ID": "GHA",
+     "country": "Ghana",
+     "year": 2021,
+     "value": 38.8471820412,
+     "qualifier": null,
+     "map_id": 288,
+     "without_power": 61.1528179588
+    },
+    {
+     "COUNTRY_ID": "MRT",
+     "country": "Mauritania",
+     "year": 2020,
+     "value": 39.1486546096,
+     "qualifier": null,
+     "map_id": 478,
+     "without_power": 60.8513453904
+    },
+    {
+     "COUNTRY_ID": "PAK",
+     "country": "Pakistan",
+     "year": 2024,
+     "value": 41.2648231145,
+     "qualifier": null,
+     "map_id": 586,
+     "without_power": 58.7351768855
+    },
+    {
+     "COUNTRY_ID": "COM",
+     "country": "Comoros",
+     "year": 2024,
+     "value": 49.0693739425,
+     "qualifier": null,
+     "map_id": 174,
+     "without_power": 50.9306260575
+    },
+    {
+     "COUNTRY_ID": "SEN",
+     "country": "Senegal",
+     "year": 2024,
+     "value": 56.6496735533,
+     "qualifier": null,
+     "map_id": 686,
+     "without_power": 43.3503264467
+    },
+    {
+     "COUNTRY_ID": "GMB",
+     "country": "Gambia",
+     "year": 2025,
+     "value": 57.0637119114,
+     "qualifier": null,
+     "map_id": 270,
+     "without_power": 42.9362880886
+    },
+    {
+     "COUNTRY_ID": "ZMB",
+     "country": "Zambia",
+     "year": 2024,
+     "value": 57.7896022331,
+     "qualifier": null,
+     "map_id": 894,
+     "without_power": 42.2103977669
+    },
+    {
+     "COUNTRY_ID": "CIV",
+     "country": "Côte d'Ivoire",
+     "year": 2024,
+     "value": 66.8810935772,
+     "qualifier": null,
+     "map_id": 384,
+     "without_power": 33.1189064228
+    },
+    {
+     "COUNTRY_ID": "LAO",
+     "country": "Lao People's Democratic Republic",
+     "year": 2025,
+     "value": 67.0295309786,
+     "qualifier": null,
+     "map_id": 418,
+     "without_power": 32.9704690214
+    },
+    {
+     "COUNTRY_ID": "TZA",
+     "country": "Tanzania",
+     "year": 2024,
+     "value": 68.0465591974,
+     "qualifier": null,
+     "map_id": 834,
+     "without_power": 31.9534408026
+    },
+    {
+     "COUNTRY_ID": "KEN",
+     "country": "Kenya",
+     "year": 2023,
+     "value": 69.5951644644,
+     "qualifier": null,
+     "map_id": 404,
+     "without_power": 30.4048355356
+    },
+    {
+     "COUNTRY_ID": "ZWE",
+     "country": "Zimbabwe",
+     "year": 2024,
+     "value": 74.2825056152,
+     "qualifier": null,
+     "map_id": 716,
+     "without_power": 25.7174943848
+    },
+    {
+     "COUNTRY_ID": "VEN",
+     "country": "Venezuela (Bolivarian Republic of)",
+     "year": 2024,
+     "value": 76.2896194458,
+     "qualifier": null,
+     "map_id": 862,
+     "without_power": 23.7103805542
+    },
+    {
+     "COUNTRY_ID": "GUY",
+     "country": "Guyana",
+     "year": 2024,
+     "value": 76.6292134831,
+     "qualifier": null,
+     "map_id": 328,
+     "without_power": 23.3707865169
+    },
+    {
+     "COUNTRY_ID": "SUR",
+     "country": "Suriname",
+     "year": 2024,
+     "value": 76.8421052632,
+     "qualifier": null,
+     "map_id": 740,
+     "without_power": 23.1578947368
+    },
+    {
+     "COUNTRY_ID": "RWA",
+     "country": "Rwanda",
+     "year": 2024,
+     "value": 80.5246226182,
+     "qualifier": null,
+     "map_id": 646,
+     "without_power": 19.4753773818
+    },
+    {
+     "COUNTRY_ID": "DJI",
+     "country": "Djibouti",
+     "year": 2023,
+     "value": 81.4814834595,
+     "qualifier": null,
+     "map_id": 262,
+     "without_power": 18.5185165405
+    },
+    {
+     "COUNTRY_ID": "FSM",
+     "country": "Micronesia (Federated States of)",
+     "year": 2024,
+     "value": 81.9444444444,
+     "qualifier": null,
+     "map_id": 583,
+     "without_power": 18.0555555556
+    },
+    {
+     "COUNTRY_ID": "NPL",
+     "country": "Nepal",
+     "year": 2025,
+     "value": 83.2651564307,
+     "qualifier": null,
+     "map_id": 524,
+     "without_power": 16.7348435693
+    },
+    {
+     "COUNTRY_ID": "PAN",
+     "country": "Panama",
+     "year": 2024,
+     "value": 85.219543457,
+     "qualifier": null,
+     "map_id": 591,
+     "without_power": 14.780456543
+    },
+    {
+     "COUNTRY_ID": "MHL",
+     "country": "Marshall Islands",
+     "year": 2023,
+     "value": 85.8695652174,
+     "qualifier": null,
+     "map_id": 584,
+     "without_power": 14.1304347826
+    },
+    {
+     "COUNTRY_ID": "SYR",
+     "country": "Syrian Arab Republic",
+     "year": 2024,
+     "value": 86.8947067261,
+     "qualifier": null,
+     "map_id": 760,
+     "without_power": 13.1052932739
+    },
+    {
+     "COUNTRY_ID": "COL",
+     "country": "Colombia",
+     "year": 2022,
+     "value": 87.6011428833,
+     "qualifier": null,
+     "map_id": 170,
+     "without_power": 12.3988571167
+    },
+    {
+     "COUNTRY_ID": "KIR",
+     "country": "Kiribati",
+     "year": 2024,
+     "value": 87.6288659794,
+     "qualifier": null,
+     "map_id": 296,
+     "without_power": 12.3711340206
+    },
+    {
+     "COUNTRY_ID": "NAM",
+     "country": "Namibia",
+     "year": 2024,
+     "value": 89.8888888889,
+     "qualifier": null,
+     "map_id": 516,
+     "without_power": 10.1111111111
+    },
+    {
+     "COUNTRY_ID": "DOM",
+     "country": "Dominican Republic",
+     "year": 2023,
+     "value": 90.3813167964,
+     "qualifier": null,
+     "map_id": 214,
+     "without_power": 9.6186832036
+    },
+    {
+     "COUNTRY_ID": "KHM",
+     "country": "Cambodia",
+     "year": 2024,
+     "value": 90.6081081081,
+     "qualifier": null,
+     "map_id": 116,
+     "without_power": 9.3918918919
+    },
+    {
+     "COUNTRY_ID": "IND",
+     "country": "India",
+     "year": 2025,
+     "value": 91.4848094092,
+     "qualifier": null,
+     "map_id": 356,
+     "without_power": 8.5151905908
+    },
+    {
+     "COUNTRY_ID": "PER",
+     "country": "Peru",
+     "year": 2024,
+     "value": 91.4876403809,
+     "qualifier": null,
+     "map_id": 604,
+     "without_power": 8.5123596191
+    },
+    {
+     "COUNTRY_ID": "CPV",
+     "country": "Cabo Verde",
+     "year": 2022,
+     "value": 91.5384615385,
+     "qualifier": null,
+     "map_id": 132,
+     "without_power": 8.4615384615
+    },
+    {
+     "COUNTRY_ID": "ECU",
+     "country": "Ecuador",
+     "year": 2024,
+     "value": 93.2003113281,
+     "qualifier": null,
+     "map_id": 218,
+     "without_power": 6.7996886719
+    },
+    {
+     "COUNTRY_ID": "MEX",
+     "country": "Mexico",
+     "year": 2025,
+     "value": 95.608001709,
+     "qualifier": null,
+     "map_id": 484,
+     "without_power": 4.391998291
+    },
+    {
+     "COUNTRY_ID": "BGD",
+     "country": "Bangladesh",
+     "year": 2024,
+     "value": 96.3998752182,
+     "qualifier": null,
+     "map_id": 50,
+     "without_power": 3.6001247818
+    },
+    {
+     "COUNTRY_ID": "FJI",
+     "country": "Fiji",
+     "year": 2024,
+     "value": 96.5100671141,
+     "qualifier": null,
+     "map_id": 242,
+     "without_power": 3.4899328859
+    },
+    {
+     "COUNTRY_ID": "VNM",
+     "country": "Viet Nam",
+     "year": 2024,
+     "value": 96.599983535,
+     "qualifier": null,
+     "map_id": 704,
+     "without_power": 3.400016465
+    },
+    {
+     "COUNTRY_ID": "ARG",
+     "country": "Argentina",
+     "year": 2023,
+     "value": 97.6838145658,
+     "qualifier": null,
+     "map_id": 32,
+     "without_power": 2.3161854342
+    },
+    {
+     "COUNTRY_ID": "MAR",
+     "country": "Morocco",
+     "year": 2024,
+     "value": 97.7520821541,
+     "qualifier": null,
+     "map_id": 504,
+     "without_power": 2.2479178459
+    },
+    {
+     "COUNTRY_ID": "JAM",
+     "country": "Jamaica",
+     "year": 2024,
+     "value": 97.7635803223,
+     "qualifier": null,
+     "map_id": 388,
+     "without_power": 2.2364196777
+    },
+    {
+     "COUNTRY_ID": "BWA",
+     "country": "Botswana",
+     "year": 2022,
+     "value": 97.8748524203,
+     "qualifier": null,
+     "map_id": 72,
+     "without_power": 2.1251475797
+    },
+    {
+     "COUNTRY_ID": "PHL",
+     "country": "Philippines",
+     "year": 2024,
+     "value": 97.8943315161,
+     "qualifier": null,
+     "map_id": 608,
+     "without_power": 2.1056684839
+    },
+    {
+     "COUNTRY_ID": "BRA",
+     "country": "Brazil",
+     "year": 2024,
+     "value": 97.9275436401,
+     "qualifier": null,
+     "map_id": 76,
+     "without_power": 2.0724563599
+    },
+    {
+     "COUNTRY_ID": "IDN",
+     "country": "Indonesia",
+     "year": 2025,
+     "value": 98.3534238861,
+     "qualifier": null,
+     "map_id": 360,
+     "without_power": 1.6465761139
+    },
+    {
+     "COUNTRY_ID": "SWZ",
+     "country": "Eswatini",
+     "year": 2023,
+     "value": 98.8023952096,
+     "qualifier": null,
+     "map_id": 748,
+     "without_power": 1.1976047904
+    },
+    {
+     "COUNTRY_ID": "CHL",
+     "country": "Chile",
+     "year": 2024,
+     "value": 99.1566925049,
+     "qualifier": null,
+     "map_id": 152,
+     "without_power": 0.8433074951
+    },
+    {
+     "COUNTRY_ID": "BTN",
+     "country": "Bhutan",
+     "year": 2024,
+     "value": 99.2063492063,
+     "qualifier": null,
+     "map_id": 64,
+     "without_power": 0.7936507937
+    },
+    {
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2024,
+     "value": 99.2109958738,
+     "qualifier": null,
+     "map_id": 156,
+     "without_power": 0.7890041262
+    },
+    {
+     "COUNTRY_ID": "UKR",
+     "country": "Ukraine",
+     "year": 2024,
+     "value": 99.4397759104,
+     "qualifier": null,
+     "map_id": 804,
+     "without_power": 0.5602240896
+    },
+    {
+     "COUNTRY_ID": "CRI",
+     "country": "Costa Rica",
+     "year": 2020,
+     "value": 99.4440383911,
+     "qualifier": null,
+     "map_id": 188,
+     "without_power": 0.5559616089
+    },
+    {
+     "COUNTRY_ID": "LKA",
+     "country": "Sri Lanka",
+     "year": 2023,
+     "value": 99.8478426258,
+     "qualifier": null,
+     "map_id": 144,
+     "without_power": 0.1521573742
+    },
+    {
+     "COUNTRY_ID": "DZA",
+     "country": "Algeria",
+     "year": 2025,
+     "value": 99.8839233894,
+     "qualifier": null,
+     "map_id": 12,
+     "without_power": 0.1160766106
+    },
+    {
+     "COUNTRY_ID": "THA",
+     "country": "Thailand",
+     "year": 2025,
+     "value": 99.9354380528,
+     "qualifier": null,
+     "map_id": 764,
+     "without_power": 0.0645619472
+    },
+    {
+     "COUNTRY_ID": "TUN",
+     "country": "Tunisia",
+     "year": 2023,
+     "value": 99.9809570312,
+     "qualifier": null,
+     "map_id": 788,
+     "without_power": 0.0190429688
+    },
+    {
+     "COUNTRY_ID": "FIN",
+     "country": "Finland",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 246,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "TKM",
+     "country": "Turkmenistan",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 795,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "TKL",
+     "country": "Tokelau",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 772,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "BHR",
+     "country": "Bahrain",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 48,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "DMA",
+     "country": "Dominica",
+     "year": 2023,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 212,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "KWT",
+     "country": "Kuwait",
+     "year": 2021,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 414,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "BRB",
+     "country": "Barbados",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 52,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "SMR",
+     "country": "San Marino",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 674,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "POL",
+     "country": "Poland",
+     "year": 2021,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 616,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "SAU",
+     "country": "Saudi Arabia",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 682,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "ESP",
+     "country": "Spain",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 724,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "EST",
+     "country": "Estonia",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 233,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "AIA",
+     "country": "Anguilla",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 660,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "SVK",
+     "country": "Slovakia",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 703,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "CHE",
+     "country": "Switzerland",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 756,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "GRD",
+     "country": "Grenada",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 308,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "BRN",
+     "country": "Brunei Darussalam",
+     "year": 2020,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 96,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "PLW",
+     "country": "Palau",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 585,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "AUT",
+     "country": "Austria",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 40,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "CZE",
+     "country": "Czechia",
+     "year": 2022,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 203,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "MCO",
+     "country": "Monaco",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 492,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 276,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "COK",
+     "country": "Cook Islands",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 184,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "MSR",
+     "country": "Montserrat",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 500,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 752,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "TUR",
+     "country": "Türkiye",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 792,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "QAT",
+     "country": "Qatar",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 634,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "MYS",
+     "country": "Malaysia",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 458,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "BLR",
+     "country": "Belarus",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 112,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "VGB",
+     "country": "British Virgin Islands",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 92,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "MDV",
+     "country": "Maldives",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 462,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "KNA",
+     "country": "Saint Kitts and Nevis",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 659,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 376,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "FRA",
+     "country": "France",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 250,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "NOR",
+     "country": "Norway",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 578,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "HKG",
+     "country": "China, Hong Kong Special Administrative Region",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 344,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "TLS",
+     "country": "Timor-Leste",
+     "year": 2023,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 626,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "CYM",
+     "country": "Cayman Islands",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 136,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "JOR",
+     "country": "Jordan",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 400,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "LUX",
+     "country": "Luxembourg",
+     "year": 2021,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 442,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "NRU",
+     "country": "Nauru",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 520,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "SYC",
+     "country": "Seychelles",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 690,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "UZB",
+     "country": "Uzbekistan",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 860,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "GIB",
+     "country": "Gibraltar",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 292,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "LCA",
+     "country": "Saint Lucia",
+     "year": 2023,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 662,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "LBN",
+     "country": "Lebanon",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 422,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "KOR",
+     "country": "Republic of Korea",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 410,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "NZL",
+     "country": "New Zealand",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 554,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "OMN",
+     "country": "Oman",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 512,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "IRN",
+     "country": "Iran (Islamic Republic of)",
+     "year": 2023,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 364,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "TCA",
+     "country": "Turks and Caicos Islands",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 796,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "AZE",
+     "country": "Azerbaijan",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 31,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "AND",
+     "country": "Andorra",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 20,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "ALB",
+     "country": "Albania",
+     "year": 2021,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 8,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "VCT",
+     "country": "Saint Vincent and the Grenadines",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 670,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "URY",
+     "country": "Uruguay",
+     "year": 2023,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 858,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "TON",
+     "country": "Tonga",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 776,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "SVN",
+     "country": "Slovenia",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 705,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "NIU",
+     "country": "Niue",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 570,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "GEO",
+     "country": "Georgia",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 268,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "KAZ",
+     "country": "Kazakhstan",
+     "year": 2020,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 398,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "BEL",
+     "country": "Belgium",
+     "year": 2022,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 56,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "ISL",
+     "country": "Iceland",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 352,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "ATG",
+     "country": "Antigua and Barbuda",
+     "year": 2023,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 28,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "WSM",
+     "country": "Samoa",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 882,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "TUV",
+     "country": "Tuvalu",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 798,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "ARM",
+     "country": "Armenia",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 51,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "HUN",
+     "country": "Hungary",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 348,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "NLD",
+     "country": "Netherlands",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 528,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "MNG",
+     "country": "Mongolia",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 496,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "TTO",
+     "country": "Trinidad and Tobago",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 780,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "LVA",
+     "country": "Latvia",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 428,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "DNK",
+     "country": "Denmark",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 208,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "LTU",
+     "country": "Lithuania",
+     "year": 2025,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 440,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "CUB",
+     "country": "Cuba",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 192,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "AUS",
+     "country": "Australia",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 36,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "ARE",
+     "country": "United Arab Emirates",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 784,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "ABW",
+     "country": "Aruba",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 533,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "PRT",
+     "country": "Portugal",
+     "year": 2021,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 620,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "SGP",
+     "country": "Singapore",
+     "year": 2023,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 702,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "PRI",
+     "country": "Puerto Rico",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 630,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "MUS",
+     "country": "Mauritius",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 480,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "MAC",
+     "country": "China, Macao Special Administrative Region",
+     "year": 2024,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 446,
+     "without_power": 0
+    },
+    {
+     "COUNTRY_ID": "PSE",
+     "country": "Palestine",
+     "year": 2023,
+     "value": 100,
+     "qualifier": null,
+     "map_id": 275,
+     "without_power": 0
+    }
+   ],
+   "metadata": {
+    "COUNTRY_ID": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "value": {
+     "type": "number",
+     "levels": []
+    },
+    "qualifier": {
+     "type": "boolean",
+     "levels": []
+    },
+    "map_id": {
+     "type": "integer",
+     "levels": []
+    },
+    "without_power": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import pandas as pd\nimport duckdb\nout=duckdb.query(\"SELECT COUNTRY_ID, country, year, value, qualifier FROM read_parquet('data/sdg4_national.parquet') WHERE indicator_id='SCHBSP.1.WELEC' AND year BETWEEN 2020 AND 2025 AND value BETWEEN 0 AND 100 AND (magnitude IS NULL OR magnitude NOT IN ('NA','SUPP')) QUALIFY row_number() OVER (PARTITION BY COUNTRY_ID ORDER BY year DESC)=1\").df()\nout=out.merge(pd.read_parquet('data/countries.parquet')[['COUNTRY_ID','map_id']],on='COUNTRY_ID',how='left')\nout['without_power']=100-out['value']\nout['country']=out.country.replace({'Democratic Republic of the Congo':'DR Congo','United Republic of Tanzania':'Tanzania','United Kingdom of Great Britain and Northern Ireland':'UK'})\nout=out.sort_values('without_power',ascending=False)",
+    "codeSignature": "2c7e51d0cf8de7c7647cf0d343b5caa57cb3510edcc045bfaacf039aa7930151",
+    "outputVariable": "out",
+    "source": [
+     "sdg4_national",
+     "countries"
+    ],
+    "inputSources": [
+     {
+      "id": "data:2d7b684ff39ac6e542b1af59e828d4f3:sdg4_national",
+      "kind": "data",
+      "displayName": "sdg4_national"
+     },
+     {
+      "id": "data:3bfeafe1536e0211b109193b1e492f81:countries",
+      "kind": "data",
+      "displayName": "countries"
+     }
+    ],
+    "trigger": {
+     "tableId": "sdg4_national",
+     "resultTableId": "d_out",
+     "chart": {
+      "id": "chart-1792309333951",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "sdg4_national",
+      "source": "trigger"
+     }
+    },
+    "explanation": {
+     "status": "ok",
+     "concepts": [
+      {
+       "field": "without_power",
+       "explanation": "Percentage of primary schools without electricity: `without_power = 100 - value`."
+      }
+     ],
+     "agent": "CodeExplanationAgent"
+    }
+   },
+   "virtual": {
+    "tableId": "d_out",
+    "rowCount": 153
+   },
+   "description": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792309324960_step_1",
+   "createdAt": 1792309341466
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-61a2dd17d29c",
+   "chartType": "Choropleth",
+   "encodingMap": {
+    "id": {
+     "fieldID": "concept-map_id-1792309341466-0.7547858952260262"
+    },
+    "color": {
+     "fieldID": "concept-without_power-1792309341466-0.742269950205123",
+     "dtype": "quantitative",
+     "scheme": "oranges"
+    },
+    "detail": {
+     "channel": "detail",
+     "bin": false
+    }
+   },
+   "tableRef": "d_out",
+   "source": "user",
+   "title": "Primary schools without electricity by country",
+   "subtitle": "Latest reported values, 2020–2025 · UIS, February 2026 release",
+   "titleKey": "Choropleth|color:concept-without_power-1792309341466-0.742269950205123:|detail::|id:concept-map_id-1792309341466-0.7547858952260262:",
+   "unread": false,
+   "themeId": "datawrapper"
+  },
+  {
+   "id": "chart-bba2daab549e",
+   "chartType": "Bar Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-without_power-1792309341466-0.742269950205123",
+     "dtype": "quantitative"
+    },
+    "y": {
+     "fieldID": "concept-country-1792309341466-0.8049023069687322",
+     "dtype": "nominal",
+     "sortOrder": "descending",
+     "sortBy": "x"
+    },
+    "color": {
+     "channel": "color",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "d_out",
+   "source": "user",
+   "title": "Primary schools without electricity by country: highest first",
+   "subtitle": "Latest reported values, 2020–2025 · UIS, February 2026 release",
+   "unread": false,
+   "themeId": "datawrapper",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-without_power-1792309341466-0.742269950205123:|y:concept-country-1792309341466-0.8049023069687322:"
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-country-1792309341466-0.8049023069687322",
+   "name": "country",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-map_id-1792309341466-0.7547858952260262",
+   "name": "map_id",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-without_power-1792309341466-0.742269950205123",
+   "name": "without_power",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792309324960_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1792309324960_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Where are schools still without power?",
+   "parentNodeId": "conversation-root:dc84fc05-dd2f-47a8-83f5-95f342a47f4d",
+   "actionId": "exploreDataFromNL_1792309324960",
+   "createdAt": 1792309324961
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792309324960_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1792309324960_step_1",
+   "textKind": "explain",
+   "content": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792309324960_prompt",
+   "actionId": "exploreDataFromNL_1792309324960",
+   "createdAt": 1792309341465,
+   "startedAt": 1792309324961,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1792309324960-1",
+     "kind": "tool",
+     "label": "Reading: session/tables/sdg4_national.json, session/tables/count…",
+     "status": "completed",
+     "tool": "read_file",
+     "toolCallId": "call_H13waY8id3IeW2FAOANxYfJc"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792309324960-2",
+     "kind": "chart",
+     "label": "creating chart...",
+     "status": "completed"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792309324960_1792309345146",
+   "displayId": "textTurn_exploreDataFromNL_1792309324960_closing",
+   "textKind": "explain",
+   "content": "**The biggest gaps are in sub-Saharan Africa.** Among countries reporting recent data, primary schools without electricity account for:\n\n- **99% in Chad** (2024)\n- **92% in Niger** (2024)\n- **90% in DR Congo** (2023)\n- **88% in Madagascar** (2024)\n- **83% in Sierra Leone** (2024)\n\nThe map shows each country’s latest reported value from **2020–2025**, covering 153 countries and territories. Countries without recent data are missing—not necessarily fully electrified.\n\nSource: UIS, February 2026 release.",
+   "parentNodeId": "d_out",
+   "actionId": "exploreDataFromNL_1792309324960",
+   "createdAt": 1792309345146,
+   "startedAt": 1792309324961,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "d_out",
+   "fields": {
+    "COUNTRY_ID": {
+     "semanticType": "ID"
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "displayName": "Country"
+     }
+    },
+    "year": {
+     "semanticType": "Year",
+     "displayName": "Year",
+     "authored": {
+      "displayName": "Year"
+     }
+    },
+    "value": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "intrinsicDomain": [
+      0,
+      100
+     ],
+     "displayName": "Schools with electricity (%)",
+     "authored": {
+      "displayName": "Schools with electricity (%)"
+     }
+    },
+    "qualifier": {
+     "semanticType": "Unknown",
+     "displayName": "Estimate flag",
+     "authored": {
+      "displayName": "Estimate flag"
+     }
+    },
+    "map_id": {
+     "semanticType": "ID"
+    },
+    "without_power": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "intrinsicDomain": [
+      0,
+      100
+     ],
+     "displayName": "Primary schools without electricity (%)",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "intrinsicDomain": [
+       0,
+       100
+      ],
+      "displayName": "Primary schools without electricity (%)"
+     }
+    }
+   }
+  }
+ ],
+ "activeWorkspace": {
+  "id": "education-sdg4-e23",
+  "displayName": "One in five primary schools still has no power"
+ },
+ "focusedId": {
+  "type": "chart",
+  "chartId": "chart-61a2dd17d29c"
+ }
+}

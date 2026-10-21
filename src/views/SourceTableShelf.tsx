@@ -1098,14 +1098,13 @@ export const SourceTableShelf: FC<{
                             fontWeight: 500,
                             py: 0.5,
                             borderRadius: '6px',
-                            border: '1px dashed',
-                            borderColor: 'rgba(0,0,0,0.15)',
+                            // A muted filled button, not a dashed outline.
+                            backgroundColor: 'rgba(0,0,0,0.04)',
                             color: 'text.secondary',
                             '& .MuiButton-startIcon': { mr: 0.5 },
                             '&:hover': {
-                                borderColor: 'primary.main',
                                 color: 'primary.main',
-                                backgroundColor: alpha(theme.palette.primary.main, 0.04),
+                                backgroundColor: alpha(theme.palette.primary.main, 0.08),
                             },
                         }}
                     >

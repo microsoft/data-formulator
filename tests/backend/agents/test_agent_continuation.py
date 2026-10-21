@@ -187,6 +187,25 @@ def test_a_model_stream_that_sends_nothing_is_retried(workspace, monkeypatch) ->
     assert issubclass(agent_module.ModelStreamStalled, TimeoutError)
 
 
+def test_a_rate_limited_model_call_waits_longer_and_retries_more(workspace, monkeypatch) -> None:
+    from data_formulator.agent_config import AnalystExecutionConfig
+    from data_formulator.analyst import agent as agent_module
+
+    class RateLimitError(Exception):
+        pass
+
+    waits: list[float] = []
+    monkeypatch.setattr(agent_module.time, "sleep", waits.append)
+    client = MagicMock()
+    client.model = "m"
+    limited = RateLimitError("exceeded token rate limit")
+    client.get_completion_with_tools.side_effect = [limited, limited, limited, iter(["chunk"])]
+    agent = AnalystAgent(client=client, workspace=workspace, execution_config=AnalystExecutionConfig(rate_limit_backoff_seconds=2.0))
+    agent.cancel = None
+    assert list(agent._open_stream([{"role": "user", "content": "hi"}], [])) == ["chunk"]
+    assert waits == [2.0, 4.0, 8.0]
+
+
 def test_a_continued_turn_shows_what_is_new_to_the_conversation(workspace) -> None:
     from types import SimpleNamespace
     from data_formulator.analyst.session_files import render_turn_context

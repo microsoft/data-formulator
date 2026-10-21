@@ -5,7 +5,7 @@ import { alpha, createTheme, type Theme } from '@mui/material/styles';
 
 import { menuPaperSlotProps } from './LayoutProvider';
 import { buttonVar, iconVar, textVar } from './layout';
-import { bgAlpha, defaultPaletteKey, palettes } from './tokens';
+import { bgAlpha, defaultPaletteKey, fontSans, palettes } from './tokens';
 
 /**
  * Data Formulator's MUI theme for a palette. Shared by the app shell and by
@@ -15,12 +15,7 @@ import { bgAlpha, defaultPaletteKey, palettes } from './tokens';
 export function createDfTheme(paletteKey: string): Theme {
     return createTheme({
     typography: {
-        fontFamily: [
-            "Arial",
-            "Roboto",
-            "Helvetica Neue",
-            "sans-serif"
-        ].join(",")
+        fontFamily: fontSans
     },
     // Default Material UI palette
     // Active palette from user config — selectable via Settings dialog

@@ -59,14 +59,14 @@ import { ModelSelectionButton } from './ModelSelectionDialog';
 import { UnifiedDataUploadDialog, UploadTabType, ConnectorInstance } from './UnifiedDataUploadDialog';
 import { LandingDataEntry } from './LandingDataEntry';
 import { ReportView } from './ReportView';
-import { CanvasChromeContext, useCanvasHeaderClaim } from './CanvasHeader';
+import { CanvasChromeContext } from './CanvasHeader';
 import { CanvasTabs } from './CanvasTabs';
 import { DataSourceSidebar, SessionsDialog } from './DataSourceSidebar';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions, publishExampleSession, usePublishedExamples } from './ExampleSessions';
 import { WorkflowPanel, WorkflowRunObserver } from './WorkflowPanel';
-import { SiteLanding, hasSiteLanding } from '../sites/SiteLanding';
-import type { SiteStarter } from '../sites/types';
+import { SiteLanding } from '../sites/SiteLanding';
+import type { SiteStarter, SiteStory } from '../sites/types';
 import { listWorkflowLibrary, SchedulesPanel, useScheduleLibrary } from './WorkflowSchedules';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import { useTranslation } from 'react-i18next';
@@ -465,6 +465,7 @@ export const DataFormulatorFC = ({ }) => {
             dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: session.title, provisional: true }));
             const state = await importWorkspace(file, wsId, session.title);
             dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: session.title } }));
+            dispatch(dfActions.setExampleFollowUps({ title: session.title, questions: session.followUps || [] }));
 
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
@@ -488,13 +489,19 @@ export const DataFormulatorFC = ({ }) => {
     };
 
     /** A site's starter session; with a question, the analyst starts on it once the session is open. */
-    const handleOpenStarter = async (starter: SiteStarter, question?: string) => {
+    const handleOpenStarter = async (starter: SiteStarter, question?: string, followUps?: string[]) => {
         const opened = await handleLoadExampleSession({ id: starter.id, title: starter.title,
-            description: starter.description || '', previewImage: '', workspace: starter.workspace, live: false });
+            description: starter.description || '', previewImage: '', workspace: starter.workspace, live: false, followUps });
         if (opened && question) {
             dispatch(ensureActiveWorkspace());
             dispatch(dfActions.queueAnalystTask({ text: question, images: [], attachments: [] }));
         }
+    };
+    /** A story opens on its saved session, its question already answered; without one the analyst runs it live. */
+    const handleOpenStory = async (starter: SiteStarter, story: SiteStory) => {
+        if (!story.available) return handleOpenStarter(starter, story.prompt, story.follow_ups);
+        await handleLoadExampleSession({ id: story.id, title: story.headline, description: story.dek || '',
+            previewImage: story.image || '', workspace: story.session, live: false, followUps: story.follow_ups });
     };
 
     useEffect(() => {
@@ -723,9 +730,8 @@ export const DataFormulatorFC = ({ }) => {
         }}/>
     );
 
-    const { claimClose } = useCanvasHeaderClaim();
     // Under the tab strip, view headers carry neither the title (the tab has it) nor close.
-    const canvasChrome = useMemo(() => ({ claimClose, tabbed: true }), [claimClose]);
+    const canvasChrome = useMemo(() => ({ tabbed: true }), []);
 
     // Browser-style: the tabs sit above the canvas box and the active tab opens into it. Under an active
     // tab at either end, the box's corner squares off so the tab's edge runs straight down.
@@ -1141,10 +1147,11 @@ export const DataFormulatorFC = ({ }) => {
                 </DialogActions>
             </Dialog>);
 
-    const site = serverConfig.SITE && hasSiteLanding(serverConfig.SITE.id) ? serverConfig.SITE : undefined;
+    const site = serverConfig.SITE;
     const siteSessions = sortedSavedWorkspaces.filter(w => !w.scheduled_run);
     const siteLanding = site && <SiteLanding site={site} disabled={sessionLoading || activeWorkspace?.readOnly}
-        onOpenStarter={(starter, question) => void handleOpenStarter(starter, question)} footer={footer}
+        onOpenStarter={(starter, question) => void handleOpenStarter(starter, question)}
+        onOpenStory={(starter, story) => void handleOpenStory(starter, story)} footer={footer}
         sessions={siteSessions.length > 0 && <Box sx={itemCardGridSx}>
             {siteSessions.slice(0, INITIAL_SESSION_COUNT).map(w => workspaceCard(w))}
         </Box>} />;
@@ -1228,7 +1235,7 @@ export const DataFormulatorFC = ({ }) => {
                     }}>
                         <Box sx={{margin:'auto', pb: '5%', px: 2, maxWidth: '100%', boxSizing: 'border-box', display: "flex", flexDirection: "column", textAlign: "center"}}>
                             <Box component="img" sx={{  width: 196, margin: "auto" }} alt="Data Formulator logo" src={dfLogo} fetchPriority="high" />
-                            <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: 0, fontSize: { xs: 28, sm: Math.min(48, headingSize) }, overflowWrap: 'anywhere'}}>
+                            <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 400, letterSpacing: 0, fontSize: { xs: 28, sm: Math.min(48, headingSize) }, overflowWrap: 'anywhere'}}>
                                 {appName}
                             </Typography>
                             <Typography variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>

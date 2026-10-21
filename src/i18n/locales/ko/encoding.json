@@ -75,9 +75,6 @@
     "autoSortServerError": "서버 문제로 자동 정렬을 수행할 수 없습니다.",
     "followUpChartPlaceholder": "차트 스타일 업데이트 또는 후속 분석",
     "refreshIdeas": "아이디어 새로고침",
-    "stylePresetsTooltip": "차트 스타일 변경…",
-    "stylePresetsHeader": "차트 스타일 변경",
-    "stylePresetsHint": "또는 입력 상자에 스타일을 설명해 주세요 — 예: \"녹색 팔레트 사용\", \"제목 굵게\", \"축 레이블 회전\", \"최고값에 주석\"",
     "formulationSucceeded": "{{fields}} 데이터 가공에 성공했습니다.",
     "formulationFailed": "데이터 가공에 실패했습니다."
   }

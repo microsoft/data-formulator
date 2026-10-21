@@ -11,7 +11,6 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 import { useTranslation } from 'react-i18next';
 import type { CodeExecution, TerminalExecution, TextTurn } from '../components/ComponentType';
-import { textVar } from '../app/layout';
 import { CompactMarkdown } from './InteractionEntryCard';
 import { ExecutionCodeBlock, TerminalExecutionView } from '../components/TerminalApprovalDialog';
 
@@ -44,7 +43,10 @@ const rowSx = { display: 'flex', width: '100%', minWidth: 0, justifyContent: 'fl
     '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } } as const;
 const iconSx = { fontSize: 14, flexShrink: 0, mt: '3px' } as const;
 
-/** One tool call: its own box, a header line that opens its code (or command) and output in place. */
+/**
+ * One tool call: a quiet italic line, like thinking, until opened; opened, it becomes a box with
+ * its code (or command) and output in place.
+ */
 const CallRow: FC<{ call: Call }> = ({ call }) => {
     const { t } = useTranslation();
     const [open, setOpen] = useState(false);
@@ -53,10 +55,13 @@ const CallRow: FC<{ call: Call }> = ({ call }) => {
     const failed = call.status === 'failed' || call.status === 'rejected';
     const StatusIcon = call.status === 'completed' ? CheckCircleOutlineIcon : failed ? ErrorOutlineIcon : PauseCircleOutlineIcon;
     const Icon = isCode ? CodeIcon : TerminalIcon;
-    return <Box data-work-entry sx={{ minWidth: 0, border: '1px solid', borderColor: 'divider', borderRadius: 1.5, overflow: 'hidden' }}>
-        <ButtonBase onClick={() => setOpen(value => !value)} aria-expanded={open} sx={{ ...rowSx, px: 1, py: 0.5, borderRadius: 0 }}>
-            <Icon sx={iconSx} />
-            <Typography component="span" sx={{ flex: 1, minWidth: 0, fontSize: textVar.sm, lineHeight: 1.5,
+    return <Box data-work-entry sx={{ minWidth: 0, border: '1px solid', borderColor: open ? 'divider' : 'transparent', borderRadius: 1.5,
+        overflow: 'hidden', transition: 'border-color 0.15s' }}>
+        <ButtonBase onClick={() => setOpen(value => !value)} aria-expanded={open} sx={{ ...rowSx, px: open ? 1 : 0.5, py: open ? 0.5 : '2px',
+            borderRadius: open ? 0 : 1, color: 'text.disabled', '&:hover': { bgcolor: 'action.hover', color: 'text.secondary' } }}>
+            <Icon sx={{ ...iconSx, fontSize: 13 }} />
+            <Typography component="span" sx={{ flex: 1, minWidth: 0, fontSize: '0.75rem', lineHeight: 1.5, fontStyle: open ? 'normal' : 'italic',
+                color: open ? 'text.primary' : 'inherit',
                 ...(open ? { overflowWrap: 'anywhere' } : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }) }}>
                 {call.purpose || (!isCode && call.argv?.length ? call.argv.join(' ')
                     : t(isCode ? 'tool.pythonCode' : 'terminal.command', { defaultValue: isCode ? 'Python code' : 'Command' }))}
@@ -65,8 +70,10 @@ const CallRow: FC<{ call: Call }> = ({ call }) => {
             <ChevronRightIcon sx={{ ...iconSx, transform: open ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
         </ButtonBase>
         {/* Open: the code (or command) and its output, flush in the same box. */}
-        {open && <Box sx={{ borderTop: '1px solid', borderColor: 'divider', minWidth: 0, fontSize: textVar.sm,
-            '& pre': { fontSize: textVar.sm } }}>
+        {/* Details read as a quiet aside, smaller than the conversation. Fixed sizes: the reading canvas
+            enlarges the shared text scale. */}
+        {open && <Box sx={{ borderTop: '1px solid', borderColor: 'divider', minWidth: 0, fontSize: '0.75rem',
+            '& pre': { fontSize: '0.6875rem', lineHeight: 1.55 }, '& p': { fontSize: '0.6875rem' } }}>
             {isCode ? <ExecutionCodeBlock flush code={call.code} language="python"
                 label={t('tool.pythonCode', { defaultValue: 'Python code' })}
                 copyLabel={t('tool.copyCode', { defaultValue: 'Copy code' })}
@@ -83,9 +90,10 @@ const CallRow: FC<{ call: Call }> = ({ call }) => {
 export const ConversationWorkLog: FC<{ turn: TextTurn }> = ({ turn }) => {
     const entries = workEntriesOf(turn);
     if (!entries.length) return null;
-    return <Box data-work-log={turn.id} sx={{ mb: 1.25, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+    return <Box data-work-log={turn.id} sx={{ mb: 2, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
         {entries.map(entry => entry.kind === 'thought'
-            ? <Box key={entry.key} data-work-entry sx={{ color: 'text.secondary', fontSize: textVar.sm, '& p': { my: 0.25 } }}>
+            ? <Box key={entry.key} data-work-entry sx={{ color: 'text.secondary', fontSize: '0.8125rem', lineHeight: 1.6, my: 0.5,
+                '& p': { my: 0.25, fontSize: 'inherit' }, '& li': { fontSize: 'inherit' } }}>
                 <CompactMarkdown content={entry.text} color="text.secondary" />
             </Box>
             : <CallRow key={entry.key} call={entry.call} />)}

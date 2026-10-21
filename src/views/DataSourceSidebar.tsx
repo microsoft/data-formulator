@@ -98,6 +98,12 @@ import { importConnectorFile, loadsAsConnectorReference, isSemanticConnectorTabl
 
 type SidebarTab = DataFormulatorState['dataSourceSidebarTab'];
 
+/** A demo front page (`serverConfig.SITE`) offers only Sessions: no data connectors, workflows or schedules. */
+const selectIsDemo = (state: DataFormulatorState) => !!state.serverConfig.SITE;
+// Older persisted state predates the tab field; 'sources' was the default.
+const selectSidebarTab = (state: DataFormulatorState): SidebarTab =>
+    selectIsDemo(state) ? 'sessions' : (state.dataSourceSidebarTab ?? 'sources');
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const RAIL_WIDTH = REFERENCE.rail;
@@ -244,7 +250,8 @@ export const DataSourceSidebar: React.FC<{
     // appears when they try to add a new connector or link a folder.
     // Stored in Redux so the active tab survives a session refresh.
     // Fall back to 'sources' for older persisted state that predates this field.
-    const initialTab = useSelector((state: DataFormulatorState) => state.dataSourceSidebarTab ?? 'sources');
+    const isDemo = useSelector(selectIsDemo);
+    const initialTab = useSelector(selectSidebarTab);
     const setInitialTab = useCallback(
         (tab: SidebarTab) => dispatch(dfActions.setDataSourceSidebarTab(tab)),
         [dispatch],
@@ -385,34 +392,36 @@ export const DataSourceSidebar: React.FC<{
                         <FolderOutlinedIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
-                <Tooltip title={t('sidebar.openDataConnectors', { defaultValue: 'Data connectors' })} placement="right">
-                    <IconButton size="small" onClick={() => { setInitialTab('sources'); if (!isOpen) toggle(); else if (initialTab !== 'sources') setInitialTab('sources'); else toggle(); }} sx={{
-                        color: isOpen && initialTab === 'sources' ? 'primary.main' : 'text.secondary',
-                        bgcolor: isOpen && initialTab === 'sources' ? 'action.selected' : 'transparent',
-                        borderRadius: 1,
-                    }}>
-                        <RelationalDBIcon fontSize="small" />
-                    </IconButton>
-                </Tooltip>
-                <Tooltip title={t('knowledge.workflows')} placement="right">
-                    <IconButton size="small" onClick={() => { setInitialTab('knowledge'); if (!isOpen) toggle(); else if (initialTab !== 'knowledge') setInitialTab('knowledge'); else toggle(); }} sx={{
-                        color: isOpen && initialTab === 'knowledge' ? 'primary.main' : 'text.secondary',
-                        bgcolor: isOpen && initialTab === 'knowledge' ? 'action.selected' : 'transparent',
-                        borderRadius: 1,
-                    }}>
-                        <WorkflowGears running={false} size={20} showTooltip={false} />
-                    </IconButton>
-                </Tooltip>
-                <Tooltip title={t('sidebar.schedules', { defaultValue: 'Schedules' })} placement="right">
-                    <IconButton size="small" aria-label={t('sidebar.schedules', { defaultValue: 'Schedules' })}
-                        onClick={() => { setInitialTab('schedules'); if (!isOpen) toggle(); else if (initialTab !== 'schedules') setInitialTab('schedules'); else toggle(); }} sx={{
-                        color: isOpen && initialTab === 'schedules' ? 'primary.main' : 'text.secondary',
-                        bgcolor: isOpen && initialTab === 'schedules' ? 'action.selected' : 'transparent',
-                        borderRadius: 1,
-                    }}>
-                        <ScheduleOutlinedIcon fontSize="small" />
-                    </IconButton>
-                </Tooltip>
+                {!isDemo && <>
+                    <Tooltip title={t('sidebar.openDataConnectors', { defaultValue: 'Data connectors' })} placement="right">
+                        <IconButton size="small" onClick={() => { setInitialTab('sources'); if (!isOpen) toggle(); else if (initialTab !== 'sources') setInitialTab('sources'); else toggle(); }} sx={{
+                            color: isOpen && initialTab === 'sources' ? 'primary.main' : 'text.secondary',
+                            bgcolor: isOpen && initialTab === 'sources' ? 'action.selected' : 'transparent',
+                            borderRadius: 1,
+                        }}>
+                            <RelationalDBIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                    <Tooltip title={t('knowledge.workflows')} placement="right">
+                        <IconButton size="small" onClick={() => { setInitialTab('knowledge'); if (!isOpen) toggle(); else if (initialTab !== 'knowledge') setInitialTab('knowledge'); else toggle(); }} sx={{
+                            color: isOpen && initialTab === 'knowledge' ? 'primary.main' : 'text.secondary',
+                            bgcolor: isOpen && initialTab === 'knowledge' ? 'action.selected' : 'transparent',
+                            borderRadius: 1,
+                        }}>
+                            <WorkflowGears running={false} size={20} showTooltip={false} />
+                        </IconButton>
+                    </Tooltip>
+                    <Tooltip title={t('sidebar.schedules', { defaultValue: 'Schedules' })} placement="right">
+                        <IconButton size="small" aria-label={t('sidebar.schedules', { defaultValue: 'Schedules' })}
+                            onClick={() => { setInitialTab('schedules'); if (!isOpen) toggle(); else if (initialTab !== 'schedules') setInitialTab('schedules'); else toggle(); }} sx={{
+                            color: isOpen && initialTab === 'schedules' ? 'primary.main' : 'text.secondary',
+                            bgcolor: isOpen && initialTab === 'schedules' ? 'action.selected' : 'transparent',
+                            borderRadius: 1,
+                        }}>
+                            <ScheduleOutlinedIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                </>}
             </Box>
 
             {/* The expanded panel overlays the workspace instead of changing
@@ -552,7 +561,7 @@ const DataSourceSidebarPanel: React.FC<{
     // Stored in Redux so the active tab survives a session refresh; the
     // `initialTab` prop is derived from the same Redux value upstream.
     // Fall back to 'sources' for older persisted state that predates this field.
-    const activeTab = useSelector((state: DataFormulatorState) => state.dataSourceSidebarTab ?? 'sources');
+    const activeTab = useSelector(selectSidebarTab);
     const setActiveTab = useCallback(
         (tab: SidebarTab) => dispatch(dfActions.setDataSourceSidebarTab(tab)),
         [dispatch],

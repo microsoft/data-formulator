@@ -172,12 +172,19 @@ it.each(['source', 'python', 'sql'])('shows table-owned transformation details f
         store.dispatch(dfActions.setFocused({ type: 'table', tableId: 'result' }));
         render(React.createElement(Provider, { store, children: React.createElement(VisualizationViewFC) }));
         expect(screen.getByRole('button', { name: 'Download CSV' })).toBeTruthy();
+        // Like a chart, the table's view actions float at the top right; Quick chart opens the chart picker.
+        fireEvent.click(screen.getByRole('button', { name: 'Quick chart' }));
+        await waitFor(() => expect(document.querySelector('.MuiPopover-paper')).toBeTruthy());
+        fireEvent.keyDown(document.querySelector('.MuiPopover-root')!, { key: 'Escape' });
+        await waitFor(() => expect(document.querySelector('.MuiPopover-paper')).toBeNull());
         if (kind === 'source') {
             expect(screen.queryByRole('button', { name: 'Transformation' })).toBeNull();
+            expect(screen.queryByRole('button', { name: 'log' })).toBeNull();
             expect(screen.queryByText('Derived table')).toBeNull();
             return;
         }
         expect(screen.getByText('Result data').parentElement).toContainElement(screen.getByText('Derived table'));
+        expect(screen.getByRole('button', { name: 'log' })).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: 'Transformation' }));
         const dialog = await screen.findByRole('dialog', { name: 'Transformation: Result data' });
         expect(dialog.querySelector(`code.language-${kind}`)?.textContent).toBe(code);
@@ -190,6 +197,8 @@ it.each(['source', 'python', 'sql'])('shows table-owned transformation details f
                 const chart = dfSelectors.getAllCharts(store.getState())[0];
                 store.dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
             });
+            // Under a chart the transformation is the top-right code button only, not repeated below the table.
+            expect(screen.queryByRole('button', { name: 'Transformation' })).toBeNull();
             fireEvent.click(screen.getByRole('button', { name: 'code' }));
             const chartDialog = await screen.findByRole('dialog', { name: 'Transformation: Result data' });
             expect(chartDialog.querySelector('code.language-python')?.textContent).toBe(code);
@@ -394,7 +403,6 @@ it('shows the instruction message before a table in conversation without making 
     expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'conversation', tableId: 'deployments', nodeIds: ['instruction', 'deployments'] });
     card.unmount();
     const { container } = render(React.createElement(Provider, { store, children: React.createElement(VisualizationViewFC) }));
-    expect(screen.getByRole('heading', { name: 'Conversation' })).toBeTruthy();
     expect(container.querySelector('[data-conversation-entry="instruction"]')?.textContent).toBe(entry.content);
     expect(container.querySelector('[data-conversation-entry="deployments"]')).toBeTruthy();
 });
@@ -428,7 +436,6 @@ it('renders a conversation canvas with full messages and collapsed command resul
     }));
     store.dispatch(dfActions.setFocused({ type: 'conversation', tableId: 'root', nodeIds: ['first', 'next'] }));
     render(React.createElement(Provider, { store, children: React.createElement(VisualizationViewFC) }));
-    expect(screen.getByRole('heading', { name: 'Conversation' })).toBeTruthy();
     expect(screen.getByText('Analyze usage')).toBeTruthy();
     expect(screen.getByText('Here are the findings.')).toBeTruthy();
     expect(screen.queryByRole('img', { name: 'User' })).toBeNull();
@@ -472,6 +479,9 @@ it.each(['table', 'chart', 'chart-image'])('shows inline table and chart preview
     expect(screen.getByRole('img', { name: 'Bar Chart - Usage' }).getAttribute('src')).toBe(image);
     expect(screen.getByText('Visualize it and write a report')).toBeTruthy();
     expect(screen.getByText('Which resources account for observed token consumption?')).toBeTruthy();
+    // Rows load when opened.
+    expect(screen.queryByRole('table')).toBeNull();
+    fireEvent.click(screen.getByText('Show rows'));
     expect(screen.getByRole('table')).toBeTruthy();
     expect(screen.getByText('resource-0')).toBeTruthy();
     expect(screen.getByText('resource-4')).toBeTruthy();
@@ -530,7 +540,7 @@ it('renders explicit long responses in the dedicated response view, not Conversa
     store.dispatch(dfActions.setFocused({ type: 'text', textId: 'long' }));
     render(React.createElement(Provider, { store, children: React.createElement(VisualizationViewFC) }));
     expect(screen.getByText('Detailed standalone findings.')).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'Conversation' })).toBeNull();
+    expect(document.querySelector('[data-conversation-entry]')).toBeNull();
     expect(screen.getByRole('heading')).toBeTruthy();
 });
 

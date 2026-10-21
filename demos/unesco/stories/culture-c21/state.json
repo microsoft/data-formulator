@@ -1,0 +1,403 @@
+{
+ "__stateVersion": 14,
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "d_output",
+   "displayId": "National and local heritage funding comparisons",
+   "names": [
+    "COUNTRY_ID",
+    "country",
+    "year",
+    "Local",
+    "National",
+    "local_share",
+    "label"
+   ],
+   "rows": [
+    {
+     "COUNTRY_ID": "BEL",
+     "country": "Belgium",
+     "year": 2023,
+     "Local": 184.1465,
+     "National": 24.56651,
+     "local_share": 88.2295262763,
+     "label": "Belgium (2023)"
+    },
+    {
+     "COUNTRY_ID": "BLR",
+     "country": "Belarus",
+     "year": 2023,
+     "Local": 43.0312,
+     "National": 14.28443,
+     "local_share": 75.0776009964,
+     "label": "Belarus (2023)"
+    },
+    {
+     "COUNTRY_ID": "SRB",
+     "country": "Serbia",
+     "year": 2023,
+     "Local": 16.71118,
+     "National": 7.88662,
+     "local_share": 67.9377017457,
+     "label": "Serbia (2023)"
+    },
+    {
+     "COUNTRY_ID": "POL",
+     "country": "Poland",
+     "year": 2024,
+     "Local": 50.85138,
+     "National": 28.05709,
+     "local_share": 64.4435001718,
+     "label": "Poland (2024)"
+    },
+    {
+     "COUNTRY_ID": "ESP",
+     "country": "Spain",
+     "year": 2023,
+     "Local": 25.94196,
+     "National": 14.37502,
+     "local_share": 64.3449980629,
+     "label": "Spain (2023)"
+    },
+    {
+     "COUNTRY_ID": "FIN",
+     "country": "Finland",
+     "year": 2023,
+     "Local": 147.30182,
+     "National": 117.84146,
+     "local_share": 55.5555547174,
+     "label": "Finland (2023)"
+    },
+    {
+     "COUNTRY_ID": "BIH",
+     "country": "Bosnia and Herzegovina",
+     "year": 2023,
+     "Local": 22.34222,
+     "National": 20.40855,
+     "local_share": 52.2615616046,
+     "label": "Bosnia and Herzegovina (2023)"
+    },
+    {
+     "COUNTRY_ID": "DOM",
+     "country": "Dominican Republic",
+     "year": 2024,
+     "Local": 1.46017,
+     "National": 13.06447,
+     "local_share": 10.0530546712,
+     "label": "Dominican Republic (2024)"
+    },
+    {
+     "COUNTRY_ID": "HRV",
+     "country": "Croatia",
+     "year": 2023,
+     "Local": 18.33364,
+     "National": 222.05881,
+     "local_share": 7.6265456756,
+     "label": "Croatia (2023)"
+    },
+    {
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2024,
+     "Local": 4.23764,
+     "National": 80.14622,
+     "local_share": 5.0218608156,
+     "label": "Sweden (2024)"
+    },
+    {
+     "COUNTRY_ID": "MUS",
+     "country": "Mauritius",
+     "year": 2024,
+     "Local": 0.67039,
+     "National": 13.07968,
+     "local_share": 4.8755388154,
+     "label": "Mauritius (2024)"
+    },
+    {
+     "COUNTRY_ID": "MLT",
+     "country": "Malta",
+     "year": 2023,
+     "Local": 11.77565,
+     "National": 338.70738,
+     "local_share": 3.3598345689,
+     "label": "Malta (2023)"
+    },
+    {
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2024,
+     "Local": 0.98671,
+     "National": 33.11791,
+     "local_share": 2.8931857326,
+     "label": "Israel (2024)"
+    },
+    {
+     "COUNTRY_ID": "PHL",
+     "country": "Philippines",
+     "year": 2020,
+     "Local": 0.11731,
+     "National": 4.6163,
+     "local_share": 2.4782354271,
+     "label": "Philippines (2020)"
+    },
+    {
+     "COUNTRY_ID": "CIV",
+     "country": "Côte d'Ivoire",
+     "year": 2023,
+     "Local": 0.00662,
+     "National": 3.49509,
+     "local_share": 0.1890504925,
+     "label": "Côte d'Ivoire (2023)"
+    }
+   ],
+   "metadata": {
+    "COUNTRY_ID": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "Local": {
+     "type": "number",
+     "levels": []
+    },
+    "National": {
+     "type": "number",
+     "levels": []
+    },
+    "local_share": {
+     "type": "number",
+     "levels": []
+    },
+    "label": {
+     "type": "string",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import pandas as pd\nx=pd.read_parquet('data/sdg11_national.parquet')\nids={'HEXPCSTPPPCAPGOV.LOC.HER.PU':'Local','HEXPCSTPPPCAPGOV.NTL.HER.PU':'National'}\na=x[x.indicator_id.isin(ids)&x.year.ge(2020)].copy();a['level']=a.indicator_id.map(ids)\np=a.pivot(index=['COUNTRY_ID','country','year'],columns='level',values='value').dropna().reset_index().sort_values('year').drop_duplicates('COUNTRY_ID',keep='last')\np=p[~p.COUNTRY_ID.isin(['AND','SMR','MCO','LIE'])].copy()\np['local_share']=100*p.Local/(p.Local+p.National)\np=p.sort_values('local_share',ascending=False)\np=pd.concat([p.head(7),p.tail(8)])\np['country']=p.country.replace({'United Kingdom of Great Britain and Northern Ireland':'UK','Bolivia (Plurinational State of)':'Bolivia'})\np['label']=p.country+' ('+p.year.astype(int).astype(str)+')'\noutput=p",
+    "codeSignature": "e61195b5bc3802b76933f9be8ba844102e9f274afec78b9a8066f9b43a8bdc35",
+    "outputVariable": "output",
+    "source": [
+     "sdg11_national"
+    ],
+    "inputSources": [
+     {
+      "id": "data:dde8cde108f63babea4b427160284e38:sdg11_national",
+      "kind": "data",
+      "displayName": "sdg11_national"
+     }
+    ],
+    "trigger": {
+     "tableId": "sdg11_national",
+     "resultTableId": "d_output",
+     "chart": {
+      "id": "chart-1792308388984",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "sdg11_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "d_output",
+    "rowCount": 15
+   },
+   "description": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792308340159_step_1",
+   "createdAt": 1792308389455
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-13ad138c860e",
+   "chartType": "Bar Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-local_share-1792308389455-0.29873767004610086",
+     "dtype": "quantitative"
+    },
+    "y": {
+     "fieldID": "concept-label-1792308389455-0.965114619273611",
+     "dtype": "nominal",
+     "sortOrder": "descending",
+     "sortBy": "local_share"
+    },
+    "color": {
+     "channel": "color",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "d_output",
+   "source": "user",
+   "title": "Local government share of national and local heritage spending",
+   "subtitle": "Selected countries, latest matched year in 2020–2024; excludes regional governments. UIS, February 2026 release.",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-local_share-1792308389455-0.29873767004610086:|y:concept-label-1792308389455-0.965114619273611:",
+   "unread": false,
+   "themeId": "datawrapper"
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-local_share-1792308389455-0.29873767004610086",
+   "name": "local_share",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-label-1792308389455-0.965114619273611",
+   "name": "label",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308340159_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1792308340159_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Who pays for heritage: national or local governments?",
+   "parentNodeId": "conversation-root:9a7cf056-87d8-44bc-9cd0-1aad9c431567",
+   "actionId": "exploreDataFromNL_1792308340159",
+   "createdAt": 1792308340159
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308340159_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1792308340159_step_1",
+   "textKind": "explain",
+   "content": "Compare national and local heritage spending in each country's latest matched year since 2020.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792308340159_prompt",
+   "actionId": "exploreDataFromNL_1792308340159",
+   "createdAt": 1792308365278,
+   "startedAt": 1792308340160,
+   "codeExecutions": [
+    {
+     "id": "code_exploreDataFromNL_1792308340159_1",
+     "tool": "execute_python_script",
+     "purpose": "Compare national and local heritage spending in each country's latest matched year since 2020.",
+     "code": "import pandas as pd\nx=pd.read_parquet('data/sdg11_national.parquet')\nids={'HEXPCSTPPPCAPGOV.LOC.HER.PU':'Local','HEXPCSTPPPCAPGOV.NTL.HER.PU':'National'}\na=x[x.indicator_id.isin(ids)&x.year.ge(2020)].copy();a['level']=a.indicator_id.map(ids)\np=a.pivot(index=['COUNTRY_ID','country','year'],columns='level',values='value').dropna().reset_index().sort_values('year').drop_duplicates('COUNTRY_ID',keep='last')\np=p[~p.COUNTRY_ID.isin(['AND','SMR','MCO','LIE'])]\np['local_share']=100*p.Local/(p.Local+p.National)\nprint(p.to_string(index=False));print('COUNTS',len(p),(p.National>p.Local).sum(),(p.Local>p.National).sum());print(a.qualifier.value_counts())",
+     "status": "completed",
+     "createdAt": 1792308365277,
+     "output": "COUNTRY_ID                                              country  year     Local  National  local_share\n       GBR United Kingdom of Great Britain and Northern Ireland  2020  57.33476  77.35504    42.568004\n       PHL                                          Philippines  2020   0.11731   4.61630     2.478235\n       AUS                                            Australia  2020   5.99586  21.87834    21.510429\n       EST                                              Estonia  2021  14.39011  16.82911    46.093753\n       ALB                                              Albania  2021  10.71673  15.58274    40.748844\n       CYP                                               Cyprus  2021  14.63083  49.56028    22.792611\n       CHE                                          Switzerland  2022  55.24640  91.65579    37.607608\n       BLR                                              Belarus  2023  43.03120  14.28443    75.077601\n       BIH                               Bosnia and Herzegovina  2023  22.34222  20.40855    52.261562\n       SRB                                               Serbia  2023  16.71118   7.88662    67.937702\n       BEL                                              Belgium  2023 184.14650  24.56651    88.229526\n       HRV                                              Croatia  2023  18.33364 222.05881     7.626546\n       HUN                                              Hungary  2023  23.16671  72.60369    24.189844\n       BOL                     Bolivia (Plurinational State of)  2023  51.55146 219.89880    18.991126\n       FIN                                              Finland  2023 147.30182 117.84146    55.555555\n       ESP                                                Spain  2023  25.94196  14.37502    64.344998\n       FRA                                               France  2023  47.63967  50.02552    48.778557\n       MDA                                  Republic of Moldova  2023   0.78779   2.03418    27.916314\n       MLT                                                Malta  2023  11.77565 338.70738     3.359835\n       CIV                                        Côte d'Ivoire  2023   0.00662   3.49509     0.189050\n       SWE                                               Sweden  2024   4.23764  80.14622     5.021861\n       DOM                                   Dominican Republic  2024   1.46017  13.06447    10.053055\n       COL                                             Colombia  2024   6.52282   7.58559    46.233559\n       SVK                                             Slovakia  2024  22.69157  34.77233    39.488392\n       ECU                                              Ecuador  2024  23.55443  29.70886    44.222634\n       MUS                                            Mauritius  2024   0.67039  13.07968     4.875539\n       POL                                               Poland  2024  50.85138  28.05709    64.443500\n       CMR                                             Cameroon  2024   0.29927   1.04593    22.247249\n       ARM                                              Armenia  2024   4.90232  16.02193    23.428892\n       ISR                                               Israel  2024   0.98671  33.11791     2.893186\n       PER                                                 Peru  2024   1.95735   8.17047    19.326469\n       LTU                                            Lithuania  2024  17.48851  23.98055    42.172429\n       NOR                                               Norway  2024   2.45066  12.74954    16.122551\n       LUX                                           Luxembourg  2024  64.33571 166.55506    27.864132\n       BRA                                               Brazil  2024   7.19368  11.91971    37.636861\n       IRL                                              Ireland  2024  52.41447  56.96158    47.921341\n       TUR                                              Türkiye  2024   0.23363   0.55493    29.627422\nCOUNTS 37 30 7\nqualifier\nUIS_EST    10\nName: count, dtype: int64\n"
+    }
+   ],
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1792308340159-1",
+     "kind": "tool",
+     "label": "Reading: session/tables/sdg11_indicators.json, session/tables/sd…",
+     "status": "completed",
+     "tool": "read_file",
+     "toolCallId": "call_9HSIEn3H9m3dBv6BiFLLEs1A"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792308340159-2",
+     "kind": "tool",
+     "label": "running code... Compare national and local heritage spending in each country's latest matched year since 2020.",
+     "status": "completed",
+     "tool": "execute_python_script",
+     "toolCallId": "call_5cfee59E7f3K2iOQL4LFSdAg",
+     "executionId": "code_exploreDataFromNL_1792308340159_1"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792308340159-3",
+     "kind": "chart",
+     "label": "creating chart...",
+     "status": "completed"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792308340159-4",
+     "kind": "thought",
+     "label": "I’ll compare national and local spending in the same year, using each country’s latest matched figures from 2020–2024.",
+     "status": "completed"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308340159_1792308395655",
+   "displayId": "textTurn_exploreDataFromNL_1792308340159_closing",
+   "textKind": "explain",
+   "content": "**National governments usually spend more—but local governments lead in some countries.** National spending exceeded local spending in **30 of 37 countries** with matched figures, using each country’s latest available year from 2020–2024.\n\nLocal governments accounted for **88%** of combined national-and-local heritage spending in Belgium, **75%** in Belarus and **68%** in Serbia. In contrast, their share was only **5%** in Sweden and **3%** in Malta.\n\nThese figures cover cultural and natural heritage, exclude regional governments and private funding, and are not a worldwide total; reporting is incomplete and some values are estimates. Source: UIS, February 2026 release.",
+   "parentNodeId": "d_output",
+   "actionId": "exploreDataFromNL_1792308340159",
+   "createdAt": 1792308395655,
+   "startedAt": 1792308340160,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "d_output",
+   "fields": {
+    "Local": {
+     "displayName": "Local spending per person (2017 PPP$)",
+     "authored": {
+      "displayName": "Local spending per person (2017 PPP$)"
+     }
+    },
+    "National": {
+     "displayName": "National spending per person (2017 PPP$)",
+     "authored": {
+      "displayName": "National spending per person (2017 PPP$)"
+     }
+    },
+    "local_share": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "intrinsicDomain": [
+      0,
+      100
+     ],
+     "displayName": "Local share (%)",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "intrinsicDomain": [
+       0,
+       100
+      ],
+      "displayName": "Local share (%)"
+     }
+    },
+    "label": {
+     "displayName": "Country and year",
+     "authored": {
+      "displayName": "Country and year"
+     }
+    }
+   }
+  }
+ ],
+ "activeWorkspace": {
+  "id": "culture-c21",
+  "displayName": "Who pays for heritage? Mostly national governments"
+ },
+ "focusedId": {
+  "type": "chart",
+  "chartId": "chart-13ad138c860e"
+ }
+}

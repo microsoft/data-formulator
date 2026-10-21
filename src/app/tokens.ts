@@ -37,9 +37,12 @@ export const sidebarEdge = {
     overlayShadow: '5px 0 16px -8px rgba(0, 0, 0, 0.32)',
 } as const;
 
+/** The app's typeface, as on the Flint site: Inter (bundled, variable weight), then system fonts. */
+export const fontSans = '"Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif';
+
 /** Reading typography for reports; other long-form canvases (workflow runs) match it. */
 export const readingTypography = {
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+    fontFamily: fontSans,
     color: 'rgb(55, 53, 47)',
 } as const;
 
@@ -192,7 +195,7 @@ export const radius = {
     sm: 1,
 
     /** Floating panels, dialogs, chat cards, table containers
-    *  DataThread popups, ChatDialog, About, TableSelectionView */
+    *  DataThread popups, ChatDialog, TableSelectionView */
     md: 2,
 
     /** Status indicators, model icons

@@ -274,8 +274,8 @@ class SessionLayer:
                                  and table["id"] in ((other.get("derive") or {}).get("source") or [])), None)
             authored = [chart for chart in charts if chart.get("source") != "trigger"]
             agent_chart, later = (authored[0], authored[1:]) if authored else (None, [])
-            edited = bool(agent_chart) and (bool(agent_chart.get("styleVariants")) or bool(
-                agent_chart.get("titleKey") and agent_chart["titleKey"] != encoding_fingerprint(agent_chart)))
+            edited = bool(agent_chart) and bool(
+                agent_chart.get("titleKey") and agent_chart["titleKey"] != encoding_fingerprint(agent_chart))
             report = next((report for report in all_reports if report.get("triggerTableId") == table["id"]
                            or any(f"chart://{id}" in (report.get("content") or "") for id in chart_ids)), None)
             name = self.table_name(table)
@@ -827,8 +827,6 @@ class SessionLayer:
                 continue
             table = self.table_by_id[chart["tableRef"]]
             flags = [str(chart.get("chartType")), f"of {self.table_name(table)}"]
-            if chart.get("styleVariants"):
-                flags.append("user restyled")
             if self.reports_showing(chart["id"]):
                 flags.append("in a report")
             blocked = self._blocked().get(chart["tableRef"])

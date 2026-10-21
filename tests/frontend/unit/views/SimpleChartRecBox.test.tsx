@@ -127,6 +127,35 @@ describe('Analyst landing attachment handoff', () => {
         expect(buildThreads(dfSelectors.getThreadGraph(store.getState())).some(thread => thread.branchFromId)).toBe(false);
     });
 
+    it('offers an example session\'s follow-ups and asks the one clicked', async () => {
+        const { store } = mountTask();
+        act(() => { store.dispatch(dfActions.setExampleFollowUps({ title: 'Movies', questions: ['Which genres earn the most?', 'Who directs the hits?'] })); });
+        const callout = screen.getByRole('note', { name: 'Follow-up suggestions' });
+        expect(callout).toHaveTextContent('Try these examples');
+        fireEvent.click(screen.getByRole('button', { name: 'Which genres earn the most?' }));
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        expect(requestBody().user_question).toBe('Which genres earn the most?');
+        await waitFor(() => expect(store.getState().exampleFollowUps).toBeUndefined());
+    });
+
+    it('folds an example session\'s follow-ups away while the user works elsewhere', () => {
+        const { store } = mountTask();
+        act(() => { store.dispatch(dfActions.setExampleFollowUps({ title: 'Movies', questions: ['Which genres earn the most?'] })); });
+        fireEvent.pointerDown(document.body);
+        expect(screen.queryByRole('note', { name: 'Follow-up suggestions' })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Follow-up ideas' }));
+        expect(screen.getByRole('note', { name: 'Follow-up suggestions' })).toBeInTheDocument();
+        expect(streamRequest).not.toHaveBeenCalled();
+    });
+
+    it('dismisses an example session\'s follow-ups without asking anything', () => {
+        const { store } = mountTask();
+        act(() => { store.dispatch(dfActions.setExampleFollowUps({ title: 'Movies', questions: ['Which genres earn the most?'] })); });
+        fireEvent.click(screen.getByRole('button', { name: 'Dismiss suggestions' }));
+        expect(screen.queryByRole('note', { name: 'Follow-up suggestions' })).toBeNull();
+        expect(streamRequest).not.toHaveBeenCalled();
+    });
+
     it('starts a quick action as a visible user prompt requesting suggestions', async () => {
         const { dispatchSpy } = mountTask();
         fireEvent.click(screen.getByRole('button', { name: 'Quick actions' }));

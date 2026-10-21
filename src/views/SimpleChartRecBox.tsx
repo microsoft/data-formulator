@@ -40,10 +40,12 @@ import { toAnalystTableRef } from '../app/tableResolution';
 import { alpha } from '@mui/material/styles';
 import { WritingPencil } from '../components/FunComponents';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import { notifyWorkspaceFilesChanged } from '../app/workspaceService';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import BoltIcon from '@mui/icons-material/Bolt';
+import CloseIcon from '@mui/icons-material/Close';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import StopIcon from '@mui/icons-material/Stop';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
@@ -224,6 +226,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
     // A focused running or paused workflow shows its pending interaction above the input.
     const chatWorkflow = useSelector(selectChatWorkflow);
+    const exampleFollowUps = useSelector((state: DataFormulatorState) => state.exampleFollowUps);
     const currentStore = useStore();
     const connectorParams = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams);
 
@@ -243,6 +246,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // "Selected answers: ..." prefix and prepended to the typed message).
     const [clarifyAnswers, setClarifyAnswers] = useState<Record<number, ClarificationResponse>>({});
     const [isChatFormulating, setIsChatFormulating] = useState(false);
+    // An example session's follow-up suggestions are offered until the user asks anything.
+    useEffect(() => {
+        if (isChatFormulating && exampleFollowUps) dispatch(dfActions.setExampleFollowUps(undefined));
+    }, [isChatFormulating, exampleFollowUps, dispatch]);
     const [pendingTerminal, setPendingTerminal] = useState<{
         proposal: TerminalProposal;
         trajectory: any[];
@@ -354,6 +361,25 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // Stale draft detection is handled by loadState in dfSlice (marks running/clarifying drafts as interrupted)
 
     const inputCardRef = useRef<HTMLDivElement>(null);
+    // The input box, once it is on the page: what the follow-ups callout points at.
+    const [followUpsAnchor, setFollowUpsAnchor] = useState<HTMLDivElement | null>(null);
+    useEffect(() => { setFollowUpsAnchor(exampleFollowUps ? inputCardRef.current : null); }, [exampleFollowUps]);
+    // The hint steps aside once the user works elsewhere (the report, the thread): it folds into a
+    // small chip by the input, and opens again from the chip or the input.
+    const followUpsRef = useRef<HTMLDivElement>(null);
+    const [followUpsFolded, setFollowUpsFolded] = useState(false);
+    useEffect(() => { setFollowUpsFolded(false); }, [exampleFollowUps]);
+    useEffect(() => {
+        if (!exampleFollowUps) return;
+        const onPointerDown = (event: PointerEvent) => {
+            const target = event.target as Node | null;
+            if (!target) return;
+            if (followUpsRef.current?.contains(target)) return;
+            setFollowUpsFolded(!inputCardRef.current?.contains(target));
+        };
+        document.addEventListener('pointerdown', onPointerDown, true);
+        return () => document.removeEventListener('pointerdown', onPointerDown, true);
+    }, [exampleFollowUps]);
     // Ref to the chat textarea so getting-started starter prompts can seed
     // the input and immediately focus it for editing.
     const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -439,6 +465,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         }
         return [...ids];
     }, [defaultPrimaryTableIds, mentionedTableIds, inputTables]);
+    // The tables shown as chips: only those the user added, beyond the ones in view.
+    const mentionedChipIds = primaryTableIds.filter(id => !defaultPrimaryTableIds.includes(id));
 
     // Extract the filter text from after the last @ in the prompt
     const mentionFilter = React.useMemo(() => {
@@ -2533,20 +2561,18 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             )}
             {/* Input area wrapper */}
             <Box sx={{ position: 'relative' }}>
-            {/* @-mention table chips and image attachments.
-                Skip the table-chip row entirely when there's only one root table —
-                there's nothing else the user could @-mention, so the chip is noise. */}
-            {((primaryTableIds.length > 0 && inputTables.length > 1) || attachedImages.length > 0 || attachedFiles.length > 0) && !isChatFormulating && (
+            {/* Chips only for context the user added: @-mentioned tables and attached images or files, as in
+                chat and coding agents. The table in view is implied (the canvas tab names it) and is still sent. */}
+            {(mentionedChipIds.length > 0 || attachedImages.length > 0 || attachedFiles.length > 0) && !isChatFormulating && (
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px', px: 0.5, pb: '2px' }}>
-                    {inputTables.length > 1 && primaryTableIds.map(id => {
+                    {mentionedChipIds.map(id => {
                         const tbl = tables.find(t => t.id === id);
-                        const isDefault = defaultPrimaryTableIds.includes(id);
                         return (
                             <Chip
                                 key={id}
                                 size="small"
                                 label={`@${tbl?.displayId || id}`}
-                                onDelete={isDefault ? undefined : () => setMentionedTableIds(prev => prev.filter(mid => mid !== id))}
+                                onDelete={() => setMentionedTableIds(prev => prev.filter(mid => mid !== id))}
                                 sx={{
                                     height: 20,
                                     fontSize: textVar.xxs,
@@ -2956,6 +2982,74 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         </Box>
     ) : null;
 
+    // ── Example-session follow-ups ───────────────────────────────────
+    // A callout when an example session opens: the user can continue the
+    // analysis with their own question or click one of these. It floats above
+    // the panes, starting over the input and reaching across into the canvas,
+    // with its pointer on the input.
+    // Styled as a plain tooltip (MUI's default dark fill, no border).
+    const calloutFill = alpha(theme.palette.grey[700], 0.92);
+    const calloutText = theme.palette.common.white;
+    const showFollowUps = !!exampleFollowUps && !workspaceReadOnly && !chatWorkflow && !isChatFormulating;
+    const followUpsBlock = showFollowUps && exampleFollowUps ? (
+        <Popper open={!!followUpsAnchor} anchorEl={followUpsAnchor} placement="top-start" style={{ zIndex: 1250 }}
+            modifiers={[{ name: 'offset', options: {
+                // Open, the hint sits mostly over the canvas (about 30% over the chat pane, 70% beyond),
+                // so it leaves the latest thread items in view; its pointer stays on the input.
+                offset: ({ reference, popper }: { reference: { width: number }; popper: { width: number } }) => followUpsFolded
+                    ? [20, 6] : [Math.max(20, reference.width - 0.3 * popper.width), 12] } }, { name: 'preventOverflow', options: { padding: 12 } }, { name: 'flip', enabled: false }]}>
+        <Box ref={followUpsRef}>
+        {followUpsFolded ? <ButtonBase onClick={() => setFollowUpsFolded(false)} sx={{
+            display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.375, borderRadius: '4px',
+            bgcolor: calloutFill, color: calloutText,
+            fontFamily: 'inherit', fontSize: textVar.xs, fontWeight: 500,
+            '&:hover, &.Mui-focusVisible': { bgcolor: theme.palette.grey[800] },
+        }}>
+            <TipsAndUpdatesIcon sx={{ fontSize: iconVar.sm }} />
+            {t('chartRec.followUpsFolded', { defaultValue: 'Follow-up ideas' })}
+        </ButtonBase> :
+        <Box role="note" aria-label={t('chartRec.followUpsTitle', { defaultValue: 'Follow-up suggestions' })} sx={{
+            position: 'relative', width: 'min(440px, calc(100vw - 32px))', boxSizing: 'border-box', px: 1.25, pt: 0.875, pb: 1, borderRadius: '4px',
+            bgcolor: calloutFill, color: calloutText,
+            animation: 'followUpsIn 0.22s ease-out',
+            '@keyframes followUpsIn': { from: { opacity: 0, transform: 'translateY(4px)' }, to: { opacity: 1, transform: 'none' } },
+            // The pointer toward the input box below, as on a tooltip arrow.
+            '&::after': {
+                content: '""', position: 'absolute', left: 24, bottom: -4, width: 8, height: 8, transform: 'rotate(45deg)',
+                bgcolor: calloutFill,
+            },
+        }}>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75 }}>
+                <TipsAndUpdatesIcon sx={{ fontSize: iconVar.sm, mt: '2px', flexShrink: 0, opacity: 0.85 }} />
+                <Typography sx={{ flex: 1, minWidth: 0, fontSize: textVar.xs, lineHeight: 1.5, color: 'inherit' }}>
+                    {t('chartRec.followUpsBody', { defaultValue: 'You can ask follow-up questions in the chat to continue the analysis: ask for new charts, explanations or a new report. Try these examples:' })}
+                </Typography>
+                <Tooltip title={t('chartRec.followUpsDismiss', { defaultValue: 'Dismiss suggestions' })}>
+                    <IconButton size="small" aria-label={t('chartRec.followUpsDismiss', { defaultValue: 'Dismiss suggestions' })}
+                        onClick={() => dispatch(dfActions.setExampleFollowUps(undefined))}
+                        sx={{ p: 0.25, mt: '-2px', mr: '-4px', color: alpha(calloutText, 0.75), flexShrink: 0,
+                            '&:hover': { color: calloutText, bgcolor: alpha(calloutText, 0.12) } }}>
+                        <CloseIcon sx={{ fontSize: iconVar.sm }} />
+                    </IconButton>
+                </Tooltip>
+            </Box>
+            <Box sx={{ mt: 0.5, pl: 2.5, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                {exampleFollowUps.questions.map(question => <ButtonBase key={question} onClick={() => submitChat(question)} sx={{
+                    display: 'inline-flex', alignItems: 'baseline', gap: 0.5, py: 0.25, borderRadius: '4px',
+                    fontFamily: 'inherit', fontSize: textVar.xs, lineHeight: 1.45, textAlign: 'left', color: 'inherit', fontWeight: 600,
+                    '& .follow-up-arrow': { transition: 'transform 0.12s' },
+                    '&:hover, &.Mui-focusVisible': { textDecoration: 'underline', textUnderlineOffset: '2px' },
+                    '&:hover .follow-up-arrow, &.Mui-focusVisible .follow-up-arrow': { transform: 'translateX(2px)' },
+                }}>
+                    <ArrowForwardRoundedIcon className="follow-up-arrow" sx={{ fontSize: iconVar.xs, alignSelf: 'center', flexShrink: 0 }} />
+                    {question}
+                </ButtonBase>)}
+            </Box>
+        </Box>}
+        </Box>
+        </Popper>
+    ) : null;
+
     return (
         <ClickAwayListener
             mouseEvent="onMouseDown"
@@ -3006,7 +3100,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             terminalResponse: { request_id: pending.proposal.id, decision },
                         }, undefined, { images: [], files: [] });
                     }} />}
-                {gettingStartedBlock}
+                {followUpsBlock}
+                {!followUpsBlock && gettingStartedBlock}
                 {/* The input box */}
                 {inputBox}
             </Box>

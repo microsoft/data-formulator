@@ -112,7 +112,7 @@
     "msgEncodingEmpty": "データフィールドをチャートビルダーに配置するか、希望を説明してください！",
     "msgUnavailable": "データを定式化して可視化を作成しましょう！",
     "msgSynthesizing": "合成しています...",
-    "msgWarning": "AIが生成した結果は不正確な場合があります。内容を確認してください！",
+    "aiDisclaimer": "AI は間違えることがあります。重要な結果は確認してください。",
     "templateGroups": {
       "table": "テーブル",
       "scatter": "散布図",

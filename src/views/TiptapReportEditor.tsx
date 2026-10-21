@@ -247,8 +247,8 @@ const StreamingText: FC<{ text: string; resolveChartImage?: ResolveChartImage }>
     return (
         <Box sx={{
             px: '24px', pt: '40px', pb: '64px',
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
-            fontSize: '0.95rem', lineHeight: 1.7, color: 'rgb(55, 53, 47)',
+            fontFamily: readingTypography.fontFamily,
+            fontSize: '0.95rem', lineHeight: 1.7, color: readingTypography.color,
         }}>
             <StreamingMarkdownLite text={text} resolveChartImage={resolveChartImage} />
             <Box sx={{ mt: text.length === 0 ? 1 : 2 }}>

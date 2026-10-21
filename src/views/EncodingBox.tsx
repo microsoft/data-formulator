@@ -208,10 +208,8 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             setAutoSortResult(levels);
 
             if (!chart.chartType.includes("Area") && levels && levels.length > 0) {
-                // Only dispatch when sortBy actually needs updating. Otherwise this
-                // effect re-fires on every chart switch and the resulting no-op
-                // dispatch silently clears chart.activeVariantId in the reducer
-                // (because updateChartEncodingProp resets variants on any edit).
+                // Only dispatch when sortBy actually needs updating; this effect
+                // re-fires on every chart switch.
                 const nextSortBy = JSON.stringify(levels);
                 if (encoding.sortBy !== nextSortBy) {
                     updateEncProp('sortBy', nextSortBy);

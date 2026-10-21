@@ -3,9 +3,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigationType, useSearchParams } from 'react-router-dom';
 import { DataFormulatorState, dfActions, dfSelectors } from './dfSlice';
-import { openSession } from './sessionThunks';
+import { leaveSession, openSession } from './sessionThunks';
 import { claimSession, registerSessionHolder, SESSION_PARAM } from './sessionTabs';
 import { store, AppDispatch } from './store';
 import { getSerializableState } from './useAutoSave';
@@ -16,18 +16,27 @@ import { saveWorkspaceState } from './workspaceService';
  * Make this tab own one session (see `sessionTabs.ts`):
  * - on start, open the session named in the URL from the backend; state restored
  *   from shared browser storage may belong to a different tab;
- * - keep the URL naming the open session so reload and new tabs work;
+ * - keep the URL naming the open session so reload and new tabs work, adding a
+ *   history entry each time the user enters, leaves, or switches sessions;
+ * - follow the browser's back/forward buttons between the landing page and sessions;
  * - hand the session to another tab that claims it, saving first.
  */
 export function useSessionTabs() {
     const dispatch = useDispatch<AppDispatch>();
     const [searchParams, setSearchParams] = useSearchParams();
+    // POP is the browser's back/forward (or the initial load); links PUSH/REPLACE.
+    const navigationType = useNavigationType();
     const inSession = useSelector(dfSelectors.selectInSession);
     const activeId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
     // While the URL's session loads, the URL stays authoritative.
     const loadingFromUrl = useRef<string | null>(null);
     const [urlLoads, setUrlLoads] = useState(0);
     const started = useRef(false);
+    // The session the URL last agreed with; undefined until the first sync.
+    const syncedId = useRef<string | null | undefined>(undefined);
+    // Correct the URL in place (no new history entry) after a back/forward
+    // navigation that could not be followed, e.g. a deleted session.
+    const replaceNext = useRef(false);
 
     useEffect(() => registerSessionHolder({
         holds: sessionId => {
@@ -68,14 +77,38 @@ export function useSessionTabs() {
     }, []);
 
     useEffect(() => {
-        if (loadingFromUrl.current) return;
+        if (loadingFromUrl.current !== null) return;
+        const urlId = searchParams.get(SESSION_PARAM) || null;
         const next = inSession && activeId ? activeId : null;
-        if ((searchParams.get(SESSION_PARAM) || null) === next) return;
+        if (urlId === next) {
+            syncedId.current = next;
+            replaceNext.current = false;
+            return;
+        }
+        const urlMoved = syncedId.current !== undefined && urlId !== syncedId.current;
+        if (urlMoved && navigationType === 'POP') {
+            // Back/forward moved the URL: bring the app along.
+            loadingFromUrl.current = urlId ?? '';
+            const follow = urlId ? dispatch(openSession(urlId)) : dispatch(leaveSession());
+            void Promise.resolve(follow).finally(() => {
+                loadingFromUrl.current = null;
+                syncedId.current = urlId;
+                replaceNext.current = true;
+                setUrlLoads(count => count + 1);
+            });
+            return;
+        }
+        // Startup, corrections, and in-app links that dropped the query (e.g. to
+        // Admin) rewrite the current entry; entering, leaving, or switching
+        // sessions adds one.
+        const replace = syncedId.current === undefined || replaceNext.current || urlMoved;
+        syncedId.current = next;
+        replaceNext.current = false;
         setSearchParams(previous => {
             const params = new URLSearchParams(previous);
             if (next) params.set(SESSION_PARAM, next);
             else params.delete(SESSION_PARAM);
             return params;
-        }, { replace: true });
-    }, [inSession, activeId, searchParams, setSearchParams, urlLoads]);
+        }, { replace });
+    }, [inSession, activeId, searchParams, navigationType, setSearchParams, urlLoads]);
 }

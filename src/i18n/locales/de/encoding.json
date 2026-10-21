@@ -75,9 +75,6 @@
     "autoSortServerError": "Automatische Sortierung aufgrund eines Serverproblems nicht möglich.",
     "followUpChartPlaceholder": "Diagrammstil aktualisieren oder Folgeanalyse durchführen",
     "refreshIdeas": "Ideen aktualisieren",
-    "stylePresetsTooltip": "Diagramm neu gestalten als…",
-    "stylePresetsHeader": "Diagramm neu gestalten als",
-    "stylePresetsHint": "Oder beschreiben Sie einen Stil im Eingabefeld — z. B. „teal-Palette verwenden“, „Titel fett darstellen“, „Achsenbeschriftungen drehen“, „Spitzenwert annotieren“.",
     "formulationSucceeded": "Datenformulierung für {{fields}} erfolgreich.",
     "formulationFailed": "Datenformulierung fehlgeschlagen."
   }

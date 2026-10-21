@@ -103,6 +103,13 @@ function workflowOutputIds(run: Run): string[] {
 
 const deletedWorkflowRuns = new Set<string>();
 
+/** A one-line notice above a workflow list, sized like the list's text rather than a page-level alert. */
+const listNoticeSx = {
+    py: 0.25, px: 1, borderRadius: 1, alignItems: 'center', fontSize: textVar.xs, lineHeight: 1.45,
+    '& .MuiAlert-icon': { fontSize: iconVar.sm, mr: 0.75, py: 0.5, opacity: 0.85 },
+    '& .MuiAlert-message': { py: 0.5 },
+} as const;
+
 function workflowArtifacts(run: Run): NonNullable<NonNullable<TextTurn['workflow']>['artifacts']> {
     return (run.outputs || []).flatMap(output => {
         const evidence = run.evidence?.[output.id] || (output.type === 'report'
@@ -1000,7 +1007,8 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 color: readingTypography.color, '--df-text-xs': '0.75rem', '--df-text-sm': '0.8125rem', '--df-text-md': '0.875rem',
                 '& h2': { fontSize: '0.95rem', lineHeight: 1.4, letterSpacing: 0 },
                 '& h3': { fontSize: '0.875rem', lineHeight: 1.4, letterSpacing: 0 } } : { minWidth: 0, width: '100%' }) }}>
-        {canvas && !interactionOnly && <CanvasHeader icon={<WorkflowGears running={workflow.status === 'running'} size={18} color="text.secondary" showTooltip={false} />} title={turn.displayId || t('workflow.fallbackName')}
+        {/* Under the tabs the header only carries status and run controls; a finished run needs neither. */}
+        {canvas && !interactionOnly && workflow.status !== 'completed' && <CanvasHeader icon={<WorkflowGears running={workflow.status === 'running'} size={18} color="text.secondary" showTooltip={false} />} title={turn.displayId || t('workflow.fallbackName')}
             meta={<Box component="span" sx={{ color: statusColor, textTransform: 'capitalize' }}>
                 {workflow.status === 'running' ? <ShimmerText tone="neutral" fontSize="inherit">{workflow.pauseRequested ? t('workflow.stopping') : workflow.planReviewPending ? t('workflow.reviewingPlan') : statusLabel('running')}</ShimmerText> : statusLabel(workflow.status)}
             </Box>}
@@ -1393,7 +1401,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
             {groupId === 'user' && toolbar}
             </Box>
             )}
-            {landing && groupId === 'demo' && !model && <Alert severity="info" sx={{ mb: 1 }}>{t('workflow.selectModelToRun')}</Alert>}
+            {landing && groupId === 'demo' && !model && <Alert severity="info" sx={{ ...listNoticeSx, mb: 1 }}>{t('workflow.selectModelToRun')}</Alert>}
             <Box id={`workflow-${presentation}-group-${groupId}`} sx={{ mx: landing ? 0 : 0.75, mt: landing ? 0 : 1, display: 'grid', gap: landing ? 1 : 0.75,
                 ...(landing ? { gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))' } : {}) }}>
         {!group.length && <Typography sx={{ px: 1, py: 0.75, fontSize: textVar.xs, color: 'text.secondary' }}>
@@ -1461,7 +1469,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         </Box>
         {!landing && toolbar}
         <Box sx={{ overflowY: landing ? 'visible' : 'auto', minHeight: 0, pb: 1 }}>
-        {!landing && !model && <Alert severity="info" sx={{ mx: 1, mb: 1 }}>{t('workflow.selectModelToRun')}</Alert>}
+        {!landing && !model && <Alert severity="info" sx={{ ...listNoticeSx, mx: 0.75, mt: 1 }}>{t('workflow.selectModelToRun')}</Alert>}
         {renderGroups(landing ? ['demo', 'user', 'server'] : ['all'])}
         </Box>
         </>}

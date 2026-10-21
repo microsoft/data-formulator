@@ -287,6 +287,8 @@ def _register_blueprints():
     app.register_blueprint(model_endpoints_bp)
     app.register_blueprint(workspace_files_bp)
     app.register_blueprint(site_bp)
+    from data_formulator.sites import warn_about_missing_sites
+    warn_about_missing_sites()
 
     # Initialise pluggable authentication (reads AUTH_PROVIDER env var)
     from data_formulator.auth.identity import init_auth, get_active_provider

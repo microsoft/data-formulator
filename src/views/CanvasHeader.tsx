@@ -3,35 +3,24 @@
 
 /**
  * The one header every canvas shares: what is open (type icon, title, a little
- * metadata), the item's own actions, an overflow menu, and close — always in
- * the same places. The canvas pane provides close through context; while a
- * header is mounted the pane's floating close steps aside.
+ * metadata), the item's own actions and an overflow menu, always in the same
+ * places. Under the canvas tab strip the tab carries the title and close, so
+ * the header keeps only the view's tools.
  */
 
-import React, { createContext, FC, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, FC, useContext, useState } from 'react';
 import { Box, IconButton, InputBase, Menu, MenuItem, ListItemIcon, ListItemText, Tooltip, Typography } from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import { useTranslation } from 'react-i18next';
 import { iconVar } from '../app/layout';
 
-export const CANVAS_HEADER_HEIGHT = 40;
+const CANVAS_HEADER_HEIGHT = 40;
 
-/** Supplied by the canvas pane: how to close it, and a way for a header to say it owns close. */
-export const CanvasChromeContext = createContext<{ close?: () => void; claimClose?: () => () => void;
+/** Supplied by the canvas pane. */
+export const CanvasChromeContext = createContext<{
     /** Under the canvas tab strip: the tab shows the title and owns close, so the header is just the view's tools. */
     tabbed?: boolean }>({});
-
-/** A header-mounted canvas hides the pane's floating close; returns whether one is mounted. */
-export const useCanvasHeaderClaim = () => {
-    const [claims, setClaims] = useState(0);
-    const claimClose = useRef(() => {
-        setClaims(count => count + 1);
-        return () => setClaims(count => count - 1);
-    }).current;
-    return { headerMounted: claims > 0, claimClose };
-};
 
 export interface CanvasMenuItem {
     label: string;
@@ -66,12 +55,9 @@ export const CanvasHeader: FC<{
     actions?: React.ReactNode;
     /** Less frequent actions, behind ⋯. */
     menu?: CanvasMenuItem[];
-    /** Overrides the pane's close (e.g. a canvas that closes into something else). */
-    onClose?: () => void;
-}> = ({ icon, title, meta, onRename, onRequestRename, renameDisabled, actions, menu, onClose }) => {
+}> = ({ icon, title, meta, onRename, onRequestRename, renameDisabled, actions, menu }) => {
     const { t } = useTranslation();
-    const { close, claimClose, tabbed } = useContext(CanvasChromeContext);
-    useEffect(() => claimClose?.(), [claimClose]);
+    const { tabbed } = useContext(CanvasChromeContext);
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(title);
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
@@ -80,10 +66,10 @@ export const CanvasHeader: FC<{
         const next = draft.trim();
         if (next && next !== title) onRename?.(next);
     };
-    const handleClose = onClose ?? close;
     return <Box component="header" data-canvas-header aria-label={tabbed ? title : undefined} sx={{
         display: 'flex', alignItems: 'center', gap: 0.75, flexShrink: 0, height: tabbed ? 34 : CANVAS_HEADER_HEIGHT, boxSizing: 'border-box',
-        pl: 1.5, pr: 0.75, borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', minWidth: 0,
+        // No rule under it: the header is the top of the canvas, not a separate bar.
+        pl: 1.5, pr: 0.75, bgcolor: 'background.paper', minWidth: 0,
         '& [data-canvas-rename]': { opacity: 0 }, '&:hover [data-canvas-rename], &:focus-within [data-canvas-rename]': { opacity: 1 },
     }}>
         {!tabbed && <Box component="span" sx={{ display: 'flex', flexShrink: 0, color: 'text.secondary', '& svg': { fontSize: 18 } }}>{icon}</Box>}
@@ -120,8 +106,5 @@ export const CanvasHeader: FC<{
                 </MenuItem>)}
             </Menu>
         </>}
-        {handleClose && !tabbed && <CanvasHeaderAction label={t('canvas.close', { defaultValue: 'Close canvas' })} onClick={handleClose}>
-            <CloseIcon />
-        </CanvasHeaderAction>}
     </Box>;
 };

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { FLINT_INPUT, assembleVegaChart, extractFieldsFromEncodingMap } from "../../../../src/app/utils";
-import { Chart, computeInsightKey } from "../../../../src/components/ComponentType";
+import { Chart, chartTitleFits, computeInsightKey } from "../../../../src/components/ComponentType";
 
 
 const chart = {
@@ -62,6 +62,18 @@ describe("chart insight contract", () => {
 
     expect(computeInsightKey(swapped)).not.toBe(original);
     expect(computeInsightKey(averaged)).not.toBe(original);
+  });
+
+  it("keeps the title when x and y are swapped, but not when what the chart shows changes", () => {
+    const titled = { ...chart, title: "Sales by category", titleKey: computeInsightKey(chart) } as Chart;
+    const turned = { ...titled, encodingMap: { x: chart.encodingMap.y, y: chart.encodingMap.x } } as Chart;
+    const averaged = { ...titled, encodingMap: { ...chart.encodingMap, y: { ...chart.encodingMap.y, aggregate: "average" } } } as Chart;
+    const otherType = { ...turned, chartType: "Line Chart" } as Chart;
+    expect(chartTitleFits(titled)).toBe(true);
+    expect(chartTitleFits(turned)).toBe(true);
+    expect(chartTitleFits(averaged)).toBe(false);
+    expect(chartTitleFits(otherType)).toBe(false);
+    expect(chartTitleFits({ ...turned, title: undefined } as Chart)).toBe(false);
   });
 
   it("passes title and subtitle through Flint assembly", () => {

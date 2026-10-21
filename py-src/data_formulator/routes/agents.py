@@ -576,6 +576,10 @@ def analyst_streaming():
     except ValueError as exc:
         return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, str(exc)))
     agent_exploration_rules = content.get("agent_exploration_rules", "")
+    from data_formulator.sites import current_site, site_analyst_rules
+    site_rules = site_analyst_rules(current_site())
+    if site_rules:
+        agent_exploration_rules = "\n\n".join(rules for rules in (site_rules, agent_exploration_rules) if rules)
     agent_coding_rules = content.get("agent_coding_rules", "")
     attached_images = content.get("attached_images", None)
     scratch_files = content.get("scratch_files", None)
@@ -1025,66 +1029,6 @@ def workspace_name():
         raise
     except Exception as e:
         logger.warning("Failed to generate workspace name", exc_info=e)
-        raise classify_and_wrap_llm_error(e) from e
-
-
-# ---------------------------------------------------------------------------
-# Chart style refinement (restyle agent)
-# ---------------------------------------------------------------------------
-
-@agent_bp.route('/chart-restyle', methods=['POST'])
-def chart_restyle():
-    """Apply a natural-language STYLE instruction to a Vega-Lite spec.
-
-    Request body:
-        model: model config object (same shape as other agent routes)
-        instruction: str — the user's NL style instruction
-        vlSpec: dict — current Vega-Lite spec (data block already stripped client-side)
-        chartType: str — chart template label (e.g. "Bar Chart")
-        dataSample: list[dict] (optional) — first ~10 rows of the underlying table
-
-    Response:
-        On success: {status: "success", data: {vlSpec: <new spec>, rationale: str}}
-        On out-of-scope (data change): {status: "success", data: {out_of_scope: True, rationale: str}}
-
-    See design-docs/28-chart-style-refinement-agent.md.
-    """
-    from data_formulator.agents.agent_chart_restyle import ChartRestyleAgent
-
-    if not request.is_json:
-        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid request format")
-
-    content = request.get_json() or {}
-    instruction = (content.get("instruction") or "").strip()
-    vl_spec = content.get("vlSpec")
-    chart_type = (content.get("chartType") or "").strip()
-    data_sample = content.get("dataSample") or []
-    style_reference_spec = content.get("styleReferenceSpec")
-    model_config = content.get("model")
-
-    if not instruction:
-        raise AppError(ErrorCode.VALIDATION_ERROR, "Instruction is required")
-    if not isinstance(vl_spec, dict):
-        raise AppError(ErrorCode.VALIDATION_ERROR, "vlSpec must be a JSON object")
-    if not model_config:
-        raise AppError(ErrorCode.INVALID_REQUEST, "Model configuration is required")
-
-    client = get_client(model_config)
-
-    try:
-        agent = ChartRestyleAgent(client=client, language_instruction=get_language_instruction(mode="compact"))
-        result = agent.run(
-            vl_spec=vl_spec,
-            instruction=instruction,
-            chart_type=chart_type,
-            data_sample=data_sample if isinstance(data_sample, list) else [],
-            style_reference_spec=style_reference_spec if isinstance(style_reference_spec, dict) else None,
-        )
-        return json_ok(result)
-    except AppError:
-        raise
-    except Exception as e:
-        logger.warning("chart-restyle failed", exc_info=e)
         raise classify_and_wrap_llm_error(e) from e
 
 

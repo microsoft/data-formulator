@@ -96,9 +96,7 @@ CI builds self-contained Windows and macOS applications for pull requests and
 every update to `main`. Download the latest archives from the **Artifacts**
 section of the most recent
 [desktop builds workflow](https://github.com/microsoft/data-formulator/actions/workflows/desktop-build.yml).
-Workflow artifacts are retained for 30 days. Tagged builds are also attached
-as permanent downloads to the corresponding
-[GitHub Release](https://github.com/microsoft/data-formulator/releases).
+Workflow artifacts are retained for 30 days.
 
 Extract the archive, then launch Data Formulator using the instructions for
 your operating system:

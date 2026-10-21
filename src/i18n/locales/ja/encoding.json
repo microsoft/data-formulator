@@ -75,9 +75,6 @@
     "autoSortServerError": "サーバーの問題により自動ソートを実行できませんでした。",
     "followUpChartPlaceholder": "チャートのスタイルを更新するか、追加の分析を行う",
     "refreshIdeas": "アイデアを更新",
-    "stylePresetsTooltip": "チャートのスタイルを変更…",
-    "stylePresetsHeader": "チャートのスタイルを変更",
-    "stylePresetsHint": "または入力ボックスでスタイルを指定します — 例: 「ティール系パレットを使う」「タイトルを太字にする」「軸ラベルを回転する」「ピークに注釈を付ける」。",
     "formulationSucceeded": "{{fields}} のデータ定式化に成功しました。",
     "formulationFailed": "データ定式化に失敗しました。"
   }

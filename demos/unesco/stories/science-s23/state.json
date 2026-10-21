@@ -1,0 +1,4200 @@
+{
+ "__stateVersion": 14,
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "d_out",
+   "displayId": "Regional research spending trends",
+   "names": [
+    "indicator_id",
+    "region_group",
+    "region",
+    "year",
+    "value",
+    "magnitude",
+    "qualifier",
+    "Region",
+    "Year"
+   ],
+   "rows": [
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2000,
+     "value": 0.22726,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2001,
+     "value": 0.24283,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2002,
+     "value": 0.24787,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2003,
+     "value": 0.23926,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2004,
+     "value": 0.23563,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2005,
+     "value": 0.24906,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2006,
+     "value": 0.22275,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2007,
+     "value": 0.19927,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2008,
+     "value": 0.19565,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2009,
+     "value": 0.20455,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2010,
+     "value": 0.14778,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2011,
+     "value": 0.14709,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2012,
+     "value": 0.15543,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2013,
+     "value": 0.15868,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2014,
+     "value": 0.15461,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2015,
+     "value": 0.15795,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2016,
+     "value": 0.14995,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2017,
+     "value": 0.12323,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2018,
+     "value": 0.11009,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2019,
+     "value": 0.11077,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2020,
+     "value": 0.12359,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2021,
+     "value": 0.1206,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2022,
+     "value": 0.12394,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2023,
+     "value": 0.12947,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2000,
+     "value": 1.82045,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2001,
+     "value": 1.85447,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2002,
+     "value": 1.88769,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2003,
+     "value": 1.90125,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2004,
+     "value": 1.9311,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2005,
+     "value": 2.00205,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2006,
+     "value": 2.04371,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2007,
+     "value": 2.03244,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2008,
+     "value": 2.04479,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2009,
+     "value": 2.11992,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2010,
+     "value": 2.12472,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2011,
+     "value": 2.18702,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2012,
+     "value": 2.27044,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2013,
+     "value": 2.34541,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2014,
+     "value": 2.37487,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2015,
+     "value": 2.3688,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2016,
+     "value": 2.36433,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2017,
+     "value": 2.40147,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2018,
+     "value": 2.43179,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2019,
+     "value": 2.49849,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2020,
+     "value": 2.63448,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2021,
+     "value": 2.64286,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2022,
+     "value": 2.76115,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2023,
+     "value": 2.82548,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2000,
+     "value": 1.72485,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2001,
+     "value": 1.74692,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2002,
+     "value": 1.76347,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2003,
+     "value": 1.75425,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2004,
+     "value": 1.71144,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2005,
+     "value": 1.69597,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2006,
+     "value": 1.70198,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2007,
+     "value": 1.71078,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2008,
+     "value": 1.73739,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2009,
+     "value": 1.83469,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2010,
+     "value": 1.81239,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2011,
+     "value": 1.81605,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2012,
+     "value": 1.83977,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2013,
+     "value": 1.85399,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2014,
+     "value": 1.8828,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2015,
+     "value": 1.90875,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2016,
+     "value": 1.91102,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2017,
+     "value": 1.93623,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2018,
+     "value": 1.94172,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2019,
+     "value": 1.96505,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2020,
+     "value": 2.04058,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2021,
+     "value": 1.96542,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2022,
+     "value": 1.9507,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2023,
+     "value": 1.96626,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2000,
+     "value": 2.55736,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2001,
+     "value": 2.586,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2002,
+     "value": 2.49955,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2003,
+     "value": 2.50143,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2004,
+     "value": 2.44607,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2005,
+     "value": 2.45729,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2006,
+     "value": 2.49476,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2007,
+     "value": 2.5554,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2008,
+     "value": 2.66964,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2009,
+     "value": 2.71829,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2010,
+     "value": 2.6395,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2011,
+     "value": 2.65717,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2012,
+     "value": 2.59727,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2013,
+     "value": 2.61156,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2014,
+     "value": 2.6241,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2015,
+     "value": 2.68578,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2016,
+     "value": 2.74505,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2017,
+     "value": 2.78336,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2018,
+     "value": 2.88547,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2019,
+     "value": 3.02949,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2020,
+     "value": 3.29857,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2021,
+     "value": 3.33308,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2022,
+     "value": 3.34068,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2023,
+     "value": 3.30646,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2000,
+     "value": 0.54458,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2001,
+     "value": 0.56098,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2002,
+     "value": 0.58429,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2003,
+     "value": 0.59538,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2004,
+     "value": 0.60947,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2005,
+     "value": 0.62177,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2006,
+     "value": 0.64263,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2007,
+     "value": 0.67006,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2008,
+     "value": 0.71136,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2009,
+     "value": 0.71609,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2010,
+     "value": 0.71814,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2011,
+     "value": 0.74627,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2012,
+     "value": 0.74414,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2013,
+     "value": 0.7655,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2014,
+     "value": 0.81408,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2015,
+     "value": 0.86673,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2016,
+     "value": 0.92735,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2017,
+     "value": 0.9477,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2018,
+     "value": 0.942,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2019,
+     "value": 0.96195,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2020,
+     "value": 1.05408,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2021,
+     "value": 1.0714,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2022,
+     "value": 1.06744,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2023,
+     "value": 1.02801,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2000,
+     "value": 0.5851,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2001,
+     "value": 0.57682,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2002,
+     "value": 0.57406,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2003,
+     "value": 0.59763,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2004,
+     "value": 0.61237,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2005,
+     "value": 0.68462,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2006,
+     "value": 0.67361,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2007,
+     "value": 0.69273,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2008,
+     "value": 0.72821,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2009,
+     "value": 0.71121,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2010,
+     "value": 0.68117,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2011,
+     "value": 0.65734,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2012,
+     "value": 0.64888,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2013,
+     "value": 0.62189,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2014,
+     "value": 0.61762,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2015,
+     "value": 0.61016,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2016,
+     "value": 0.59326,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2017,
+     "value": 0.59165,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2018,
+     "value": 0.58703,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2019,
+     "value": 0.58485,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2020,
+     "value": 0.56997,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2021,
+     "value": 0.56964,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2022,
+     "value": 0.57158,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2023,
+     "value": 0.57569,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2000,
+     "value": 0.7058,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2001,
+     "value": 0.73351,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2002,
+     "value": 0.73091,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2003,
+     "value": 0.71224,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2004,
+     "value": 0.69612,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2005,
+     "value": 0.70298,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2006,
+     "value": 0.68959,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2007,
+     "value": 0.73143,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2008,
+     "value": 0.71721,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2009,
+     "value": 0.7395,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2010,
+     "value": 0.72985,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2011,
+     "value": 0.7459,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2012,
+     "value": 0.75876,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2013,
+     "value": 0.75514,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2014,
+     "value": 0.78273,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2015,
+     "value": 0.87575,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2016,
+     "value": 0.95702,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2017,
+     "value": 0.98084,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2018,
+     "value": 1.00567,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2019,
+     "value": 1.05094,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2020,
+     "value": 1.15321,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2021,
+     "value": 1.1106,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2022,
+     "value": 1.1187,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2023,
+     "value": 1.18681,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2023-01-01T00:00:00.000"
+    }
+   ],
+   "metadata": {
+    "indicator_id": {
+     "type": "string",
+     "levels": []
+    },
+    "region_group": {
+     "type": "string",
+     "levels": []
+    },
+    "region": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "value": {
+     "type": "number",
+     "levels": []
+    },
+    "magnitude": {
+     "type": "boolean",
+     "levels": []
+    },
+    "qualifier": {
+     "type": "boolean",
+     "levels": []
+    },
+    "Region": {
+     "type": "string",
+     "levels": []
+    },
+    "Year": {
+     "type": "date",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import pandas as pd\nr=pd.read_parquet('data/rd_sdg_regional.parquet')\nregions=['Eastern Asia','South-Eastern Asia','Southern Asia','Central Asia','Western Asia','Europe','Northern America']\nout=r[r.indicator_id.eq('EXPGDP.TOT') & r.region.isin(['SDG: '+x for x in regions]) & r.year.between(2000,2023)].copy()\nout['Region']=out.region.str.replace('SDG: ','',regex=False).replace({'Eastern Asia':'East Asia','South-Eastern Asia':'Southeast Asia','Southern Asia':'South Asia','Northern America':'North America','Western Asia':'West Asia'})\nout['Year']=pd.to_datetime(out.year.astype(str),format='%Y')",
+    "codeSignature": "9ec66c91b6933805856016f7fb678a71bc90facdd31ceb586a46a2a509bfef5a",
+    "outputVariable": "out",
+    "source": [
+     "rd_sdg_regional"
+    ],
+    "inputSources": [
+     {
+      "id": "data:46cef5fe0613ee664114be00c3a474ed:rd_sdg_regional",
+      "kind": "data",
+      "displayName": "rd_sdg_regional"
+     }
+    ],
+    "trigger": {
+     "tableId": "rd_sdg_regional",
+     "resultTableId": "d_out",
+     "chart": {
+      "id": "chart-1792308921087",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "rd_sdg_regional",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "d_out",
+    "rowCount": 168
+   },
+   "description": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792308900318_step_1",
+   "createdAt": 1792308922270
+  },
+  {
+   "kind": "table",
+   "id": "d_out_2",
+   "displayId": "Regional researcher density trends",
+   "names": [
+    "indicator_id",
+    "region_group",
+    "region",
+    "year",
+    "value",
+    "magnitude",
+    "qualifier",
+    "Region",
+    "Year"
+   ],
+   "rows": [
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2000,
+     "value": 444.81386,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2001,
+     "value": 426.04136,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2002,
+     "value": 431.79028,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2003,
+     "value": 413.45382,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2004,
+     "value": 413.17541,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2005,
+     "value": 457.92347,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2006,
+     "value": 429.45155,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2007,
+     "value": 409.62778,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2008,
+     "value": 410.02718,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2009,
+     "value": 403.58592,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2010,
+     "value": 393.25125,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2011,
+     "value": 411.53363,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2012,
+     "value": 454.91262,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2013,
+     "value": 490.34424,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2014,
+     "value": 503.84439,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2015,
+     "value": 499.16901,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2016,
+     "value": 478.26009,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2017,
+     "value": 462.37962,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2018,
+     "value": 454.25474,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2019,
+     "value": 420.02588,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2020,
+     "value": 435.87045,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2021,
+     "value": 465.56998,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2022,
+     "value": 489.50468,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Central Asia",
+     "year": 2023,
+     "value": 497.04183,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Central Asia",
+     "Year": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2000,
+     "value": 851.9679,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2001,
+     "value": 892.20744,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2002,
+     "value": 902.42593,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2003,
+     "value": 949.93941,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2004,
+     "value": 979.53037,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2005,
+     "value": 1096.81077,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2006,
+     "value": 1153.72431,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2007,
+     "value": 1250.57408,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2008,
+     "value": 1307.99377,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2009,
+     "value": 1365.63944,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2010,
+     "value": 1411.58677,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2011,
+     "value": 1489.12343,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2012,
+     "value": 1547.49787,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2013,
+     "value": 1602.73036,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2014,
+     "value": 1649.87462,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2015,
+     "value": 1694.05958,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2016,
+     "value": 1739.89446,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2017,
+     "value": 1782.17122,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2018,
+     "value": 1869.88903,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2019,
+     "value": 2031.17801,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2020,
+     "value": 2147.11469,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2021,
+     "value": 2248.35687,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2022,
+     "value": 2405.87232,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Eastern Asia",
+     "year": 2023,
+     "value": 2632.06054,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "East Asia",
+     "Year": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2000,
+     "value": 2456.64821,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2001,
+     "value": 2506.85287,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2002,
+     "value": 2549.21186,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2003,
+     "value": 2596.21957,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2004,
+     "value": 2652.99193,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2005,
+     "value": 2722.88294,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2006,
+     "value": 2782.57155,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2007,
+     "value": 2834.25899,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2008,
+     "value": 2891.63827,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2009,
+     "value": 2918.82491,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2010,
+     "value": 2980.27304,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2011,
+     "value": 3017.87845,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2012,
+     "value": 3091.94123,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2013,
+     "value": 3158.32896,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2014,
+     "value": 3206.29971,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2015,
+     "value": 3313.74649,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2016,
+     "value": 3354.74878,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2017,
+     "value": 3453.20749,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2018,
+     "value": 3559.0193,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2019,
+     "value": 3649.49863,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2020,
+     "value": 3688.0263,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2021,
+     "value": 3786.34455,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2022,
+     "value": 3918.17489,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Europe",
+     "year": 2023,
+     "value": 4025.47436,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Europe",
+     "Year": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2000,
+     "value": 3550.62582,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2001,
+     "value": 3606.2231,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2002,
+     "value": 3649.40735,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2003,
+     "value": 3853.82908,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2004,
+     "value": 3745.16517,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2005,
+     "value": 3693.31302,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2006,
+     "value": 3736.33214,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2007,
+     "value": 3718.9652,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2008,
+     "value": 3846.52117,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2009,
+     "value": 3934.87309,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2010,
+     "value": 3743.83331,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2011,
+     "value": 3857.55726,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2012,
+     "value": 3824.52893,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2013,
+     "value": 3896.67699,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2014,
+     "value": 3978.36152,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2015,
+     "value": 4007.72262,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2016,
+     "value": 3945.98656,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2017,
+     "value": 4060.1144,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2018,
+     "value": 4360.83173,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2019,
+     "value": 4414.52221,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2020,
+     "value": 4625.73625,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2021,
+     "value": 4960.86598,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2022,
+     "value": 5005.94279,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Northern America",
+     "year": 2023,
+     "value": 5006.37931,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "North America",
+     "Year": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2000,
+     "value": 279.67051,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2001,
+     "value": 287.25503,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2002,
+     "value": 306.61648,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2003,
+     "value": 330.07698,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2004,
+     "value": 353.73932,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2005,
+     "value": 374.31842,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2006,
+     "value": 387.85456,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2007,
+     "value": 414.73737,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2008,
+     "value": 434.43845,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2009,
+     "value": 478.64427,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2010,
+     "value": 527.42977,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2011,
+     "value": 562.58652,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2012,
+     "value": 606.97293,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2013,
+     "value": 646.04702,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2014,
+     "value": 663.48189,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2015,
+     "value": 661.97979,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2016,
+     "value": 707.02652,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2017,
+     "value": 736.92209,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2018,
+     "value": 784.78509,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2019,
+     "value": 855.5898,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2020,
+     "value": 860.61329,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2021,
+     "value": 845.36832,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2022,
+     "value": 889.79785,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: South-Eastern Asia",
+     "year": 2023,
+     "value": 872.97265,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "Southeast Asia",
+     "Year": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2000,
+     "value": 117.74298,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2001,
+     "value": 121.20026,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2002,
+     "value": 124.67235,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2003,
+     "value": 127.97728,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2004,
+     "value": 131.65717,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2005,
+     "value": 138.11663,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2006,
+     "value": 148.08919,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2007,
+     "value": 155.99038,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2008,
+     "value": 159.65944,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2009,
+     "value": 161.15771,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2010,
+     "value": 164.5875,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2011,
+     "value": 171.11416,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2012,
+     "value": 179.26239,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2013,
+     "value": 187.68724,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2014,
+     "value": 205.6466,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2015,
+     "value": 223.90247,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2016,
+     "value": 249.58761,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2017,
+     "value": 275.3648,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2018,
+     "value": 290.85515,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2019,
+     "value": 301.10834,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2020,
+     "value": 321.20957,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2021,
+     "value": 337.6491,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2022,
+     "value": 342.41775,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Southern Asia",
+     "year": 2023,
+     "value": 347.27018,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "South Asia",
+     "Year": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2000,
+     "value": 618.01244,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2001,
+     "value": 613.00963,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2002,
+     "value": 610.24294,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2003,
+     "value": 645.01407,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2004,
+     "value": 646.72607,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2005,
+     "value": 659.48869,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2006,
+     "value": 668.11178,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2007,
+     "value": 691.14763,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2008,
+     "value": 702.6862,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2009,
+     "value": 720.08747,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2010,
+     "value": 742.54063,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2011,
+     "value": 770.52942,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2012,
+     "value": 851.62806,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2013,
+     "value": 882.82038,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2014,
+     "value": 888.87571,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2015,
+     "value": 888.57288,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2016,
+     "value": 938.76085,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2017,
+     "value": 987.53425,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2018,
+     "value": 1039.40579,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2019,
+     "value": 1113.64759,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2020,
+     "value": 1183.72286,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2021,
+     "value": 1289.36678,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2022,
+     "value": 1383.73377,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "region_group": "SDG",
+     "region": "SDG: Western Asia",
+     "year": 2023,
+     "value": 1437.19685,
+     "magnitude": null,
+     "qualifier": null,
+     "Region": "West Asia",
+     "Year": "2023-01-01T00:00:00.000"
+    }
+   ],
+   "metadata": {
+    "indicator_id": {
+     "type": "string",
+     "levels": []
+    },
+    "region_group": {
+     "type": "string",
+     "levels": []
+    },
+    "region": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "value": {
+     "type": "number",
+     "levels": []
+    },
+    "magnitude": {
+     "type": "boolean",
+     "levels": []
+    },
+    "qualifier": {
+     "type": "boolean",
+     "levels": []
+    },
+    "Region": {
+     "type": "string",
+     "levels": []
+    },
+    "Year": {
+     "type": "date",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import pandas as pd\nr=pd.read_parquet('data/rd_sdg_regional.parquet')\nregions=['Eastern Asia','South-Eastern Asia','Southern Asia','Central Asia','Western Asia','Europe','Northern America']\nout=r[r.indicator_id.eq('RESDEN.INHAB.TFTE') & r.region.isin(['SDG: '+x for x in regions]) & r.year.between(2000,2023)].copy()\nout['Region']=out.region.str.replace('SDG: ','',regex=False).replace({'Eastern Asia':'East Asia','South-Eastern Asia':'Southeast Asia','Southern Asia':'South Asia','Northern America':'North America','Western Asia':'West Asia'})\nout['Year']=pd.to_datetime(out.year.astype(str),format='%Y')",
+    "codeSignature": "f3a85949d494cb3d34953626b2f3356e11abedab3b0ee1dc8167b728732ffec9",
+    "outputVariable": "out",
+    "source": [
+     "rd_sdg_regional"
+    ],
+    "inputSources": [
+     {
+      "id": "data:46cef5fe0613ee664114be00c3a474ed:rd_sdg_regional",
+      "kind": "data",
+      "displayName": "rd_sdg_regional"
+     }
+    ],
+    "trigger": {
+     "tableId": "d_out",
+     "resultTableId": "d_out_2",
+     "chart": {
+      "id": "chart-1792308947216",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "d_out",
+      "source": "trigger"
+     }
+    },
+    "explanation": {
+     "status": "ok",
+     "concepts": [],
+     "agent": "CodeExplanationAgent"
+    }
+   },
+   "virtual": {
+    "tableId": "d_out_2",
+    "rowCount": 168
+   },
+   "description": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792308900318_step_2",
+   "createdAt": 1792308955638
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-3a494b06cce2",
+   "chartType": "Line Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-Year-1792308922270-0.8469887899114346",
+     "dtype": "temporal"
+    },
+    "y": {
+     "fieldID": "concept-value-1792308922270-0.9461410494751481",
+     "dtype": "quantitative"
+    },
+    "color": {
+     "fieldID": "concept-Region-1792308922270-0.3624902528008953",
+     "dtype": "nominal"
+    },
+    "strokeDash": {
+     "channel": "strokeDash",
+     "bin": false
+    },
+    "detail": {
+     "channel": "detail",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "d_out",
+   "source": "user",
+   "title": "Research spending as a share of GDP",
+   "subtitle": "2000–2023 • Official regional aggregates • UIS, February 2026 release",
+   "titleKey": "Line Chart|color:concept-Region-1792308922270-0.3624902528008953:|column::|detail::|opacity::|row::|strokeDash::|x:concept-Year-1792308922270-0.8469887899114346:|y:concept-value-1792308922270-0.9461410494751481:",
+   "unread": false,
+   "themeId": "datawrapper",
+   "config": {
+    "includeZero_y": true
+   }
+  },
+  {
+   "id": "chart-c214660d987d",
+   "chartType": "Line Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-Year-1792308922270-0.8469887899114346",
+     "dtype": "temporal"
+    },
+    "y": {
+     "fieldID": "concept-value-1792308922270-0.9461410494751481",
+     "dtype": "quantitative"
+    },
+    "color": {
+     "fieldID": "concept-Region-1792308922270-0.3624902528008953",
+     "dtype": "nominal"
+    },
+    "strokeDash": {
+     "channel": "strokeDash",
+     "bin": false
+    },
+    "detail": {
+     "channel": "detail",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "d_out_2",
+   "source": "user",
+   "title": "Researchers per million people",
+   "subtitle": "2000–2023 • Full-time equivalents • UIS, February 2026 release",
+   "titleKey": "Line Chart|color:concept-Region-1792308922270-0.3624902528008953:|column::|detail::|opacity::|row::|strokeDash::|x:concept-Year-1792308922270-0.8469887899114346:|y:concept-value-1792308922270-0.9461410494751481:",
+   "unread": false,
+   "themeId": "datawrapper",
+   "config": {
+    "includeZero_y": true
+   }
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-value-1792308922270-0.9461410494751481",
+   "name": "value",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-Region-1792308922270-0.3624902528008953",
+   "name": "Region",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-Year-1792308922270-0.8469887899114346",
+   "name": "Year",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308900318_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1792308900318_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Is Asia catching up with Europe and North America in research?",
+   "parentNodeId": "conversation-root:72a8146d-48b9-437c-badb-09aa5ce3b201",
+   "actionId": "exploreDataFromNL_1792308900318",
+   "createdAt": 1792308900318
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308900318_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1792308900318_step_1",
+   "textKind": "explain",
+   "content": "Identify comparable regional series and check their time coverage and endpoint values.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792308900318_prompt",
+   "actionId": "exploreDataFromNL_1792308900318",
+   "createdAt": 1792308914763,
+   "startedAt": 1792308900319,
+   "codeExecutions": [
+    {
+     "id": "code_exploreDataFromNL_1792308900318_1",
+     "tool": "execute_python_script",
+     "purpose": "Identify comparable regional series and check their time coverage and endpoint values.",
+     "code": "import pandas as pd\nr=pd.read_parquet('data/rd_sdg_regional.parquet')\nprint(r[['region_group','region']].drop_duplicates().to_string(index=False))\ns=r[r.region_group.eq('SDG')]\nprint(s[s.year.isin([2000,2010,2023])][['indicator_id','region','year','value']].to_string(index=False))\nprint(s.groupby(['indicator_id','region']).agg(first=('year','min'),last=('year','max'),n=('value','count')).to_string())",
+     "status": "completed",
+     "createdAt": 1792308914781,
+     "output": "region_group                                                   region\n         MDG                           MDG: Caucasus and Central Asia\n         MDG                                   MDG: Developed regions\n         MDG                                  MDG: Developing regions\n         MDG                                        MDG: Eastern Asia\n         MDG                      MDG: Eastern Asia (excluding China)\n         MDG                     MDG: Latin America and the Caribbean\n         MDG                                     MDG: Northern Africa\n         MDG                                  MDG: South-eastern Asia\n         MDG                                       MDG: Southern Asia\n         MDG                     MDG: Southern Asia (excluding India)\n         MDG                                  MDG: Sub-Saharan Africa\n         MDG                                        MDG: Western Asia\n         MDG                                               MDG: World\n         SDG                           SDG: Australia and New Zealand\n         SDG                                        SDG: Central Asia\n         SDG                           SDG: Central and Southern Asia\n         SDG                                        SDG: Eastern Asia\n         SDG                      SDG: Eastern and South-Eastern Asia\n         SDG                                              SDG: Europe\n         SDG                         SDG: Europe and Northern America\n         SDG SDG: Europe, Northern America, Australia and New Zealand\n         SDG                     SDG: Landlocked Developing Countries\n         SDG                     SDG: Latin America and the Caribbean\n         SDG                           SDG: Least Developed Countries\n         SDG                                     SDG: Northern Africa\n         SDG                    SDG: Northern Africa and Western Asia\n         SDG                                    SDG: Northern America\n         SDG                                             SDG: Oceania\n         SDG                      SDG: Small Island Developing States\n         SDG                                  SDG: South-Eastern Asia\n         SDG                                       SDG: Southern Asia\n         SDG                                  SDG: Sub-Saharan Africa\n         SDG                                        SDG: Western Asia\n         SDG                                               SDG: World\n         UIS                                         UIS: Arab States\n         UIS                                        UIS: Central Asia\n         UIS                          UIS: Central and Eastern Europe\n         UIS                           UIS: East Asia and the Pacific\n         UIS                     UIS: Latin America and the Caribbean\n         UIS                    UIS: North America and Western Europe\n         UIS                                 UIS: South and West Asia\n         UIS                                  UIS: Sub-Saharan Africa\n         UIS                                               UIS: World\n      UNESCO                                             UNESCO: SIDS\n          WB                              WB: High income (July 2025)\n          WB                               WB: Low income (July 2025)\n          WB                      WB: Lower middle income (July 2025)\n          WB                            WB: Middle income (July 2025)\n          WB                      WB: Upper middle income (July 2025)\n          WB                                                WB: World\n     indicator_id                                                   region  year      value\n       EXPGDP.TOT                           SDG: Australia and New Zealand  2000    1.49582\n       EXPGDP.TOT                           SDG: Australia and New Zealand  2010    2.21688\n       EXPGDP.TOT                           SDG: Australia and New Zealand  2023    1.81741\n       EXPGDP.TOT                                        SDG: Central Asia  2000    0.22726\n       EXPGDP.TOT                                        SDG: Central Asia  2010    0.14778\n       EXPGDP.TOT                                        SDG: Central Asia  2023    0.12947\n       EXPGDP.TOT                           SDG: Central and Southern Asia  2000    0.56573\n       EXPGDP.TOT                           SDG: Central and Southern Asia  2010    0.64627\n       EXPGDP.TOT                           SDG: Central and Southern Asia  2023    0.54609\n       EXPGDP.TOT                                        SDG: Eastern Asia  2000    1.82045\n       EXPGDP.TOT                                        SDG: Eastern Asia  2010    2.12472\n       EXPGDP.TOT                                        SDG: Eastern Asia  2023    2.82548\n       EXPGDP.TOT                      SDG: Eastern and South-Eastern Asia  2000    1.48955\n       EXPGDP.TOT                      SDG: Eastern and South-Eastern Asia  2010    1.78869\n       EXPGDP.TOT                      SDG: Eastern and South-Eastern Asia  2023    2.41964\n       EXPGDP.TOT                                              SDG: Europe  2000    1.72485\n       EXPGDP.TOT                                              SDG: Europe  2010    1.81239\n       EXPGDP.TOT                                              SDG: Europe  2023    1.96626\n       EXPGDP.TOT                         SDG: Europe and Northern America  2000    2.11156\n       EXPGDP.TOT                         SDG: Europe and Northern America  2010    2.17263\n       EXPGDP.TOT                         SDG: Europe and Northern America  2023    2.54673\n       EXPGDP.TOT SDG: Europe, Northern America, Australia and New Zealand  2000    2.09684\n       EXPGDP.TOT SDG: Europe, Northern America, Australia and New Zealand  2010    2.17378\n       EXPGDP.TOT SDG: Europe, Northern America, Australia and New Zealand  2023    2.52487\n       EXPGDP.TOT                     SDG: Landlocked Developing Countries  2000    0.22974\n       EXPGDP.TOT                     SDG: Landlocked Developing Countries  2010    0.20268\n       EXPGDP.TOT                     SDG: Landlocked Developing Countries  2023    0.19864\n       EXPGDP.TOT                     SDG: Latin America and the Caribbean  2000    0.53302\n       EXPGDP.TOT                     SDG: Latin America and the Caribbean  2010    0.64084\n       EXPGDP.TOT                     SDG: Latin America and the Caribbean  2023    0.57304\n       EXPGDP.TOT                           SDG: Least Developed Countries  2000    0.20893\n       EXPGDP.TOT                           SDG: Least Developed Countries  2010    0.22480\n       EXPGDP.TOT                           SDG: Least Developed Countries  2023    0.27544\n       EXPGDP.TOT                                     SDG: Northern Africa  2000    0.29070\n       EXPGDP.TOT                                     SDG: Northern Africa  2010    0.42322\n       EXPGDP.TOT                                     SDG: Northern Africa  2023    0.80411\n       EXPGDP.TOT                    SDG: Northern Africa and Western Asia  2000    0.59065\n       EXPGDP.TOT                    SDG: Northern Africa and Western Asia  2010    0.64365\n       EXPGDP.TOT                    SDG: Northern Africa and Western Asia  2023    1.08225\n       EXPGDP.TOT                                    SDG: Northern America  2000    2.55736\n       EXPGDP.TOT                                    SDG: Northern America  2010    2.63950\n       EXPGDP.TOT                                    SDG: Northern America  2023    3.30646\n       EXPGDP.TOT                                             SDG: Oceania  2000    1.46008\n       EXPGDP.TOT                                             SDG: Oceania  2010    2.14942\n       EXPGDP.TOT                                             SDG: Oceania  2023    1.76237\n       EXPGDP.TOT                      SDG: Small Island Developing States  2000    0.80634\n       EXPGDP.TOT                      SDG: Small Island Developing States  2010    0.94778\n       EXPGDP.\n... (truncated)"
+    }
+   ],
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1792308900318-1",
+     "kind": "tool",
+     "label": "Reading: session/tables/rd_sdg_indicators.json, session/tables/r…",
+     "status": "completed",
+     "tool": "read_file",
+     "toolCallId": "call_rKUNdpUyBYxIg4d5upJ4GWVP"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792308900318-2",
+     "kind": "thought",
+     "label": "I’ll use official regional figures to distinguish Asia’s subregions rather than treating Asia as one uniform bloc.",
+     "status": "completed"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792308900318-3",
+     "kind": "tool",
+     "label": "running code... Identify comparable regional series and check their time coverage and endpoint values.",
+     "status": "completed",
+     "tool": "execute_python_script",
+     "toolCallId": "call_YAhEWlINPxsJKYgejUbHZ6WL",
+     "executionId": "code_exploreDataFromNL_1792308900318_1"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792308900318-4",
+     "kind": "chart",
+     "label": "creating chart...",
+     "status": "completed"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308900318_step_2",
+   "displayId": "textTurn_exploreDataFromNL_1792308900318_step_2",
+   "textKind": "explain",
+   "content": "Verify endpoint comparisons for researcher density and spending across the selected regions.",
+   "parentNodeId": "d_out",
+   "actionId": "exploreDataFromNL_1792308900318",
+   "createdAt": 1792308938555,
+   "startedAt": 1792308900319,
+   "codeExecutions": [
+    {
+     "id": "code_exploreDataFromNL_1792308900318_2",
+     "tool": "execute_python_script",
+     "purpose": "Verify endpoint comparisons for researcher density and spending across the selected regions.",
+     "code": "import pandas as pd\nr=pd.read_parquet('data/rd_sdg_regional.parquet'); names=['Eastern Asia','South-Eastern Asia','Southern Asia','Central Asia','Western Asia','Europe','Northern America']\ns=r[r.region.isin(['SDG: '+x for x in names]) & r.year.between(2000,2023)]\nprint(s.groupby(['indicator_id','region']).agg(n=('value','count'),first=('year','min'),last=('year','max')).to_string())\nprint(s[s.year.isin([2000,2023])].pivot(index='region',columns=['indicator_id','year'],values='value').round(3).to_string())",
+     "status": "completed",
+     "createdAt": 1792308938555,
+     "output": "                                            n  first  last\nindicator_id      region                                  \nEXPGDP.TOT        SDG: Central Asia        24   2000  2023\n                  SDG: Eastern Asia        24   2000  2023\n                  SDG: Europe              24   2000  2023\n                  SDG: Northern America    24   2000  2023\n                  SDG: South-Eastern Asia  24   2000  2023\n                  SDG: Southern Asia       24   2000  2023\n                  SDG: Western Asia        24   2000  2023\nRESDEN.INHAB.TFTE SDG: Central Asia        24   2000  2023\n                  SDG: Eastern Asia        24   2000  2023\n                  SDG: Europe              24   2000  2023\n                  SDG: Northern America    24   2000  2023\n                  SDG: South-Eastern Asia  24   2000  2023\n                  SDG: Southern Asia       24   2000  2023\n                  SDG: Western Asia        24   2000  2023\nindicator_id            EXPGDP.TOT        RESDEN.INHAB.TFTE          \nyear                          2000   2023              2000      2023\nregion                                                               \nSDG: Central Asia            0.227  0.129           444.814   497.042\nSDG: Eastern Asia            1.820  2.825           851.968  2632.061\nSDG: Europe                  1.725  1.966          2456.648  4025.474\nSDG: Northern America        2.557  3.306          3550.626  5006.379\nSDG: South-Eastern Asia      0.545  1.028           279.671   872.973\nSDG: Southern Asia           0.585  0.576           117.743   347.270\nSDG: Western Asia            0.706  1.187           618.012  1437.197\n"
+    }
+   ],
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1792308900318-5",
+     "kind": "tool",
+     "label": "running code... Verify endpoint comparisons for researcher density and spending across the selected regions.",
+     "status": "completed",
+     "tool": "execute_python_script",
+     "toolCallId": "call_5zHRidXpzkPqUVUVrC3MllXN",
+     "executionId": "code_exploreDataFromNL_1792308900318_2"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792308900318-6",
+     "kind": "chart",
+     "label": "creating chart...",
+     "status": "completed"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308900318_1792308993793",
+   "displayId": "textTurn_exploreDataFromNL_1792308900318_closing",
+   "textKind": "explain",
+   "content": "**Yes—especially East Asia, but not Asia uniformly.** Between 2000 and 2023:\n\n- **East Asia narrowed its spending gap with North America.** R&D spending rose from **1.82% to 2.83% of GDP**, compared with North America’s **2.56% to 3.31%**. East Asia was already ahead of Europe in 2000 and widened that lead.\n- **Its researcher workforce also caught up in relative terms.** Researchers per million people more than tripled, from **852 to 2,632**—rising from about **35% to 65% of Europe’s level**. It still remained below Europe’s 4,025 and North America’s 5,006 in 2023.\n- **Elsewhere in Asia, progress is mixed.** Southeast and West Asia increased research spending relative to GDP, but stayed well below Europe and North America. South Asia’s spending share was roughly unchanged; Central Asia’s fell.\n\nThese official UIS regional figures measure **research investment and workforce, not the quality or impact of discoveries**, and regional averages hide large country differences. Source: UIS, February 2026 release.",
+   "parentNodeId": "d_out_2",
+   "actionId": "exploreDataFromNL_1792308900318",
+   "createdAt": 1792308993793,
+   "startedAt": 1792308900319,
+   "plan": [
+    {
+     "text": "Compare research spending over time.",
+     "status": "done",
+     "results": [
+      "chart-3a494b06cce2"
+     ]
+    },
+    {
+     "text": "Compare researchers per person.",
+     "status": "done",
+     "results": [
+      "chart-c214660d987d"
+     ]
+    }
+   ],
+   "planTitle": "Compare research capacity",
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "d_out",
+   "fields": {
+    "value": {
+     "semanticType": "Percentage",
+     "unit": "% of GDP",
+     "displayName": "R&D spending (% of GDP)",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "% of GDP",
+      "displayName": "R&D spending (% of GDP)"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "d_out_2",
+   "fields": {
+    "indicator_id": {
+     "semanticType": "ID"
+    },
+    "region_group": {
+     "semanticType": "Category"
+    },
+    "region": {
+     "semanticType": "Region"
+    },
+    "year": {
+     "semanticType": "Year"
+    },
+    "value": {
+     "semanticType": "Number",
+     "unit": "per million people",
+     "displayName": "Researchers per million people",
+     "authored": {
+      "semanticType": "Number",
+      "unit": "per million people",
+      "displayName": "Researchers per million people"
+     }
+    },
+    "magnitude": {
+     "semanticType": "Unknown"
+    },
+    "qualifier": {
+     "semanticType": "Unknown"
+    },
+    "Region": {
+     "semanticType": "Region"
+    },
+    "Year": {
+     "semanticType": "Year"
+    }
+   }
+  }
+ ],
+ "activeWorkspace": {
+  "id": "science-s23",
+  "displayName": "East Asia closes in on North America in research"
+ },
+ "focusedId": {
+  "type": "chart",
+  "chartId": "chart-3a494b06cce2"
+ }
+}

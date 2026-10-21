@@ -112,7 +112,7 @@
     "msgEncodingEmpty": "Fügen Sie Datenfelder zum Diagrammersteller hinzu oder beschreiben Sie, was Sie möchten!",
     "msgUnavailable": "Formulieren Sie Daten, um die Visualisierung zu erstellen!",
     "msgSynthesizing": "Synthese läuft...",
-    "msgWarning": "KI-generierte Ergebnisse können ungenau sein. Bitte überprüfen Sie sie!",
+    "aiDisclaimer": "KI kann Fehler machen. Überprüfen Sie wichtige Ergebnisse.",
     "templateGroups": {
       "table": "Tabelle",
       "scatter": "Streudiagramm",

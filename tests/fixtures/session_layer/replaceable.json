@@ -142,11 +142,7 @@
         "encodingMap": {},
         "tableRef": "d_edited",
         "source": "user",
-        "styleVariants": [
-          {
-            "id": "v"
-          }
-        ]
+        "titleKey": "stale"
       },
       {
         "id": "chart-retitled",
