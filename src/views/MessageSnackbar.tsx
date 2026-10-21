@@ -57,7 +57,7 @@ const DiagnosticsViewer: React.FC<{ diagnostics: any }> = React.memo(({ diagnost
     const jsonStr = React.useMemo(() => JSON.stringify(diagnostics, null, 2), [diagnostics]);
 
     const handleCopy = React.useCallback(() => {
-        navigator.clipboard.writeText(jsonStr).then(() => {
+        navigator.clipboard?.writeText(jsonStr).then(() => {
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);
         });

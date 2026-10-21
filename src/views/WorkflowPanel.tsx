@@ -32,6 +32,7 @@ import { getCachedChart } from '../app/chartCache';
 import { ApiRequestError, apiRequest, streamRequest } from '../app/apiClient';
 import { handleApiError } from '../app/errorHandler';
 import { getAgentLanguage, getUrls, resolveRecommendedChart } from '../app/utils';
+import { generateUUID } from '../app/identity';
 import { authoredFieldSemantics } from '../app/fieldSemantics';
 import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
 import { store } from '../app/store';
@@ -470,7 +471,7 @@ function canAnswerWorkflowQuestion(turn: TextTurn) {
 async function replyWorkflowQuestion(turn: TextTurn, text: string, onAccepted?: () => void, messageId?: string) {
     const workflow = turn.workflow;
     if (workflow?.status !== 'paused' || workflow.terminalRequest || !text.trim()) throw new Error(i18n.t('workflow.notWaitingForReply'));
-    const replyId = workflow.interactionId || messageId || crypto.randomUUID();
+    const replyId = workflow.interactionId || messageId || generateUUID();
     await executeWorkflow({ run_id: workflow.runId, reply: text.trim() }, () => {
         // The question the run paused on stays in the chain, answered, before the reply.
         if (workflow.questions?.length) {
@@ -961,7 +962,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
         const text = messageDraft.trim();
         if (!text || sendingMessage) return;
         setSendingMessage(true);
-        try { await sendWorkflowMessage(turn, text, crypto.randomUUID(), () => { setMessageAnchor(null); setMessageDraft(''); }); }
+        try { await sendWorkflowMessage(turn, text, generateUUID(), () => { setMessageAnchor(null); setMessageDraft(''); }); }
         catch (reason) { handleApiError(reason, 'Workflow message'); }
         finally { setSendingMessage(false); }
     };

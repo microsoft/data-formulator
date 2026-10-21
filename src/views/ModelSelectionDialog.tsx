@@ -896,7 +896,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                                 <Typography component="code" variant="body2" aria-label={t('model.deviceCode')}
                                     sx={{ fontFamily: 'monospace', fontSize: textVar.sm, fontWeight: 600, overflowWrap: 'anywhere', userSelect: 'all' }}>{deviceCode}</Typography>
                                 <Tooltip title={t('model.copyDeviceCode')}><IconButton size="small" aria-label={t('model.copyDeviceCode')}
-                                    onClick={() => void navigator.clipboard.writeText(deviceCode).catch(() => setOpenRouterError(t('model.copyDeviceCodeFailed')))}>
+                                    onClick={() => void navigator.clipboard?.writeText(deviceCode).catch(() => setOpenRouterError(t('model.copyDeviceCodeFailed')))}>
                                     <ContentCopyOutlinedIcon sx={{ fontSize: iconVar.sm }} />
                                 </IconButton></Tooltip>
                             </Box>
@@ -1267,7 +1267,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                         <IconButton
                             size="small"
                             aria-label={t('model.copyDiagnostic')}
-                            onClick={() => navigator.clipboard.writeText([
+                            onClick={() => navigator.clipboard?.writeText([
                                 newModelDiagnostic.message,
                                 newModelDiagnostic.request_id || '',
                             ].filter(Boolean).join('\n'))}

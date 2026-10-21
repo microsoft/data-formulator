@@ -5,6 +5,7 @@ import { Type } from '../data/types';
 import { channels, type ChartTemplateDef } from 'flint-chart';
 import { inferTypeFromValueArray, refineTemporalType } from '../data/utils';
 import type { DataOperation, LoadQuery } from '../dataOperations/models';
+import { generateUUID } from '../app/identity';
 
 export type FieldSource = "custom" | "original";
 
@@ -25,7 +26,7 @@ export const duplicateField = (field: FieldItem) => {
     } as FieldItem;
 }
 
-export const createConversationRootId = (id: string = crypto.randomUUID()) => `conversation-root:${id}`;
+export const createConversationRootId = (id: string = generateUUID()) => `conversation-root:${id}`;
 export const isConversationRootId = (id: string | undefined): boolean =>
     !!id?.startsWith('conversation-root:');
 
