@@ -12,7 +12,8 @@ import SchoolOutlinedIcon from '@mui/icons-material/SchoolOutlined';
 import ScienceOutlinedIcon from '@mui/icons-material/ScienceOutlined';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import { fontSans } from '../app/tokens';
-import type { SiteLandingProps, SiteStarter, SiteStory } from './types';
+import { apiRequest } from '../app/apiClient';
+import type { SiteConfig, SiteLandingProps, SiteStarter, SiteStory } from './types';
 
 // The built-in site front page, laid out from the site's profile (see demos/README.md).
 // Each dataset is one block: the dataset, then example analyses an AI analyst ran on it (the lead one
@@ -305,10 +306,72 @@ const AppWindow: React.FC<{ image: string }> = ({ image }) =>
         <Box component="img" src={image} alt="" sx={{ display: 'block', width: '100%', height: 'auto' }} />
     </Box>;
 
+interface InstallStatus {
+    status: 'ready' | 'not_installed';
+    can_install: boolean;
+    job: { state: 'running' | 'done' | 'failed'; error?: string | null; log: string[] } | null;
+}
+
+/** Before a demo's content is on this server: install it (local installs) or say it is not available. */
+export const DemoInstall: React.FC<{ site: SiteConfig }> = ({ site }) => {
+    const url = `/api/demos/${encodeURIComponent(site.id)}/install`;
+    const [install, setInstall] = useState<InstallStatus | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const running = install?.job?.state === 'running';
+
+    const request = async (options?: RequestInit) => {
+        try {
+            const { data } = await apiRequest<InstallStatus>(url, options);
+            setInstall(data);
+            setError(null);
+            // The page reloads with the demo's datasets and stories.
+            if (data.status === 'ready' && data.job?.state === 'done') window.location.reload();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : String(e));
+        }
+    };
+    useEffect(() => { void request(); }, [url]);
+    useEffect(() => {
+        if (!running) return;
+        const timer = window.setInterval(() => void request(), 1500);
+        return () => window.clearInterval(timer);
+    }, [running, url]);
+
+    const canInstall = install?.can_install ?? site.can_install;
+    const failed = install?.job?.state === 'failed';
+    const log = install?.job?.log ?? [];
+    return <Box component="section" aria-labelledby="demo-install" sx={{ mt: { xs: 6, md: 8 }, mx: 'auto', maxWidth: 1000, p: { xs: 2.5, sm: 3.5 },
+        border: `1px solid ${HAIRLINE}`, borderRadius: RADIUS, bgcolor: 'white' }}>
+        <Box component="h2" id="demo-install" sx={{ m: 0, fontSize: '22px', fontWeight: 700, lineHeight: 1.35, color: TEXT }}>
+            {canInstall ? 'Install this demo' : 'This demo is not available yet'}
+        </Box>
+        <Box component="p" sx={{ ...prose, mt: 1, color: MUTED }}>
+            {canInstall
+                ? site.install_note || 'Installing downloads the demo\'s data and builds its example sessions on this computer.'
+                : 'Its data has not been installed on this server.'}
+        </Box>
+        {canInstall && <Box sx={{ mt: 2.5, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <ButtonBase disabled={running} onClick={() => void request({ method: 'POST' })}
+                sx={{ ...heroButton('primary'), ...(running && { opacity: 0.6 }) }}>
+                {running ? 'Installing…' : failed ? 'Try again' : 'Install demo'}
+            </ButtonBase>
+            {running && <Box component="span" sx={{ fontSize: '14px', color: MUTED }}>This takes a minute or two; you can leave this page open.</Box>}
+        </Box>}
+        {(failed || error) && <Box component="p" role="alert" sx={{ ...prose, mt: 2, fontSize: '14.5px', color: '#b42318' }}>
+            {failed ? `The install stopped: ${install?.job?.error}` : `Could not reach the server: ${error}`}
+        </Box>}
+        {log.length > 0 && <Box component="pre" aria-label="Install progress" sx={{ mt: 2, mb: 0, p: 1.5, maxHeight: 180, overflow: 'auto',
+            fontSize: '12.5px', lineHeight: 1.5, color: MUTED, bgcolor: '#f6f8fa', borderRadius: RADIUS, whiteSpace: 'pre-wrap' }}>
+            {log.slice(-12).join('\n')}
+        </Box>}
+    </Box>;
+};
+
 const SitePage: React.FC<SiteLandingProps> = ({ site, onOpenStarter, onOpenStory, sessions, footer, disabled }) => {
     const scroller = useRef<HTMLDivElement>(null);
     // Opening the page at #<dataset> scrolls to it once the datasets are on the page.
-    const hasStarters = site.starters.length > 0;
+    const installed = !site.status || site.status === 'ready';
+    const hasStarters = installed && site.starters.length > 0;
     useEffect(() => {
         const id = decodeURIComponent(window.location.hash.slice(1));
         if (id && hasStarters) scroller.current?.querySelector(`[id="${CSS.escape(id)}"]`)?.scrollIntoView();
@@ -345,7 +408,7 @@ const SitePage: React.FC<SiteLandingProps> = ({ site, onOpenStarter, onOpenStory
                         {site.intro && <Box component="p" sx={{ m: 0, mt: 1.5 }}><LinkedText text={fillRelease(site.intro, site.release)} /></Box>}
                     </Box>
                     {/* Jump to each dataset's section below. */}
-                    {site.starters.length > 1 && <Box component="nav" aria-label="Datasets" sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, pt: { md: '4px' } }}>
+                    {installed && site.starters.length > 1 && <Box component="nav" aria-label="Datasets" sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, pt: { md: '4px' } }}>
                         {site.starters.map(starter => {
                             const Icon = starterIcon(starter.icon);
                             return <Box component="a" key={starter.id} href={`#${starter.id}`} sx={{ ...heroButton('secondary'), justifyContent: 'center', width: '100%' }}>
@@ -358,8 +421,8 @@ const SitePage: React.FC<SiteLandingProps> = ({ site, onOpenStarter, onOpenStory
             </Box>
             {site.hero_image && <Box sx={{ mt: { xs: 6, md: 9 }, mx: 'auto', maxWidth: 1000 }}><AppWindow image={site.hero_image} /></Box>}
 
-            {site.starters.map(starter => <DatasetBlock key={starter.id} starter={starter} disabled={disabled}
-                onOpenStarter={onOpenStarter} onOpenStory={onOpenStory} />)}
+            {installed ? site.starters.map(starter => <DatasetBlock key={starter.id} starter={starter} disabled={disabled}
+                onOpenStarter={onOpenStarter} onOpenStory={onOpenStory} />) : <DemoInstall site={site} />}
 
             {sessions && <Box component="section" aria-labelledby="site-sessions" sx={{ mt: 5, pt: 4, borderTop: SECTION_RULE }}>
                 <Box component="h2" id="site-sessions" sx={{ m: 0, mb: 2, fontSize: '22px', fontWeight: 700, lineHeight: 1.35, color: TEXT }}>

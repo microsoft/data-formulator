@@ -440,10 +440,16 @@ def get_app_config():
         "WORKSPACE_BACKEND": workspace_backend,
     }
 
-    from data_formulator.sites import current_site, site_frontend_config
+    from data_formulator.sites import current_site, default_demo, demo_status, site_frontend_config
+    from data_formulator.sites.install import can_install, listed_demos
+    config["DEFAULT_DEMO"] = default_demo()
+    config["DEMOS"] = listed_demos()
+    config["STANDARD_APP_NAME"] = config["APP_NAME"]
     site = current_site()
     if site:
         site_config = site_frontend_config(site)
+        site_config["status"] = demo_status(site)
+        site_config["can_install"] = can_install(site)
         config["SITE"] = site_config
         config["APP_NAME"] = site_config["name"] or config["APP_NAME"]
         config["APP_TAGLINE"] = site_config["tagline"] or config["APP_TAGLINE"]

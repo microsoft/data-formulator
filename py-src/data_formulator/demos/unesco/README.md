@@ -1,7 +1,7 @@
 # UIS Data Explorer (`unesco`)
 
-A front page for exploring UNESCO Institute for Statistics (UIS) data with Data Formulator,
-and the example to start from for your own demo. See [../README.md](../README.md) for the
+A front page for exploring UNESCO Institute for Statistics (UIS) data with Data Formulator, at
+`/demo/unesco`, and the example to start from for your own demo. See [../README.md](../README.md) for the
 `profile.yaml` format.
 
 | File | Purpose |
@@ -15,10 +15,12 @@ and the example to start from for your own demo. See [../README.md](../README.md
 
 ## Install
 
+On a local Data Formulator, open `/demo/unesco` and click **Install demo**. Or, from a checkout:
+
 ```bash
-uv run python demos/unesco/build.py                        # into DF_SITES_DIR (~/.data_formulator/site-content)
-uv run python demos/unesco/build.py --sites-dir /some/dir  # elsewhere, e.g. to upload to a server
-uv run python demos/unesco/build.py --only culture --rebuild
+uv run python py-src/data_formulator/demos/unesco/build.py                        # into DF_SITES_DIR (~/.data_formulator/site-content)
+uv run python py-src/data_formulator/demos/unesco/build.py --sites-dir /some/dir  # elsewhere, e.g. to upload to a server
+uv run python py-src/data_formulator/demos/unesco/build.py --only culture --rebuild
 ```
 
 It downloads the UIS bulk release (cached in `~/.cache/data-formulator/uis-raw`), builds the
@@ -35,7 +37,7 @@ which are kept outside the repository; to change a story, export its session fro
 `<folder>/stories/<story id>.zip` and run:
 
 ```bash
-uv run python demos/unesco/make_seeds.py <folder> --only <story id>
+uv run python py-src/data_formulator/demos/unesco/make_seeds.py <folder> --only <story id>
 ```
 
 It keeps the question that made the story's map (else its first question), adds the ranking
@@ -48,14 +50,14 @@ Data: UIS Bulk Data Download Service, February 2026 release
 ## Run locally
 
 ```bash
-DF_SITE=unesco uv run data_formulator
+uv run data_formulator                     # then open /demo/unesco
+DF_SITE=unesco uv run data_formulator      # / opens the demo
 ```
 
 ## Deploy
 
 Install with `--sites-dir` pointing at the server's `DF_SITES_DIR` (or upload a folder built
-that way), then set `DF_SITES='{"<hostname>": "unesco"}'` (or `DF_SITE=unesco` for a UIS-only
-deployment).
+that way). The demo is then at `/demo/unesco`; set `DF_SITE=unesco` to make it the home page.
 
 ## New UIS release
 

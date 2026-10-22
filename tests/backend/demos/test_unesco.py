@@ -1,8 +1,9 @@
-"""The UIS demo: its profile, images and build script (see demos/README.md)."""
+"""The UIS demo shipped in data_formulator/demos/unesco: its profile, images and build script."""
 
 import importlib.util
 import io
 import json
+import re
 import zipfile
 from pathlib import Path
 
@@ -10,12 +11,14 @@ import pytest
 import yaml
 
 from data_formulator import sites
+from data_formulator.session_format import SESSION_STATE_VERSION
 
 pytestmark = [pytest.mark.backend]
 
-HERE = Path(__file__).resolve().parent
-# Loaded by path: `import build` would find the PyPI `build` package (a dev dependency).
-_spec = importlib.util.spec_from_file_location("unesco_build", HERE / "build.py")
+REPO = Path(__file__).resolve().parents[3]
+DEMO = sites.packaged_demo_dir("unesco")
+# Loaded by path, as the app does: the demo folder is data, not a Python package.
+_spec = importlib.util.spec_from_file_location("unesco_build", DEMO / "build.py")
 build = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(build)
 
@@ -157,3 +160,25 @@ def test_build_adds_a_story_to_its_dataset_session(tmp_path):
     assert state["charts"] == seed["charts"] and state["textTurns"] == seed["textTurns"]
     assert state["activeWorkspace"] == {"id": "culture-c20", "displayName": story["headline"]}
 
+
+
+def test_session_state_version_matches_the_frontend():
+    source = (REPO / "src" / "app" / "stateMigrations.ts").read_text(encoding="utf-8")
+    assert int(re.search(r"DF_STATE_VERSION\s*=\s*(\d+)", source).group(1)) == SESSION_STATE_VERSION
+
+
+def test_install_builds_and_reports_what_is_still_missing(tmp_path):
+    _fake_uis_download(tmp_path / "raw")
+    lines = []
+    with pytest.raises(build.InstallError, match="missing from"):
+        build.install(tmp_path / "sites", tmp_path / "raw", only=["culture"], download_missing=False, log=lines.append)
+    content = tmp_path / "sites" / "unesco" / yaml.safe_load(build.PROFILE.read_text(encoding="utf-8"))["release"]
+    assert (content / "culture.zip").is_file() and (content / "stories" / "culture-c20.zip").is_file()
+    assert (tmp_path / "sites" / "unesco" / "profile.yaml").is_file()
+    assert lines[0] == "building culture" and any("story culture-c20" in line for line in lines)
+    assert build._log is print
+
+
+def test_install_rejects_unknown_datasets(tmp_path):
+    with pytest.raises(build.InstallError, match="unknown datasets: nope"):
+        build.install(tmp_path, tmp_path / "raw", only=["nope"], download_missing=False, log=lambda line: None)

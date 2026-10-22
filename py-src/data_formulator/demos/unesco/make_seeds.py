@@ -9,7 +9,7 @@ opens instantly and the visitor asks the next question. A seed is the trimmed se
 plus the table's parquet file, committed under stories/<story id>/; build.py combines it with
 the dataset session at install time. Agent transcripts are not kept.
 
-    uv run python demos/unesco/make_seeds.py ~/data-formulator-demo-backups/unesco-2026-02
+    uv run python py-src/data_formulator/demos/unesco/make_seeds.py ~/data-formulator-demo-backups/unesco-2026-02
 
 The input folder holds full story sessions as stories/<story id>.zip (exported from the app).
 Rerun after replacing a story session; it rewrites that story's seed and its profile prompt.

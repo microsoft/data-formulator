@@ -1,5 +1,6 @@
-# Demo profile for unesco.data-formulator.ai (prototype); see demos/README.md.
-# Install the demo (dataset and story sessions, this profile, images) with `uv run python demos/unesco/build.py`.
+# The UIS demo's profile, served at /demo/unesco; see ../README.md.
+# Its content (dataset and story sessions, images) is installed by build.py: from the demo page on a
+# local install, or `uv run python py-src/data_formulator/demos/unesco/build.py`.
 
 name: UIS Data Explorer
 # The front page's title; the app bar keeps the short name.
@@ -21,6 +22,10 @@ intro: >-
   For each dataset below, you can (1) open an example analysis to see a question an AI analyst
   answered and keep asking your own questions, or (2) start a fresh exploration from the dataset.
 release: "2026-02"
+# Shown before the demo is installed, beside the Install button (local installs).
+install_note: >-
+  Installing downloads about 120 MB of public data from the UNESCO Institute for Statistics and
+  builds the example sessions on this computer (about 230 MB).
 # A screenshot of the app with an example session open, in the release's content folder.
 hero_image: hero.png
 # Standing guidance for the analyst on this site: visitors are a general audience.

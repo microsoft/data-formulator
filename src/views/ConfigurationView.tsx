@@ -173,8 +173,8 @@ export const ConfigurationView = () => {
     const workflowExists = getRows('workflows').some(item => item.id === workflowId);
     const workflowNameValid = /^[A-Za-z0-9][A-Za-z0-9_-]*\.yaml$/.test(workflowName.trim());
     return <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'auto', bgcolor: 'background.paper',
-        backgroundImage: theme => `linear-gradient(90deg, ${alpha(theme.palette.text.primary, 0.025)} 1px, transparent 1px), linear-gradient(0deg, ${alpha(theme.palette.text.primary, 0.025)} 1px, transparent 1px)`,
-        backgroundSize: '16px 16px',
+        backgroundImage: theme => `linear-gradient(90deg, ${alpha(theme.palette.text.primary, 0.02)} 1px, transparent 1px), linear-gradient(0deg, ${alpha(theme.palette.text.primary, 0.02)} 1px, transparent 1px)`,
+        backgroundSize: '24px 24px',
         fontSize: textVar.md,
         '& .MuiTypography-body1, & .MuiTypography-body2, & .MuiInputBase-root, & .MuiInputLabel-root': { fontSize: textVar.md },
         '& .MuiTypography-caption, & .MuiFormHelperText-root': { fontSize: textVar.sm },

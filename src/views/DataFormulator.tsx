@@ -66,6 +66,7 @@ import GitHubIcon from '@mui/icons-material/GitHub';
 import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions, publishExampleSession, usePublishedExamples } from './ExampleSessions';
 import { WorkflowPanel, WorkflowRunObserver } from './WorkflowPanel';
 import { SiteLanding } from '../sites/SiteLanding';
+import { DEMO_ID } from '../app/demo';
 import type { SiteStarter, SiteStory } from '../sites/types';
 import { listWorkflowLibrary, SchedulesPanel, useScheduleLibrary } from './WorkflowSchedules';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
@@ -866,10 +867,10 @@ export const DataFormulatorFC = ({ }) => {
     let dataUploadRequestBox = <Box sx={{
             margin: '4px 4px 4px 8px', 
             background: `
-                linear-gradient(90deg, ${alpha(theme.palette.text.primary, 0.025)} 1px, transparent 1px),
-                linear-gradient(0deg, ${alpha(theme.palette.text.primary, 0.025)} 1px, transparent 1px)
+                linear-gradient(90deg, ${alpha(theme.palette.text.primary, 0.02)} 1px, transparent 1px),
+                linear-gradient(0deg, ${alpha(theme.palette.text.primary, 0.02)} 1px, transparent 1px)
             `,
-            backgroundSize: '16px 16px',
+            backgroundSize: '24px 24px',
             flex: 1, minWidth: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
         }}>
         <Box sx={{mx:'auto', pb: 8, display: "flex", flexDirection: "column", textAlign: "center", maxWidth: 1024, width: '100%', px: 2, boxSizing: 'border-box' }}>
@@ -1149,12 +1150,17 @@ export const DataFormulatorFC = ({ }) => {
 
     const site = serverConfig.SITE;
     const siteSessions = sortedSavedWorkspaces.filter(w => !w.scheduled_run);
-    const siteLanding = site && <SiteLanding site={site} disabled={sessionLoading || activeWorkspace?.readOnly}
+    const siteLanding = site ? <SiteLanding site={site} disabled={sessionLoading || activeWorkspace?.readOnly}
         onOpenStarter={(starter, question) => void handleOpenStarter(starter, question)}
         onOpenStory={(starter, story) => void handleOpenStory(starter, story)} footer={footer}
         sessions={siteSessions.length > 0 && <Box sx={itemCardGridSx}>
             {siteSessions.slice(0, INITIAL_SESSION_COUNT).map(w => workspaceCard(w))}
-        </Box>} />;
+        </Box>} />
+        // A /demo/<id> page for a demo this server does not have.
+        : DEMO_ID && <Box sx={{ m: 'auto', p: 3, textAlign: 'center' }}>
+            <Typography variant="h6">{t('demo.notFound', { defaultValue: 'There is no demo called “{{id}}” here.', id: DEMO_ID })}</Typography>
+            <Link href="/" sx={{ mt: 1, display: 'inline-block' }}>{t('demo.openApp', { defaultValue: 'Open Data Formulator' })}</Link>
+        </Box>;
     
     return (
         <Box sx={{ display: 'block', width: "100%", height: '100%', position: 'relative' }}>

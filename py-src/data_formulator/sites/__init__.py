@@ -1,23 +1,21 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-"""Demo front pages ("sites" in code and settings), configured without code (see ``demos/README.md``).
+"""Demo front pages ("sites" in code), configured without code (see ``demos/README.md``).
 
-A site is a folder ``<DF_SITES_DIR>/<id>/`` (default ``DF_SITES_DIR`` is
-``<DATA_FORMULATOR_HOME>/site-content``) with a ``profile.yaml`` (text,
-datasets, example sessions, analyst guidance) and its content in
-``<release>/`` (session ZIPs, images). In a source checkout, the profile may
-instead come from the repository's ``demos/<id>/``, e.g. the UIS example.
+A demo is served at ``/demo/<id>``: the page sends the id with each API request in the
+``X-DF-Demo`` header, which selects the demo's profile, analyst guidance and its users' own
+storage (``<root>/sites/<id>/``). Requests without it are the standard app.
 
-The site is selected per request from the hostname
-(``DF_SITES='{"unesco.data-formulator.ai": "unesco"}'``) or for the whole
-server with ``DF_SITE=unesco``. Requests without a site keep the standard app
-and storage paths. User data for a site is stored under ``<root>/sites/<id>/``.
+Data Formulator ships the demos in ``data_formulator/demos/<id>/`` (profile, images, build
+script); a demo's content (session ZIPs) is installed into ``<DF_SITES_DIR>/<id>/<release>/``
+(default ``<DATA_FORMULATOR_HOME>/site-content``) by its ``build.py``, from the page on a local
+install. A profile installed there takes precedence over the shipped one. ``DF_SITE=<id>``
+makes ``/`` open that demo.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
@@ -29,14 +27,14 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+DEMO_HEADER = "X-DF-Demo"
 _SITE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
-_PACKAGE_DIR = Path(__file__).resolve().parent.parent
-# The repository's demos, in a source checkout.
-_REPO_DEMOS_DIR = _PACKAGE_DIR.parent.parent / "demos"
+# The demos shipped with Data Formulator.
+PACKAGED_DEMOS = Path(__file__).resolve().parent.parent / "demos"
 
 
 def sites_dir() -> Path:
-    """The folder holding each site's ``<id>/profile.yaml`` and content."""
+    """The folder holding each demo's installed ``<id>/profile.yaml`` and content."""
     configured = os.getenv("DF_SITES_DIR")
     if configured:
         return Path(configured).expanduser()
@@ -44,12 +42,20 @@ def sites_dir() -> Path:
     return get_data_formulator_home() / "site-content"
 
 
-@lru_cache(maxsize=None)
-def site_profile(site_id: str) -> dict[str, Any] | None:
-    """The profile for ``site_id`` from the sites folder (or this checkout's demos/), or None."""
+def packaged_demo_dir(site_id: str) -> Path | None:
+    """The demo's folder shipped with Data Formulator (profile, images, build.py), if any."""
     if not _SITE_ID.fullmatch(site_id or ""):
         return None
-    path = next((base / site_id / "profile.yaml" for base in (sites_dir(), _REPO_DEMOS_DIR)
+    folder = PACKAGED_DEMOS / site_id
+    return folder if (folder / "profile.yaml").is_file() else None
+
+
+@lru_cache(maxsize=None)
+def site_profile(site_id: str) -> dict[str, Any] | None:
+    """The demo's profile: installed in the sites folder, else shipped with Data Formulator; or None."""
+    if not _SITE_ID.fullmatch(site_id or ""):
+        return None
+    path = next((base / site_id / "profile.yaml" for base in (sites_dir(), PACKAGED_DEMOS)
                  if (base / site_id / "profile.yaml").is_file()), None)
     if path is None:
         return None
@@ -90,42 +96,61 @@ def _profile_problem(profile: Any) -> str | None:
     return None
 
 
-@lru_cache(maxsize=4)
-def _host_map(raw: str) -> dict[str, str]:
-    try:
-        mapping = json.loads(raw) if raw else {}
-    except json.JSONDecodeError:
-        logger.warning("DF_SITES is not valid JSON; ignoring it")
-        return {}
-    if not isinstance(mapping, dict):
-        return {}
-    return {str(host).strip().lower(): str(site).strip() for host, site in mapping.items()}
+def referenced_files(profile: dict[str, Any]) -> list[str]:
+    """Every content file the profile names, relative to its release folder."""
+    files = [profile.get("hero_image")]
+    for starter in profile.get("starters") or []:
+        files.append(starter.get("file"))
+        for story in starter.get("stories") or []:
+            files += [story.get("file"), story.get("image")]
+            files += [item.get("image") for item in story.get("stack") or [] if isinstance(item, dict)]
+    return [str(name) for name in files if name]
+
+
+def demo_status(site_id: str) -> str | None:
+    """``"ready"`` when every file the profile names is installed, ``"not_installed"`` otherwise,
+    or None when there is no such demo."""
+    profile = site_profile(site_id)
+    if not profile:
+        return None
+    content = site_content_dir(site_id)
+    ready = all((content / name).is_file() for name in referenced_files(profile))
+    return "ready" if ready else "not_installed"
+
+
+def all_demo_ids() -> list[str]:
+    """Every demo with a valid profile, installed or shipped."""
+    ids = set()
+    for base in (sites_dir(), PACKAGED_DEMOS):
+        if base.is_dir():
+            ids |= {folder.name for folder in base.iterdir() if (folder / "profile.yaml").is_file()}
+    return sorted(site_id for site_id in ids if site_profile(site_id))
 
 
 def current_site() -> str | None:
-    """The site for the current request, or None for the default site."""
-    forced = os.getenv("DF_SITE", "").strip()
-    if forced:
-        return forced if site_profile(forced) else None
+    """The demo the current request belongs to (its ``X-DF-Demo`` header), or None for the standard app."""
     try:
         from flask import has_request_context, request
     except ImportError:
         return None
     if not has_request_context():
         return None
-    host = (request.host or "").split(":", 1)[0].strip().lower()
-    site = _host_map(os.getenv("DF_SITES", "")).get(host)
+    site = (request.headers.get(DEMO_HEADER) or "").strip()
+    return site if site and site_profile(site) else None
+
+
+def default_demo() -> str | None:
+    """The demo ``/`` opens (``DF_SITE``), or None for the standard home page."""
+    site = os.getenv("DF_SITE", "").strip()
     return site if site and site_profile(site) else None
 
 
 def warn_about_missing_sites() -> None:
-    """Log configured sites (``DF_SITE``, ``DF_SITES``) that have no usable profile."""
-    forced = os.getenv("DF_SITE", "").strip()
-    configured = set(_host_map(os.getenv("DF_SITES", "")).values()) | ({forced} if forced else set())
-    for site_id in sorted(configured):
-        if not site_profile(site_id):
-            logger.warning("Site %r is configured but %s has no valid profile.yaml; those requests get the "
-                           "standard app (see demos/README.md).", site_id, sites_dir() / site_id)
+    """Log a ``DF_SITE`` that names no demo."""
+    site = os.getenv("DF_SITE", "").strip()
+    if site and not site_profile(site):
+        logger.warning("DF_SITE=%r names no demo (no valid profile.yaml in %s or the shipped demos); "
+                       "/ shows the standard app (see demos/README.md).", site, sites_dir() / site)
 
 
 def site_scope(root: Path, site: str | None = None) -> Path:
@@ -173,7 +198,7 @@ def _version(path: Path) -> str:
     return f"?v={int(path.stat().st_mtime)}"
 
 
-def _story_config(story: dict[str, Any], content: Path) -> dict[str, Any]:
+def _story_config(site_id: str, story: dict[str, Any], content: Path) -> dict[str, Any]:
     story_id = str(story.get("id") or "")
     session = str(story.get("file") or "")
     image = str(story.get("image") or "")
@@ -187,10 +212,10 @@ def _story_config(story: dict[str, Any], content: Path) -> dict[str, Any]:
         "follow_ups": [str(question) for question in story.get("follow_ups") or []],
         # A saved session opening on the prompt already answered; without one the analyst runs the prompt live.
         "available": bool(session) and (content / session).is_file(),
-        "session": f"/api/site/stories/{story_id}",
-        "image": f"/api/site/stories/{story_id}/image{_version(content / image)}" if image and (content / image).is_file() else None,
+        "session": f"/api/demos/{site_id}/stories/{story_id}",
+        "image": f"/api/demos/{site_id}/stories/{story_id}/image{_version(content / image)}" if image and (content / image).is_file() else None,
         # A few findings to show as a stack of chart cards; only those whose image is built.
-        "stack": [{"label": str(item.get("label") or ""), "image": f"/api/site/stories/{story_id}/stack/{index}{_version(content / str(item['image']))}"}
+        "stack": [{"label": str(item.get("label") or ""), "image": f"/api/demos/{site_id}/stories/{story_id}/stack/{index}{_version(content / str(item['image']))}"}
                   for index, item in enumerate(story.get("stack") or [])
                   if isinstance(item, dict) and item.get("image") and (content / str(item["image"])).is_file()],
     }
@@ -210,12 +235,12 @@ def site_frontend_config(site_id: str) -> dict[str, Any]:
             "description": starter.get("description", ""),
             "questions": list(starter.get("questions") or []),
             "available": bool(file_name) and (content / file_name).is_file(),
-            "workspace": f"/api/site/starters/{starter.get('id')}",
+            "workspace": f"/api/demos/{site_id}/starters/{starter.get('id')}",
             "kicker": starter.get("kicker", ""),
             "source_url": starter.get("source_url", ""),
             "icon": starter.get("icon", ""),
             "start_note": starter.get("start_note", ""),
-            "stories": [_story_config(story, content) for story in starter.get("stories") or []],
+            "stories": [_story_config(site_id, story, content) for story in starter.get("stories") or []],
         })
     return {
         "id": site_id,
@@ -226,9 +251,10 @@ def site_frontend_config(site_id: str) -> dict[str, Any]:
         "intro": profile.get("intro", ""),
         "about": [str(item) for item in profile.get("about") or []],
         "release": profile.get("release", ""),
-        "hero_image": f"/api/site/hero{_version(content / hero)}" if (hero := str(profile.get("hero_image") or "")) and (content / hero).is_file() else None,
+        "hero_image": f"/api/demos/{site_id}/hero{_version(content / hero)}" if (hero := str(profile.get("hero_image") or "")) and (content / hero).is_file() else None,
         "attribution": profile.get("attribution", ""),
         "disclaimer": profile.get("disclaimer", ""),
+        "install_note": profile.get("install_note", ""),
         "links": list(profile.get("links") or []),
         "starters": starters,
     }

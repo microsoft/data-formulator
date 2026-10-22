@@ -104,6 +104,18 @@ include = ["data_formulator*"]
 "data_formulator.data_loader.guides" = ["*.md"]
 "data_formulator.workflows" = ["*.yaml", "*.md"]
 "data_formulator.analyst" = ["chart_catalog.json"]
+# Demos shipped with the app (see data_formulator/demos/README.md): profile, front-page
+# images, story seeds and the build script that installs the rest from the page.
+"data_formulator" = [
+    "demos/README.md",
+    "demos/*/README.md",
+    "demos/*/profile.yaml",
+    "demos/*/*.py",
+    "demos/*/*.csv",
+    "demos/*/assets/**/*.png",
+    "demos/*/stories/*/state.json",
+    "demos/*/stories/*/*.parquet",
+]
 
 [project.scripts]
 data_formulator = "data_formulator:run_app"

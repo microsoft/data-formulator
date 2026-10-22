@@ -10,9 +10,12 @@ its answer and charts; see make_seeds.py). It installs those sessions with profi
 the front-page images (assets/) into ``<sites dir>/unesco/`` (default ``DF_SITES_DIR``,
 ``~/.data_formulator/site-content``). No AI models are involved.
 
-    uv run python demos/unesco/build.py                      # everything
-    uv run python demos/unesco/build.py --only culture       # rebuild one dataset
-    uv run python demos/unesco/build.py --sites-dir /srv/df-sites
+Data Formulator runs ``install()`` when a local user installs the demo from its page; from a
+checkout, run this file:
+
+    uv run python py-src/data_formulator/demos/unesco/build.py                  # everything
+    uv run python py-src/data_formulator/demos/unesco/build.py --only culture   # rebuild one dataset
+    uv run python py-src/data_formulator/demos/unesco/build.py --sites-dir /srv/df-sites
 """
 
 from __future__ import annotations
@@ -28,16 +31,16 @@ import time
 import urllib.request
 import zipfile
 from pathlib import Path
+from typing import Callable
 
 import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 import yaml
 
-REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "py-src"))
-
-from data_formulator.datalake.workspace_manager import WorkspaceManager  # noqa: E402
+from data_formulator.datalake.workspace_manager import WorkspaceManager
+from data_formulator.session_format import SESSION_STATE_VERSION
+from data_formulator.sites import referenced_files, sites_dir
 
 HERE = Path(__file__).resolve().parent
 PROFILE = HERE / "profile.yaml"
@@ -98,7 +101,7 @@ def download(raw: Path) -> None:
         if path.exists():
             continue
         url = BASE_URL + urllib.request.quote(remote)
-        print(f"downloading {url}")
+        _log(f"downloading {url}")
         with urllib.request.urlopen(url) as response, open(path, "wb") as out:
             shutil.copyfileobj(response, out)
 
@@ -281,11 +284,6 @@ def data_guide(starter: dict, profile: dict, tables: list[tuple[str, int, str]],
     return "\n".join(lines)
 
 
-def state_version() -> int:
-    source = (REPO / "src" / "app" / "stateMigrations.ts").read_text(encoding="utf-8")
-    return int(re.search(r"DF_STATE_VERSION\s*=\s*(\d+)", source).group(1))
-
-
 def session_state(workspace, starter: dict, order: list[str]) -> dict:
     now = int(time.time() * 1000)
     metadata = workspace.get_metadata()
@@ -308,7 +306,7 @@ def session_state(workspace, starter: dict, order: list[str]) -> dict:
             "addedAt": now,
         })
     return {
-        "__stateVersion": state_version(),
+        "__stateVersion": SESSION_STATE_VERSION,
         "inputTables": input_tables,
         "workspaceItemOrder": [f"shelf-card-{name}" for name in order],
         "activeWorkspace": {"id": starter["id"], "displayName": starter["title"]},
@@ -341,7 +339,7 @@ def build_starter(starter: dict, profile: dict, raw: Path, work: Path, out: Path
             workspace.save_workspace_file(pdf_markdown(raw / doc, title).encode("utf-8"), name, "text/markdown")
             files.append(name)
         else:
-            print(f"  skipping missing {doc}")
+            _log(f"  skipping missing {doc}")
     guide = data_guide(starter, profile, tables, files)
     workspace.save_workspace_file(guide.encode("utf-8"), "UIS data guide.md", "text/markdown")
 
@@ -351,7 +349,7 @@ def build_starter(starter: dict, profile: dict, raw: Path, work: Path, out: Path
     target = out / starter["file"]
     target.write_bytes(archive.getvalue())
     for name, rows, _ in tables:
-        print(f"  {name}: {rows:,} rows")
+        _log(f"  {name}: {rows:,} rows")
     return target
 
 
@@ -370,17 +368,6 @@ def build_story(story: dict, starter: dict, work: Path, content: Path) -> Path:
     return target
 
 
-def referenced_files(profile: dict) -> list[str]:
-    """Every content file the profile names, relative to the release folder."""
-    files = [profile.get("hero_image")]
-    for starter in profile.get("starters") or []:
-        files.append(starter.get("file"))
-        for story in starter.get("stories") or []:
-            files += [story.get("file"), story.get("image")]
-            files += [item.get("image") for item in story.get("stack") or [] if isinstance(item, dict)]
-    return [str(name) for name in files if name]
-
-
 def install_static(profile: dict, site: Path) -> None:
     """Copy the profile and front-page images into the installed site."""
     content = site / str(profile["release"])
@@ -397,56 +384,81 @@ def missing_files(profile: dict, content: Path) -> list[str]:
     return [name for name in referenced_files(profile) if not (content / name).is_file()]
 
 
-def default_sites_dir() -> Path:
-    from data_formulator.sites import sites_dir
-    return sites_dir()
+DEFAULT_RAW = Path.home() / ".cache" / "data-formulator" / "uis-raw"
+_log: Callable[[str], None] = print
+
+
+class InstallError(Exception):
+    """The demo could not be installed (e.g. a download failed or a file is missing)."""
+
+
+def install(sites: Path | None = None, raw: Path | None = None, *, only: list[str] | None = None,
+            rebuild: bool = False, download_missing: bool = True, log: Callable[[str], None] = print) -> Path:
+    """Build and install the demo into ``<sites>/unesco/``; returns that folder.
+
+    Dataset sessions already built are kept unless ``rebuild`` or ``only`` asks for them; story
+    sessions are always assembled again. ``log`` receives one line per step.
+    """
+    global _log
+    _log = log
+    try:
+        profile = yaml.safe_load(PROFILE.read_text(encoding="utf-8"))
+        site = (sites or sites_dir()).expanduser() / "unesco"
+        content = site / str(profile["release"])
+        raw = raw or DEFAULT_RAW
+        unknown = set(only or []) - {starter["id"] for starter in profile["starters"]}
+        if unknown:
+            raise InstallError(f"unknown datasets: {', '.join(sorted(unknown))}")
+        starters = [starter for starter in profile["starters"] if not only or starter["id"] in only]
+        todo = [starter for starter in starters if rebuild or only or not (content / starter["file"]).is_file()]
+
+        if todo and download_missing:
+            try:
+                download(raw)
+            except OSError as exc:
+                raise InstallError(f"could not download the UIS data: {exc}") from exc
+        with tempfile.TemporaryDirectory(prefix="uis-build-") as tmp:
+            for starter in todo:
+                log(f"building {starter['id']}")
+                target = build_starter(starter, profile, raw, Path(tmp), content)
+                log(f"  -> {target.name} ({target.stat().st_size / 2**20:.1f} MB)")
+        for starter in starters:
+            if starter not in todo:
+                log(f"{starter['id']}: already built")
+
+        # Stories are quick to assemble, so they always follow their dataset session.
+        with tempfile.TemporaryDirectory(prefix="uis-stories-") as tmp:
+            for starter in starters:
+                if not (content / starter["file"]).is_file():
+                    continue
+                for story in starter.get("stories") or []:
+                    if story.get("file") and (STORIES / story["id"] / "state.json").is_file():
+                        target = build_story(story, starter, Path(tmp), content)
+                        log(f"  story {story['id']} -> {target.name} ({target.stat().st_size / 2**20:.1f} MB)")
+
+        install_static(profile, site)
+        missing = missing_files(profile, content)
+        if missing:
+            raise InstallError(f"missing from {content}: {', '.join(missing)}")
+        log(f"unesco: installed in {site}")
+        return site
+    finally:
+        _log = print
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--sites-dir", type=Path, help="where to install (default: DF_SITES_DIR)")
-    parser.add_argument("--raw", type=Path, default=Path.home() / ".cache" / "data-formulator" / "uis-raw",
+    parser.add_argument("--raw", type=Path, default=DEFAULT_RAW,
                         help="cache for the UIS downloads (default: ~/.cache/data-formulator/uis-raw)")
     parser.add_argument("--no-download", action="store_true", help="use only UIS files already in --raw")
     parser.add_argument("--only", nargs="*", help="build only these datasets (starter ids)")
     parser.add_argument("--rebuild", action="store_true", help="rebuild dataset sessions that already exist")
     args = parser.parse_args()
-
-    profile = yaml.safe_load(PROFILE.read_text(encoding="utf-8"))
-    site = (args.sites_dir or default_sites_dir()).expanduser() / "unesco"
-    content = site / str(profile["release"])
-    starters = [starter for starter in profile["starters"] if not args.only or starter["id"] in args.only]
-    unknown = set(args.only or []) - {starter["id"] for starter in profile["starters"]}
-    if unknown:
-        parser.error(f"unknown datasets: {', '.join(sorted(unknown))}")
-    todo = [starter for starter in starters if args.rebuild or args.only or not (content / starter["file"]).is_file()]
-
-    if todo and not args.no_download:
-        download(args.raw)
-    with tempfile.TemporaryDirectory(prefix="uis-build-") as tmp:
-        for starter in todo:
-            print(f"building {starter['id']}")
-            target = build_starter(starter, profile, args.raw, Path(tmp), content)
-            print(f"  -> {target} ({target.stat().st_size / 2**20:.1f} MB)")
-    for starter in starters:
-        if starter not in todo:
-            print(f"{starter['id']}: already built (use --rebuild to rebuild)")
-
-    # Stories are quick to assemble, so they always follow their dataset session.
-    with tempfile.TemporaryDirectory(prefix="uis-stories-") as tmp:
-        for starter in starters:
-            if not (content / starter["file"]).is_file():
-                continue
-            for story in starter.get("stories") or []:
-                if story.get("file") and (STORIES / story["id"] / "state.json").is_file():
-                    target = build_story(story, starter, Path(tmp), content)
-                    print(f"  story {story['id']} -> {target.name} ({target.stat().st_size / 2**20:.1f} MB)")
-
-    install_static(profile, site)
-    missing = missing_files(profile, content)
-    if missing:
-        sys.exit(f"unesco: missing from {content}: {', '.join(missing)}")
-    print(f"unesco: installed in {site}")
+    try:
+        install(args.sites_dir, args.raw, only=args.only, rebuild=args.rebuild, download_missing=not args.no_download)
+    except InstallError as exc:
+        sys.exit(f"unesco: {exc}")
 
 
 if __name__ == "__main__":

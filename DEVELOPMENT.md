@@ -645,8 +645,9 @@ package. The alias is wired in `vite.config.ts` and `vitest.config.ts`.
 
 - **Customize the home page (optional)**
 
-    A demo replaces the home page with your own front page, configured in a `profile.yaml`
-    with no rebuild. See [demos/README.md](demos/README.md); `demos/unesco` is an example.
+    A demo is a front page of your own at `/demo/<id>`, configured in a `profile.yaml` with no
+    rebuild. See [py-src/data_formulator/demos/README.md](py-src/data_formulator/demos/README.md);
+    the UIS demo at `/demo/unesco` is an example.
 
 
 ## Desktop installer validation

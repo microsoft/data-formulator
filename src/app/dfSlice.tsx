@@ -76,6 +76,12 @@ export interface ServerConfig {
     APP_TAGLINE?: string;
     /** Set when this hostname serves a site profile (py-src/data_formulator/sites). */
     SITE?: SiteConfig;
+    /** Demos visitors can open on this server (installed, or installable from their page). */
+    DEMOS?: { id: string; name: string }[];
+    /** The standard app's name (APP_NAME is the demo's name on a demo page). */
+    STANDARD_APP_NAME?: string;
+    /** The demo `/` opens (`DF_SITE`), if any. */
+    DEFAULT_DEMO?: string | null;
     MANAGED_MODE?: boolean;
     CAN_CONFIGURE?: boolean;
     TERMINAL_MODE?: 'off' | 'ask' | 'auto';

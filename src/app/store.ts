@@ -8,6 +8,7 @@ import { persistReducer, persistStore, createTransform } from 'redux-persist'
 import localforage from 'localforage';
 import { migrateState } from './stateMigrations';
 import { stripConnectorPrefillFromEntries } from './connectorFormPersistence';
+import { demoScoped } from './demo';
 
 export type AppDispatch = typeof store.dispatch
 
@@ -24,7 +25,8 @@ const stripConnectorPrefill = createTransform(
 );
 
 const persistConfig = {
-    key: 'root',
+    // A demo (/demo/<id>) keeps its open session and settings apart from the standard app's.
+    key: demoScoped('root'),
     //storage,
     storage: localforage,
     // globalModels are always fetched fresh from the server on each app start,

@@ -67,6 +67,12 @@ export interface SiteConfig {
     disclaimer?: string;
     links?: { label: string; url: string }[];
     starters: SiteStarter[];
+    /** "ready" once the demo's content is installed on this server. */
+    status?: 'ready' | 'not_installed';
+    /** Whether the page may install the demo's content (local installs). */
+    can_install?: boolean;
+    /** What installing the demo downloads and builds, shown before it is installed. */
+    install_note?: string;
 }
 
 export interface SiteLandingProps {

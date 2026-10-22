@@ -13,6 +13,7 @@ import { assembleVegaLite, type ChartEncoding, type AssembleOptions } from "flin
 import { mergeableLayerSorts, resolveColumnSorts } from "./chartSort";
 import { choroplethRegion, keepUnmatchedRegions } from "./chartMaps";
 import { getBrowserId } from './identity';
+import { DEMO_HEADER, DEMO_ID } from './demo';
 
 export function getUrls() {
     return {
@@ -236,6 +237,8 @@ async function _doFetch(
         }
 
         headers.set('Accept-Language', getAgentLanguage());
+
+        if (DEMO_ID) headers.set(DEMO_HEADER, DEMO_ID);
 
         // Attach OIDC Bearer token when available (frontend mode only).
         // In backend mode the session cookie handles auth — no Bearer needed.

@@ -29,6 +29,7 @@ import {
     Tooltip,
     Typography,
     Box,
+    ButtonBase,
     Toolbar,
     Divider,
     DialogTitle,
@@ -97,6 +98,8 @@ import SaveIcon from '@mui/icons-material/Save';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { getUrls } from './utils';
+import { APP_PATH, DEMO_ID } from './demo';
+import { AppSwitcher, destinationItems, useAppDestinations, type AppDestination } from './AppSwitcher';
 import { apiRequest } from './apiClient';
 import { listWorkspaces, deleteWorkspace, onWorkspaceListChanged } from './workspaceService';
 import { leaveSession, openSession } from './sessionThunks';
@@ -302,12 +305,14 @@ const LanguageMenuItems: React.FC<{ onSelect: () => void }> = ({ onSelect }) => 
 };
 
 /** Compact replacement for the App / Admin top-nav buttons (shown only when Admin is available). */
-const PageNavMenu: React.FC<{ isAdministrationPage: boolean; appName: string }> = ({ isAdministrationPage, appName }) => {
+const PageNavMenu: React.FC<{ isAdministrationPage: boolean; appName: string; destinations: AppDestination[]; onGoHome: (event: React.MouseEvent) => void }> = ({
+    isAdministrationPage, appName, destinations, onGoHome,
+}) => {
     const { t } = useTranslation();
     const navigate = useNavigate();
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const pages = [
-        { to: '/app', label: t('appBar.app'), selected: !isAdministrationPage },
+        { to: APP_PATH, label: t('appBar.app'), selected: !isAdministrationPage },
         { to: '/configurations', label: t('appBar.admin', { defaultValue: 'Admin' }), selected: isAdministrationPage },
     ];
     const currentLabel = pages.find(page => page.selected)?.label ?? '';
@@ -361,6 +366,8 @@ const PageNavMenu: React.FC<{ isAdministrationPage: boolean; appName: string }> 
                         </ListItemText>
                     </MenuItem>
                 ))}
+                {destinations.length > 0 && <Divider />}
+                {destinationItems(destinations.filter(destination => !destination.current), onGoHome, () => setAnchorEl(null))}
             </Menu>
         </>
     );
@@ -616,10 +623,12 @@ const WorkspaceMenu: React.FC = () => {
     return (
         <>
             <Tooltip title={t('workspace.sessionTooltip', { name: activeWorkspace?.id || '' })} placement="bottom">
-                <Box 
+                <ButtonBase
+                    disableRipple
                     onClick={() => !diskPersistenceDisabled && setPickerOpen(true)}
                     sx={{ 
-                        display: 'flex', alignItems: 'center', gap: 0.5,
+                        display: 'flex', alignItems: 'center', gap: 0.5, textAlign: 'left',
+                        '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
                         // Shrinks with a narrow toolbar so long session names truncate instead of overlapping.
                         minWidth: 0, maxWidth: '100%',
                         cursor: 'pointer',
@@ -641,7 +650,7 @@ const WorkspaceMenu: React.FC = () => {
                         {activeWorkspace?.displayName || activeWorkspace?.id}
                     </Typography>
                     <KeyboardArrowDownIcon className="ws-chevron" sx={{ fontSize: iconVar.md, color: 'text.secondary', opacity: 0.4, transition: 'opacity 0.15s' }} />
-                </Box>
+                </ButtonBase>
             </Tooltip>
             <WorkspacePickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} />
         </>
@@ -652,6 +661,16 @@ const WorkspaceMenu: React.FC = () => {
 const useExitSession = () => {
     const dispatch = useDispatch<AppDispatch>();
     return useCallback(() => dispatch(leaveSession()), [dispatch]);
+};
+
+/** `/`: the standard app, or the server's default demo (`DF_SITE`), which loads as its own page. */
+const HomePage: React.FC = () => {
+    const defaultDemo = useSelector((state: DataFormulatorState) => state.serverConfig.DEFAULT_DEMO);
+    const redirect = !DEMO_ID && !!defaultDemo;
+    useEffect(() => {
+        if (redirect) window.location.replace(`/demo/${defaultDemo}${window.location.search}${window.location.hash}`);
+    }, [redirect, defaultDemo]);
+    return redirect ? null : <DataFormulatorFC />;
 };
 
 /**
@@ -666,7 +685,7 @@ const useGoHome = (onAppPage: boolean) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
         event.preventDefault();
         if (dfSelectors.selectInSession(store.getState())) await dispatch(leaveSession());
-        if (!onAppPage) navigate('/app');
+        if (!onAppPage) navigate(APP_PATH);
     }, [dispatch, navigate, onAppPage]);
 };
 
@@ -1025,7 +1044,7 @@ const ErrorBoundaryFallback: React.FC = () => {
                 maxWidth: 640, px: 2,
             }}>
                 <Typography color="gray">
-                    {t('workspace.errorOccurred')} <Link href="/app">{t('workspace.refreshSession')}</Link>{'. '}{t('workspace.errorPersistHint')}
+                    {t('workspace.errorOccurred')} <Link href={APP_PATH}>{t('workspace.refreshSession')}</Link>{'. '}{t('workspace.errorPersistHint')}
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     {(detail || stack) && (
@@ -1134,6 +1153,7 @@ const AppShell: FC = () => {
     const [logsOpen, setLogsOpen] = useState(false);
     const exitSession = useExitSession();
     const goHome = useGoHome(isAppPage);
+    const destinations = useAppDestinations();
     const inSession = isAppPage && inWorkspaceSession;
     const shellScrollRef = useRef<HTMLDivElement | null>(null);
     const { moreAbove, moreBelow, moreLeft, moreRight, update: updateShellFade } = useScrollFade(shellScrollRef, location.pathname);
@@ -1167,10 +1187,17 @@ const AppShell: FC = () => {
                 overflow: 'hidden'
             }}>
                 <AppBar position="static">
-                    <Toolbar ref={toolbarRef} variant="dense" sx={{ height: 40, minHeight: 36, position: 'relative', pl: '0px !important' }}>
+                    <Toolbar ref={toolbarRef} variant="dense" sx={{ height: 40, minHeight: 36, position: 'relative', pl: '0px !important',
+                        // Controls are shorter than the bar and centred in it; stretch each one's hit area to the
+                        // bar's full height, so a pointer thrown to the top edge (maximized window) still lands on it.
+                        '& :is(a, button)': { position: 'relative' },
+                        '& :is(a, button)::after': { content: '""', position: 'absolute', left: 0, right: 0, top: '50%', height: 40, transform: 'translateY(-50%)' },
+                        // A click that moves a pixel would otherwise drag the link or logo, or select the name, and not click.
+                        userSelect: 'none',
+                    }} onDragStart={(event) => event.preventDefault()}>
                         <Box
                             component={RouterLink}
-                            to="/app"
+                            to={APP_PATH}
                             onClick={goHome}
                             aria-label={t('appBar.home', { defaultValue: 'Home' })}
                             title={t('appBar.home', { defaultValue: 'Home' })}
@@ -1180,9 +1207,12 @@ const AppShell: FC = () => {
                         </Box>
                         {isCompactToolbar ? (
                             canAdminister ? (
-                                <PageNavMenu isAdministrationPage={isAdministrationPage} appName={appName} />
+                                <PageNavMenu isAdministrationPage={isAdministrationPage} appName={appName}
+                                    destinations={destinations} onGoHome={goHome} />
+                            ) : destinations.length > 0 ? (
+                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} compact />
                             ) : (
-                                <Button component={RouterLink} to="/app" onClick={goHome} color="inherit"
+                                <Button component={RouterLink} to={APP_PATH} onClick={goHome} color="inherit"
                                     sx={{ textTransform: 'none', minWidth: 0, px: 0.75, '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' } }}>
                                     <Typography noWrap component="h1" title={appName}
                                         sx={{ maxWidth: { xs: 160, sm: 320 }, fontSize: textVar.xl, fontWeight: 400, lineHeight: 1.2, letterSpacing: 0 }}>
@@ -1193,7 +1223,12 @@ const AppShell: FC = () => {
                         ) : (
                         // Brand and page links share a text baseline, whatever the font's metrics.
                         <Box sx={{ display: 'flex', alignItems: 'baseline', minWidth: 0 }}>
-                        <Button component={RouterLink} to="/app" onClick={goHome} sx={{
+                        {destinations.length > 0 ? (
+                            <Box sx={{ display: { xs: 'none', sm: 'block' }, minWidth: 0 }}>
+                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} />
+                            </Box>
+                        ) : (
+                        <Button component={RouterLink} to={APP_PATH} onClick={goHome} sx={{
                             display: "flex", flexDirection: "row", textTransform: "none",
                             alignItems: 'center',
                             backgroundColor: 'transparent',
@@ -1210,6 +1245,7 @@ const AppShell: FC = () => {
                                 </Typography>
                             </Box>
                         </Button>
+                        )}
                         {canAdminister && (
                             <Box
                                 sx={{
@@ -1219,7 +1255,7 @@ const AppShell: FC = () => {
                                     alignItems: 'baseline',
                                 }}
                             >
-                                <TopNavButton to="/app" label={t('appBar.app')} selected={isAppPage} />
+                                <TopNavButton to={APP_PATH} label={t('appBar.app')} selected={isAppPage} />
                                 <TopNavButton to="/configurations" label={t('appBar.admin', { defaultValue: 'Admin' })} selected={isAdministrationPage} />
                             </Box>
                         )}
@@ -1501,7 +1537,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             children: [
                 {
                     index: true,
-                    element: <DataFormulatorFC />,
+                    element: <HomePage />,
                 },
                 {
                     path: "app",
@@ -1510,7 +1546,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 {
                     // The About page was removed; keep old links working.
                     path: "about",
-                    element: <Navigate to="/app" replace />,
+                    element: <Navigate to={APP_PATH} replace />,
                 },
                 {
                     path: "configurations",

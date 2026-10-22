@@ -1,19 +1,31 @@
 # Demos
 
-A demo replaces Data Formulator's home page with a front page of your own: your title and
-text, your datasets, example analyses to open, and questions to start from. Visitors go
-from the page into the normal Data Formulator workspace.
+A demo is a front page of your own at `/demo/<id>`: your title and text, your datasets,
+example analyses to open, and questions to start from. Visitors go from the page into the
+normal Data Formulator workspace, which stays under `/demo/<id>`; the standard app is still at
+`/app`.
 
 A demo is configuration, not code. Data Formulator's built-in page
 (`src/sites/SitePage.tsx`) lays it out from a `profile.yaml`, so customizing it needs no
 frontend build and works with a pip-installed Data Formulator. [`unesco/`](unesco/) (the
-UIS Data Explorer) is a complete example to start from.
+UIS Data Explorer, at `/demo/unesco`) ships with Data Formulator and is a complete example to
+start from.
 
-In code and settings a demo is called a *site* (`DF_SITE`, `/api/site/...`).
+In code and settings a demo is called a *site* (`DF_SITE`, `DF_SITES_DIR`).
+
+## How a demo is served
+
+The page reads its id from the path and sends it with every API request (header
+`X-DF-Demo`). That selects the demo's profile and analyst guidance, and keeps its visitors'
+sessions apart: on the server under `<root>/sites/<id>/`, in the browser under storage names
+ending in `:demo:<id>`. Moving between a demo and the standard app loads the page again; the
+menu on the app name switches between them, listing the demos that are installed (or, on a
+local Data Formulator, installable).
+Content (sessions, images) is served from `/api/demos/<id>/...`.
 
 ## Folder
 
-Put each demo in its own folder under `DF_SITES_DIR` (default
+A demo's content is installed in its own folder under `DF_SITES_DIR` (default
 `~/.data_formulator/site-content`):
 
 ```text
@@ -25,42 +37,45 @@ Put each demo in its own folder under `DF_SITES_DIR` (default
     hero.png, stories/<story>.png
 ```
 
-`<id>` uses lowercase letters, digits and hyphens. It also names the folder where the demo's
-users' sessions are kept, so keep it stable once deployed. In a source checkout, Data
-Formulator also finds profiles in this repository's `demos/<id>/` (e.g. `DF_SITE=unesco`),
-but `DF_SITES_DIR` takes precedence.
+`<id>` uses lowercase letters, digits and hyphens. It is in the demo's URL and names the
+folder where its users' sessions are kept, so keep it stable once deployed.
 
 Sessions are Data Formulator sessions: export one from the app, or build them with a script.
 
-## In this repository
+## Demos shipped with Data Formulator
 
-Each demo here is a folder with everything needed to install it, apart from data it downloads:
+Each demo in this folder (`py-src/data_formulator/demos/`, part of the Python package) has
+everything needed to install it, apart from data it downloads:
 
 ```text
 demos/<id>/
   profile.yaml            # the page (below)
   assets/                 # front-page images, laid out as the profile names them
   build.py                # downloads the data, builds the sessions, installs the demo
-  README.md, tests        # plus anything build.py needs, e.g. story seeds
+  README.md               # plus anything build.py needs, e.g. story seeds
 ```
 
-`build.py` installs the demo into `DF_SITES_DIR` (or `--sites-dir`): it builds the sessions,
-then copies `profile.yaml` and `assets/` beside them, and fails if any file the profile names is
-missing. It must not call AI models: data goes in as downloaded and processed, and an analysis
-made with the AI analyst goes in as curated content, as the UIS demo does with its small story
-seeds (see [unesco/README.md](unesco/README.md)). Only someone running a demo needs any of
-this; the app itself never imports it.
+Its page is at `/demo/<id>` on every Data Formulator. Until its content is installed, the page
+shows its introduction and, on a local Data Formulator, an **Install demo** button that runs
+`build.py` in the server and reloads once it finishes; elsewhere it says the demo is not
+available yet. A profile installed in `DF_SITES_DIR` takes precedence over the shipped one.
 
-## Turning a demo on
+`build.py` defines `install(sites_dir, *, log)`, which the button calls, and runs it from the
+command line with `--sites-dir` and other options. It builds the sessions, copies
+`profile.yaml` and `assets/` beside them, and fails if any file the profile names is missing.
+It must not call AI models: data goes in as downloaded and processed, and an analysis made with
+the AI analyst goes in as curated content, as the UIS demo does with its small story seeds (see
+[unesco/README.md](unesco/README.md)). Tests are in `tests/backend/demos/`.
+
+## Settings
 
 | Setting | Effect |
 |---|---|
-| `DF_SITE=<id>` | Every hostname shows the demo |
-| `DF_SITES='{"data.example.org": "<id>"}'` | Those hostnames show the demo; others get the standard app |
-| `DF_SITES_DIR=/path/to/demos` | Where demo folders are (default `<DATA_FORMULATOR_HOME>/site-content`) |
+| `DF_SITE=<id>` | `/` opens the demo (`/app` is still the standard app) |
+| `DF_SITES_DIR=/path/to/demos` | Where demo content is installed (default `<DATA_FORMULATOR_HOME>/site-content`) |
 
-Profiles are read once per server start; restart after editing one. If a configured demo's
-`profile.yaml` is missing or invalid, the server logs why and shows the standard app instead.
+Profiles are read once per server start (and again after an install); restart after editing
+one. If a profile is invalid, the server logs why and `/demo/<id>` says there is no such demo.
 
 ## `profile.yaml`
 
@@ -84,6 +99,7 @@ and `intro` reads as the release's month and year (e.g. `2026-02` → February 2
 | `attribution` | A line at the foot of the page, e.g. the data's source and license |
 | `links` | Links at the foot: a list of `{label, url}` |
 | `disclaimer` | A note after "Powered by Data Formulator" (*links*); a generic note on AI-written analyses by default |
+| `install_note` | Before the demo is installed: what installing it downloads and builds |
 | `analyst_rules` | Guidance added to every analyst request on the demo, e.g. audience and tone (not shown) |
 | `starters` | The datasets, in order |
 
@@ -122,9 +138,10 @@ deployment's model, and can differ from run to run.
 
 ## Deploying
 
-Install the demo into the server's `DF_SITES_DIR`, either by running its `build.py` with
-`--sites-dir <folder>` where this repository is available, or by uploading a folder built that
-way, then set `DF_SITE` or `DF_SITES`. Nothing in the app build changes. Demos get the same
+Hosted servers do not offer the Install button: install the demo into the server's
+`DF_SITES_DIR`, either by running its `build.py` there or by uploading a folder built with
+`--sites-dir <folder>`. It is then at `/demo/<id>`; set `DF_SITE` to make it the server's home
+page as well. Nothing in the app build changes. Demos get the same
 agents, workspaces, access controls and sandbox as the rest of the app; on a public demo,
 visitors' questions use the deployment's model and its sandboxed Python, so plan rate limits
 and model budget accordingly.
