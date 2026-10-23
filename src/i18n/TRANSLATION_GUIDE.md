@@ -19,17 +19,20 @@ review translation files, and for anyone adding support for a new language.
 src/i18n/
 ├── index.ts                          # i18next init
 └── locales/
-    ├── index.ts                      # { en, zh }
+    ├── index.ts                      # { en, zh, hi, id, ja, de, fr, ko }
     ├── en/
     │   ├── index.ts                  # spread-merge all *.json → one object
     │   ├── common.json               # app-wide UI strings
     │   ├── chart.json                # chart rendering & gallery
+    │   ├── dataLoading.json          # data loading assistant
     │   ├── encoding.json             # encoding shelf & channels
+    │   ├── errors.json               # error messages
+    │   ├── loader.json               # data loader connection forms
     │   ├── messages.json             # snackbar & system messages
     │   ├── model.json                # LLM model configuration
     │   ├── navigation.json           # nav / routing labels
     │   └── upload.json               # data upload & import
-    └── zh/
+    └── zh/, hi/, id/, ja/, de/, fr/, ko/
         └── (same structure as en/)
 ```
 
@@ -303,7 +306,10 @@ Files are grouped by **functional domain**, not by page:
 |---|---|---|
 | `common.json` | `app`, `appBar`, `session`, `config`, `landing`, `about`, `footer`, `agentRules`, `refresh`, `report`, `db`, `dataThread`, `dataLoading`, `preview`, `conceptShelf`, `chartRec`, `dataGrid`, `chatDialog`, `dataView`, `auth`, `supersetPanel`, `supersetDashboard`, `supersetCatalog` | App-wide shared strings |
 | `chart.json` | `chart` | Chart rendering, gallery, chart-type labels |
+| `dataLoading.json` | `dataLoading` | Data loading assistant |
 | `encoding.json` | `encoding` | Encoding shelf, channels, data types |
+| `errors.json` | `errors` | Error messages |
+| `loader.json` | `loader` | Data loader connection forms |
 | `messages.json` | `messages` | Snackbar & system messages |
 | `model.json` | `model` | LLM model configuration UI |
 | `navigation.json` | `navigation` | Nav / routing labels |
@@ -333,116 +339,7 @@ grep -r '"myFeature"' src/i18n/locales/en/
 
 ---
 
-## 6. Plugin Translations (Self-Contained)
-
-Data source plugins (under `src/plugins/`) maintain their own translation
-files **inside the plugin directory**, separate from the host project's
-`src/i18n/locales/` files. This ensures plugin developers never need to
-modify the host project's translation files.
-
-### 6.1 Directory Structure
-
-```
-src/plugins/superset/
-  ├── locales/
-  │   ├── en.json      ← plugin's English translations
-  │   └── zh.json      ← plugin's Chinese translations
-  ├── api.ts
-  ├── SupersetPanel.tsx
-  └── index.tsx         ← exports locales via DataSourcePluginModule
-```
-
-### 6.2 JSON Format
-
-Plugin locale files use the **same nested key path** as the host project.
-Every plugin's keys must be prefixed with `plugin.<pluginId>.` to avoid
-collisions with host translations or other plugins:
-
-```json
-{
-  "plugin": {
-    "superset": {
-      "login": "Sign In",
-      "logout": "Sign Out",
-      "datasets": "Datasets"
-    }
-  }
-}
-```
-
-In components, access these keys the normal way: `t('plugin.superset.login')`.
-
-### 6.3 Exporting Locales from a Plugin
-
-The plugin's `index.tsx` imports the locale files and exports them via the
-`locales` field on `DataSourcePluginModule`:
-
-```tsx
-import en from './locales/en.json';
-import zh from './locales/zh.json';
-
-const myPlugin: DataSourcePluginModule = {
-    id: 'superset',
-    Icon: SupersetIcon,
-    Panel: SupersetPanel,
-    locales: { en, zh },
-};
-```
-
-`locales` is a `Record<string, Record<string, unknown>>` keyed by language
-code. This is a **data declaration** — all listed languages are registered,
-and the active language is determined at runtime by i18next's language
-detector. This is not "hardcoded" to any one language.
-
-### 6.4 Merge Mechanism
-
-At app startup (`src/index.tsx`), `registerPluginTranslations()` from
-`src/plugins/registry.ts` iterates over all discovered plugin modules and
-calls:
-
-```typescript
-i18n.addResourceBundle(lang, 'translation', bundle, true, true);
-```
-
-This deep-merges each plugin's translations into the existing `translation`
-namespace. The `deep=true, overwrite=true` arguments ensure plugin keys are
-added without affecting host translations.
-
-### 6.5 Rules for Plugin Translations
-
-| Rule | Detail |
-|------|--------|
-| **Key prefix** | Always use `plugin.<pluginId>.` as the top-level path |
-| **No host file edits** | Never add plugin keys to `src/i18n/locales/{lang}/*.json` |
-| **All languages required** | Provide a locale file for every language the host supports (`en`, `zh`, etc.) |
-| **Consistent keys across languages** | Every key in `en.json` must have a corresponding entry in `zh.json` and vice versa |
-| **Same `t()` usage** | Plugin components use `useTranslation()` with no arguments, same as host components |
-| **Interpolation** | Follows the same `{{variable}}` syntax as the host |
-
-### 6.6 Adding Translations for a New Plugin
-
-1. Create `src/plugins/<pluginId>/locales/en.json` and `zh.json` (and any
-   other supported languages).
-2. Structure the JSON as `{ "plugin": { "<pluginId>": { ... } } }`.
-3. In the plugin's `index.tsx`, import the locale files and set
-   `locales: { en, zh }` on the exported module.
-4. Done — `registerPluginTranslations()` handles the rest automatically.
-   No other files need to be modified.
-
-### 6.7 Adding a New Language to an Existing Plugin
-
-1. Create `src/plugins/<pluginId>/locales/<lang>.json` with translated
-   values (copy the structure from `en.json`).
-2. Import it in the plugin's `index.tsx` and add it to the `locales` object:
-   ```tsx
-   import ja from './locales/ja.json';
-   // ...
-   locales: { en, zh, ja },
-   ```
-
----
-
-## 7. Adding a New Language
+## 6. Adding a New Language
 
 To add a new language (e.g., Japanese — `ja`):
 
@@ -461,7 +358,10 @@ Copy every JSON file from `en/` into `ja/` and translate the **values**
 src/i18n/locales/ja/
 ├── common.json
 ├── chart.json
+├── dataLoading.json
 ├── encoding.json
+├── errors.json
+├── loader.json
 ├── messages.json
 ├── model.json
 ├── navigation.json
@@ -480,6 +380,9 @@ import model from './model.json';
 import encoding from './encoding.json';
 import messages from './messages.json';
 import navigation from './navigation.json';
+import dataLoading from './dataLoading.json';
+import loader from './loader.json';
+import errors from './errors.json';
 
 export default {
   ...common,
@@ -489,6 +392,9 @@ export default {
   ...encoding,
   ...messages,
   ...navigation,
+  ...dataLoading,
+  ...loader,
+  ...errors,
 };
 ```
 
@@ -499,27 +405,40 @@ export default {
 ```ts
 import en from './en';
 import zh from './zh';
+import hi from './hi';
+import id from './id';
 import ja from './ja';
+import de from './de';
+import fr from './fr';
+import ko from './ko';
 
-export { en, zh, ja };
+export { en, zh, hi, id, ja, de, fr, ko };
 ```
 
-**`src/i18n/index.ts`** — add the language to the `resources` map:
+**`src/i18n/index.ts`** — add the language to the `resources` map (the
+exported `SUPPORTED_UI_LANGUAGES` list is derived from its keys):
 
 ```ts
-import { en, zh, ja } from './locales';
+import { en, zh, hi, id, ja, de, fr, ko } from './locales';
 
 const resources = {
   en: { translation: en },
   zh: { translation: zh },
+  hi: { translation: hi },
+  id: { translation: id },
   ja: { translation: ja },
+  de: { translation: de },
+  fr: { translation: fr },
+  ko: { translation: ko },
 };
 ```
 
 ### Step 5 — Add a Language Switcher Option
 
-Find the language-switcher component and add the new option. The switcher
-typically calls `i18n.changeLanguage('ja')`.
+The language switcher in `src/app/App.tsx` renders one entry per
+`SUPPORTED_UI_LANGUAGES` code. Add a display name for the new code to the
+`LANGUAGE_LABELS` map in that file; without it the switcher falls back to the
+upper-cased code (`JA`).
 
 ### Step 6 — Validate
 
@@ -531,7 +450,7 @@ typically calls `i18n.changeLanguage('ja')`.
 
 ---
 
-## 8. Adding New Translation Keys
+## 7. Adding New Translation Keys
 
 When adding new translatable text:
 
@@ -563,7 +482,7 @@ When adding new translatable text:
 
 ---
 
-## 9. Common Pitfalls
+## 8. Common Pitfalls
 
 | Pitfall | Consequence | Prevention |
 |---|---|---|
@@ -579,7 +498,7 @@ When adding new translatable text:
 
 ---
 
-## 10. Quick Reference
+## 9. Quick Reference
 
 ```
 To translate a UI label:
@@ -600,10 +519,5 @@ To add a new language:
   2. Translate values (not keys)
   3. Create index.ts aggregator
   4. Register in locales/index.ts and i18n/index.ts
-
-To add translations for a plugin:
-  1. Create src/plugins/<pluginId>/locales/en.json and zh.json
-  2. Use { "plugin": { "<pluginId>": { ... } } } as the JSON structure
-  3. Import and export via locales field in the plugin's index.tsx
-  4. No host files need to be modified
+  5. Add a display name to LANGUAGE_LABELS in src/app/App.tsx
 ```
