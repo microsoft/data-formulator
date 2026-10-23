@@ -25,7 +25,6 @@ import CheckBoxIcon from '@mui/icons-material/CheckBox';
 import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import IndeterminateCheckBoxIcon from '@mui/icons-material/IndeterminateCheckBox';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { TableIcon } from '../icons';
@@ -33,6 +32,7 @@ import { iconVar, textVar } from '../app/layout';
 import { useLayout } from '../app/LayoutProvider';
 import type { CatalogTreeNode } from './CatalogTree';
 import { CountBadge } from './CatalogTree';
+import { metadataTooltipSlotProps } from './ItemCard';
 
 // ─── Flattened row representation ────────────────────────────────────────────
 
@@ -212,7 +212,6 @@ function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSS
     const groupLoaded = isGroup ? loadedMap[itemId] : undefined;
     const childCount = isNamespace ? (node.children?.length ?? 0) : 0;
     const tableCount = isGroup ? (node.metadata?.tables?.length ?? 0) : 0;
-    const metaStatus = node.metadata?.source_metadata_status;
     const isSelected = selectedItemId === itemId;
     const isPreviewLoading = loadingItemId === itemId;
 
@@ -266,23 +265,11 @@ function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSS
         <div style={style} {...dragProps}>
             <Tooltip
                 title={hoverCard ?? ''}
-                placement="right"
-                enterDelay={hoverCard ? 450 : 400}
-                slotProps={hoverCard ? {
-                    tooltip: {
-                        sx: {
-                            maxWidth: 'none', p: 0,
-                            maxHeight: 'calc(100vh - 32px)',
-                            overflowY: 'auto',
-                            overscrollBehavior: 'contain',
-                            bgcolor: 'background.paper',
-                            color: 'text.primary',
-                            border: '1px solid',
-                            borderColor: 'divider',
-                            boxShadow: 4,
-                        },
-                    },
-                } : undefined}
+                placement={hoverCard ? 'right-start' : 'right'}
+                arrow={!!hoverCard}
+                enterDelay={hoverCard ? 300 : 400}
+                enterNextDelay={hoverCard ? 100 : undefined}
+                slotProps={hoverCard ? metadataTooltipSlotProps : undefined}
             >
                 <Box
                     data-catalog-item-id={itemId}
@@ -297,8 +284,8 @@ function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSS
                         borderRadius: '6px',
                         cursor: 'pointer',
                         '&:hover': { backgroundColor: theme.palette.action.hover },
-                        '& .catalog-hover-action': { visibility: 'hidden' },
-                        '&:hover .catalog-hover-action': { visibility: 'visible' },
+                        '& .catalog-hover-action': { display: 'none' },
+                        '&:hover .catalog-hover-action': { display: 'inline-flex' },
                         ...(rowSelectable ? {
                             '&:hover .cat-slot-glyph': { display: 'none' },
                             '&:hover .cat-slot-check': { display: 'flex' },
@@ -362,19 +349,15 @@ function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSS
                     {isPreviewLoading && <CircularProgress size={iconVar.sm} sx={{ flexShrink: 0, color: 'text.disabled' }} />}
                     {/* Loaded check */}
                     {(loaded || groupLoaded) && <CheckIcon sx={{ fontSize: iconVar.sm, color: 'success.main', flexShrink: 0 }} />}
-                    {/* Metadata status hint — only surfaced when metadata is
-                        genuinely unavailable. "partial" just means columns are
-                        lazy-loaded (expected during a full-cluster browse), so
-                        it's not worth flagging. */}
-                    {isTable && metaStatus === 'unavailable' && (
-                        <Tooltip title={t('sidebar.metadataUnavailable')} placement="top">
-                            <InfoOutlinedIcon sx={{ fontSize: iconVar.xs, color: 'text.disabled', flexShrink: 0, opacity: 0.6 }} />
-                        </Tooltip>
-                    )}
                     {/* Row count */}
                     {isTable && node.metadata?.row_count != null && (
                         <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.disabled', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
                             {Number(node.metadata.row_count).toLocaleString()}
+                        </Typography>
+                    )}
+                    {isTable && node.metadata?.query_model === 'semantic' && (
+                        <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.disabled', flexShrink: 0 }}>
+                            {t('sidebar.semanticTag')}
                         </Typography>
                     )}
                     {/* Count badges */}

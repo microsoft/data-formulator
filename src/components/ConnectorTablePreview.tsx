@@ -32,6 +32,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import CheckIcon from '@mui/icons-material/Check';
 
 import { DataFrameTable } from '../views/DataFrameTable';
+import { InlineLoadingStatus, LoadingStatus } from './FunComponents';
 import { fetchWithIdentity, CONNECTOR_ACTION_URLS, SourceTableRef } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { iconVar, textVar } from '../app/layout';
@@ -88,6 +89,7 @@ export interface ConnectorTablePreviewProps {
     hideHeader?: boolean;
     dockActions?: boolean;
     previewRowLimit?: number;
+    loadLabel?: string;
 
     onLoad?: (importOptions: Record<string, any>) => void;
     /** Optional: load the table into a brand-new workspace session. When
@@ -167,6 +169,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
     hideHeader = false,
     dockActions = false,
     previewRowLimit = 10,
+    loadLabel,
     onLoad,
     onLoadInNewSession,
     onUnload,
@@ -545,7 +548,9 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                 </Box>
             )}
 
-            <Box sx={{
+            {isLoading && sampleRows.length > 0 && <InlineLoadingStatus
+                label={t('connectorPreview.refreshingPreview', { defaultValue: 'Refreshing preview...' })} sx={{ py: 1 }} />}
+            <Box aria-busy={isLoading} sx={{
                 flex: dockActions ? '1 1 0' : '0 0 auto',
                 height: dockActions ? undefined : 290,
                 minHeight: dockActions ? 120 : undefined,
@@ -554,12 +559,8 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                 overflowY: dockActions ? 'auto' : 'hidden',
             }}>
                 {isLoading && sampleRows.length === 0 ? (
-                    <Box sx={{
-                        position: 'absolute', inset: 0,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                        <CircularProgress size={18} thickness={4} sx={{ color: 'text.disabled', opacity: 0.6 }} />
-                    </Box>
+                    <LoadingStatus label={t('connectorPreview.loadingPreview', { defaultValue: 'Loading preview...' })}
+                        sx={{ position: 'absolute', inset: 0, p: 2 }} />
                 ) : sampleRows.length > 0 ? (
                     <DataFrameTable
                         columns={columns.map(c => c.name)}
@@ -720,9 +721,12 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                             variant="contained" size="small"
                             disabled={isLoading}
                             onClick={handleLoad}
+                            startIcon={isLoading ? <CircularProgress size={14} color="inherit" /> : undefined}
                             sx={{ textTransform: 'none', fontSize: textVar.sm, px: 3, height: 30, flexShrink: 0 }}
                         >
-                            {t('connectorPreview.loadTable', { defaultValue: 'Load Table' })}
+                            {isLoading
+                                ? t('common.loading', { defaultValue: 'Loading...' })
+                                : loadLabel || t('connectorPreview.loadTable', { defaultValue: 'Load Table' })}
                         </Button>
                     </Box>
                 )}

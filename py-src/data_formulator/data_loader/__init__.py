@@ -73,6 +73,8 @@ _LOADER_SPECS: list[tuple[str, str, str, str]] = [
     ("bigquery",   "data_formulator.data_loader.bigquery_data_loader",   "BigQueryDataLoader",   "google-cloud-bigquery"),
     ("athena",     "data_formulator.data_loader.athena_data_loader",     "AthenaDataLoader",     "boto3"),
     ("superset",   "data_formulator.data_loader.superset_data_loader",   "SupersetLoader",       "requests"),
+    ("cube",       "data_formulator.data_loader.cube_data_loader",       "CubeDataLoader",       "requests"),
+    ("powerbi",    "data_formulator.data_loader.powerbi_data_loader",    "PowerBIDataLoader",    "azure-identity"),
     ("local_folder", "data_formulator.data_loader.local_folder_data_loader", "LocalFolderDataLoader", "pyarrow"),
     ("sample_datasets", "data_formulator.data_loader.sample_datasets_loader", "SampleDatasetsLoader", "requests"),
 ]
@@ -110,7 +112,7 @@ _BUILTIN_CATALOG_POLICIES: dict[str, CatalogCachePolicy] = {
             automatic_refresh="while_connected",
             automatic_refresh_kind="full",
         )
-        for key in ("mysql", "postgresql", "mssql", "clickhouse")
+        for key in ("mysql", "postgresql", "mssql", "clickhouse", "cube")
     },
     **{
         key: CatalogCachePolicy(
@@ -128,7 +130,7 @@ _BUILTIN_CATALOG_POLICIES: dict[str, CatalogCachePolicy] = {
             refresh_cost="moderate",
             automatic_refresh="while_connected",
         )
-        for key in ("databricks", "bigquery", "athena")
+        for key in ("databricks", "bigquery", "athena", "powerbi")
     },
     **{
         key: CatalogCachePolicy(

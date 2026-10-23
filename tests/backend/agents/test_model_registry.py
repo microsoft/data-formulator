@@ -34,27 +34,28 @@ def _make_env(providers: dict[str, dict[str, str]]) -> dict[str, str]:
 
 SAMPLE_ENV = _make_env({
     "openai": {
-        "enabled": "true",
         "api_key": "sk-secret-openai-key",
         "models": "gpt-4o,gpt-5",
     },
     "ollama": {
-        "enabled": "true",
         "api_base": "http://localhost:11434",
         "models": "qwen3:32b",
     },
     "deepseek": {
-        "enabled": "true",
         "endpoint": "openai",
         "api_key": "sk-secret-deepseek-key",
         "api_base": "https://api.deepseek.com/v1",
         "models": "deepseek-chat",
     },
     "orcarouter": {
-        "enabled": "true",
         "api_key": "sk-orca-secret-key",
         "api_base": "https://api.orcarouter.ai/v1",
         "models": "auto",
+    },
+    "cheaperinference": {
+        "api_key": "sk-ci-secret-key",
+        "api_base": "https://api.cheaperinference.com/v1",
+        "models": "gpt-5.4-mini",
     },
 })
 
@@ -75,27 +76,41 @@ class TestModelDiscovery:
         assert "global-ollama-qwen3:32b" in ids
         assert "global-deepseek-deepseek-chat" in ids
         assert "global-orcarouter-auto" in ids
+        assert "global-cheaperinference-gpt-5.4-mini" in ids
 
     @patch.dict(os.environ, SAMPLE_ENV, clear=True)
     def test_total_model_count(self):
         registry = ModelRegistry()
-        assert len(registry.list_public()) == 5  # 2 openai + 1 ollama + 1 deepseek + 1 orcarouter
+        assert len(registry.list_public()) == 6  # 2 openai + 1 ollama + 1 deepseek + 1 orcarouter + 1 cheaperinference
 
     @patch.dict(os.environ, {}, clear=True)
     def test_empty_env_yields_no_models(self):
         registry = ModelRegistry()
         assert registry.list_public() == []
 
-    @patch.dict(os.environ, {"OPENAI_ENABLED": "true", "OPENAI_API_KEY": "sk-x"}, clear=True)
+    @patch.dict(os.environ, {
+        "AZURE_API_BASE": "https://df.cognitiveservices.azure.com/", "AZURE_MODELS": "gpt-5",
+        "APPSETTING_AZURE_API_BASE": "https://df.cognitiveservices.azure.com/", "APPSETTING_AZURE_MODELS": "gpt-5",
+    }, clear=True)
+    def test_ignores_app_service_setting_mirrors(self):
+        assert [(m["id"], m["endpoint"]) for m in ModelRegistry().list_public()] == [("global-azure-gpt-5", "azure")]
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "sk-x"}, clear=True)
     def test_skips_provider_without_models(self):
         """OPENAI_MODELS not set → no models registered."""
         registry = ModelRegistry()
         assert registry.list_public() == []
 
-    @patch.dict(os.environ, {"OPENAI_ENABLED": "false", "OPENAI_API_KEY": "sk-x", "OPENAI_MODELS": "gpt-4o"}, clear=True)
-    def test_skips_disabled_provider(self):
+    @patch.dict(os.environ, {"OPENAI_MODELS": "gpt-4o", "DISABLE_CUSTOM_MODELS": "true"}, clear=True)
+    def test_skips_provider_without_key_or_base(self):
+        """_MODELS alone (including unrelated vars like DISABLE_CUSTOM_MODELS) registers nothing."""
         registry = ModelRegistry()
         assert registry.list_public() == []
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "sk-x", "OPENAI_MODELS": "gpt-4o"}, clear=True)
+    def test_models_and_key_enable_provider(self):
+        registry = ModelRegistry()
+        assert [m["id"] for m in registry.list_public()] == ["global-openai-gpt-4o"]
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +173,6 @@ class TestCustomProvider:
         assert config["api_base"] == "https://api.orcarouter.ai/v1"
 
     @patch.dict(os.environ, {
-        "MYVENDOR_ENABLED": "true",
         "MYVENDOR_API_KEY": "key123",
         "MYVENDOR_MODELS": "my-model",
     }, clear=True)

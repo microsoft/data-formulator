@@ -23,34 +23,34 @@ classifiers = [
 dependencies = [
     "pandas",
     "flask",
-    "flask-cors",
     "flask-limiter",
     "openai",
     "python-dotenv",
-    # litellm 1.92 switched to a native Rust/maturin build and initially shipped
-    # Linux-only wheels. Newer releases restored native macOS/Windows wheels,
-    # but stay on the last universal pure-Python line until the new runtime and
-    # cross-platform packaging have dedicated compatibility coverage.
-    "litellm>=1.91.5,<1.92",
-    "aiohttp>=3.14.3",
+    # litellm >=1.92 is a native Rust/maturin build; 1.99+ ships wheels for
+    # macOS x64/arm64, Windows x64 and manylinux/musllinux. 1.106 imports its MCP server
+    # (needs the optional `mcp` package) on every Responses call, so every request fails.
+    "litellm>=1.99,<1.106",
+    "aiohttp>=3.14.4",
     "duckdb",
     "numpy",
     "vl-convert-python",
     "beautifulsoup4",
     "scikit-learn",
     "pyyaml",
-    "pyarrow>=13.0.0",
+    "jsonschema>=4.18",
+    # 25.0.0 bundles mimalloc 3.3.1, which crashes when pyarrow is first
+    # loaded on a thread that exits (apache/arrow#50471); fixed in 25.0.1.
+    "pyarrow>=13.0.0,!=25.0.0",
     "xlrd",
     "openpyxl>=3.1.0",
     "lxml", # pandas.read_html web table extraction
     "yfinance",
     # Data-loader deps (all included by default; try/except keeps things safe)
-    "pymongo", # mongodb
+    "pymongo>=4.18.2", # mongodb
     "azure-cosmos", # cosmosdb
     "azure-storage-blob", # azure_blob
     "azure-identity", # azure_blob, kusto
     "azure-kusto-data", # kusto
-    "azure-keyvault-secrets", # kusto
     "pymysql", # mysql
     "clickhouse-connect", # clickhouse
     "mssql-python>=1.11.0", # mssql
@@ -61,11 +61,12 @@ dependencies = [
     "db-dtypes", # bigquery
     "databricks-sql-connector", # databricks
     # SSO / Auth deps
-    "PyJWT[crypto]>=2.8.0", # OIDC JWT verification (includes cryptography)
+    "PyJWT[crypto]>=2.15.0", # OIDC JWT verification (includes cryptography)
     "cryptography>=50.0.0", # Security floor for auth and local vault encryption
     "requests", # GitHub OAuth code exchange, Superset API calls
     "flask-session>=0.8.0", # Server-side session (SQLite) for TokenStore
     "filelock>=3.20",
+    "apscheduler>=3.11,<4",
     "pypdf>=6.16.2",
 ]
 
@@ -102,6 +103,19 @@ include = ["data_formulator*"]
 "*" = ["SKILL.md", "tools.json"]
 "data_formulator.data_loader.guides" = ["*.md"]
 "data_formulator.workflows" = ["*.yaml", "*.md"]
+"data_formulator.analyst" = ["chart_catalog.json"]
+# Demos shipped with the app (see data_formulator/demos/README.md): profile, front-page
+# images, story seeds and the build script that installs the rest from the page.
+"data_formulator" = [
+    "demos/README.md",
+    "demos/*/README.md",
+    "demos/*/profile.yaml",
+    "demos/*/*.py",
+    "demos/*/*.csv",
+    "demos/*/assets/**/*.png",
+    "demos/*/stories/*/state.json",
+    "demos/*/stories/*/*.parquet",
+]
 
 [project.scripts]
 data_formulator = "data_formulator:run_app"

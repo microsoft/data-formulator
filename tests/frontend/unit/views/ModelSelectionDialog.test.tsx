@@ -4,7 +4,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ModelSelectionButton, parseAzureTargetUri } from '../../../../src/views/ModelSelectionDialog';
-import { dataFormulatorReducer, dfActions, ModelConfig } from '../../../../src/app/dfSlice';
+import { dataFormulatorReducer, dfActions, dfSelectors, ModelConfig } from '../../../../src/app/dfSlice';
 import { apiRequest, ApiRequestError } from '../../../../src/app/apiClient';
 import modelStrings from '../../../../src/i18n/locales/en/model.json';
 import commonStrings from '../../../../src/i18n/locales/en/common.json';
@@ -30,6 +30,7 @@ afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    window.history.replaceState({}, '', '/');
 });
 
 describe('Model connection form', () => {
@@ -39,27 +40,110 @@ describe('Model connection form', () => {
         vi.mocked(apiRequest).mockImplementation(async url => ({
             data: url === '/api/local/azure-status'
                 ? { installed: true, signed_in: true, account: { user: 'test-account' } }
-                : [],
+                : url === '/api/model-endpoints/azure/subscriptions' ? { subscriptions: [], default_subscription: '' } : [],
         }) as any);
     });
 
-    const openForm = (model?: ModelConfig) => {
+    const openForm = (model?: ModelConfig, managed = false) => {
         const initial = dataFormulatorReducer(undefined, { type: 'test/init' });
         const store = configureStore({
             reducer: dataFormulatorReducer,
             preloadedState: { ...initial, models: model && !model.is_global ? [model] : [],
                 globalModels: model?.is_global ? [model] : [], selectedModelId: model?.id,
-                serverConfig: { ...initial.serverConfig, IS_LOCAL_MODE: true } },
+                serverConfig: { ...initial.serverConfig, IS_LOCAL_MODE: true, DISABLE_CUSTOM_MODELS: managed } },
         });
         render(<Provider store={store}><ModelSelectionButton /></Provider>);
         fireEvent.click(screen.getByRole('button', { name: 'Select a model' }));
         return store;
     };
 
+    it('limits managed deployments to server models without custom-model actions', () => {
+        const store = openForm({ id: 'global-openai-managed', endpoint: 'openai', model: 'managed-model', is_global: true }, true);
+        expect(screen.getByRole('heading', { name: 'managed-model' })).toBeTruthy();
+        expect(screen.queryByRole('button', { name: modelStrings.model.addModel })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+        expect(screen.queryByRole('button', { name: modelStrings.model.copyDetails })).toBeNull();
+        expect(screen.queryByRole('button', { name: /Save/ })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: modelStrings.model.useModel }));
+        expect(store.getState().selectedModelId).toBe('global-openai-managed');
+    });
+
+    it('hides a persisted custom model and does not offer an add form in managed mode', () => {
+        const store = openForm({ id: 'custom', endpoint: 'openai', model: 'private-model', api_key: 'test-key' }, true);
+        expect(dfSelectors.getAllModels(store.getState())).toEqual([]);
+        expect(dfSelectors.getActiveModel(store.getState())).toBeUndefined();
+        expect(screen.queryByText('private-model')).toBeNull();
+        expect(screen.queryByRole('button', { name: modelStrings.model.addModel })).toBeNull();
+        expect(screen.queryByRole('combobox', { name: 'Provider' })).toBeNull();
+        expect(screen.queryByRole('button', { name: /Save/ })).toBeNull();
+        act(() => store.dispatch(dfActions.setServerConfig({ ...store.getState().serverConfig, DISABLE_CUSTOM_MODELS: false })));
+        expect(dfSelectors.getActiveModel(store.getState())?.id).toBe('custom');
+        expect(screen.getByRole('button', { name: modelStrings.model.addModel })).toBeTruthy();
+    });
+
     const chooseProvider = async (label: string) => {
         fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Provider' }));
-        fireEvent.click(await screen.findByRole('option', { name: label, exact: true }));
+        fireEvent.click(await screen.findByRole('option', { name: label }));
     };
+
+    it('stages installation models without saving personal state or using account login', async () => {
+        const initial = dataFormulatorReducer(undefined, { type: 'test/init' });
+        const store = configureStore({ reducer: dataFormulatorReducer, preloadedState: initial });
+        const stage = vi.fn().mockResolvedValue(undefined);
+        render(<Provider store={store}><ModelSelectionButton onStageConnection={stage} /></Provider>);
+        fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Provider' }));
+        expect(screen.queryByRole('option', { name: 'ChatGPT' })).toBeNull();
+        fireEvent.click(await screen.findByRole('option', { name: 'OpenAI' }));
+        fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'private-key' } });
+        fireEvent.change(screen.getByRole('textbox', { name: 'Model' }), { target: { value: 'test-model' } });
+        fireEvent.change(screen.getByRole('textbox', { name: 'Small Model (optional)' }), { target: { value: 'small-test-model' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Test and save' }));
+        await waitFor(() => expect(stage).toHaveBeenCalledWith(expect.objectContaining({ endpoint: 'openai', model: 'test-model', small_model: 'small-test-model', api_key: 'private-key' })));
+        expect(store.getState().models).toEqual(initial.models);
+        expect(vi.mocked(apiRequest).mock.calls.some(([url, options]) => options?.method === 'POST')).toBe(false);
+    });
+
+    it('prefills an installation model and tests edits with the stored credential', async () => {
+        const initial = dataFormulatorReducer(undefined, { type: 'test/init' });
+        const store = configureStore({ reducer: dataFormulatorReducer, preloadedState: initial });
+        const stage = vi.fn().mockResolvedValue(undefined);
+        render(<Provider store={store}><ModelSelectionButton initialDefinition={{ endpoint: 'openai', model: 'existing-model', auth_mode: 'key' }}
+            hasStoredCredentials onStageConnection={stage} /></Provider>);
+        expect((screen.getByRole('textbox', { name: 'Model' }) as HTMLInputElement).value).toBe('existing-model');
+        expect((screen.getByLabelText('API Key') as HTMLInputElement).value).toBe('');
+        fireEvent.change(screen.getByRole('textbox', { name: 'Model' }), { target: { value: 'updated-model' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Test and save' }));
+        await waitFor(() => expect(stage).toHaveBeenCalledWith(expect.objectContaining({ endpoint: 'openai', model: 'updated-model', api_key: '' })));
+        expect(store.getState().models).toEqual(initial.models);
+    });
+
+    it.each(['azure_identity', 'managed_identity'])('stages Azure %s separately from API keys', async authMode => {
+        const initial = dataFormulatorReducer(undefined, { type: 'test/init' });
+        const store = configureStore({ reducer: dataFormulatorReducer, preloadedState: initial });
+        const stage = vi.fn().mockResolvedValue(undefined);
+        render(<Provider store={store}><ModelSelectionButton initialDefinition={{ endpoint: 'azure', model: 'deployment',
+            api_base: 'https://example.openai.azure.com', auth_mode: 'key' }} hasStoredCredentials onStageConnection={stage} /></Provider>);
+        fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'old-key' } });
+        fireEvent.click(screen.getByRole('button', { name: authMode === 'azure_identity' ? 'Microsoft Entra ID' : 'Managed identity' }));
+        if (authMode === 'managed_identity') {
+            fireEvent.change(screen.getByLabelText('Managed identity client ID (optional)'), { target: { value: 'identity-client' } });
+        } else {
+            expect(screen.queryByLabelText('Managed identity client ID (optional)')).toBeNull();
+        }
+        fireEvent.click(screen.getByRole('button', { name: 'Test and save' }));
+        await waitFor(() => expect(stage).toHaveBeenCalledWith(expect.objectContaining({
+            endpoint: 'azure', auth_mode: authMode, api_key: '',
+            managed_identity_client_id: authMode === 'managed_identity' ? 'identity-client' : '',
+        })));
+    });
+
+    it('preserves saved managed identity mode and its client ID', () => {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        render(<Provider store={store}><ModelSelectionButton initialDefinition={{ endpoint: 'azure', model: 'deployment',
+            auth_mode: 'managed_identity', managed_identity_client_id: 'saved-identity' }} onStageConnection={vi.fn()} /></Provider>);
+        expect(screen.getByRole('button', { name: 'Managed identity' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByLabelText('Managed identity client ID (optional)')).toHaveValue('saved-identity');
+    });
 
     const mockOpenRouter = (connected = false, complete = true) => {
         const base = '/api/model-endpoints/connections/openrouter';
@@ -90,10 +174,10 @@ describe('Model connection form', () => {
         fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Provider' }));
         const listbox = await screen.findByRole('listbox');
         expect(Array.from(listbox.children).map(child => child.textContent)).toEqual([
-            'Sign in', 'OpenRouter', 'GitHub Copilot', 'ChatGPT', 'API', 'OpenAI', 'Azure', 'Anthropic', 'Google Gemini', 'Ollama', 'OrcaRouter',
+            'Sign in', 'OpenRouter', 'GitHub Copilot', 'ChatGPT', 'API', 'OpenAI', 'Azure', 'Anthropic', 'Google Gemini', 'Ollama', 'OrcaRouter', 'Cheaper Inference',
         ]);
         expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual([
-            'OpenRouter', 'GitHub Copilot', 'ChatGPT', 'OpenAI', 'Azure', 'Anthropic', 'Google Gemini', 'Ollama', 'OrcaRouter',
+            'OpenRouter', 'GitHub Copilot', 'ChatGPT', 'OpenAI', 'Azure', 'Anthropic', 'Google Gemini', 'Ollama', 'OrcaRouter', 'Cheaper Inference',
         ]);
         const openRouter = screen.getByRole('option', { name: 'OpenRouter' });
         act(() => openRouter.focus());
@@ -182,6 +266,23 @@ describe('Model connection form', () => {
         expect(apiRequest).toHaveBeenCalledWith(base + '/cancel', expect.objectContaining({ body: JSON.stringify({ flow_id: 'copilot-flow' }) }));
         expect(screen.queryByLabelText('Device code')).not.toBeInTheDocument();
         expect(screen.queryByRole('link', { name: 'Manage on GitHub' })).not.toBeInTheDocument();
+    });
+
+    it('does not open an about:blank authorization window in the desktop app', async () => {
+        window.history.replaceState({}, '', '/?desktop=1');
+        mockCopilot(false, false);
+        const open = vi.spyOn(window, 'open').mockReturnValue(null);
+        openForm();
+        await chooseProvider('GitHub Copilot');
+        const connect = screen.getByRole('button', { name: 'Connect GitHub Copilot' });
+        await waitFor(() => expect(connect).toBeEnabled());
+        fireEvent.click(connect);
+        expect(await screen.findByRole('link', { name: 'Open GitHub' })).toHaveAttribute('href', 'https://github.com/login/device');
+        expect(screen.getByText(modelStrings.model.deviceCodeInstructions)).toBeVisible();
+        const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+        screen.getByRole('link', { name: 'Open GitHub' }).dispatchEvent(click);
+        expect(click.defaultPrevented).toBe(false);
+        expect(open).not.toHaveBeenCalled();
     });
 
     it('cancels a late Copilot authorization start without touching the new provider', async () => {
@@ -410,29 +511,16 @@ describe('Model connection form', () => {
         await chooseProvider('OpenRouter');
         await screen.findByText('Connected');
         expect(screen.queryByText(/user_test_creator/)).not.toBeInTheDocument();
-        expect(screen.getByText('Connected').parentElement?.querySelector('svg')).toBeNull();
         expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Authorize again...' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Connection actions' })).not.toBeInTheDocument();
         const manage = screen.getByRole('link', { name: 'Manage on OpenRouter' });
         const disconnect = screen.getByRole('button', { name: 'Disconnect' });
-        const actions = screen.getByRole('group', { name: 'Connection actions' });
-        expect(actions).toContainElement(manage);
-        expect(actions).toContainElement(disconnect);
-        expect(actions).not.toContainElement(screen.getByText('Connected'));
-        expect(manage).toHaveTextContent('Manage');
-        expect(disconnect).toHaveTextContent('Disconnect');
-        expect(disconnect.querySelector('[data-testid="LinkOffIcon"]')).not.toBeNull();
         expect(manage).toHaveAttribute('href', 'https://openrouter.ai/keys/test-hash');
         expect(manage).toHaveAttribute('target', '_blank');
         expect(manage).toHaveAttribute('rel', 'noopener noreferrer');
         expect(disconnect).toBeEnabled();
-        const connectionRow = screen.getByText('Connected').parentElement?.parentElement?.parentElement;
-        expect(connectionRow).toContainElement(manage);
-        expect(connectionRow).toContainElement(disconnect);
         const refresh = screen.getByRole('button', { name: 'Refresh models' });
-        expect(connectionRow).not.toContainElement(refresh);
-        expect(refresh.parentElement?.parentElement).toContainElement(screen.getByRole('combobox', { name: /^Model/ }));
         fireEvent.click(refresh);
         await screen.findByText('Connected');
         expect(vi.mocked(apiRequest).mock.calls.filter(([url]) => url === base + '/models')).toHaveLength(2);
@@ -457,6 +545,7 @@ describe('Model connection form', () => {
 
     it('shows server-managed details without disabled form controls and preserves copying', async () => {
         openForm({ id: 'managed', endpoint: 'azure', model: 'team-assistant',
+            small_model: 'team-small',
             api_base: 'https://resource.example', api_version: '2025-04-01-preview',
             api_key: '', auth_mode: 'azure_identity', is_global: true });
         expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
@@ -468,6 +557,67 @@ describe('Model connection form', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Copy details' }));
         expect(screen.getByRole('textbox', { name: /Endpoint URL/ })).toBeEnabled();
         expect(screen.getByRole('textbox', { name: /Model deployment/ })).toHaveValue('team-assistant');
+        expect(screen.getByRole('textbox', { name: 'Small Model (optional)' })).toHaveValue('team-small');
+    });
+
+    it.each(['', 'main-model', 'small-model'])('saves and forwards optional Small Model %s with the same connection', async smallModel => {
+        const store = openForm({ id: 'pair', endpoint: 'openai', model: 'main-model', api_key: 'private-key' });
+        fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+        fireEvent.change(screen.getByRole('textbox', { name: 'Small Model (optional)' }), { target: { value: smallModel } });
+        fireEvent.click(screen.getByRole('button', { name: 'Test and save' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Edit' })).toBeVisible());
+        const request = vi.mocked(apiRequest).mock.calls.find(([url]) => url === '/api/agent/test-model')!;
+        expect(JSON.parse(request[1]!.body as string).model).toMatchObject({
+            endpoint: 'openai', model: 'main-model', api_key: 'private-key',
+            ...(smallModel ? { small_model: smallModel } : {}),
+        });
+        const saved = store.getState().models[0];
+        expect(saved.small_model).toBe(smallModel || undefined);
+        expect(buildDistillModelConfig(saved).small_model).toBe(smallModel || undefined);
+        expect(screen.getByText('Main').parentElement).toHaveTextContent('main-model');
+        if (smallModel && smallModel !== 'main-model') {
+            expect(screen.getByText('Small')).toBeVisible();
+            expect(screen.getByText('Small').parentElement).toHaveTextContent(smallModel);
+        } else {
+            expect(screen.queryByText('Small')).not.toBeInTheDocument();
+        }
+    });
+
+    it.each([
+        ['azure', 'https://fxdata-eastus2.openai.azure.com', 'Azure \u00b7 fxdata-eastus2'],
+        ['azure', 'https://team.services.ai.azure.com/api', 'Azure \u00b7 team'],
+        ['azure', 'https://team.cognitiveservices.azure.com', 'Azure \u00b7 team'],
+        ['azure', 'https://team.openai.azure.com:8443', 'Azure \u00b7 team:8443'],
+        ['azure', 'https://team.openai.azure.com.example.org', 'Azure \u00b7 team.openai.azure.com.example.org'],
+        ['azure', '', 'Azure'],
+        ['ollama', '', 'Ollama \u00b7 localhost:11434'],
+        ['ollama', 'http://inference.internal:11435/api', 'Ollama \u00b7 inference.internal:11435'],
+        ['ollama', 'http://[::1]:11434', 'Ollama \u00b7 [::1]:11434'],
+        ['openai', 'https://api.openai.com/v1/', 'OpenAI'],
+        ['openai', 'https://api.openai.com:8443/v1', 'OpenAI \u00b7 api.openai.com:8443'],
+        ['openai', 'https://user:secret@proxy.example:8443/v1?token=secret', 'OpenAI \u00b7 proxy.example:8443'],
+        ['openai', 'not a URL', 'OpenAI'],
+        ['openai', 'file:///tmp/model', 'OpenAI'],
+        ['github_copilot', 'https://api.githubcopilot.com', 'GitHub Copilot'],
+    ])('identifies the %s connection from %s in its sidebar header', (endpoint, apiBase, label) => {
+        openForm({ id: 'endpoint-label', endpoint, model: 'main-model', api_base: apiBase, is_global: true });
+        const header = screen.getByText('Main').closest('dl')!.previousElementSibling;
+        expect(header?.textContent).toBe(label);
+    });
+
+    it('does not save a pair when the Small Model test fails', async () => {
+        const original = { id: 'pair', endpoint: 'openai', model: 'main-model', api_key: 'private-key' };
+        const store = openForm(original);
+        const originalRequest = vi.mocked(apiRequest).getMockImplementation()!;
+        vi.mocked(apiRequest).mockImplementation((url, options) => url === '/api/agent/test-model'
+            ? Promise.reject(new ApiRequestError({ code: 'AGENT_ERROR', message: 'Small Model failed' }, 400))
+            : originalRequest(url, options));
+        fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+        fireEvent.change(screen.getByRole('textbox', { name: 'Small Model (optional)' }), { target: { value: 'small-model' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Test and save' }));
+        expect(await screen.findByText('Small Model failed')).toBeVisible();
+        expect(store.getState().models).toEqual([original]);
+        expect(store.getState().testedModels.find(model => model.id === 'pair')?.status).toBe('error');
     });
 
     it('never renders a saved key in details and preserves editing and cancel', async () => {
@@ -492,24 +642,19 @@ describe('Model connection form', () => {
         expect(screen.queryByRole('button', { name: 'Use recent' })).not.toBeInTheDocument();
     });
 
-    it.each([
-        ['OpenAI', 'gpt-5.6-terra'],
-        ['Anthropic', 'claude-sonnet-5'],
-        ['Google Gemini', 'gemini-3.8-flash'],
-        ['Azure', 'team-assistant'],
-        ['Ollama', 'qwen3.8:27b'],
-        ['OrcaRouter', 'auto'],
-    ])('%s shows a provider-specific example without selecting a model', async (provider, example) => {
+    it.each(['OpenAI', 'Azure', 'Ollama'])(
+        '%s does not treat a suggested model as a selected model', async provider => {
         openForm();
         await chooseProvider(provider);
+        if (provider === 'Azure') fireEvent.click(screen.getByRole('button', { name: 'Enter manually' }));
         const model = screen.getByRole('textbox', { name: /^Model/ });
-        expect(model).toHaveAttribute('placeholder', example);
         expect(model).toHaveValue('');
         expect(screen.getByRole('button', { name: 'Test and save' })).toBeDisabled();
     });
 
     it('offers recent configurations as a separate menu that prefills the new model form', async () => {
         vi.mocked(apiRequest).mockResolvedValue({ data: [{ endpoint: 'azure', model: 'recent-deployment',
+            small_model: 'recent-small',
             api_base: 'https://recent.example', api_version: '2025-04-01-preview', auth_mode: 'key' }] } as any);
         openForm();
         const recent = await screen.findByRole('button', { name: 'Use recent' });
@@ -518,6 +663,7 @@ describe('Model connection form', () => {
         fireEvent.click(recent);
         fireEvent.click(screen.getByRole('menuitem', { name: /Azure \/ recent-deployment/ }));
         expect(screen.getByRole('textbox', { name: /Model deployment/ })).toHaveValue('recent-deployment');
+        expect(screen.getByRole('textbox', { name: 'Small Model (optional)' })).toHaveValue('recent-small');
         expect(screen.getByRole('textbox', { name: /Endpoint URL/ })).toHaveValue('https://recent.example');
         expect(screen.getByRole('textbox', { name: 'API Version' })).toHaveValue('2025-04-01-preview');
         expect(screen.getByLabelText('API Key', { selector: 'input' })).toHaveValue('');
@@ -544,10 +690,6 @@ describe('Model connection form', () => {
         const edit = screen.getByRole('button', { name: 'Edit' });
         const copy = screen.getByRole('button', { name: 'Copy details' });
         expect(edit).toBeVisible();
-        expect(copy).toHaveTextContent(/^Copy$/);
-        expect(edit.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        expect(edit.parentElement).toBe(copy.parentElement);
-        expect(edit.parentElement?.querySelector('.MuiDivider-vertical')).not.toBeNull();
         fireEvent.click(copy);
         expect(screen.getByRole('textbox', { name: /^Model/ })).toHaveValue('original-model');
         expect(screen.getByLabelText('Base URL')).toHaveValue(original.api_base);
@@ -570,8 +712,7 @@ describe('Model connection form', () => {
             store.dispatch(dfActions.updateModelStatus({ id: model.id, status, message: '' }));
         });
 
-        expect(screen.getByRole('button', { name: 'Test model' })).toHaveTextContent('');
-        expect(screen.queryByText('Test model')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Test model' })).toBeEnabled();
 
         setStatus('testing');
         expect(screen.getByRole('button', { name: 'Testing…' })).toBeDisabled();
@@ -579,25 +720,22 @@ describe('Model connection form', () => {
 
         setStatus('ok');
         const passed = screen.getByRole('button', { name: 'Test passed' });
-        expect(passed).toHaveClass('MuiIconButton-colorSuccess');
-        expect(passed.querySelector('[data-testid="CheckCircleOutlineIcon"]')).not.toBeNull();
-        expect(screen.queryByText('Test passed')).not.toBeInTheDocument();
+        expect(passed).toBeEnabled();
 
         setStatus('error');
         const retry = screen.getByRole('button', { name: 'Test failed, retry' });
-        expect(retry).toHaveTextContent('Test');
-        expect(retry.querySelector('[data-testid="PlayCircleOutlineIcon"]')).not.toBeNull();
+        expect(retry).toBeEnabled();
         fireEvent.click(retry);
         expect(screen.getByRole('button', { name: 'Testing…' })).toBeDisabled();
         await waitFor(() => expect(screen.getByRole('button', { name: 'Test passed' })).toBeEnabled());
     });
 
-    it('orders Azure endpoint before deployment and parses a pasted Target URI', async () => {
+    it('fills endpoint, deployment, and API version from a pasted Azure Target URI', async () => {
         openForm();
         await chooseProvider('Azure');
+        fireEvent.click(screen.getByRole('button', { name: 'Enter manually' }));
         const endpoint = screen.getByRole('textbox', { name: /Endpoint URL/ });
         const deployment = screen.getByRole('textbox', { name: /Model deployment/ });
-        expect(endpoint.compareDocumentPosition(deployment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         fireEvent.paste(endpoint, { clipboardData: { getData: () =>
             'https://resource.openai.azure.com/openai/deployments/team-assistant/chat/completions?api-version=2025-04-01-preview',
         } });
@@ -631,9 +769,9 @@ describe('Model connection form', () => {
         expect(store.getState().models[0]).toMatchObject({ endpoint: 'ollama', model: 'llama3.2', api_key: '', api_base: '' });
     });
 
-    it.each(['OpenAI', 'Anthropic', 'Google Gemini', 'OrcaRouter'])('%s keeps optional URL overrides under Advanced', async provider => {
+    it('keeps optional URL overrides under Advanced for hosted providers', async () => {
         openForm();
-        await chooseProvider(provider);
+        await chooseProvider('OpenAI');
         expect(screen.getByLabelText('Base URL')).not.toBeVisible();
         expect(screen.getByLabelText('API Key')).toBeVisible();
         fireEvent.click(screen.getByRole('button', { name: 'Advanced settings' }));

@@ -1,0 +1,1216 @@
+{
+ "__stateVersion": 14,
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "d_result_2",
+   "displayId": "Country wealth gaps in school completion",
+   "names": [
+    "COUNTRY_ID",
+    "country",
+    "year",
+    "poorest",
+    "richest",
+    "gap",
+    "value",
+    "map_id"
+   ],
+   "rows": [
+    {
+     "COUNTRY_ID": "PNG",
+     "country": "Papua New Guinea",
+     "year": 2018,
+     "poorest": 1.6718399525,
+     "richest": 39.8954696655,
+     "gap": 38.2236297131,
+     "value": 10483.061,
+     "map_id": 598
+    },
+    {
+     "COUNTRY_ID": "CMR",
+     "country": "Cameroon",
+     "year": 2018,
+     "poorest": 1.2782000303,
+     "richest": 53.1183204651,
+     "gap": 51.8401204348,
+     "value": 28747.541,
+     "map_id": 120
+    },
+    {
+     "COUNTRY_ID": "IRQ",
+     "country": "Iraq",
+     "year": 2018,
+     "poorest": 12.8067302704,
+     "richest": 53.2601203918,
+     "gap": 40.4533901215,
+     "value": 45557.903,
+     "map_id": 368
+    },
+    {
+     "COUNTRY_ID": "SUR",
+     "country": "Suriname",
+     "year": 2018,
+     "poorest": 7.4025797844,
+     "richest": 52.9153404236,
+     "gap": 45.5127606392,
+     "value": 631.744,
+     "map_id": 740
+    },
+    {
+     "COUNTRY_ID": "GIN",
+     "country": "Guinea",
+     "year": 2018,
+     "poorest": 0.4984999895,
+     "richest": 45.3586196899,
+     "gap": 44.8601197004,
+     "value": 14581.541,
+     "map_id": 324
+    },
+    {
+     "COUNTRY_ID": "GEO",
+     "country": "Georgia",
+     "year": 2018,
+     "poorest": 53.5021400452,
+     "richest": 92.3340072632,
+     "gap": 38.831867218,
+     "value": 3807.839,
+     "map_id": 268
+    },
+    {
+     "COUNTRY_ID": "KIR",
+     "country": "Kiribati",
+     "year": 2018,
+     "poorest": 3.9417500496,
+     "richest": 38.26512146,
+     "gap": 34.3233714104,
+     "value": 133.527,
+     "map_id": 296
+    },
+    {
+     "COUNTRY_ID": "MKD",
+     "country": "North Macedonia",
+     "year": 2018,
+     "poorest": 56.132358551,
+     "richest": 100,
+     "gap": 43.867641449,
+     "value": 1827.512,
+     "map_id": 807
+    },
+    {
+     "COUNTRY_ID": "MNG",
+     "country": "Mongolia",
+     "year": 2018,
+     "poorest": 50.5026512146,
+     "richest": 95.0727767944,
+     "gap": 44.5701255798,
+     "value": 3454.27,
+     "map_id": 496
+    },
+    {
+     "COUNTRY_ID": "PAK",
+     "country": "Pakistan",
+     "year": 2018,
+     "poorest": 1.3762899637,
+     "richest": 55.0657615662,
+     "gap": 53.6894716024,
+     "value": 249335.59,
+     "map_id": 586
+    },
+    {
+     "COUNTRY_ID": "NER",
+     "country": "Niger",
+     "year": 2018,
+     "poorest": 0,
+     "richest": 23.63,
+     "gap": 23.63,
+     "value": 26592.439,
+     "map_id": 562
+    },
+    {
+     "COUNTRY_ID": "ARM",
+     "country": "Armenia",
+     "year": 2018,
+     "poorest": 75.4,
+     "richest": 82.95,
+     "gap": 7.55,
+     "value": 2984.438,
+     "map_id": 51
+    },
+    {
+     "COUNTRY_ID": "AUS",
+     "country": "Australia",
+     "year": 2018,
+     "poorest": 84.51,
+     "richest": 94.38,
+     "gap": 9.87,
+     "value": 26581.446,
+     "map_id": 36
+    },
+    {
+     "COUNTRY_ID": "MNE",
+     "country": "Montenegro",
+     "year": 2018,
+     "poorest": 54.4516181946,
+     "richest": 100,
+     "gap": 45.5483818054,
+     "value": 639.435,
+     "map_id": 499
+    },
+    {
+     "COUNTRY_ID": "ETH",
+     "country": "Ethiopia",
+     "year": 2019,
+     "poorest": 1.7288099527,
+     "richest": 18.4683303833,
+     "gap": 16.7395204306,
+     "value": 130355.024,
+     "map_id": 231
+    },
+    {
+     "COUNTRY_ID": "PSE",
+     "country": "Palestine",
+     "year": 2019,
+     "poorest": 47.5378799438,
+     "richest": 74.9280014038,
+     "gap": 27.39012146,
+     "value": 5450.426,
+     "map_id": 275
+    },
+    {
+     "COUNTRY_ID": "IND",
+     "country": "India",
+     "year": 2019,
+     "poorest": 19.6821594238,
+     "richest": 79.6711502075,
+     "gap": 59.9889907837,
+     "value": 1444436.244,
+     "map_id": 356
+    },
+    {
+     "COUNTRY_ID": "LBR",
+     "country": "Liberia",
+     "year": 2019,
+     "poorest": 2.1682400703,
+     "richest": 49.1245613098,
+     "gap": 46.9563212395,
+     "value": 5553.392,
+     "map_id": 430
+    },
+    {
+     "COUNTRY_ID": "GUY",
+     "country": "Guyana",
+     "year": 2019,
+     "poorest": 35.7981796265,
+     "richest": 84.6543731689,
+     "gap": 48.8561935425,
+     "value": 828.632,
+     "map_id": 328
+    },
+    {
+     "COUNTRY_ID": "ZWE",
+     "country": "Zimbabwe",
+     "year": 2019,
+     "poorest": 0.7419099808,
+     "richest": 34.3579406738,
+     "gap": 33.6160306931,
+     "value": 16478.384,
+     "map_id": 716
+    },
+    {
+     "COUNTRY_ID": "SLE",
+     "country": "Sierra Leone",
+     "year": 2019,
+     "poorest": 3.4345400333,
+     "richest": 35.2791595459,
+     "gap": 31.8446195126,
+     "value": 8552.905,
+     "map_id": 694
+    },
+    {
+     "COUNTRY_ID": "UGA",
+     "country": "Uganda",
+     "year": 2019,
+     "poorest": 2.62,
+     "richest": 52.91,
+     "gap": 50.29,
+     "value": 49332.093,
+     "map_id": 800
+    },
+    {
+     "COUNTRY_ID": "WSM",
+     "country": "Samoa",
+     "year": 2019,
+     "poorest": 38.8125190735,
+     "richest": 78.3050613403,
+     "gap": 39.4925422668,
+     "value": 217.342,
+     "map_id": 882
+    },
+    {
+     "COUNTRY_ID": "BLR",
+     "country": "Belarus",
+     "year": 2019,
+     "poorest": 77.2836074829,
+     "richest": 93.5343780518,
+     "gap": 16.2507705688,
+     "value": 9085.898,
+     "map_id": 112
+    },
+    {
+     "COUNTRY_ID": "CAF",
+     "country": "Central African Republic",
+     "year": 2019,
+     "poorest": 0.0883700028,
+     "richest": 18.6029605865,
+     "gap": 18.5145905837,
+     "value": 5240.249,
+     "map_id": 140
+    },
+    {
+     "COUNTRY_ID": "DZA",
+     "country": "Algeria",
+     "year": 2019,
+     "poorest": 25.0345401764,
+     "richest": 71.9888763428,
+     "gap": 46.9543361664,
+     "value": 46497.095,
+     "map_id": 12
+    },
+    {
+     "COUNTRY_ID": "SRB",
+     "country": "Serbia",
+     "year": 2019,
+     "poorest": 61.6881217957,
+     "richest": 95.944442749,
+     "gap": 34.2563209534,
+     "value": 6758.334,
+     "map_id": 688
+    },
+    {
+     "COUNTRY_ID": "TCD",
+     "country": "Chad",
+     "year": 2019,
+     "poorest": 0.9191399813,
+     "richest": 14.8947000504,
+     "gap": 13.9755600691,
+     "value": 19870.444,
+     "map_id": 148
+    },
+    {
+     "COUNTRY_ID": "MWI",
+     "country": "Malawi",
+     "year": 2020,
+     "poorest": 1.5809400082,
+     "richest": 43.3222084045,
+     "gap": 41.7412683964,
+     "value": 21376.132,
+     "map_id": 454
+    },
+    {
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2020,
+     "poorest": 89.72,
+     "richest": 96.98,
+     "gap": 7.26,
+     "value": 344479.572,
+     "map_id": 840
+    },
+    {
+     "COUNTRY_ID": "RWA",
+     "country": "Rwanda",
+     "year": 2020,
+     "poorest": 1.7994099855,
+     "richest": 48.108631134,
+     "gap": 46.3092211485,
+     "value": 14106.347,
+     "map_id": 646
+    },
+    {
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2020,
+     "poorest": 86.51,
+     "richest": 85.91,
+     "gap": -0.6,
+     "value": 1420908.919,
+     "map_id": 156
+    },
+    {
+     "COUNTRY_ID": "GMB",
+     "country": "Gambia",
+     "year": 2020,
+     "poorest": 11.3922195435,
+     "richest": 45.1715583801,
+     "gap": 33.7793388367,
+     "value": 2728.905,
+     "map_id": 270
+    },
+    {
+     "COUNTRY_ID": "VNM",
+     "country": "Vietnam",
+     "year": 2021,
+     "poorest": 30.2890796661,
+     "richest": 91.5962677002,
+     "gap": 61.3071880341,
+     "value": 100675.292,
+     "map_id": 704
+    },
+    {
+     "COUNTRY_ID": "NPL",
+     "country": "Nepal",
+     "year": 2021,
+     "poorest": 15.4012298584,
+     "richest": 74.3617706299,
+     "gap": 58.9605407715,
+     "value": 29673.95,
+     "map_id": 524
+    },
+    {
+     "COUNTRY_ID": "MDG",
+     "country": "Madagascar",
+     "year": 2021,
+     "poorest": 0.3592700064,
+     "richest": 42.1036491394,
+     "gap": 41.744379133,
+     "value": 31578.39,
+     "map_id": 450
+    },
+    {
+     "COUNTRY_ID": "NGA",
+     "country": "Nigeria",
+     "year": 2021,
+     "poorest": 15.6580896378,
+     "richest": 89.7575378418,
+     "gap": 74.099448204,
+     "value": 230271.141,
+     "map_id": 566
+    },
+    {
+     "COUNTRY_ID": "EGY",
+     "country": "Egypt",
+     "year": 2021,
+     "poorest": 66.1821212769,
+     "richest": 91.6944885254,
+     "gap": 25.5123672485,
+     "value": 115578.409,
+     "map_id": 818
+    },
+    {
+     "COUNTRY_ID": "FJI",
+     "country": "Fiji",
+     "year": 2021,
+     "poorest": 29.5439605713,
+     "richest": 77.3210220337,
+     "gap": 47.7770614624,
+     "value": 926.544,
+     "map_id": 242
+    },
+    {
+     "COUNTRY_ID": "CIV",
+     "country": "Côte d'Ivoire",
+     "year": 2021,
+     "poorest": 1.9175599813,
+     "richest": 42.5810890198,
+     "gap": 40.6635290384,
+     "value": 31547.788,
+     "map_id": 384
+    },
+    {
+     "COUNTRY_ID": "KHM",
+     "country": "Cambodia",
+     "year": 2021,
+     "poorest": 6.0855998993,
+     "richest": 52.756980896,
+     "gap": 46.6713809967,
+     "value": 17533.083,
+     "map_id": 116
+    },
+    {
+     "COUNTRY_ID": "BEN",
+     "country": "Benin",
+     "year": 2021,
+     "poorest": 2.7810900211,
+     "richest": 34.89112854,
+     "gap": 32.1100385189,
+     "value": 14287.903,
+     "map_id": 204
+    },
+    {
+     "COUNTRY_ID": "BFA",
+     "country": "Burkina Faso",
+     "year": 2021,
+     "poorest": 2.3004601002,
+     "richest": 35.9087791443,
+     "gap": 33.6083190441,
+     "value": 23285.916,
+     "map_id": 854
+    },
+    {
+     "COUNTRY_ID": "BOL",
+     "country": "Bolivia (Plurinational State of)",
+     "year": 2021,
+     "poorest": 64.9,
+     "richest": 88.1,
+     "gap": 23.2,
+     "value": 12328.824,
+     "map_id": 68
+    },
+    {
+     "COUNTRY_ID": "UZB",
+     "country": "Uzbekistan",
+     "year": 2022,
+     "poorest": 89.8106079102,
+     "richest": 96.5803070068,
+     "gap": 6.7696990967,
+     "value": 35294.16,
+     "map_id": 860
+    },
+    {
+     "COUNTRY_ID": "BGD",
+     "country": "Bangladesh",
+     "year": 2022,
+     "poorest": 12.0933103561,
+     "richest": 59.9632301331,
+     "gap": 47.8699197769,
+     "value": 172507.468,
+     "map_id": 50
+    },
+    {
+     "COUNTRY_ID": "SWZ",
+     "country": "Eswatini",
+     "year": 2022,
+     "poorest": 18.4167308807,
+     "richest": 50.5724105835,
+     "gap": 32.1556797028,
+     "value": 1236.306,
+     "map_id": 748
+    },
+    {
+     "COUNTRY_ID": "COM",
+     "country": "Comoros",
+     "year": 2022,
+     "poorest": 21.9540405273,
+     "richest": 48.039478302,
+     "gap": 26.0854377747,
+     "value": 858.507,
+     "map_id": 174
+    },
+    {
+     "COUNTRY_ID": "THA",
+     "country": "Thailand",
+     "year": 2022,
+     "poorest": 43.0922584534,
+     "richest": 96.4749832153,
+     "gap": 53.382724762,
+     "value": 71689.208,
+     "map_id": 764
+    },
+    {
+     "COUNTRY_ID": "TTO",
+     "country": "Trinidad and Tobago",
+     "year": 2022,
+     "poorest": 67.6580123901,
+     "richest": 85.1134033203,
+     "gap": 17.4553909302,
+     "value": 1505.755,
+     "map_id": 780
+    },
+    {
+     "COUNTRY_ID": "TUR",
+     "country": "Türkiye",
+     "year": 2022,
+     "poorest": 65.86,
+     "richest": 84.01,
+     "gap": 18.15,
+     "value": 87371.675,
+     "map_id": 792
+    },
+    {
+     "COUNTRY_ID": "TZA",
+     "country": "Tanzania",
+     "year": 2022,
+     "poorest": 0.416170001,
+     "richest": 23.6151294708,
+     "gap": 23.1989594698,
+     "value": 67578.209,
+     "map_id": 834
+    },
+    {
+     "COUNTRY_ID": "CHL",
+     "country": "Chile",
+     "year": 2022,
+     "poorest": 88,
+     "richest": 98.3,
+     "gap": 10.3,
+     "value": 19714.431,
+     "map_id": 152
+    },
+    {
+     "COUNTRY_ID": "MOZ",
+     "country": "Mozambique",
+     "year": 2022,
+     "poorest": 1.8572800159,
+     "richest": 49.1303901672,
+     "gap": 47.2731101513,
+     "value": 34129.694,
+     "map_id": 508
+    },
+    {
+     "COUNTRY_ID": "AFG",
+     "country": "Afghanistan",
+     "year": 2022,
+     "poorest": 6.08081007,
+     "richest": 52.9619216919,
+     "gap": 46.8811116219,
+     "value": 42044.654,
+     "map_id": 4
+    },
+    {
+     "COUNTRY_ID": "MEX",
+     "country": "Mexico",
+     "year": 2022,
+     "poorest": 43.4,
+     "richest": 81.5,
+     "gap": 38.1,
+     "value": 130308.399,
+     "map_id": 484
+    },
+    {
+     "COUNTRY_ID": "PHL",
+     "country": "Philippines",
+     "year": 2022,
+     "poorest": 35.851650238,
+     "richest": 89.3001937866,
+     "gap": 53.4485435486,
+     "value": 115371.047,
+     "map_id": 608
+    },
+    {
+     "COUNTRY_ID": "JAM",
+     "country": "Jamaica",
+     "year": 2022,
+     "poorest": 76.4248275757,
+     "richest": 97.234161377,
+     "gap": 20.8093338013,
+     "value": 2839.822,
+     "map_id": 388
+    },
+    {
+     "COUNTRY_ID": "KEN",
+     "country": "Kenya",
+     "year": 2022,
+     "poorest": 21.9986991882,
+     "richest": 81.9407424927,
+     "gap": 59.9420433044,
+     "value": 55884.494,
+     "map_id": 404
+    },
+    {
+     "COUNTRY_ID": "GHA",
+     "country": "Ghana",
+     "year": 2022,
+     "poorest": 18.8324394226,
+     "richest": 87.1681213379,
+     "gap": 68.3356819153,
+     "value": 34108.457,
+     "map_id": 288
+    },
+    {
+     "COUNTRY_ID": "RUS",
+     "country": "Russian Federation",
+     "year": 2022,
+     "poorest": 87.66,
+     "richest": 96.82,
+     "gap": 9.16,
+     "value": 145205.581,
+     "map_id": 643
+    },
+    {
+     "COUNTRY_ID": "VUT",
+     "country": "Vanuatu",
+     "year": 2023,
+     "poorest": 2.4652400017,
+     "richest": 51.4775695801,
+     "gap": 49.0123295784,
+     "value": 324.085,
+     "map_id": 548
+    },
+    {
+     "COUNTRY_ID": "AZE",
+     "country": "Azerbaijan",
+     "year": 2023,
+     "poorest": 71.4337615967,
+     "richest": 93.8547592163,
+     "gap": 22.4209976196,
+     "value": 10304.789,
+     "map_id": 31
+    },
+    {
+     "COUNTRY_ID": "URY",
+     "country": "Uruguay",
+     "year": 2023,
+     "poorest": 25.5,
+     "richest": 85.7,
+     "gap": 60.2,
+     "value": 3387.479,
+     "map_id": 858
+    },
+    {
+     "COUNTRY_ID": "YEM",
+     "country": "Yemen",
+     "year": 2023,
+     "poorest": 16.8191394806,
+     "richest": 56.7062911987,
+     "gap": 39.8871517181,
+     "value": 39987.261,
+     "map_id": 887
+    },
+    {
+     "COUNTRY_ID": "AGO",
+     "country": "Angola",
+     "year": 2023,
+     "poorest": 0.606679976,
+     "richest": 49.3289299011,
+     "gap": 48.7222499251,
+     "value": 37312.856,
+     "map_id": 24
+    },
+    {
+     "COUNTRY_ID": "PAN",
+     "country": "Panama",
+     "year": 2023,
+     "poorest": 46.5,
+     "richest": 91.8,
+     "gap": 45.3,
+     "value": 4487.488,
+     "map_id": 591
+    },
+    {
+     "COUNTRY_ID": "LAO",
+     "country": "Laos",
+     "year": 2023,
+     "poorest": 9.9915599823,
+     "richest": 80.8607711792,
+     "gap": 70.8692111969,
+     "value": 7717.674,
+     "map_id": 418
+    },
+    {
+     "COUNTRY_ID": "BRA",
+     "country": "Brazil",
+     "year": 2023,
+     "poorest": 55.1,
+     "richest": 93,
+     "gap": 37.9,
+     "value": 211574.458,
+     "map_id": 76
+    },
+    {
+     "COUNTRY_ID": "KGZ",
+     "country": "Kyrgyzstan",
+     "year": 2023,
+     "poorest": 86.6569595337,
+     "richest": 96.7807006836,
+     "gap": 10.1237411499,
+     "value": 7130.594,
+     "map_id": 417
+    },
+    {
+     "COUNTRY_ID": "DOM",
+     "country": "Dominican Republic",
+     "year": 2023,
+     "poorest": 45,
+     "richest": 78.9,
+     "gap": 33.9,
+     "value": 11379.988,
+     "map_id": 214
+    },
+    {
+     "COUNTRY_ID": "PER",
+     "country": "Peru",
+     "year": 2023,
+     "poorest": 83.2,
+     "richest": 94.8,
+     "gap": 11.6,
+     "value": 34034.89,
+     "map_id": 604
+    },
+    {
+     "COUNTRY_ID": "COD",
+     "country": "DR Congo",
+     "year": 2023,
+     "poorest": 10.9015398026,
+     "richest": 71.5909576416,
+     "gap": 60.6894178391,
+     "value": 107516.151,
+     "map_id": 180
+    },
+    {
+     "COUNTRY_ID": "ECU",
+     "country": "Ecuador",
+     "year": 2023,
+     "poorest": 64,
+     "richest": 94.8,
+     "gap": 30.8,
+     "value": 17902.009,
+     "map_id": 218
+    },
+    {
+     "COUNTRY_ID": "SLV",
+     "country": "El Salvador",
+     "year": 2023,
+     "poorest": 39.6,
+     "richest": 82.4,
+     "gap": 42.8,
+     "value": 6323.985,
+     "map_id": 222
+    },
+    {
+     "COUNTRY_ID": "SEN",
+     "country": "Senegal",
+     "year": 2023,
+     "poorest": 3.6211900711,
+     "richest": 35.2301216125,
+     "gap": 31.6089315414,
+     "value": 18288.074,
+     "map_id": 686
+    },
+    {
+     "COUNTRY_ID": "HND",
+     "country": "Honduras",
+     "year": 2023,
+     "poorest": 21,
+     "richest": 76.5,
+     "gap": 55.5,
+     "value": 10735.392,
+     "map_id": 340
+    },
+    {
+     "COUNTRY_ID": "TJK",
+     "country": "Tajikistan",
+     "year": 2023,
+     "poorest": 80.0877914429,
+     "richest": 84.6792373657,
+     "gap": 4.5914459229,
+     "value": 10491.706,
+     "map_id": 762
+    },
+    {
+     "COUNTRY_ID": "JOR",
+     "country": "Jordan",
+     "year": 2023,
+     "poorest": 32.567199707,
+     "richest": 89.8457489014,
+     "gap": 57.2785491943,
+     "value": 11530.943,
+     "map_id": 400
+    },
+    {
+     "COUNTRY_ID": "TUN",
+     "country": "Tunisia",
+     "year": 2023,
+     "poorest": 12.584859848,
+     "richest": 59.3772010803,
+     "gap": 46.7923412323,
+     "value": 12240.26,
+     "map_id": 788
+    },
+    {
+     "COUNTRY_ID": "COL",
+     "country": "Colombia",
+     "year": 2023,
+     "poorest": 58.4,
+     "richest": 93.4,
+     "gap": 35,
+     "value": 52609.701,
+     "map_id": 170
+    },
+    {
+     "COUNTRY_ID": "LSO",
+     "country": "Lesotho",
+     "year": 2024,
+     "poorest": 5.7083702087,
+     "richest": 71.8111877441,
+     "gap": 66.1028175354,
+     "value": 2324.448,
+     "map_id": 426
+    },
+    {
+     "COUNTRY_ID": "ZMB",
+     "country": "Zambia",
+     "year": 2024,
+     "poorest": 4.6932997704,
+     "richest": 68.7105407715,
+     "gap": 64.0172410011,
+     "value": 21017.548,
+     "map_id": 894
+    },
+    {
+     "COUNTRY_ID": "MLI",
+     "country": "Mali",
+     "year": 2024,
+     "poorest": 0.1473100036,
+     "richest": 31.7263793945,
+     "gap": 31.5790693909,
+     "value": 24122.346,
+     "map_id": 466
+    },
+    {
+     "COUNTRY_ID": "KAZ",
+     "country": "Kazakhstan",
+     "year": 2024,
+     "poorest": 90.4278182983,
+     "richest": 97.1818084717,
+     "gap": 6.7539901733,
+     "value": 20464.208,
+     "map_id": 398
+    },
+    {
+     "COUNTRY_ID": "PRY",
+     "country": "Paraguay",
+     "year": 2024,
+     "poorest": 45.7854194641,
+     "richest": 89.1552734375,
+     "gap": 43.3698539734,
+     "value": 6886.766,
+     "map_id": 600
+    },
+    {
+     "COUNTRY_ID": "CRI",
+     "country": "Costa Rica",
+     "year": 2024,
+     "poorest": 67.8262481689,
+     "richest": 94.2947311401,
+     "gap": 26.4684829712,
+     "value": 5118.075,
+     "map_id": 188
+    }
+   ],
+   "metadata": {
+    "COUNTRY_ID": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "poorest": {
+     "type": "number",
+     "levels": []
+    },
+    "richest": {
+     "type": "number",
+     "levels": []
+    },
+    "gap": {
+     "type": "number",
+     "levels": []
+    },
+    "value": {
+     "type": "number",
+     "levels": []
+    },
+    "map_id": {
+     "type": "integer",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import pandas as pd\nn=pd.read_parquet('data/sdg4_national.parquet')\nd=n[n.indicator_id.isin(['CR.3.Q1','CR.3.Q5']) & n.year.between(2018,2024)]\np=d.pivot(index=['COUNTRY_ID','country','year'],columns='indicator_id',values='value').dropna().reset_index().sort_values('year').groupby('COUNTRY_ID').tail(1)\np=p.rename(columns={'CR.3.Q1':'poorest','CR.3.Q5':'richest'})\np['gap']=p.richest-p.poorest\nm=pd.read_parquet('data/dem_national.parquet'); pop=m[(m.indicator_id=='200101') & m.year.between(2018,2024)].sort_values('year').groupby('COUNTRY_ID').tail(1)\np=p.merge(pop[['COUNTRY_ID','value']],on='COUNTRY_ID');p=p[p.value>=100]\nc=pd.read_parquet('data/countries.parquet')\nresult=p.merge(c[['COUNTRY_ID','map_id']],on='COUNTRY_ID').dropna(subset=['map_id'])\nresult['country']=result.country.replace({\"Lao People's Democratic Republic\":'Laos','Viet Nam':'Vietnam','Democratic Republic of the Congo':'DR Congo','United Republic of Tanzania':'Tanzania'})",
+    "codeSignature": "49d5bdbb427baa32fd97019bf8caff2e45e540604e3b3aee490201a60c1bbf57",
+    "outputVariable": "result",
+    "source": [
+     "sdg4_national",
+     "dem_national",
+     "countries"
+    ],
+    "inputSources": [
+     {
+      "id": "data:2d7b684ff39ac6e542b1af59e828d4f3:sdg4_national",
+      "kind": "data",
+      "displayName": "sdg4_national"
+     },
+     {
+      "id": "data:3bfeafe1536e0211b109193b1e492f81:countries",
+      "kind": "data",
+      "displayName": "countries"
+     },
+     {
+      "id": "data:0d178bacfd5229b81a7a675622924763:dem_national",
+      "kind": "data",
+      "displayName": "dem_national"
+     }
+    ],
+    "trigger": {
+     "tableId": "sdg4_national",
+     "resultTableId": "d_result_2",
+     "chart": {
+      "id": "chart-1792307911847",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "sdg4_national",
+      "source": "trigger"
+     }
+    },
+    "explanation": {
+     "status": "ok",
+     "concepts": [
+      {
+       "field": "gap",
+       "explanation": "Using each country's latest year in 2018–2024 with both values available: `gap = richest - poorest`"
+      }
+     ],
+     "agent": "CodeExplanationAgent"
+    }
+   },
+   "virtual": {
+    "tableId": "d_result_2",
+    "rowCount": 87
+   },
+   "description": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792307895237_step_1",
+   "createdAt": 1792307919221
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-cebfbf97a863",
+   "chartType": "Choropleth",
+   "encodingMap": {
+    "id": {
+     "fieldID": "concept-map_id-1792307919221-0.36645434804607746",
+     "dtype": "nominal"
+    },
+    "color": {
+     "fieldID": "concept-gap-1792307919221-0.7536829209980974",
+     "dtype": "quantitative",
+     "scheme": "oranges"
+    },
+    "detail": {
+     "channel": "detail",
+     "bin": false
+    }
+   },
+   "tableRef": "d_result_2",
+   "source": "user",
+   "title": "Rich–poor gap in upper-secondary completion",
+   "subtitle": "Latest matched observations, 2018–2024; richest fifth minus poorest fifth, both sexes",
+   "titleKey": "Choropleth|color:concept-gap-1792307919221-0.7536829209980974:|detail::|id:concept-map_id-1792307919221-0.36645434804607746:",
+   "unread": false,
+   "themeId": "datawrapper"
+  },
+  {
+   "id": "chart-3fdde6f72ae0",
+   "chartType": "Bar Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-gap-1792307919221-0.7536829209980974",
+     "dtype": "quantitative"
+    },
+    "y": {
+     "fieldID": "concept-country-1792307919221-0.18359653014626343",
+     "dtype": "nominal",
+     "sortOrder": "descending",
+     "sortBy": "x"
+    },
+    "color": {
+     "channel": "color",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "d_result_2",
+   "source": "user",
+   "title": "Rich–poor gap in upper-secondary completion: highest first",
+   "subtitle": "Latest matched observations, 2018–2024; richest fifth minus poorest fifth, both sexes",
+   "unread": false,
+   "themeId": "datawrapper",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-gap-1792307919221-0.7536829209980974:|y:concept-country-1792307919221-0.18359653014626343:"
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-country-1792307919221-0.18359653014626343",
+   "name": "country",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-gap-1792307919221-0.7536829209980974",
+   "name": "gap",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-map_id-1792307919221-0.36645434804607746",
+   "name": "map_id",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792307895237_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1792307895237_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Where is the gap between rich and poor children in finishing school biggest?",
+   "parentNodeId": "conversation-root:7665ccfd-ee96-4fd4-93ca-1581cb724b2c",
+   "actionId": "exploreDataFromNL_1792307895237",
+   "createdAt": 1792307895237
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792307895237_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1792307895237_step_1",
+   "textKind": "explain",
+   "content": "Identify the largest recent upper-secondary completion gaps, excluding very small territories.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792307895237_prompt",
+   "actionId": "exploreDataFromNL_1792307895237",
+   "createdAt": 1792307907112,
+   "startedAt": 1792307895237,
+   "codeExecutions": [
+    {
+     "id": "code_exploreDataFromNL_1792307895237_1",
+     "tool": "execute_python_script",
+     "purpose": "Identify the largest recent upper-secondary completion gaps, excluding very small territories.",
+     "code": "import pandas as pd\nn=pd.read_parquet('data/sdg4_national.parquet'); d=n[n.indicator_id.isin(['CR.3.Q1','CR.3.Q5']) & n.year.between(2018,2024)]\np=d.pivot(index=['COUNTRY_ID','country','year'],columns='indicator_id',values='value').dropna().reset_index().sort_values('year').groupby('COUNTRY_ID').tail(1)\np['gap']=p['CR.3.Q5']-p['CR.3.Q1']\nm=pd.read_parquet('data/dem_national.parquet'); pop=m[(m.indicator_id=='200101') & m.year.between(2018,2024)].sort_values('year').groupby('COUNTRY_ID').tail(1)\np=p.merge(pop[['COUNTRY_ID','value']],on='COUNTRY_ID');p=p[p.value>=100]\nprint(len(p));print(p.sort_values('gap',ascending=False)[['country','year','CR.3.Q1','CR.3.Q5','gap']].head(10).to_string(index=False))",
+     "status": "completed",
+     "createdAt": 1792307907112,
+     "output": "87\n                         country  year   CR.3.Q1   CR.3.Q5       gap\n                         Nigeria  2021 15.658090 89.757538 74.099448\nLao People's Democratic Republic  2023  9.991560 80.860771 70.869211\n                           Ghana  2022 18.832439 87.168121 68.335682\n                         Lesotho  2024  5.708370 71.811188 66.102818\n                          Zambia  2024  4.693300 68.710541 64.017241\n                        Viet Nam  2021 30.289080 91.596268 61.307188\nDemocratic Republic of the Congo  2023 10.901540 71.590958 60.689418\n                         Uruguay  2023 25.500000 85.700000 60.200000\n                           India  2019 19.682159 79.671150 59.988991\n                           Kenya  2022 21.998699 81.940742 59.942043\n"
+    }
+   ],
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1792307895237-1",
+     "kind": "tool",
+     "label": "Reading: session/tables/countries.json, session/tables/dem_indic…",
+     "status": "completed",
+     "tool": "read_file",
+     "toolCallId": "call_gO74TehP6KcPbh09yvS7YxWK"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792307895237-2",
+     "kind": "tool",
+     "label": "running code... Identify the largest recent upper-secondary completion gaps, excluding very small territories.",
+     "status": "completed",
+     "tool": "execute_python_script",
+     "toolCallId": "call_gx6V95JAXPycXPApCi6jjLqI",
+     "executionId": "code_exploreDataFromNL_1792307895237_1"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792307895237-3",
+     "kind": "chart",
+     "label": "creating chart...",
+     "status": "completed"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792307895237-4",
+     "kind": "thought",
+     "label": "I’ll compare upper-secondary completion, where the earlier comparison showed the widest wealth gap.",
+     "status": "completed"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792307895237_1792307925461",
+   "displayId": "textTurn_exploreDataFromNL_1792307895237_closing",
+   "textKind": "explain",
+   "content": "**Nigeria has the biggest upper-secondary completion gap among the 87 countries compared:** 90% of children from the richest fifth of families finished, versus 16% from the poorest fifth—a **74-percentage-point gap** in 2021.\n\nThe next largest gaps were **Laos (71 points, 2023), Ghana (68 points, 2022), Lesotho (66 points, 2024), and Zambia (64 points, 2024).**\n\nThe map uses each country’s latest matched data from 2018–2024 and excludes territories with fewer than 100,000 people. Countries without recent wealth-group data cannot be ranked.",
+   "parentNodeId": "d_result_2",
+   "actionId": "exploreDataFromNL_1792307895237",
+   "createdAt": 1792307925461,
+   "startedAt": 1792307895237,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "d_result_2",
+   "fields": {
+    "COUNTRY_ID": {
+     "semanticType": "ID"
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "displayName": "Country"
+     }
+    },
+    "year": {
+     "semanticType": "Year",
+     "displayName": "Observation year",
+     "authored": {
+      "displayName": "Observation year"
+     }
+    },
+    "poorest": {
+     "semanticType": "Percentage",
+     "intrinsicDomain": [
+      0,
+      100
+     ],
+     "displayName": "Poorest fifth completion (%)",
+     "authored": {
+      "displayName": "Poorest fifth completion (%)"
+     }
+    },
+    "richest": {
+     "semanticType": "Percentage",
+     "intrinsicDomain": [
+      0,
+      100
+     ],
+     "displayName": "Richest fifth completion (%)",
+     "authored": {
+      "displayName": "Richest fifth completion (%)"
+     }
+    },
+    "gap": {
+     "semanticType": "Number",
+     "unit": "percentage points",
+     "displayName": "Completion gap (percentage points)",
+     "authored": {
+      "semanticType": "Number",
+      "unit": "percentage points",
+      "displayName": "Completion gap (percentage points)"
+     }
+    },
+    "value": {
+     "semanticType": "Number"
+    },
+    "map_id": {
+     "semanticType": "ID"
+    }
+   }
+  }
+ ],
+ "activeWorkspace": {
+  "id": "education-sdg4-e21",
+  "displayName": "Poorest children half as likely to finish high school"
+ },
+ "focusedId": {
+  "type": "chart",
+  "chartId": "chart-cebfbf97a863"
+ }
+}

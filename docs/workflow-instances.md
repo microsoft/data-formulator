@@ -1,10 +1,50 @@
 # Concrete Workflow Instances
 
 The Workflows sidebar runs concrete YAML analysis instances using the analyst's
-Python sandbox and workspace tools, without workflow-specific source adapters. This
-initial implementation is local-only and does not include templates,
-parameterization, distillation, scheduling, or unattended background execution.
+Python sandbox and workspace tools, without workflow-specific source adapters.
+Saved instances support parameterized, interactive and scheduled execution.
 Ordinary AnalystAgent conversations are unchanged.
+
+## Scheduled Runs
+
+Use **New schedule** beside **New workflow** in the Workflows sidebar, or select
+an existing schedule to edit it. Choose a saved
+workflow, a server-configured model connection, weekdays, local time, and an IANA
+timezone. Browser-only model credentials cannot support unattended runs. Each
+occurrence creates a separate session tagged **Scheduled**, with its schedule name
+and intended execution time. Background runs do not change the open session.
+
+Schedules execute in the local app while its backend is running. Hosted and
+ephemeral deployments do not schedule runs; the Schedules views explain that
+scheduling is only available locally. On a hosted deployment, administrators
+publish workflows and example sessions instead: **Publish as example** on a
+session adds it to everyone's Example sessions, and opening one imports a copy
+into the viewer's own sessions, like the built-in demos.
+
+The scheduler stores definitions and occurrence records in
+`<data-dir>/scheduling/schedules.sqlite3`.
+
+Retries apply only to classified transient model errors, at 30/60/120-second
+backoff, with at most three retries and the same session/checkpoint. When all
+workflow executor slots are busy, the occurrence is deferred one minute using the
+same retry budget. Tool side
+effects are not blindly replayed. A backend interruption marks active occurrences
+**Needs attention** instead of automatically replaying uncertain work. Overlapping
+ticks are recorded as skipped. Missed occurrences are skipped unless run-once
+catch-up is enabled; no historical backlog is replayed.
+
+Scheduled runs have a two-hour limit. At the limit the run is paused, the
+occurrence is marked **Needs attention**, and later occurrences are no longer
+blocked. Operations without cancellation support may still finish in the
+background. A scheduled session stays read-only while its occurrence is running
+or awaiting a retry, and follows the run live in local mode; it becomes editable
+once the occurrence completes or needs attention.
+
+Auto-approval is opt-in. It covers permitted local terminal requests and loading
+proposals with a single option; sandbox and connector authorization still apply.
+Questions, credentials, alternatives, and interrupted commands need attention.
+Use the **Open latest run** control on a workflow or schedule card to visit its
+latest available run.
 
 ## Try It
 
@@ -68,7 +108,7 @@ steps:
         on_fail: analyze
     next: report
   - id: report
-    instructions: Write the report with the returned chart ID embedded as a chart:// image and independently verify its claims against published data.
+    instructions: Write the report with the returned chart ID embedded as a chart:// image and review its claims against existing evidence and published data.
     checkers: []
 ```
 
@@ -129,11 +169,16 @@ run directory. The final report filename is reserved. Each script has a
 fresh namespace and can reread saved files. These scratch outputs are internal
 intermediates. User-facing deliverables must use the native publication tools.
 
-Checks reference actual tool observation IDs. Output hashes and a run revision
-invalidate previous checks after outputs change or acquisition completes. Merely
-revisiting a step preserves checks. Delivery requires published outputs, an
-independent verification script after the final outputs, current
-passing checks, and evidence for every declared deliverable. These are structural
+Checks reference actual tool observation IDs. Changed or deleted evidence inputs
+invalidate dependent checks; unrelated new outputs, navigation, and acknowledgments
+preserve them. Evidence currently fingerprints all workspace tables, files, and scratch
+files present at observation time, so unrelated edits can also invalidate checks.
+User decisions require reassessment of affected conclusions, not automatic repetition
+of completed work. Delivery reviews published outputs against existing evidence, with
+current passing checks and a supporting explanation for every declared deliverable.
+There is no blanket requirement for a new post-publication script: investigate only
+gaps, inconsistencies, or changed inputs or requirements, while honoring any explicit
+independent validation required by the workflow. These are structural
 guards: check outcomes and analytical correctness remain agent-reported, not
 independently guaranteed by the runtime.
 
@@ -161,7 +206,22 @@ form and require user confirmation. Targeted analyst form-editing tools are not
 offered in workflows. Missing data alone should lead to discovery before requesting
 manual uploads. Provider-specific source handlers are not used.
 
-Pause is cooperative at model/tool boundaries. Questions appear in the shared
+Pause immediately shows Stopping until the executor confirms its checkpoint is
+paused. Model turns stop waiting for the provider, close an available stream on a
+best-effort basis, and retain partial text and unfinished tool arguments as inert
+context. Unfinished tool calls are never dispatched; late model responses cannot
+advance a paused run. A provider request still opening may finish in the background,
+but its returned stream is closed and discarded without executing its response.
+Terminal commands receive SIGINT followed by forced termination if needed, retaining
+captured output. Local Python workers receive an interrupt and are discarded after
+shutdown; captured stdout is retained when the worker can return it. Interrupted
+results cannot serve as evidence for a passed check or verified completion.
+Pause does not roll back files, writes, or other completed side effects. Connector,
+database, and other operations without cancellation support still finish their
+current blocking operation before the workflow can pause. Resume continues from
+retained context rather than automatically replaying the interrupted operation.
+
+Questions appear in the shared
 question panel above the workflow chat input; answers are recorded in the thread
 and continue the same workflow. A main-chat reply also answers the pending
 question instead of becoming steering. Approvals, imports, and connection forms
@@ -169,12 +229,38 @@ retain their explicit controls. Other interruptions use the shared Interrupted
 panel with Retry. Command approvals remain separate exact-command dialogs, not
 plain-text authorization. Per-run locks prevent duplicate execution and detect
 orphaned running checkpoints after a backend restart. Recovery preserves their
-outputs and trajectory and marks them paused for review and resumption. Live
-streams check executor status every five seconds with a ten-second request timeout;
-unavailable status is shown as interrupted, not indefinite progress. This does not
-prove that a remote executor stopped, and Retry still obeys its execution lock.
-The initial limits are 80 model rounds and 15 minutes of
-active execution, checked between rounds, plus existing provider/tool timeouts.
+outputs and trajectory and marks them paused for review and resumption.
+
+Manual and scheduled runs execute in backend-owned workers. Refreshing the page,
+closing the tab, switching sessions, or losing the update stream only detaches
+the viewer; it does not pause execution. A bounded update queue prevents a slow
+viewer from blocking the worker. Each backend process accepts up to eight active
+workflow executions; additional starts are rejected until capacity is available.
+Execution still requires the backend process to remain running.
+
+Opening a session polls the checkpoints of its running workflow nodes and restores
+outputs created while the viewer was away, without starting a new execution or
+changing the current view's focus. Connection
+failures display **Reconnecting to workflow...** while retaining the last known
+execution status; they do not prove that the executor stopped. Explicit Pause,
+required input, execution failure, or backend shutdown can interrupt a run.
+Deleting a workflow node pauses it when active; its checkpoint remains available
+for explicit reopening through Recent runs or Open latest run. In `--dev` mode the
+backend auto-reloads on source edits, which stops active runs; resume them from
+their checkpoints.
+There is no fixed model-round or total execution-time cap. Runs continue until
+verified completion, a blocker or approval requiring input, user pause, or an error.
+Existing provider/tool timeouts remain in force. Without a total budget backstop,
+a stalled run may continue consuming model usage until paused. Both analyst and workflow
+agents add a soft `[Automatic message]` progress reminder after every 16 model-response
+rounds, counting inspection, actions, and self-directed text continuations together.
+Parallel tool calls count as one round; provider retries do not add rounds. The reminder
+asks the agent to take stock and, if blocked, ask the user or request help; it never
+restricts tools or stops the run. The count resets on new user input (each analyst
+request or workflow steering message) and whenever a workflow moves to a different step.
+Failed workflow model requests are retried up to four times with exponential backoff
+unless the error cannot be fixed by retrying (authentication, context length, missing
+model, content filtering, or access denial).
 While a workflow runs, the chat input uses a subtly accented border and routes instructions
 exclusively to that workflow, even when a different artifact is selected. Messages
 are queued persistently, visibly acknowledged as queued and then received, and injected
@@ -203,10 +289,12 @@ the current steps, so reused IDs do not mix their histories.
 After adaptation, substantive tools are gated until `review_plan` assesses every new
 step exactly once. Inspection tools remain available. Completed assessments require
 successful substantive evidence and an explanation; pending steps may have no evidence.
-Earlier evidence may justify reusing work, but does not become current verification.
+Earlier evidence remains reusable when its inputs are unchanged, but must be assessed
+against the revised requirements before recording a check result.
 The agent chooses the next step after assessment; the UI distinguishes progress
-assessments from checker results. Plan adaptation invalidates checks and still requires
-independent verification of final outputs. Assessment quality is agent-reported,
+assessments from checker results. Plan adaptation clears check statuses, not the underlying
+evidence; checks can be reassessed without repeating applicable computations. Final
+delivery still reviews the published outputs and supporting evidence. Assessment quality is agent-reported,
 not independently guaranteed. No adaptation bypasses authorization or tool restrictions.
 
 Each explicit resume gets a fresh execution window; cumulative calls and time remain

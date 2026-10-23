@@ -1,29 +1,44 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import threading
+from contextvars import copy_context
 from pathlib import Path
+from queue import Empty, Full, Queue
 from uuid import UUID, uuid4
 
 from filelock import FileLock, Timeout
-from flask import Blueprint, Response, request, stream_with_context, send_file, current_app
+from flask import Blueprint, Response, request, stream_with_context, send_file, current_app, copy_current_request_context
 
 from data_formulator.auth.identity import get_identity_id, is_local_mode
+from data_formulator.configuration import is_managed_mode
 from data_formulator.datalake.workspace import get_user_home
 from data_formulator.error_handler import json_ok, stream_error_event, classify_and_wrap_llm_error
 from data_formulator.errors import AppError, ErrorCode
 from data_formulator.workspace_factory import get_workspace, get_active_workspace_id
-from data_formulator.workflows.instances import WorkflowStore, parse_workflow
+from data_formulator.workflows.instances import WorkflowStore, parse_definition
 from data_formulator.workflows.agent import WorkflowAgent, new_run, public_run
 
 workflow_bp = Blueprint("workflows", __name__, url_prefix="/api/workflows")
 _cancellations: dict[str, threading.Event] = {}
 _lock = threading.Lock()
+_execution_slots = threading.BoundedSemaphore(8)
+EXECUTOR_BUSY = "WORKFLOW_EXECUTOR_BUSY"
+
+
+class WorkflowCancellation(threading.Event):
+    def __init__(self, path: Path):
+        super().__init__()
+        self.path = path
+
+    def is_set(self):
+        return super().is_set() or self.path.exists()
 
 
 def context(require_workspace: bool = True):
-    if not is_local_mode():
-        raise AppError(ErrorCode.ACCESS_DENIED, "Workflow execution is currently available in local mode only.")
+    if not (is_local_mode() or is_managed_mode()):
+        raise AppError(ErrorCode.ACCESS_DENIED, "Workflows require local or managed mode.")
     identity = get_identity_id()
     if not identity:
         raise AppError(ErrorCode.AUTH_REQUIRED, "Sign in to run workflows.")
@@ -59,7 +74,19 @@ def save_run(path: Path, state: dict):
 
 def read_messages(path: Path) -> list[dict]:
     inbox = path.with_suffix(".messages")
-    return json.loads(inbox.read_text()) if inbox.exists() else []
+    return json.loads(inbox.read_text(encoding="utf-8")) if inbox.exists() else []
+
+
+def omit_known_rows(run: dict, known: set[str]) -> dict:
+    """Drop chart rows the client already holds; runs carry every chart's rows and are resent on each update."""
+    outputs = []
+    for output in run.get("outputs", []):
+        if output.get("type") == "result" and output.get("id") in known:
+            result = output["content"]["result"]
+            output = {**output, "content": {**output["content"], "result": {
+                **result, "content": {**result["content"], "rows": [], "rows_omitted": True}}}}
+        outputs.append(output)
+    return {**run, "outputs": outputs}
 
 
 @workflow_bp.route("/message", methods=["POST"])
@@ -83,7 +110,7 @@ def steer_run():
             if existing["text"] != text.strip():
                 raise AppError(ErrorCode.INVALID_REQUEST, "Message ID already used for different text.")
             return json_ok({"message": existing})
-        state = json.loads(path.read_text())
+        state = json.loads(path.read_text(encoding="utf-8"))
         if state["status"] not in {"running", "paused"}:
             raise AppError(ErrorCode.INVALID_REQUEST, "This workflow is complete. Start a new run for a new request.")
         if len(messages) >= 100:
@@ -109,34 +136,51 @@ def list_instances():
             if path.is_symlink():
                 continue
             try:
-                state = json.loads(path.read_text())
+                state = json.loads(path.read_text(encoding="utf-8"))
                 runs.append({key: state[key] for key in ("id", "status", "started_at", "step_id", "message")}
-                            | {"name": state["instance"]["name"]})
+                            | {"name": state["instance"]["name"]}
+                            | ({"workflow_path": state["workflow_path"]} if "workflow_path" in state else {}))
             except (ValueError, KeyError):
                 continue
-    return json_ok({"items": store.list_all(), "runs": runs})
+    items = store.list_all(str((request.get_json(silent=True) or {}).get("language") or "en"))
+    return json_ok({"items": items, "runs": runs})
+
+
+def read_definition(store, path):
+    content = store.read(path)
+    return content, hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 @workflow_bp.route("/read", methods=["POST"])
 def read_instance():
-    _, store, _ = context(False)
+    _, store, workspace = context(False)
     try:
-        return json_ok({"content": store.read((request.get_json() or {}).get("path"))})
+        content, content_hash = read_definition(store, (request.get_json() or {}).get("path"))
+        return json_ok({"content": content, "content_hash": content_hash})
     except (ValueError, FileNotFoundError) as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
 
 
 @workflow_bp.route("/save", methods=["POST"])
 def save_instance():
-    _, store, _ = context(False)
+    _, store, workspace = context(False)
     body = request.get_json() or {}
+    content_hash = None
     try:
         if not isinstance(body.get("content"), str):
             raise ValueError("Workflow content must be YAML text.")
-        store.save(body.get("path"), body["content"])
+        parse_definition(body["content"])
+        path = body.get("path")
+        store.validate_name(path)
+        with FileLock(str(store.files.resolve(".library.lock"))):
+            existing_hash = hashlib.sha256(store.read(path).encode("utf-8")).hexdigest() if store.files.exists(path) else None
+            if existing_hash != body.get("content_hash"):
+                raise ValueError("Workflow changed or already exists; read it again before saving.")
+            store.save(path, body["content"])
+        content_hash = hashlib.sha256(body["content"].encode("utf-8")).hexdigest()
     except ValueError as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
-    return json_ok({"path": body["path"]})
+    return json_ok({"path": body["path"], "content_hash": content_hash})
 
 
 @workflow_bp.route("/delete", methods=["POST"])
@@ -153,10 +197,11 @@ def delete_instance():
 @workflow_bp.route("/run-state", methods=["POST"])
 def get_run():
     _, _, workspace = context()
-    path = run_path(workspace, (request.get_json() or {}).get("run_id"))
+    body = request.get_json() or {}
+    path = run_path(workspace, body.get("run_id"))
     if not path.exists():
         raise AppError(ErrorCode.INVALID_REQUEST, "Workflow run not found in this session.")
-    state = json.loads(path.read_text())
+    state = json.loads(path.read_text(encoding="utf-8"))
     if state["status"] == "running":
         execution_lock = FileLock(str(path) + ".lock")
         try:
@@ -165,13 +210,17 @@ def get_run():
             pass
         else:
             try:
-                state = json.loads(path.read_text())
+                state = json.loads(path.read_text(encoding="utf-8"))
                 if state["status"] == "running":
                     state.update(status="paused", message="Execution interrupted: the workflow executor stopped. Review and resume the checkpoint.")
                     save_run(path, state)
             finally:
                 execution_lock.release()
-    return json_ok({"run": public_run(state)})
+    known = body.get("known_outputs")
+    run = public_run(state)
+    if body.get("omit_rows"):
+        known = [output.get("id") for output in run.get("outputs", [])]
+    return json_ok({"run": omit_known_rows(run, set(known)) if isinstance(known, list) else run})
 
 
 @workflow_bp.route("/pause", methods=["POST"])
@@ -193,7 +242,7 @@ def download_artifact():
     path = run_path(workspace, body.get("run_id"))
     if not path.exists():
         raise AppError(ErrorCode.INVALID_REQUEST, "Run not found.")
-    state = json.loads(path.read_text())
+    state = json.loads(path.read_text(encoding="utf-8"))
     filename = body.get("filename")
     if not isinstance(filename, str) or filename not in state.get("artifacts", []) or Path(filename).name != filename:
         raise AppError(ErrorCode.INVALID_REQUEST, "Unknown run artifact.")
@@ -212,20 +261,25 @@ def run_instance():
         raise AppError(ErrorCode.INVALID_REQUEST, "Select a model to execute the workflow.")
     identifier = body.get("run_id") or uuid4().hex
     path = run_path(workspace, identifier)
-    lock = FileLock(str(path) + ".lock")
+    lock = FileLock(str(path) + ".lock", thread_local=False)
     try:
         lock.acquire(timeout=0)
     except Timeout as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, "This workflow is already running.") from exc
+    if not _execution_slots.acquire(blocking=False):
+        lock.release()
+        raise AppError(EXECUTOR_BUSY, "The workflow executor is busy. Try again after a run finishes.", retry=True)
     try:
         terminal_proposal = None
         operation_repository = None
         execution_operation = None
         resolved_interaction = None
         if body.get("run_id"):
+            if "setup" in body:
+                raise ValueError("Setup is only accepted for new runs. Use steering to revise an existing run.")
             if not path.exists():
                 raise ValueError("Run not found in this session.")
-            state = json.loads(path.read_text())
+            state = json.loads(path.read_text(encoding="utf-8"))
             if state["status"] == "completed":
                 raise ValueError("This run is complete. Start a new run for fresh data.")
             terminal_response = body.get("terminal_response")
@@ -247,6 +301,7 @@ def run_instance():
                         raise ValueError("Terminal request expired. Reject it and request a new command.")
                     terminal_proposal = broker.consume(pending_terminal["id"], identity, state["id"],
                                                        workspace_id=get_active_workspace_id() or "")
+                    terminal_proposal["decision"] = "approve"
                 else:
                     broker = current_app.extensions.get("terminal_requests")
                     if broker is not None:
@@ -277,24 +332,37 @@ def run_instance():
                 resolved_interaction = {"user_reply": str(body["reply"]),
                                         "instruction": "Verify source availability with discovery tools before using it."}
             state.update(status="running", message="")
+            state.pop("execution_error", None)
             reply = body.get("reply", "")
             if reply:
                 state["trajectory"].append({"role": "user", "content": str(reply)})
         else:
             if body.get("terminal_response") is not None or body.get("interaction_response") is not None:
                 raise ValueError("An interaction response requires an existing workflow run.")
-            state = new_run(parse_workflow(store.read(body.get("path"))), UUID(identifier).hex)
+            from data_formulator.routes.agents import _get_ui_lang
+            content = body.get("content") if "content" in body else read_definition(store, body.get("path"))[0]
+            state = new_run(parse_definition(content), UUID(identifier).hex, body.get("setup"), _get_ui_lang())
+            if isinstance(body.get("path"), str):
+                state["workflow_path"] = body["path"]
+        if "external_references" in body:
+            from data_formulator.analyst.workspace_inputs import normalize_external_references
+
+            references = {item["id"]: item for item in normalize_external_references(state.get("external_references"))}
+            references.update({item["id"]: item for item in normalize_external_references(body["external_references"])})
+            state["external_references"] = list(references.values())
         from data_formulator.routes.agents import get_client
 
         client = get_client(body["model"])
         save_run(path, state)
     except (ValueError, FileNotFoundError) as exc:
         lock.release()
+        _execution_slots.release()
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
     except Exception:
         lock.release()
+        _execution_slots.release()
         raise
-    cancellation = threading.Event()
+    cancellation = WorkflowCancellation(path.with_suffix(".pause"))
     path.with_suffix(".pause").unlink(missing_ok=True)
     with _lock:
         _cancellations[str(path)] = cancellation
@@ -310,25 +378,31 @@ def run_instance():
             save_run(path, current)
 
     def generate():
+        sent: set[str] = set()
+
+        def state_event(run: dict) -> str:
+            slim = omit_known_rows(run, sent)
+            sent.update(output["id"] for output in run.get("outputs", []) if output.get("type") == "result")
+            return json.dumps({"type": "workflow_state", "run": slim}, ensure_ascii=False) + "\n"
+
         try:
-            yield json.dumps({"type": "workflow_state", "run": public_run(state)}) + "\n"
-            agent = WorkflowAgent(client, workspace, state, checkpoint, cancellation, identity)
+            yield state_event(public_run(state))
+            agent = WorkflowAgent(client, workspace, state, checkpoint, cancellation, identity,
+                                  workspace_id=get_active_workspace_id())
             agent.read_messages = lambda: read_messages(path)
             if terminal_proposal is not None:
                 from data_formulator.analyst.skills.terminal.skill import run_command
                 state["terminal_request"]["execution_started"] = True
                 checkpoint(state)
-                execution = run_command(terminal_proposal, scratch_dir=workspace.confined_scratch.root)
+                execution = run_command(terminal_proposal, scratch_dir=workspace.confined_scratch.root, cancel=cancellation)
                 terminal_result = {"interrupted": True, "output": "Command interrupted; inspect scratch before retrying."}
                 try:
                     for event in execution:
                         if event["type"] == "terminal_result":
                             terminal_result = event["result"]
                         checkpoint(state)
-                        if cancellation.is_set():
-                            break
                         yield json.dumps(event, ensure_ascii=False) + "\n"
-                except OSError as exc:
+                except (OSError, ValueError) as exc:
                     terminal_result = {"error": str(exc), "exit_code": None}
                 finally:
                     execution.close()
@@ -337,8 +411,10 @@ def run_instance():
             elif execution_operation is not None:
                 from data_formulator.data_operations import DataOperationExecutor, OperationError
                 try:
-                    result = DataOperationExecutor(workspace).execute(execution_operation)
-                    completed = operation_repository.finish(execution_operation.id, result.result_table_ids, result.failed_steps)
+                    result = DataOperationExecutor(
+                        workspace, external_references=state.get("external_references", []),
+                    ).execute(execution_operation)
+                    completed = operation_repository.finish(execution_operation.id, result.result_table_ids, result.failed_steps, result.result_references)
                 except Exception as exc:
                     completed = operation_repository.fail(execution_operation.id, OperationError(code="IMPORT_FAILED", message=str(exc)))
                 agent.resolve_pending({"operation": completed.to_public_dict()})
@@ -350,19 +426,63 @@ def run_instance():
                 agent.resolve_pending(resolved_interaction)
                 checkpoint(state)
             for event in agent.run_workflow():
+                if event.get("type") == "workflow_state" and isinstance(event.get("run"), dict):
+                    yield state_event(event["run"])
+                    continue
                 yield json.dumps(event, ensure_ascii=False) + "\n"
-        except GeneratorExit:
-            state.update(status="paused", message="Connection interrupted. Review and resume the checkpoint.")
-            save_run(path, state)
-            raise
         except Exception as exc:
-            state.update(status="paused", message="Execution failed. Check source access and model configuration, then resume.")
+            error = classify_and_wrap_llm_error(exc)
+            state.update(status="paused", message=error.message, execution_error=error.to_dict())
             save_run(path, state)
-            yield json.dumps({"type": "workflow_state", "run": public_run(state)}) + "\n"
-            yield stream_error_event(classify_and_wrap_llm_error(exc))
+            yield state_event(public_run(state))
+            yield stream_error_event(error)
         finally:
             with _lock:
                 _cancellations.pop(str(path), None)
             lock.release()
 
-    return Response(stream_with_context(generate()), mimetype="application/x-ndjson")
+    updates: Queue[str] = Queue(maxsize=128)
+    detached = threading.Event()
+    finished = threading.Event()
+
+    @copy_current_request_context
+    def execute():
+        try:
+            for update in generate():
+                if detached.is_set():
+                    continue
+                try:
+                    updates.put_nowait(update)
+                except Full:
+                    detached.set()
+        finally:
+            _execution_slots.release()
+            finished.set()
+
+    execution_context = copy_context()
+    worker = threading.Thread(target=execution_context.run, args=(execute,), name="workflow-" + path.stem, daemon=True)
+    try:
+        worker.start()
+    except Exception:
+        with _lock:
+            _cancellations.pop(str(path), None)
+        lock.release()
+        _execution_slots.release()
+        raise
+
+    def observe():
+        try:
+            while not finished.is_set() or not updates.empty():
+                try:
+                    yield updates.get(timeout=1)
+                except Empty:
+                    if detached.is_set():
+                        break
+                    if not finished.is_set():
+                        yield json.dumps({"type": "heartbeat"}) + "\n"
+        finally:
+            detached.set()
+
+    response = Response(stream_with_context(observe()), mimetype="application/x-ndjson")
+    response.call_on_close(detached.set)
+    return response

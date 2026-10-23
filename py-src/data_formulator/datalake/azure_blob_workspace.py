@@ -701,6 +701,20 @@ class AzureBlobWorkspace(Workspace):
             raise FileNotFoundError(f"Parquet blob not found: {meta.filename}")
         return self._blob_name(self._data_blob_key(meta.filename))
 
+    def local_parquet_file(self, table_name: str) -> Path:  # type: ignore[override]
+        """The locally cached copy of *table_name*'s parquet blob."""
+        from azure.core.exceptions import ResourceNotFoundError
+
+        meta = self.get_table_metadata(table_name)
+        if meta is None:
+            raise FileNotFoundError(f"Table not found: {table_name}")
+        if meta.file_type != "parquet":
+            raise ValueError(f"Table {table_name} is not a parquet file")
+        try:
+            return Path(self._ensure_cached(self._data_blob_key(meta.filename)).path)
+        except ResourceNotFoundError:
+            raise FileNotFoundError(f"Parquet blob not found: {meta.filename}")
+
     def run_parquet_sql(self, table_name: str, sql: str) -> pd.DataFrame:
         """Run a DuckDB SQL query against a parquet table.
 

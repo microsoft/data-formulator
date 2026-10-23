@@ -1,0 +1,116 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "write_app",
+      "description": "Create an interactive React app (dashboard, explorer) and open it on the canvas: a new file (filename), or a full rewrite of an existing app (path + expected_content_hash), saved in place. It runs in a sandbox without network access and reads the declared workspace tables live through @df/data hooks. For small changes to an existing app, use edit_file replacements instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "plan_step": {"type": "integer", "minimum": 1, "description": "When working through a checklist plan: the number (1-based) of the plan step this result serves. Several results can serve one step; a step is checked off once you move on to a later step or finish."},
+          "replaces": {
+            "type": "string",
+            "description": "The app's files/... path, equal to path. Only to fix an app the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the fixed app moves to after the latest request and the thread notes that it replaced the old one. Omit it for ordinary changes the user asks for."
+          },
+          "filename": {
+            "type": "string",
+            "description": "For a new app: a visible filename ending in .app.jsx, without directories, for example sales_explorer.app.jsx."
+          },
+          "path": {
+            "type": "string",
+            "description": "To rewrite an existing agent-editable app in place: its files/... path (ending in .app.jsx). Omit filename when you pass path."
+          },
+          "expected_content_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "With path: the app's current content_hash. On conflict, reread the app before retrying."
+          },
+          "title": {
+            "type": "string",
+            "description": "Short single-line title shown to the user (at most 80 characters)."
+          },
+          "tables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Workspace table names the app reads with @df/data hooks. Only these tables are available to the app."
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Connected sources the app queries live with useSourceQuery from @df/data: reference ids of external sources in this session (add one with propose_data_operation). Live queries read the source each time the app runs; prefer declared workspace tables for data already loaded."
+          },
+          "code": {
+            "type": "string",
+            "description": "The complete single-file React app: imports only from react, @df/ui, @df/data, @df/chart, @df/format, @df/icons, @mui/material, d3, lodash, or @df/geo, and `export default function App()`."
+          }
+        },
+        "required": [
+          "title",
+          "tables",
+          "code"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "write_html_app",
+      "description": "Create an interactive HTML app and open it on the canvas: a new file (filename), or a full rewrite of an existing app (path + expected_content_hash), saved in place. The app runs in a sandbox without network access and reads the declared workspace tables live through the DF runtime. For small changes to an existing app, use edit_file replacements instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "plan_step": {"type": "integer", "minimum": 1, "description": "When working through a checklist plan: the number (1-based) of the plan step this result serves. Several results can serve one step; a step is checked off once you move on to a later step or finish."},
+          "replaces": {
+            "type": "string",
+            "description": "The app's files/... path, equal to path. Only to fix an app the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the fixed app moves to after the latest request and the thread notes that it replaced the old one. Omit it for ordinary changes the user asks for."
+          },
+          "filename": {
+            "type": "string",
+            "description": "For a new app: a visible filename ending in .html, without directories, for example sales_explorer.html."
+          },
+          "path": {
+            "type": "string",
+            "description": "To rewrite an existing agent-editable app in place: its files/... path (ending in .html). Omit filename when you pass path."
+          },
+          "expected_content_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "With path: the app's current content_hash. On conflict, reread the app before retrying."
+          },
+          "title": {
+            "type": "string",
+            "description": "Short single-line title shown to the user (at most 80 characters)."
+          },
+          "tables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Workspace table names the app reads with DF.query or DF.table. Only these tables are available to the app."
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Connected sources the app queries live with DF.sourceQuery: reference ids of external sources in this session (add one with propose_data_operation). Live queries read the source each time the app runs; prefer declared workspace tables for data already loaded."
+          },
+          "html": {
+            "type": "string",
+            "description": "The complete HTML document, with inline CSS and JavaScript only. Do not load external scripts, stylesheets, fonts, or images."
+          }
+        },
+        "required": [
+          "title",
+          "tables",
+          "html"
+        ]
+      }
+    }
+  }
+]

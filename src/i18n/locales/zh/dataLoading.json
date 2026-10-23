@@ -72,6 +72,7 @@
       "fromSource": "来自"
     },
     "operation": {
+      "virtualSource": "{{name}}：虚拟源（数据行保留在远端）",
       "title": "数据加载选项",
       "previewHeading": "待加载的数据表",
       "previewGuide": "在加入工作区之前先预览每张表。",

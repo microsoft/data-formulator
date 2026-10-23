@@ -3,7 +3,7 @@
     "type": "function",
     "function": {
       "name": "execute_python_script",
-      "description": "Execute a general-purpose Python script in the sandbox. Here you use it to inspect data, compute statistics, transform tables, or verify assumptions before you act — write results to stdout with print() and that output is returned to you (it is NOT shown to the user). The script is for your own analysis, not for producing the final visualization. pandas, numpy, duckdb, sklearn, scipy are available.",
+      "description": "Execute a general-purpose Python script in the sandbox. Here you use it to inspect data, compute statistics, transform tables, or verify assumptions before you act — write results to stdout with print() and that output is returned to you (it is NOT shown to the user). The script is for your own analysis, not for producing the final visualization. pandas, numpy, duckdb, sklearn, scipy are available, as are other packages installed with Data Formulator, packages installed into this session, and your helper modules in files/ (files/lib/cleaning.py imports as lib.cleaning).",
       "parameters": {
         "type": "object",
         "properties": {

@@ -16,6 +16,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/EditOutlined';
 import CheckIcon from '@mui/icons-material/Check';
 import DownloadIcon from '@mui/icons-material/Download';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ImageIcon from '@mui/icons-material/Image';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
@@ -62,6 +63,78 @@ export const ReportView: FC = () => {
     const [isEditMode, setIsEditMode] = useState(false);
     // Download/share menu anchored to the floating download button.
     const [downloadMenuAnchor, setDownloadMenuAnchor] = useState<null | HTMLElement>(null);
+    const reportScrollRef = useRef<HTMLDivElement>(null);
+    const reportFrameRef = useRef<HTMLDivElement>(null);
+    const reportContentRef = useRef<HTMLDivElement>(null);
+    const reportSpaceRef = useRef<HTMLDivElement>(null);
+    const resumeReportFollowRef = useRef(() => {});
+    const [reportFollowPaused, setReportFollowPaused] = useState(false);
+
+    useEffect(() => {
+        if (reportScrollRef.current) reportScrollRef.current.scrollTop = 0;
+        if (reportFrameRef.current) reportFrameRef.current.style.minHeight = '0px';
+        if (reportSpaceRef.current) reportSpaceRef.current.style.height = '0px';
+        setReportFollowPaused(false);
+    }, [currentReportId]);
+
+    useEffect(() => {
+        const scroller = reportScrollRef.current;
+        const reportFrame = reportFrameRef.current;
+        const content = reportContentRef.current;
+        const space = reportSpaceRef.current;
+        if (!isGenerating || !scroller || !reportFrame || !content || !space) return;
+        let following = true;
+        let lastScrollTop = scroller.scrollTop;
+        let frame: number | undefined;
+        setReportFollowPaused(false);
+
+        const advance = () => {
+            frame = undefined;
+            const height = scroller.clientHeight;
+            if (!height) return;
+            const step = Math.min(240, Math.max(96, height * 0.35));
+            space.style.height = `${step}px`;
+            reportFrame.style.minHeight = `${content.getBoundingClientRect().height}px`;
+            if (!following) return;
+            const bottom = content.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top;
+            if (bottom >= height - 24) {
+                scroller.scrollTop += bottom - height + step;
+                lastScrollTop = scroller.scrollTop;
+            }
+        };
+        const schedule = () => {
+            if (frame === undefined) frame = requestAnimationFrame(advance);
+        };
+        const pause = () => {
+            following = false;
+            setReportFollowPaused(true);
+        };
+        const onScroll = () => {
+            if (scroller.scrollTop < lastScrollTop - 1) pause();
+            lastScrollTop = scroller.scrollTop;
+        };
+        const onWheel = (event: WheelEvent) => {
+            if (event.deltaY < 0) pause();
+        };
+        resumeReportFollowRef.current = () => {
+            following = true;
+            setReportFollowPaused(false);
+            schedule();
+        };
+        const observer = new ResizeObserver(schedule);
+        observer.observe(content);
+        observer.observe(scroller);
+        scroller.addEventListener('scroll', onScroll, { passive: true });
+        scroller.addEventListener('wheel', onWheel, { passive: true });
+        schedule();
+        return () => {
+            observer.disconnect();
+            if (frame !== undefined) cancelAnimationFrame(frame);
+            scroller.removeEventListener('scroll', onScroll);
+            scroller.removeEventListener('wheel', onWheel);
+            resumeReportFollowRef.current = () => {};
+        };
+    }, [currentReportId, isGenerating]);
 
     const updateCachedReportImages = (chartId: string, blobUrl: string, width: number, height: number) => {
         setCachedReportImages(prev => ({
@@ -748,11 +821,13 @@ ${styles}
                         )}
                     </Box>
                     {/* Continuous canvas — content flows cleanly */}
-                    <Box sx={{ 
-                        height: '100%', overflow: 'auto', 
-                        display: 'flex', justifyContent: 'center',
+                    <Box ref={reportScrollRef} data-report-scroll sx={{
+                        height: '100%', overflow: 'auto', overflowAnchor: 'none',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center',
                     }}>
+                        <Box ref={reportFrameRef} sx={{ width: '100%', maxWidth: '816px', flexShrink: 0 }}>
                         <Box
+                            ref={reportContentRef}
                             data-report-content
                             sx={{
                                 width: '100%',
@@ -760,7 +835,7 @@ ${styles}
                                 display: 'flex',
                                 flexDirection: 'column',
                                 minHeight: 'fit-content',
-                                alignSelf: 'flex-start',
+                                flexShrink: 0,
                             }}
                         >
                             <TiptapReportEditor
@@ -780,7 +855,20 @@ ${styles}
                                 }}
                             />
                         </Box>
+                        </Box>
+                        <Box ref={reportSpaceRef} aria-hidden="true" sx={{ flexShrink: 0, width: '100%' }} />
                     </Box>
+                    {isGenerating && reportFollowPaused && (
+                        <Tooltip title={t('report.jumpToLatest')}>
+                            <IconButton
+                                aria-label={t('report.jumpToLatest')}
+                                onClick={() => resumeReportFollowRef.current()}
+                                sx={{ ...floatingPillSx, position: 'absolute', bottom: 20, left: 24 }}
+                            >
+                                <ArrowDownwardIcon sx={{ fontSize: iconVar.lg }} />
+                            </IconButton>
+                        </Tooltip>
+                    )}
                 </Box>
             </Box>
     );

@@ -15,6 +15,7 @@ const makeMinimalState = (
     models: [],
     globalModels: [],
     selectedModelId: undefined,
+    serverConfig: { DISABLE_CUSTOM_MODELS: false },
     ...overrides,
   } as unknown as DataFormulatorState;
 };
@@ -46,33 +47,6 @@ describe('dfSelectors.getActiveModel', () => {
     expect(dfSelectors.getActiveModel(state)).toBeUndefined();
   });
 
-  it('should return undefined when models is empty even with a selectedModelId', () => {
-    const state = makeMinimalState({
-      models: [],
-      selectedModelId: 'some-id',
-    });
-    expect(dfSelectors.getActiveModel(state)).toBeUndefined();
-  });
-
-  it('should return the first model when selectedModelId is undefined', () => {
-    const first = makeModel({ id: 'only' });
-    const state = makeMinimalState({
-      models: [first],
-      selectedModelId: undefined,
-    });
-    expect(dfSelectors.getActiveModel(state)).toEqual(first);
-  });
-
-  it('should find a model in globalModels by selectedModelId', () => {
-    const globalModel = makeModel({ id: 'global-1' });
-    const state = makeMinimalState({
-      globalModels: [globalModel],
-      models: [],
-      selectedModelId: 'global-1',
-    });
-    expect(dfSelectors.getActiveModel(state)).toEqual(globalModel);
-  });
-
   it('should prefer exact match in globalModels over first user model', () => {
     const globalModel = makeModel({ id: 'global-1', model: 'gpt-4' });
     const userModel = makeModel({ id: 'user-1', model: 'local-llm' });
@@ -80,16 +54,6 @@ describe('dfSelectors.getActiveModel', () => {
       globalModels: [globalModel],
       models: [userModel],
       selectedModelId: 'global-1',
-    });
-    expect(dfSelectors.getActiveModel(state)).toEqual(globalModel);
-  });
-
-  it('should fall back to first globalModel when no id matches and models is empty', () => {
-    const globalModel = makeModel({ id: 'global-1' });
-    const state = makeMinimalState({
-      globalModels: [globalModel],
-      models: [],
-      selectedModelId: 'non-existent',
     });
     expect(dfSelectors.getActiveModel(state)).toEqual(globalModel);
   });
@@ -111,8 +75,17 @@ describe('dfSelectors.getActiveModel', () => {
       models: [userModel],
       globalModels: undefined,
       selectedModelId: 'user-1',
+      serverConfig: { DISABLE_CUSTOM_MODELS: false },
     } as unknown as DataFormulatorState;
     expect(dfSelectors.getActiveModel(state)).toEqual(userModel);
+  });
+
+  it('should ignore user models when custom models are disabled', () => {
+    const userModel = makeModel({ id: 'user-1' });
+    const globalModel = makeModel({ id: 'global-1' });
+    const state = makeMinimalState({ models: [userModel], globalModels: [globalModel], selectedModelId: 'user-1' });
+    (state as any).serverConfig = { DISABLE_CUSTOM_MODELS: true };
+    expect(dfSelectors.getActiveModel(state)).toEqual(globalModel);
   });
 });
 

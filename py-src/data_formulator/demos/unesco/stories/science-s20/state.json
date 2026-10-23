@@ -1,0 +1,1372 @@
+{
+ "__stateVersion": 14,
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "d_output_2",
+   "displayId": "Recent research spending by country",
+   "names": [
+    "indicator_id",
+    "COUNTRY_ID",
+    "country",
+    "year",
+    "value",
+    "magnitude",
+    "qualifier",
+    "map_id"
+   ],
+   "rows": [
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "IND",
+     "country": "India",
+     "year": 2020,
+     "value": 0.64558,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 356
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "COL",
+     "country": "Colombia",
+     "year": 2020,
+     "value": 0.2894,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 170
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "IDN",
+     "country": "Indonesia",
+     "year": 2020,
+     "value": 0.28068,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 360
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "PHL",
+     "country": "Philippines",
+     "year": 2020,
+     "value": 0.27625,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 608
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "TJK",
+     "country": "Tajikistan",
+     "year": 2020,
+     "value": 0.08969,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 762
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "IRQ",
+     "country": "Iraq",
+     "year": 2021,
+     "value": 0.0407,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 368
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "IRN",
+     "country": "Iran",
+     "year": 2021,
+     "value": 0.72665,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 364
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "BOL",
+     "country": "Bolivia (Plurinational State of)",
+     "year": 2021,
+     "value": 0.06308,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 68
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "AUS",
+     "country": "Australia",
+     "year": 2021,
+     "value": 1.85783,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 36
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ARE",
+     "country": "United Arab Emirates",
+     "year": 2021,
+     "value": 1.49469,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 784
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "QAT",
+     "country": "Qatar",
+     "year": 2021,
+     "value": 0.68058,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 634
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "TTO",
+     "country": "Trinidad and Tobago",
+     "year": 2022,
+     "value": 0.05039,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 780
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "SGP",
+     "country": "Singapore",
+     "year": 2022,
+     "value": 1.80821,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 702
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "NAM",
+     "country": "Namibia",
+     "year": 2022,
+     "value": 0.64636,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 516
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "MYS",
+     "country": "Malaysia",
+     "year": 2022,
+     "value": 1.0121,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 458
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "MNG",
+     "country": "Mongolia",
+     "year": 2022,
+     "value": 0.08365,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 496
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "SYR",
+     "country": "Syrian Arab Republic",
+     "year": 2022,
+     "value": 0.04217,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 760
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ZAF",
+     "country": "South Africa",
+     "year": 2022,
+     "value": 0.61479,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 710
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHL",
+     "country": "Chile",
+     "year": 2022,
+     "value": 0.39205,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 152
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "COG",
+     "country": "Congo",
+     "year": 2022,
+     "value": 0.38339,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 178
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "LKA",
+     "country": "Sri Lanka",
+     "year": 2022,
+     "value": 0.10506,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 144
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ALB",
+     "country": "Albania",
+     "year": 2022,
+     "value": 0.19997,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 8
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "BGR",
+     "country": "Bulgaria",
+     "year": 2023,
+     "value": 0.79224,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 100
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ROU",
+     "country": "Romania",
+     "year": 2023,
+     "value": 0.51656,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 642
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "UGA",
+     "country": "Uganda",
+     "year": 2023,
+     "value": 0.4383,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 800
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "RWA",
+     "country": "Rwanda",
+     "year": 2023,
+     "value": 0.78149,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 646
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "TKM",
+     "country": "Turkmenistan",
+     "year": 2023,
+     "value": 0.09,
+     "magnitude": null,
+     "qualifier": "UIS_EST",
+     "map_id": 795
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "TUR",
+     "country": "Turkey",
+     "year": 2023,
+     "value": 1.42224,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 792
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "URY",
+     "country": "Uruguay",
+     "year": 2023,
+     "value": 0.70196,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 858
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "AUT",
+     "country": "Austria",
+     "year": 2023,
+     "value": 3.25517,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 40
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2023,
+     "value": 3.1539,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 276
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DNK",
+     "country": "Denmark",
+     "year": 2023,
+     "value": 3.04841,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 208
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CZE",
+     "country": "Czechia",
+     "year": 2023,
+     "value": 1.83369,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 203
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "SVN",
+     "country": "Slovenia",
+     "year": 2023,
+     "value": 2.13385,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 705
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "SVK",
+     "country": "Slovakia",
+     "year": 2023,
+     "value": 1.03359,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 703
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2023,
+     "value": 2.57729,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 156
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2023,
+     "value": 3.59978,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 752
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CRI",
+     "country": "Costa Rica",
+     "year": 2023,
+     "value": 0.33738,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 188
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "SLV",
+     "country": "El Salvador",
+     "year": 2023,
+     "value": 0.10152,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 222
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CYP",
+     "country": "Cyprus",
+     "year": 2023,
+     "value": 0.68145,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 196
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "BEL",
+     "country": "Belgium",
+     "year": 2023,
+     "value": 3.27235,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 56
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "THA",
+     "country": "Thailand",
+     "year": 2023,
+     "value": 0.93628,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 764
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHE",
+     "country": "Switzerland",
+     "year": 2023,
+     "value": 3.22178,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 756
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "BRA",
+     "country": "Brazil",
+     "year": 2023,
+     "value": 1.1938,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 76
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "GBR",
+     "country": "UK",
+     "year": 2023,
+     "value": 2.67614,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 826
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "PRY",
+     "country": "Paraguay",
+     "year": 2023,
+     "value": 0.14117,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 600
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ITA",
+     "country": "Italy",
+     "year": 2023,
+     "value": 1.37935,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 380
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2023,
+     "value": 3.44125,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 392
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ARG",
+     "country": "Argentina",
+     "year": 2023,
+     "value": 0.60111,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 32
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "MMR",
+     "country": "Myanmar",
+     "year": 2023,
+     "value": 0.02307,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 104
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "MLT",
+     "country": "Malta",
+     "year": 2023,
+     "value": 0.64792,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 470
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "MLI",
+     "country": "Mali",
+     "year": 2023,
+     "value": 0.14743,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 466
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "LVA",
+     "country": "Latvia",
+     "year": 2023,
+     "value": 0.8236,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 428
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2023,
+     "value": 4.94352,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 410
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "LSO",
+     "country": "Lesotho",
+     "year": 2023,
+     "value": 0.09453,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 426
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "VNM",
+     "country": "Vietnam",
+     "year": 2023,
+     "value": 0.41456,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 704
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "LTU",
+     "country": "Lithuania",
+     "year": 2023,
+     "value": 1.04977,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 440
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "LUX",
+     "country": "Luxembourg",
+     "year": 2023,
+     "value": 1.07045,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 442
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISL",
+     "country": "Iceland",
+     "year": 2023,
+     "value": 2.64005,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 352
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2023,
+     "value": 6.34589,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 376
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "IRL",
+     "country": "Ireland",
+     "year": 2023,
+     "value": 1.58829,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 372
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ESP",
+     "country": "Spain",
+     "year": 2023,
+     "value": 1.49362,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 724
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "EST",
+     "country": "Estonia",
+     "year": 2023,
+     "value": 1.83878,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 233
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "PRT",
+     "country": "Portugal",
+     "year": 2023,
+     "value": 1.69491,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 620
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "FIN",
+     "country": "Finland",
+     "year": 2023,
+     "value": 3.0938,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 246
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "POL",
+     "country": "Poland",
+     "year": 2023,
+     "value": 1.55525,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 616
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "FRA",
+     "country": "France",
+     "year": 2023,
+     "value": 2.17832,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 250
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "PER",
+     "country": "Peru",
+     "year": 2023,
+     "value": 0.17611,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 604
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "GTM",
+     "country": "Guatemala",
+     "year": 2023,
+     "value": 0.00609,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 320
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "GRC",
+     "country": "Greece",
+     "year": 2023,
+     "value": 1.4943,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 300
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2023,
+     "value": 3.44716,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 840
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "NZL",
+     "country": "New Zealand",
+     "year": 2023,
+     "value": 1.54848,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 554
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "HRV",
+     "country": "Croatia",
+     "year": 2023,
+     "value": 1.38621,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 191
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "NOR",
+     "country": "Norway",
+     "year": 2023,
+     "value": 1.85142,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 578
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "HUN",
+     "country": "Hungary",
+     "year": 2023,
+     "value": 1.37748,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 348
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "NLD",
+     "country": "Netherlands",
+     "year": 2023,
+     "value": 2.26719,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 528
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "PAK",
+     "country": "Pakistan",
+     "year": 2023,
+     "value": 0.16399,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 586
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "UKR",
+     "country": "Ukraine",
+     "year": 2024,
+     "value": 0.36988,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 804
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "AZE",
+     "country": "Azerbaijan",
+     "year": 2024,
+     "value": 0.20778,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 31
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ARM",
+     "country": "Armenia",
+     "year": 2024,
+     "value": 0.2861,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 51
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "UZB",
+     "country": "Uzbekistan",
+     "year": 2024,
+     "value": 0.10416,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 860
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "EGY",
+     "country": "Egypt",
+     "year": 2024,
+     "value": 1.01757,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 818
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "BHR",
+     "country": "Bahrain",
+     "year": 2024,
+     "value": 0.19327,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 48
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "MAC",
+     "country": "China, Macao Special Administrative Region",
+     "year": 2024,
+     "value": 0.31097,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 446
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "MDA",
+     "country": "Republic of Moldova",
+     "year": 2024,
+     "value": 0.21589,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 498
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "MEX",
+     "country": "Mexico",
+     "year": 2024,
+     "value": 0.25372,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 484
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KWT",
+     "country": "Kuwait",
+     "year": 2024,
+     "value": 0.08954,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 414
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "MKD",
+     "country": "North Macedonia",
+     "year": 2024,
+     "value": 0.37363,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 807
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KEN",
+     "country": "Kenya",
+     "year": 2024,
+     "value": 0.81069,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 404
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KAZ",
+     "country": "Kazakhstan",
+     "year": 2024,
+     "value": 0.16242,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 398
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "MUS",
+     "country": "Mauritius",
+     "year": 2024,
+     "value": 0.26181,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 480
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "HKG",
+     "country": "China, Hong Kong Special Administrative Region",
+     "year": 2024,
+     "value": 1.12597,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 344
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "OMN",
+     "country": "Oman",
+     "year": 2024,
+     "value": 0.38979,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 512
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "BFA",
+     "country": "Burkina Faso",
+     "year": 2024,
+     "value": 0.10477,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 854
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "PAN",
+     "country": "Panama",
+     "year": 2024,
+     "value": 0.19708,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 591
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DZA",
+     "country": "Algeria",
+     "year": 2024,
+     "value": 0.44395,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 12
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "RUS",
+     "country": "Russia",
+     "year": 2024,
+     "value": 0.93706,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 643
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "SAU",
+     "country": "Saudi Arabia",
+     "year": 2024,
+     "value": 0.63522,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 682
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CUB",
+     "country": "Cuba",
+     "year": 2024,
+     "value": 0.43839,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 192
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "SRB",
+     "country": "Serbia",
+     "year": 2024,
+     "value": 0.93978,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 688
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CAN",
+     "country": "Canada",
+     "year": 2024,
+     "value": 1.7908,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 124
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "BTN",
+     "country": "Bhutan",
+     "year": 2024,
+     "value": 0.09979,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 64
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "TGO",
+     "country": "Togo",
+     "year": 2024,
+     "value": 0.22229,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 768
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "BLR",
+     "country": "Belarus",
+     "year": 2024,
+     "value": 0.5872,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 112
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "BIH",
+     "country": "Bosnia and Herzegovina",
+     "year": 2024,
+     "value": 0.21437,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 70
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "GEO",
+     "country": "Georgia",
+     "year": 2024,
+     "value": 0.26435,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 268
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KGZ",
+     "country": "Kyrgyzstan",
+     "year": 2024,
+     "value": 0.05269,
+     "magnitude": null,
+     "qualifier": null,
+     "map_id": 417
+    }
+   ],
+   "metadata": {
+    "indicator_id": {
+     "type": "string",
+     "levels": []
+    },
+    "COUNTRY_ID": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "value": {
+     "type": "number",
+     "levels": []
+    },
+    "magnitude": {
+     "type": "boolean",
+     "levels": []
+    },
+    "qualifier": {
+     "type": "string",
+     "levels": []
+    },
+    "map_id": {
+     "type": "integer",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import pandas as pd\nd=pd.read_parquet('data/rd_sdg_national.parquet')\nc=pd.read_parquet('data/countries.parquet')\noutput=d[(d.indicator_id=='EXPGDP.TOT') & d.year.between(2020,2024)].sort_values('year').drop_duplicates('COUNTRY_ID',keep='last')\noutput=output[~output.COUNTRY_ID.isin(['LIE','AND','MCO','SMR','VAT','ASM','BMU','CYM','GRL','FRO','GIB','TCA','VGB','AIA','MSR','FLK','SHN','SPM','WLF','COK','NIU','TKL','TUV','NRU','PLW','SXM','MAF','BLM','BES','ALA'])].merge(c[['COUNTRY_ID','map_id']],on='COUNTRY_ID',how='left')\noutput['country']=output.country.replace({'Republic of Korea':'South Korea','United States of America':'US','United Kingdom of Great Britain and Northern Ireland':'UK','Iran (Islamic Republic of)':'Iran','Viet Nam':'Vietnam','Russian Federation':'Russia','Türkiye':'Turkey'})\noutput=output.dropna(subset=['map_id'])",
+    "codeSignature": "8cd16df855f68135db733ff4413644b46633e82c6cadc70ee83bfdffd245b2c9",
+    "outputVariable": "output",
+    "source": [
+     "rd_sdg_national",
+     "countries"
+    ],
+    "inputSources": [
+     {
+      "id": "data:e2d392aa9fac7f3712262b0e9ae08869:rd_sdg_national",
+      "kind": "data",
+      "displayName": "rd_sdg_national"
+     },
+     {
+      "id": "data:3bfeafe1536e0211b109193b1e492f81:countries",
+      "kind": "data",
+      "displayName": "countries"
+     }
+    ],
+    "trigger": {
+     "tableId": "rd_sdg_national",
+     "resultTableId": "d_output_2",
+     "chart": {
+      "id": "chart-1792307670427",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "rd_sdg_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "d_output_2",
+    "rowCount": 107
+   },
+   "description": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792307641229_step_1",
+   "createdAt": 1792307678801
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-3820250ff1e5",
+   "chartType": "Choropleth",
+   "encodingMap": {
+    "id": {
+     "fieldID": "concept-map_id-1792307678801-0.6754749212099423",
+     "dtype": "nominal"
+    },
+    "color": {
+     "fieldID": "concept-value-1792307629232-0.8053914034701449",
+     "dtype": "quantitative"
+    },
+    "detail": {
+     "channel": "detail",
+     "bin": false
+    },
+    "tooltip": {
+     "fieldID": "concept-country-1792307678801-0.2723460413268537",
+     "dtype": "nominal"
+    }
+   },
+   "tableRef": "d_output_2",
+   "source": "user",
+   "title": "Research spending as a share of national GDP",
+   "subtitle": "Latest reported values, 2020–2024; territories with fewer than about 100,000 people excluded",
+   "titleKey": "Choropleth|color:concept-value-1792307629232-0.8053914034701449:|detail::|id:concept-map_id-1792307678801-0.6754749212099423:|tooltip:concept-country-1792307678801-0.2723460413268537:",
+   "unread": false,
+   "themeId": "datawrapper"
+  },
+  {
+   "id": "chart-66ce61563d30",
+   "chartType": "Bar Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-value-1792307629232-0.8053914034701449",
+     "dtype": "quantitative"
+    },
+    "y": {
+     "fieldID": "concept-country-1792307678801-0.2723460413268537",
+     "dtype": "nominal",
+     "sortOrder": "descending",
+     "sortBy": "x"
+    },
+    "color": {
+     "channel": "color",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "d_output_2",
+   "source": "user",
+   "title": "Research spending as a share of national GDP: highest first",
+   "subtitle": "Latest reported values, 2020–2024; territories with fewer than about 100,000 people excluded",
+   "unread": false,
+   "themeId": "datawrapper",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-value-1792307629232-0.8053914034701449:|y:concept-country-1792307678801-0.2723460413268537:"
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-country-1792307678801-0.2723460413268537",
+   "name": "country",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-map_id-1792307678801-0.6754749212099423",
+   "name": "map_id",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-value-1792307629232-0.8053914034701449",
+   "name": "value",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792307641229_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1792307641229_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Which countries spend the most on research?",
+   "parentNodeId": "conversation-root:e34542f0-b6a1-4e28-b01f-d97525dbd0fe",
+   "actionId": "exploreDataFromNL_1792307641229",
+   "createdAt": 1792307641230
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792307641229_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1792307641229_step_1",
+   "textKind": "explain",
+   "content": "Identify the countries with the highest recent research spending shares.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792307641229_prompt",
+   "actionId": "exploreDataFromNL_1792307641229",
+   "createdAt": 1792307652362,
+   "startedAt": 1792307641230,
+   "codeExecutions": [
+    {
+     "id": "code_exploreDataFromNL_1792307641229_1",
+     "tool": "execute_python_script",
+     "purpose": "Identify the countries with the highest recent research spending shares.",
+     "code": "import pandas as pd\nd=pd.read_parquet('data/rd_sdg_national.parquet')\na=d[(d.indicator_id=='EXPGDP.TOT') & d.year.between(2020,2024)].sort_values('year').drop_duplicates('COUNTRY_ID',keep='last')\nprint(a.sort_values('value',ascending=False).head(15).to_string(index=False));print('coverage',len(a))",
+     "status": "completed",
+     "createdAt": 1792307652362,
+     "output": "indicator_id COUNTRY_ID                                              country  year   value magnitude qualifier\n  EXPGDP.TOT        ISR                                               Israel  2023 6.34589      None      None\n  EXPGDP.TOT        LIE                                        Liechtenstein  2023 6.00984      None      None\n  EXPGDP.TOT        KOR                                    Republic of Korea  2023 4.94352      None      None\n  EXPGDP.TOT        SWE                                               Sweden  2023 3.59978      None      None\n  EXPGDP.TOT        USA                             United States of America  2023 3.44716      None      None\n  EXPGDP.TOT        JPN                                                Japan  2023 3.44125      None      None\n  EXPGDP.TOT        BEL                                              Belgium  2023 3.27235      None      None\n  EXPGDP.TOT        AUT                                              Austria  2023 3.25517      None      None\n  EXPGDP.TOT        CHE                                          Switzerland  2023 3.22178      None      None\n  EXPGDP.TOT        DEU                                              Germany  2023 3.15390      None      None\n  EXPGDP.TOT        FIN                                              Finland  2023 3.09380      None      None\n  EXPGDP.TOT        DNK                                              Denmark  2023 3.04841      None      None\n  EXPGDP.TOT        GBR United Kingdom of Great Britain and Northern Ireland  2023 2.67614      None      None\n  EXPGDP.TOT        ISL                                              Iceland  2023 2.64005      None      None\n  EXPGDP.TOT        CHN                                                China  2023 2.57729      None      None\ncoverage 110\n"
+    }
+   ],
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1792307641229-1",
+     "kind": "tool",
+     "label": "Reading: session/tables/rd_sdg_national.json, session/tables/cou…",
+     "status": "completed",
+     "tool": "read_file",
+     "toolCallId": "call_5oI3fGmzo0CjVIr1asMIFksH"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792307641229-2",
+     "kind": "tool",
+     "label": "running code... Identify the countries with the highest recent research spending shares.",
+     "status": "completed",
+     "tool": "execute_python_script",
+     "toolCallId": "call_hQGXkCKr47tTpLnwHMCc7seP",
+     "executionId": "code_exploreDataFromNL_1792307641229_1"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792307641229-3",
+     "kind": "chart",
+     "label": "creating chart...",
+     "status": "completed"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792307641229-4",
+     "kind": "thought",
+     "label": "I’ll compare spending as a share of GDP, using each country’s latest value from 2020–2024.",
+     "status": "completed"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792307641229_1792307717722",
+   "displayId": "textTurn_exploreDataFromNL_1792307641229_closing",
+   "textKind": "explain",
+   "content": "**Israel spends the most on research relative to its economy: 6.35% of GDP**, followed by **South Korea at 4.94%**.\n\nThe next highest are Sweden (**3.60%**), the US (**3.45%**) and Japan (**3.44%**). All five figures are for **2023**, using each country’s latest report within 2020–2024.\n\nThis compares shares of GDP, not total dollars. The map excludes very small territories; missing countries lack recent data, and some values are estimates.",
+   "parentNodeId": "d_output_2",
+   "actionId": "exploreDataFromNL_1792307641229",
+   "createdAt": 1792307717722,
+   "startedAt": 1792307641230,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "d_output_2",
+   "fields": {
+    "country": {
+     "displayName": "Country",
+     "authored": {
+      "displayName": "Country"
+     }
+    },
+    "year": {
+     "semanticType": "Year",
+     "displayName": "Reporting year",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Reporting year"
+     }
+    },
+    "value": {
+     "semanticType": "Percentage",
+     "unit": "% of GDP",
+     "displayName": "Research spending (% of GDP)",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "% of GDP",
+      "displayName": "Research spending (% of GDP)"
+     }
+    }
+   }
+  }
+ ],
+ "activeWorkspace": {
+  "id": "science-s20",
+  "displayName": "World research spending climbs, but Africa falls behind"
+ },
+ "focusedId": {
+  "type": "chart",
+  "chartId": "chart-3820250ff1e5"
+ }
+}

@@ -11,8 +11,18 @@ from typing import Any, Generator
 from data_formulator.datalake.text_edit import apply_text_patch, TextEditConflictError
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
 from data_formulator.analyst.input_provenance import normalize_input_sources
+from data_formulator.analyst.replacement import record_run_artifact
+from data_formulator.datalake.workspace import agent_file_path_error
+from data_formulator.analyst.deletion import delete_files, file_imported, forget_deleted, plan_deletion
+from data_formulator.analyst.session_edits import edit_session_file
+from data_formulator.analyst.session_files import SessionFiles, helper_module_name
+from data_formulator.sandbox.session_imports import helper_warnings, sign_helper
+from data_formulator.analyst.skills.html_app.skill import (
+    REACT_APP_SUFFIX, check_app_revision, replace_file_in_place,
+)
 from data_formulator.analyst.workspace_inputs import (
     WorkspaceInputEngine,
+    normalize_external_references,
     workspace_memory_is_fresh,
 )
 from .data_loading import WorkspaceDataLoading
@@ -30,9 +40,36 @@ class WorkspaceSkill:
     ) -> ToolResult:
         if name in {
             "summarize_data_sources", "list_data", "find_data", "describe_data", "probe_data",
-            "list_connectors", "describe_connector", "read_connector_form",
         }:
             return self._data_loading.handle_tool(name, args, ctx)
+        if name == "list_files":
+            return ToolResult(text=json.dumps(SessionFiles(ctx).list(args.get("path") or ""), ensure_ascii=False))
+        if name == "read_file":
+            files = SessionFiles(ctx)
+            if args.get("paths"):
+                paths = [*([args["path"]] if args.get("path") else []), *args["paths"]]
+                return ToolResult(text=json.dumps(files.read_many(paths, args.get("limit", 400)), ensure_ascii=False))
+            return ToolResult(text=json.dumps(files.read(
+                args.get("path"), args.get("offset", 1), args.get("limit", 400)), ensure_ascii=False))
+        if name == "search_files":
+            return ToolResult(text=json.dumps(SessionFiles(ctx).search(
+                args.get("pattern"), args.get("path") or "", regex=bool(args.get("regex")),
+                case_sensitive=bool(args.get("case_sensitive")), glob=args.get("glob"),
+                max_results=args.get("max_results", 50)), ensure_ascii=False))
+        if name == "move_file":
+            moved = self._move_file(args, ctx)
+            ctx.payload["workspace_inputs"] = WorkspaceInputEngine(
+                ctx.workspace, ctx.payload.get("input_tables", []),
+            ).manifest
+            return ToolResult(text=json.dumps(moved, ensure_ascii=False))
+        if name == "delete_items":
+            plan = plan_deletion(args.get("items"), ctx)
+            delete_files(plan, ctx)
+            forget_deleted(plan, ctx)
+            ctx.payload["workspace_inputs"] = WorkspaceInputEngine(
+                ctx.workspace, ctx.payload.get("input_tables", []),
+            ).manifest
+            return ToolResult(text=json.dumps({"deleted": plan}, ensure_ascii=False))
         if name in {"create_data", "update_data"}:
             import pandas as pd
             table_name = args.get("table_name")
@@ -88,7 +125,7 @@ class WorkspaceSkill:
                 frame = pd.DataFrame(rows)
             metadata = ctx.workspace.save_agent_data(
                 frame, table_name, input_sources=sources, expected_content_hash=expected_hash,
-                display_name=display_name,
+                display_name=display_name, acquisition=args.get("acquisition"),
             )
             input_tables = ctx.payload.setdefault("input_tables", [])
             input_tables[:] = [table for table in input_tables if table.get("name") != metadata.name]
@@ -98,13 +135,18 @@ class WorkspaceSkill:
             })
             ctx.payload["workspace_inputs"] = WorkspaceInputEngine(ctx.workspace, input_tables).manifest
             return ToolResult(text=json.dumps({
+                "id": next(item.id for item in ctx.payload["workspace_inputs"].data
+                           if item.path == f"data/{metadata.filename}"),
                 "table_name": metadata.name, "content_hash": metadata.content_hash,
                 "row_count": metadata.row_count, "operation": "update" if name == "update_data" else "create",
                 "input_sources": sources, "origin": metadata.origin, "role": metadata.role,
                 "edit_policy": metadata.edit_policy,
                 "display_name": metadata.original_name,
                 "path": f"data/{metadata.filename}",
+                **({"acquisition": metadata.import_options["acquisition"]} if metadata.import_options and "acquisition" in metadata.import_options else {}),
             }, ensure_ascii=False))
+        if name == "edit_file" and str(args.get("path") or "").startswith("session/"):
+            return ToolResult(text=json.dumps(edit_session_file(args, ctx), ensure_ascii=False))
         if name in {"create_file", "edit_file"}:
             editing = name == "edit_file"
             filename = args.get("filename")
@@ -138,6 +180,10 @@ class WorkspaceSkill:
                     )
             elif patching:
                 raise ValueError("Text patches require edit_file")
+            if args.get("replaces") is not None and not editing:
+                raise ValueError("To replace a file, revise it with edit_file and replaces set to its path")
+            # Fixing a file the user wants replaced rewrites it in place, even an app.
+            replaces = replace_file_in_place(args, ctx) if editing else None
             display_name = args.get("display_name")
             if display_name is not None:
                 if (not isinstance(display_name, str) or not display_name.strip()
@@ -145,11 +191,8 @@ class WorkspaceSkill:
                         or any(ord(character) < 32 or ord(character) == 127 for character in display_name)):
                     raise ValueError("display_name must be a non-empty single-line title of at most 80 characters")
                 display_name = display_name.strip()
-            if not editing and (not isinstance(filename, str) or not filename.strip() or filename != filename.strip()
-                    or len(filename.encode("utf-8")) > 255 or filename.startswith((".", "_"))
-                    or filename == "data_operations"
-                    or any(character in '/\\' or ord(character) < 32 for character in filename)):
-                raise ValueError("filename must be a visible filename without directories")
+            if not editing and (problem := agent_file_path_error(filename)):
+                raise ValueError(problem)
             if "code" in args:
                 if content is not None or not args.get("code") or not str(args.get("output_variable", "")).isidentifier():
                     raise ValueError("Provide either content or code with an output_variable")
@@ -179,11 +222,22 @@ class WorkspaceSkill:
                 raise ValueError("Output must be a DataFrame, bytes, or UTF-8 text without null bytes")
             if len(encoded) > 128 * 1024 * 1024:
                 raise ValueError("Files must be under 128 MB")
+            app = None
+            if editing:
+                previous = original.decode("utf-8", errors="replace") if len(original) <= 2_000_000 else None
+                app = check_app_revision(filename, previous, content, ctx)
+                if app is not None and display_name is None:
+                    display_name = app["title"]
+            elif filename.lower().endswith(REACT_APP_SUFFIX):
+                raise ValueError("Create apps with write_app (html_app skill); it validates the code and opens the app")
             metadata = ctx.workspace.save_workspace_file(
-                encoded, filename, mimetypes.guess_type(filename)[0],
+                encoded, filename,
+                "text/jsx" if filename.lower().endswith(REACT_APP_SUFFIX) else mimetypes.guess_type(filename)[0],
                 expected_content_hash=expected_hash if editing else None,
                 display_name=display_name, agent_managed=True,
+                code_signature=sign_helper(filename, encoded),
             )
+            record_run_artifact(ctx, "file", f"files/{metadata.name}", metadata.display_name or metadata.name)
             ctx.payload["workspace_inputs"] = WorkspaceInputEngine(
                 ctx.workspace, ctx.payload.get("input_tables", []),
             ).manifest
@@ -193,6 +247,9 @@ class WorkspaceSkill:
                 "origin": metadata.origin, "edit_policy": metadata.edit_policy,
                 "url": f"/api/workspace/files/{quote(metadata.name, safe='')}",
                 "temporary": False, "available_in_workspace": True,
+                **({"app": True, "tables": app["tables"], "warnings": app["warnings"]} if app is not None else {}),
+                **({"replaces": replaces} if replaces else {}),
+                **self._helper_info(metadata.name),
             }, ensure_ascii=False))
         input_tables = (ctx.payload or {}).get("input_tables") or []
         input_tool_names = {
@@ -208,14 +265,25 @@ class WorkspaceSkill:
             scope = args.get("scope", "input")
             query = str(args.get("query", "")).casefold().strip()
             if scope == "input":
+                kinds = args.get("kinds")
+                local_kinds = [kind for kind in kinds if kind != "external-table-reference"] if kinds else None
                 result = json.loads(input_engine.list_items(
-                    kinds=args.get("kinds"),
+                    kinds=local_kinds,
                     query=args.get("query", ""),
-                ))
+                )) if local_kinds or not kinds else {"inputs": [], "count": 0}
+                if not kinds or "data" in kinds or "external-table-reference" in kinds:
+                    result["inputs"].extend({
+                        "id": reference["id"], "kind": "external-table-reference",
+                        "display_name": reference["displayName"],
+                        "source_id": reference["connectorId"], "table_key": reference["tableKey"],
+                        "summary": reference.get("summary", {}),
+                        "capabilities": ["describe_data", "probe_data", "propose_data_operation"],
+                    } for reference in normalize_external_references(ctx.payload.get("external_references"))
+                        if not query or query in json.dumps(reference, ensure_ascii=False).casefold())
                 return ToolResult(text=json.dumps({
                     "scope": scope,
                     "items": result["inputs"],
-                    "count": result["count"],
+                    "count": len(result["inputs"]),
                 }, ensure_ascii=False))
             if args.get("kinds"):
                 raise ValueError("kinds is only supported for input scope")
@@ -264,6 +332,14 @@ class WorkspaceSkill:
                 "count": len(items),
             }, ensure_ascii=False))
         if name == "read_workspace_item" and input_engine is not None:
+            reference = next((reference for reference in normalize_external_references(ctx.payload.get("external_references"))
+                              if reference["id"] == args.get("item_id")), None)
+            if reference is not None:
+                return ToolResult(text=json.dumps({
+                    "reference": reference, "source_id": reference["connectorId"], "table_key": reference["tableKey"],
+                    "note": "Cached metadata only, not rows. Use describe_data for missing schema, probe_data for bounded evidence, "
+                            "or propose_data_operation to load a filtered subset for analysis. This reference is not a Python input.",
+                }, ensure_ascii=False))
             return ToolResult(text=input_engine.read_item(
                 args.get("item_id", ""),
                 locator=args.get("locator"),
@@ -277,8 +353,45 @@ class WorkspaceSkill:
                 kinds=args.get("kinds"),
                 options=args.get("options"),
                 max_results=args.get("max_results", 20),
+                external_references=ctx.payload.get("external_references"),
             ))
         return ToolResult(text=f"workspace has no tool '{name}'.")
+
+    @staticmethod
+    def _helper_info(name: str) -> dict[str, Any]:
+        """For a Python file: the module sandboxed code imports it as, or why it cannot."""
+        if not name.endswith(".py"):
+            return {}
+        warnings = helper_warnings(name)
+        module = helper_module_name(f"files/{name}")
+        return {"helper_warnings": warnings} if warnings else {"importable_as": module}
+
+    @staticmethod
+    def _move_file(args: dict[str, Any], ctx: SkillContext) -> dict[str, Any]:
+        source, target = args.get("path"), args.get("new_path")
+        if not isinstance(source, str) or not source.startswith("files/"):
+            raise ValueError("path must be a workspace file under files/")
+        if not isinstance(target, str) or not target.startswith("files/"):
+            raise ValueError("new_path must be under files/, e.g. files/notes/plan.md")
+        name, new_name = source[len("files/"):], target[len("files/"):]
+        if problem := agent_file_path_error(new_name):
+            raise ValueError(problem)
+        if name.lower().endswith(".app.jsx") != new_name.lower().endswith(".app.jsx"):
+            raise ValueError("An app keeps its .app.jsx extension")
+        if helper_module_name(source) and helper_module_name(source) != helper_module_name(target):
+            from data_formulator.analyst.session_layer import session_layer
+            layer = session_layer(ctx.payload)
+            tables = layer.items()["tables"] if layer is not None else []
+            users = [table.get("name") or table.get("id") for table in tables if file_imported(name, table)]
+            if users:
+                raise ValueError(f"The code of {', '.join(map(str, users))} imports {source}; moving it would break "
+                                 "their refresh. Leave it in place or copy it instead.")
+        try:
+            moved = ctx.workspace.rename_workspace_file(name, new_name)
+        except FileNotFoundError:
+            raise ValueError(f"{source} does not exist. Use list_files to see the workspace files.") from None
+        return {"moved": {"from": source, "to": f"files/{moved.name}"}, "content_hash": moved.content_hash,
+                **WorkspaceSkill._helper_info(moved.name)}
 
     def handle_action(
         self,
@@ -286,7 +399,7 @@ class WorkspaceSkill:
         spec: dict[str, Any],
         ctx: SkillContext,
     ) -> Generator[Event, None, str | None]:
-        if action in {"propose_data_operation", "propose_connection", "update_connector_form"}:
+        if action == "propose_data_operation":
             return (yield from self._data_loading.handle_action(action, spec, ctx))
         yield {"type": "error", "message": f"workspace has no action '{action}'."}
         return f"workspace has no action '{action}'."

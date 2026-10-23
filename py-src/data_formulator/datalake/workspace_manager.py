@@ -132,6 +132,7 @@ class WorkspaceManager:
         chart_count: Optional[int] = None,
         source_ids: Optional[list[str]] = None,
         provisional: Optional[bool] = None,
+        scheduled_run: Optional[dict] = None,
     ) -> None:
         """Write a lightweight ``workspace_meta.json`` used by list_workspaces.
 
@@ -178,6 +179,10 @@ class WorkspaceManager:
             meta["sourceIds"] = existing["sourceIds"]
         if provisional:
             meta["provisional"] = True
+        if scheduled_run is not None:
+            meta["scheduledRun"] = scheduled_run
+        elif existing.get("scheduledRun"):
+            meta["scheduledRun"] = existing["scheduledRun"]
         meta_file.write_text(
             json.dumps(meta, ensure_ascii=False), encoding="utf-8",
         )
@@ -225,8 +230,17 @@ class WorkspaceManager:
         """
         if (ws_dir / SESSION_STATE_FILENAME).exists():
             return True
-        if (ws_dir / "workspace.yaml").exists():
-            return True
+        yaml_file = ws_dir / "workspace.yaml"
+        if yaml_file.exists():
+            # Opening a Workspace writes an empty workspace.yaml, so only
+            # registered tables or files count as work.
+            try:
+                import yaml
+                metadata = yaml.safe_load(yaml_file.read_text(encoding="utf-8")) or {}
+            except Exception:
+                return True
+            if not isinstance(metadata, dict) or metadata.get("tables") or metadata.get("files"):
+                return True
         data_dir = ws_dir / "data"
         return data_dir.is_dir() and any(data_dir.iterdir())
 
@@ -271,6 +285,7 @@ class WorkspaceManager:
                 "table_count": tc,
                 "chart_count": cc,
                 "source_ids": meta.get("sourceIds", []),
+                "scheduled_run": meta.get("scheduledRun"),
             })
 
         workspaces.sort(key=lambda w: w.get("updated_at") or "", reverse=True)
@@ -435,7 +450,9 @@ class WorkspaceManager:
         if not ws_dir.exists():
             raise ValueError(f"Workspace '{workspace_id}' does not exist")
 
-        return Workspace(identity_id, workspace_path=ws_dir)
+        workspace = Workspace(identity_id, workspace_path=ws_dir)
+        workspace.repair_legacy_file_names()
+        return workspace
 
     def create_and_open_workspace(self, workspace_id: str, identity_id: str) -> Workspace:
         """Create a new workspace and return an open Workspace instance."""
@@ -564,6 +581,7 @@ class WorkspaceManager:
             table_count=tc,
             chart_count=cc,
             source_ids=_session_source_ids(clean_state),
+            scheduled_run=aw.get("scheduledRun") if isinstance(aw, dict) else None,
         )
 
         logger.debug(f"Saved session state to {state_file}")

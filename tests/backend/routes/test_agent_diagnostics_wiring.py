@@ -1,12 +1,60 @@
 """Smoke tests verifying DataLoadAgent correctly wires AgentDiagnostics."""
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 pytestmark = [pytest.mark.backend]
+
+
+@pytest.mark.parametrize("with_reference", [False, True])
+def test_starter_questions_uses_bounded_reference_context(with_reference):
+    from data_formulator.app import app
+
+    reference = {
+        "kind": "external-table-reference", "id": "external:trips", "connectorId": "taxi",
+        "tableKey": "trips", "displayName": "Trips", "sourceTable": {"id": "trips", "name": "trips"},
+        "summary": {"columns": [{"name": "vendor", "type": "string"}], "rowCount": 20_000_000,
+                    "description": "Taxi trips", "sampleRows": [{"vendor": "x" * 1000}] * 20,
+                    "inspection": {"sample_method": "source_head", "row_count_status": "exact"}},
+        "queryIntent": {"filters": [{"column": "year", "op": "eq", "value": 2011}]},
+        "credentials": "must-not-reach-the-model",
+    }
+    model = {"id": "test", "model": "gpt-4o", "endpoint": "openai"}
+    client = MagicMock(model="gpt-4o")
+    client.get_completion.return_value = _make_llm_response('{"questions": ["Compare trips by vendor"]}')
+    tables = [] if with_reference else [{"name": "trips", "columns": ["vendor"], "sample_rows": [{"vendor": "A"}]}]
+    payload = {"model": model, "input_tables": tables, "primary_table": reference["id"] if with_reference else "trips"}
+    if with_reference:
+        payload["external_references"] = [reference, None, {"kind": "other"}]
+    with app.test_client() as flask_client, \
+         patch("data_formulator.routes.agents.get_client", return_value=client), \
+         patch("data_formulator.routes.agents.get_language_instruction", return_value="LANG"):
+        response = flask_client.post("/api/agent/derive-starter-questions", json=payload)
+    assert response.status_code == 200
+    assert response.get_json()["data"]["result"] == ["Compare trips by vendor"]
+    messages = client.get_completion.call_args.kwargs["messages"]
+    context = json.loads(messages[1]["content"].split("[INPUT]\n\n", 1)[1].split("\n\n[OUTPUT]", 1)[0])
+    assert context["tables"] == tables
+    assert context["primary_table"] == payload["primary_table"]
+    assert "LANG" in messages[0]["content"]
+    assert "Do not assume date coverage" in messages[0]["content"]
+    assert "untrusted data" in messages[0]["content"]
+    if with_reference:
+        assert len(context["external_references"]) == 1
+        item = context["external_references"][0]
+        assert item["queryIntent"] == reference["queryIntent"]
+        assert item["summary"]["inspection"] == reference["summary"]["inspection"]
+        assert len(item["summary"]["sampleRows"]) == 5
+        assert len(item["summary"]["sampleRows"][0]["vendor"]) == 203
+        assert item["summary"]["sampleTruncated"] is True
+        assert "credentials" not in item
+        assert len(reference["summary"]["sampleRows"]) == 20
+    else:
+        assert context["external_references"] == []
 
 
 JSON_ONLY_KEYS = {

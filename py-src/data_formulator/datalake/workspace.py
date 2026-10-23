@@ -97,10 +97,13 @@ def get_user_home(identity_id: str) -> Path:
     """Return the per-user home directory: DATA_FORMULATOR_HOME/users/<safe_id>/.
 
     Shared helper used by workspace_factory, data_connector, and any
-    code that needs per-user storage paths.
+    code that needs per-user storage paths. Requests for a site (see
+    ``data_formulator.sites``) use DATA_FORMULATOR_HOME/sites/<site>/users/<safe_id>/.
     """
+    from data_formulator.sites import site_scope
+
     safe_id = sanitize_identity_dirname(identity_id)
-    return get_data_formulator_home() / "users" / safe_id
+    return site_scope(get_data_formulator_home()) / "users" / safe_id
 
 
 def sanitize_identity_dirname(identity_id: str) -> str:
@@ -134,7 +137,8 @@ def _configured_scratch_max_bytes() -> int:
     try:
         from flask import current_app, has_app_context
         if has_app_context():
-            return int(current_app.config.get('CLI_ARGS', {}).get('scratch_max_bytes', SCRATCH_MAX_BYTES))
+            from data_formulator.configuration import effective_limit
+            return effective_limit('scratch_max_bytes')
     except Exception:
         pass
     return SCRATCH_MAX_BYTES
@@ -183,6 +187,52 @@ def cleanup_stale_temp_files(workspace_path: Path, max_age_hours: int = 24) -> i
         logger.info(f"Cleaned up {cleaned_count} stale temp file(s) from {workspace_path}")
 
     return cleaned_count
+
+
+
+MAX_WORKSPACE_FILE_DEPTH = 4
+
+
+def workspace_file_path(name: str) -> str:
+    """A workspace file name, which may sit in folders (``notes/plan.md``); raises ``ValueError``.
+
+    Each ``/``-separated segment is a safe file or folder name (``.write-`` is reserved for
+    atomic writes); at most ``MAX_WORKSPACE_FILE_DEPTH`` segments.
+    """
+    if not isinstance(name, str) or not name or "\\" in name or len(name) > 255:
+        raise ValueError(f"Invalid file name: {name!r}")
+    segments = name.split("/")
+    if len(segments) > MAX_WORKSPACE_FILE_DEPTH:
+        raise ValueError(f"Invalid file name: {name!r} (at most {MAX_WORKSPACE_FILE_DEPTH} levels of folders)")
+    for segment in segments:
+        if (not segment or segment != segment.strip() or segment in (".", "..") or segment.startswith(".write-")
+                or any(ord(character) < 32 or ord(character) == 127 for character in segment)):
+            raise ValueError(f"Invalid file name: {name!r}")
+    return name
+
+
+def _session_archive_segment(segment: str) -> str:
+    """One path component from a session ZIP: kept if it is a safe workspace name, else sanitized."""
+    try:
+        workspace_file_path(segment)
+        if "/" not in segment and not any(character in segment for character in '<>:"|?*'):
+            return segment
+    except ValueError:
+        pass
+    return secure_filename(segment)
+
+
+def agent_file_path_error(name: Any) -> str | None:
+    """Why the agent cannot create a workspace file at ``name``, or None: visible names, folders allowed."""
+    message = "filename must be a visible file name, optionally in folders (notes/plan.md)"
+    try:
+        workspace_file_path(name)
+    except ValueError:
+        return message
+    if (len(name.encode("utf-8")) > 255 or any(segment.startswith((".", "_")) for segment in name.split("/"))
+            or name.split("/")[0] == "data_operations"):
+        return message
+    return None
 
 
 class Workspace:
@@ -272,6 +322,11 @@ class Workspace:
         """
         return _sanitize_identity_id(identity_id)
     
+    @property
+    def identity_id(self) -> str:
+        """Identity that owns this workspace."""
+        return self._identity_id
+
     @property
     def user_home(self) -> Path:
         """Per-user home directory (parent of workspaces, catalog_cache, etc.)."""
@@ -390,8 +445,8 @@ class Workspace:
         return self.get_file_path(filename).exists()
 
     def _write_workspace_file(self, filename: str, content: bytes) -> None:
-        target = self._confined_files.resolve(filename)
-        temporary = self._confined_files.resolve(f".write-{uuid.uuid4().hex}")
+        target = self._confined_files.resolve(filename, mkdir_parents=True)
+        temporary = target.parent / f".write-{uuid.uuid4().hex}"
         try:
             temporary.write_bytes(content)
             temporary.replace(target)
@@ -401,17 +456,61 @@ class Workspace:
     def _read_workspace_file(self, filename: str) -> bytes:
         return self._confined_files.resolve(filename).read_bytes()
 
+    def repair_legacy_file_names(self) -> int:
+        """Move files back to the names their metadata records.
+
+        Session imports used to sanitize every path component (``DEM README.md``
+        became ``DEM_README.md`` on disk) while the metadata kept the original
+        name, so those files could not be opened. Returns how many were moved.
+        """
+        repaired = 0
+        try:
+            files = list(self.get_metadata().files.values())
+        except Exception:
+            return 0
+        for workspace_file in files:
+            legacy_name = "/".join(secure_filename(part) for part in workspace_file.filename.split("/"))
+            if legacy_name == workspace_file.filename:
+                continue
+            try:
+                expected = self._confined_files.resolve(workspace_file.filename)
+                legacy = self._confined_files.resolve(legacy_name)
+            except ValueError:
+                continue
+            if expected.exists() or not legacy.is_file():
+                continue
+            expected.parent.mkdir(parents=True, exist_ok=True)
+            legacy.rename(expected)
+            self._remove_empty_file_folders(legacy.parent)
+            repaired += 1
+        if repaired:
+            logger.info("Restored %d workspace file name(s) changed by an earlier session import", repaired)
+        return repaired
+
     def _delete_workspace_file(self, filename: str) -> None:
         path = self._confined_files.resolve(filename)
         if path.exists():
             path.unlink()
+        self._remove_empty_file_folders(path.parent)
 
     def _rename_workspace_file(self, filename: str, new_filename: str) -> None:
         source = self._confined_files.resolve(filename)
-        target = self._confined_files.resolve(new_filename)
+        target = self._confined_files.resolve(new_filename, mkdir_parents=True)
         if target.exists() and not source.samefile(target):
             raise ValueError("A file with this name already exists")
         source.rename(target)
+        self._remove_empty_file_folders(source.parent)
+
+    def _remove_empty_file_folders(self, folder: Path) -> None:
+        """A folder goes with its last file."""
+        root = self._confined_files.root.resolve()
+        folder = folder.resolve()
+        while folder != root and folder.is_relative_to(root):
+            try:
+                folder.rmdir()
+            except OSError:
+                return
+            folder = folder.parent
 
     def save_workspace_file(
         self,
@@ -422,13 +521,14 @@ class Workspace:
         display_name: str | None = None,
         agent_managed: bool = False,
         expected_content_hash: str | None = None,
+        code_signature: str | None = None,
     ) -> WorkspaceFileMetadata:
         """Persist a workspace file, guarding agent edits against ownership and hash conflicts."""
         import hashlib
         saved = []
 
         def add(metadata):
-            safe_name = safe_data_filename(filename)
+            safe_name = workspace_file_path(filename)
             existing = metadata.files.get(safe_name)
             if expected_content_hash is not None:
                 if not agent_managed:
@@ -456,6 +556,7 @@ class Workspace:
                     existing.display_name if expected_content_hash is not None else None),
                 origin="agent" if agent_managed else None,
                 edit_policy="agent_editable" if agent_managed else None,
+                code_signature=code_signature,
             )
             self._write_workspace_file(safe_name, content)
             metadata.add_file(workspace_file)
@@ -469,8 +570,10 @@ class Workspace:
     ) -> WorkspaceFileMetadata:
         import hashlib
 
-        if not name or safe_data_filename(name) != name or any(character in name for character in '/\\'):
-            raise ValueError("Invalid filename")
+        try:
+            workspace_file_path(name)
+        except ValueError:
+            raise ValueError("Invalid filename") from None
         encoded = content.encode("utf-8")
         if len(encoded) > 2_000_000 or "\x00" in content:
             raise ValueError("Text files must be UTF-8 text under 2 MB")
@@ -504,8 +607,10 @@ class Workspace:
         return result[0]
 
     def rename_workspace_file(self, name: str, new_name: str) -> WorkspaceFileMetadata:
-        if not new_name or new_name in (".", "..") or safe_data_filename(new_name) != new_name or any(character in new_name for character in '/\\'):
-            raise ValueError("Invalid filename")
+        try:
+            workspace_file_path(new_name)
+        except ValueError:
+            raise ValueError("Invalid filename") from None
         result = []
 
         def update(metadata):
@@ -524,6 +629,7 @@ class Workspace:
                 display_name=existing.display_name,
                 origin=existing.origin,
                 edit_policy=existing.edit_policy,
+                code_signature=existing.code_signature,
             )
             self._rename_workspace_file(existing.filename, new_name)
             metadata.remove_file(name)
@@ -1111,7 +1217,18 @@ class Workspace:
     def save_agent_data(
         self, df: pd.DataFrame, table_name: str, *, input_sources: list[dict],
         expected_content_hash: str | None = None, display_name: str | None = None,
+        acquisition: dict[str, str] | None = None,
     ) -> TableMetadata:
+        if acquisition is not None:
+            if (not isinstance(acquisition, dict)
+                    or set(acquisition) - {"source", "scope", "query", "limitations"}
+                    or any(not isinstance(acquisition.get(key), str) or not acquisition[key].strip()
+                           for key in ("source", "scope"))
+                    or any(not isinstance(value, str) or not value.strip() or len(value) > 8000
+                           for value in acquisition.values())):
+                raise ValueError("acquisition requires non-empty source and scope; optional query and limitations must be text under 8000 characters")
+            if not input_sources or any(source.get("kind") != "file" for source in input_sources):
+                raise ValueError("Acquired data must declare the actual acquired file inputs")
         safe_name = sanitize_table_name(table_name)
         if not table_name or safe_name != table_name:
             raise ValueError("table_name must be a valid workspace table identifier")
@@ -1131,8 +1248,10 @@ class Workspace:
             name=safe_name, source_type="data_loader", filename=filename, file_type="parquet",
             created_at=now, last_synced=now, content_hash=compute_dataframe_hash(df),
             file_size=len(content), row_count=len(df), columns=get_arrow_column_info(arrow_table),
-            original_name=display_name or safe_name, origin="agent", role="derived" if input_sources else "source",
+            original_name=display_name or safe_name, origin="agent",
+            role="source" if acquisition is not None or not input_sources else "derived",
             edit_policy="agent_editable", input_sources=input_sources,
+            import_options={"acquisition": {**acquisition, "acquired_at": now.isoformat()}} if acquisition is not None else None,
         )
 
         def commit(metadata: WorkspaceMetadata) -> None:
@@ -1149,6 +1268,18 @@ class Workspace:
                     raise TextEditConflictError("Table changed; read it again before updating")
                 result.created_at = existing.created_at
                 result.original_name = display_name or existing.original_name
+            if len(input_sources) == 1 and input_sources[0].get("kind") == "data":
+                source = input_sources[0]
+                parent = metadata.get_table(source.get("table_name", ""))
+                if (parent is not None and not parent.stale and parent.content_hash
+                        and parent.content_hash == source.get("content_hash")
+                        and len(parent.input_sources or []) <= 1):
+                    origin = parent.imported_from or (parent.import_options or {}).get("data_operation")
+                    if isinstance(origin, dict) and origin.get("lineage_verified") is not False and all(
+                        isinstance(origin.get(key), str) and origin[key].strip()
+                        for key in ("source_id", "table_key")
+                    ):
+                        result.imported_from = {key: origin[key] for key in ("source_id", "table_key")}
             self.upload_file(content, filename)
             metadata.add_table(result)
             changed = {safe_name}
@@ -1310,6 +1441,10 @@ class Workspace:
             raise FileNotFoundError(f"Parquet file not found: {path}")
         return path.resolve()
 
+    def local_parquet_file(self, table_name: str) -> Path:
+        """A local filesystem path to *table_name*'s parquet file, for DuckDB to read."""
+        return self.get_parquet_path(table_name)
+
     def run_parquet_sql(self, table_name: str, sql: str) -> pd.DataFrame:
         """
         Run a DuckDB SQL query against a parquet table.
@@ -1432,8 +1567,10 @@ class Workspace:
                 self.save_workspace_snapshot(ws_snap)
                 if ws_snap.exists():
                     for ws_file in ws_snap.rglob("*"):
-                        if ws_file.is_file():
-                            arcname = "workspace/" + str(ws_file.relative_to(ws_snap))
+                        relative = ws_file.relative_to(ws_snap)
+                        # The agent's conversation stays with the session it happened in (design-docs/63).
+                        if ws_file.is_file() and relative.parts[:2] != ("scratch", "_agent"):
+                            arcname = "workspace/" + str(relative)
                             zf.write(ws_file, arcname)
         buf.seek(0)
         return buf
@@ -1461,14 +1598,18 @@ class Workspace:
                         rel = entry[len("workspace/"):]
                         if not rel:
                             continue
-                        # Sanitize each path component individually to preserve
-                        # directory structure (e.g., "data/sales.parquet")
-                        # while still guarding against zip-slip / path traversal.
-                        parts = [secure_filename(p) for p in rel.split("/")]
+                        # Keep each component's name when it is already a safe
+                        # file name — workspace files may contain spaces, and
+                        # renaming them would orphan their metadata entries —
+                        # and sanitize anything else. Together with the
+                        # containment check below this guards against zip-slip.
+                        parts = [_session_archive_segment(p) for p in rel.split("/")]
                         parts = [p for p in parts if p]
                         if not parts:
                             continue
                         dest = ws_tmp.joinpath(*parts)
+                        if not dest.resolve().is_relative_to(ws_tmp.resolve()):
+                            continue
                         dest.parent.mkdir(parents=True, exist_ok=True)
                         dest.write_bytes(zf.read(entry))
                     self.restore_workspace_snapshot(ws_tmp)

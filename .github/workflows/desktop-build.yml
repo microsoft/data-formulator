@@ -3,7 +3,6 @@ name: desktop builds
 on:
   push:
     branches: [main]
-    tags: ['*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -135,21 +134,3 @@ jobs:
           path: release/*
           if-no-files-found: error
           retention-days: 30
-
-  attach-macos-to-release:
-    name: Preserve macOS portable release
-    if: github.ref_type == 'tag'
-    needs: build-desktop
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: data-formulator-macos
-          path: release
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: release/Data-Formulator-macOS.zip
-          fail_on_unmatched_files: true
-          generate_release_notes: true

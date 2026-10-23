@@ -3,13 +3,15 @@
     "type": "function",
     "function": {
       "name": "run_terminal",
-      "description": "Propose one local command to find data or diagnose a connection. Exact-command approval is required. OS enforcement confines filesystem writes to the workspace scratch directory, available as DF_SCRATCH_DIR in the command environment. cwd does not grant write access. Results return automatically; do not resubmit. No interactive stdin or background services. Commands may still read local files and access the network.",
+      "description": "Run a command to acquire data or diagnose connections using local files outside the workspace, installed CLI clients/logins, and online datasets, documentation, or APIs. Sandboxed writes follow application policy and execute directly in Auto. dangerouslyDisableSandbox with sandboxDisablingReason always requests user approval. Reads/network are not confined; command output is sent to the model provider. Follow the terminal skill for acquisition handoff, retries, and execution limits.",
       "parameters": {
         "type": "object",
         "properties": {
           "argv": {"type": "array", "items": {"type": "string"}, "minItems": 1, "description": "Executable followed by exact arguments, without implicit shell interpretation."},
           "cwd": {"type": "string", "description": "Absolute working directory, or ~ for the user's home directory."},
-          "purpose": {"type": "string", "description": "Data discovery or connection goal and expected scratch writes or network transfers. Setup requiring writes outside scratch must be performed by the user."}
+          "purpose": {"type": "string", "description": "Data acquisition, discovery, or connection goal, requested scope, and expected writes or network transfers."},
+          "dangerouslyDisableSandbox": {"type": "boolean", "description": "Default false. Request this exact command outside the filesystem sandbox only when the configured policy cannot support it. Always pauses for user approval, including in Auto. Does not grant root privileges or carry over to another command. Submit this tool call directly; conversational consent does not approve execution."},
+          "sandboxDisablingReason": {"type": "string", "maxLength": 2000, "description": "Required when dangerouslyDisableSandbox is true. Explain the blocked access, why sandboxed execution is insufficient, expected host changes, and any partial effects of the prior attempt. Shown to the user with the exact command."}
         },
         "required": ["argv", "cwd", "purpose"],
         "additionalProperties": false

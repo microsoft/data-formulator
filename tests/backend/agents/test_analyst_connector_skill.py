@@ -13,7 +13,7 @@ pytestmark = pytest.mark.backend
 
 
 def _skill():
-    skill = build_registry().get_skill("workspace")
+    skill = build_registry().get_skill("configure")
     assert skill is not None
     return skill
 
@@ -51,22 +51,31 @@ def _context() -> SkillContext:
     return SkillContext(client=None, workspace=SimpleNamespace(), payload={})
 
 
-def test_list_and_describe_connectors() -> None:
+def test_one_call_lists_connectors_and_describes_the_named_type() -> None:
     skill = _skill()
     ctx = _context()
+
+    class _S3(_Loader):
+        DISPLAY_NAME = "Amazon S3"
+
     with (
-        patch.dict("data_formulator.data_loader.DATA_LOADERS", {"postgresql": _Loader}, clear=True),
+        patch.dict("data_formulator.data_loader.DATA_LOADERS", {"postgresql": _Loader, "s3": _S3}, clear=True),
         patch.dict("data_formulator.data_loader.DISABLED_LOADERS", {}, clear=True),
     ):
-        listed = json.loads(skill.handle_tool("list_connectors", {}, ctx).text)
-        described = json.loads(skill.handle_tool(
-            "describe_connector", {"source_type": "postgresql"}, ctx,
-        ).text)
+        def list_(**args):
+            return json.loads(skill.handle_tool("list_connectors", args, ctx).text)
+        listed = list_()
+        described = list_(source_type="postgres")
 
-    assert listed["connectors"][0]["type"] == "postgresql"
-    assert "call propose_connection now" in listed["next_action"]
-    assert described["params"][1]["sensitive"] is True
-    assert "Call propose_connection now" in described["next_action"]
+        assert listed["connectors"][0]["type"] == "postgresql" and "connector" not in listed
+        assert "call propose_connection now" in listed["next_action"]
+        # A loose name finds the type; its fields come with the list.
+        assert described["connector"]["type"] == "postgresql" and described["connector"]["params"][1]["sensitive"] is True
+        assert "Call propose_connection now" in described["connector"]["next_action"]
+        assert described["connectors"] == [{"type": "postgresql", "name": "PostgreSQL"}, {"type": "s3", "name": "Amazon S3"}]
+        assert list_(source_type="Amazon S3")["connector"]["type"] == "s3"
+        unknown = list_(source_type="oracle")
+        assert "connector" not in unknown and "No connector type matches 'oracle'" in unknown["note"]
 
 
 def test_read_and_update_existing_form_filters_secrets_and_checks_revision() -> None:
@@ -136,11 +145,11 @@ def test_propose_connection_emits_prefilled_canvas_form_without_echo() -> None:
 
     assert events == [{
         "type": "interact",
-        "thought": "",
         "form": {
             "kind": "connector",
             "title": "Connect to PostgreSQL",
             "response": "Choose a connector and review the connection details before connecting.",
+            "auto_submit": False,
             "connector": {
                 "source_type": "postgresql",
                 "prefilled": {"host": "db.example.com", "password": "secret"},
@@ -148,6 +157,18 @@ def test_propose_connection_emits_prefilled_canvas_form_without_echo() -> None:
         },
     }]
     assert "secret" not in json.dumps({key: value for key, value in events[0].items() if key != "form"})
+
+
+def test_propose_connection_always_waits_for_the_users_connect(monkeypatch) -> None:
+    skill = _skill()
+    monkeypatch.setattr("data_formulator.auth.identity.is_local_mode", lambda: True)
+    with patch.dict("data_formulator.data_loader.DATA_LOADERS", {"postgresql": _Loader}, clear=True):
+        form = list(skill.handle_action("propose_connection", {
+            "source_type": "postgresql", "prefilled": {"host": "db.example.com", "user": "reader"}, "user_review_needed": False,
+        }, _context()))[0]["form"]
+
+    assert form["auto_submit"] is False
+    assert "Choose a connector and review" in form["response"]
 
 
 def test_local_folder_is_available_when_registered() -> None:

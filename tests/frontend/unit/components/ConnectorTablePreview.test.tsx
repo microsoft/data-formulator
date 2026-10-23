@@ -50,6 +50,16 @@ describe('ConnectorTablePreview source metadata', () => {
         onLoad: vi.fn(),
     };
 
+    it('uses a centered track for empty previews and an inline status over retained rows', () => {
+        const view = render(<ConnectorTablePreview {...baseProps} loading sampleRows={[]} />);
+        expect(screen.getByText('Loading preview...').closest('[role="status"]')?.querySelector('.MuiLinearProgress-root')).not.toBeNull();
+        expect(screen.getByRole('progressbar', { name: 'Loading preview...' })).toBeDefined();
+        view.rerender(<ConnectorTablePreview {...baseProps} loading />);
+        expect(screen.getByText('US')).toBeDefined();
+        expect(screen.getByRole('status', { name: 'Refreshing preview...' }).querySelector('.MuiCircularProgress-root')).not.toBeNull();
+        expect(screen.queryByRole('progressbar', { name: 'Loading preview...' })).toBeNull();
+    });
+
     it('shows the source table description directly', () => {
         render(
             <ConnectorTablePreview
@@ -81,25 +91,18 @@ describe('ConnectorTablePreview source metadata', () => {
 
         expect(screen.getByText(`sample-${limit}`)).toBeDefined();
         expect(screen.queryByText('beyond-limit')).toBeNull();
-        fireEvent.click(screen.getByRole('button', { name: 'Preview', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
         await waitFor(() => expect(onRefreshPreview).toHaveBeenCalledWith(
             rows, [{ name: 'value', type: 'STRING' }], null,
         ));
         expect(JSON.parse(String(vi.mocked(apiRequest).mock.calls[0][1]?.body)).import_options.size).toBe(limit);
     });
 
-    it('uses descriptions on table headers without restoring the old metadata panel', () => {
-        const { container } = render(
-            <ConnectorTablePreview
-                {...baseProps}
-            />,
-        );
+    it('shows progress and disables the load action while loading', () => {
+        render(<ConnectorTablePreview {...baseProps} loading />);
 
-        const orderHeader = Array.from(container.querySelectorAll('th'))
-            .find(header => header.textContent === 'order_id');
-        expect(orderHeader).toBeDefined();
-        expect(orderHeader?.getAttribute('title')).toBeNull();
-        expect(screen.queryByText('(订单编号)')).toBeNull();
-        expect(screen.queryByText('SUM(line_items.amount)')).toBeNull();
+        const loadButton = screen.getByRole('button', { name: 'Loading...' });
+        expect(loadButton.hasAttribute('disabled')).toBe(true);
+        expect(screen.getByRole('progressbar')).toBeDefined();
     });
 });

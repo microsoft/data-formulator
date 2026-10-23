@@ -46,6 +46,7 @@ import {
     Tabs,
     Tooltip,
     Typography,
+    useTheme,
 } from '@mui/material';
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -60,7 +61,9 @@ import { getUrls } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { DataFormulatorState } from '../app/dfSlice';
 import { textVar } from '../app/layout';
+import { codeEditorSearchPanelSx } from '../app/tokens';
 import { WorkspaceFile, previewWorkspaceFile, downloadWorkspaceFile } from '../app/workspaceService';
+import { formatBytes } from './ViewUtils';
 
 const DEFAULT_TAIL_LINES = 500;
 
@@ -144,73 +147,6 @@ const savedStateEditorTheme = EditorView.theme({
     },
     '&.cm-focused': { outline: 'none' },
     '.cm-scroller': { fontFamily: 'var(--df-font-mono)' },
-    '.cm-panels': {
-        backgroundColor: '#f7f8fa',
-        color: '#30343b',
-        fontFamily: 'Roboto, sans-serif',
-    },
-    '.cm-panels.cm-panels-bottom': {
-        borderTop: '1px solid rgba(0, 0, 0, 0.12)',
-    },
-    '.cm-search': {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-        padding: '7px 10px',
-    },
-    '.cm-search label, .cm-search br': { display: 'none' },
-    '.cm-search .cm-textfield': {
-        width: 'min(320px, 45vw)',
-        height: '30px',
-        boxSizing: 'border-box',
-        padding: '4px 9px',
-        border: '1px solid rgba(0, 0, 0, 0.18)',
-        borderRadius: '6px',
-        backgroundColor: '#fff',
-        color: '#202124',
-        fontFamily: 'var(--df-font-mono)',
-        fontSize: `${textVar.sm}px`,
-        outline: 'none',
-    },
-    '.cm-search .cm-textfield:focus': {
-        borderColor: '#1976d2',
-        boxShadow: '0 0 0 2px rgba(25, 118, 210, 0.14)',
-    },
-    '.cm-search .cm-button': {
-        height: '30px',
-        boxSizing: 'border-box',
-        margin: '0',
-        padding: '4px 10px',
-        border: '1px solid rgba(0, 0, 0, 0.14)',
-        borderRadius: '6px',
-        backgroundImage: 'none',
-        backgroundColor: '#fff',
-        color: '#3c4043',
-        fontFamily: 'Roboto, sans-serif',
-        fontSize: `${textVar.xs}px`,
-        cursor: 'pointer',
-    },
-    '.cm-search .cm-button:hover': {
-        borderColor: 'rgba(25, 118, 210, 0.45)',
-        backgroundColor: 'rgba(25, 118, 210, 0.06)',
-        color: '#1565c0',
-    },
-    '.cm-search button[name="close"]': {
-        position: 'static',
-        width: '30px',
-        height: '30px',
-        marginLeft: 'auto',
-        border: '0',
-        borderRadius: '6px',
-        backgroundColor: 'transparent',
-        color: '#5f6368',
-        fontSize: '18px',
-        cursor: 'pointer',
-    },
-    '.cm-search button[name="close"]:hover': {
-        backgroundColor: 'rgba(0, 0, 0, 0.06)',
-        color: '#202124',
-    },
 });
 
 const savedStateEditorExtensions = [
@@ -234,19 +170,12 @@ const SAVED_STATE_AUTO_FOLD_PATHS = [
     ['draftNodes', '*', 'derive', 'trigger', 'interaction'],
     ['draftNodes', '*', 'derive', 'pendingClarification', 'trajectory'],
     // Generated visual/report payloads.
-    ['charts', '*', 'styleVariants'],
     ['generatedReports', '*', 'inspectionSteps'],
     // Structured artifacts: keep turn identity, kind, status, and parent visible.
     ['textTurns', '*', 'options'],
     ['textTurns', '*', 'form'],
     ['textTurns', '*', 'dataOperation'],
     ['textTurns', '*', 'resume', 'trajectory'],
-    // Embedded loading results: keep message role, content, and timestamp visible.
-    ['dataLoadingChatMessages', '*', 'codeBlocks'],
-    ['dataLoadingChatMessages', '*', 'tables'],
-    ['dataLoadingChatMessages', '*', 'loadPlan'],
-    ['dataLoadingChatMessages', '*', 'dataOperation'],
-    ['dataLoadingChatMessages', '*', 'connectorForm'],
 ];
 
 interface LogTailResponse {
@@ -328,6 +257,7 @@ export const LogViewerDialog: FC<{
     title,
 }) => {
     const { t } = useTranslation();
+    const theme = useTheme();
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const [openState, setOpenState] = useState(false);
     const open = openProp ?? openState;
@@ -346,6 +276,7 @@ export const LogViewerDialog: FC<{
     const [scratchPreview, setScratchPreview] = useState('');
     const [scratchPreviewError, setScratchPreviewError] = useState<string | null>(null);
     const [scratchPreviewLoading, setScratchPreviewLoading] = useState(false);
+    const filesRequestRef = useRef(0);
     const preRef = useRef<HTMLPreElement>(null);
     const savedStateEditorRef = useRef<EditorView | null>(null);
 
@@ -388,25 +319,31 @@ export const LogViewerDialog: FC<{
     }, [activeWorkspace?.id, t]);
 
     const fetchScratchFiles = useCallback(async () => {
+        const requestId = ++filesRequestRef.current;
         setLoading(true);
         setError(null);
         try {
             if (!activeWorkspace?.id) throw new Error('No active workspace to inspect.');
-            const { data } = await apiRequest<{ files: WorkspaceFile[] }>('/api/workspace/files?include_temp=true');
-            const files = data.files.filter(file => file.temporary && file.name.startsWith('scratch/'));
+            const { data } = await apiRequest<{ files: WorkspaceFile[] }>('/api/workspace/files?include_temp=true&include_tables=true', {
+                headers: { 'X-Workspace-Id': activeWorkspace.id },
+            });
+            if (requestId !== filesRequestRef.current) return;
+            const files = data.files;
             setScratchFiles(files);
             setSelectedScratch(selected => files.some(file => file.name === selected) ? selected : null);
         } catch (error: any) {
-            setError(error?.message || 'Failed to load scratch files');
+            if (requestId === filesRequestRef.current) setError(error?.message || 'Failed to load workspace files');
         } finally {
-            setLoading(false);
+            if (requestId === filesRequestRef.current) setLoading(false);
         }
     }, [activeWorkspace?.id]);
 
     useEffect(() => {
+        filesRequestRef.current++;
         setSavedState('');
         setScratchFiles([]);
         setSelectedScratch(null);
+        return () => { filesRequestRef.current++; };
     }, [activeWorkspace?.id]);
 
     useEffect(() => {
@@ -605,7 +542,7 @@ export const LogViewerDialog: FC<{
                 >
                     <Tab label={t('logs.logTab', { defaultValue: 'Backend log' })} />
                     <Tab label={t('logs.savedStateTab', { defaultValue: 'Saved state' })} />
-                    <Tab label={t('logs.scratchFilesTab', { defaultValue: 'Scratch files' })} />
+                    <Tab label={t('logs.workspaceFilesTab', { defaultValue: 'Workspace files' })} />
                 </Tabs>
                 <DialogContent dividers data-testid="diagnostics-content" sx={{ p: 0, height: '60vh', flex: '0 1 60vh', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
                     {activeTab === 0 && path && (
@@ -658,24 +595,26 @@ export const LogViewerDialog: FC<{
                                 {content || (!loading && !error ? t('logs.empty', { defaultValue: 'Log file is empty.' }) : '')}
                             </Box>
                             <Box sx={{ flex: 1, minHeight: 0, display: activeTab === 2 ? 'flex' : 'none', flexDirection: { xs: 'column', sm: 'row' }, overflow: 'hidden' }}>
-                                <List dense aria-label="Scratch files" sx={{ width: { xs: '100%', sm: 260 }, maxHeight: { xs: '20vh', sm: '100%' }, flexShrink: 0, overflow: 'auto', borderRight: '1px solid', borderColor: 'divider' }}>
-                                    {!loading && !error && scratchFiles.length === 0 && <Typography sx={{ p: 2, fontSize: textVar.sm, color: 'text.secondary' }}>No scratch files.</Typography>}
+                                <List dense aria-label="Workspace files" sx={{ width: { xs: '100%', sm: 260 }, maxHeight: { xs: '20vh', sm: '100%' }, flexShrink: 0, overflow: 'auto', borderRight: '1px solid', borderColor: 'divider' }}>
+                                    {!loading && !error && scratchFiles.length === 0 && <Typography sx={{ p: 2, fontSize: textVar.sm, color: 'text.secondary' }}>No workspace files.</Typography>}
                                     {scratchFiles.map(file => <ListItemButton key={file.name} selected={selectedScratch === file.name} onClick={() => setSelectedScratch(file.name)}>
-                                        <ListItemText primary={file.name.slice('scratch/'.length)} secondary={`${file.file_size.toLocaleString()} bytes`}
-                                            primaryTypographyProps={{ sx: { fontSize: textVar.sm, overflowWrap: 'anywhere' } }} />
+                                        <ListItemText primary={file.name} secondary={file.file_size === 0 ? '0 B' : formatBytes(file.file_size)}
+                                            primaryTypographyProps={{ sx: { fontSize: textVar.sm, overflowWrap: 'anywhere' } }}
+                                            secondaryTypographyProps={{ sx: { fontSize: textVar.xs, lineHeight: 1.4 } }} />
                                     </ListItemButton>)}
                                 </List>
                                 <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                                     {selectedScratch && <Box sx={{ display: 'flex', alignItems: 'center', px: 2, py: 0.5, borderBottom: '1px solid', borderColor: 'divider' }}>
                                         <Typography sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', fontSize: textVar.sm }}>{selectedScratch}</Typography>
-                                        <Tooltip title="Download file"><IconButton aria-label="Download scratch file" size="small" onClick={handleDownloadScratch}><DownloadIcon fontSize="small" /></IconButton></Tooltip>
+                                        <Tooltip title="Download file"><IconButton aria-label="Download file" size="small" onClick={handleDownloadScratch}><DownloadIcon fontSize="small" /></IconButton></Tooltip>
                                     </Box>}
                                     {scratchPreviewLoading ? <Box sx={{ p: 2 }}><CircularProgress size={20} /></Box>
                                         : scratchPreviewError ? <Typography color="error" sx={{ p: 2 }}>{scratchPreviewError}</Typography>
                                         : <Box component="pre" sx={{ m: 0, p: 2, overflow: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontFamily: 'var(--df-font-mono)', fontSize: textVar.xs }}>{scratchPreview}</Box>}
                                 </Box>
                             </Box>
-                            <Box sx={{ display: activeTab === 1 ? 'block' : 'none', flex: 1, minHeight: 0, overflow: 'hidden', '& > .cm-theme': { height: '100%' } }}>
+                            <Box sx={{ display: activeTab === 1 ? 'block' : 'none', flex: 1, minHeight: 0, overflow: 'hidden', '& > .cm-theme': { height: '100%' },
+                                ...codeEditorSearchPanelSx(theme) }}>
                                 <CodeMirror
                                     value={savedState}
                                     height="100%"

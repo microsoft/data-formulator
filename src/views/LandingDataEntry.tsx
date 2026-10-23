@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { Alert, Box, Button, Chip, Typography, alpha } from '@mui/material';
+import type { Theme } from '@mui/material/styles';
 import BoltOutlinedIcon from '@mui/icons-material/BoltOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import AddIcon from '@mui/icons-material/Add';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import { useTranslation } from 'react-i18next';
 import { AgentChatInput } from './AgentChatInput';
-import { buildDataLoadingQuickActions, buildDataLoadingSuggestions } from './dataLoadingSuggestions';
+import { TerminalAccessButton } from '../components/TerminalApprovalDialog';
+import { buildDataLoadingQuickActions, buildDataLoadingSuggestions, QuickActionContext } from './dataLoadingSuggestions';
 import { ConnectorInstance } from '../components/ComponentType';
 import { apiRequest } from '../app/apiClient';
 import { getUrls } from '../app/utils';
@@ -16,15 +18,16 @@ interface LandingDataEntryProps {
     onStartChat: (prompt: string, images: string[], attachments: string[]) => void;
     ensureActiveWorkspace: () => void;
     onUpload: () => void;
-    onConnect: () => void;
+    onConnect?: () => void;
     onLinkFolder?: () => void;
     onSelectConnector: (connector: ConnectorInstance) => void;
     connectors: ConnectorInstance[];
     readOnly?: boolean;
+    quickActionContext?: QuickActionContext;
 }
 
 export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
-    onStartChat, ensureActiveWorkspace, onUpload, onConnect, onLinkFolder, onSelectConnector, connectors, readOnly = false,
+    onStartChat, ensureActiveWorkspace, onUpload, onConnect, onLinkFolder, onSelectConnector, connectors, readOnly = false, quickActionContext,
 }) => {
     const { t } = useTranslation();
     const [input, setInput] = useState('');
@@ -32,6 +35,8 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
     const [attachments, setAttachments] = useState<string[]>([]);
     const [uploadCount, setUploadCount] = useState(0);
     const [error, setError] = useState('');
+    // One pick per visit, so the second quick action doesn't change while the user reads it.
+    const [quickActionSeed] = useState(() => Math.random());
     const disabled = readOnly || uploadCount > 0;
     const submit = (text: string, imageValues: string[], attachmentValues: string[]) => {
         if (disabled || (!text.trim() && !imageValues.length && !attachmentValues.length)) return;
@@ -49,15 +54,15 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
         display: 'inline-flex', alignItems: 'center', gap: 0.5, p: 0, border: 'none', borderRadius: 0,
         background: 'none', maxWidth: '100%', minWidth: 0, minHeight: 0, textTransform: 'none', whiteSpace: 'normal',
         fontWeight: 400, fontSize: '0.8125rem', lineHeight: 1.4, textAlign: 'left', overflowWrap: 'anywhere',
-        color: theme => alpha(theme.palette.text.primary, 0.76), transition: 'color 120ms ease',
+        color: (theme: Theme) => alpha(theme.palette.text.primary, 0.76), transition: 'color 120ms ease',
         '& .MuiButton-startIcon': { m: 0, flexShrink: 0, '& .MuiSvgIcon-root': { fontSize: iconVar.md } },
         '&:hover': { background: 'none', color: 'primary.main', textDecoration: 'underline', textUnderlineOffset: 2 },
     } as const;
     const labelStyle = { fontSize: '0.8rem', fontWeight: 600,
-        color: theme => alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 } as const;
+        color: (theme: Theme) => alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 } as const;
     return <Box sx={{ width: '100%', maxWidth: 800, mx: 'auto', textAlign: 'left' }}>
         <Box sx={{ mb: 1.75, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75 }}>
-            {buildDataLoadingQuickActions(suggestionArgs).map(action => <Chip key={action.kind}
+            {buildDataLoadingQuickActions(suggestionArgs, quickActionContext, quickActionSeed).map(action => <Chip key={action.kind}
                 icon={<BoltOutlinedIcon />} label={action.label} onClick={action.onClick} disabled={disabled}
                 variant="outlined" size="small" sx={{ fontSize: textVar.md, minHeight: 30, height: { xs: 'auto', sm: 30 }, maxWidth: '100%', borderRadius: 2,
                     color: 'text.secondary', borderColor: theme => alpha(theme.palette.text.primary, 0.12),
@@ -67,6 +72,7 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
         </Box>
         {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 1 }}>{error}</Alert>}
         <AgentChatInput value={input} onChange={setInput} images={images} onImagesChange={setImages}
+            leadingSlot={<TerminalAccessButton />}
             onSend={() => submit(input, images, attachments)} disabled={disabled} layout="stacked" minRows={4}
             attachments={attachments} onAttachmentsChange={setAttachments}
             onNonImageFile={async file => {
@@ -88,7 +94,7 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
             focusSuggestions={buildDataLoadingSuggestions(suggestionArgs)}
             placeholder={t('upload.agentChatPlaceholder', { defaultValue: 'Ask the agent to find datasets, or extract data from an image or text...' })}
             sendTooltip={t('upload.agentChatSendTooltip', { defaultValue: 'Start chatting with the agent' })}
-            sx={{ borderColor: theme => alpha(theme.palette.primary.main, 0.38),
+            sx={{ borderColor: (theme: Theme) => alpha(theme.palette.primary.main, 0.38),
                 boxShadow: '0 5px 18px rgba(32, 33, 36, 0.11), 0 1px 4px rgba(32, 33, 36, 0.07)',
                 '&:hover': { boxShadow: '0 6px 20px rgba(32, 33, 36, 0.11), 0 2px 6px rgba(32, 33, 36, 0.06)' } }} />
         <Box sx={{ mt: 4, display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -113,9 +119,9 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
                 {onLinkFolder && <Button disableRipple startIcon={<CreateNewFolderIcon />} onClick={onLinkFolder} sx={linkStyle}>
                     {t('upload.localFolder', { defaultValue: 'Link local folder' })}
                 </Button>}
-                <Button disableRipple startIcon={<AddIcon />} onClick={onConnect} sx={linkStyle}>
+                {onConnect && <Button disableRipple startIcon={<AddIcon />} onClick={onConnect} sx={linkStyle}>
                     {t('upload.addConnection', { defaultValue: 'Connect databases' })}
-                </Button>
+                </Button>}
             </Box>
         </Box>
     </Box>;

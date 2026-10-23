@@ -100,6 +100,33 @@ def test_upload_list_download_and_delete(client, tmp_workspace):
     assert client.get("/api/workspace/files").get_json()["data"]["files"] == []
 
 
+def test_diagnostics_include_managed_parquet_files_with_bounded_read_only_access(client, tmp_workspace):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    metadata = tmp_workspace.write_parquet_from_arrow(pa.table({"value": list(range(75))}), "events")
+    tmp_workspace.confined_scratch.write("note.txt", b"scratch note")
+    _upload(client, "notes.md", b"saved note")
+    path = f"data/{metadata.filename}"
+    ordinary = client.get("/api/workspace/files?include_temp=true").get_json()["data"]["files"]
+    assert path not in [item["name"] for item in ordinary]
+    files = client.get("/api/workspace/files?include_temp=true&include_tables=true").get_json()["data"]["files"]
+    assert [item["name"] for item in files] == [path, "notes.md", "scratch/note.txt"]
+    assert files[0]["file_size"] > 0
+    preview = client.get(f"/api/workspace/files/{path}/preview").get_json()["data"]
+    assert preview["kind"] == "table"
+    assert len(preview["rows"]) == 50
+    assert preview["row_count"] == 75
+    assert preview["truncated"] is True
+    downloaded = client.get(f"/api/workspace/files/{path}")
+    assert pq.read_table(io.BytesIO(downloaded.data)).num_rows == 75
+    assert client.delete(f"/api/workspace/files/{path}").get_json()["status"] == "error"
+    for invalid in ("data/missing.parquet", "data/../notes.md", "data/../events.parquet"):
+        assert client.get(f"/api/workspace/files/{invalid}").get_json()["status"] == "error"
+        assert client.get(f"/api/workspace/files/{invalid}/preview").get_json()["status"] == "error"
+    assert tmp_workspace.get_table_metadata("events").row_count == 75
+
+
 def test_duplicate_filenames_are_kept(client):
     assert _upload(client, "notes.md").get_json()["data"]["name"] == "notes.md"
     assert _upload(client, "notes.md").get_json()["data"]["name"] == "notes_2.md"
@@ -282,3 +309,24 @@ def test_preview_uploaded_docx_without_persisting(client, tmp_workspace):
 
     assert response.get_json()["data"]["content"] == "Staged document"
     assert tmp_workspace.list_workspace_files() == []
+
+def test_files_in_folders_are_created_moved_and_deleted_with_their_folder(client, tmp_workspace):
+    created = client.post("/api/workspace/files/text", json={"name": "notes/plan.md"}).get_json()["data"]
+    assert created["name"] == "notes/plan.md"
+    for invalid in ("notes//plan.md", "notes/../plan.md", "/plan.md", "a/b/c/d/e.md", "notes\\plan.md", "notes/.write-x"):
+        assert client.post("/api/workspace/files/text", json={"name": invalid}).get_json()["status"] == "error", invalid
+    # Encoded or not, the name addresses the file in its folder.
+    saved = client.put("/api/workspace/files/notes%2Fplan.md/text", json={
+        "content": "Plan", "content_hash": created["content_hash"]}).get_json()
+    assert saved["status"] == "success"
+    assert client.get("/api/workspace/files/notes/plan.md").data == b"Plan"
+    files_root = tmp_workspace._confined_files.root
+    assert (files_root / "notes" / "plan.md").read_bytes() == b"Plan"
+
+    moved = client.patch("/api/workspace/files/notes%2Fplan.md", json={"name": "archive/2026/plan.md"}).get_json()["data"]
+    assert moved["name"] == "archive/2026/plan.md"
+    assert not (files_root / "notes").exists()
+    assert [item["name"] for item in client.get("/api/workspace/files").get_json()["data"]["files"]
+            if not item.get("temporary")] == ["archive/2026/plan.md"]
+    assert client.delete("/api/workspace/files/archive%2F2026%2Fplan.md").get_json()["status"] == "success"
+    assert not (files_root / "archive").exists()

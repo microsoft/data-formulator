@@ -37,6 +37,96 @@ const derivedTable = {
 };
 
 describe("split table collections", () => {
+  it('replaces a virtual reference in place without disturbing existing outputs', () => {
+    const reference = { kind: 'external-table-reference' as const, id: 'external:orders', connectorId: 'db',
+      tableKey: 'orders', sourceTable: { id: 'orders', name: 'orders' }, displayName: 'Original orders',
+      capturedAt: '', summary: { columns: [] } };
+    let state = dataFormulatorReducer(undefined, dfActions.upsertExternalTableReference(reference));
+    state = dataFormulatorReducer(state, dfActions.addTableToStore(derivedTable as any));
+    state = dataFormulatorReducer(state, dfActions.appendWorkspaceItems(['before', reference.id, 'after']));
+    state = dataFormulatorReducer(state, dfActions.addLoadedTableNode({ kind: 'loaded-table', id: 'loaded-reference-1',
+      tableId: reference.id, external: true, parentNodeId: 'turn-1', createdAt: 1 }));
+    // The thread node takes focus; the canvas shows the source it points at.
+    expect(state.focusedId).toEqual({ type: 'reference', referenceId: 'loaded-reference-1' });
+    expect(dfSelectors.selectCanvasTarget(state)).toEqual({ type: 'external-table', referenceId: reference.id });
+    state = dataFormulatorReducer(state, dfActions.replaceExternalTableReference({ referenceId: reference.id, table: sourceTable as any }));
+    expect(state.externalTableReferences).toEqual([]);
+    expect(state.loadedTableNodes).toEqual([{ kind: 'loaded-table', id: 'loaded-reference-1', tableId: 'orders', parentNodeId: 'turn-1', createdAt: 1 }]);
+    expect(state.inputTables[0].displayId).toBe('Original orders');
+    expect(state.workspaceItemOrder).toEqual(['before', 'shelf-card-orders', 'after']);
+    expect(dfSelectors.selectCanvasTarget(state)).toEqual({ type: 'table', tableId: 'orders' });
+    expect(state.derivedTables[0].derive).toMatchObject(derivedTable.derive);
+    const deleted = dataFormulatorReducer(undefined, dfActions.replaceExternalTableReference({ referenceId: reference.id, table: sourceTable as any }));
+    expect(deleted.inputTables).toEqual([]);
+    let removed = dataFormulatorReducer(undefined, dfActions.upsertExternalTableReference(reference));
+    removed = dataFormulatorReducer(removed, dfActions.addLoadedTableNode({ kind: 'loaded-table', id: 'loaded-reference-1',
+      tableId: reference.id, external: true, parentNodeId: 'turn-1', createdAt: 1 }));
+    removed = dataFormulatorReducer(removed, dfActions.removeExternalTableReference(reference.id));
+    expect(removed.loadedTableNodes).toEqual([]);
+    expect(removed.focusedId).toBeUndefined();
+  });
+
+  it.each(['add', 'insert'])('keeps one derived owner across %s publication, refresh, and restore', publication => {
+    const { derive, ...snapshot } = derivedTable;
+    let state = dataFormulatorReducer(undefined, dfActions.addTableToStore(snapshot as any));
+    const staleInput = state.inputTables[0];
+    state = dataFormulatorReducer(state, publication === 'add'
+      ? dfActions.addTableToStore(derivedTable as any)
+      : dfActions.insertDerivedTables(derivedTable as any));
+    expect(state.inputTables).toEqual([]);
+    expect(state.derivedTables).toHaveLength(1);
+    state = dataFormulatorReducer(state, dfActions.addTableToStore({ ...snapshot, rows: [{ order_id: 2 }] } as any));
+    expect(state.inputTables).toEqual([]);
+    expect(state.derivedTables[0].derive).toEqual(derive);
+    expect(state.derivedTables[0].rows).toEqual([{ order_id: 2 }]);
+    state = dataFormulatorReducer(state, dfActions.loadState({ ...state, inputTables: [staleInput] }));
+    expect(state.inputTables).toEqual([]);
+    expect(dfSelectors.getAllTables(state)).toHaveLength(1);
+    expect(state.derivedTables[0].derive).toEqual(derive);
+  });
+
+  it("preserves workspace item order and appends recreated items at the end", () => {
+    let state = dataFormulatorReducer(undefined, dfActions.addTableToStore(sourceTable as any));
+    state = dataFormulatorReducer(state, dfActions.appendWorkspaceItems([
+      'shelf-card-orders', 'workspace-file-notes.txt', 'external:orders', 'shelf-card-later',
+    ]));
+    state = dataFormulatorReducer(state, dfActions.removeTableLocally('orders'));
+    state = dataFormulatorReducer(state, dfActions.removeFileNodes('notes.txt'));
+    state = dataFormulatorReducer(state, dfActions.removeExternalTableReference('external:orders'));
+    expect(state.workspaceItemOrder).toEqual(['shelf-card-later']);
+    state = dataFormulatorReducer(state, dfActions.appendWorkspaceItems([
+      'shelf-card-later', 'workspace-file-notes.txt', 'workspace-file-notes.txt', 'shelf-card-orders', 'external:orders',
+    ]));
+    expect(state.workspaceItemOrder).toEqual([
+      'shelf-card-later', 'workspace-file-notes.txt', 'shelf-card-orders', 'external:orders',
+    ]);
+    expect(dataFormulatorReducer(undefined, dfActions.loadState(state)).workspaceItemOrder).toEqual(state.workspaceItemOrder);
+    expect(dataFormulatorReducer(undefined, dfActions.loadState({})).workspaceItemOrder).toEqual([]);
+  });
+
+  it("tracks concurrent pending table loads and clears only the settled request", () => {
+    const pending = (requestId: string) => ({ type: 'dataFormulator/loadTable/pending',
+      meta: { requestId, arg: { table: sourceTable } } });
+    let state = dataFormulatorReducer(undefined, pending('first'));
+    state = dataFormulatorReducer(state, pending('second'));
+    expect(state.pendingTableLoads).toEqual([
+      { id: 'first', names: ['Orders'] }, { id: 'second', names: ['Orders'] },
+    ]);
+    state = dataFormulatorReducer(state, { type: 'dataFormulator/loadTable/rejected', meta: { requestId: 'first' } });
+    expect(state.pendingTableLoads).toEqual([{ id: 'second', names: ['Orders'] }]);
+    expect(dataFormulatorReducer(undefined, dfActions.loadState(state)).pendingTableLoads).toEqual([]);
+    state = dataFormulatorReducer(state, { type: 'dataFormulator/loadTable/fulfilled', meta: { requestId: 'second' } });
+    expect(state.pendingTableLoads).toEqual([]);
+  });
+
+  it("cleans up agent loading entries independently", () => {
+    let state = dataFormulatorReducer(undefined, dfActions.startTableLoad({ id: 'agent', names: ['Reviews'] }));
+    state = dataFormulatorReducer(state, dfActions.startTableLoad({ id: 'agent', names: ['Scoped reviews'] }));
+    expect(state.pendingTableLoads).toEqual([{ id: 'agent', names: ['Scoped reviews'] }]);
+    state = dataFormulatorReducer(state, dfActions.finishTableLoad('agent'));
+    expect(state.pendingTableLoads).toEqual([]);
+  });
+
   it("stores file results separately and updates revisions without moving the node", () => {
     const file = { kind: "file" as const, id: "file-result", path: "scratch/cpi.parquet",
       displayName: "CPI Summary", contentHash: "v1", parentNodeId: CONVERSATION_ROOT_ID, createdAt: 1 };
@@ -92,7 +182,7 @@ describe("split table collections", () => {
     expect(state.derivedTables[0].derive?.source).toEqual(["orders"]);
   });
 
-  it("stores a Flint theme and returns an active custom variant to the base chart", () => {
+  it("stores a Flint theme on the chart", () => {
     let state = dataFormulatorReducer(
       undefined,
       dfActions.addChart({
@@ -101,7 +191,6 @@ describe("split table collections", () => {
         tableRef: "orders",
         source: "user",
         encodingMap: {},
-        activeVariantId: "variant-1",
       } as any)
     );
 
@@ -111,7 +200,6 @@ describe("split table collections", () => {
     );
 
     expect(state.charts[0].themeId).toBe("nyt");
-    expect(state.charts[0].activeVariantId).toBeUndefined();
   });
 
   it("stores inferred field semantics separately from physical metadata", () => {
@@ -154,7 +242,7 @@ describe("split table collections", () => {
         tableId: "orders",
         fields: {
           order_id: {
-            semanticType: "identifier",
+            semanticType: "ID",
             sortOrder: ["first", "second"],
             intrinsicDomain: [1, 100],
             unit: "order",
@@ -169,6 +257,21 @@ describe("split table collections", () => {
       dfActions.removeTableLocally("orders")
     );
     expect(state.tableSemantics).toEqual([]);
+  });
+
+  it("layers agent-authored semantics over every inference result", () => {
+    let state = dataFormulatorReducer(undefined, dfActions.addTableToStore(sourceTable as any));
+    state = dataFormulatorReducer(state, dfActions.applyAuthoredFieldSemantics({
+      tableId: "orders", fields: { order_id: { semanticType: "Rank", displayName: "Order" } },
+    }));
+    const infer = (fields: Record<string, unknown>) => fetchFieldSemanticType.fulfilled(
+      { result: [{ fields }] }, "request-id", sourceTable as any);
+    state = dataFormulatorReducer(state, infer({ order_id: { semantic_type: "identifier", unit: "order", display_name: "Ignored" } }));
+    expect(state.tableSemantics[0].fields.order_id).toMatchObject({ semanticType: "Rank", unit: "order", displayName: "Order" });
+
+    state = dataFormulatorReducer(state, infer({ order_id: { semantic_type: "String" } }));
+    expect(state.tableSemantics[0].fields.order_id).toMatchObject({ semanticType: "Rank", displayName: "Order" });
+    expect(state.tableSemantics[0].fields.order_id.unit).toBeUndefined();
   });
 
   it("does not replace a manually renamed table with a late inferred name", () => {
@@ -404,82 +507,58 @@ describe("split table collections", () => {
     expect(state.draftNodes[0].derive.source).toEqual(["orders"]);
   });
 
-  it("clears an orphaned continuation answer when its failed draft is deleted", () => {
+  it("reopens a question when its only reply is removed, not when the reply's failed run is", () => {
     let state = dataFormulatorReducer(
       undefined,
       dfActions.addTextTurn({
-        kind: "text",
-        id: "textTurn-answer",
-        displayId: "Answer",
-        textKind: "explain",
-        content: "Previous explanation",
-        parentNodeId: "orders",
-        answered: true,
-        answer: "visualize conversation turns",
-        createdAt: 1,
+        kind: "text", id: "textTurn-answer", displayId: "Answer", textKind: "explain",
+        content: "Previous explanation", parentNodeId: "orders", answered: true, createdAt: 1,
+      })
+    );
+    state = dataFormulatorReducer(
+      state,
+      dfActions.addTextTurn({
+        kind: "text", id: "textTurn-reply", displayId: "Reply", textKind: "explain",
+        content: "", prompt: "visualize conversation turns", parentNodeId: "textTurn-answer", createdAt: 2,
       })
     );
     state = dataFormulatorReducer(
       state,
       dfActions.createDraftNode({
-        id: "draft-failed",
-        displayId: "Failed",
-        parentNodeId: "textTurn-answer",
-        parentTableId: "orders",
-        source: ["orders"],
-        interaction: [],
+        id: "draft-failed", displayId: "Failed", parentNodeId: "textTurn-reply",
+        parentTableId: "orders", source: ["orders"], interaction: [],
       })
     );
 
     state = dataFormulatorReducer(state, dfActions.removeDraftNode("draft-failed"));
+    expect(state.textTurns.map(turn => turn.id)).toEqual(["textTurn-answer", "textTurn-reply"]);
+    expect(state.textTurns[0].answered).toBe(true);
 
+    state = dataFormulatorReducer(state, dfActions.removeTextTurn("textTurn-reply"));
     expect(state.textTurns[0].answered).toBe(false);
-    expect(state.textTurns[0]).not.toHaveProperty("answer");
   });
 
-  it("keeps a continuation answer when another child artifact remains", () => {
+  it("keeps a question answered while another reply remains", () => {
     let state = dataFormulatorReducer(
       undefined,
       dfActions.addTextTurn({
-        kind: "text",
-        id: "textTurn-answer",
-        displayId: "Answer",
-        textKind: "explain",
-        content: "Previous explanation",
-        parentNodeId: "orders",
-        answered: true,
-        answer: "visualize conversation turns",
-        createdAt: 1,
+        kind: "text", id: "textTurn-answer", displayId: "Answer", textKind: "explain",
+        content: "Previous explanation", parentNodeId: "orders", answered: true, createdAt: 1,
       })
     );
-    state = dataFormulatorReducer(
-      state,
-      dfActions.createDraftNode({
-        id: "draft-failed",
-        displayId: "Failed",
-        parentNodeId: "textTurn-answer",
-        parentTableId: "orders",
-        source: ["orders"],
-        interaction: [],
-      })
-    );
-    state = dataFormulatorReducer(
-      state,
-      dfActions.addTextTurn({
-        kind: "text",
-        id: "textTurn-child",
-        displayId: "Child",
-        textKind: "explain",
-        content: "Another response",
-        parentNodeId: "textTurn-answer",
-        createdAt: 2,
-      })
-    );
+    for (const id of ["textTurn-reply", "textTurn-other-reply"]) {
+      state = dataFormulatorReducer(
+        state,
+        dfActions.addTextTurn({
+          kind: "text", id, displayId: id, textKind: "explain", content: "", prompt: id,
+          parentNodeId: "textTurn-answer", createdAt: 2,
+        })
+      );
+    }
 
-    state = dataFormulatorReducer(state, dfActions.removeDraftNode("draft-failed"));
+    state = dataFormulatorReducer(state, dfActions.removeTextTurn("textTurn-reply"));
 
     expect(state.textTurns[0].answered).toBe(true);
-    expect(state.textTurns[0].answer).toBe("visualize conversation turns");
   });
 
   it("resolves focused draft canvas context through its parent turn", () => {
@@ -614,7 +693,6 @@ describe("split table collections", () => {
         content: "How can I help?",
         parentNodeId: "root",
         answered: true,
-        answer: "Tell me more",
         createdAt: 1,
       })
     );
@@ -625,7 +703,8 @@ describe("split table collections", () => {
         id: "textTurn-child",
         displayId: "Child response",
         textKind: "explain",
-        content: "Here is more detail.",
+        content: "",
+        prompt: "Tell me more",
         parentNodeId: "textTurn-parent",
         createdAt: 2,
       })
@@ -639,7 +718,6 @@ describe("split table collections", () => {
         answered: false,
       }),
     ]);
-    expect(state.textTurns[0]).not.toHaveProperty("answer");
   });
 
   it("removes loaded-table references with their shelf table", () => {
@@ -767,14 +845,14 @@ describe("text artifact canvas ownership", () => {
   it.each([
     ["form", { form: { kind: "connector", title: "Connect", connector: { sourceType: "kusto", status: "pending" } } }],
     ["data operation", { dataOperation: { id: "operation-1", plans: [] } }],
-  ])("opens conversation when selecting an explanation after a %s", (_label, artifact) => {
+  ])("traces a message after a %s back past it to the item before it (design-docs/58)", (_label, artifact) => {
     const state = {
-      ...dataFormulatorReducer(undefined, { type: "test/init" }),
+      ...dataFormulatorReducer(undefined, dfActions.addTableToStore(sourceTable as any)),
       focusedId: { type: "text", textId: "explanation-1" },
       textTurns: [
         {
           kind: "text", id: "artifact-1", displayId: "artifact-1",
-          textKind: "explain", content: "Artifact", parentNodeId: "root",
+          textKind: "explain", content: "Artifact", parentNodeId: "orders",
           createdAt: 1, ...artifact,
         },
         {
@@ -785,9 +863,50 @@ describe("text artifact canvas ownership", () => {
       ],
     };
 
-    expect(dfSelectors.selectCanvasTarget(state as any)).toEqual({
-      type: "text",
-      textId: "artifact-1",
-    });
+    expect(dfSelectors.selectCanvasTarget(state as any)).toEqual({ type: "table", tableId: "orders" });
+    // The widget itself still opens its own view when it is the focused message.
+    expect(dfSelectors.selectCanvasTarget({ ...state, focusedId: { type: "text", textId: "artifact-1" } } as any))
+      .toEqual({ type: "text", textId: "artifact-1" });
+  });
+});
+
+describe("removing thread items (design-docs/58)", () => {
+  const turn = (id: string, parentNodeId: string, createdAt: number) => dfActions.addTextTurn({
+    kind: "text", id, displayId: id, textKind: "explain", content: id, parentNodeId, createdAt,
+  });
+  const file = (path: string, parentNodeId: string) => dfActions.upsertFileNode({
+    kind: "file", id: `file-${path}`, path, displayName: path, contentHash: "hash", parentNodeId, createdAt: 1,
+  });
+  const parentOf = (state: any, id: string) => [...state.textTurns, ...state.fileNodes, ...state.generatedReports,
+    ...state.artifactSets].find((node: any) => node.id === id)?.parentNodeId;
+
+  it("moves what followed a removed file or report to the item's parent", () => {
+    let state = dataFormulatorReducer(undefined, turn("ask", CONVERSATION_ROOT_ID, 1));
+    state = dataFormulatorReducer(state, file("notes.md", "ask"));
+    state = dataFormulatorReducer(state, dfActions.saveGeneratedReport({ id: "report", content: "", parentNodeId: "file-notes.md",
+      selectedChartIds: [], createdAt: 2, status: "completed" } as any));
+    state = dataFormulatorReducer(state, turn("after", "report", 3));
+
+    state = dataFormulatorReducer(state, dfActions.deleteGeneratedReport("report"));
+    expect(parentOf(state, "after")).toBe("file-notes.md");
+    state = dataFormulatorReducer(state, dfActions.removeFileNodes("notes.md"));
+    expect(parentOf(state, "after")).toBe("ask");
+  });
+
+  it("drops removed members from an artifact set and turns a one-item set back into that item", () => {
+    let state = dataFormulatorReducer(undefined, turn("ask", CONVERSATION_ROOT_ID, 1));
+    state = dataFormulatorReducer(state, file("a.md", "ask"));
+    state = dataFormulatorReducer(state, file("b.md", "ask"));
+    state = dataFormulatorReducer(state, file("c.md", "ask"));
+    state = dataFormulatorReducer(state, dfActions.addArtifactSet({ kind: "artifact-set", id: "set", parentNodeId: "ask",
+      memberIds: ["file-a.md", "file-b.md", "file-c.md"], createdAt: 2 }));
+    state = dataFormulatorReducer(state, turn("after", "set", 3));
+
+    state = dataFormulatorReducer(state, dfActions.removeFileNodes("a.md"));
+    expect(state.artifactSets[0].memberIds).toEqual(["file-b.md", "file-c.md"]);
+    state = dataFormulatorReducer(state, dfActions.removeFileNodes("b.md"));
+    expect(state.artifactSets).toEqual([]);
+    expect(parentOf(state, "file-c.md")).toBe("ask");
+    expect(parentOf(state, "after")).toBe("file-c.md");
   });
 });

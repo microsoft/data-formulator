@@ -16,11 +16,16 @@
  * only spot of color is the header icon's badge (`?` / `i`).
  * Keeping them in one file makes shared styling/layout tweaks (header
  * spacing, palette use, collapse animation) trivial to maintain.
+ *
+ * Long text scrolls inside a height cap. When it is taller than a small
+ * minimum, a grip on the panel's top edge lets the user drag that cap (from the
+ * minimum up to the content, at most 70% of the window); the chosen height is
+ * remembered for later panels, and double-clicking the grip restores the default.
  */
 
-import React, { FC, ReactNode, useEffect, useRef, useState } from 'react';
+import React, { FC, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Box, Button, IconButton, InputAdornment, Radio, TextField, Tooltip, Typography, useTheme,
+    Box, Button, ButtonBase, CircularProgress, Collapse, IconButton, InputAdornment, Radio, TextField, Tooltip, Typography, useTheme,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
@@ -29,6 +34,10 @@ import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded';
+import CodeIcon from '@mui/icons-material/Code';
+import TerminalIcon from '@mui/icons-material/Terminal';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { useTranslation } from 'react-i18next';
 import { AgentToyIcon } from './AgentToyIcon';
 import {
@@ -39,12 +48,119 @@ import { renderFieldHighlights, CompactMarkdown } from './InteractionEntryCard';
 import { iconVar, textVar } from '../app/layout';
 import { DataOperationCard } from '../components/DataOperationCard';
 import type { DataOperation } from '../dataOperations/models';
-import { TerminalMessageContent } from '../components/TerminalApprovalDialog';
-import type { TerminalExecution } from '../components/ComponentType';
+import { ExecutionCodeBlock, TerminalExecutionView, TerminalMessageContent } from '../components/TerminalApprovalDialog';
+import type { TerminalExecution, CodeExecution } from '../components/ComponentType';
 
 // ---------------------------------------------------------------------------
 // Shared shell
 // ---------------------------------------------------------------------------
+
+/** Below this the panel's text needs no resizing: shorter content just fits. */
+export const PAUSE_REGION_MIN_HEIGHT = 80;
+const PAUSE_HEIGHT_KEY = 'df.pausePanelHeight';
+const PAUSE_HEIGHT_STEP = 16;
+
+const readPauseHeight = (): number | undefined => {
+    try {
+        const value = Number(window.localStorage.getItem(PAUSE_HEIGHT_KEY));
+        return Number.isFinite(value) && value >= PAUSE_REGION_MIN_HEIGHT ? value : undefined;
+    } catch { return undefined; }
+};
+const writePauseHeight = (value: number | undefined) => {
+    try {
+        if (value === undefined) window.localStorage.removeItem(PAUSE_HEIGHT_KEY);
+        else window.localStorage.setItem(PAUSE_HEIGHT_KEY, String(value));
+    } catch { /* storage unavailable: the height lasts until the panel closes */ }
+};
+
+/** The panel's height cap chosen by the user, and how its scrolling regions report their content. */
+const PauseRegionContext = React.createContext<{ height?: number; register: (element: HTMLElement) => () => void } | null>(null);
+
+/**
+ * A scrolling text region of a pause panel. It is capped at `defaultMaxHeight`
+ * until the user drags the panel's grip; then every region follows that height.
+ */
+const PauseScrollRegion: FC<{ defaultMaxHeight: string; sx?: Record<string, unknown>; children: ReactNode }> = ({ defaultMaxHeight, sx, children }) => {
+    const region = useContext(PauseRegionContext);
+    const register = region?.register;
+    const ref = useRef<HTMLDivElement>(null);
+    useEffect(() => (ref.current && register ? register(ref.current) : undefined), [register]);
+    return <Box ref={ref} data-pause-scroll-region
+        sx={{ ...sx, boxSizing: 'border-box', maxHeight: region?.height !== undefined ? `${region.height}px` : defaultMaxHeight, overflowY: 'auto' }}>
+        {children}
+    </Box>;
+};
+
+/** Track the panel's scrolling regions and the height the user chose for them. */
+const usePauseRegionHeight = () => {
+    const [height, setHeight] = useState(readPauseHeight);
+    const [contentHeight, setContentHeight] = useState(0);
+    const regions = useRef(new Set<HTMLElement>());
+    const measure = useCallback(() => setContentHeight(Math.max(0, ...[...regions.current].map(element => element.scrollHeight))), []);
+    const observer = useMemo(() => typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure), [measure]);
+    useEffect(() => () => observer?.disconnect(), [observer]);
+    const register = useCallback((element: HTMLElement) => {
+        regions.current.add(element);
+        // The region is clipped at its cap, so watch its content to see it grow.
+        const content = [element, ...Array.from(element.children)];
+        content.forEach(node => observer?.observe(node));
+        measure();
+        return () => {
+            regions.current.delete(element);
+            content.forEach(node => observer?.unobserve(node));
+            measure();
+        };
+    }, [observer, measure]);
+    // From the minimum up to the full content, leaving room for the thread above.
+    const clamp = (value: number) => Math.round(Math.max(PAUSE_REGION_MIN_HEIGHT,
+        Math.min(value, contentHeight, window.innerHeight * 0.7)));
+    const current = () => Math.max(PAUSE_REGION_MIN_HEIGHT, ...[...regions.current].map(element => element.clientHeight));
+    return { height, setHeight, contentHeight, register, clamp, current };
+};
+
+/** Drag (or arrow keys) on the panel's top edge sets its text height; double-click restores the default. */
+const PauseResizeGrip: FC<{ resize: ReturnType<typeof usePauseRegionHeight> }> = ({ resize }) => {
+    const { t } = useTranslation();
+    const theme = useTheme();
+    const { height, setHeight, contentHeight, clamp, current } = resize;
+    const commit = (value: number | undefined) => { setHeight(value); writePauseHeight(value); };
+    const onPointerDown = (event: React.PointerEvent) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        const startY = event.clientY;
+        const start = current();
+        let last = height ?? start;
+        const move = (moveEvent: PointerEvent) => { last = clamp(start + startY - moveEvent.clientY); setHeight(last); };
+        const end = () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', end);
+            window.removeEventListener('pointercancel', end);
+            writePauseHeight(last);
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', end);
+        window.addEventListener('pointercancel', end);
+    };
+    const onKeyDown = (event: React.KeyboardEvent) => {
+        const value = height ?? current();
+        const next = event.key === 'ArrowUp' ? value + PAUSE_HEIGHT_STEP : event.key === 'ArrowDown' ? value - PAUSE_HEIGHT_STEP
+            : event.key === 'Home' ? PAUSE_REGION_MIN_HEIGHT : event.key === 'End' ? contentHeight : undefined;
+        if (next === undefined) return;
+        event.preventDefault();
+        commit(clamp(next));
+    };
+    return <Box role="separator" tabIndex={0} aria-orientation="horizontal"
+        aria-label={t('chartRec.resizePanel', { defaultValue: 'Resize panel' })}
+        aria-valuemin={PAUSE_REGION_MIN_HEIGHT} aria-valuemax={Math.round(contentHeight)} aria-valuenow={height}
+        title={t('chartRec.resizePanelHint', { defaultValue: 'Drag to resize; double-click to reset' })}
+        onPointerDown={onPointerDown} onKeyDown={onKeyDown} onDoubleClick={() => commit(undefined)}
+        sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 7, zIndex: 1, cursor: 'ns-resize', touchAction: 'none',
+            display: 'flex', justifyContent: 'center', alignItems: 'flex-start', pt: '2px',
+            '&::after': { content: '""', width: 28, height: 3, borderRadius: 2, bgcolor: alpha(theme.palette.text.primary, 0.18),
+                opacity: 0, transition: 'opacity 0.15s' },
+            '&:hover::after, &:focus-visible::after': { opacity: 1 },
+            '&:focus-visible': { outline: 'none' } }} />;
+};
 
 interface AgentPauseShellProps {
     /** Localized header label. */
@@ -72,6 +188,8 @@ interface AgentPauseShellProps {
     onClose: () => void;
     /** Deprecated: delete is handled from the thread card directly. */
     onDelete?: () => void;
+    /** Controls beside the close button. */
+    headerActions?: ReactNode;
     children: ReactNode;
 }
 
@@ -81,6 +199,7 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
     icon,
     accentColor,
     onClose,
+    headerActions,
     children,
 }) => {
     const theme = useTheme();
@@ -93,9 +212,13 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
     const panelBg = alpha(fillAccent, 0.05);
     const panelBorder = alpha(fillAccent, 0.18);
     const primaryColor = theme.palette.primary.main;
+    const resize = usePauseRegionHeight();
+    const region = useMemo(() => ({ height: resize.height, register: resize.register }), [resize.height, resize.register]);
 
     return (
+        <PauseRegionContext.Provider value={region}>
         <Box sx={{
+            position: 'relative',
             display: 'flex', flexDirection: 'column',
             px: 0.5, pt: 0,
             borderBottom: `1px solid ${panelBorder}`,
@@ -107,6 +230,7 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
             overflow: 'hidden',
             mx: '-10px', mt: '-8px', mb: '4px',
         }}>
+            {resize.contentHeight > PAUSE_REGION_MIN_HEIGHT && <PauseResizeGrip resize={resize} />}
             <Box sx={{
                 display: 'flex', alignItems: 'center', gap: '6px', minHeight: 16,
                 px: 0.5, mx: -0.5, pt: '8px', pb: '6px',
@@ -121,6 +245,7 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
                 }}>
                     {title}
                 </Typography>
+                {headerActions}
                 <Tooltip title={closeTooltip}>
                     <IconButton
                         size="small"
@@ -138,6 +263,7 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
 
             {children}
         </Box>
+        </PauseRegionContext.Provider>
     );
 };
 
@@ -198,6 +324,9 @@ export const ResponseOptionButton: FC<ResponseOptionButtonProps> = ({
 // ClarificationPanel (also handles `variant="explain"`)
 // ---------------------------------------------------------------------------
 
+/** Options shown before a long list collapses behind "+N more". */
+const OPTION_PREVIEW_COUNT = 8;
+
 interface ClarificationPanelProps {
     questions: ClarificationQuestion[];
     dataOperation?: DataOperation;
@@ -253,6 +382,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     const [freeTexts, setFreeTexts] = useState<Record<number, string>>({});
     const [localAnswers, setLocalAnswers] = useState<Record<number, ClarificationResponse>>({});
     const [hasUsedSkip, setHasUsedSkip] = useState(false);
+    const [expandedOptions, setExpandedOptions] = useState<Record<number, boolean>>({});
     const selectedAnswers = controlledAnswers ?? localAnswers;
 
     useEffect(() => {
@@ -260,6 +390,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
         setFreeTexts({});
         setLocalAnswers({});
         setHasUsedSkip(false);
+        setExpandedOptions({});
     }, [questions]);
 
     const setFreeText = (key: number, value: string) =>
@@ -301,12 +432,13 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     // A clarify panel auto-submits (on the click that completes it) only when
     // EVERY answer is a clicked option — a pure "click your way through" flow.
     // The moment any text answer is in play (a free_text question, or the user
-    // typed into a single_choice's "type your own" field), we show an explicit
+    // typed into a single_choice's "type your own" field), or a multi_choice
+    // question needs an explicit "done", we show an explicit
     // shared submit button instead, so a stray option click can never sweep up
     // an unfinished typed answer. The button belongs to the panel, not a row.
-    const hasFreeTextQuestion = !isExplain && questions.some(q => q.responseType === 'free_text');
+    const needsExplicitSubmit = !isExplain && questions.some(q => q.responseType === 'free_text' || q.responseType === 'multi_choice');
     const anyTextTyped = questions.some((_q, idx) => (freeTexts[idx] || '').trim().length > 0);
-    const showPanelSubmit = !isExplain && (hasFreeTextQuestion || anyTextTyped || hasUsedSkip);
+    const showPanelSubmit = !isExplain && (needsExplicitSubmit || anyTextTyped || hasUsedSkip);
 
     // Gather the reply: each question's clicked option, else its typed
     // free-text; plus (explain only) the optional panel-level custom override.
@@ -524,6 +656,28 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
         submitResponses([response]);
     };
 
+    // multi_choice: each click toggles one option; the answer lists the picks in option order.
+    const toggleMultiOption = (idx: number, label: string) => {
+        const current = selectedAnswers?.[idx];
+        const picked = new Set(current?.source === 'option' ? current.selections ?? [] : []);
+        if (picked.has(label)) picked.delete(label);
+        else picked.add(label);
+        const selections = (questions[idx]?.options || []).map(option => option.label).filter(item => picked.has(item));
+        if ((freeTexts[idx] || '').length > 0) setFreeText(idx, '');
+        if (selections.length === 0) {
+            setLocalAnswers(previous => {
+                const next = { ...previous };
+                delete next[idx];
+                return next;
+            });
+            onClearAnswer?.(idx);
+            return;
+        }
+        const response: ClarificationResponse = { question_index: idx, answer: selections.join(', '), selections, source: 'option' };
+        setLocalAnswers(previous => ({ ...previous, [idx]: response }));
+        onSelectAnswer?.(idx, response, false);
+    };
+
     const title = t(isExplain ? 'chartRec.explanationTitle' : 'chartRec.clarificationTitle');
     const selectedOperationResponse = dataOperation ? selectedAnswers?.[0] : undefined;
     const selectedPlanId = dataOperation?.plans.some(
@@ -560,16 +714,11 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                         {/* The finding that motivates the options; bounded like a
                             question so long prose can't push them off-screen. */}
                         {(dataOperation.description || questions[0]?.text) && (
-                            <Box sx={{
-                                maxHeight: 'clamp(144px, 28vh, 288px)',
-                                overflowY: 'auto',
-                                pr: '4px',
-                                mb: '6px',
-                            }}>
+                            <PauseScrollRegion defaultMaxHeight="clamp(144px, 28vh, 288px)" sx={{ pr: '4px', mb: '6px' }}>
                                 <Typography component="div" sx={{ fontSize: textVar.sm, color: theme.palette.text.primary, lineHeight: 1.5 }}>
                                     {renderFieldHighlights(dataOperation.description || questions[0].text, accentColor)}
                                 </Typography>
-                            </Box>
+                            </PauseScrollRegion>
                         )}
                         <DataOperationCard
                             operation={dataOperation}
@@ -611,11 +760,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                         {/* Text portion is height-bounded and scrollable so very
                             long explanations don't push options off-screen.
                             Options remain fixed below the scrolling region. */}
-                        <Box sx={{
-                            maxHeight: 'clamp(144px, 28vh, 288px)',
-                            overflowY: 'auto',
-                            pr: '4px',
-                        }}>
+                        <PauseScrollRegion defaultMaxHeight="clamp(144px, 28vh, 288px)" sx={{ pr: '4px' }}>
                             <Typography component="div" sx={{ fontSize: textVar.sm, color: theme.palette.text.primary, lineHeight: 1.5 }}>
                                 {!isExplain && questions.length > 1 && (
                                     <>
@@ -624,7 +769,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                                 )}
                                 {renderFieldHighlights(question.text, accentColor)}
                             </Typography>
-                        </Box>
+                        </PauseScrollRegion>
 
                         {isFreeTextOnly ? (
                             // A free_text question is answered right here, with
@@ -632,44 +777,67 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                             renderQuestionField(questionIndex, t('chartRec.freeTextClarificationPlaceholder'), fieldTrailing)
                         ) : (
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                {showChips && (question.options || []).length > 0 && (
-                                    <>
-                                        {isExplain && (
+                                {showChips && (question.options || []).length > 0 && (() => {
+                                    const options = question.options || [];
+                                    const isMulti = !isExplain && question.responseType === 'multi_choice';
+                                    const selected = selectedAnswers?.[questionIndex];
+                                    const isOptionSelected = (option: typeof options[number]) => selected?.source === 'option'
+                                        && (isMulti ? !!selected.selections?.includes(option.label)
+                                            : option.value ? selected.value === option.value : selected.answer === option.label);
+                                    // Collapse only when it hides at least two options; picks stay visible.
+                                    const collapsible = options.length > OPTION_PREVIEW_COUNT + 1;
+                                    const expanded = !collapsible || !!expandedOptions[questionIndex];
+                                    const visible = expanded ? options
+                                        : options.filter((option, index) => index < OPTION_PREVIEW_COUNT || isOptionSelected(option));
+                                    return <>
+                                        {(isExplain || isMulti) && (
                                             <Typography sx={{
                                                 fontSize: textVar.xxs,
                                                 color: theme.palette.text.disabled,
                                                 fontStyle: 'italic',
                                                 mt: '2px',
                                             }}>
-                                                {t('chartRec.explanationFollowupsLabel')}
+                                                {isExplain ? t('chartRec.explanationFollowupsLabel')
+                                                    : t('chartRec.multiChoiceLabel', { defaultValue: 'Select all that apply' })}
                                             </Typography>
                                         )}
-                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                            {(question.options || []).map((option, optionIndex) => {
-                                                const selected = selectedAnswers?.[questionIndex];
-                                                const isSelected = selected?.source === 'option'
-                                                    && (option.value
-                                                        ? selected.value === option.value
-                                                        : selected.answer === option.label);
-                                                return (
-                                                    <ResponseOptionButton
-                                                        key={optionIndex}
-                                                        accentColor={accentColor}
-                                                        selected={isSelected}
-                                                        onClick={() => handleAnswer({
-                                                                question_index: questionIndex,
-                                                                answer: option.label,
-                                                                ...(option.value ? { value: option.value } : {}),
-                                                                source: 'option',
-                                                            })}
-                                                    >
-                                                            {renderFieldHighlights(option.label, accentColor)}
-                                                    </ResponseOptionButton>
-                                                );
-                                            })}
+                                        <Box role={isMulti ? 'group' : undefined} aria-label={isMulti ? question.text : undefined}
+                                            sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                            {visible.map(option => (
+                                                <ResponseOptionButton
+                                                    key={`${options.indexOf(option)}-${option.label}`}
+                                                    accentColor={accentColor}
+                                                    selected={isOptionSelected(option)}
+                                                    onClick={() => isMulti
+                                                        ? toggleMultiOption(questionIndex, option.label)
+                                                        : handleAnswer({
+                                                            question_index: questionIndex,
+                                                            answer: option.label,
+                                                            ...(option.value ? { value: option.value } : {}),
+                                                            source: 'option',
+                                                        })}
+                                                >
+                                                    {isMulti && isOptionSelected(option) && <CheckRoundedIcon sx={{ fontSize: iconVar.xs }} />}
+                                                    {renderFieldHighlights(option.label, accentColor)}
+                                                </ResponseOptionButton>
+                                            ))}
+                                            {collapsible && (
+                                                <ButtonBase
+                                                    aria-expanded={expanded}
+                                                    onClick={() => setExpandedOptions(previous => ({ ...previous, [questionIndex]: !expanded }))}
+                                                    sx={{
+                                                        px: '8px', py: '4px', borderRadius: '6px', fontSize: textVar.xs, lineHeight: 1.4,
+                                                        color: theme.palette.text.secondary, fontFamily: theme.typography.fontFamily,
+                                                        '&:hover': { color: theme.palette.text.primary, textDecoration: 'underline' },
+                                                    }}
+                                                >
+                                                    {expanded ? t('chartRec.showFewerOptions', { defaultValue: 'Show fewer' })
+                                                        : t('chartRec.showMoreOptions', { defaultValue: '+{{count}} more', count: options.length - visible.length })}
+                                                </ButtonBase>
+                                            )}
                                         </Box>
-                                    </>
-                                )}
+                                    </>;
+                                })()}
                                 {/* single_choice questions also accept a typed
                                     answer (chips are shortcuts, not the only
                                     option). explain has no per-question freeform. */}
@@ -722,7 +890,6 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
 interface ExplanationPanelProps {
     /** The agent's plain-text answer (markdown) to display read-only. */
     content: string;
-    executions?: TerminalExecution[];
     /** Close: de-highlight the panel and switch focus to the previous chart. */
     onClose: () => void;
     /** Delete: remove this explanation block from the thread. */
@@ -736,7 +903,69 @@ interface ExplanationPanelProps {
  * but carries no inputs or actions — it's purely "here's what I said",
  * dismissible by the header's delete button or by focusing another item.
  */
-export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, executions, onClose, onDelete }) => {
+export const StepToolCall: FC<{ execution: TerminalExecution | CodeExecution }> = ({ execution }) => {
+    const { t } = useTranslation();
+    const isCode = 'code' in execution;
+    const purpose = execution.purpose || t(isCode ? 'tool.pythonCode' : 'terminal.command', {
+        defaultValue: isCode ? 'Python code' : 'Command',
+    });
+    // Expanded code and output read at the panel's body size, like an explanation.
+    return <Box sx={{ minWidth: 0, pb: 1, '& pre': { fontSize: textVar.sm } }}>
+        <Typography sx={{ fontSize: textVar.sm, lineHeight: 1.6, overflowWrap: 'anywhere' }}>{purpose}</Typography>
+        <Typography sx={{ fontSize: textVar.xs, lineHeight: 1.5, color: execution.status === 'failed' ? 'error.main' : 'text.secondary' }}>
+            {t(`terminal.status.${execution.status}`, { defaultValue: execution.status })}
+        </Typography>
+        {isCode ? <ExecutionCodeBlock code={execution.code} language="python"
+            label={t('tool.pythonCode', { defaultValue: 'Python code' })}
+            copyLabel={t('tool.copyCode', { defaultValue: 'Copy code' })}
+            result={{ output: execution.output, error: execution.error }} />
+            : <TerminalExecutionView execution={execution} detailsOnly />}
+    </Box>;
+};
+
+/** One tool call's code or command and result; steps through the other calls of its step. */
+export const ToolActivityPanel: FC<{
+    execution: TerminalExecution | CodeExecution;
+    calls?: (TerminalExecution | CodeExecution)[];
+    onSelect?: (execution: TerminalExecution | CodeExecution) => void;
+    onClose: () => void;
+}> = ({ execution, calls = [], onSelect, onClose }) => {
+    const theme = useTheme();
+    const { t } = useTranslation();
+    const isCode = 'code' in execution;
+    const position = calls.findIndex(call => call.id === execution.id);
+    const step = (offset: number) => calls[position + offset] && onSelect?.(calls[position + offset]);
+    const navSx = { p: 0, width: 16, height: 16, color: theme.palette.text.secondary, '&:hover': { color: theme.palette.primary.main } };
+    const headerActions = calls.length > 1 && position >= 0 && onSelect ? <Box sx={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+        <IconButton size="small" disabled={position === 0} onClick={() => step(-1)} sx={navSx}
+            aria-label={t('tool.previousCall', { defaultValue: 'Previous call' })}>
+            <ChevronLeftIcon sx={{ fontSize: iconVar.sm }} />
+        </IconButton>
+        <Typography component="span" sx={{ fontSize: textVar.xxs, color: 'text.secondary', minWidth: 24, textAlign: 'center' }}>
+            {position + 1}/{calls.length}
+        </Typography>
+        <IconButton size="small" disabled={position === calls.length - 1} onClick={() => step(1)} sx={navSx}
+            aria-label={t('tool.nextCall', { defaultValue: 'Next call' })}>
+            <ChevronRightIcon sx={{ fontSize: iconVar.sm }} />
+        </IconButton>
+    </Box> : undefined;
+
+    return <AgentPauseShell
+        icon={isCode ? <CodeIcon sx={{ fontSize: textVar.xl, color: theme.palette.primary.main }} />
+            : <TerminalIcon sx={{ fontSize: textVar.xl, color: theme.palette.primary.main }} />}
+        accentColor={theme.palette.primary.main}
+        title={t(isCode ? 'tool.pythonCode' : 'terminal.command', { defaultValue: isCode ? 'Python code' : 'Command' })}
+        closeTooltip={t('chartRec.pauseClose')}
+        onClose={onClose}
+        headerActions={headerActions}
+    >
+        <PauseScrollRegion defaultMaxHeight="clamp(120px, 32vh, 360px)" sx={{ pb: '8px', pl: '20px', pr: '8px', fontSize: textVar.sm }}>
+            <StepToolCall key={execution.id} execution={execution} />
+        </PauseScrollRegion>
+    </AgentPauseShell>;
+};
+
+export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, onDelete }) => {
     const theme = useTheme();
     const { t } = useTranslation();
 
@@ -753,14 +982,9 @@ export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, execution
             onClose={onClose}
             onDelete={onDelete}
         >
-            <Box sx={{
-                maxHeight: 'clamp(120px, 32vh, 360px)',
-                overflowY: 'auto',
-                pb: '8px', pl: '20px', pr: '8px',
-                fontSize: textVar.sm,
-            }}>
-                <TerminalMessageContent content={content} executions={executions} />
-            </Box>
+            <PauseScrollRegion defaultMaxHeight="clamp(120px, 32vh, 360px)" sx={{ pb: '8px', pl: '20px', pr: '8px', fontSize: textVar.sm }}>
+                <TerminalMessageContent content={content} />
+            </PauseScrollRegion>
         </AgentPauseShell>
     );
 };

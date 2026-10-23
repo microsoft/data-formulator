@@ -40,8 +40,15 @@ const toolLabelKeys: Record<string, string> = {
     find_data: 'dataLoading.toolLabels.searchingData',
     describe_data: 'dataLoading.toolLabels.describingData',
     probe_data: 'dataLoading.toolLabels.probingData',
+    load_data: 'dataLoading.toolLabels.loadingData',
     list_connectors: 'dataThread.listingConnectors',
-    describe_connector: 'dataThread.readingConnector',
+    list_workflows: 'dataThread.listingWorkflows',
+    list_sessions: 'dataThread.searchingSessions',
+    delete_items: 'dataThread.deletingItems',
+    list_files: 'dataThread.listingFiles',
+    read_file: 'dataThread.readingFile',
+    search_files: 'dataThread.searchingFiles',
+    move_file: 'dataThread.movingFile',
 };
 
 export const formatAnalystToolProgress = (
@@ -69,17 +76,39 @@ export const formatAnalystToolProgress = (
             detail = [shortSourceId(values.source_id), values.table_key].filter(Boolean).join('/');
             break;
         case 'probe_data':
-            detail = [values.table_key, summarizeProbeQuery(values.query)]
+            detail = [String(values.table_key || '').split('/').pop(), summarizeProbeQuery(values.query)]
                 .filter(Boolean).join(' · ');
             break;
-        case 'describe_connector':
+        case 'load_data':
+            detail = Array.isArray(values.tables) ? values.tables.map(String).join(', ') : '';
+            break;
+        case 'list_connectors':
             detail = values.source_type || '';
+            break;
+        case 'list_sessions':
+            detail = values.query ? `“${values.query}”` : '';
+            break;
+        case 'list_files':
+            detail = values.path || '';
+            break;
+        case 'read_file':
+            detail = [values.path, ...(Array.isArray(values.paths) ? values.paths : [])].filter(Boolean).map(String).join(', ');
+            break;
+        case 'search_files':
+            detail = [values.pattern ? `“${values.pattern}”` : '', values.path ? `in ${values.path}` : ''].filter(Boolean).join(' ');
+            break;
+        case 'move_file':
+            detail = [values.path, values.new_path].filter(Boolean).join(' → ');
+            break;
+        case 'delete_items':
+            detail = Array.isArray(values.items) ? values.items.map(String).join(', ') : '';
             break;
     }
 
-    const labelKey = toolLabelKeys[tool];
+    // Naming a type reads that connector's setup.
+    const labelKey = tool === 'list_connectors' && values.source_type ? 'dataThread.readingConnector' : toolLabelKeys[tool];
     const label = labelKey
-        ? t(labelKey)
+        ? t(labelKey, tool === 'load_data' ? { defaultValue: 'Loading data' } : undefined)
         : tool.replaceAll('_', ' ');
     return detail ? `${label}: ${truncateDetail(String(detail))}` : label;
 };

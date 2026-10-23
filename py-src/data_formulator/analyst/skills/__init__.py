@@ -28,7 +28,8 @@ import importlib
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -108,6 +109,22 @@ class SkillRegistry:
     # ``actions`` is a committing action, in ``tools`` an inspection tool).
     tool_specs: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     _doc_paths: dict[str, Path] = field(default_factory=dict)
+    terminal_mode: str = "ask"
+
+    def with_terminal_policy(self, mode: str) -> SkillRegistry:
+        registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths), terminal_mode=mode)
+        if mode == "off":
+            for collection in (registry.metas, registry.skills, registry.tool_specs, registry._doc_paths):
+                collection.pop("terminal", None)
+        elif "terminal" in registry.metas:
+            registry.metas["terminal"] = replace(registry.metas["terminal"], always_on=True)
+            for spec in registry.tool_specs.get("terminal", []):
+                spec["function"]["description"] += (
+                    " Each invocation requires exact-command approval." if mode == "ask" else
+                    " The application automatically executes permitted invocations; do not ask for routine approval."
+                )
+        return registry
 
     def canonical_name(self, name: str) -> str:
         """Resolve a public skill name, accepting legacy underscore aliases."""
@@ -170,7 +187,9 @@ class SkillRegistry:
             for included_name in self.metas[name].includes:
                 visit(included_name)
 
-        for name in names:
+        # Sets have no stable order; tool specs follow from this order, and a provider caches the
+        # prompt only up to the first difference, so unordered input is sorted (lists keep their order).
+        for name in (sorted(names) if isinstance(names, (set, frozenset)) else names):
             visit(name)
         return expanded
 
@@ -226,6 +245,27 @@ class SkillRegistry:
             if not path or not path.exists():
                 continue
             _, body = _parse_front_matter(path.read_text(encoding="utf-8"))
+            if expanded_name == "connected_data":
+                terminal_route = (
+                    "| Existing CLI access or local files | Use `run_terminal` to acquire a bounded dataset "
+                    "into scratch without requiring a new connector. Register the working dataset with "
+                    "`create_data` and acquisition metadata, then use its returned input ID and path for "
+                    "analysis and visualization or report tools. Follow the terminal skill's approval "
+                    "and execution contract. |\n"
+                    if self.has("terminal") else ""
+                )
+                body = body.replace("{terminal_acquisition_route}\n", terminal_route)
+            if expanded_name == "terminal":
+                policy = (
+                    "The application pauses for approval of each exact invocation. Submit the tool call directly; "
+                    "a pending proposal has not executed."
+                    if self.terminal_mode == "ask" else
+                    "Auto approval is enabled. Sandboxed commands, including writes within the configured policy, "
+                    "execute immediately. Only dangerouslyDisableSandbox requests require user approval."
+                )
+                body = body.replace("{terminal_policy}", policy)
+                from data_formulator.analyst.skills.terminal.skill import sandbox_filesystem_policy
+                body = body.replace("{terminal_filesystem_policy}", json.dumps(sandbox_filesystem_policy()))
             if body.strip():
                 bodies.append(body.strip())
         return "\n\n".join(bodies)
@@ -357,7 +397,15 @@ def _load_tool_specs(skill_dir: Path) -> list[dict[str, Any]]:
     except Exception:
         logger.warning("Failed to parse %s", f, exc_info=True)
         return []
-    return [s for s in data if isinstance(s, dict)] if isinstance(data, list) else []
+    specs = [spec for spec in data if isinstance(spec, dict)] if isinstance(data, list) else []
+    for spec in specs:
+        properties = spec.get("function", {}).get("parameters", {}).get("properties", {})
+        if properties.get("definition") == {"$ref": "workflow-definition"}:
+            from copy import deepcopy
+            from data_formulator.workflows.instances import WORKFLOW_DEFINITION_SCHEMA
+
+            properties["definition"] = deepcopy(WORKFLOW_DEFINITION_SCHEMA)
+    return specs
 
 
 def build_registry(skills_dir: Path | None = None) -> SkillRegistry:

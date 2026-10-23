@@ -72,6 +72,7 @@
       "fromSource": "from"
     },
     "operation": {
+      "virtualSource": "{{name}}: Virtual source (rows remain remote)",
       "title": "Data loading options",
       "previewHeading": "Tables to load",
       "previewGuide": "A preview of each table before it is added to your workspace.",

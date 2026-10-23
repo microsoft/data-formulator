@@ -14,28 +14,17 @@ import type { TerminalExecution } from '../components/ComponentType';
 
 interface ExplanationCanvasProps {
     content: string;
-    sourceTableId?: string;
-    timestamps?: number[];
-    textTurnId?: string;
+    textTurnId: string;
     executions?: TerminalExecution[];
 }
 
-export const ExplanationCanvas: FC<ExplanationCanvasProps> = ({ content, sourceTableId, timestamps, textTurnId, executions }) => {
+/** A long answer's own view on the canvas (design-docs/58, rule 2). */
+export const ExplanationCanvas: FC<ExplanationCanvasProps> = ({ content, textTurnId }) => {
     const dispatch = useDispatch();
     const { t } = useTranslation();
     const theme = useTheme();
-    const canDelete = !!textTurnId || (!!sourceTableId && !!timestamps?.length);
 
-    const handleDelete = () => {
-        if (textTurnId) {
-            dispatch(dfActions.removeTextTurn(textTurnId));
-            return;
-        }
-        if (sourceTableId && timestamps?.length) {
-            dispatch(dfActions.removeInteractionEntries({ tableId: sourceTableId, timestamps }));
-        }
-        dispatch(dfActions.setFocused(undefined));
-    };
+    const handleDelete = () => dispatch(dfActions.removeTextTurn(textTurnId));
 
     return (
         <Box id="vis-view-canvas" sx={{
@@ -51,17 +40,15 @@ export const ExplanationCanvas: FC<ExplanationCanvasProps> = ({ content, sourceT
                 }}>
                     {t('chartRec.explanationTitle')}
                 </Typography>
-                {canDelete && (
-                    <Tooltip title={t('chartRec.pauseDelete')}>
-                        <IconButton size="small" color="error" onClick={handleDelete} aria-label={t('chartRec.pauseDelete')}>
-                            <DeleteIcon fontSize="small" />
-                        </IconButton>
-                    </Tooltip>
-                )}
+                <Tooltip title={t('chartRec.pauseDelete')}>
+                    <IconButton size="small" color="error" onClick={handleDelete} aria-label={t('chartRec.pauseDelete')}>
+                        <DeleteIcon fontSize="small" />
+                    </IconButton>
+                </Tooltip>
                 <Box sx={{ flex: 1 }} />
             </Box>
             <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 3, py: 2.5, fontSize: textVar.md, userSelect: 'text' }}>
-                <TerminalMessageContent content={content} executions={executions} variant="document" />
+                <TerminalMessageContent content={content} variant="document" />
             </Box>
         </Box>
     );

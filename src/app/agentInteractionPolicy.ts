@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { ComputationInputSource, createConversationRootId } from '../components/ComponentType';
+import type { ThreadGraph } from './threadGraph';
 
 export function shouldAutoFocusGeneratedChart(userChartFocusLocked: boolean): boolean {
     return !userChartFocusLocked;
@@ -15,40 +16,33 @@ export function resolveRunParentNodeId(
     return continuationParentNodeId || focusedConversationNodeId || newConversationRootId || createConversationRootId();
 }
 
-type ConversationTurnRef = {
-    id: string;
-    parentNodeId: string;
-    createdAt: number;
-};
-
+/**
+ * Where a request continues from (design-docs/58, rule 3). A focused message is
+ * followed directly. A focused item (a derived table, an app or file, a report,
+ * a reference) continues its open conversation: the newest message after the
+ * item that nothing has been produced from yet. When there is none (nothing
+ * follows, or every conversation after it already led to another item), the
+ * request starts from the item itself.
+ */
 export function resolveConversationParentNodeId(
     focusedTurnId: string | null | undefined,
-    focusedTableId: string | null | undefined,
-    textTurns: ConversationTurnRef[],
-    tableIds: string[],
+    focusedItemId: string | null | undefined,
+    graph: ThreadGraph,
+    canContinue: (turnId: string) => boolean = () => true,
 ): string | undefined {
-    if (focusedTurnId && textTurns.some(turn => turn.id === focusedTurnId)) {
-        return focusedTurnId;
+    if (focusedTurnId && graph.kindOf(focusedTurnId) === 'turn') return focusedTurnId;
+    if (!focusedItemId) return undefined;
+    const producesItem = (id: string, seen = new Set<string>()): boolean => graph.childrenOf(id).some(child =>
+        !seen.has(child.id) && (seen.add(child.id), graph.isItem(child.id) || producesItem(child.id, seen)));
+    let open: { id: string; createdAt: number } | undefined;
+    for (const node of graph.nodes.values()) {
+        // A workflow proposal is a reply too, so it can be the open end.
+        if ((node.kind !== 'turn' && node.kind !== 'workflow-definition') || !canContinue(node.id)
+            || graph.nearestItem(node.id, { includeSelf: false }) !== focusedItemId) continue;
+        if (open && node.createdAt <= open.createdAt) continue;
+        if (!producesItem(node.id)) open = node;
     }
-    if (!focusedTableId) return undefined;
-
-    const turnsById = new Map(textTurns.map(turn => [turn.id, turn]));
-    const knownTableIds = new Set(tableIds);
-    const belongsToFocusedTable = (turn: ConversationTurnRef) => {
-        let parentId: string | undefined = turn.parentNodeId;
-        const seen = new Set<string>();
-        while (parentId && !seen.has(parentId)) {
-            if (parentId === focusedTableId) return true;
-            if (knownTableIds.has(parentId)) return false;
-            seen.add(parentId);
-            parentId = turnsById.get(parentId)?.parentNodeId;
-        }
-        return false;
-    };
-
-    return textTurns
-        .filter(belongsToFocusedTable)
-        .sort((left, right) => right.createdAt - left.createdAt)[0]?.id;
+    return open?.id;
 }
 
 export function resolveDerivedTriggerTableId(

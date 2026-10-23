@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -31,7 +31,8 @@ vi.mock('../../../../src/components/VirtualizedCatalogTree', () => ({
         <button key={node.name} onClick={() => onItemClick(node)}>{node.name}</button>)}</div>,
 }));
 vi.mock('../../../../src/components/ConnectorTablePreview', () => ({
-    ConnectorTablePreview: ({ sampleRows, rowCount }: any) => <div>Preview: {sampleRows.length} / {rowCount}</div>,
+    ConnectorTablePreview: ({ sampleRows, rowCount, onLoad, loading, loadLabel }: any) => <div>Preview: {sampleRows.length} / {rowCount}
+        <button disabled={loading} onClick={() => onLoad?.({})}>{loadLabel || 'Load Table'}</button></div>,
 }));
 vi.mock('../../../../src/views/WorkspaceFileCanvas', () => ({
     WorkspaceFileCanvas: ({ fileName, sourceFile }: { fileName: string; sourceFile?: File }) => <div>{sourceFile ? 'Source artifact viewer' : 'File viewer'}: {fileName}</div>,
@@ -63,6 +64,89 @@ it.each(['notes.md', 'workbook.xlsx'])('loads %s as a file and opens the workspa
     expect(store.getState().inputTables).toEqual([]);
 });
 
+it('adds a large table as a session reference without uploading files or importing rows', async () => {
+    const onReferenceAdded = vi.fn();
+    vi.mocked(apiRequest).mockReset();
+    vi.mocked(apiRequest).mockImplementation(async url => {
+        if (url === CONNECTOR_ACTION_URLS.GET_CATALOG_TREE) return { data: { tree: [
+            { name: 'events', node_type: 'table', path: ['db', 'events'], metadata: { table_key: 'canonical-events', row_count: '19521849', original_size_bytes: 18 * 1024 ** 3 } },
+        ] } } as any;
+        if (url === CONNECTOR_ACTION_URLS.PREVIEW_DATA) return { data: { columns: [{ name: 'timestamp', type: 'datetime' }], rows: [], total_row_count: 19521849 } } as any;
+        throw new Error(`Unexpected request: ${url}`);
+    });
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    render(<Provider store={store}><ConnectedSourceOverview connectorId="adx" onReferenceAdded={onReferenceAdded} /></Provider>);
+    fireEvent.click(await screen.findByRole('button', { name: 'events' }));
+    await screen.findByText('Preview: 0 / 19521849');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Add table reference' })); });
+    expect(store.getState().externalTableReferences).toEqual([expect.objectContaining({
+        kind: 'external-table-reference', connectorId: 'adx', tableKey: 'canonical-events',
+        summary: expect.objectContaining({ rowCount: 19521849, columns: [{ name: 'timestamp', type: 'datetime' }] }),
+    })]);
+    expect(onReferenceAdded).toHaveBeenCalledOnce();
+    expect(store.getState().inputTables).toEqual([]);
+    expect(store.getState().focusedId).toEqual({ type: 'external-table', referenceId: 'external:adx:canonical-events' });
+    expect(vi.mocked(apiRequest).mock.calls.every(([url]) => url === CONNECTOR_ACTION_URLS.GET_CATALOG_TREE || url === CONNECTOR_ACTION_URLS.PREVIEW_DATA)).toBe(true);
+});
+
+it.each([923098710, undefined])('requires explicit preview for a large or unknown-size Azure blob (%s)', async size => {
+    const name = 'az://account.blob.core.windows.net/container/reviews.csv';
+    vi.mocked(apiRequest).mockReset();
+    vi.mocked(apiRequest).mockImplementation(async url => {
+        if (url === CONNECTOR_ACTION_URLS.GET_CATALOG_TREE) return { data: { tree: [
+            { name, node_type: 'table', path: [name], metadata: { size_bytes: size } },
+        ] } } as any;
+        return { data: { columns: [{ name: 'value' }], rows: [{ value: 1 }], total_row_count: 1 } } as any;
+    });
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    render(<Provider store={store}><ConnectedSourceOverview connectorId="blob" /></Provider>);
+    fireEvent.click(await screen.findByRole('button', { name }));
+    expect(screen.getByText(/Preview reads the full file and may be slow/)).toBeTruthy();
+    expect(screen.queryByText('0 columns')).toBeNull();
+    expect(apiRequest).not.toHaveBeenCalledWith(CONNECTOR_ACTION_URLS.PREVIEW_DATA, expect.anything());
+    fireEvent.click(screen.getByRole('tab', { name: 'Columns' }));
+    expect(apiRequest).not.toHaveBeenCalledWith(CONNECTOR_ACTION_URLS.PREVIEW_DATA, expect.anything());
+    fireEvent.click(screen.getByRole('tab', { name: 'Sample data' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View preview' }));
+    await screen.findByText('Preview: 1 / 1');
+    expect(apiRequest).toHaveBeenCalledWith(CONNECTOR_ACTION_URLS.PREVIEW_DATA, expect.anything());
+    fireEvent.click(screen.getByRole('button', { name: 'Back to tables' }));
+    fireEvent.click(screen.getByRole('button', { name }));
+    expect(screen.getByRole('button', { name: 'View preview' })).toBeTruthy();
+});
+
+it('requires explicit preview before downloading a large file attachment', async () => {
+    const previewFile = vi.spyOn(workspaceService, 'previewConnectorFile').mockResolvedValue(new File(['contents'], 'large.xlsx'));
+    vi.mocked(apiRequest).mockReset();
+    vi.mocked(apiRequest).mockResolvedValue({ data: { tree: [
+        { name: 'large.xlsx', node_type: 'table', path: ['large.xlsx'], metadata: { artifact_kind: 'file', file_size: 50 * 1024 * 1024 } },
+    ] } } as any);
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    render(<Provider store={store}><ConnectedSourceOverview connectorId="files" /></Provider>);
+    fireEvent.click(await screen.findByRole('button', { name: 'large.xlsx' }));
+    expect(screen.getByText(/Preview downloads the file and may be slow/)).toBeTruthy();
+    expect(previewFile).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'View preview' }));
+    await screen.findByText('Source artifact viewer: large.xlsx');
+    expect(previewFile).toHaveBeenCalledTimes(1);
+});
+
+it('keeps small Azure blob previews automatic', async () => {
+    const name = 'az://account.blob.core.windows.net/container/small.parquet';
+    vi.mocked(apiRequest).mockReset();
+    vi.mocked(apiRequest).mockImplementation(async url => {
+        if (url === CONNECTOR_ACTION_URLS.GET_CATALOG_TREE) return { data: { tree: [
+            { name, node_type: 'table', path: [name], metadata: { size_bytes: 5769397 } },
+        ] } } as any;
+        return { data: { columns: [], rows: [], total_row_count: 0 } } as any;
+    });
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    render(<Provider store={store}><ConnectedSourceOverview connectorId="blob" /></Provider>);
+    fireEvent.click(await screen.findByRole('button', { name }));
+    await screen.findByText('Preview: 0 / 0');
+    expect(screen.queryByRole('button', { name: 'View preview' })).toBeNull();
+});
+
 it('offers direct upload and browsing with an agent tip instead of a chat composer', () => {
     const onSelectTab = vi.fn();
     render(<DataLoadMenu onSelectTab={onSelectTab} />);
@@ -80,8 +164,8 @@ it('keeps the landing chat, quick actions, and source links separate from the lo
     const onConnect = vi.fn();
     const onSelectConnector = vi.fn();
     const connector = { id: 'examples', display_name: 'Example Datasets', connected: true } as any;
-    render(<LandingDataEntry onStartChat={onStartChat} ensureActiveWorkspace={vi.fn()}
-        onUpload={onUpload} onConnect={onConnect} onSelectConnector={onSelectConnector} connectors={[connector]} />);
+    render(<Provider store={configureStore({ reducer: dataFormulatorReducer })}><LandingDataEntry onStartChat={onStartChat} ensureActiveWorkspace={vi.fn()}
+        onUpload={onUpload} onConnect={onConnect} onSelectConnector={onSelectConnector} connectors={[connector]} /></Provider>);
     expect(screen.queryByRole('button', { name: 'Browse data sources' })).toBeNull();
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: 'Compare weekly sales' } });
@@ -105,8 +189,8 @@ it('uploads landing attachments into a session and submits the server filename',
     vi.mocked(apiRequest).mockResolvedValue({ data: { path: 'scratch/sales-123.csv' } } as any);
     const ensureActiveWorkspace = vi.fn();
     const onStartChat = vi.fn();
-    const { container } = render(<LandingDataEntry onStartChat={onStartChat} ensureActiveWorkspace={ensureActiveWorkspace}
-        onUpload={vi.fn()} onConnect={vi.fn()} onSelectConnector={vi.fn()} connectors={[]} />);
+    const { container } = render(<Provider store={configureStore({ reducer: dataFormulatorReducer })}><LandingDataEntry onStartChat={onStartChat} ensureActiveWorkspace={ensureActiveWorkspace}
+        onUpload={vi.fn()} onConnect={vi.fn()} onSelectConnector={vi.fn()} connectors={[]} /></Provider>);
     fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['sales\n12'], 'sales.csv', { type: 'text/csv' })] } });
     expect(ensureActiveWorkspace).toHaveBeenCalledOnce();
     await screen.findByText('sales-123.csv');
@@ -115,10 +199,10 @@ it('uploads landing attachments into a session and submits the server filename',
 });
 
 it('disables the landing composer and quick actions in read-only sessions', () => {
-    render(<LandingDataEntry onStartChat={vi.fn()} ensureActiveWorkspace={vi.fn()} onUpload={vi.fn()}
-        onConnect={vi.fn()} onSelectConnector={vi.fn()} connectors={[]} readOnly />);
+    render(<Provider store={configureStore({ reducer: dataFormulatorReducer })}><LandingDataEntry onStartChat={vi.fn()} ensureActiveWorkspace={vi.fn()} onUpload={vi.fn()}
+        onConnect={vi.fn()} onSelectConnector={vi.fn()} connectors={[]} readOnly /></Provider>);
     expect(screen.getByRole('textbox')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Guide me to connect a data source' })).toHaveClass('Mui-disabled');
+    expect(screen.getByRole('button', { name: 'Guide me to connect a data source' })).toHaveAttribute('aria-disabled', 'true');
 });
 
 it('browses a connector using the artifact preview inside the load dialog', async () => {
@@ -136,13 +220,34 @@ it('browses a connector using the artifact preview inside the load dialog', asyn
     const onClose = vi.fn();
     render(<Provider store={store}><UnifiedDataUploadDialog open onClose={onClose} /></Provider>);
     fireEvent.click(screen.getByRole('button', { name: 'Browse data sources' }));
-    fireEvent.change(await screen.findByRole('combobox', { name: 'Data source' }), { target: { value: 'source' } });
+    fireEvent.click(await within(screen.getByRole('navigation', { name: 'Browse data sources' })).findByRole('button', { name: /Example source/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Events' }));
     await screen.findByText('Preview: 1 / 100');
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Columns' })).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
     expect(store.getState().focusedConnectorId).toBeFalsy();
+});
+
+it.each([false, true])('opens a connector directly in the appropriate view (connected=%s)', async connected => {
+    vi.mocked(apiRequest).mockReset();
+    vi.mocked(apiRequest).mockImplementation(async url => {
+        if (url === CONNECTOR_URLS.LIST) return { data: { connectors: [
+            { id: 'source', display_name: 'Example source', icon: 'azure_blob', connected, deletable: true, params_form: [], auth_mode: 'credentials' },
+        ] } } as any;
+        return { data: { tree: [{ name: 'Events', node_type: 'table', path: ['Events'], metadata: {} }] } } as any;
+    });
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    render(<Provider store={store}><UnifiedDataUploadDialog open initialTab="connector:source" onClose={vi.fn()} /></Provider>);
+    await screen.findByRole('button', { name: 'Rename connector' });
+    expect(screen.getByRole('button', { name: 'Delete connector' })).toBeTruthy();
+    if (connected) {
+        await screen.findByRole('button', { name: 'Events' });
+        expect(screen.queryByRole('button', { name: /^Connect$/ })).toBeNull();
+    } else {
+        expect(screen.getByRole('button', { name: /^Connect$/ })).toBeTruthy();
+        expect(apiRequest).not.toHaveBeenCalledWith(CONNECTOR_ACTION_URLS.GET_CATALOG_TREE, expect.anything());
+    }
 });
 
 it.each([false, true])('preserves catalog browsing and bounded previews with split view %s', async wide => {
@@ -161,10 +266,15 @@ it.each([false, true])('preserves catalog browsing and bounded previews with spl
     render(<Provider store={store}><ConnectedSourceOverview connectorId="source" /></Provider>);
     const table = await screen.findByRole('button', { name: 'Events' });
     expect(vi.mocked(apiRequest).mock.calls).toHaveLength(1);
+    const scrollParent = table.parentElement!.parentElement!;
+    scrollParent.scrollTop = 120;
     fireEvent.change(screen.getByRole('textbox', { name: 'Search tables' }), { target: { value: 'Events' } });
+    expect(scrollParent.scrollTop).toBe(0);
+    scrollParent.scrollTop = 80;
     const catalog = screen.getByRole('navigation', { name: 'Tables' });
     fireEvent.click(table);
     await screen.findByText('Preview: 1 / 100');
+    expect(scrollParent.scrollTop).toBe(80);
     if (wide) {
         expect(screen.getByRole('navigation', { name: 'Tables' })).toBe(catalog);
         expect(screen.queryByRole('button', { name: 'Back to tables' })).toBeNull();

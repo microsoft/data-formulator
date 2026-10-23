@@ -53,6 +53,11 @@ _ENV_KEY = "DF_ALLOWED_API_BASES"
 def _load_patterns() -> list[str] | None:
     """Return the allowlist patterns, or ``None`` for open mode."""
     raw = os.environ.get(_ENV_KEY, "").strip()
+    if _ENV_KEY not in os.environ:
+        from data_formulator.configuration import read_configuration
+        configured = read_configuration()['overrides'].get('allowed_api_bases')
+        if configured is not None:
+            return [pattern.strip().lower() for pattern in configured]
     if not raw:
         return None
     patterns = [p.strip().lower() for p in raw.split(",") if p.strip()]

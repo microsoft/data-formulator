@@ -15,14 +15,13 @@ import {
 } from '@mui/material';
 
 import { dfActions } from '../app/dfSlice';
-import { DictTable, Trigger } from "../components/ComponentType";
+import { DictTable } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AddchartIcon from '@mui/icons-material/Addchart';
 
-import { TriggerCard } from './EncodingShelfCard';
-import { ComponentBorderStyle, shadow } from '../app/tokens';
+import { ComponentBorderStyle, shadow, sidebarRowActionSx, sidebarRowDangerActionSx } from '../app/tokens';
 import { iconVar, textVar } from '../app/layout';
 
 
@@ -116,23 +115,26 @@ export let buildChartCards = (
         </Box>);
 }
 
-export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, artifactType, children }: {
+export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, artifactType, warning = false, children }: {
     title: string;
     selected: boolean;
     onClick: () => void;
     notes?: string;
     actions?: React.ReactNode;
-    artifactType: 'table' | 'file' | 'report' | 'workflow';
+    artifactType: 'table' | 'file' | 'report' | 'app' | 'workflow';
+    warning?: boolean;
     children?: React.ReactNode;
 }) => {
-    const tone = artifactType === 'report' ? 'secondary' : 'primary';
+    // Reports and apps are the agent's authored outputs: both purple, told apart by their icons.
+    const tone = artifactType === 'report' || artifactType === 'app' ? 'secondary' : 'primary';
     return <Card
     className={`data-thread-card ${selected ? 'selected-artifact-card' : ''}`} elevation={0}
-    sx={{ width: '100%', minWidth: 0, display: 'flex', alignItems: 'center',
+    sx={{ width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', position: 'relative',
         ...ComponentBorderStyle, borderRadius: '6px',
         backgroundColor: theme => artifactType === 'file' || artifactType === 'workflow' ? theme.palette.background.paper
             : theme.palette[tone].bgcolor || alpha(theme.palette[tone].main, 0.08),
-        '--artifact-selection-color': theme => theme.palette[tone].light,
+        '--artifact-selection-color': theme => warning ? theme.palette.warning.main : theme.palette[tone].light,
+        ...(warning ? { borderColor: 'warning.main', boxShadow: '0 0 0 1px var(--artifact-selection-color)' } : {}),
         '& .artifact-actions': { opacity: 0, transition: 'opacity 0.15s' },
         '&:hover .artifact-actions, &:focus-within .artifact-actions': { opacity: 1 },
         '@media (hover: none)': { '& .artifact-actions': { opacity: 1 } },
@@ -142,11 +144,15 @@ export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, a
         '&.Mui-focusVisible': { outline: '2px solid', outlineColor: `${tone}.main`, outlineOffset: -2 },
     }}>
         {children || <Typography component="span" sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: 500,
-            display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</Typography>}
+            // The title wraps (to two lines) rather than cutting a name short.
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            overflowWrap: 'anywhere', lineHeight: 1.35 }} title={title}>{title}</Typography>}
         {notes && <Typography component="span" sx={{ display: 'block', fontSize: textVar.xs,
             color: 'text.secondary', overflowWrap: 'anywhere' }}>{notes}</Typography>}
     </ButtonBase>
-    {actions && <Box className="artifact-actions" sx={{ display: 'flex', flexShrink: 0, pr: 0.25 }}>{actions}</Box>}
+    {actions && <Box className="artifact-actions" sx={{ display: 'flex', flexShrink: 0, pr: 0.25,
+        ...(artifactType === 'workflow' ? { position: 'absolute', top: 2, right: 2 } : {}),
+    }}>{actions}</Box>}
 </Card>;
 };
 
@@ -155,9 +161,9 @@ export const ArtifactMenuButton = ({ label, tooltip = label, onClick }: {
     tooltip?: string;
     onClick: (anchorEl: HTMLElement) => void;
 }) => <Tooltip title={tooltip}>
-    <IconButton aria-label={label} size="small" sx={{ p: 0.25, color: 'text.secondary' }}
+    <IconButton aria-label={label} size="small" sx={sidebarRowActionSx}
         onClick={event => { event.stopPropagation(); onClick(event.currentTarget); }}>
-        <MoreVertIcon sx={{ fontSize: iconVar.md }} />
+        <MoreVertIcon />
     </IconButton>
 </Tooltip>;
 
@@ -166,9 +172,9 @@ export const ArtifactDeleteButton = ({ label, onClick, disabled = false }: {
     onClick: () => void;
     disabled?: boolean;
 }) => <Tooltip title={label}><span>
-    <IconButton aria-label={label} size="small" color="error" disabled={disabled}
-        sx={{ p: 0.5 }} onClick={event => { event.stopPropagation(); onClick(); }}>
-        <DeleteIcon sx={{ fontSize: iconVar.md }} />
+    <IconButton aria-label={label} size="small" disabled={disabled}
+        sx={sidebarRowDangerActionSx} onClick={event => { event.stopPropagation(); onClick(); }}>
+        <DeleteIcon />
     </IconButton>
 </span></Tooltip>;
 
@@ -192,34 +198,6 @@ export let buildTableRefChip = (props: {
                 : { type: 'table', tableId }))}
             actions={props.onDelete && <ArtifactDeleteButton label={props.deleteLabel || 'Delete table'} onClick={props.onDelete} />} />
     </Box>
-}
-
-// ─── Trigger Card Wrapper ────────────────────────────────────────────────────
-
-export let buildTriggerCard = (
-    trigger: Trigger,
-    focusedChartId: string | undefined,
-    highlighted: boolean = false,
-    dimmed: boolean = false,
-) => {
-    let selectedClassName = trigger.chart?.id == focusedChartId ? 'selected-card' : '';
-    
-    let triggerCard = <div key={'thread-card-trigger-box'}>
-        <Box sx={{ flex: 1 }} >
-            <TriggerCard className={selectedClassName} trigger={trigger} 
-                hideFields={!!(trigger.interaction && trigger.interaction.length > 0)} 
-                highlighted={highlighted}
-                sx={{
-                    '& .MuiBox-root': { mx: 0.5, my: 0.25 },
-                    '& .MuiSvgIcon-root': { width: '12px', height: '12px' },
-                }}
-            />
-        </Box>
-    </div>;
-
-    return <Box sx={{ display: 'flex', flexDirection: 'column' }} key={`trigger-card-${trigger.chart?.id}`}>
-        {triggerCard}
-    </Box>;
 }
 
 // ─── Table Card ──────────────────────────────────────────────────────────────

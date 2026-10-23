@@ -25,7 +25,6 @@ import {
     CircularProgress,
     Divider,
 } from '@mui/material';
-import { alpha } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
@@ -40,9 +39,9 @@ import {
     type KnowledgeCategory,
 } from '../api/knowledgeApi';
 import type { KnowledgeItem } from '../api/knowledgeApi';
-import { borderColor, radius } from '../app/tokens';
+import { borderColor, radius, sidebarRowActionSx, sidebarRowDangerActionSx, sidebarRowSx, sidebarRowTitleSx } from '../app/tokens';
 import { dfActions, dfSelectors, type DataFormulatorState } from '../app/dfSlice';
-import { isLeafDerivedTable, buildLeafEvents } from './workflowContext';
+import { isLeafDerivedTable, buildLeafEvents, threadConversationOf } from './workflowContext';
 import { SessionDistillDialog, findSessionWorkflow } from './SessionDistill';
 import { iconVar, textVar } from '../app/layout';
 
@@ -103,6 +102,8 @@ export const KnowledgePanel: React.FC = () => {
     const hasTables = tables.length > 0;
     const charts = useSelector((s: DataFormulatorState) => s.charts);
     const conceptShelfItems = useSelector((s: DataFormulatorState) => s.conceptShelfItems);
+    const threadGraph = useSelector(dfSelectors.getThreadGraph);
+    const textTurns = useSelector((s: DataFormulatorState) => s.textTurns);
     const selectedModelId = useSelector((s: DataFormulatorState) => s.selectedModelId);
     const allModels = useSelector((s: DataFormulatorState) => [...s.globalModels, ...s.models]);
 
@@ -202,11 +203,12 @@ export const KnowledgePanel: React.FC = () => {
     // (i.e. has a user message). Cheap to compute — same predicate as
     // before, just used for the placeholder enable-state.
     const hasDistillableSession = React.useMemo(() => {
+        const conversationOf = threadConversationOf(threadGraph, textTurns);
         return tables.some(t =>
             isLeafDerivedTable(t, tables) &&
-            buildLeafEvents(t, tables, charts, conceptShelfItems) != null,
+            buildLeafEvents(t, tables, conversationOf, charts, conceptShelfItems) != null,
         );
-    }, [tables, charts, conceptShelfItems]);
+    }, [tables, threadGraph, textTurns, charts, conceptShelfItems]);
 
     const selectedModel = allModels.find(m => m.id === selectedModelId);
     const canDistillFromSession = hasDistillableSession && !!selectedModel && !!activeWorkspace;
@@ -252,20 +254,11 @@ export const KnowledgePanel: React.FC = () => {
             <Box
                 key={`${category}/${item.path}`}
                 onClick={() => openEditDialog(category, item)}
-                sx={{
-                    display: 'flex', alignItems: 'flex-start', gap: 0.75,
-                    mx: 0.75, px: 0.75, py: 0.625,
-                    borderRadius: 0.75,
-                    cursor: 'pointer',
-                    color: 'text.primary',
-                    '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.045)' },
-                    '&:hover .item-actions': { display: 'inline-flex' },
-                    userSelect: 'none',
-                }}
+                sx={{ ...sidebarRowSx, alignItems: 'flex-start' }}
             >
                 <DescriptionOutlinedIcon sx={{ fontSize: iconVar.md, color: 'text.primary', mt: 0.25 }} />
                 <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontSize: textVar.sm, fontWeight: 500, lineHeight: 1.45, wordBreak: 'break-word', color: 'text.primary' }}>
+                    <Typography sx={{ ...sidebarRowTitleSx, wordBreak: 'break-word' }}>
                         {primary}
                     </Typography>
                 </Box>
@@ -283,25 +276,21 @@ export const KnowledgePanel: React.FC = () => {
                                     aria-label={hasTables ? t('knowledge.replayTooltip') : t('knowledge.replayNoData')}
                                     disabled={!hasTables}
                                     onClick={(e) => { e.stopPropagation(); handleReplay(item); }}
-                                    sx={{
-                                        p: 0.25,
-                                        color: 'primary.main',
-                                        '&:hover': { bgcolor: theme => alpha(theme.palette.primary.main, 0.08) },
-                                    }}
+                                    sx={sidebarRowActionSx}
                                 >
-                                    <PlayArrowIcon sx={{ fontSize: iconVar.lg }} />
+                                    <PlayArrowIcon />
                                 </IconButton>
                             </span>
                         </Tooltip>
                     )}
                     <IconButton
-                        className="item-actions"
+                        className="sidebar-row-actions"
                         size="small"
                         aria-label={t('knowledge.deleteItem')}
                         onClick={(e) => { e.stopPropagation(); setDeleteTarget({ category, path: item.path, title: item.title }); }}
-                        sx={{ p: 0.25, mt: 'auto', display: 'none', color: 'text.secondary', '&:hover': { color: 'error.main' } }}
+                        sx={{ ...sidebarRowDangerActionSx, mt: 'auto' }}
                     >
-                        <DeleteOutlineIcon sx={{ fontSize: iconVar.md }} />
+                        <DeleteOutlineIcon />
                     </IconButton>
                 </Box>
             </Box>

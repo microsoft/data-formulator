@@ -380,12 +380,15 @@ class SupersetLoader(ExternalDataLoader):
             return ds.get("table_name") or ds.get("name") or f"dataset_{ds.get('id', '?')}"
 
         def _dataset_meta(ds: dict) -> dict:
-            return {
+            meta = {
                 "dataset_id": ds["id"],
                 "row_count": ds.get("row_count"),
                 "schema": ds.get("schema", ""),
                 "database": (ds.get("database") or {}).get("database_name", ""),
             }
+            if ds.get("uuid"):
+                meta["uuid"] = ds["uuid"]
+            return meta
 
         all_datasets = self._fetch_all_datasets(token)
         dataset_children: list[dict] = []
@@ -437,6 +440,7 @@ class SupersetLoader(ExternalDataLoader):
                         "node_type": "table",
                         "path": [str(dash_id), str(tbl["dataset_id"])],
                         "metadata": {
+                            **({"uuid": tbl["uuid"]} if tbl.get("uuid") else {}),
                             "dataset_id": tbl["dataset_id"],
                             "row_count": tbl.get("row_count"),
                             "parent_group": str(dash_id),
@@ -446,6 +450,8 @@ class SupersetLoader(ExternalDataLoader):
                 ],
             })
             result_count += 1
+
+        self._apply_tree_table_keys(tree)
 
         return {"tree": tree, "truncated": truncated}
 
@@ -508,6 +514,7 @@ class SupersetLoader(ExternalDataLoader):
                     node_type="table",
                     path=[parent_id, str(ds["id"])],
                     metadata={
+                        **({"uuid": ds["uuid"]} if ds.get("uuid") else {}),
                         "dataset_id": ds["id"],
                         "row_count": ds.get("row_count"),
                         "schema": ds.get("schema", ""),
@@ -540,14 +547,37 @@ class SupersetLoader(ExternalDataLoader):
         for ds in datasets:
             ds_id = ds["id"]
             name = ds.get("table_name") or ds.get("name") or f"dataset_{ds_id}"
-            tables.append({
+            entry = {
                 "name": name,
                 "dataset_id": ds_id,
                 "row_count": ds.get("row_count"),
-            })
+            }
+            if ds.get("uuid"):
+                entry["uuid"] = ds["uuid"]
+            tables.append(entry)
 
         return tables
 
+    @staticmethod
+    def _apply_tree_table_keys(tree: list[dict]) -> None:
+        """Stamp ``metadata.table_key`` on every table node in a tree.
+
+        ``list_tables_tree`` and ``search_catalog`` build their trees by hand
+        instead of going through ``_tables_to_catalog_tree``, so neither picks
+        up the base-class backfill.  The key mirrors the ``list_tables`` path,
+        which prefers the dataset uuid.
+        """
+        for node in tree:
+            for child in node.get("children") or []:
+                if child.get("node_type") != "table":
+                    continue
+                meta = child.get("metadata") or {}
+                child["metadata"] = {
+                    **meta,
+                    "table_key": (
+                        meta.get("uuid") or meta.get("_source_name") or child["name"]
+                    ),
+                }
 
     # -- Chart Data API query builders ------------------------------------
 
@@ -1077,6 +1107,7 @@ class SupersetLoader(ExternalDataLoader):
                         "node_type": "table",
                         "path": node.path + [str(tbl["dataset_id"])],
                         "metadata": {
+                            **({"uuid": tbl["uuid"]} if tbl.get("uuid") else {}),
                             "dataset_id": tbl["dataset_id"],
                             "row_count": tbl.get("row_count"),
                             "parent_group": node.path[0] if node.path else None,
@@ -1087,6 +1118,8 @@ class SupersetLoader(ExternalDataLoader):
             else:
                 d["children"] = []
             tree.append(d)
+
+        self._apply_tree_table_keys(tree)
 
         return {
             "hierarchy": self.catalog_hierarchy(),

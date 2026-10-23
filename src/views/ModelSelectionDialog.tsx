@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { useEffect, useRef, useState } from 'react';
+import Portal from '@mui/material/Portal';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux";
@@ -96,6 +97,28 @@ const PROVIDERS: Record<string, { label: string; model: string; base: string; co
     github_copilot: { label: 'GitHub Copilot', model: '', base: 'https://api.githubcopilot.com', connectionMethod: 'account' },
     chatgpt: { label: 'ChatGPT', model: '', base: '', connectionMethod: 'account' },
     orcarouter: { label: 'OrcaRouter', model: 'auto', base: 'https://api.orcarouter.ai/v1', connectionMethod: 'api' },
+    cheaperinference: { label: 'Cheaper Inference', model: 'gpt-5.4-mini', base: 'https://api.cheaperinference.com/v1', connectionMethod: 'api' },
+};
+
+const getModelEndpointLabel = (model: ModelConfig): string => {
+    const provider = PROVIDERS[model.endpoint];
+    const label = provider?.label || model.endpoint;
+    if (provider?.connectionMethod === 'account') return label;
+    const base = model.api_base?.trim() || (model.endpoint === 'ollama' ? provider?.base : '');
+    if (!base) return label;
+    try {
+        const url = new URL(base);
+        if (!['https:', 'http:'].includes(url.protocol)) return label;
+        if (model.endpoint !== 'azure' && model.endpoint !== 'ollama'
+            && provider?.base && url.host === new URL(provider.base).host) return label;
+        const azureResource = model.endpoint === 'azure' && url.hostname.match(
+            /^([a-z0-9-]+)\.(?:openai\.azure\.com|cognitiveservices\.azure\.com|services\.ai\.azure\.com)$/,
+        );
+        const identifier = azureResource ? `${azureResource[1]}${url.port ? `:${url.port}` : ''}` : url.host;
+        return `${label} \u00b7 ${identifier}`;
+    } catch {
+        return label;
+    }
 };
 
 const connectionRequest = (provider: string, action: string, body: object = {}) => apiRequest(
@@ -141,11 +164,17 @@ export function parseAzureTargetUri(value: string): {
 
 interface ModelSelectionButtonProps {
     appearance?: 'toolbar' | 'inline';
+    actionContainer?: HTMLElement | null;
+    hideStageAction?: boolean;
+    onStageConnection?: (definition: Record<string, string>) => Promise<void>;
+    initialDefinition?: Record<string, string>;
+    hasStoredCredentials?: boolean;
 }
 
 interface RememberedModelEndpoint {
     endpoint: string;
     model: string;
+    small_model?: string;
     api_base: string;
     api_version: string;
     auth_mode: string;
@@ -161,7 +190,7 @@ interface AzureDeploymentOption {
     region: string;
 }
 
-export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appearance = 'toolbar' }) => {
+export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appearance = 'toolbar', onStageConnection, initialDefinition, hasStoredCredentials = false, actionContainer, hideStageAction = false }) => {
     const { t } = useTranslation();
 
     const dispatch = useDispatch();
@@ -171,9 +200,9 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     const testedModels = useSelector((state: DataFormulatorState) => state.testedModels);
     const config = useSelector((state: DataFormulatorState) => state.config);
 
-    const [modelDialogOpen, setModelDialogOpen] = useState<boolean>(false);
+    const [modelDialogOpen, setModelDialogOpen] = useState<boolean>(!!onStageConnection);
     const [detailModelId, setDetailModelId] = useState<string | undefined>(selectedModelId);
-    const [isEditingDetails, setIsEditingDetails] = useState(false);
+    const [isEditingDetails, setIsEditingDetails] = useState(!!onStageConnection);
     const [showKeys, setShowKeys] = useState<boolean>(false);
     const [providerModelOptions, setProviderModelOptions] = useState<{[key: string]: string[]}>({
         'openai': [],
@@ -181,7 +210,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         'anthropic': [],
         'gemini': [],
         'ollama': [],
-        'orcarouter': []
+        'orcarouter': [],
+        'cheaperinference': []
     });
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
@@ -194,19 +224,24 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
 
     // Helper functions for slot management
     const [tempSelectedModelId, setTempSelectedModelId] = useState<string | undefined>(selectedModelId);
-    const [newEndpoint, setNewEndpoint] = useState<string>(""); // openai, azure, ollama etc
+    const [newEndpoint, setNewEndpoint] = useState<string>(initialDefinition?.endpoint || ""); // openai, azure, ollama etc
     const isAccountProvider = PROVIDERS[newEndpoint]?.connectionMethod === 'account';
     const isCopilot = newEndpoint === 'github_copilot';
     const isChatGPT = newEndpoint === 'chatgpt';
     const usesDeviceCode = isCopilot || isChatGPT;
+    const isDesktopApp = new URLSearchParams(window.location.search).get('desktop') === '1';
     const accountProvider = isAccountProvider ? newEndpoint : 'openrouter';
     const accountConnectionUrl = `/api/model-endpoints/connections/${accountProvider}`;
-    const [newModel, setNewModel] = useState<string>("");
+    const [newModel, setNewModel] = useState<string>(initialDefinition?.model || "");
+    const [newSmallModel, setNewSmallModel] = useState(initialDefinition?.small_model || '');
+    const [newReasoningEffort, setNewReasoningEffort] = useState<'' | 'low' | 'medium' | 'high'>('');
     const [newApiKey, setNewApiKey] = useState<string>("");
-    const [newApiBase, setNewApiBase] = useState<string>("");
-    const [newApiVersion, setNewApiVersion] = useState<string>("");
+    const [newApiBase, setNewApiBase] = useState<string>(initialDefinition?.api_base || "");
+    const [newApiVersion, setNewApiVersion] = useState<string>(initialDefinition?.api_version || "");
+    const [managedIdentityClientId, setManagedIdentityClientId] = useState(initialDefinition?.managed_identity_client_id || '');
     const [advancedOpen, setAdvancedOpen] = useState(false);
-    const [azureAuthMethod, setAzureAuthMethod] = useState<'azure_cli' | 'api_key'>('azure_cli');
+    const [azureAuthMethod, setAzureAuthMethod] = useState<'azure_cli' | 'managed_identity' | 'api_key'>(
+        initialDefinition?.auth_mode === 'managed_identity' ? 'managed_identity' : initialDefinition?.auth_mode === 'key' ? 'api_key' : 'azure_cli');
     const [isAddingModel, setIsAddingModel] = useState(false);
     const [newModelError, setNewModelError] = useState("");
     const [newModelDiagnostic, setNewModelDiagnostic] = useState<ApiError | null>(null);
@@ -228,7 +263,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     const [azureDiscoveryError, setAzureDiscoveryError] = useState('');
     const [azureDiscoveryWarnings, setAzureDiscoveryWarnings] = useState<string[]>([]);
     const [azureDiscoveryRefresh, setAzureDiscoveryRefresh] = useState(0);
-    const canBrowseAzure = serverConfig.IS_LOCAL_MODE && newEndpoint === 'azure' && azureAuthMethod === 'azure_cli';
+    const canBrowseAzure = !onStageConnection && serverConfig.IS_LOCAL_MODE && newEndpoint === 'azure' && azureAuthMethod === 'azure_cli';
     const browseAzure = canBrowseAzure && !azureManualEntry;
     const azureDiscoveryActive = modelDialogOpen && isEditingDetails && browseAzure && !!azureCliStatus?.signed_in;
     const [openRouterConnected, setOpenRouterConnected] = useState(false);
@@ -359,7 +394,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
 
     const resumeOpenRouterLogin = (event: React.MouseEvent<HTMLAnchorElement>) => {
         const attempt = openRouterAttempt.current;
-        if (!attempt || attempt.cancelled) return;
+        // pywebview routes plain link clicks to the system browser; script popups would open twice or not at all.
+        if (!attempt || attempt.cancelled || isDesktopApp) return;
         try {
             if (attempt.popup && !attempt.popup.closed) {
                 attempt.popup.location.href = openRouterAuthUrl;
@@ -381,7 +417,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     const startOpenRouterLogin = async () => {
         cancelOpenRouterLogin();
         setOpenRouterError('');
-        const popup = window.open('', '_blank', 'popup,width=650,height=760');
+        const popup = isDesktopApp ? null : window.open('', '_blank', 'popup,width=650,height=760');
         if (popup) popup.opener = null;
         const attempt = { cancelled: false, provider: accountProvider, popup, flowId: undefined as string | undefined };
         openRouterAttempt.current = attempt;
@@ -426,7 +462,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         }
     };
 
-    const usesAzureCli = serverConfig.IS_LOCAL_MODE && (
+    const usesAzureCli = !onStageConnection && serverConfig.IS_LOCAL_MODE && (
         (newEndpoint === 'azure' && azureAuthMethod === 'azure_cli')
         || globalModels.some(model => model.auth_mode === 'azure_identity')
         || models.some(model => model.endpoint === 'azure' && !model.api_key)
@@ -497,7 +533,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     }, [azureDiscoveryActive, azureSubscription, azureSubscriptionsLoading, azureCliStatus?.account?.tenant_id, azureCliStatus?.account?.user]);
 
     useEffect(() => {
-        if (!modelDialogOpen) return;
+        if (!modelDialogOpen || onStageConnection) return;
         apiRequest<RememberedModelEndpoint[]>(getUrls().MODEL_ENDPOINTS)
             .then(({ data }) => setRememberedEndpoints(data))
             .catch(() => setRememberedEndpoints([]));
@@ -508,6 +544,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         const entry = {
             endpoint: model.endpoint,
             model: model.model,
+            ...(model.small_model ? { small_model: model.small_model } : {}),
             api_base: model.api_base || '',
             api_version: model.api_version || '',
             auth_mode: model.auth_mode || '',
@@ -557,7 +594,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
             'anthropic': [],
             'gemini': [],
             'ollama': [],
-            'orcarouter': []
+            'orcarouter': [],
+            'cheaperinference': []
         };
 
         globalModels.forEach((modelConfig: any) => {
@@ -576,7 +614,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     }, [globalModels]);
 
 
-    const allModels = [...globalModels, ...models];
+    const allModels = serverConfig.DISABLE_CUSTOM_MODELS ? globalModels : [...globalModels, ...models];
     const detailModel = allModels.find(model => model.id === detailModelId);
     const detailIsGlobal = globalModels.some(model => model.id === detailModelId);
     const detailModelStatus = getStatus(detailModelId);
@@ -587,7 +625,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         : false;
 
     let modelExists = allModels.some(m => m.id !== detailModelId &&
-        m.endpoint == newEndpoint && m.model == newModel.trim() && (isAccountProvider
+        m.endpoint == newEndpoint && m.model == newModel.trim()
+        && (m.small_model || m.model) === (newSmallModel.trim() || newModel.trim()) && (m.reasoning_effort || '') === newReasoningEffort && (isAccountProvider
             ? m.connection_id === accountProvider
             : m.api_base == newApiBase && (m.api_key || '') == newApiKey && (m.api_version || '') == newApiVersion));
 
@@ -615,12 +654,13 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     const baseIsPrimary = newEndpoint === 'azure' || newEndpoint === 'ollama';
     const hasConnection = isAccountProvider
         ? openRouterConnected && !openRouterLoading && !openRouterAuthUrl && openRouterModels.some(model => model.id === newModel)
+            && (!newSmallModel || openRouterModels.some(model => model.id === newSmallModel))
         : newEndpoint === 'azure'
-        ? Boolean(newApiBase.trim()) && (azureAuthMethod === 'azure_cli' || Boolean(newApiKey.trim()))
+        ? Boolean(newApiBase.trim()) && (azureAuthMethod !== 'api_key' || Boolean(newApiKey.trim()) || hasStoredCredentials)
             && (!browseAzure || (!!azureCliStatus?.signed_in && !azureSubscriptionsLoading && !azureDeploymentsLoading
                 && azureDeployments.some(model => model.deployment === newModel
                     && model.api_base.replace(/\/$/, '') === newApiBase.replace(/\/$/, ''))))
-        : newEndpoint === 'ollama' || Boolean(newApiKey.trim()) || Boolean(newApiBase.trim());
+        : newEndpoint === 'ollama' || Boolean(newApiKey.trim()) || Boolean(newApiBase.trim()) || hasStoredCredentials;
     const readyToTest = Boolean(newEndpoint && newModel.trim() && hasConnection) && !isAddingModel;
 
     const resetNewModelForm = () => {
@@ -628,9 +668,12 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         setRecentMenuAnchor(null);
         setNewEndpoint("");
         setNewModel("");
+        setNewSmallModel('');
+        setNewReasoningEffort('');
         setNewApiKey("");
         setNewApiBase("");
         setNewApiVersion("");
+        setManagedIdentityClientId('');
         setAdvancedOpen(false);
         setShowKeys(false);
         setAzureAuthMethod('azure_cli');
@@ -640,14 +683,32 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     };
 
     const handleSaveModel = async () => {
-        if (!readyToTest || modelExists) return;
+        if (onStageConnection) {
+            if (!readyToTest || isAccountProvider) return;
+            setIsAddingModel(true);
+            setNewModelError('');
+            try {
+                await onStageConnection({ endpoint: newEndpoint, model: newModel.trim(), api_key: newApiKey,
+                    small_model: newSmallModel.trim(),
+                    api_base: newApiBase.trim(), api_version: newApiVersion.trim(),
+                    auth_mode: newEndpoint === 'azure' && azureAuthMethod !== 'api_key'
+                        ? (azureAuthMethod === 'managed_identity' ? 'managed_identity' : 'azure_identity') : 'key',
+                    managed_identity_client_id: azureAuthMethod === 'managed_identity' ? managedIdentityClientId.trim() : '' });
+                resetNewModelForm();
+            } catch (error) { setNewModelError(error instanceof Error ? error.message : String(error)); }
+            finally { setIsAddingModel(false); }
+            return;
+        }
+        if (serverConfig.DISABLE_CUSTOM_MODELS || !readyToTest || modelExists) return;
         const updatingUserModel = detailModelId && !detailIsGlobal;
         const id = updatingUserModel
             ? detailModelId
-            : simpleHash(`${newEndpoint}-${newModel}-${newApiKey}-${newApiBase}-${newApiVersion}${isAccountProvider ? '-account' : ''}`);
+            : simpleHash(`${newEndpoint}-${newModel}-${newSmallModel.trim()}-${newApiKey}-${newApiBase}-${newApiVersion}${isAccountProvider ? '-account' : ''}${newReasoningEffort ? `-${newReasoningEffort}` : ''}`);
         const model: ModelConfig = {
             endpoint: newEndpoint,
             model: newModel.trim(),
+            small_model: newSmallModel.trim() || undefined,
+            reasoning_effort: newReasoningEffort || undefined,
             api_key: isAccountProvider ? undefined : newApiKey,
             api_base: isAccountProvider ? undefined : newApiBase.trim(),
             api_version: isAccountProvider ? undefined : newApiVersion.trim(),
@@ -697,6 +758,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         setTempSelectedModelId(model.id);
         setNewEndpoint(model.endpoint);
         setNewModel(model.model);
+        setNewSmallModel(model.small_model || '');
+        setNewReasoningEffort(model.reasoning_effort || '');
         setNewApiBase(model.api_base || '');
         setNewApiVersion(model.api_version || '');
         setNewApiKey(model.is_global ? '' : model.api_key || '');
@@ -717,16 +780,19 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     };
 
     const startNewModel = () => {
+        if (serverConfig.DISABLE_CUSTOM_MODELS) return;
         setDetailModelId(undefined);
         resetNewModelForm();
         setIsEditingDetails(true);
     };
 
     const editModelDetails = () => {
+        if (serverConfig.DISABLE_CUSTOM_MODELS) return;
         setIsEditingDetails(true);
     };
 
     const copyModelDetails = () => {
+        if (serverConfig.DISABLE_CUSTOM_MODELS) return;
         setDetailModelId(undefined);
         setNewModelError('');
         setNewModelDiagnostic(null);
@@ -830,7 +896,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                                 <Typography component="code" variant="body2" aria-label={t('model.deviceCode')}
                                     sx={{ fontFamily: 'monospace', fontSize: textVar.sm, fontWeight: 600, overflowWrap: 'anywhere', userSelect: 'all' }}>{deviceCode}</Typography>
                                 <Tooltip title={t('model.copyDeviceCode')}><IconButton size="small" aria-label={t('model.copyDeviceCode')}
-                                    onClick={() => void navigator.clipboard.writeText(deviceCode).catch(() => setOpenRouterError(t('model.copyDeviceCodeFailed')))}>
+                                    onClick={() => void navigator.clipboard?.writeText(deviceCode).catch(() => setOpenRouterError(t('model.copyDeviceCodeFailed')))}>
                                     <ContentCopyOutlinedIcon sx={{ fontSize: iconVar.sm }} />
                                 </IconButton></Tooltip>
                             </Box>
@@ -922,7 +988,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                 select
                 fullWidth
                 size="small"
-                disabled={!isEditingDetails}
+                disabled={!isEditingDetails || (!!onStageConnection && !!initialDefinition)}
                 label={t('model.provider')}
                 value={newEndpoint}
                 onChange={(event) => {
@@ -931,7 +997,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                     setNewEndpoint(provider);
                 }}
             >
-                {(['account', 'api'] as const).flatMap(connectionMethod => [
+                {(onStageConnection ? ['api'] as const : ['account', 'api'] as const).flatMap(connectionMethod => [
                     <ListSubheader key={connectionMethod} disableSticky aria-hidden="true" sx={{
                         fontSize: textVar.sm, lineHeight: '28px', color: 'text.secondary',
                         ...(connectionMethod === 'api' && { borderTop: 1, borderColor: 'divider', mt: 0.5, pt: 0.5 }),
@@ -990,16 +1056,19 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                     onChange={(_event, value) => {
                         if (!value) return;
                         setAzureAuthMethod(value);
-                        if (value === 'azure_cli') setNewApiKey('');
+                        if (value !== 'api_key') setNewApiKey('');
                     }}
                     aria-label={t('model.authentication')}
                 >
-                    <ToggleButton value="azure_cli">Azure CLI</ToggleButton>
+                    <ToggleButton value="azure_cli">{onStageConnection ? 'Microsoft Entra ID' : 'Azure CLI'}</ToggleButton>
+                    {onStageConnection && <ToggleButton value="managed_identity">Managed identity</ToggleButton>}
                     <ToggleButton value="api_key">{t('model.apiKey')}</ToggleButton>
                 </ToggleButtonGroup>
             )}
 
-            {newEndpoint === 'azure' && azureAuthMethod === 'azure_cli' && (
+            {onStageConnection && newEndpoint === 'azure' && azureAuthMethod === 'managed_identity' && <TextField size="small"
+                label="Managed identity client ID (optional)" value={managedIdentityClientId} onChange={event => setManagedIdentityClientId(event.target.value)} />}
+            {!onStageConnection && newEndpoint === 'azure' && azureAuthMethod === 'azure_cli' && (
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
                     {azureCliStatus?.signed_in ? (
                         <Typography variant="caption" color="success.main" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
@@ -1113,6 +1182,35 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                 </Box>}
             </Box>}
 
+            {newEndpoint && (isAccountProvider ? <Autocomplete
+                fullWidth size="small"
+                options={openRouterModels}
+                value={openRouterModels.find(model => model.id === newSmallModel) || null}
+                getOptionLabel={model => model.name}
+                isOptionEqualToValue={(option, value) => option.id === value.id}
+                disabled={!isEditingDetails || !openRouterConnected || openRouterLoading}
+                onChange={(_event, model) => setNewSmallModel(model?.id || '')}
+                renderInput={params => <TextField {...params} label={t('model.smallModelOptional')}
+                    placeholder={t('model.sameAsModel')} />}
+            /> : <TextField
+                fullWidth size="small" disabled={!isEditingDetails}
+                label={t('model.smallModelOptional')}
+                value={newSmallModel}
+                onChange={event => setNewSmallModel(event.target.value)}
+                placeholder={t('model.sameAsModel')}
+                autoComplete="off"
+            />)}
+
+            {newEndpoint && !onStageConnection && <TextField
+                select fullWidth size="small" disabled={!isEditingDetails}
+                label={t('model.thinking')} value={newReasoningEffort || 'low'}
+                onChange={event => setNewReasoningEffort(event.target.value === 'low' ? '' : event.target.value as typeof newReasoningEffort)}
+                helperText={t('model.thinkingHint')}>
+                <MenuItem value="low">{t('model.thinkingLow')}</MenuItem>
+                <MenuItem value="medium">{t('model.thinkingMedium')}</MenuItem>
+                <MenuItem value="high">{t('model.thinkingHigh')}</MenuItem>
+            </TextField>}
+
             {newEndpoint && newEndpoint !== 'ollama' && !isAccountProvider
                 && (newEndpoint !== 'azure' || azureAuthMethod === 'api_key') && apiKeyField}
 
@@ -1159,7 +1257,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                 </Accordion>
             )}
 
-            {isEditingDetails && modelExists && <Typography variant="caption" color="error">{t('model.providerModelExists')}</Typography>}
+            {!onStageConnection && isEditingDetails && modelExists && <Typography variant="caption" color="error">{t('model.providerModelExists')}</Typography>}
             {newModelDiagnostic && (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                     <Typography variant="caption" color="error" sx={{ flex: 1 }}>
@@ -1169,7 +1267,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                         <IconButton
                             size="small"
                             aria-label={t('model.copyDiagnostic')}
-                            onClick={() => navigator.clipboard.writeText([
+                            onClick={() => navigator.clipboard?.writeText([
                                 newModelDiagnostic.message,
                                 newModelDiagnostic.request_id || '',
                             ].filter(Boolean).join('\n'))}
@@ -1226,6 +1324,11 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                     {newEndpoint === 'azure' ? t('model.deploymentName') : t('model.model')}
                 </Typography>
                 <Typography component="dd" variant="body2">{newModel}</Typography>
+                <Typography component="dt" variant="body2">{t('model.smallModel')}</Typography>
+                <Typography component="dd" variant="body2">{newSmallModel || t('model.sameAsModel')}</Typography>
+                <Typography component="dt" variant="body2">{t('model.thinking')}</Typography>
+                <Typography component="dd" variant="body2">{t(newReasoningEffort === 'high' ? 'model.thinkingHigh'
+                    : newReasoningEffort === 'medium' ? 'model.thinkingMedium' : 'model.thinkingLow')}</Typography>
                 <Typography component="dt" variant="body2">{t(detailUsesAccount ? 'model.account' : 'model.authentication')}</Typography>
                 <Box component="dd">
                     {!detailUsesAccount && <Typography variant="body2">
@@ -1278,40 +1381,60 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         }}>
             <Box sx={{ pr: { md: 2.5 }, borderRight: { md: '1px solid' }, borderColor: { md: 'divider' } }}>
                 <Box sx={{ display: 'grid' }}>
-                    {allModels.map(model => (
+                    {allModels.map(model => {
+                        const endpointLabel = getModelEndpointLabel(model);
+                        return (
                             <Box
                                 key={model.id}
                                 onClick={() => loadModelDetails(model)}
                                 sx={{
                                     display: 'grid',
-                                    gridTemplateColumns: 'minmax(0, 1fr) auto',
+                                    gridTemplateColumns: 'minmax(0, 1fr) 24px',
                                     alignItems: 'center',
-                                    gap: 1,
+                                    gap: 0.75,
                                     px: 1,
-                                    py: 1.25,
+                                    py: 1,
                                     borderBottom: '1px solid',
                                     borderColor: 'divider',
                                     bgcolor: detailModelId === model.id ? 'action.selected' : 'transparent',
                                     cursor: 'pointer',
                                     '&:hover': { bgcolor: 'action.hover' },
+                                    '& .model-remove': { opacity: 0 },
+                                    '&:hover .model-remove, &:focus-within .model-remove': { opacity: 1 },
+                                    '@media (hover: none)': { '& .model-remove': { opacity: 1 } },
                                 }}
                             >
                                 <Box sx={{ minWidth: 0 }}>
-                                    <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>{model.model}</Typography>
-                                    <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
-                                        {PROVIDERS[model.endpoint]?.label || model.endpoint}
-                                    </Typography>
-                                </Box>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    {selectedModelId === model.id && (
-                                        <Typography variant="caption" color="text.secondary">
-                                            {t('model.current')}
+                                    <Tooltip title={endpointLabel}>
+                                        <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', mb: 0.5 }}>
+                                            {endpointLabel}
                                         </Typography>
-                                    )}
+                                    </Tooltip>
+                                    <Box component="dl" sx={{ display: 'grid', gridTemplateColumns: 'max-content minmax(0, 1fr)', alignItems: 'baseline', columnGap: 1, rowGap: 0.25, m: 0 }}>
+                                        <Typography component="dt" variant="caption" color="text.secondary">{t('model.mainShort')}</Typography>
+                                        <Tooltip title={model.model}>
+                                            <Typography component="dd" variant="body2" noWrap sx={{ m: 0, fontWeight: 500 }}>{model.model}</Typography>
+                                        </Tooltip>
+                                        {model.small_model?.trim() && model.small_model.trim() !== model.model.trim() && <>
+                                            <Typography component="dt" variant="caption" color="text.secondary">{t('model.smallShort')}</Typography>
+                                            <Tooltip title={`${t('model.smallModel')}: ${model.small_model}`}>
+                                                <Typography component="dd" variant="body2" color="text.secondary" noWrap sx={{ m: 0 }}>{model.small_model}</Typography>
+                                            </Tooltip>
+                                        </>}
+                                    </Box>
+                                </Box>
+                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', alignSelf: 'start', width: 24, height: 48 }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 24, width: 24 }}>
+                                        {selectedModelId === model.id && <Tooltip title={t('model.current')}>
+                                            <CheckCircleOutlineIcon titleAccess={t('model.current')} color="primary" sx={{ fontSize: 16 }} />
+                                        </Tooltip>}
+                                    </Box>
                                     {!globalModels.some(globalModel => globalModel.id === model.id) && (
                                         <Tooltip title={t('model.removeModel')}>
                                             <IconButton
+                                                className="model-remove"
                                                 size="small"
+                                                sx={{ width: 24, height: 24, '& .MuiSvgIcon-root': { fontSize: 16 } }}
                                                 aria-label={t('model.removeModel')}
                                                 onClick={(event) => {
                                                     event.stopPropagation();
@@ -1329,8 +1452,9 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                                     )}
                                 </Box>
                             </Box>
-                    ))}
-                    <Button
+                        );
+                    })}
+                    {!serverConfig.DISABLE_CUSTOM_MODELS && <Button
                         size="small"
                         startIcon={<AddCircleIcon />}
                         onClick={startNewModel}
@@ -1341,20 +1465,20 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                         }}
                     >
                         {t('model.addModel')}
-                    </Button>
+                    </Button>}
                 </Box>
             </Box>
             <Box sx={{ minWidth: 0 }}>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
                     <Box sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
                         <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                            {detailModel ? detailModel.model : t('model.newModel')}
+                            {detailModel ? detailModel.display_name || detailModel.model : t(serverConfig.DISABLE_CUSTOM_MODELS ? 'model.pleaseSelectModel' : 'model.newModel')}
                         </Typography>
                         {detailIsGlobal && (
                             <Typography variant="caption" color="text.secondary">{t('model.serverManaged')}</Typography>
                         )}
                     </Box>
-                    {isEditingDetails && !detailModelId && rememberedEndpoints.length > 0 && <>
+                    {!serverConfig.DISABLE_CUSTOM_MODELS && isEditingDetails && !detailModelId && rememberedEndpoints.length > 0 && <>
                         <Button
                             size="small"
                             variant="text"
@@ -1384,6 +1508,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                                     onClick={() => {
                                         setNewEndpoint(option.endpoint);
                                         setNewModel(option.model);
+                                        setNewSmallModel(option.small_model || '');
                                         setNewApiBase(option.api_base);
                                         setNewApiVersion(option.api_version);
                                         setNewApiKey('');
@@ -1401,6 +1526,9 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                                         <Typography variant="body2">
                                             {PROVIDERS[option.endpoint]?.label || option.endpoint} / {option.model}
                                         </Typography>
+                                        {option.small_model && <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                            {t('model.smallModel')}: {option.small_model}
+                                        </Typography>}
                                         {option.api_base && <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                                             {option.api_base}
                                         </Typography>}
@@ -1447,7 +1575,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                                     </span>
                                 </Tooltip>
                             )}
-                            <Box sx={{
+                            {!serverConfig.DISABLE_CUSTOM_MODELS && <Box sx={{
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: 0.5,
@@ -1473,11 +1601,11 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                                 >
                                     {t('app.copy')}
                                 </Button>
-                            </Box>
+                            </Box>}
                         </Box>
                     )}
                 </Box>
-                {isEditingDetails ? addModelForm : modelDetails}
+                {isEditingDetails && !serverConfig.DISABLE_CUSTOM_MODELS ? addModelForm : modelDetails}
             </Box>
         </Box>
     );
@@ -1485,7 +1613,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     // A model is "ready" to use when it's been verified ('ok') or when it's a
     // server-configured model in 'unknown' state (trusted by default).
     const isModelReady = (id: string | undefined): boolean => {
-        if (!id) return false;
+        if (!id || !allModels.some(model => model.id === id)) return false;
         const status = getStatus(id);
         if (status === 'ok') return true;
         const isGlobal = globalModels.some(m => m.id === id);
@@ -1495,11 +1623,19 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     let modelNotReady = !isModelReady(tempSelectedModelId);
 
     let tempModel = allModels.find(m => m.id == tempSelectedModelId);
-    let tempModelName = tempModel ? `${tempModel.endpoint}/${tempModel.model}` : t('model.pleaseSelectModel');
+    let tempModelName = tempModel ? tempModel.display_name || `${tempModel.endpoint}/${tempModel.model}` : t('model.pleaseSelectModel');
     let selectedModelName = allModels.find(m => m.id == selectedModelId)?.model || t('model.unselected');
 
     const selectedReady = isModelReady(selectedModelId);
     const isInlineAction = appearance === 'inline';
+
+    if (onStageConnection) return <Box sx={{ maxWidth: 700 }}>
+        {addModelForm}
+        {!hideStageAction && <Portal container={actionContainer} disablePortal={!actionContainer}>
+            <Button sx={actionContainer ? undefined : { mt: 2 }} size="small" variant="contained" disabled={!readyToTest} onClick={handleSaveModel}
+                startIcon={isAddingModel ? <CircularProgress size={16} /> : undefined}>Test and save</Button>
+        </Portal>}
+    </Box>;
 
     return <>
         <Tooltip title={t('model.selectModel')}>
@@ -1556,7 +1692,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
             </Dialog>
             <DialogContent sx={{ width: { xs: '100%', sm: 720 }, maxWidth: '100%', boxSizing: 'border-box' }}>{modelManagerView}</DialogContent>
             <DialogActions sx={{ flexWrap: 'wrap', rowGap: 1 }}>
-                {isEditingDetails ? (
+                {isEditingDetails && !serverConfig.DISABLE_CUSTOM_MODELS ? (
                     <>
                         <Button variant="text" disabled={isAddingModel} onClick={() => {
                             if (detailModel) loadModelDetails(detailModel);

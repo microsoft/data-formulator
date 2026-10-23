@@ -31,7 +31,6 @@
 | 端点 | 事件 type | 说明 |
 |------|-----------|------|
 | `data-agent-streaming` | `"text_delta"`, `"completion"`, `"clarify"` 等 | 顶层 `type` 事件 |
-| `get-recommendation-questions` | `"question"` | 探索建议问题 |
 | `generate-report-chat` | `"text_delta"`, `"embed_chart"`, `"embed_table"` | 报告生成流 |
 | `data-loading-chat` | `"text_delta"`, `"tool_call"`, `"tool_result"`, `"done"` | 数据加载对话 |
 | （跨端点通用） | `"thinking_text"` | Agent 推理/思考过程文本（参见 2.4） |
@@ -268,7 +267,6 @@ if (parsed.text) { ... }
 | 端点 | MIME | 序列化方式 | error 格式 | warning 支持 |
 |------|------|------------|------------|-------------|
 | `/data-agent-streaming` | `x-ndjson` | route `json.dumps(event)` | `stream_error_event` | ✅ `_with_warnings` |
-| `/get-recommendation-questions` | `x-ndjson` | route 累积碎片 → `_try_parse_explore_line` | `stream_error_event` | ✅ `_with_warnings` |
 | `/generate-report-chat` | `x-ndjson` | route `json.dumps(event)` | `stream_error_event` | ✅ `_with_warnings` |
 | `/data-loading-chat` | `x-ndjson` | route `json.dumps(event)` | `stream_error_event` | ✅ `_with_warnings` |
 

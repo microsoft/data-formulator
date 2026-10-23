@@ -19,6 +19,17 @@ Run backend tests (pytest):
 pytest tests/backend
 ```
 
+Tests that take a second or more (sandbox subprocesses, query workers, the
+workflow agent) are marked `@pytest.mark.slow` and skipped in broad runs like
+the one above. A file named on the command line runs all of its tests,
+including slow ones. Run everything with:
+
+```bash
+pytest tests/backend --run-slow   # or DF_RUN_SLOW_TESTS=1
+```
+
+Mark a new test `slow` when it takes about a second or more on its own.
+
 Run frontend tests (Vitest):
 
 ```bash

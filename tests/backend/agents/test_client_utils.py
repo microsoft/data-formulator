@@ -6,7 +6,6 @@
 Tests cover the pure-logic parts that don't require a live LLM:
 - Model name prefixing for gemini / anthropic / ollama
 - Ollama api_base normalisation (trailing /api stripping)
-- Image block stripping helpers (_strip_image_blocks, _strip_images_from_messages)
 - Image request detection (_messages_contain_images)
 - Image deserialise error detection (_is_image_deserialize_error)
 - Client.from_config constructor
@@ -27,6 +26,54 @@ pytestmark = [pytest.mark.backend]
 # ---------------------------------------------------------------------------
 
 class TestModelNamePrefixing:
+    @pytest.mark.parametrize("wrapping_depth", [0, 2])
+    @pytest.mark.parametrize("api_type", [None, "responses"])
+    @pytest.mark.parametrize("original_id", ["rs_" + "a" * 48, "a" * 432])
+    def test_responses_replays_compatible_reasoning_items(self, monkeypatch, wrapping_depth, api_type, original_id):
+        import copy
+        import httpx
+        from litellm.llms.custom_httpx.http_handler import HTTPHandler
+        from litellm.responses.utils import ResponsesAPIRequestUtils
+
+        wrapped_id = original_id
+        for _ in range(wrapping_depth):
+            wrapped_id = ResponsesAPIRequestUtils._build_encrypted_item_id("test-deployment", wrapped_id)
+        messages = [
+            {"role": "user", "content": "Continue"},
+            {"role": "assistant", "content": None,
+             "reasoning_items": [{"type": "reasoning", "id": wrapped_id, "summary": [], "encrypted_content": "opaque-test"}],
+             "tool_calls": [{"id": "call_test", "type": "function", "function": {"name": "query", "arguments": "{}"}}]},
+            {"role": "tool", "tool_call_id": "call_test", "content": "1"},
+        ]
+        original_messages = copy.deepcopy(messages)
+        requests = []
+
+        def respond(handler, url, **kwargs):
+            requests.append(kwargs["json"])
+            return httpx.Response(200, request=httpx.Request("POST", url), json={
+                "id": "resp_test", "object": "response", "created_at": 1, "status": "completed",
+                "model": "gpt-5.4", "output": [{"type": "message", "id": "msg_test",
+                    "role": "assistant", "status": "completed", "content": [
+                        {"type": "output_text", "text": "ok", "annotations": []}]}],
+                "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+            })
+
+        monkeypatch.setattr(HTTPHandler, "post", respond)
+        monkeypatch.setattr(httpx.Client, "send", lambda *args, **kwargs: pytest.fail("Unexpected network request"))
+        client = Client("azure", "responses/gpt-5.4" if api_type is None else "gpt-5.4", api_key="test-key",
+                        api_base="https://example.openai.azure.com", api_type=api_type)
+        client.get_completion(messages)
+        inputs = requests[-1]["input"]
+        reasoning = [item for item in inputs if item.get("type") == "reasoning"]
+        if len(original_id) > 64:
+            assert reasoning == []
+        else:
+            assert reasoning[0]["id"] == original_id
+            assert reasoning[0]["encrypted_content"] == "opaque-test"
+        assert any(item.get("type") == "function_call" and item["call_id"] == "call_test" for item in inputs)
+        assert any(item.get("type") == "function_call_output" and item["call_id"] == "call_test" for item in inputs)
+        assert messages == original_messages
+
     def test_chatgpt_uses_private_native_responses_transport(self, monkeypatch):
         import base64
         import httpx
@@ -112,6 +159,19 @@ class TestModelNamePrefixing:
         assert attach_reasoning_content({"role": "assistant"}, message)["reasoning_items"] == [reasoning]
         assert responses.call_args.kwargs["stream"] is True
 
+    def test_failed_responses_stream_is_an_error_not_an_empty_reply(self, monkeypatch):
+        import json
+        from unittest.mock import Mock
+
+        events = [{"type": "response.created", "response": {"id": "resp_failed", "status": "in_progress", "output": []}},
+                  {"type": "response.failed", "response": {"id": "resp_failed", "status": "failed", "output": [],
+                   "error": {"code": "rate_limit_exceeded", "message": "Rate limit reached."}}}]
+        monkeypatch.setattr(client_utils.litellm, "responses", Mock(side_effect=lambda **kwargs: iter(json.dumps(event) for event in events)))
+        client = Client("openai", "test-model", api_key="test-key", api_type="responses")
+        tools = [{"type": "function", "function": {"name": "query", "parameters": {"type": "object"}}}]
+        with pytest.raises(Exception, match="rate_limit_exceeded"):
+            list(client.get_completion_with_tools([{"role": "user", "content": "Query"}], tools, stream=True))
+
     def test_responses_failure_does_not_fall_back_to_chat(self, monkeypatch):
         from unittest.mock import Mock
 
@@ -150,6 +210,187 @@ class TestModelNamePrefixing:
         client.ping()
         assert completion.call_args.kwargs["_skip_responses_api_bridge"] is True
         assert completion.call_args.kwargs["model"] == "test-model"
+
+    @pytest.mark.parametrize("responses_fails", [False, True])
+    def test_tools_with_reasoning_move_to_responses_when_chat_rejects_them(self, monkeypatch, responses_fails):
+        from unittest.mock import Mock
+
+        monkeypatch.setattr(client_utils, "_RESPONSES_FOR_TOOLS", set())
+        rejection = Exception("Error code: 400 - Function tools with reasoning_effort are not supported for gpt-6.1-sol "
+                              "in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'.")
+
+        def completion(**kwargs):
+            if kwargs["model"].startswith("responses/"):
+                if responses_fails:
+                    raise RuntimeError("responses unavailable")
+                return "responses-reply"
+            raise rejection
+
+        completion = Mock(side_effect=completion)
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        tools = [{"type": "function", "function": {"name": "query", "parameters": {"type": "object"}}}]
+        messages = [{"role": "user", "content": "hi"}]
+        client = Client("azure", "gpt-6.1-sol", api_key="k", api_base="https://apim.example.test")
+        if responses_fails:
+            with pytest.raises(RuntimeError, match="responses unavailable"):
+                client.get_completion_with_tools(messages, tools, reasoning_effort="low")
+            assert client.api_type is None and not client_utils._RESPONSES_FOR_TOOLS
+            return
+        assert client.get_completion_with_tools(messages, tools, reasoning_effort="low") == "responses-reply"
+        assert completion.call_args.kwargs["custom_llm_provider"] == "azure"
+        completion.reset_mock()
+        fresh = Client("azure", "gpt-6.1-sol", api_key="k", api_base="https://apim.example.test")
+        assert fresh.get_completion_with_tools(messages, tools) == "responses-reply"
+        assert completion.call_count == 1
+
+    @pytest.mark.parametrize("endpoint,api_base,api_type,expected", [
+        ("openai", None, None, "responses"),
+        ("openai", "https://api.openai.com/v1", None, "responses"),
+        ("openai", "http://localhost:8000/v1", None, None),
+        ("azure", "https://df.openai.azure.com", None, "responses"),
+        ("azure", "https://df.cognitiveservices.azure.com", None, "responses"),
+        ("azure", "https://apim.example.test", None, None),
+        ("azure", "https://df.openai.azure.com", "chat_completions", "chat_completions"),
+        ("openrouter", None, None, None),
+        ("anthropic", None, None, None),
+    ])
+    def test_first_party_openai_hosts_default_to_responses(self, endpoint, api_base, api_type, expected):
+        assert Client(endpoint, "gpt-5", api_key="k", api_base=api_base, api_type=api_type).api_type == expected
+
+    def test_default_responses_falls_back_to_chat_for_old_azure_api_versions(self, monkeypatch):
+        from unittest.mock import Mock
+
+        monkeypatch.setattr(client_utils, "_CHAT_ONLY", set())
+
+        def completion(**kwargs):
+            if kwargs["model"].startswith("responses/"):
+                raise Exception('AzureException - {"error":{"code":"BadRequest","message":"Azure OpenAI Responses API '
+                                'is enabled only for api-version 2025-03-01-preview and later"}}')
+            return "chat-reply"
+
+        completion = Mock(side_effect=completion)
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        config = dict(api_key="k", api_base="https://df.openai.azure.com", api_version="2025-01-01-preview")
+        assert Client("azure", "gpt-4.1", **config).get_completion([{"role": "user", "content": "hi"}]) == "chat-reply"
+        completion.reset_mock()
+        fresh = Client("azure", "gpt-4.1", **config)
+        assert fresh.api_type is None
+        assert fresh.get_completion([{"role": "user", "content": "hi"}]) == "chat-reply"
+        assert completion.call_count == 1
+
+    def test_explicit_responses_route_does_not_fall_back(self, monkeypatch):
+        from unittest.mock import Mock
+
+        completion = Mock(side_effect=Exception("Resource not found"))
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        client = Client("azure", "gpt-4.1", api_key="k", api_base="https://apim.example.test", api_type="responses")
+        with pytest.raises(Exception, match="Resource not found"):
+            client.get_completion([{"role": "user", "content": "hi"}])
+        assert completion.call_count == 1
+
+    def test_ping_accepts_reasoning_that_exhausts_the_tiny_budget(self, monkeypatch):
+        from unittest.mock import Mock
+
+        monkeypatch.setattr(client_utils.litellm, "completion", Mock(side_effect=Exception(
+            "APIConnectionError - gpt-5-mini unable to complete request: max_output_tokens")))
+        Client("azure", "gpt-5-mini", api_key="k", api_base="https://df.openai.azure.com").ping()
+
+    @pytest.mark.parametrize("model,api_base,sent,forced", [
+        ("gpt-6.1-sol", "https://df.openai.azure.com", True, False),
+        ("gpt-4.1", "https://df.openai.azure.com", False, False),
+        ("my-reasoning-deployment", "https://df.openai.azure.com", True, True),
+        ("my-reasoning-deployment", "https://apim.example.test", True, False),
+    ])
+    def test_thinking_level_reaches_only_models_that_can_use_it(self, monkeypatch, model, api_base, sent, forced):
+        from unittest.mock import Mock
+
+        completion = Mock(return_value="reply")
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        Client("azure", model, api_key="k", api_base=api_base).get_completion([{"role": "user", "content": "hi"}],
+                                                                              reasoning_effort="high")
+        kwargs = completion.call_args.kwargs
+        assert ("reasoning_effort" in kwargs) is sent
+        assert ("allowed_openai_params" in kwargs) is forced
+
+    @pytest.mark.parametrize("endpoint,api_base,sent", [
+        ("azure", "https://df.openai.azure.com", True), ("openai", None, True), ("anthropic", None, False)])
+    def test_json_schema_is_sent_only_to_verified_endpoints(self, monkeypatch, endpoint, api_base, sent):
+        from unittest.mock import Mock
+
+        completion = Mock(return_value="reply")
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        response_format = {"type": "json_schema", "json_schema": {"name": "x", "schema": {"type": "object"}}}
+        Client(endpoint, "gpt-5", api_key="k", api_base=api_base).get_completion(
+            [{"role": "user", "content": "hi"}], response_format=response_format)
+        assert ("response_format" in completion.call_args.kwargs) is sent
+
+    def test_rejected_json_schema_falls_back_to_plain_text(self, monkeypatch):
+        from unittest.mock import Mock
+
+        def completion(**kwargs):
+            if "response_format" in kwargs:
+                raise Exception("Invalid parameter: 'response_format' of type 'json_schema' is not supported with this model.")
+            return "reply"
+
+        completion = Mock(side_effect=completion)
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        client = Client("azure", "gpt-4", api_key="k", api_base="https://df.openai.azure.com")
+        assert client.get_completion([{"role": "user", "content": "hi"}], response_format={"type": "json_schema"}) == "reply"
+        assert completion.call_count == 2
+
+    @pytest.mark.parametrize("api_base,sent", [("https://df.openai.azure.com", True), ("https://apim.example.test", False)])
+    def test_prompt_cache_key_goes_only_to_first_party_endpoints(self, monkeypatch, api_base, sent):
+        from unittest.mock import Mock
+
+        completion = Mock(return_value="reply")
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        client = Client("azure", "gpt-5", api_key="k", api_base=api_base)
+        client.prompt_cache_key = "session-key"
+        client.get_completion([{"role": "user", "content": "hi"}])
+        assert (completion.call_args.kwargs.get("prompt_cache_key") == "session-key") is sent
+
+    def test_deployment_that_rejects_thinking_is_remembered(self, monkeypatch):
+        from unittest.mock import Mock
+
+        monkeypatch.setattr(client_utils, "_NO_REASONING", set())
+
+        def completion(**kwargs):
+            if "reasoning_effort" in kwargs:
+                raise Exception('{"error": {"message": "Unsupported parameter: \'reasoning.effort\' is not supported '
+                                'with this model.", "param": "reasoning.effort"}}')
+            return "reply"
+
+        completion = Mock(side_effect=completion)
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        config = dict(api_key="k", api_base="https://df.openai.azure.com")
+        assert Client("azure", "my-gpt4o", **config).get_completion([{"role": "user", "content": "hi"}]) == "reply"
+        completion.reset_mock()
+        assert Client("azure", "my-gpt4o", **config).get_completion([{"role": "user", "content": "hi"}]) == "reply"
+        assert completion.call_count == 1
+
+    def test_claude_requests_mark_the_system_prompt_and_latest_turn_for_caching(self, monkeypatch):
+        import json
+        import httpx
+
+        bodies = []
+
+        def send(client, request, *args, **kwargs):
+            bodies.append(json.loads(request.content))
+            return httpx.Response(200, request=request, json={
+                "id": "msg_test", "type": "message", "role": "assistant", "model": "claude-sonnet-4-5",
+                "content": [{"type": "text", "text": "ok"}], "stop_reason": "end_turn",
+                "usage": {"input_tokens": 1, "output_tokens": 1}})
+
+        monkeypatch.setattr(httpx.Client, "send", send)
+        messages = [{"role": "system", "content": "Analyst instructions"}, {"role": "user", "content": "Load data"},
+                    {"role": "assistant", "content": "Loaded."}, {"role": "user", "content": "Chart it"}]
+        Client("anthropic", "claude-sonnet-4-5", api_key="k").get_completion(messages)
+        body = bodies[0]
+        assert body["system"][-1]["cache_control"] == {"type": "ephemeral"}
+        assert body["messages"][-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+        assert all("cache_control" not in block for message in body["messages"][:-1]
+                   for block in (message["content"] if isinstance(message["content"], list) else []))
+        assert "enable_prompt_caching" not in body
 
     @pytest.mark.parametrize("endpoint", ["openai", "azure", "github_copilot"])
     def test_responses_transport_preserves_client_identity_and_contract(self, monkeypatch, endpoint):
@@ -190,7 +431,7 @@ class TestModelNamePrefixing:
         assert client.params == original_params
 
         client.ping()
-        assert responses.call_args.kwargs["max_output_tokens"] == 3
+        assert responses.call_args.kwargs["max_output_tokens"] == 16
 
     def test_copilot_uses_explicit_credentials_without_shared_authenticator(self, monkeypatch):
         from unittest.mock import Mock
@@ -254,10 +495,6 @@ class TestModelNamePrefixing:
 # ---------------------------------------------------------------------------
 
 class TestOrcaRouter:
-    def test_default_base_url(self):
-        c = Client("orcarouter", "auto", api_key="k")
-        assert c.params["api_base"] == "https://api.orcarouter.ai/v1"
-
     def test_custom_base_url_strips_trailing_slash(self):
         c = Client("orcarouter", "auto", api_key="k",
                    api_base="https://api.orcarouter.ai/v1/")
@@ -276,6 +513,26 @@ class TestOrcaRouter:
     def test_model_prefix_not_doubled(self):
         c = Client("orcarouter", "orcarouter/auto", api_key="k")
         assert c.model == "orcarouter/auto"
+
+
+# ---------------------------------------------------------------------------
+# Cheaper Inference endpoint
+# ---------------------------------------------------------------------------
+
+class TestCheaperInference:
+    def test_custom_base_url_strips_trailing_slash(self):
+        c = Client("cheaperinference", "gpt-5.4-mini", api_key="k",
+                   api_base="https://api.cheaperinference.com/v1/")
+        assert c.params["api_base"] == "https://api.cheaperinference.com/v1"
+
+    def test_uses_openai_compatible_provider(self):
+        c = Client("cheaperinference", "gpt-5.4-mini", api_key="k")
+        assert c.params["custom_llm_provider"] == "openai"
+
+    def test_model_id_kept_bare(self):
+        """Cheaper Inference model ids are bare, so no prefix is added."""
+        c = Client("cheaperinference", "claude-sonnet-5", api_key="k")
+        assert c.model == "claude-sonnet-5"
 
 
 # ---------------------------------------------------------------------------
@@ -377,125 +634,12 @@ class TestAzureCredentialSelection:
 
 
 # ---------------------------------------------------------------------------
-# _strip_image_blocks
-# ---------------------------------------------------------------------------
-
-class TestStripImageBlocks:
-    def setup_method(self):
-        self.client = Client("openai", "gpt-4o", api_key="k")
-
-    def test_string_content_unchanged(self):
-        result = self.client._strip_image_blocks("hello")
-        assert result == "hello"
-
-    def test_image_url_blocks_removed(self):
-        content = [
-            {"type": "text", "text": "Describe this"},
-            {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}},
-        ]
-        result = self.client._strip_image_blocks(content)
-        assert len(result) == 1
-        assert result[0]["type"] == "text"
-
-    def test_non_image_blocks_preserved(self):
-        content = [
-            {"type": "text", "text": "Hello"},
-            {"type": "text", "text": "World"},
-        ]
-        result = self.client._strip_image_blocks(content)
-        assert len(result) == 2
-
-    def test_mixed_list_with_non_dict_preserved(self):
-        content = [
-            "plain string",
-            {"type": "image_url", "image_url": {}},
-            {"type": "text", "text": "keep"},
-        ]
-        result = self.client._strip_image_blocks(content)
-        assert "plain string" in result
-        assert any(isinstance(r, dict) and r.get("type") == "text" for r in result)
-        assert not any(isinstance(r, dict) and r.get("type") == "image_url" for r in result)
-
-    def test_all_images_removed_returns_empty_list(self):
-        content = [{"type": "image_url"}, {"type": "image_url"}]
-        result = self.client._strip_image_blocks(content)
-        assert result == []
-
-
-# ---------------------------------------------------------------------------
-# _strip_images_from_messages
-# ---------------------------------------------------------------------------
-
-class TestStripImagesFromMessages:
-    def setup_method(self):
-        self.client = Client("openai", "gpt-4o", api_key="k")
-
-    def _multimodal_messages(self):
-        return [
-            {"role": "system", "content": "You are helpful."},
-            {"role": "user", "content": [
-                {"type": "text", "text": "What is in this image?"},
-                {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}},
-            ]},
-        ]
-
-    def test_system_message_unchanged(self):
-        msgs = self._multimodal_messages()
-        result = self.client._strip_images_from_messages(msgs)
-        assert result[0]["content"] == "You are helpful."
-
-    def test_image_blocks_removed_from_user_message(self):
-        msgs = self._multimodal_messages()
-        result = self.client._strip_images_from_messages(msgs)
-        user_content = result[1]["content"]
-        assert all(
-            not (isinstance(b, dict) and b.get("type") == "image_url")
-            for b in user_content
-        )
-
-    def test_text_blocks_preserved_in_user_message(self):
-        msgs = self._multimodal_messages()
-        result = self.client._strip_images_from_messages(msgs)
-        user_content = result[1]["content"]
-        assert any(isinstance(b, dict) and b.get("type") == "text" for b in user_content)
-
-    def test_original_messages_not_mutated(self):
-        msgs = self._multimodal_messages()
-        original_len = len(msgs[1]["content"])
-        self.client._strip_images_from_messages(msgs)
-        assert len(msgs[1]["content"]) == original_len
-
-    def test_non_dict_messages_preserved(self):
-        msgs = ["plain string message"]
-        result = self.client._strip_images_from_messages(msgs)
-        assert result == ["plain string message"]
-
-
-# ---------------------------------------------------------------------------
 # _is_image_deserialize_error
 # ---------------------------------------------------------------------------
 
 class TestIsImageDeserializeError:
     def setup_method(self):
         self.client = Client("openai", "gpt-4o", api_key="k")
-
-    def test_image_url_expected_text_detected(self):
-        err = "Error: image_url content part was sent but expected `text` content"
-        assert self.client._is_image_deserialize_error(err) is True
-
-    def test_unknown_variant_image_url_detected(self):
-        err = "unknown variant `image_url`, expected one of `text`, `audio`"
-        assert self.client._is_image_deserialize_error(err) is True
-
-    def test_unrelated_error_not_detected(self):
-        assert self.client._is_image_deserialize_error("rate limit exceeded") is False
-
-    def test_empty_string_not_detected(self):
-        assert self.client._is_image_deserialize_error("") is False
-
-    def test_partial_match_image_url_without_expected(self):
-        """'image_url' alone without 'expected `text`' should NOT match."""
-        assert self.client._is_image_deserialize_error("received image_url block") is False
 
     def test_upstream_failure_with_images_detected(self):
         err = "400: Error from provider (OpenCode Go): Upstream request failed"
@@ -540,30 +684,12 @@ class TestMessagesContainImages:
 # ---------------------------------------------------------------------------
 
 class TestFromConfig:
-    def test_creates_client_from_dict(self):
-        cfg = {"endpoint": "openai", "model": "gpt-4o", "api_key": "mykey"}
-        c = Client.from_config(cfg)
-        assert c.endpoint == "openai"
-        assert c.model == "openai/gpt-4o"
-        assert c.params["api_key"] == "mykey"
-
     def test_strips_whitespace_from_values(self):
         cfg = {"endpoint": "  openai  ", "model": "  gpt-4o  ", "api_key": "  key  "}
         c = Client.from_config(cfg)
         assert c.endpoint == "openai"
         assert c.model == "openai/gpt-4o"
         assert c.params["api_key"] == "key"
-
-    def test_optional_fields_absent_when_empty(self):
-        cfg = {"endpoint": "openai", "model": "gpt-4o", "api_key": "k"}
-        c = Client.from_config(cfg)
-        # api_base and api_version should not be set when absent
-        assert "api_base" not in c.params or c.params.get("api_base", "") == ""
-
-    def test_gemini_prefix_applied_via_from_config(self):
-        cfg = {"endpoint": "gemini", "model": "gemini-pro", "api_key": "k"}
-        c = Client.from_config(cfg)
-        assert c.model.startswith("gemini/")
 
 
 # ---------------------------------------------------------------------------

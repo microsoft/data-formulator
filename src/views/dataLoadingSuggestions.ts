@@ -166,40 +166,43 @@ export interface DataLoadingQuickAction {
     onClick: () => void;
 }
 
+/** What the user already has; quick actions suggest the next step (connect, explore, automate). */
+export interface QuickActionContext {
+    hasUserSources: boolean;
+    hasSessions: boolean;
+    hasWorkflows: boolean;
+    canSchedule: boolean;
+    hasSchedules: boolean;
+}
+
 /**
- * A short list of one-tap "quick actions" surfaced as pills above the
- * composer (distinct from the `focusSuggestions` dropdown, which holds
- * example prompts). These are the highest-intent entry points — connect a
- * source, or see what connected data is already available. Rendered without
- * icons to keep the empty-state / front page clean.
+ * One-tap "quick actions" surfaced as pills above the composer (distinct from the
+ * `focusSuggestions` dropdown, which holds example prompts). Listing connected data
+ * is always first; the second rotates, by `seed` in [0, 1), among next steps that
+ * fit what the user already has.
  */
 export function buildDataLoadingQuickActions(
     { t, setInput, setImages, setAttachments, requestAutoSend }: BuildSuggestionsArgs,
+    context?: QuickActionContext,
+    seed = 0,
 ): DataLoadingQuickAction[] {
-    const connectLabel = t('upload.agentChatQuickAction.connect', {
-        defaultValue: 'Guide me to connect a data source',
-    });
-    const askLabel = t('upload.agentChatQuickAction.askConnected', {
-        defaultValue: 'List tables from my connected sources',
-    });
-
+    const label = (key: string, defaultValue: string) => t(`upload.agentChatQuickAction.${key}`, { defaultValue });
     const fillAndSend = (text: string) => {
         setImages([]);
         setAttachments([]);
         setInput(text);
         requestAutoSend?.({ text, images: [], attachments: [] });
     };
-
-    return [
-        {
-            kind: 'connect',
-            label: connectLabel,
-            onClick: () => fillAndSend(connectLabel),
-        },
-        {
-            kind: 'ask',
-            label: askLabel,
-            onClick: () => fillAndSend(askLabel),
-        },
-    ];
+    const action = (kind: string, text: string) => ({ kind, label: text, onClick: () => fillAndSend(text) });
+    const nextSteps = [
+        action('connect', label('connect', 'Guide me to connect a data source')),
+        context?.hasSessions && !context.hasWorkflows
+            && action('workflow', label('workflowFromSession', 'Turn my last analysis into a workflow')),
+        context?.canSchedule && context.hasWorkflows && !context.hasSchedules
+            && action('schedule', label('scheduleWorkflow', 'Schedule a workflow to run daily')),
+    ].filter((item): item is DataLoadingQuickAction => !!item);
+    // Without a connected source, connecting is the only sensible next step.
+    const next = context && !context.hasUserSources ? nextSteps[0]
+        : nextSteps[Math.min(nextSteps.length - 1, Math.floor(seed * nextSteps.length))];
+    return [action('ask', label('askConnected', 'List tables from my connected sources')), next];
 }

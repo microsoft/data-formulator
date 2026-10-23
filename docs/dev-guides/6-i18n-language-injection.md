@@ -41,7 +41,6 @@ frontend i18n.language
 |------|----------|------|
 | `SortDataAgent` | 已接入 | 构造函数接收 `language_instruction`，route 使用 `compact` 模式 |
 | `workspace-name` | 已接入 | `SimpleAgents` 接收 `language_instruction`，生成 session/workspace 展示名使用 `full` |
-| `nl-to-filter` | 暂不注入 | 当前返回结构化 JSON；未来若返回用户可见自然语言再接入 |
 | `test-model` | 明确豁免 | 健康检查需要固定返回，不应被语言指令影响 |
 | `rec_language_instruction` | 已清理 | 当前 `routes/agents.py` 未再保留该误导性参数 |
 | `message_code` / `content_code` / `option_codes` | 已落地 | Python 固定用户消息由前端翻译，后端保留英文 fallback |
@@ -59,7 +58,7 @@ frontend i18n.language
 | 用户可读解释、建议、报告、对话、自动命名 | 是 | 必须跟随 UI 语言 |
 | 生成代码、JSON key、字段名、变量名 | 部分 | 使用 `compact`，只约束用户可见字段 |
 | 纯健康检查 / 固定连通性测试 | 否 | 例如 `test-model`，保持固定英文更稳定 |
-| 纯结构化 JSON 且不展示自然语言 | 通常否 | 例如当前 `nl-to-filter`，未来若返回用户文案再接入 |
+| 纯结构化 JSON 且不展示自然语言 | 通常否 | 未来若返回用户文案再接入 |
 
 决策树：
 
@@ -100,7 +99,6 @@ agent = SortDataAgent(client=client, language_instruction=language_instruction)
 | `SortDataAgent`、`ChartRestyleAgent` | `compact` |
 | `workspace-name` | `full` |
 | `test-model`、模型列表、纯状态检查 | 不注入 |
-| `nl-to-filter`、`classify-chart-intent` | 不注入（纯结构化输出） |
 
 ### 2.2 Agent 层
 
@@ -387,7 +385,7 @@ locale 文件完整并在 `src/i18n/index.ts` 注册的语言，才应出现在�
 
 - [ ] 读取 `Accept-Language` 派生语言指令
 - [ ] `test-model` 这类健康检查明确记录为不注入
-- [ ] `nl-to-filter` 这类纯结构化 JSON route 若新增自然语言输出，需要重新评估注入
+- [ ] 纯结构化 JSON route 若新增自然语言输出，需要重新评估注入
 - [ ] 流式事件中的错误、clarify、summary 使用 message code
 - [ ] 前端消费路径调用 `translateBackend()`
 

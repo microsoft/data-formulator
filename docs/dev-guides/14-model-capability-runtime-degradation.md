@@ -62,10 +62,9 @@ class Client:
 | `data_load` | `minimal` | 一次性类型推断 |
 | `experience_distill` | `minimal` | 总结分析上下文 |
 | `chart_insight` | `minimal` | 图表标题 + 1–3 个 takeaway |
-| `chart_restyle` | `minimal` | 对 Vega-Lite spec 做样式编辑 |
 | `code_explanation` | `minimal` | 解释衍生字段 |
 | `sort_data` | `minimal` | 小列表的自然顺序排序 |
-| `simple` | `minimal` | nl_to_filter / workspace_name / intent |
+| `simple` | `minimal` | workspace_name |
 
 `DEFAULT_REASONING_EFFORT = "low"` —— 未在表中列出的 agent id 走默认值。
 

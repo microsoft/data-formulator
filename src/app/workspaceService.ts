@@ -14,7 +14,45 @@ import { workspaceDB, TableIndexEntry } from './workspaceDB';
 import { INPUT_TABLE_PREVIEW_ROW_LIMIT, replaceInputTablePreviews } from './inputTablePreviewCache';
 import { migrateState } from './stateMigrations';
 import { workspaceTableIdOf } from './tableResolution';
-import type { InputTable } from '../components/ComponentType';
+import type { InputTable, ExternalTableReference } from '../components/ComponentType';
+import type { ServerConfig } from './dfSlice';
+
+export interface ScheduledRunProvenance {
+    scheduleId: string;
+    scheduleName: string;
+    scheduledFor: string;
+    forked?: boolean;
+}
+
+export function createExternalTableReference(reference: Omit<ExternalTableReference, 'id'>): ExternalTableReference {
+    return { ...reference, id: `external:${encodeURIComponent(reference.connectorId)}:${encodeURIComponent(reference.tableKey)}` };
+}
+
+export function externalReferenceTitle(reference: ExternalTableReference): string {
+    let title = reference.displayName || reference.sourceTable.name;
+    if (title === reference.sourceTable.name) {
+        try { title = new URL(title).pathname || title; } catch {}
+        title = title.split(/[\\/]/).filter(Boolean).pop() || reference.sourceTable.name;
+    }
+    return title;
+}
+
+export function isLargeConnectorTable(metadata?: Record<string, any> | null,
+    config?: Pick<ServerConfig, 'EXTERNAL_TABLE_MAX_ROWS' | 'EXTERNAL_TABLE_MAX_BYTES'>): boolean {
+    return Number(metadata?.row_count) > (config?.EXTERNAL_TABLE_MAX_ROWS ?? 1_000_000)
+        || ['original_size_bytes', 'size_bytes', 'file_size'].some(key =>
+            Number(metadata?.[key]) > (config?.EXTERNAL_TABLE_MAX_BYTES ?? 512 * 1024 * 1024));
+}
+
+export function isSemanticConnectorTable(metadata?: Record<string, any> | null): boolean {
+    return metadata?.query_model === 'semantic';
+}
+
+/** Semantic models and large tables are added as references; the agent queries them. */
+export function loadsAsConnectorReference(metadata?: Record<string, any> | null,
+    config?: Pick<ServerConfig, 'EXTERNAL_TABLE_MAX_ROWS' | 'EXTERNAL_TABLE_MAX_BYTES'>): boolean {
+    return isSemanticConnectorTable(metadata) || isLargeConnectorTable(metadata, config);
+}
 
 export interface WorkspaceSummary {
     id: string;
@@ -25,6 +63,7 @@ export interface WorkspaceSummary {
     chart_count?: number | null;
     source_ids?: string[];
     read_only?: boolean;
+    scheduled_run?: ScheduledRunProvenance;
 }
 
 export interface WorkspaceFile {
@@ -177,8 +216,8 @@ export async function listWorkspaces(): Promise<WorkspaceSummary[]> {
         .sort((left, right) => (right.saved_at || '').localeCompare(left.saved_at || ''));
 }
 
-/** Load a workspace's saved state. Returns null if not found. */
-export async function loadWorkspace(id: string): Promise<{ state: Record<string, any>; displayName: string; readOnly: boolean } | null> {
+/** Load a workspace's saved state. Returns null if not found. A scheduled run's checkpoint comes back as `workflowRun`. */
+export async function loadWorkspace(id: string): Promise<{ state: Record<string, any>; displayName: string; readOnly: boolean; workflowRun?: any } | null> {
     const generation = ++workspaceLoadGeneration;
     const ephemeral = await isEphemeralBackend();
     assertCurrentWorkspaceLoad(generation);
@@ -190,6 +229,17 @@ export async function loadWorkspace(id: string): Promise<{ state: Record<string,
         });
         if (!data.state) return null;
         const state = migrateState(data.state);
+        if (data.workflow_run) {
+            const workflowPanel = await import('../views/WorkflowPanel');
+            const run = data.workflow_run;
+            const turn = workflowPanel.workflowTextTurn(run, state.textTurns?.find((item: any) => item.workflow?.runId === run.id));
+            const summaryId = `scheduled-summary-${run.id}`;
+            state.textTurns = [...(state.textTurns || []).filter((item: any) => item.id !== summaryId && item.id !== turn.id), turn];
+            if (run.status !== 'completed' || !state.focusedId) {
+                state.focusedId = { type: 'text', textId: turn.id };
+                state.viewMode = 'editor';
+            }
+        }
         const previews = await prepareInputTablePreviews(state, id);
         assertCurrentWorkspaceLoad(generation);
         replaceInputTablePreviews(previews);
@@ -198,7 +248,8 @@ export async function loadWorkspace(id: string): Promise<{ state: Record<string,
         if (ephemeral) {
             await workspaceDB.save(id, displayName, createRecoveryState(state), createTableIndex(state));
         }
-        return { state, displayName, readOnly: false };
+        return { state, displayName, readOnly: data.read_only === true || state.activeWorkspace?.readOnly === true,
+            ...(data.workflow_run ? { workflowRun: data.workflow_run } : {}) };
     } catch (error) {
         if (error instanceof WorkspaceLoadSupersededError) throw error;
         assertCurrentWorkspaceLoad(generation);
@@ -327,6 +378,14 @@ export function deleteTablesFromWorkspace(tableIds: string[]): void {
 
 export function isWorkspaceReadOnly(workspace: { readOnly?: boolean } | null | undefined): boolean {
     return workspace?.readOnly === true;
+}
+
+/** Whether a workspace file name is invalid; names may sit in folders (`notes/plan.md`), up to 4 levels. */
+export function isInvalidWorkspaceFileName(name: string): boolean {
+    const segments = name.split('/');
+    return !name || name.includes('\\') || name.length > 255 || segments.length > 4
+        || segments.some(segment => !segment || segment !== segment.trim() || segment === '.' || segment === '..'
+            || segment.startsWith('.write-') || Array.from(segment).some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127));
 }
 
 export async function listWorkspaceFiles(): Promise<WorkspaceFile[]> {

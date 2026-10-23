@@ -10,6 +10,11 @@ actions: []
 
 # Analysis
 
+When inputs need loading, load the `connected_data` skill and follow its Data Access Paths. Python reads
+actual workspace paths, not external reference IDs or connector addresses.
+Only `compute_ready: true` load outcomes are local computation inputs; follow
+the workspace policy to materialize a working dataset from a virtual outcome.
+
 - `inspect_source_data(table_names)` returns schema, statistics, and sample rows
   for analysis input tables. Prefer it for basic inspection.
 - `execute_python_script(code)` runs general-purpose sandboxed Python for data
@@ -20,16 +25,23 @@ actions: []
 The initial context already includes samples and statistics. When that evidence
 is sufficient, proceed without an extra inspection call.
 
+Use `visualize` for chart-specific transformations; use `execute_python_script`
+for inspection, statistical tests, and independent verification.
+
 Follow the workspace data boundaries below. Use data tools for registered tables
 and file tools for durable documents or exports; computation alone does not create a workspace artifact.
 
 Python runs in the workspace root directory. Use exact paths from context and
 assign any resulting DataFrame to the requested output variable. pandas, numpy,
 duckdb, sklearn, scipy, math, datetime, json, statistics, collections, re,
-random, itertools, functools, operator, and time are available. File writes,
-network access, and unlisted libraries are forbidden.
+random, itertools, functools, operator, and time are available. File writes
+and unlisted libraries are forbidden. Network access depends on the deployment
+(local macOS allows internet but never local services); when it is unavailable,
+acquire remote data with the data-loading tools instead.
 
 Prefer pandas for ordinary work. Use DuckDB for large aggregations, joins,
 filters, or window functions. Quote SQL identifiers containing spaces,
 punctuation, or non-ASCII characters with double quotes, for example
 `"customer name"`, and escape SQL string literals by doubling single quotes.
+Name computed columns with `AS`, and double-quote names that are SQL keywords
+(`first`, `last`, `order`, `group`, `default`): `min(year) AS "first"`.

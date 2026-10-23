@@ -14,4 +14,5 @@ export interface CatalogTableDragItem {
     tableId?: string;
     tablePath: string[];
     sourceType: string;
+    metadata?: Record<string, any>;
 }

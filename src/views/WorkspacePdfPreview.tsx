@@ -1,5 +1,7 @@
 import React, { FC, useEffect, useRef, useState } from 'react';
-import { Box, CircularProgress, Typography } from '@mui/material';
+import { Box, Typography } from '@mui/material';
+import { useTranslation } from 'react-i18next';
+import { LoadingStatus } from '../components/FunComponents';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Virtuoso } from 'react-virtuoso';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -29,6 +31,7 @@ export const WorkspacePdfPreview: FC<WorkspacePdfPreviewProps> = ({
     onPageCountChange,
     onVisiblePageChange,
 }) => {
+    const { t } = useTranslation();
     const viewportRef = useRef<HTMLDivElement>(null);
     const [pageWidth, setPageWidth] = useState(720);
 
@@ -50,7 +53,7 @@ export const WorkspacePdfPreview: FC<WorkspacePdfPreviewProps> = ({
             <Document
                 file={file}
                 onLoadSuccess={({ numPages }) => onPageCountChange(numPages)}
-                loading={<Box sx={{ py: 8, display: 'grid', placeItems: 'center' }}><CircularProgress size={28} /></Box>}
+                loading={<LoadingStatus label={t('dataThread.loadingFilePreview', { defaultValue: 'Loading file preview...' })} sx={{ height: '100%', minHeight: 160, p: 2 }} />}
                 error={<Typography sx={{ py: 8, px: 3, textAlign: 'center', fontSize: textVar.md, color: 'text.secondary' }}>{errorLabel}</Typography>}
             >
                 {pageCount > 0 && (

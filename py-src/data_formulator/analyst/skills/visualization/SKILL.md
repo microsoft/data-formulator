@@ -13,6 +13,41 @@ Use `visualize` to run Python that produces a DataFrame and render it as a
 chart. The result returns as an observation, so inspect it before deciding what
 to do next.
 
+## Progressive Visual Analysis
+
+When grounded data supports a view that advances the question, publish it and
+use the returned evidence to guide subsequent analysis; do not reserve all charts
+for final delivery. Reuse useful views and avoid redundant charts. Respect explicit
+nonvisual requests; prefer a scalar or table for exact lookups or validation tallies.
+Inspect the returned data, specification, and diagnostics, claiming visual inspection
+only when image evidence is available. Verify numerical claims independently.
+Before comparing periods, check that the first and last periods are complete;
+flag or exclude partial ones. Answer from the data; label facts it cannot support.
+
+## Inputs and Publication
+
+To fix a chart the user says is wrong or unwanted, publish the corrected one with
+`replaces` set to the old table or chart id; the old pair is deleted. Variations
+and follow-ups add new charts instead.
+
+Choose inputs from the session; to load more, load the `connected_data` skill and follow its Data Access Paths. Compute
+chart-specific filters, grouping, and ranking from their listed paths. No
+separate `create_data` call is needed to prepare or publish chart data.
+Virtual load outcomes are not local chart inputs; follow the workspace policy
+to obtain a compute-ready result or use the connector input path below.
+
+For the optional one-off chart path, declare `connector_inputs` in this call.
+Each input has a unique `alias`, `source_id`,
+`table_key`, and optional structured `query`. The backend persists the query
+result and supplies `connector_inputs['alias']` as its actual Parquet path before
+running Python. Read it with `pd.read_parquet(connector_inputs['alias'])`.
+Do not guess a filename or connect to the source from sandboxed Python.
+
+Connector inputs are added to provenance automatically; `input_sources` lists
+other durable inputs used by the code. Use `[]` when there are no other inputs.
+Matching loaded queries are reused. If Python or rendering fails, the returned
+bindings remain available; retry with those paths instead of reloading.
+
 - `title`: concise, neutral analytical heading naming the subject, measure, and
   lens. Do not name the chart type, imply causality, or editorialize.
 - `subtitle`: supporting context not already clear from title or axes, at most
@@ -21,12 +56,14 @@ to do next.
 - `code`: standalone Python producing the DataFrame named by `output_variable`.
 - `input_sources`: durable inputs materially used by the transform. Use stable
   IDs and kinds from workspace context; use `[]` when none contributed.
-- `field_metadata`: semantic annotations for encoded fields. Preserve units,
-  baselines, intrinsic domains, and ordinal order; never invent a unit.
+- `field_metadata`: for encoded fields, a SemanticType name (`Year`, `Amount`,
+  `Category`, …; not `quantitative` or `nominal`) or an object adding `unit`,
+  `intrinsic_domain`, `sort_order` for ordered categories, and
+  `diverging_midpoint` for a baseline. Never invent a unit.
 - `field_display_names`: concise human-readable labels for axes and legends.
-- `chart.encodings`: map each channel to a Flint encoding object such as
-  `{"x": {"field": "category", "type": "nominal"}}`. A bare field-name
-  string is accepted as shorthand. Every `field` must name an output column.
+- `chart.encodings`: map each channel to a Flint encoding object
+  (`{"field": ..., "type": ...}`) or a bare field name. Every `field` must name
+  an output column.
 
 Choose the chart from the analytical intent: comparison, trend, distribution,
 relationship, composition, deviation, ranking, uncertainty, or spatial pattern.

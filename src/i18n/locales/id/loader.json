@@ -1,0 +1,116 @@
+{
+  "loader": {
+    "mysql": {
+      "user": "Nama pengguna MySQL",
+      "password": "kosongkan jika tanpa kata sandi",
+      "host": "alamat server",
+      "port": "port server",
+      "database": "Nama basis data (kosongkan untuk menjelajahi semua basis data)",
+      "authInstructions": "**Contoh:** user: `root` · host: `localhost` · port: `3306` · database: `mydb`\n\n**Penyiapan lokal:** Pastikan MySQL berjalan — `brew services list` (macOS) atau `systemctl status mysql` (Linux). Kosongkan kata sandi jika tidak diatur.\n\n**Penyiapan jarak jauh:** Dapatkan host, port, nama pengguna, dan kata sandi dari administrator basis data Anda. Pastikan server mengizinkan koneksi jarak jauh dan IP Anda masuk daftar putih.\n\n**Cakupan:** Kosongkan *database* untuk menjelajahi semua basis data di server, atau isi untuk langsung menuju tabel di basis data tersebut.\n\n**Pemecahan masalah:** Uji dengan `mysql -u <user> -p -h <host> -P <port> <database>`"
+    },
+    "mssql": {
+      "server": "Alamat host atau nama instans SQL Server",
+      "database": "Nama basis data (kosongkan untuk menjelajahi semua basis data)",
+      "user": "Nama pengguna (kosongkan untuk autentikasi Entra ID / Windows)",
+      "password": "Kata sandi (kosongkan untuk autentikasi Entra ID / Windows)",
+      "port": "Port SQL Server (bawaan: 1433)",
+      "encrypt": "Aktifkan enkripsi (yes/no)",
+      "trust_server_certificate": "Percayai sertifikat server (yes/no)",
+      "connection_timeout": "Batas waktu koneksi dalam detik",
+      "authInstructions": "**Microsoft Entra ID (disarankan):** Jalankan `az login` sekali di terminal Anda, lalu jalankan Data Formulator. Pilih *Microsoft Entra ID*, isi hanya `server` dan (opsional) `database`, dan kosongkan nama pengguna/kata sandi — kredensial Azure CLI Anda digunakan secara otomatis. Managed Identity, VS Code, dan kredensial lingkungan juga berfungsi via `DefaultAzureCredential`.\n\n> Identitas Entra Anda harus diberi akses ke basis data, misalnya admin menjalankan `CREATE USER [you@contoso.com] FROM EXTERNAL PROVIDER;` dan memberikan peran yang diperlukan.\n\n**Contoh (Entra ID):** server: `myserver.database.windows.net` · database: `mydb` (nama pengguna/kata sandi kosong)\n\n**Autentikasi SQL Server:** Pilih *autentikasi SQL Server* dan berikan nama pengguna dan kata sandi.\n\n**Contoh (autentikasi SQL):** server: `localhost` · database: `mydb` · user: `sa` · password: `MyP@ss` · port: `1433`\n\n**Autentikasi Windows (khusus Windows):** Pilih *autentikasi Windows* dan kosongkan nama pengguna/kata sandi.\n\n**Driver:** Driver Microsoft SQL Server sudah terkemas bersama Data Formulator; tidak perlu instalasi ODBC terpisah. Untuk Entra ID, instal Azure CLI dan jalankan `az login`.\n\n**Pemecahan masalah:** Pastikan Anda masuk dengan `az account show`. Pastikan layanan SQL Server berjalan dan TCP/IP diaktifkan. Uji autentikasi SQL dengan `sqlcmd -S <server> -d <database> -U <user> -P <password>`."
+    },
+    "postgresql": {
+      "user": "Nama pengguna PostgreSQL",
+      "password": "kosongkan jika tanpa kata sandi",
+      "host": "Host PostgreSQL",
+      "port": "Port PostgreSQL",
+      "database": "Nama basis data (kosongkan untuk menjelajahi semua basis data)",
+      "authInstructions": "**Contoh:** user: `postgres` · host: `localhost` · port: `5432` · database: `mydb`\n\n**Penyiapan lokal:** Pastikan PostgreSQL berjalan — `brew services list` (macOS) atau `systemctl status postgresql` (Linux). Kosongkan kata sandi jika tidak diatur.\n\n**Penyiapan jarak jauh:** Dapatkan host, port, nama pengguna, dan kata sandi dari administrator basis data Anda. Pengguna harus memiliki izin SELECT pada tabel yang ingin Anda akses.\n\n**Cakupan:** Kosongkan *database* untuk menjelajahi semua basis data di server, atau isi untuk langsung menuju skema/tabel di basis data tersebut.\n\n**Pemecahan masalah:** Uji dengan `psql -U <user> -h <host> -p <port> -d <database>`"
+    },
+    "mongodb": {
+      "host": "alamat server",
+      "port": "port server",
+      "username": "kosongkan jika tanpa autentikasi",
+      "password": "kosongkan jika tanpa autentikasi",
+      "database": "nama basis data",
+      "collection": "kosongkan untuk mencantumkan semua koleksi",
+      "authSource": "basis data autentikasi (bawaan ke basis data target)",
+      "authInstructions": "**Contoh:** host: `localhost` · port: `27017` · database: `mydb` · collection: `users`\n\n**Penyiapan lokal:** Pastikan MongoDB berjalan. Kosongkan nama pengguna dan kata sandi jika autentikasi tidak diaktifkan.\n\n**Penyiapan jarak jauh:** Dapatkan host, port, nama pengguna, dan kata sandi dari administrator basis data Anda.\n\n**Pemecahan masalah:** Uji dengan `mongosh --host <host> --port <port>`"
+    },
+    "cosmosdb": {
+      "endpoint": "URL endpoint akun Cosmos DB",
+      "key": "kunci akun atau kunci emulator",
+      "database": "nama basis data",
+      "container": "kosongkan untuk mencantumkan semua kontainer",
+      "authInstructions": "**Contoh:** endpoint: `https://myaccount.documents.azure.com:443/` · database: `mydb`\n\n**Penyiapan Azure:** Temukan endpoint dan kunci Anda di Azure Portal pada bagian *Keys* untuk akun Cosmos DB Anda.\n\n**Emulator lokal:** Gunakan endpoint `https://localhost:8081` dengan kunci emulator yang sudah dikenal.\n\n**Pemecahan masalah:** Pastikan firewall akun mengizinkan IP Anda, atau gunakan koneksi dari jaringan yang diizinkan."
+    },
+    "bigquery": {
+      "project_id": "ID Proyek Google Cloud",
+      "dataset_id": "ID Kumpulan Data — kosongkan untuk semua, atau tentukan satu atau beberapa dipisah koma",
+      "credentials_path": "Jalur ke berkas JSON akun layanan (opsional)",
+      "location": "Lokasi BigQuery (bawaan: US)",
+      "authInstructions": "**Contoh:** project_id: `my-gcp-project` · dataset_id: `analytics` · credentials_path: `/path/to/key.json` · location: `US`\n\n**Opsi 1 — Kredensial Bawaan Aplikasi (disarankan):**\nInstal [Google Cloud SDK](https://cloud.google.com/sdk/docs/install), lalu jalankan `gcloud auth application-default login`. Kosongkan `credentials_path`.\n\n**Opsi 2 — Berkas Kunci Akun Layanan:**\nBuat akun layanan di Google Cloud Console, unduh kunci JSON, dan masukkan jalur lengkap di `credentials_path`. Berikan peran **BigQuery Data Viewer** dan **BigQuery Job User** pada akun tersebut.\n\n**Opsi 3 — Variabel Lingkungan:**\nAtur `GOOGLE_APPLICATION_CREDENTIALS` ke jalur berkas JSON akun layanan Anda. Kosongkan `credentials_path`."
+    },
+    "athena": {
+      "aws_profile": "Nama profil AWS dari ~/.aws/credentials (jika diatur, kunci akses dan rahasia tidak diperlukan)",
+      "aws_access_key_id": "ID kunci akses AWS (tidak diperlukan jika menggunakan aws_profile)",
+      "aws_secret_access_key": "Kunci rahasia AWS (tidak diperlukan jika menggunakan aws_profile)",
+      "aws_session_token": "Token sesi AWS (diperlukan untuk kredensial sementara)",
+      "region_name": "Nama region AWS",
+      "workgroup": "Nama workgroup Athena (lokasi keluaran diambil dari konfigurasi workgroup)",
+      "output_location": "Lokasi keluaran S3 untuk hasil kueri (misalnya s3://bucket/path/). Jika kosong, memakai konfigurasi workgroup.",
+      "database": "Basis data/katalog bawaan untuk kueri",
+      "query_timeout": "Batas waktu eksekusi kueri dalam detik (bawaan: 300 = 5 menit)",
+      "authInstructions": "**Contoh (profil):** aws_profile: `default` · region_name: `us-east-1` · workgroup: `primary` · database: `my_database`\n\n**Contoh (kunci):** aws_access_key_id: `AKIA...` · aws_secret_access_key: `wJalr...` · region_name: `us-east-1`\n\n**Opsi 1 — Profil AWS (disarankan):**\nAtur `aws_profile` ke nama profil dari `~/.aws/credentials`. Siapkan dengan `aws configure --profile <name>`. Tidak perlu kunci akses atau rahasia.\n\n**Opsi 2 — Kredensial Eksplisit:**\nMasukkan `aws_access_key_id` dan `aws_secret_access_key` secara langsung. Tambahkan `aws_session_token` untuk kredensial sementara.\n\n**Izin IAM yang diperlukan:** `athena:StartQueryExecution`, `athena:GetQueryExecution`, `athena:GetQueryResults`, `athena:GetWorkGroup`, `athena:ListDatabases`, `athena:ListTableMetadata`, ditambah izin S3 dan Glue pada bucket data/hasil Anda."
+    },
+    "kusto": {
+      "kusto_cluster": "misalnya https://mycluster.region.kusto.windows.net",
+      "kusto_database": "Nama basis data (wajib)",
+      "client_id": "Hanya perwakilan layanan",
+      "client_secret": "Hanya perwakilan layanan",
+      "tenant_id": "Hanya perwakilan layanan",
+      "authInstructions": "**Opsi 1 — Masuk dengan Microsoft (disarankan):** Masuk sebagai diri sendiri dan gunakan izin Kusto Anda yang ada. Opsi ini muncul ketika server telah mengonfigurasi `KUSTO_OAUTH_CLIENT_ID`.\n\n**Opsi 2 — Identitas Bawaan Azure:** Gunakan login Azure CLI (`az login`), Managed Identity, kredensial VS Code, atau kredensial lingkungan.\n\n**Opsi 3 — Perwakilan Layanan:** Berikan `client_id`, `client_secret`, dan `tenant_id` untuk perwakilan layanan dengan akses kluster.\n\nSetiap identitas harus sudah memiliki akses bidang-data ke basis data Kusto yang dipilih."
+    },
+    "databricks": {
+      "server_hostname": "misalnya adb-1234567890.11.azuredatabricks.net",
+      "http_path": "Jalur HTTP gudang SQL, misalnya /sql/1.0/warehouses/abc123",
+      "catalog": "Nama Unity Catalog (kosongkan untuk menjelajahi semua katalog)",
+      "schema": "Nama skema (kosongkan untuk menjelajahi semua skema dalam katalog)",
+      "access_token": "Token akses personal Databricks (dapi...)",
+      "authInstructions": "**Tempat menemukannya:** Di ruang kerja Databricks Anda, buka **SQL → SQL Warehouses** (bilah sisi kiri), klik gudang Anda, dan buka tab **Connection details** — salin **Server hostname** dan **HTTP path** dari sana.\n\n**Token akses:** Klik avatar Anda (kanan atas) → **Settings → Developer → Access tokens → Generate new token**. Token diawali `dapi` dan hanya ditampilkan sekali.\n\n**Izin:** Pengguna token memerlukan `USE CATALOG` / `USE SCHEMA` dan `SELECT` pada objek Unity Catalog yang ingin dibaca.\n\n**Cakupan:** Kosongkan *catalog* dan *schema* untuk menjelajahi semua yang dapat Anda akses, atau atur untuk langsung menuju katalog/skema tertentu — misalnya coba `samples` → `nyctaxi` → `trips` bawaan.\n\n**Belum punya akun?** Databricks Free Edition tanpa server, gratis, dan menyertakan katalog `samples` — tidak perlu penyiapan kluster atau gudang."
+    },
+    "superset": {
+      "url": "URL dasar Superset (misalnya https://bi.company.com)",
+      "username": "Nama pengguna Superset (opsional jika memakai SSO)",
+      "password": "Kata sandi Superset (opsional jika memakai SSO)",
+      "authInstructions": "**Contoh:** url: `https://bi.company.com` · username: `admin` · password: `***`\n\n**Penyiapan:** Berikan URL dasar instans Superset Anda dan kredensial pengguna dengan setidaknya peran **Gamma** (akses baca ke kumpulan data).\n\n**SSO:** Jika Superset Anda memakai SSO, gunakan alur SSO bridge alih-alih autentikasi kata sandi (konfigurasikan via `PLG_SUPERSET_SSO_LOGIN_URL`)."
+    },
+    "azure_blob": {
+      "account_name": "Nama akun penyimpanan Azure",
+      "container_name": "Nama kontainer blob Azure",
+      "connection_string": "String koneksi penyimpanan Azure (alternatif untuk account_name + kredensial)",
+      "credential_chain": "Daftar berurutan penyedia kredensial Azure (cli;managed_identity;env)",
+      "account_key": "Kunci akun penyimpanan Azure",
+      "sas_token": "Token SAS Azure",
+      "endpoint": "Penggantian endpoint Azure",
+      "authInstructions": "**Contoh (string koneksi):** connection_string: `DefaultEndpointsProtocol=https;AccountName=...` · container_name: `mydata`\n\n**Contoh (kunci akun):** account_name: `mystorageacct` · container_name: `mydata` · account_key: `abc123...`\n\n**Opsi 1 — String Koneksi (paling mudah):**\nDapatkan dari Azure Portal → Storage Account → Access keys. Masukkan di `connection_string`; `account_name` boleh dikosongkan.\n\n**Opsi 2 — Kunci Akun:**\nDari Azure Portal → Storage Account → Access keys. Gunakan `account_name` + `account_key`.\n\n**Opsi 3 — Token SAS (disarankan untuk akses terbatas):**\nBuat dari Azure Portal → Storage Account → Shared access signature. Gunakan `account_name` + `sas_token`. Dapat dibatasi waktu dan izin.\n\n**Opsi 4 — Azure CLI / Managed Identity (paling aman):**\nCukup berikan `account_name` + `container_name`. Memerlukan `az login` atau Managed Identity.\n\n**Format yang didukung:** CSV, Parquet, JSON, JSONL"
+    },
+    "s3": {
+      "aws_access_key_id": "ID kunci akses AWS",
+      "aws_secret_access_key": "Kunci rahasia AWS",
+      "aws_session_token": "Token sesi AWS (diperlukan untuk kredensial sementara)",
+      "region_name": "Nama region AWS",
+      "bucket": "Nama bucket S3",
+      "authInstructions": "**Contoh:** aws_access_key_id: `AKIA...` · aws_secret_access_key: `wJalr...` · region_name: `us-east-1` · bucket: `my-data-bucket`\n\n**Mendapatkan kredensial:** Konsol AWS → IAM → Users → Security credentials → Create access key → pilih \"Application running outside AWS\".\n\n**Izin yang diperlukan:** `s3:GetObject` dan `s3:ListBucket` pada bucket Anda.\n\n**Format yang didukung:** CSV, Parquet, JSON, JSONL"
+    },
+    "local_folder": {
+      "root_dir": "Jalur absolut ke direktori lokal untuk dijelajahi",
+      "recursive": "Sertakan berkas dalam subdirektori",
+      "file_pattern": "Pola glob untuk memfilter berkas (misalnya '*.csv')",
+      "authInstructions": "Arahkan `root_dir` ke direktori lokal berisi berkas data.\n\n**Format yang didukung:** CSV, TSV, Parquet, JSON, JSONL, Excel (.xlsx/.xls)\n\nKlik **Jelajahi** untuk membuka pemilih folder, atau tempel jalur direktori."
+    },
+    "_common": {
+      "table_filter": "Filter tabel berdasarkan kata kunci (misalnya 'sales')"
+    }
+  }
+}

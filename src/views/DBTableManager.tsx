@@ -1,6 +1,7 @@
 // TableManager.tsx
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import Portal from '@mui/material/Portal';
 import {
   Typography,
   Button,
@@ -25,6 +26,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import { getConnectorIcon } from '../icons';
 import { AgentToyIcon } from './AgentToyIcon';
 
 import { CONNECTOR_ACTION_URLS } from '../app/utils';
@@ -109,9 +111,14 @@ export const DataLoaderForm: React.FC<{
     authMode?: string,
     authPaths?: ConnectorAuthPath[],
     formTitle?: React.ReactNode,
+    formFieldsBefore?: React.ReactNode,
     onImport: () => void,
     onFinish: (status: "success" | "error" | "warning", message: string, importedTables?: string[]) => void,
     onConnected?: () => void,
+    onStageConnection?: (params: Record<string, any>) => Promise<void>,
+    actionContainer?: HTMLElement | null,
+    initialConnectionParams?: Record<string, string>,
+    configuredParams?: Record<string, string | number | boolean> | null,
     onBusyChange?: (busy: boolean) => void,
     /** Called before the connect step. Returns the effective connectorId to use.
      *  Used by AddConnectionPanel to create the connector before connecting. */
@@ -137,9 +144,19 @@ export const DataLoaderForm: React.FC<{
     /** Hands the user to the data agent chat with a seeded question when they
      *  get stuck on setup. Omitted inside the chat card itself. */
     onAskAgent?: (prompt: string) => void,
-}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, authPaths = [], formTitle, onImport, onFinish, onConnected, onBusyChange, onBeforeConnect, onConnectionFailed, hasStoredCredentials, compact = false, comfortableSpacing = false, hideInstructions = false, initialSensitiveParams, onAskAgent}) => {
+}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, authPaths = [], formTitle, formFieldsBefore, onImport, onFinish, onConnected, onStageConnection, actionContainer, initialConnectionParams, configuredParams, onBusyChange, onBeforeConnect, onConnectionFailed, hasStoredCredentials, compact = false, comfortableSpacing = false, hideInstructions = false, initialSensitiveParams, onAskAgent}) => {
     const { t } = useTranslation();
-    const dispatch = useDispatch<AppDispatch>();
+    const reduxDispatch = useDispatch<AppDispatch>();
+    const [installationParams, setInstallationParams] = useState<Record<string, string>>(initialConnectionParams || {});
+    const dispatch = useCallback((action: ReturnType<typeof dfActions.updateDataLoaderConnectParam> | ReturnType<typeof dfActions.updateDataLoaderConnectParams>) => {
+        if (!onStageConnection) return reduxDispatch(action);
+        if (dfActions.updateDataLoaderConnectParam.match(action)) {
+            setInstallationParams(previous => ({ ...previous, [action.payload.paramName]: action.payload.paramValue }));
+        } else if (dfActions.updateDataLoaderConnectParams.match(action)) {
+            setInstallationParams(action.payload.params);
+        }
+        return action;
+    }, [!!onStageConnection, reduxDispatch]);
     const loaderTypeKey = loaderType || dataLoaderType;
     const getParamPlaceholder = (paramDef: {name: string; default?: string | number | boolean; description?: string}) => {
         // Sensitive fields whose stored credentials we have on the server
@@ -147,7 +164,7 @@ export const DataLoaderForm: React.FC<{
         // blank to keep, type to replace."
         if (
             hasStoredCredentials
-            && paramDefs.find(p => p.name === paramDef.name)?.tier === 'auth'
+            && (onStageConnection || paramDefs.find(p => p.name === paramDef.name)?.tier === 'auth')
             && (paramDefs.find(p => p.name === paramDef.name)?.sensitive
                 || paramDefs.find(p => p.name === paramDef.name)?.type === 'password')
         ) {
@@ -189,8 +206,10 @@ export const DataLoaderForm: React.FC<{
     // Effective connectorId — may be updated by onBeforeConnect (e.g. AddConnectionPanel)
     const connectorIdRef = useRef(connectorId);
     useEffect(() => { connectorIdRef.current = connectorId; }, [connectorId]);
-    const params = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[dataLoaderType] ?? {});
-    const isLocalMode = useSelector((state: DataFormulatorState) => !!state.serverConfig?.IS_LOCAL_MODE);
+    const savedParams = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[dataLoaderType] ?? {});
+    const params = onStageConnection ? installationParams : savedParams;
+    const localMode = useSelector((state: DataFormulatorState) => !!state.serverConfig?.IS_LOCAL_MODE);
+    const isLocalMode = !onStageConnection && localMode;
 
     // Materialize declared defaults and the default authentication path as
     // actual form values rather than placeholders. Existing user-entered or
@@ -216,6 +235,7 @@ export const DataLoaderForm: React.FC<{
     }, [authPaths, dataLoaderType, dispatch, paramDefs, params]);
 
     let [isConnecting, setIsConnecting] = useState(false);
+    const [connectionError, setConnectionError] = useState('');
     useEffect(() => { onBusyChange?.(isConnecting); }, [isConnecting, onBusyChange]);
     const [persistCredentials, setPersistCredentials] = useState(true);
     // High-level progress shown while connecting (e.g. Kusto reporting which
@@ -501,6 +521,7 @@ export const DataLoaderForm: React.FC<{
     const CONNECTION_TIMEOUT_MS = 30_000;
 
     const reportConnectionFailure = useCallback(async (message: string) => {
+        setConnectionError(message);
         try {
             await onConnectionFailed?.();
         } finally {
@@ -508,63 +529,92 @@ export const DataLoaderForm: React.FC<{
         }
     }, [onConnectionFailed, onFinish]);
 
+    const connectionUncertain = useRef(false);
+    const checkConnectionStatus = useCallback(async () => {
+        if (!connectorIdRef.current) return false;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10_000);
+        try {
+            const { data } = await apiRequest<any>(CONNECTOR_ACTION_URLS.GET_STATUS, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connectorIdRef.current }),
+                signal: controller.signal,
+            });
+            return data.connected === true;
+        } finally {
+            clearTimeout(timeout);
+        }
+    }, []);
+
+    const handleConnectionError = useCallback(async (error: any) => {
+        const uncertain = error?.name === 'AbortError' || error instanceof TypeError
+            || error?.apiError?.retry === true || [408, 429, 502, 503, 504].includes(error?.httpStatus);
+        if (!uncertain) {
+            await reportConnectionFailure(error.message || 'Failed to connect');
+            return;
+        }
+        connectionUncertain.current = true;
+        setConnectProgress(t('db.checkingConnection', { defaultValue: 'Checking connection status...' }));
+        try {
+            if (await checkConnectionStatus()) {
+                connectionUncertain.current = false;
+                onConnected?.();
+                return;
+            }
+        } catch {}
+        setConnectionError(t('db.connectionUnconfirmed', {
+            defaultValue: 'Connection status could not be confirmed. Your connector has been kept. Retry to check again.',
+        }));
+    }, [checkConnectionStatus, onConnected, reportConnectionFailure, t]);
+
     // Helper: connect via data connector. Catalog browsing happens in the
     // data-source sidebar after the dialog closes; this form only validates
     // the connection and hands off via onConnected.
     const connectAndListTables = useCallback(async () => {
         setIsConnecting(true);
+        setConnectionError('');
         setConnectProgress('');
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), CONNECTION_TIMEOUT_MS);
-        // Poll for high-level listing progress (e.g. which Kusto database is
-        // being queried) so the spinner isn't silent on slow multi-database
-        // sources. Best-effort: any failure is ignored.
-        let cancelledPoll = false;
-        const pollProgress = async () => {
-            const cid = connectorIdRef.current;
-            if (cancelledPoll || !cid) return;
-            try {
-                const { data } = await apiRequest<any>(CONNECTOR_ACTION_URLS.GET_CATALOG_PROGRESS, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ connector_id: cid }),
-                });
-                if (!cancelledPoll && data?.message) setConnectProgress(data.message);
-            } catch { /* progress is best-effort */ }
-        };
-        const progressTimer = setInterval(pollProgress, 700);
         try {
+            if (connectionUncertain.current && await checkConnectionStatus()) {
+                connectionUncertain.current = false;
+                onConnected?.();
+                return;
+            }
             // Strip table_filter from params sent to connect (it's a catalog-side filter)
             const { table_filter: _tf, ...connectParams } = getCurrentParams() as Record<string, any>;
             // If onBeforeConnect is provided (e.g. AddConnectionPanel), create the connector first
+            if (onStageConnection) {
+                const { _auth_path, ...definition } = connectParams;
+                await onStageConnection(definition);
+                return;
+            }
             if (onBeforeConnect) {
                 connectorIdRef.current = await onBeforeConnect(connectParams);
             }
             const { data: connectData } = await apiRequest<any>(CONNECTOR_ACTION_URLS.CONNECT, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ connector_id: connectorIdRef.current, params: connectParams, persist: persistCredentials }),
+                body: JSON.stringify({ connector_id: connectorIdRef.current, params: configuredParams ? {} : connectParams, persist: configuredParams ? false : persistCredentials }),
                 signal: controller.signal,
             });
             clearTimeout(timeoutId);
             if (connectData.status !== 'connected') {
                 throw new Error(extractConnectError(connectData, 'Connection failed'));
             }
+            connectionUncertain.current = false;
             onConnected?.();
         } catch (error: any) {
             clearTimeout(timeoutId);
-            if (error.name === 'AbortError') {
-                await reportConnectionFailure(t('db.connectionTimeout'));
-            } else {
-                await reportConnectionFailure(error.message || 'Failed to connect');
-            }
+            await handleConnectionError(error);
         } finally {
-            cancelledPoll = true;
-            clearInterval(progressTimer);
+            clearTimeout(timeoutId);
             setConnectProgress('');
             setIsConnecting(false);
         }
-    }, [getCurrentParams, persistCredentials, onConnected, onBeforeConnect, reportConnectionFailure, t]);
+    }, [getCurrentParams, persistCredentials, configuredParams, onConnected, onBeforeConnect, onStageConnection, checkConnectionStatus, handleConnectionError]);
 
     // Delegated (popup-based) login flow for token-based connectors
     const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -581,7 +631,7 @@ export const DataLoaderForm: React.FC<{
             }
             if (!connectorIdRef.current) return;
         } catch (err: any) {
-            await reportConnectionFailure(err.message || 'Failed to create connector');
+            await handleConnectionError(err);
             setIsConnecting(false);
             return;
         }
@@ -663,7 +713,7 @@ export const DataLoaderForm: React.FC<{
                     }
                     onConnected?.();
                 } catch (err: any) {
-                    await reportConnectionFailure(err.message || 'Login failed');
+                    await handleConnectionError(err);
                 }
             } else {
                 await reportConnectionFailure('Login failed');
@@ -681,7 +731,7 @@ export const DataLoaderForm: React.FC<{
                 void reportConnectionFailure('Login was cancelled');
             }
         }, 1000);
-    }, [delegatedLogin, getCurrentParams, persistCredentials, onConnected, onBeforeConnect, reportConnectionFailure, t]);
+    }, [delegatedLogin, getCurrentParams, persistCredentials, onConnected, onBeforeConnect, reportConnectionFailure, handleConnectionError, t]);
 
 
     // Auto-connect on mount from vault credentials or SSO token passthrough.
@@ -860,8 +910,27 @@ export const DataLoaderForm: React.FC<{
         </Button>
     ) : null;
 
+    if (configuredParams) return <Box aria-busy={isConnecting} sx={{ maxWidth: 560, width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+        <Typography variant="subtitle1" sx={{ fontSize: titleFontSize, fontWeight: 600, lineHeight: 1.5 }}>
+            {t('db.connectionDetails', { defaultValue: 'Connection details' })}
+        </Typography>
+        <Box component="dl" sx={{ m: 0, width: '100%', display: 'grid', gridTemplateColumns: 'minmax(90px, 1fr) minmax(0, 3fr)', '& > dt, & > dd': { py: 0.75, borderBottom: 1, borderColor: 'divider' } }}>
+            {Object.entries(configuredParams).map(([name, value]) => <React.Fragment key={name}>
+                <Typography component="dt" variant="body2" color="text.secondary" sx={{ pr: 2, overflowWrap: 'anywhere' }}>{name.replaceAll('_', ' ')}</Typography>
+                <Typography component="dd" variant="body2" sx={{ m: 0, overflowWrap: 'anywhere' }}>{String(value) || '-'}</Typography>
+            </React.Fragment>)}
+        </Box>
+        {connectionError && <Typography role="alert" color="error" variant="body2" sx={{ overflowWrap: 'anywhere', width: '100%' }}>{connectionError}</Typography>}
+        <Button variant="contained" size="small" sx={{ ...actionButtonSx, borderRadius: 1 }} disabled={isConnecting} onClick={() => connectAndListTables()}
+            startIcon={isConnecting ? <CircularProgress size={18} color="inherit" /> : getConnectorIcon(loaderTypeKey)}>
+            {connectionError ? t('model.retryConnection', { defaultValue: 'Retry connection' }) : t('db.connect', { suffix: '' })}
+        </Button>
+        {isConnecting && <Typography role="status" variant="body2" color="text.secondary">{connectProgress || t('db.connecting', { defaultValue: 'Connecting...' })}</Typography>}
+    </Box>;
+
     return (
         <Box aria-busy={isConnecting} sx={{position: 'relative', p: 0, pb: compact ? 0.5 : 2, display: 'flex', flexDirection: 'column' }}>
+            {connectionError && <Typography role="alert" color="error" variant="body2" sx={{ overflowWrap: 'anywhere', mb: 1 }}>{connectionError}</Typography>}
             {isConnecting && <Box role="status" sx={{
                 position: "absolute", top: 0, left: 0, width: "100%", height: "100%", 
                 display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, zIndex: 1000,
@@ -896,6 +965,7 @@ export const DataLoaderForm: React.FC<{
                 boxSizing: 'border-box',
             }}>
                 <Box sx={{ minWidth: 0 }}>
+                {formFieldsBefore && <Box sx={{ mb: fieldGap }}>{formFieldsBefore}</Box>}
                 {formTitle && (
                     <Typography variant="subtitle1" sx={{ fontSize: titleFontSize, fontWeight: 600, lineHeight: 1.5, mb: 1.5 }}>
                         {formTitle}
@@ -930,6 +1000,10 @@ export const DataLoaderForm: React.FC<{
                                             />}
                                         </Box>
                                     ))}
+                                    <Portal container={actionContainer} disablePortal={!actionContainer}><Button variant="contained" size="small" disabled={isConnecting}
+                                        sx={actionContainer ? { minHeight: 28, fontSize: textVar.md } : { ...actionButtonSx, justifySelf: 'start' }} onClick={() => connectAndListTables()}>
+                                        {onStageConnection ? 'Test and save' : t('db.connect', { suffix: '' })}
+                                    </Button></Portal>
                                 </Box>
                             );
                         }
@@ -1149,7 +1223,7 @@ export const DataLoaderForm: React.FC<{
                         const selectedAuthParams = authParams.filter(p => selectedAuthFieldNames.has(p.name));
                         const hasDelegated = !!delegatedLogin?.login_url
                             && (!selectedAuthPath || selectedAuthPath.kind === 'delegated_login');
-                        const connectLabel = onBeforeConnect && !comfortableSpacing
+                        const connectLabel = onStageConnection ? 'Test and save' : onBeforeConnect && !comfortableSpacing
                             ? t('db.createConnector', { defaultValue: 'Create Connector' })
                             : t('db.connect', { suffix: (params.table_filter || '').trim() ? t('db.withFilter') : '' });
                         const hasGuidedSubscription = Boolean(azureSubscription) && !clustersLoading && kustoClusters.length > 0;
@@ -1161,6 +1235,27 @@ export const DataLoaderForm: React.FC<{
                         ) : connectionParams;
                         const showConnectAction = (!hasDelegated || selectedAuthParams.length > 0)
                             && (!browseKusto || hasGuidedDatabase);
+
+                        const advancedSettings = advancedConnectionParams.length > 0 && (
+                            <Accordion disableGutters elevation={0} expanded={showAdvancedConnection}
+                                onChange={() => setShowAdvancedConnection(value => !value)}
+                                sx={theme => ({
+                                    backgroundColor: alpha(theme.palette.text.primary, 0.04), borderRadius: 1, overflow: 'hidden',
+                                    '&:before': { display: 'none' },
+                                    '& .MuiAccordionSummary-root': { minHeight: compact ? 30 : 40, px: compact ? 1 : 1.5 },
+                                    '& .MuiAccordionSummary-content': { my: compact ? 0.5 : 1 },
+                                    '& .MuiAccordionSummary-expandIconWrapper .MuiSvgIcon-root': { fontSize: compact ? 18 : 24 },
+                                    '& .MuiAccordionDetails-root': { px: compact ? 1 : 1.5, pt: 0.5, pb: compact ? 1 : 1.5 },
+                                    ...disclosureSx,
+                                })}>
+                                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                    <Typography variant="body2" sx={{ fontSize: bodyFontSize }}>
+                                        {t('db.advancedSettings', { defaultValue: 'Advanced settings' })}
+                                    </Typography>
+                                </AccordionSummary>
+                                <AccordionDetails>{renderParamGrid(advancedConnectionParams)}</AccordionDetails>
+                            </Accordion>
+                        );
 
                         return (
                             <Box sx={{ display: 'grid', gap: sectionGap, width: '100%' }}>
@@ -1214,36 +1309,7 @@ export const DataLoaderForm: React.FC<{
                                 {visibleConnectionParams.length > 0 && (
                                     <Box sx={{ display: 'grid', gap: sectionGap, ...(comfortableSpacing ? { order: 1 } : {}) }}>
                                         {renderParamGrid(visibleConnectionParams)}
-                                        {advancedConnectionParams.length > 0 && (
-                                                <Accordion
-                                                    disableGutters
-                                                    elevation={0}
-                                                    expanded={showAdvancedConnection}
-                                                    onChange={() => setShowAdvancedConnection(value => !value)}
-                                                    sx={(theme) => ({
-                                                        // Shaded rather than outlined — an outline would read
-                                                        // as another input box.
-                                                        backgroundColor: alpha(theme.palette.text.primary, 0.04),
-                                                        borderRadius: 1,
-                                                        overflow: 'hidden',
-                                                        '&:before': { display: 'none' },
-                                                        '& .MuiAccordionSummary-root': { minHeight: compact ? 30 : 40, px: compact ? 1 : 1.5 },
-                                                        '& .MuiAccordionSummary-content': { my: compact ? 0.5 : 1 },
-                                                        '& .MuiAccordionSummary-expandIconWrapper .MuiSvgIcon-root': { fontSize: compact ? 18 : 24 },
-                                                        '& .MuiAccordionDetails-root': { px: compact ? 1 : 1.5, pt: 0.5, pb: compact ? 1 : 1.5 },
-                                                        ...disclosureSx,
-                                                    })}
-                                                >
-                                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                                        <Typography variant="body2" sx={{ fontSize: bodyFontSize }}>
-                                                            {t('db.advancedSettings', { defaultValue: 'Advanced settings' })}
-                                                        </Typography>
-                                                    </AccordionSummary>
-                                                    <AccordionDetails>
-                                                        {renderParamGrid(advancedConnectionParams)}
-                                                    </AccordionDetails>
-                                                </Accordion>
-                                        )}
+                                        {advancedSettings}
                                     </Box>
                                 )}
 
@@ -1402,14 +1468,14 @@ export const DataLoaderForm: React.FC<{
                                         mt: compact ? 0 : 1,
                                         ...(comfortableSpacing ? { order: 3 } : {}),
                                     }}>
-                                        <Button
+                                        <Portal container={actionContainer} disablePortal={!actionContainer}><Button
                                             variant="contained" color="primary" size="small"
                                             disabled={isConnecting}
-                                            sx={actionButtonSx}
+                                            sx={actionContainer ? { minHeight: 28, fontSize: textVar.md } : actionButtonSx}
                                             onClick={() => connectAndListTables()}>
                                             {connectLabel}
-                                        </Button>
-                                        {paramDefs.length > 0 && (
+                                        </Button></Portal>
+                                        {!onStageConnection && paramDefs.length > 0 && (
                                             <FormControlLabel
                                                 sx={{ m: 0, ml: 'auto', flexShrink: 0 }}
                                                 control={(

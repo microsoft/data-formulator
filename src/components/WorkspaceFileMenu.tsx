@@ -5,7 +5,9 @@ import AddIcon from '@mui/icons-material/Add';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import NoteAddOutlinedIcon from '@mui/icons-material/NoteAddOutlined';
 import { dfActions, type DataFormulatorState } from '../app/dfSlice';
-import { createWorkspaceTextFile } from '../app/workspaceService';
+import { ensureActiveWorkspace } from '../app/sessionThunks';
+import type { AppDispatch } from '../app/store';
+import { createWorkspaceTextFile, isInvalidWorkspaceFileName } from '../app/workspaceService';
 
 export const WorkspaceFileMenu = ({ onUpload, onCreated, disabled = false, busy = false }: {
     onUpload: () => void;
@@ -13,7 +15,7 @@ export const WorkspaceFileMenu = ({ onUpload, onCreated, disabled = false, busy 
     disabled?: boolean;
     busy?: boolean;
 }) => {
-    const dispatch = useDispatch();
+    const dispatch = useDispatch<AppDispatch>();
     const workspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const fileCount = useSelector((state: DataFormulatorState) => state.workspaceFileCount);
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -21,15 +23,13 @@ export const WorkspaceFileMenu = ({ onUpload, onCreated, disabled = false, busy 
     const [name, setName] = useState('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
-    const invalidName = !name.trim() || /[\\/\x00-\x1f]/.test(name) || name === '.' || name === '..';
+    const invalidName = !name.trim() || isInvalidWorkspaceFileName(name.trim());
     const create = async () => {
         if (invalidName || saving || workspace?.readOnly) return;
         setSaving(true);
         setError('');
         try {
-            if (!workspace) {
-                dispatch(dfActions.setActiveWorkspace({ id: `session_${crypto.randomUUID()}`, displayName: 'Untitled Session' }));
-            }
+            dispatch(ensureActiveWorkspace());
             const file = await createWorkspaceTextFile(name.trim());
             dispatch(dfActions.setWorkspaceFileCount((fileCount || 0) + 1));
             dispatch(dfActions.setFocused({ type: 'file', fileName: file.name }));

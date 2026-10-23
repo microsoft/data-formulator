@@ -17,7 +17,7 @@ def test_builtin_meta_bundle_has_concrete_hidden_owners() -> None:
     assert registry.expanded_names(["meta"]) == [
         "meta", "analysis", "workspace", "visualization",
     ]
-    assert registry.gated_skill_names() == ["report", "terminal"]
+    assert registry.gated_skill_names() == ["configure", "connected_data", "html_app", "report", "terminal"]
     assert registry.get_skill("meta") is not None
     assert not registry.has("interaction")
     assert registry.action_owner("visualize") == "visualization"
@@ -29,21 +29,62 @@ def test_builtin_meta_bundle_has_concrete_hidden_owners() -> None:
         "inspect_source_data",
         "create_file",
         "edit_file",
+        "delete_items",
+        "list_files",
+        "read_file",
+        "search_files",
+        "move_file",
         "create_data",
         "update_data",
         "list_workspace_items",
         "read_workspace_item",
         "search_workspace_items",
         "summarize_data_sources", "list_data", "find_data", "describe_data", "probe_data",
-        "list_connectors", "describe_connector", "read_connector_form",
     }
     assert {
         spec["function"]["name"] for spec in registry.action_tools_for(["meta"])
     } == {
-        "visualize", "ask_user", "long_response",
-        "propose_data_operation", "propose_connection", "update_connector_form",
+        "visualize", "ask_user", "long_response", "propose_data_operation",
     }
     assert registry.action_owner("long_response") == "meta"
+
+
+def test_baseline_guides_progressive_visual_analysis() -> None:
+    registry = build_registry()
+    baseline = registry.load_body("meta")
+    visualization = registry.load_body("visualization")
+    assert baseline.count(visualization) == 1
+    assert baseline.count("## Progressive Visual Analysis") == 1
+    assert "## Workflows" not in baseline
+    assert "Load `configure`" in baseline
+    assert "propose_workflow" in registry.action_names()
+    configure = registry.load_body("configure")
+    baseline = configure
+    assert "use the latest relevant complete definition" in baseline
+    assert "actual steps and instructions, not only the summary" in baseline
+    assert "near-identical proposal as an update" in baseline
+    assert "complete structured definition" in baseline
+    assert "Organize steps around analytical goals" in baseline
+    assert "Expose meaningful rerun inputs as parameters" in baseline
+    assert "Prefer text parameters for everyday descriptions, with boolean or select inputs" in baseline
+    assert "Do not require ISO dates or other machine formats" in baseline
+    assert "keep fixed requirements in the definition" in baseline
+    assert "Preserve user acceptance criteria" in baseline
+    assert "each phase combines its analysis" in baseline
+    assert "before proposing, unless the user requests a draft" in baseline
+    assert "Failed prerequisites" in baseline
+    assert "pickup_datetime" not in baseline
+    assert "explicit\nnonvisual requests" in visualization
+    assert "Verify numerical claims independently" in visualization
+    # Acquisition guidance loads on demand; the workspace baseline points to it.
+    assert "load the `connected_data` skill" in registry.load_body("workspace")
+    workspace = registry.load_body("connected_data")
+    assert "Omit `query` to add a source" in workspace
+    assert "`compute_ready: false`" in workspace
+    assert "Concrete queries never silently fall back to references" in workspace
+    assert "Do not make a separate preparation call" in workspace
+    assert "Use that dataset directly" in workspace
+    assert "Virtual load outcomes are not local chart inputs" in visualization
 
 
 def test_long_response_emits_terminal_completion_and_rejects_empty_content() -> None:
@@ -62,16 +103,26 @@ def test_long_response_emits_terminal_completion_and_rejects_empty_content() -> 
         assert "non-empty" in stopped.value.value
 
 
-def test_connector_actions_are_registered_as_actions_not_read_only_tools() -> None:
+def test_setup_actions_are_owned_by_the_gated_configure_skill() -> None:
     registry = build_registry()
-    action_names = {spec["function"]["name"] for spec in registry.action_tools_for(["workspace"])}
-    tool_names = {spec["function"]["name"] for spec in registry.tools_for(["workspace"])}
+    action_names = {spec["function"]["name"] for spec in registry.action_tools_for(["configure"])}
+    tool_names = {spec["function"]["name"] for spec in registry.tools_for(["configure"])}
 
-    assert action_names == {"propose_data_operation", "propose_connection", "update_connector_form"}
+    assert action_names == {
+        "propose_connection", "update_connector_form", "propose_workflow", "propose_schedule", "propose_session_changes",
+    }
     for action_name in action_names:
-        assert registry.action_owner(action_name) == "workspace"
+        assert registry.action_owner(action_name) == "configure"
         assert action_name not in tool_names
-    assert {"list_connectors", "describe_connector", "read_connector_form"} <= tool_names
+        assert not registry.is_active(["meta"], "configure")
+    assert tool_names == {
+        "list_connectors", "read_connector_form", "list_workflows", "list_sessions",
+    }
+    assert {spec["function"]["name"] for spec in registry.action_tools_for(["workspace"])} == {"propose_data_operation"}
+    configure = registry.load_body("configure")
+    for section in ("## Connections", "## Workflows", "## Schedules", "## Sessions"):
+        assert configure.count(section) == 1
+    assert "user_review_needed: false" in configure
 
 
 def test_meta_preserves_questions_and_options_beyond_three() -> None:

@@ -2,21 +2,213 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
+import { DndProvider } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
+import { createTheme, ThemeProvider } from '@mui/material';
 import { describe, expect, it, vi } from 'vitest';
 
-import { normalizeOperationPreview, VisualizationViewFC } from '../../../../src/views/VisualizationView';
-import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
-import { ConversationCanvas, conversationPath } from '../../../../src/views/ConversationCanvas';
+import { ChartEditorFC, checkChartAvailabilityOnPreparedData, normalizeOperationPreview, VisualizationViewFC } from '../../../../src/views/VisualizationView';
+import { dataFormulatorReducer, dfActions, dfSelectors, generateFreshChart } from '../../../../src/app/dfSlice';
+import { computeDisplayRowsCacheKey, displayRowsCache } from '../../../../src/app/displayRowsCache';
+import { ConversationCanvas } from '../../../../src/views/ConversationCanvas';
 import { CompactMarkdown, InteractionEntryCard, workspaceFileFromHref } from '../../../../src/views/InteractionEntryCard';
 import { invalidateChart, setCachedChart } from '../../../../src/app/chartCache';
 import { SourceTableShelf } from '../../../../src/views/SourceTableShelf';
 import * as workspaceService from '../../../../src/app/workspaceService';
 import { WorkspaceFileCanvas } from '../../../../src/views/WorkspaceFileCanvas';
 import { DataThread } from '../../../../src/views/DataThread';
+import { buildDictTableFromWorkspace } from '../../../../src/app/tableThunks';
 
 const CONVERSATION_ROOT_ID = 'conversation-root:test';
 
-it('balances thread columns without measuring fragmented content back into their height', () => {
+it.each([false, true])('preserves locally prepared chart aggregates after refresh (virtual=%s)', async virtual => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+    const rows = [
+        { month: 'January', price: 2 },
+        { month: 'January', price: 4 },
+        { month: 'February', price: 6 },
+        { month: 'February', price: 10 },
+    ];
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+        status: 'success', data: { rows, columns: ['month', 'price'], row_count: rows.length },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    const table = {
+        kind: 'table', id: 'local-aggregate-chart', displayId: 'Monthly prices',
+        names: ['month', 'price'], rows,
+        metadata: { month: { type: 'string', levels: ['January', 'February'] }, price: { type: 'number', levels: [2, 4, 6, 10] } },
+        ...(virtual ? { virtual: { tableId: 'local-aggregate-chart', rowCount: rows.length } } : {}),
+    } as any;
+    const fields = ['month', 'price'].map(name => ({ id: name, name, source: 'custom', tableRef: 'custom' })) as any;
+    const chart = generateFreshChart(table.id, 'Line Chart');
+    chart.encodingMap.x = { fieldID: 'month', dtype: 'ordinal' };
+    chart.encodingMap.y = { fieldID: 'price', dtype: 'quantitative', aggregate: 'average' };
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.addTableToStore(table));
+    store.dispatch(dfActions.addConceptItems(fields));
+    store.dispatch(dfActions.addChart(chart));
+    store.dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
+    const storedTable = dfSelectors.getAllTables(store.getState()).find(candidate => candidate.id === table.id)!;
+    const cacheKey = computeDisplayRowsCacheKey(storedTable, chart, fields);
+    try {
+        const { container, unmount } = render(React.createElement(Provider, { store,
+            children: React.createElement(ThemeProvider, {
+                theme: createTheme({ palette: { custom: { main: '#a34d16', bgcolor: '#fff' } } } as any),
+                children: React.createElement(DndProvider, { backend: HTML5Backend,
+                    children: React.createElement(ChartEditorFC),
+                }),
+            }),
+        }));
+        await waitFor(() => expect(displayRowsCache.get(cacheKey)?.rows).toEqual([
+            { month: 'January', price_average: 3 },
+            { month: 'February', price_average: 8 },
+        ]));
+        expect(checkChartAvailabilityOnPreparedData(chart, fields, displayRowsCache.get(cacheKey)!.rows)).toBe(true);
+        expect(displayRowsCache.get(cacheKey)?.totalCount).toBe(2);
+        expect(container.querySelector(`[id="focused-chart-element-${chart.id}"]`)).not.toBeNull();
+        unmount();
+    } finally {
+        displayRowsCache.delete(cacheKey);
+        vi.unstubAllGlobals();
+    }
+});
+
+it('keeps an unmapped sortBy column and contains assembly failures to the chart', async () => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+    const rows = [{ model: 'a', requests: 2, total_tokens: 9 }, { model: 'b', requests: 5, total_tokens: 3 }];
+    const table = { kind: 'table', id: 'token-usage', displayId: 'Token usage', names: ['model', 'requests', 'total_tokens'], rows,
+        metadata: { model: { type: 'string', levels: ['a', 'b'] }, requests: { type: 'number', levels: [] }, total_tokens: { type: 'number', levels: [] } } } as any;
+    const fields = table.names.map((name: string) => ({ id: name, name, source: 'custom', tableRef: 'custom' })) as any;
+    const chart = generateFreshChart(table.id, 'Bar Chart');
+    chart.encodingMap.x = { fieldID: 'model', dtype: 'nominal', sortBy: 'total_tokens', sortOrder: 'descending' };
+    chart.encodingMap.y = { fieldID: 'requests', dtype: 'quantitative' };
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.addTableToStore(table));
+    store.dispatch(dfActions.addConceptItems(fields));
+    store.dispatch(dfActions.addChart(chart));
+    store.dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
+    const cacheKey = computeDisplayRowsCacheKey(dfSelectors.getAllTables(store.getState()).find(item => item.id === table.id)!, chart, fields);
+    const utils = await import('../../../../src/app/utils');
+    const assemble = vi.spyOn(utils, 'assembleVegaChart').mockImplementation(() => { throw new Error('encodings.x.sortBy is invalid'); });
+    try {
+        render(React.createElement(Provider, { store,
+            children: React.createElement(ThemeProvider, {
+                theme: createTheme({ palette: { custom: { main: '#a34d16', bgcolor: '#fff' } } } as any),
+                children: React.createElement(DndProvider, { backend: HTML5Backend, children: React.createElement(ChartEditorFC) }),
+            }),
+        }));
+        await waitFor(() => expect(displayRowsCache.get(cacheKey)?.rows[0]).toHaveProperty('total_tokens', 9));
+        expect(await screen.findByRole('alert')).toHaveTextContent("This chart can't be rendered: encodings.x.sortBy is invalid");
+        expect(assemble.mock.calls.at(-1)?.[3]?.[0]).toHaveProperty('total_tokens');
+    } finally {
+        assemble.mockRestore();
+        displayRowsCache.delete(cacheKey);
+        vi.unstubAllGlobals();
+    }
+});
+
+it.each(['native', 'structured', 'restored', 'unavailable', 'error'])('handles load query availability for %s tables', async mode => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+    const text = 'Trips | summarize pickup_count=count() by pickup_date';
+    const query = mode === 'structured' ? { columns: ['pickup_date'], limit: 48 }
+        : { native: { language: 'kql', text }, limit: 48 };
+    const listing = { name: 'hourly_pickups', columns: [], sample_rows: [], row_count: 48,
+        source_metadata: { source_table_name: 'Trips', import_options: { structured_query: query } } };
+    const fetchMock = vi.fn(async () => {
+        if (mode === 'error') throw new Error('Offline');
+        return new Response(JSON.stringify({ status: 'success', data: { tables: mode === 'unavailable' ? [] : [listing], rows: [], columns: [], row_count: 0 } }), {
+            status: 200, headers: { 'Content-Type': 'application/json' },
+        });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        const table = buildDictTableFromWorkspace(listing, undefined);
+        if (['restored', 'unavailable', 'error'].includes(mode)) delete table.source!.loadQuery;
+        store.dispatch(dfActions.addTableToStore(table));
+        store.dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }));
+        render(React.createElement(Provider, { store, children: React.createElement(VisualizationViewFC) }));
+        const button = screen.getByRole('button', { name: 'Load query' });
+        if (mode === 'unavailable' || mode === 'error') {
+            expect(button).toBeDisabled();
+            await act(async () => { await Promise.resolve(); });
+            expect(button).toBeDisabled();
+            fireEvent.click(button);
+            expect(screen.queryByRole('dialog')).toBeNull();
+            return;
+        }
+        await waitFor(() => expect(button).toBeEnabled());
+        fireEvent.click(button);
+        const dialog = await screen.findByRole('dialog', { name: 'Load query: hourly_pickups' });
+        expect(dialog.querySelector('code.language-json')?.textContent).toContain('48');
+        if (mode === 'structured') expect(dialog.querySelector('code.language-json')?.textContent).toContain('pickup_date');
+        else expect(dialog.querySelector('code.language-kql')?.textContent).toBe(text);
+        expect(dialog.textContent).toContain('Trips');
+        fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+        expect(store.getState().focusedId).toEqual({ type: 'table', tableId: table.id });
+    } finally {
+        vi.unstubAllGlobals();
+    }
+});
+
+it.each(['source', 'python', 'sql'])('shows table-owned transformation details for %s tables without a chart', async kind => {
+    vi.stubGlobal('ResizeObserver', class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ rows: [], columns: [], row_count: 0 }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+    })));
+    try {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        const code = kind === 'sql' ? 'SELECT * FROM source_data' : 'result = source_data.copy()';
+        store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'result', displayId: 'Result data',
+            names: [], rows: [], metadata: {},
+            ...(kind === 'sql' ? { virtual: { tableId: 'result', rowCount: 0 } } : {}),
+            ...(kind !== 'source' ? { derive: { source: [], code, dialog: [],
+                trigger: { tableId: 'source_data', resultTableId: 'result', instruction: 'Prepare data' } } } : {}),
+        } as any));
+        store.dispatch(dfActions.setFocused({ type: 'table', tableId: 'result' }));
+        render(React.createElement(Provider, { store, children: React.createElement(VisualizationViewFC) }));
+        expect(screen.getByRole('button', { name: 'Download CSV' })).toBeTruthy();
+        // Like a chart, the table's view actions float at the top right; Quick chart opens the chart picker.
+        fireEvent.click(screen.getByRole('button', { name: 'Quick chart' }));
+        await waitFor(() => expect(document.querySelector('.MuiPopover-paper')).toBeTruthy());
+        fireEvent.keyDown(document.querySelector('.MuiPopover-root')!, { key: 'Escape' });
+        await waitFor(() => expect(document.querySelector('.MuiPopover-paper')).toBeNull());
+        if (kind === 'source') {
+            expect(screen.queryByRole('button', { name: 'Transformation' })).toBeNull();
+            expect(screen.queryByRole('button', { name: 'log' })).toBeNull();
+            expect(screen.queryByText('Derived table')).toBeNull();
+            return;
+        }
+        expect(screen.getByText('Result data').parentElement).toContainElement(screen.getByText('Derived table'));
+        expect(screen.getByRole('button', { name: 'log' })).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Transformation' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Transformation: Result data' });
+        expect(dialog.querySelector(`code.language-${kind}`)?.textContent).toBe(code);
+        fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+        expect(store.getState().focusedId).toEqual({ type: 'table', tableId: 'result' });
+        if (kind === 'python') {
+            act(() => {
+                store.dispatch(dfActions.createNewChart({ tableId: 'result', chartType: 'Table' }));
+                const chart = dfSelectors.getAllCharts(store.getState())[0];
+                store.dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
+            });
+            // Under a chart the transformation is the top-right code button only, not repeated below the table.
+            expect(screen.queryByRole('button', { name: 'Transformation' })).toBeNull();
+            fireEvent.click(screen.getByRole('button', { name: 'code' }));
+            const chartDialog = await screen.findByRole('dialog', { name: 'Transformation: Result data' });
+            expect(chartDialog.querySelector('code.language-python')?.textContent).toBe(code);
+        }
+    } finally {
+        vi.unstubAllGlobals();
+    }
+});
+
+it('preserves the conversation and focus when changing column layouts', () => {
     vi.stubGlobal('ResizeObserver', class {
         observe() {}
         unobserve() {}
@@ -27,21 +219,15 @@ it('balances thread columns without measuring fragmented content back into their
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'thread-message', displayId: 'Thread',
             textKind: 'explain', content: 'A thread with enough content to render its column flow.',
             parentNodeId: CONVERSATION_ROOT_ID, createdAt: 1 }));
+        store.dispatch(dfActions.setFocused({ type: 'text', textId: 'thread-message' }));
         const tree = (denseColumns: boolean) => React.createElement(Provider, { store, children:
             React.createElement(DataThread, { denseColumns }),
         });
         const { container, rerender } = render(tree(true));
-        const flow = container.querySelector<HTMLElement>('[data-thread-column-flow]')!;
-        expect(flow).toBeTruthy();
-        expect(getComputedStyle(flow).columnCount).toBe('2');
-        expect(getComputedStyle(flow).columnFill).toBe('balance');
-        expect(getComputedStyle(flow).height).toBe('auto');
-        expect(flow.querySelector('[data-thread-flow-block]')).toBeTruthy();
-        const threadEntry = Array.from(flow.children).find(entry => entry.querySelector('[data-thread-flow-block]'))!;
-        expect(getComputedStyle(threadEntry).breakInside).toBe('avoid');
+        expect(container.querySelectorAll('[data-thread-item="textturn-thread-message"]')).toHaveLength(1);
         rerender(tree(false));
-        expect(getComputedStyle(flow).columnCount).toBe('1');
-        expect(getComputedStyle(flow).height).toBe('auto');
+        expect(container.querySelectorAll('[data-thread-item="textturn-thread-message"]')).toHaveLength(1);
+        expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'thread-message' });
     } finally {
         vi.unstubAllGlobals();
     }
@@ -56,6 +242,7 @@ it('renders scratch Parquet as a read-only table preview', async () => {
     try {
         const store = configureStore({ reducer: dataFormulatorReducer });
         render(React.createElement(Provider, { store, children: React.createElement(WorkspaceFileCanvas, { fileName: 'scratch/computed.parquet' }) }));
+        expect(screen.getByRole('progressbar', { name: 'Loading file preview...' })).toBeTruthy();
         expect(await screen.findByRole('table', { name: 'scratch/computed.parquet' })).toBeTruthy();
         expect(screen.getByRole('columnheader', { name: 'value' })).toBeTruthy();
         expect(screen.getByRole('cell', { name: '12' })).toBeTruthy();
@@ -102,7 +289,7 @@ it('uses read-only artifact Markdown controls before import without workspace re
     }
 });
 
-it('uses file display names with filename bylines and legacy fallback', () => {
+it('uses file display names with the filename in the tooltip, and a legacy fallback', () => {
     const store = configureStore({ reducer: dataFormulatorReducer });
     const file = { name: 'scratch/unesco_education_summary.md', filename: 'unesco_education_summary.md',
         temporary: true, created_at: '', content_hash: '', file_size: 10, media_type: 'text/markdown' };
@@ -113,10 +300,11 @@ it('uses file display names with filename bylines and legacy fallback', () => {
     });
     const { rerender } = render(shelf('UNESCO Education'));
     const label = screen.getByText('UNESCO Education');
-    expect(screen.getByText(file.filename)).toBeTruthy();
+    expect(screen.queryByText(file.filename)).toBeNull();
+    expect(label).toHaveAttribute('title', `UNESCO Education (${file.filename})`);
     fireEvent.click(label);
     expect(store.getState().focusedId).toEqual({ type: 'file', fileName: file.name });
-    expect(screen.getByRole('button', { name: `Actions for ${file.name}` })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Actions for UNESCO Education' })).toBeTruthy();
     rerender(shelf());
     expect(screen.getByText(file.filename)).toBeTruthy();
     expect(screen.queryByText('UNESCO Education')).toBeNull();
@@ -136,7 +324,7 @@ it('keeps temporary-file Delete available through refresh and deletes the select
     try {
         const { rerender } = render(shelf());
         expect(screen.queryByText('Temporary')).toBeNull();
-        fireEvent.click(screen.getByRole('button', { name: `Actions for ${file.name}` }));
+        fireEvent.click(screen.getByRole('button', { name: `Actions for ${file.filename}` }));
         expect(screen.getByRole('menuitem', { name: 'Delete file' })).toBeTruthy();
         expect(screen.queryByRole('menuitem', { name: 'Preview file' })).toBeNull();
         rerender(shelf());
@@ -183,31 +371,40 @@ it.each(['conversation', 'long_response'] as const)('normalizes mixed legacy com
     store.dispatch(dfActions.setFocused(surface === 'conversation'
         ? { type: 'conversation', tableId: 'legacy', nodeIds: ['legacy'] } : { type: 'text', textId: 'legacy' }));
     const { container } = render(React.createElement(Provider, { store, children: React.createElement(VisualizationViewFC) }));
-    expect(screen.getAllByRole('button', { name: /az account show Completed/ })).toHaveLength(1);
     expect(container.querySelector('pre')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /az account show Completed/ }));
+    if (surface === 'long_response') {
+        // Long-response documents show only the prose; command cards stay in the thread.
+        expect(screen.getByText('Inspect.')).toBeTruthy();
+        expect(screen.queryByRole('button', { name: /az account show/ })).toBeNull();
+        return;
+    }
+    // The command is the message's work: its own box, which opens its details.
+    expect(screen.getAllByRole('button', { name: /Inspect/ })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: /Inspect/ }));
     expect(screen.getByText('Account result')).toBeTruthy();
     expect(container.querySelector('details pre')?.textContent).toBe(JSON.stringify(execution.argv, null, 2));
 });
 
-it('shows table-owned instructions in conversation without making the instruction card clickable', () => {
+it('shows the instruction message before a table in conversation without making the instruction card clickable', () => {
     const store = configureStore({ reducer: dataFormulatorReducer });
     const entry = { from: 'data-agent', to: 'user', role: 'instruction', content: 'Which deployments drive token volume?', timestamp: 10 } as const;
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'instruction', displayId: 'instruction', textKind: 'explain',
+        content: entry.content, parentNodeId: 'root', createdAt: 1 }));
     store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'deployments', displayId: 'Deployments', names: [], metadata: {}, rows: [],
-        derive: { source: [], code: '', dialog: [], trigger: { tableId: 'root', instruction: entry.content, interaction: [entry] } },
+        parentNodeId: 'instruction', derive: { source: [], code: '', dialog: [], trigger: { tableId: 'root', instruction: entry.content } },
     } as any));
-    const onClick = vi.fn(() => store.dispatch(dfActions.setFocused({ type: 'conversation', tableId: 'deployments', entryIndex: 0 })));
+    const onClick = vi.fn(() => store.dispatch(dfActions.setFocused({ type: 'conversation', tableId: 'deployments' })));
     const card = render(React.createElement(InteractionEntryCard, { entry, onClick }));
     fireEvent.click(screen.getByText(entry.content));
     expect(onClick).not.toHaveBeenCalled();
     expect(screen.queryByRole('button')).toBeNull();
-    store.dispatch(dfActions.setFocused({ type: 'conversation', tableId: 'deployments', entryIndex: 0 }));
+    store.dispatch(dfActions.setFocused({ type: 'conversation', tableId: 'deployments', nodeIds: ['instruction', 'deployments'] }));
     expect(dfSelectors.getEffectiveTableId(store.getState())).toBe('deployments');
-    expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'conversation', tableId: 'deployments', entryIndex: 0 });
+    expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'conversation', tableId: 'deployments', nodeIds: ['instruction', 'deployments'] });
     card.unmount();
     const { container } = render(React.createElement(Provider, { store, children: React.createElement(VisualizationViewFC) }));
-    expect(screen.getByRole('heading', { name: 'Conversation' })).toBeTruthy();
-    expect(container.querySelector('[data-conversation-entry="deployments-interaction-0"]')?.textContent).toBe(entry.content);
+    expect(container.querySelector('[data-conversation-entry="instruction"]')?.textContent).toBe(entry.content);
+    expect(container.querySelector('[data-conversation-entry="deployments"]')).toBeTruthy();
 });
 
 it('shows command-only migrated table history in conversation', () => {
@@ -217,18 +414,12 @@ it('shows command-only migrated table history in conversation', () => {
             from: 'data-agent', to: 'user', role: 'explain', content: '```json\n{"argv":["pwd"],"cwd":"/"}\n```',
         }] } },
     }] } as any));
-    store.dispatch(dfActions.setFocused({ type: 'conversation', tableId: 'legacy-table', nodeIds: ['legacy-table'] }));
+    // The table's history is now the message before it.
+    const history = store.getState().derivedTables[0].parentNodeId;
+    expect(store.getState().textTurns.find(turn => turn.id === history)?.executions?.[0].argv).toEqual(['pwd']);
+    store.dispatch(dfActions.setFocused({ type: 'conversation', tableId: 'legacy-table', nodeIds: [history!, 'legacy-table'] }));
     render(React.createElement(Provider, { store, children: React.createElement(VisualizationViewFC) }));
-    expect(screen.getByRole('button', { name: /pwd Status unavailable/ })).toBeTruthy();
-});
-
-it('follows shared ancestry and a single continuation without mixing sibling branches', () => {
-    const nodes = [{ id: 'root' }, { id: 'first', parentNodeId: 'root' },
-        { id: 'left', parentNodeId: 'first' }, { id: 'right', parentNodeId: 'first' },
-        { id: 'next', parentNodeId: 'left' }];
-    expect(conversationPath(nodes, 'left')).toEqual(['root', 'first', 'left', 'next']);
-    expect(conversationPath(nodes, 'first')).toEqual(['root', 'first']);
-    expect(conversationPath([{ id: 'cycle', parentNodeId: 'cycle' }], 'cycle')).toEqual(['cycle']);
+    expect(screen.getByRole('button', { name: /pwd/ })).toBeTruthy();
 });
 
 it('renders a conversation canvas with full messages and collapsed command results', () => {
@@ -245,20 +436,19 @@ it('renders a conversation canvas with full messages and collapsed command resul
     }));
     store.dispatch(dfActions.setFocused({ type: 'conversation', tableId: 'root', nodeIds: ['first', 'next'] }));
     render(React.createElement(Provider, { store, children: React.createElement(VisualizationViewFC) }));
-    expect(screen.getByRole('heading', { name: 'Conversation' })).toBeTruthy();
     expect(screen.getByText('Analyze usage')).toBeTruthy();
     expect(screen.getByText('Here are the findings.')).toBeTruthy();
     expect(screen.queryByRole('img', { name: 'User' })).toBeNull();
     expect(screen.queryByRole('img', { name: 'Agent' })).toBeNull();
-    expect(getComputedStyle(screen.getByText('Analyze usage').closest('[data-conversation-role="user"]')!).justifyContent).toBe('flex-end');
     expect(screen.getByText('Analyze usage').closest('[data-conversation-role="user"]')).toBeTruthy();
     expect(screen.getByText('Here are the findings.').closest('[data-conversation-role="agent"]')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /az account show Completed/ }).closest('[data-conversation-role="agent"]')).toBeTruthy();
+    const work = screen.getByRole('button', { name: /Inspect/ });
+    expect(work.closest('[data-conversation-role="agent"]')).toBeTruthy();
     expect(screen.queryByText('Outside this segment.')).toBeNull();
     expect(screen.queryByText('Agent', { exact: true })).toBeNull();
     expect(screen.queryByText('You', { exact: true })).toBeNull();
     expect(screen.queryByText('Account result')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /az account show Completed/ }));
+    fireEvent.click(work);
     expect(screen.getByText('Account result')).toBeTruthy();
 });
 
@@ -268,13 +458,15 @@ vi.mock('../../../../src/components/ConnectorFormCard', () => ({
 
 it.each(['table', 'chart', 'chart-image'])('shows inline table and chart previews and opens the %s artifact', target => {
     const store = configureStore({ reducer: dataFormulatorReducer });
+    // request → instruction → usage → findings
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'request', displayId: 'request', textKind: 'explain',
+        content: '', prompt: 'Visualize it and write a report', parentNodeId: 'root', createdAt: 1 }));
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'instruction', displayId: 'instruction', textKind: 'explain',
+        content: 'Which resources account for observed token consumption?', parentNodeId: 'request', createdAt: 2 }));
     store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'usage', displayId: 'Usage', names: ['resource', 'tokens'],
         metadata: { resource: { type: 'string' }, tokens: { type: 'number' } },
         rows: Array.from({ length: 7 }, (_, index) => ({ resource: `resource-${index}`, tokens: index * 100 })),
-        derive: { source: [], code: '', dialog: [], trigger: { tableId: 'root', instruction: 'Inspect usage', interaction: [
-            { from: 'user', to: 'data-agent', role: 'prompt', content: 'Visualize it and write a report', timestamp: 1 },
-            { from: 'data-agent', to: 'user', role: 'instruction', content: 'Which resources account for observed token consumption?', timestamp: 2 },
-        ] } },
+        parentNodeId: 'instruction', derive: { source: [], code: '', dialog: [], trigger: { tableId: 'root', instruction: 'Inspect usage' } },
     } as any));
     store.dispatch(dfActions.addChart({ id: 'usage-chart', chartType: 'Bar Chart', tableRef: 'usage', source: 'user', encodingMap: {} } as any));
     const image = 'data:image/png;base64,preview';
@@ -283,21 +475,25 @@ it.each(['table', 'chart', 'chart-image'])('shows inline table and chart preview
         parentNodeId: 'usage', content: 'Usage increased this month.', createdAt: 1,
     }));
     store.dispatch(dfActions.setFocused({ type: 'text', textId: 'findings' }));
-    render(React.createElement(Provider, { store, children: React.createElement(ConversationCanvas, { textTurnId: 'findings', nodeIds: ['usage', 'findings'] }) }));
+    render(React.createElement(Provider, { store, children: React.createElement(ConversationCanvas, { textTurnId: 'findings', nodeIds: ['request', 'instruction', 'usage', 'findings'] }) }));
     expect(screen.getByRole('img', { name: 'Bar Chart - Usage' }).getAttribute('src')).toBe(image);
     expect(screen.getByText('Visualize it and write a report')).toBeTruthy();
     expect(screen.getByText('Which resources account for observed token consumption?')).toBeTruthy();
+    // Rows load when opened.
+    expect(screen.queryByRole('table')).toBeNull();
+    fireEvent.click(screen.getByText('Show rows'));
     expect(screen.getByRole('table')).toBeTruthy();
     expect(screen.getByText('resource-0')).toBeTruthy();
     expect(screen.getByText('resource-4')).toBeTruthy();
     expect(screen.queryByText('resource-5')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: target === 'table' ? 'Open table: Usage'
-        : target === 'chart' ? 'Open chart: Bar Chart - Usage' : 'Bar Chart - Usage' }));
+        : 'Open chart: Bar Chart - Usage' }));
     expect(store.getState().focusedId).toEqual(target === 'table'
         ? { type: 'table', tableId: 'usage' } : { type: 'chart', chartId: 'usage-chart' });
 });
 
-it.each(['Auto', '?', 'Table'])('does not display internal %s trigger charts as conversation artifacts', chartType => {
+it('does not display internal trigger charts as conversation artifacts', () => {
+    const chartType = 'Auto';
     const store = configureStore({ reducer: dataFormulatorReducer });
     store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'resources', displayId: 'Resources', names: [], metadata: {}, rows: [] } as any));
     store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'deployments', displayId: 'Deployments', names: [], metadata: {}, rows: [],
@@ -314,7 +510,7 @@ it.each(['Auto', '?', 'Table'])('does not display internal %s trigger charts as 
     expect(screen.getByRole('button', { name: 'Open table: Deployments' })).toBeTruthy();
 });
 
-it.each([true, false])('keeps chart titles independent of narrow preview dimensions (cached: %s)', cached => {
+it.each([true, false])('opens a chart from its labeled preview with or without a cached image (cached: %s)', cached => {
     const store = configureStore({ reducer: dataFormulatorReducer });
     const chartId = 'narrow-preview';
     const label = 'Bar Chart - Token Usage By Deployment';
@@ -326,11 +522,9 @@ it.each([true, false])('keeps chart titles independent of narrow preview dimensi
         specKey: 'narrow', naturalWidth: 120, naturalHeight: 300 });
     try {
         render(React.createElement(Provider, { store, children: React.createElement(ConversationCanvas, { textTurnId: 'deployment-table' }) }));
-        expect(screen.getAllByText(label)).toHaveLength(1);
-        const frame = screen.getByText(label).parentElement!.parentElement!;
-        expect(getComputedStyle(frame).width).toBe(cached ? '360px' : '506px');
-        expect(getComputedStyle(frame).maxWidth).toBe('100%');
-        if (cached) expect(getComputedStyle(screen.getByRole('img', { name: label })).maxWidth).toBe('120px');
+        // Drawn, the chart is its image; not yet drawn, a line with its label. Either opens it.
+        if (!cached) expect(screen.getAllByText(label)).toHaveLength(1);
+        if (cached) expect(screen.getByRole('img', { name: label })).toHaveAttribute('src', 'data:image/png;base64,narrow');
         else expect(screen.queryByRole('img', { name: label })).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: `Open chart: ${label}` }));
         expect(store.getState().focusedId).toEqual({ type: 'chart', chartId });
@@ -346,7 +540,7 @@ it('renders explicit long responses in the dedicated response view, not Conversa
     store.dispatch(dfActions.setFocused({ type: 'text', textId: 'long' }));
     render(React.createElement(Provider, { store, children: React.createElement(VisualizationViewFC) }));
     expect(screen.getByText('Detailed standalone findings.')).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'Conversation' })).toBeNull();
+    expect(document.querySelector('[data-conversation-entry]')).toBeNull();
     expect(screen.getByRole('heading')).toBeTruthy();
 });
 
@@ -383,4 +577,23 @@ describe('normalizeOperationPreview', () => {
             rows: [],
         });
     });
+});
+it('reloads an open workspace file when it is rewritten under the same name', async () => {
+    const readText = vi.spyOn(workspaceService, 'readWorkspaceTextFile')
+        .mockResolvedValueOnce({ content: '# Broken version', content_hash: 'h1' } as any)
+        .mockResolvedValueOnce({ content: '# Fixed version', content_hash: 'h2' } as any);
+    try {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        const node = { kind: 'file' as const, id: 'file-notes.md', path: 'notes.md', displayName: 'Notes', contentHash: 'h1',
+            parentNodeId: 'conversation-root:a', createdAt: 1 };
+        store.dispatch(dfActions.upsertFileNode(node));
+        render(React.createElement(Provider, { store, children: React.createElement(WorkspaceFileCanvas, { fileName: 'notes.md' }) }));
+        expect(await screen.findByRole('heading', { name: 'Broken version' })).toBeTruthy();
+        // An agent fix saved in place reaches the thread as a new content hash.
+        act(() => { store.dispatch(dfActions.replaceFileNode({ ...node, contentHash: 'h2', createdAt: 2 })); });
+        expect(await screen.findByRole('heading', { name: 'Fixed version' })).toBeTruthy();
+        expect(readText).toHaveBeenCalledTimes(2);
+    } finally {
+        readText.mockRestore();
+    }
 });

@@ -55,7 +55,9 @@
     "addSourceLabel": "添加数据：",
     "agentChatQuickAction": {
       "connect": "引导我连接数据源",
-      "askConnected": "列出已连接数据源中的表"
+      "askConnected": "列出已连接数据源中的表",
+      "workflowFromSession": "把我上次的分析变成工作流",
+      "scheduleWorkflow": "安排工作流每天运行"
     },
     "agentChatSuggestion": {
       "askConnected": "已连接的数据源里有哪些数据集？",
@@ -121,6 +123,14 @@
     "createConnectionTo": "创建 {{name}} 连接",
     "connectionNameLabel": "连接名称",
     "dataSourceTypes": "数据源",
+    "connectorGroups": {
+      "samples": "示例",
+      "files": "文件",
+      "databases": "数据库",
+      "warehouses": "数据仓库",
+      "semantic": "BI 与语义层",
+      "other": "其他"
+    },
     "folderPathPlaceholder": "/你的数据文件夹路径",
     "includeSubfolders": "包含子文件夹",
     "localFolder": "链接本地文件夹",

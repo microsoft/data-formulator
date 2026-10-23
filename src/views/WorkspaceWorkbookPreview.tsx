@@ -1,11 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Box, CircularProgress, alpha } from '@mui/material';
+import { Alert, Box, alpha } from '@mui/material';
+import { useTranslation } from 'react-i18next';
+import { LoadingStatus } from '../components/FunComponents';
 import jsPreviewExcel from '@js-preview/excel';
 import '@js-preview/excel/lib/index.css';
 import '@fontsource/source-sans-pro/400.css';
 import { textVar } from '../app/layout';
 
 export const WorkspaceWorkbookPreview: React.FC<{ file: Blob; fileName: string; errorLabel: string }> = ({ file, fileName, errorLabel }) => {
+    const { t } = useTranslation();
     const containerRef = useRef<HTMLDivElement>(null);
     const [loading, setLoading] = useState(true);
     const [failed, setFailed] = useState(false);
@@ -156,9 +159,8 @@ export const WorkspaceWorkbookPreview: React.FC<{ file: Blob; fileName: string; 
                 '&.active': { backgroundColor: theme.palette.action.selected },
             },
         })} />
-        {loading && <Box role="status" sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', bgcolor: 'background.default' }}>
-            <CircularProgress size={28} />
-        </Box>}
+        {loading && <LoadingStatus label={t('dataThread.loadingFilePreview', { defaultValue: 'Loading file preview...' })}
+            sx={{ position: 'absolute', inset: 0, p: 2, bgcolor: 'background.default' }} />}
         {failed && <Alert severity="info" sx={{ position: 'absolute', inset: '0 0 auto' }}>{errorLabel}</Alert>}
     </Box>;
 };
