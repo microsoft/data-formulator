@@ -62,18 +62,25 @@ def test_list_read_and_search_span_files_session_and_scratch(workspace) -> None:
     assert {"files/notes/plan.md", "session/charts/chart-1.json", "session/threads/1.md", "scratch/probe.txt"} <= set(paths)
     assert [item["path"] for item in _tool("list_files", {"path": "files/notes"}, ctx)["files"]] == ["files/notes/plan.md"]
 
-    read = _tool("read_file", {"path": "files/notes/plan.md", "offset": 2, "limit": 1}, ctx)
+    read = _tool("read_file", {"files": [{"path": "files/notes/plan.md", "offset": 2, "limit": 1}]}, ctx)["files"][0]
     assert read["content"] == "Compare regions by month\n" and read["total_lines"] == 2 and read["editable"] is True
     assert read["content_hash"] == workspace.get_metadata().files["notes/plan.md"].content_hash
-    chart = _tool("read_file", {"path": "session/charts/chart-1.json"}, ctx)
+    chart = _tool("read_file", {"files": [{"path": "session/charts/chart-1.json"}]}, ctx)["files"][0]
     assert json.loads(chart["content"]) == CHART and chart["content_hash"] == content_hash(chart["content"])
+    assert chart["name"] == "Sales by region"
+    # Older conversations call read_file with path/offset/limit.
+    legacy = _tool("read_file", {"path": "files/notes/plan.md", "offset": 2, "limit": 1}, ctx)["files"][0]
+    assert legacy["content"] == "Compare regions by month\n"
 
-    found = _tool("search_files", {"pattern": "region"}, ctx)
-    assert {match["path"] for match in found["matches"]} >= {
-        "files/notes/plan.md", "session/charts/chart-1.json", "session/tables/d_sales.json", "session/threads/1.md",
-        "scratch/probe.txt"}
-    regex = _tool("search_files", {"pattern": r"groupby\('(\w+)'\)", "regex": True, "path": "session/"}, ctx)
-    assert [match["path"] for match in regex["matches"]] == ["session/tables/d_sales.json"]
+    skill = build_registry().get_skill("workspace")
+    found = skill.handle_tool("search", {"query": "region"}, ctx).text
+    for path in ("files/notes/plan.md", "session/charts/chart-1.json", "session/tables/d_sales.json",
+                 "session/threads/1.md", "scratch/probe.txt"):
+        assert f"## {path}" in found
+    # A table's code is searched with it.
+    regex = skill.handle_tool("search", {"query": r"groupby\('(\w+)'\)", "regex": True, "path": ["session/"]}, ctx).text
+    assert "## session/tables/d_sales.json" in regex and "code line 1:" in regex
+    assert "## session/charts/" not in regex
     with pytest.raises(ValueError, match="not a session file"):
         SessionFiles(ctx).read("../etc/passwd")
 
@@ -82,9 +89,9 @@ def test_several_files_are_read_in_one_call(workspace, monkeypatch) -> None:
     import data_formulator.analyst.session_files as session_files
     workspace.save_workspace_file(b"# Plan\n", "notes/plan.md", "text/markdown", agent_managed=True)
     ctx = _ctx(workspace)
-    read = _tool("read_file", {"path": "files/notes/plan.md", "paths": ["session/charts/*", "session/tables/d_sales.json",
-                                                                       "session/charts/chart-1.json", "files/missing.md",
-                                                                       "session/apps/*"]}, ctx)
+    read = _tool("read_file", {"files": [{"path": "files/notes/plan.md"}, {"path": "session/charts/*"},
+                                         {"path": "session/tables/d_sales.json"}, {"path": "session/charts/chart-1.json"},
+                                         {"path": "files/missing.md"}, {"path": "session/apps/*"}]}, ctx)
     files = {item["path"]: item for item in read["files"]}
     assert list(files) == ["files/notes/plan.md", "session/charts/chart-1.json", "session/tables/d_sales.json",
                            "files/missing.md"]
@@ -92,7 +99,8 @@ def test_several_files_are_read_in_one_call(workspace, monkeypatch) -> None:
     assert files["session/charts/chart-1.json"]["editable"] and files["session/tables/d_sales.json"]["content_hash"]
     assert "does not exist" in files["files/missing.md"]["error"] and read["no_match"] == ["session/apps/*"]
     monkeypatch.setattr(session_files, "MAX_BATCH_CHARS", 10)
-    over = _tool("read_file", {"paths": ["session/charts/chart-1.json", "session/tables/d_sales.json"]}, ctx)["files"]
+    over = _tool("read_file", {"files": [{"path": "session/charts/chart-1.json"},
+                                         {"path": "session/tables/d_sales.json"}]}, ctx)["files"]
     assert "content" in over[0] and "size budget" in over[1]["not_read"]
 
 
@@ -227,7 +235,10 @@ def test_notes_are_shown_at_the_start_of_each_request(workspace) -> None:
     workspace.save_workspace_file(b"# Plan\n- compare regions\n", "notes/plan.md", "text/markdown", agent_managed=True)
     workspace.save_workspace_file(("x" * 5000).encode(), "notes/log.md", "text/markdown", agent_managed=True)
     workspace.save_workspace_file(b"not a note", "readme.md", "text/markdown")
+    workspace.save_workspace_file(b"- prefers bars", "notes/mine.md", "text/markdown")
     block = render_session_notes(workspace)
+    # The user's own notes are shown without a hash: the agent cannot edit them.
+    assert "## files/notes/mine.md (written by the user; read-only to you" in block
     assert block.startswith("[SESSION NOTES]")
     plan_hash = workspace.get_metadata().files["notes/plan.md"].content_hash
     # The hash is there, so a note can be edited without reading it first.

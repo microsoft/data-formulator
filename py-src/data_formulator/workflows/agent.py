@@ -33,9 +33,8 @@ def tool(name: str, description: str, properties: dict, required: list[str]) -> 
 
 
 TEXT = {"type": "string"}
-PLAN_REVIEW_TOOLS = {"adapt_plan", "review_plan", "load_skill", "list_workspace_items", "read_workspace_item",
-                     "list_files", "read_file", "search_files",
-                     "find_data", "list_data", "describe_data", "probe_data", "summarize_data_sources",
+PLAN_REVIEW_TOOLS = {"adapt_plan", "review_plan", "load_skill", "list_files", "read_file", "search",
+                     "probe_data",
                      "list_connectors", "ask_user", "request_help"}
 TOOLS = [
     tool("execute_python_script", "Inspect, analyze, or independently verify workspace data using the analyst Python sandbox. Print evidence. Return files via outputs = {'comparison.csv': dataframe, 'notes.md': text}; the host saves them. Scripts cannot write files.",
@@ -69,13 +68,12 @@ TOOLS = [
              "required": ["text", "responseType"], "additionalProperties": False}}}, ["questions"]),
 ]
 
-WORKSPACE_TOOLS = {"create_data", "update_data", "create_file", "edit_file", "move_file", "delete_items",
-                   "list_workspace_items", "read_workspace_item"}
+WORKSPACE_TOOLS = {"create_data", "update_data", "create_file", "edit_file", "move_file", "delete_items"}
 # Results the application applies to the session it shows (files, tables, chart and report edits, moves, deletions).
 PUBLISHED_TOOLS = {"create_data", "update_data", "create_file", "edit_file", "move_file", "delete_items"}
 # Runs may open a connection form for missing access, but never author workflows or manage app setup.
 RUN_EXCLUDED_TOOLS = {"long_response", "propose_workflow", "read_connector_form", "update_connector_form",
-                      "list_workflows", "list_sessions", "propose_schedule", "propose_session_changes"}
+                      "list_sessions", "propose_schedule", "propose_session_changes"}
 for skill_name, names in (("workspace", WORKSPACE_TOOLS), ("visualization", {"visualize"})):
     schema_path = Path(__file__).parents[1] / "analyst" / "skills" / skill_name / "tools.json"
     TOOLS.extend(item for item in json.loads(schema_path.read_text(encoding="utf-8")) if item["function"]["name"] in names)
@@ -115,7 +113,7 @@ is missing, contradictory, affected by changed inputs or requirements, or explic
 is not verification. Do not claim causality from correlations, average percentiles, mix metric units,
 or treat missing telemetry as zero. Disclose source conventions, limitations, and missing data.
 Start from the session index: read the tables, charts, reports, and files the task needs with read_file (several
-at once with paths) and find mentions with search_files; list_workspace_items covers inputs beyond it. Source fields in the
+at once; rows of tables, pages of PDFs) and find things with search (table rows, files, session items). Source fields in the
 instance are optional task guidance, not built-in adapters. Use the shared Python and workspace tools
 for inspection and analysis. Follow the workspace's Choose an Acquisition Route guidance for missing
 inputs and continue from acquired data to delivery. Print concise evidence. Request_help only when
@@ -225,9 +223,13 @@ class WorkflowAgent(AnalystAgent):
         self.read_messages = lambda: []
         self.run_dir = workspace.confined_scratch.resolve("workflow-" + state["id"])
         self.run_dir.mkdir(exist_ok=True)
+        if hasattr(workspace, "migrate_legacy_memory"):
+            workspace.migrate_legacy_memory()
         from data_formulator.analyst.session_layer import SessionLayer, load_saved_state
         # The session it runs in, as the analyst sees it (design-docs/61): from the saved session state.
+        # in_workflow_run: runs do not see workflows/ (they never author workflows).
         self._run_payload = {"input_tables": [], "charts": [], "skill_state": {}, "conversation_id": state["id"],
+                             "in_workflow_run": True,
                              "identity_id": identity_id, "workspace_id": workspace_id,
                              "session_layer": SessionLayer(load_saved_state(identity_id, workspace_id), workspace)}
         self.state.setdefault("outputs", [])
@@ -341,11 +343,8 @@ class WorkflowAgent(AnalystAgent):
                 continue
             result = output["content"]["result"]
             spec = (result.get("refined_goal") or {}).get("chart", {})
-            content = result.get("content", {})
             charts.append({"chart_id": result.get("chart_id"), "chart_type": spec.get("chart_type"),
-                           "encodings": spec.get("encodings", {}), "code": result.get("code"),
-                           "chart_data": {"rows": content.get("rows", [])[:20],
-                                          "name": (content.get("virtual") or {}).get("table_name")}})
+                           "encodings": spec.get("encodings", {})})
         self._run_payload["charts"] = charts
 
     def resolve_pending(self, result: dict) -> None:

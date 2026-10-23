@@ -22,32 +22,16 @@ def workflows_unavailable() -> str | None:
     return "Workflows require local or managed mode."
 
 
-def _workflow_store(ctx: SkillContext):
+def workflow_store(ctx: SkillContext):
     from data_formulator.datalake.workspace import get_user_home
     from data_formulator.workflows.instances import WorkflowStore
 
     return WorkflowStore(get_user_home(identity_of(ctx)))
 
 
-def list_workflows(ctx: SkillContext) -> dict[str, Any]:
-    if error := workflows_unavailable():
-        return {"error": error}
-    items = _workflow_store(ctx).list_all()
-    scheduling = list_schedules(ctx)
-    schedules = scheduling.pop("schedules", [])
-    paths = {item["path"] for item in items}
-    workflows = []
-    for item in items:
-        workflow = {key: item[key] for key in ("path", "name", "overview", "origin", "parameters", "error") if key in item}
-        workflow["schedules"] = [schedule for schedule in schedules if schedule["workflow"] == item["path"]]
-        workflows.append(workflow)
-    orphaned = [schedule for schedule in schedules if schedule["workflow"] not in paths]
-    return {
-        "workflows": workflows,
-        **({"schedules_without_workflow": orphaned} if orphaned else {}),
-        "scheduling": scheduling,
-        "note": "Schedules and runs reference a workflow by its path. Built-in examples use demo/ paths.",
-    }
+def store_path(path: Any) -> Any:
+    """A workflow path as the store and schedules know it: ``workflows/demo/x.yaml`` -> ``demo/x.yaml``."""
+    return path.strip()[len("workflows/"):] if isinstance(path, str) and path.strip().startswith("workflows/") else path
 
 
 def propose_workflow(spec: dict[str, Any], ctx: SkillContext) -> Generator[Event, None, str | None]:
@@ -65,11 +49,12 @@ def propose_workflow(spec: dict[str, Any], ctx: SkillContext) -> Generator[Event
         return f"Invalid workflow definition: {exc}. Revise the complete proposal."
     body: dict[str, Any] = {"content": content, "definition": definition}
     if spec.get("replaces"):
-        saved = next((item for item in _workflow_store(ctx).list_all()
-                      if item["path"] == spec["replaces"] and item.get("origin") == "user"), None)
+        replaces = store_path(spec["replaces"])
+        saved = next((item for item in workflow_store(ctx).list_all()
+                      if item["path"] == replaces and item.get("origin") == "user"), None)
         if saved is None:
             return (f"Workflow {spec['replaces']!r} is not one of the user's saved workflows. "
-                    "Call list_workflows, or omit replaces to propose a new workflow.")
+                    "List workflows/ with list_files, or omit replaces to propose a new workflow.")
         body["target"] = {"id": saved["path"], "name": saved.get("name") or saved["path"]}
     if spec.get("schedule") is not None:
         schedule, error = _proposed_schedule(spec["schedule"], content, ctx)
@@ -171,7 +156,7 @@ def _schedule_changes(spec: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             value = spec[key]
             if not isinstance(value, str) or not value.strip() or len(value) > 200:
                 raise ValueError(f"{key} must be a non-empty string of at most 200 characters")
-            patch[key] = value.strip()
+            patch[key] = store_path(value.strip()) if key == "workflow" else value.strip()
     if "time" in spec:
         if not isinstance(spec["time"], str) or not re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", spec["time"]):
             raise ValueError("time must use 24-hour HH:MM")
@@ -227,18 +212,18 @@ def propose_schedule(spec: dict[str, Any], ctx: SkillContext) -> Generator[Event
     if schedule_id:
         existing = next((item for item in schedule_store().list(owner) if item["id"] == schedule_id), None)
         if existing is None:
-            return f"Schedule {schedule_id!r} was not found. Call list_workflows for current schedule IDs."
+            return f"Schedule {schedule_id!r} was not found. Read workflows/schedules.json for current schedule IDs."
         config = dict(existing["config"])
         target = {"id": schedule_id, "name": existing["config"].get("name") or schedule_id}
     config.update(patch)
 
-    store = _workflow_store(ctx)
+    store = workflow_store(ctx)
     workflows = {item["path"]: item for item in store.list_all() if "error" not in item}
     workflow = None
     if config.get("workflow"):
         workflow = workflows.get(config["workflow"])
         if workflow is None:
-            return ("Unknown workflow path. Schedules run saved workflows: call list_workflows, or propose and "
+            return ("Unknown workflow path. Schedules run saved workflows: list workflows/ with list_files, or propose and "
                     "save a workflow before scheduling it.")
         config.setdefault("name", workflow["name"])
         try:

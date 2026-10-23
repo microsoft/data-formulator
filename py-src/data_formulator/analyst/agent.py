@@ -11,7 +11,7 @@ of **skills** that unlock additional **gated actions** on demand. See
 model in ``design-docs/36-artifact-turn-model.md``.
 
 Architecture (a vanilla tool-calling loop, plus the skills layer):
-  - **Inspection tools** (``execute_python_script``, ``inspect_source_data``, ``load_skill``,
+  - **Inspection tools** (``execute_python_script``, ``load_skill``, the workspace file tools,
     plus skill-private tools) are called via the tool-calling API to gather
     information. Parallel-safe, internal, no side effects.
   - **Committing actions** (``visualize``, ``delegate``) render a user-visible
@@ -55,7 +55,6 @@ from data_formulator.agents.agent_utils import (
     attach_reasoning_content,
     ensure_output_variable_in_code,
 )
-from data_formulator.agents.context import handle_inspect_source_data
 from data_formulator.agents.client_utils import Client
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.datalake.workspace_metadata import MemorySource
@@ -102,6 +101,42 @@ def _stream_deadline(name: str, default: float) -> float:
 
 def _first_chunk_deadline() -> float:
     return _stream_deadline("DF_MODEL_FIRST_CHUNK_SECONDS", 90.0)
+
+
+_MAX_RETRY_AFTER_SECONDS = 60.0
+_RETRY_AFTER_TEXT = re.compile(r"retry after (\d+(?:\.\d+)?)\s*(milliseconds?|ms|seconds?|secs?|s)\b", re.I)
+
+
+def _retry_after_seconds(exc: BaseException) -> float | None:
+    """How long a rate-limited provider asked us to wait (``retry-after-ms`` / ``retry-after`` headers,
+    or "retry after N seconds" in the message), searched through wrapped exceptions; None if not said."""
+    pending, seen = [exc], set()
+    while pending:
+        error = pending.pop(0)
+        if error is None or id(error) in seen:
+            continue
+        seen.add(id(error))
+        for headers in (getattr(error, "litellm_response_headers", None),
+                        getattr(getattr(error, "response", None), "headers", None),
+                        getattr(error, "headers", None)):
+            if not hasattr(headers, "get"):
+                continue
+            try:
+                if (value := headers.get("retry-after-ms")) is not None:
+                    return float(value) / 1000
+                if (value := headers.get("retry-after")) is not None:
+                    try:
+                        return float(value)
+                    except ValueError:
+                        from email.utils import parsedate_to_datetime
+                        return max(parsedate_to_datetime(value).timestamp() - time.time(), 0.0)
+            except (TypeError, ValueError, OverflowError):
+                continue
+        if match := _RETRY_AFTER_TEXT.search(str(error)):
+            amount, unit = float(match.group(1)), match.group(2).lower()
+            return amount / 1000 if unit.startswith("m") else amount
+        pending += [getattr(error, "original_exception", None), error.__cause__, error.__context__]
+    return None
 
 
 _STREAM_END = object()
@@ -191,25 +226,17 @@ _SKILL_PRELOADED_PREFIX = "[SKILL: "
 _SKILL_PRELOADED_SUFFIX = " Preloaded for this run"
 
 _TOOL_PROGRESS_ARG_KEYS: dict[str, tuple[str, ...]] = {
-    "summarize_data_sources": (),
-    "list_data": ("source_id", "path", "filter_by"),
-    "find_data": ("query", "source_id", "path", "filter_by"),
-    "describe_data": ("source_id", "table_key"),
     "probe_data": ("source_id", "table_key", "query"),
     "list_connectors": ("source_type",),
     "list_sessions": ("query",),
-    "inspect_chart": ("chart_id",),
     "search_data_tables": ("query",),
     "search_knowledge": ("query",),
-    "list_workspace_items": ("scope", "kinds", "query"),
-    "read_workspace_item": ("item_id", "locator"),
-    "search_workspace_items": ("query", "item_ids", "kinds"),
     "create_file": ("filename", "display_name"),
     "edit_file": ("path", "display_name"),
     "delete_items": ("items",),
     "list_files": ("path",),
-    "read_file": ("path", "paths"),
-    "search_files": ("pattern", "path"),
+    "read_file": ("files", "path", "paths"),
+    "search": ("query", "path"),
     "move_file": ("path", "new_path"),
 }
 
@@ -559,6 +586,9 @@ class AnalystAgent:
         completed_steps: list[dict[str, Any]] = []
         iteration = completed_step_count
         final_status = "success"
+        if hasattr(self.workspace, "migrate_legacy_memory"):
+            # Legacy memory becomes ordinary files the agent lists, reads and searches (design-docs/65).
+            self.workspace.migrate_legacy_memory()
         workspace_files = sorted(
             self.workspace.list_workspace_files(), key=lambda item: item.name.lower(),
         )
@@ -1106,9 +1136,9 @@ class AnalystAgent:
         reference and inspect it within the same run.
 
         The entry mirrors the shape the frontend forwards for pre-existing charts
-        (``chart_id`` / ``chart_type`` / ``encodings`` / ``table_ref`` / ``code`` /
-        ``chart_data``). Charts are read by the agent from their encodings + sample
-        data (and code), not a rendered image. The mutation lands on
+        (``chart_id`` / ``chart_type`` / ``encodings`` / ``table_ref``), so a report
+        edit may embed it. The agent reads the chart as ``session/charts/<id>.json``
+        (added to the session layer below). The mutation lands on
         ``self._run_payload['charts']`` so the next dispatched skill ctx sees it.
         """
         chart_id = transform_result.get("chart_id")
@@ -1117,7 +1147,6 @@ class AnalystAgent:
             return
         content = transform_result.get("content", {}) or {}
         table_name = (content.get("virtual", {}) or {}).get("table_name", "")
-        rows = content.get("rows", []) or []
         charts = self._run_payload.setdefault("charts", [])
         if any(c.get("chart_id") == chart_id for c in charts):
             return
@@ -1126,8 +1155,6 @@ class AnalystAgent:
             "chart_type": chart_spec.get("type") or chart_spec.get("chart_type") or "Unknown",
             "encodings": dict(chart_spec.get("encodings", {}) or {}),
             "table_ref": table_name,
-            "code": transform_result.get("code", ""),
-            "chart_data": {"name": table_name, "rows": rows[:50]},
         })
         # Editable as a session file for the rest of the run (when its type is a catalog name).
         from data_formulator.analyst.session_edits import chart_catalog
@@ -1417,7 +1444,7 @@ class AnalystAgent:
                 # Backend-minted, run-stable chart id. Forwarded to the frontend
                 # in the ``result`` event so it adopts this id verbatim — the same
                 # id the agent can embed in a same-run report (``chart://<id>``)
-                # and pass to ``inspect_chart``. NOT derived from the table name
+                # and read as ``session/charts/<id>.json``. NOT derived from the table name
                 # (one table may back many charts).
                 "chart_id": f"chart-{uuid.uuid4().hex[:12]}",
                 "code": code,
@@ -1476,7 +1503,7 @@ class AnalystAgent:
             "and reread only changed items you rely on. The user may switch threads between requests; work from "
             "where they are now.",
             "- Charts in the session already exist: build on them or reference them; do not re-create an "
-            "equivalent chart. When asked to deliver a report or narrative document, load the `report` skill "
+            "equivalent chart. When asked to deliver a report or narrative document, write it with `write_report` "
             "and embed those charts by id rather than producing equivalent visualizations. An ordinary "
             "summary can be answered directly without report delivery.",
             "- Cite inputs by the name or path you see (a table name or `session/tables/<name>.json`, a "
@@ -1673,7 +1700,7 @@ class AnalystAgent:
         """The tool set offered this turn: baseline inspection tools plus
         load_skill + loaded skills' tools) plus the committing **action**
         tools of loaded skills (visualize/ask_user always; write_report
-        once the report skill is loaded). The model gathers with inspection tools
+        always on). The model gathers with inspection tools
         and acts with at most one action per turn."""
         extra_tools = self.registry.tools_for(self._loaded_skills)
         action_tools = self.registry.action_tools_for(self._loaded_skills)
@@ -1780,8 +1807,8 @@ class AnalystAgent:
                     yield {"type": "thinking_text", "content": narration}
 
                 # A committing action is a tool call (visualize / delegate /
-                # write_report). Inspection tools (explore /
-                # inspect_source_data / inspect_chart / load_skill) gather. A turn
+                # write_report). Inspection tools (execute_python_script /
+                # read_file / search / load_skill) gather. A turn
                 # ends with exactly ONE action; the harness enforces that here.
                 action_names = self.registry.action_names()
                 action_calls = [tc for tc in tool_calls
@@ -1846,10 +1873,9 @@ class AnalystAgent:
                         "args": _tool_progress_args(tool_name, tool_args),
                         "purpose": tool_args.get("purpose") if tool_name == "execute_python_script" else None,
                         "code": tool_args.get("code") if tool_name == "execute_python_script" else None,
-                        "table_names": tool_args.get("table_names") if tool_name == "inspect_source_data" else None,
                         "skill": tool_args.get("name") if tool_name == "load_skill" else None,
                         "query": tool_args.get("query") if tool_name in (
-                            "search_data_tables", "search_knowledge", "search_workspace_items",
+                            "search_data_tables", "search_knowledge", "search",
                         ) else None,
                     }
 
@@ -1872,18 +1898,6 @@ class AnalystAgent:
                             "status": tool_status,
                             "stdout": result.get("stdout", ""),
                             "error": result.get("error"),
-                        }
-                    elif tool_name == "inspect_source_data":
-                        table_names = tool_args.get("table_names", [])
-                        tool_content = handle_inspect_source_data(
-                            table_names, input_tables or [], self.workspace,
-                        )
-                        yield {
-                            "type": "tool_result",
-                            "tool": tool_name,
-                            "tool_call_id": tc.id,
-                            "status": "ok",
-                            "stdout": tool_content,
                         }
                     elif tool_name == "load_skill":
                         skill_name = self.registry.canonical_name(tool_args.get("name", ""))
@@ -2208,11 +2222,20 @@ class AnalystAgent:
                     backoff = (self.execution_config.rate_limit_backoff_seconds if rate_limited
                                else self.execution_config.stream_open_backoff_seconds)
                     wait = backoff * 2 ** (attempt - 1)
+                    asked = _retry_after_seconds(e) if rate_limited else None
+                    if asked is not None:
+                        wait = min(max(asked, 1.0), _MAX_RETRY_AFTER_SECONDS)
                     logger.warning(
                         "[AnalystAgent] Transient LLM error (attempt %d/%d), "
-                        "retrying in %gs: %s",
-                        attempt, limit, wait, e,
+                        "retrying in %gs%s: %s",
+                        attempt, limit, wait, "" if asked is None else f" (provider asked for {asked:g}s)", e,
                     )
+                    if rate_limited:
+                        from data_formulator.error_handler import collect_stream_warning
+                        collect_stream_warning(
+                            f"The AI model is busy (rate limit reached). Retrying in {wait:.0f} seconds…",
+                            message_code="LLM_RATE_LIMIT_RETRY",
+                        )
                     if cancel is not None:
                         cancel.wait(wait)
                     else:

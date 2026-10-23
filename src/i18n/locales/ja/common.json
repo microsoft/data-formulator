@@ -468,6 +468,7 @@
     "deletedItems": "{{names}} を削除しました",
     "listingFiles": "ファイルを一覧しています",
     "readingFile": "読み込んでいます",
+    "searchingSession": "セッションを検索しています",
     "searchingFiles": "ファイルを検索しています",
     "movingFile": "移動しています",
     "movedFile": "{{from}} を {{to}} に移動しました",

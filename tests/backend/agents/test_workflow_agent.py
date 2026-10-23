@@ -351,10 +351,11 @@ def test_terminal_auto_result_records_evidence_and_closes_execution(agent, monke
 
 def test_workflow_uses_analyst_discovery_and_skill_loading(agent, monkeypatch):
     names = {item["function"]["name"] for item in agent._current_tools()}
-    assert {"find_data", "list_connectors", "describe_data", "propose_data_operation", "load_skill"} <= names
-    skill = agent._loaded_skill_tool_map()["find_data"]
+    assert {"search", "list_files", "list_connectors", "probe_data", "propose_data_operation", "load_skill"} <= names
+    assert not {"find_data", "describe_data", "list_data", "summarize_data_sources"} & names
+    skill = agent._loaded_skill_tool_map()["search"]
     monkeypatch.setattr(skill, "handle_tool", lambda *args: SimpleNamespace(text="Found connected prices"))
-    assert "Found connected prices" in agent._execute("find_data", {"query": "prices"}, "discovery")
+    assert "Found connected prices" in agent._execute("search", {"query": "prices", "path": ["sources/"]}, "discovery")
     assert "loaded" in agent._execute("load_skill", {"name": "terminal"}, "skill")
     assert "terminal" in agent._loaded_skills
     assert "sandbox.filesystem.allowWrite" in agent._build_system_prompt()
@@ -905,7 +906,9 @@ def test_output_path_safety(agent, monkeypatch):
 def test_workflow_uses_shared_tools_without_a_live_source_adapter(agent):
     names = {item["function"]["name"] for item in agent._current_tools()}
     assert "fetch_live_data" not in names
-    assert {"execute_python_script", "list_workspace_items", "read_workspace_item", "create_data", "run_terminal"} <= names
+    assert {"execute_python_script", "list_files", "read_file", "search", "create_data", "run_terminal"} <= names
+    assert not {"list_workspace_items", "read_workspace_item", "search_workspace_items", "search_files",
+                "inspect_source_data"} & names
     with pytest.raises(ValueError, match="Unknown workflow tool"):
         agent._execute("fetch_live_data", {}, "removed")
 
@@ -1876,13 +1879,14 @@ def test_a_workflow_reads_and_changes_session_files_like_the_analyst(agent):
     agent.workspace.save_workspace_file(b"# Plan\n", "notes/plan.md", "text/markdown", agent_managed=True)
     agent.workspace.save_workspace_file(b"old\n", "draft.md", "text/markdown", agent_managed=True)
 
-    read = agent._execute("read_file", {"paths": ["session/tables/d_prices.json", "files/notes/*"]}, "read-1")
+    read = agent._execute("read_file", {"files": [{"path": "session/tables/d_prices.json"},
+                                                  {"path": "files/notes/*"}]}, "read-1")
     files = json.loads(read.split("\n", 2)[2])["files"]
     assert [item["path"] for item in files] == ["session/tables/d_prices.json", "files/notes/plan.md"]
     assert json.loads(files[0]["content"])["rows"] == [{"item": "eggs", "price": 3.5}, {"item": "milk", "price": 4.1}]
     agent.state["plan_review_pending"] = True
     assert "read_file" in {spec["function"]["name"] for spec in agent._current_tools()}
-    agent._execute("search_files", {"pattern": "Plan"}, "search-1")
+    assert "## files/notes/plan.md" in agent._execute("search", {"query": "Plan"}, "search-1")
     agent.state["plan_review_pending"] = False
 
     agent._execute("move_file", {"path": "files/draft.md", "new_path": "files/notes/draft.md"}, "move-1")

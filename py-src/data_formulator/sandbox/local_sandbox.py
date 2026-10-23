@@ -386,6 +386,14 @@ def _spawn_confined(kind: str, key: str) -> tuple[_ConfinedProcess, DuplexConnec
     return proc, conn
 
 
+class _PendingWorker:
+    """A worker being started in the background by :meth:`_WarmWorkerPool.prewarm`."""
+
+    def __init__(self):
+        self.done = threading.Event()
+        self.pair: tuple[object, object] | None = None
+
+
 class _WarmWorkerPool:
     """Pool of persistent child processes with pre-imported libraries.
 
@@ -411,6 +419,7 @@ class _WarmWorkerPool:
         self._closed = False
         self._confinement_failed = False
         self._keys: dict[int, object] = {}
+        self._pending: dict[object, list[_PendingWorker]] = {}
         atexit.register(self.shutdown)
 
     def _confinement(self) -> str | None:
@@ -439,33 +448,92 @@ class _WarmWorkerPool:
         p.start()
         return p, parent_conn
 
-    def acquire(self, workspace_path: str | None = None) -> tuple[object, object]:
-        """Get a warm worker (process, conn) for *workspace_path*. Spawns one if needed."""
+    def _touch(self, key) -> list[tuple[object, object]]:
+        """Mark *key* most recently used; return the idle workers of keys that fell out (lock held)."""
+        if key in self._recent:
+            self._recent.remove(key)
+        self._recent.append(key)
+        evicted = self._recent[:-self.MAX_WORKSPACES]
+        self._recent = self._recent[-self.MAX_WORKSPACES:]
+        return [pair for old in evicted for pair in self._available.pop(old, [])]
+
+    def _register(self, pair, workspace_path: str | None) -> None:
+        with self._lock:
+            self._all.append(pair)
+            self._keys[id(pair[0])] = self._key(workspace_path)
+
+    def prewarm(self, workspace_path: str | None = None, count: int | None = None) -> None:
+        """Start workers for *workspace_path* in the background until *count* (default: the pool size)
+        are idle or starting, so that a later :meth:`acquire` does not wait for a cold start
+        (seconds: the worker imports pandas, numpy, scikit-learn, ... before it is ready)."""
         key = self._key(workspace_path)
         with self._lock:
-            if key in self._recent:
-                self._recent.remove(key)
-            self._recent.append(key)
-            evicted = [old for old in self._recent[:-self.MAX_WORKSPACES]]
-            self._recent = self._recent[-self.MAX_WORKSPACES:]
-            stale = [pair for old in evicted for pair in self._available.pop(old, [])]
-            available = self._available.setdefault(key, [])
+            if self._closed:
+                return
+            stale = self._touch(key)
+            idle = sum(1 for proc, _ in self._available.get(key, []) if proc.is_alive())
+            starting = self._pending.setdefault(key, [])
+            wanted = self._size if count is None else count
+            new = [_PendingWorker() for _ in range(max(wanted - idle - len(starting), 0))]
+            starting.extend(new)
+        for proc, conn in stale:
+            self.discard(proc, conn)
+        for pending in new:
+            threading.Thread(target=self._fill, args=(pending, key, workspace_path), daemon=True,
+                             name="sandbox-prewarm").start()
+
+    def _fill(self, pending: "_PendingWorker", key, workspace_path: str | None) -> None:
+        try:
+            pair = self._spawn(workspace_path)
+        except Exception as exc:
+            # An acquire waiting on this worker starts its own and surfaces the error.
+            logger.warning("Prewarming a Python sandbox worker failed: %s", exc)
             pair = None
+        if pair is not None:
+            self._register(pair, workspace_path)
+        stale = None
+        with self._lock:
+            starting = self._pending.get(key, [])
+            if pending in starting:
+                # Not claimed by an acquire: keep it idle for the next one.
+                starting.remove(pending)
+                if pair is not None:
+                    if self._closed or key not in self._recent:
+                        stale = pair
+                    else:
+                        self._available.setdefault(key, []).append(pair)
+            pending.pair = pair
+            pending.done.set()
+        if stale is not None:
+            self.discard(*stale)
+
+    def acquire(self, workspace_path: str | None = None) -> tuple[object, object]:
+        """Get a warm worker (process, conn) for *workspace_path*: an idle one, else one already
+        starting (see :meth:`prewarm`), else a new one."""
+        key = self._key(workspace_path)
+        with self._lock:
+            stale = self._touch(key)
+            available = self._available.setdefault(key, [])
+            pair = pending = None
             while available:
                 proc, conn = available.pop()
                 if proc.is_alive():
                     pair = (proc, conn)
                     break
                 # Dead worker -- discard and try next
+            if pair is None and self._pending.get(key):
+                pending = self._pending[key].pop(0)
         for proc, conn in stale:
             self.discard(proc, conn)
         if pair is not None:
             return pair
+        if pending is not None:
+            pending.done.wait()
+            if pending.pair is not None and pending.pair[0].is_alive():
+                return pending.pair
         # No available workers -- spawn a new one (up to pool size is advisory)
         pair = self._spawn(workspace_path)
-        with self._lock:
-            self._all.append(pair)
-            self._keys[id(pair[0])] = self._key(workspace_path)
+        self._register(pair, workspace_path)
         return pair
 
     def release(self, proc, conn) -> None:
@@ -531,12 +599,14 @@ class SandboxSession:
     EXECUTION_TIMEOUT = int(os.environ.get("DF_SANDBOX_TIMEOUT", "120"))
 
     def __init__(self, workspace_path: str | None = None):
-        # Confined workers can read only the workspace they were started for,
-        # so the worker is acquired on first use when no workspace is given.
+        # Confined workers can read only the workspace they were started for.
+        # The worker is acquired on first use; with a workspace it starts now in
+        # the background, so opening a session never waits for a cold start.
         self._proc = self._conn = None
         self._closed = False
+        self._workspace_path = workspace_path
         if workspace_path is not None:
-            self._proc, self._conn = _worker_pool.acquire(workspace_path)
+            _worker_pool.prewarm(workspace_path, count=1)
 
     # -- public API --------------------------------------------------------
 
@@ -550,7 +620,7 @@ class SandboxSession:
         if self._closed:
             return {"status": "error", "error_message": "Session is closed"}
         if self._conn is None:
-            self._proc, self._conn = _worker_pool.acquire(workspace_path)
+            self._proc, self._conn = _worker_pool.acquire(workspace_path or self._workspace_path)
         try:
             self._conn.send((code, {**allowed_objects}, workspace_path, True))
             if self._conn.poll(timeout=self.EXECUTION_TIMEOUT):

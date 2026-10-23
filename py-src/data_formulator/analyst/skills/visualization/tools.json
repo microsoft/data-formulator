@@ -34,7 +34,7 @@
             "items": {
               "type": "object",
               "properties": {
-                "id": {"type": "string", "description": "Stable ID listed in WORKSPACE INPUTS."},
+                "id": {"type": "string", "description": "A table name or its session/tables/<name>.json path (kind data), or a files/... path (kind file)."},
                 "kind": {"type": "string", "enum": ["data", "file"]}
               },
               "required": ["id", "kind"],

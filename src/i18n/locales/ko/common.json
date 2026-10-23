@@ -467,6 +467,7 @@
     "deletedItems": "{{names}} 삭제됨",
     "listingFiles": "파일 목록 가져오는 중",
     "readingFile": "읽는 중",
+    "searchingSession": "세션 검색 중",
     "searchingFiles": "파일 검색 중",
     "movingFile": "이동 중",
     "movedFile": "{{from}}을(를) {{to}}(으)로 이동함",

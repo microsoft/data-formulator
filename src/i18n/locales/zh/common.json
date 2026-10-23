@@ -468,6 +468,7 @@
     "deletedItems": "已删除 {{names}}",
     "listingFiles": "列出文件",
     "readingFile": "正在读取",
+    "searchingSession": "搜索会话",
     "searchingFiles": "搜索文件",
     "movingFile": "正在移动",
     "movedFile": "已将 {{from}} 移动到 {{to}}",

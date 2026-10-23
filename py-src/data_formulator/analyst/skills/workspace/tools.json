@@ -20,7 +20,7 @@
           }, "required": ["source", "scope"], "additionalProperties": false },
           "input_sources": { "type": "array", "items": { "type": "object", "properties": {
             "id": { "type": "string" }, "kind": { "type": "string", "enum": ["data", "file"] }
-          }, "required": ["id", "kind"], "additionalProperties": false }, "description": "Exact IDs from list_workspace_items(scope=input), or scratch/... paths with kind=file. Only inputs materially used." }
+          }, "required": ["id", "kind"], "additionalProperties": false }, "description": "Inputs materially used: a table name or its session/tables/<name>.json path (kind data); a files/... or scratch/... path (kind file)." }
         },
         "required": ["table_name", "display_name", "input_sources"],
         "additionalProperties": false
@@ -94,45 +94,8 @@
   {
     "type": "function",
     "function": {
-      "name": "list_workspace_items",
-      "description": "List workspace items when a fresh or filtered inventory is needed. input includes data/files and user-selected external table references; memory includes existing memory; temp includes execution intermediates. References provide source_id, table_key, cached summary, and connector capabilities, NOT Python-readable paths. Prefer relevant user-selected sources.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "scope": {
-            "type": "string",
-            "enum": [
-              "input",
-              "memory",
-              "temp"
-            ],
-            "default": "input"
-          },
-          "kinds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "data",
-                "file",
-                "external-table-reference"
-              ]
-            },
-            "description": "For input scope, optional item kinds to include. data includes loaded tables and external table references; external-table-reference selects only references. Use returned capabilities to determine access steps."
-          },
-          "query": {
-            "type": "string",
-            "description": "Optional case-insensitive name filter."
-          }
-        }
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "edit_file",
-      "description": "Edit an existing agent-managed workspace file. Provide exactly one of replacement content, Python code/output_variable, or text replacements/append_text. Requires the current content_hash from creation, editing, read_file, or list_workspace_items(scope=input). Also edits the session's chart specs (session/charts/<id>.json) and reports (session/reports/<id>.md); those edits are validated and rejected, changing nothing, if they are invalid. User-managed sources and internal files are protected; create a copy instead. Preserves filename and display name unless a new display_name is supplied; an app is edited in place.",
+      "description": "Edit an existing agent-managed workspace file. Provide exactly one of replacement content, Python code/output_variable, or text replacements/append_text. Requires the current content_hash from creation, editing, or read_file. Also edits the session's chart specs (session/charts/<id>.json) and reports (session/reports/<id>.md); those edits are validated and rejected, changing nothing, if they are invalid. User-managed sources and internal files are protected; create a copy instead. Preserves filename and display name unless a new display_name is supplied; an app is edited in place.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -207,11 +170,14 @@
     "type": "function",
     "function": {
       "name": "list_files",
-      "description": "List the session's files: workspace files (files/, in folders: documents, apps, your notes and Python helpers), the session as files (session/: index.md, charts/<id>.json and reports/<id>.md you can edit, tables/<name>.json, references/<id>.json, and threads/<n>.md to read), and scratch/ intermediates. Data tables are read with the data tools.",
+      "description": "List the session's files with the name the user sees, kind and size: workspace files (files/: documents, PDFs, spreadsheets, data files, apps, your notes and Python helpers), the session (session/: index.md, tables/<name>.json for every table, charts/<id>.json and reports/<id>.md you can edit, references/<id>.json for connected-source tables, threads/<n>.md), and scratch/ intermediates. sources/ holds connected-source catalogs (sources/<source_id>/<path>), listed one level at a time; workflows/ (saved and built-in workflows and schedules, read-only) is listed only when path names it. The kind and detail (rows, pages, sheets) tell which read_file parameters apply.",
       "parameters": {
         "type": "object",
         "properties": {
-          "path": { "type": "string", "description": "Folder or prefix to list, e.g. files/notes, session/charts. Omit for everything." }
+          "path": {
+            "type": "string",
+            "description": "Folder, prefix or glob to list, e.g. files/docs, session/tables, files/*.pdf. Omit for everything."
+          }
         },
         "additionalProperties": false
       }
@@ -221,15 +187,63 @@
     "type": "function",
     "function": {
       "name": "read_file",
-      "description": "Read text files of the session (files/..., session/..., scratch/...). Read one file by path, a window of lines at a time, or several in one call with paths (globs allowed, e.g. session/charts/* or a chart with its table), up to 20 files within a size budget. Returns content_hash for edit_file and whether you may edit each file.",
+      "description": "Read session files: any path from the session index or list_files (files/..., session/..., scratch/..., sources/..., workflows/...), several in one call within a size budget. Each item takes only the parameters for its kind; omit them for the default. Text and session views: offset/limit lines (default: the first 400). Tables (session/tables/<name>.json): the view with description, columns, samples and the parquet file for Python; rows=\"1790-1800\" (and columns) reads rows, at most 200 per item. Excel: its sheets; sheet + rows reads rows. Parquet files: shape and samples; rows reads rows. CSV: text by lines; rows reads it as a table. PDF: whole when short, else the first pages; pages=\"6-10\" reads pages (at most 20). A connected-source table (sources/...): its source_id, table_key, description and columns one per line (offset/limit page wide tables). Large text files are paged with a notice. A parameter that does not fit is ignored with a warning. Returns content_hash for edit_file and whether you may edit each file.",
       "parameters": {
         "type": "object",
         "properties": {
-          "path": { "type": "string", "description": "One file to read." },
-          "paths": { "type": "array", "items": { "type": "string" }, "maxItems": 20, "description": "Several files or globs to read together, each from its first line." },
-          "offset": { "type": "integer", "minimum": 1, "description": "First line to read (default 1); with path only." },
-          "limit": { "type": "integer", "minimum": 1, "maximum": 2000, "description": "Lines to read per file (default 400)." }
+          "files": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "Items to read, e.g. [{\"path\": \"session/tables/sales.json\"}, {\"path\": \"session/tables/sales.json\", \"rows\": \"1-50\"}, {\"path\": \"files/report.pdf\", \"pages\": \"3-5\"}]. Globs in path read every match with the same parameters.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "A path or glob, e.g. files/notes/plan.md, session/charts/*."
+                },
+                "offset": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Text: first line to read (default 1)."
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000,
+                  "description": "Text: lines to read (default 400)."
+                },
+                "rows": {
+                  "type": "string",
+                  "description": "Tables, Excel, parquet, CSV: row range such as \"1-50\" or \"1790-1800\" (at most 200 rows)."
+                },
+                "columns": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Tables: only these columns."
+                },
+                "sheet": {
+                  "type": "string",
+                  "description": "Excel: the sheet to read (default: the first)."
+                },
+                "pages": {
+                  "type": "string",
+                  "description": "PDF: page range such as \"6-10\" (at most 20 pages)."
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            }
+          }
         },
+        "required": [
+          "files"
+        ],
         "additionalProperties": false
       }
     }
@@ -237,19 +251,36 @@
   {
     "type": "function",
     "function": {
-      "name": "search_files",
-      "description": "Search the text of every session file, like grep: workspace files and apps, chart specs, reports, table code and provenance, references, the conversation threads, and scratch. Returns matching lines with their path and line number.",
+      "name": "search",
+      "description": "Search this session: tables (name, description, column names and every row), files (text, PDF, Excel, notes) and session items (charts, reports, threads, references), then connected-source catalogs (sources/: table names, descriptions and columns, not rows), so one search tells whether data is already here or must be loaded. Every word must appear, in any order (case-insensitive); quote a phrase to match it exactly. A table match returns whole rows, so use it to look up a code or ID by its label (for example in a codebook or lookup table) before querying the data; a file match returns the line. Words must match within one row or line, so search for one thing at a time. Searches everything except workflows/ by default, catalog matches last; pass path (e.g. session/tables/, files/docs/, sources/ or sources/<source_id>/) when you know where to look. Connected sources match on cached metadata only; probe_data queries their values.",
       "parameters": {
         "type": "object",
         "properties": {
-          "pattern": { "type": "string", "description": "Text to find (or a regular expression with regex=true)." },
-          "path": { "type": "string", "description": "Limit to a folder or prefix, e.g. session/, files/lib." },
-          "glob": { "type": "string", "description": "Limit to paths matching a glob, e.g. *.py or session/charts/*." },
-          "regex": { "type": "boolean" },
-          "case_sensitive": { "type": "boolean" },
-          "max_results": { "type": "integer", "minimum": 1, "maximum": 100 }
+          "query": {
+            "type": "string",
+            "description": "Words to find; \"a quoted phrase\" must appear exactly."
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Where to search: folders, items or globs, e.g. [\"session/tables/\"] or [\"files/report.pdf\"]. Omit for everything."
+          },
+          "regex": {
+            "type": "boolean",
+            "description": "Treat query as a regular expression matched against each line or table cell."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows and lines shown in total (default 20); every matching item still reports its count."
+          }
         },
-        "required": ["pattern"],
+        "required": [
+          "query"
+        ],
         "additionalProperties": false
       }
     }
@@ -288,259 +319,8 @@
   {
     "type": "function",
     "function": {
-      "name": "read_workspace_item",
-      "description": "Read bounded normalized content from a workspace input. External table references return cached metadata and the connector query address, not rows; use describe_data for missing schema. Data accepts a row locator and columns option; normalized text accepts a line locator. Temporary python-only items should be read through execute_python_script using their path.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "item_id": {
-            "type": "string",
-            "description": "Stable input item ID from list_workspace_items."
-          },
-          "locator": {
-            "type": "object",
-            "description": "Optional canonical location: {\"row\": 1} for data or {\"line\": 1} for normalized text."
-          },
-          "options": {
-            "type": "object",
-            "description": "Optional semantic adapter options; library-specific arguments are not accepted."
-          },
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 2000,
-            "default": 200
-          }
-        },
-        "required": [
-          "item_id"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "search_workspace_items",
-      "description": "Search current workspace inputs: local content and external reference cached metadata. References return metadata matches and connector addresses, never remote rows; no metadata match does not rule out matching records. Use describe_data and probe_data for remote schema or values. Stale memory and python-only temporary items are not searched.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "query": {
-            "type": "string",
-            "description": "Case-insensitive text to find."
-          },
-          "item_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Optional stable item IDs to search."
-          },
-          "kinds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "data",
-                "file",
-                "external-table-reference"
-              ]
-            },
-            "description": "Optional input kinds to search. data includes loaded tables and external reference metadata; external-table-reference selects only references."
-          },
-          "options": {
-            "type": "object",
-            "description": "Optional semantic adapter options; library-specific arguments are not accepted."
-          },
-          "max_results": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100,
-            "default": 20
-          }
-        },
-        "required": [
-          "query"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "summarize_data_sources",
-      "description": "Return a bounded overview of every connected data source: hierarchy stats, top-level items, branch-diverse sample tables, and explicit omitted counts. Use this first for broad questions about what data is available.",
-      "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "list_data",
-      "description": "List connected-source catalogs like ls. With no arguments, return immediate source nodes at the catalog root. With source_id and optional exact path, return immediate typed children only. Use filter_by for folders or tables and start_after when truncated. Use summarize_data_sources instead for a broad overview.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "source_id": {
-            "type": "string",
-            "description": "Connected source identifier. Omit for catalog-root source nodes."
-          },
-          "path": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Exact hierarchy path segments."
-          },
-          "filter_by": {
-            "type": "string",
-            "enum": [
-              "folder",
-              "table"
-            ],
-            "description": "Optional immediate-child node type."
-          },
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 500,
-            "description": "Maximum items. Default 100."
-          },
-          "start_after": {
-            "type": "object",
-            "description": "Exclusive continuation reference returned as next_start_after.",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "folder",
-                  "table"
-                ]
-              },
-              "path": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "table_key": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "type",
-              "path"
-            ]
-          }
-        },
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "find_data",
-      "description": "Recursively find data below an optional exact source path. Query is an optional case-insensitive regex (a plain phrase with no whole match is searched word by word); omit it to enumerate descendants. Results are flat typed nodes with exact paths. For a named subject missing from workspace inputs, search before asking the user to supply data or specify analysis scope. The top table hits carry a preview (columns, row count, a few sample rows); when it covers the task, call propose_data_operation directly, otherwise use describe_data for the rest. Search results are not loaded data. Use summarize_data_sources instead for a broad overview.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "query": {
-            "type": "string",
-            "description": "Optional case-insensitive regex. Omit to enumerate."
-          },
-          "source_id": {
-            "type": "string",
-            "description": "Optional connected source identifier."
-          },
-          "path": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Exact recursive search root. Requires source_id."
-          },
-          "filter_by": {
-            "type": "string",
-            "enum": [
-              "folder",
-              "table"
-            ],
-            "description": "Optional result node type."
-          },
-          "fields": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "name",
-                "description",
-                "columns"
-              ]
-            },
-            "description": "Fields to search. Omit for all."
-          },
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 500
-          }
-        },
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "describe_data",
-      "description": "Read cached metadata for one table or semantic model. Page fields with column_offset; narrow with column_query/role. Semantic fields include roles, native refs, and granularities. Set relationship_offset to page relationships instead. Follow the returned Next cursor with the same source, table, and filters.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "source_id": {
-            "type": "string"
-          },
-          "table_key": {
-            "type": "string"
-          },
-          "column_offset": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "Zero-based index of the first column to list."
-          },
-          "relationship_offset": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "Return a relationship page instead of fields, starting at this zero-based index. Omit for field pages."
-          },
-          "column_query": {
-            "type": "string",
-            "description": "Case-insensitive substring matched against column names and descriptions."
-          },
-          "role": {
-            "type": "string",
-            "enum": ["dimension", "time_dimension", "measure"],
-            "description": "Semantic models only: list columns with this role."
-          }
-        },
-        "required": [
-          "source_id",
-          "table_key"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "probe_data",
-      "description": "Resolve unknown values or coverage with a bounded read-only query against a connected table or semantic model. Use known schema from context or describe_data. Semantic queries select dimensions and measures in columns; native uses an advertised language and its query_capabilities.native_query_guidance. A small result does not guarantee a cheap scan; check query_capabilities. Results are inspection evidence, not workspace inputs; use propose_data_operation to load data for analysis.",
+      "description": "Resolve unknown values or coverage with a bounded read-only query against a connected table or semantic model. Use known schema from context or the table's sources/ file (read_file). Semantic queries select dimensions and measures in columns; native uses an advertised language and its query_capabilities.native_query_guidance. A small result does not guarantee a cheap scan; check query_capabilities. Results are inspection evidence, not workspace inputs; use propose_data_operation to load data for analysis.",
       "parameters": {
         "type": "object",
         "properties": {

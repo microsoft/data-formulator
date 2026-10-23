@@ -206,6 +206,60 @@ def test_a_rate_limited_model_call_waits_longer_and_retries_more(workspace, monk
     assert waits == [2.0, 4.0, 8.0]
 
 
+def test_a_rate_limited_model_call_waits_as_long_as_the_provider_asks(workspace, monkeypatch) -> None:
+    from types import SimpleNamespace
+    from data_formulator.analyst import agent as agent_module
+
+    class RateLimitError(Exception):
+        pass
+
+    class MidStreamFallbackError(Exception):
+        pass
+
+    in_headers = RateLimitError("exceeded token rate limit")
+    in_headers.response = SimpleNamespace(headers={"retry-after-ms": "2500"})
+    wrapped = MidStreamFallbackError("rate limit")
+    wrapped.original_exception = in_headers
+    in_message = RateLimitError("Rate limit is exceeded. Please retry after 7 seconds.")
+    too_long = RateLimitError("429 rate limit")
+    too_long.litellm_response_headers = {"retry-after": "600"}
+    unsaid = RateLimitError("exceeded token rate limit")
+    assert agent_module._retry_after_seconds(wrapped) == 2.5
+    assert agent_module._retry_after_seconds(in_message) == 7.0
+    assert agent_module._retry_after_seconds(unsaid) is None
+
+    waits: list[float] = []
+    monkeypatch.setattr(agent_module.time, "sleep", waits.append)
+    client = MagicMock()
+    client.model = "m"
+    client.get_completion_with_tools.side_effect = [wrapped, in_message, too_long, iter(["chunk"])]
+    agent = AnalystAgent(client=client, workspace=workspace)
+    agent.cancel = None
+    assert list(agent._open_stream([{"role": "user", "content": "hi"}], [])) == ["chunk"]
+    assert waits == [2.5, 7.0, 60.0]
+
+
+def test_a_rate_limit_wait_is_shown_to_the_user(workspace, monkeypatch) -> None:
+    import flask
+    from data_formulator.analyst import agent as agent_module
+    from data_formulator.error_handler import flush_stream_warnings
+
+    class RateLimitError(Exception):
+        pass
+
+    monkeypatch.setattr(agent_module.time, "sleep", lambda seconds: None)
+    client = MagicMock()
+    client.model = "m"
+    client.get_completion_with_tools.side_effect = [RateLimitError("exceeded token rate limit"), iter(["chunk"])]
+    agent = AnalystAgent(client=client, workspace=workspace)
+    agent.cancel = None
+    with flask.Flask(__name__).test_request_context():
+        list(agent._open_stream([{"role": "user", "content": "hi"}], []))
+        warnings = [json.loads(line)["warning"] for line in flush_stream_warnings()]
+    assert [w["message_code"] for w in warnings] == ["LLM_RATE_LIMIT_RETRY"]
+    assert "Retrying in 10 seconds" in warnings[0]["message"]
+
+
 def test_a_continued_turn_shows_what_is_new_to_the_conversation(workspace) -> None:
     from types import SimpleNamespace
     from data_formulator.analyst.session_files import render_turn_context

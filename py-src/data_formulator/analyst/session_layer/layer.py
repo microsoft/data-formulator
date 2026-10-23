@@ -112,6 +112,13 @@ def _json(value: Any) -> str:
     return json.dumps(value, indent=2, ensure_ascii=False, default=str) + "\n"
 
 
+
+def _chart_note(table: str, columns: list[str]) -> str:
+    data = (f"Its data: session/tables/{table}.json (transformation code and sample rows); read it with this chart "
+            "in one read_file call, or compute on it with Python. ") if table else ""
+    return (data + f"Edit chart_type, encodings (fields are columns of {table or 'its table'}: {', '.join(columns)}), "
+            "config, title, subtitle, or theme; the table cannot change. Invalid edits are rejected with the reasons.")
+
 class SessionLayer:
     def __init__(self, state: Any, workspace: Any = None):
         self.state = normalize_state(state)
@@ -176,6 +183,46 @@ class SessionLayer:
         table = self.table_by_id.get(chart.get("tableRef"))
         return chart.get("title") or f"{chart.get('chartType')} of {(table or {}).get('displayId') or chart.get('tableRef')}"
 
+    def name_of(self, path: str) -> str | None:
+        """The name the user sees for a session path, without building its view."""
+        folder, _, leaf = path[len("session/"):].partition("/") if path.startswith("session/") else ("", "", "")
+        stem = leaf.rsplit(".", 1)[0]
+        if folder == "tables":
+            table = next((table for table in self.tables if self.table_name(table) == stem), None)
+            if table is not None:
+                return str(table.get("displayId") or stem)
+            metadata = self.workspace.get_table_metadata(stem) if self.workspace is not None else None
+            return str(getattr(metadata, "original_name", None) or stem) if metadata is not None else None
+        if folder == "charts":
+            chart = next((chart for chart in self.charts if chart["id"] == stem), None)
+            return self.chart_name(chart) if chart else (self.overlay.get(path) or {}).get("name")
+        if folder == "reports":
+            report = next((report for report in self.reports if report["id"] == stem), None)
+            return self.report_name(report) if report else None
+        if folder == "references":
+            reference = next((reference for reference in self.references if reference["id"] == stem), None)
+            return reference.get("displayName") if reference else None
+        if folder == "threads":
+            return f"Thread {stem}"
+        if path == "session/index.md":
+            return "Session index"
+        return None
+
+    def table_code(self, name: str) -> str:
+        """The code that derived a session table, or "" for a loaded one."""
+        table = next((table for table in self.tables if self.table_name(table) == name), None)
+        return str(((table or {}).get("derive") or {}).get("code") or "")
+
+    def table_shape(self, name: str) -> tuple[int | None, int | None]:
+        """(rows, columns) of a session table, from the session state or the workspace."""
+        table = next((table for table in self.tables if self.table_name(table) == name), None)
+        if table is not None:
+            return self.row_count(table), len(self.table_columns(table))
+        metadata = self.workspace.get_table_metadata(name) if self.workspace is not None else None
+        if metadata is None:
+            return None, None
+        return metadata.row_count, len(metadata.columns or [])
+
     # -- dependencies ---------------------------------------------------------
 
     def _input_names(self, table: dict[str, Any], kind: str) -> list[str]:
@@ -201,8 +248,13 @@ class SessionLayer:
     def report_name(self, report: dict[str, Any]) -> str:
         return report.get("title") or report["id"]
 
+    def report_content(self, report: dict[str, Any]) -> str:
+        """A report's text as of now: an edit made earlier in this run counts."""
+        edited = self.overlay.get(f"session/reports/{report['id']}.md")
+        return str(edited["content"]) if edited else (report.get("content") or "")
+
     def reports_showing(self, chart_id: str) -> list[str]:
-        return [self.report_name(report) for report in self.reports if f"chart://{chart_id}" in (report.get("content") or "")]
+        return [self.report_name(report) for report in self.reports if f"chart://{chart_id}" in self.report_content(report)]
 
     def charts_of(self, table: dict[str, Any]) -> list[dict[str, Any]]:
         return [chart for chart in self.charts if chart.get("tableRef") == table["id"]]
@@ -247,6 +299,8 @@ class SessionLayer:
                 "charts": [chart["id"] for chart in self.charts_of(table)],
                 "computed_into": [other["id"] for other in self.computed_into(table)],
                 "reports": self.reports_using(table),
+                "reports_made_from": [self.report_name(report) for report in self.reports
+                                      if report.get("triggerTableId") == table["id"]],
                 **({"files": files} if files else {}), **({"imports": imports} if imports else {}),
             })
         charts = [{"id": chart["id"], "name": self.chart_name(chart), "table": chart.get("tableRef"),
@@ -277,7 +331,7 @@ class SessionLayer:
             edited = bool(agent_chart) and bool(
                 agent_chart.get("titleKey") and agent_chart["titleKey"] != encoding_fingerprint(agent_chart))
             report = next((report for report in all_reports if report.get("triggerTableId") == table["id"]
-                           or any(f"chart://{id}" in (report.get("content") or "") for id in chart_ids)), None)
+                           or any(f"chart://{id}" in self.report_content(report) for id in chart_ids)), None)
             name = self.table_name(table)
             blocked = (f"the table {derived_from.get('displayId') or derived_from['id']} was computed from it" if derived_from
                        else "another chart was made from it" if later
@@ -395,8 +449,7 @@ class SessionLayer:
             table = self.table_by_id[chart["tableRef"]]
             columns = [column["name"] for column in self.table_columns(table)]
             return {"content": _json(spec), "editable": True, "name": self.chart_name(chart), "columns": columns,
-                    "note": f"Edit chart_type, encodings (fields are columns of {spec['table']}: {', '.join(columns)}), "
-                            "config, title, subtitle, or theme; the table cannot change. Invalid edits are rejected with the reasons."}
+                    "note": _chart_note(spec["table"], columns)}
         if folder == "reports" and leaf.endswith(".md"):
             report = next((report for report in self.reports if report["id"] == stem), None)
             return None if report is None else {"content": report.get("content") or "", "editable": True,
@@ -438,14 +491,11 @@ class SessionLayer:
         return self._description_cache
 
     def _data_profile(self, name: str, columns: list[dict[str, Any]]) -> dict[str, Any]:
-        """What the workspace knows about a table's data: input id, file, descriptions, values, rows."""
+        """What the workspace knows about a table's data: file, descriptions, values, rows."""
         if self.workspace is None:
             return {}
         profile: dict[str, Any] = {}
         try:
-            from data_formulator.analyst.workspace_inputs import _input_id
-            metadata = self.workspace.get_table_metadata(name)
-            profile["input_id"] = _input_id("data", name, getattr(metadata, "content_hash", None))
             profile["file"] = self.workspace.get_relative_data_file_path(name)
         except Exception:
             pass
@@ -484,7 +534,7 @@ class SessionLayer:
         return profile
 
     def _table_view(self, table: dict[str, Any]) -> dict[str, Any]:
-        """Everything about a table: the input id to cite, the file to read, columns with values, and links."""
+        """Everything about a table: the file to read, columns with values, and links."""
         name = self.table_name(table)
         derive = table.get("derive") or {}
         sources = [self.table_by_id[id] for id in derive.get("source") or [] if id in self.table_by_id]
@@ -859,7 +909,7 @@ class SessionLayer:
         if connected:
             # Sources the user connected, beyond this session: searchable for more data.
             lines.extend([f"## Connected data sources ({len(connected)})",
-                          "Searchable with summarize_data_sources and find_data: " + ", ".join(connected[:12])
+                          "Catalogs under sources/ (search covers them; list_files sources/ to browse): " + ", ".join(connected[:12])
                           + (f" (+{len(connected) - 12} more)" if len(connected) > 12 else ""), ""])
         if self.workspace is not None:
             try:
@@ -953,7 +1003,7 @@ class SessionLayer:
         """A chart this run made, editable for the rest of the run."""
         self.overlay[f"session/charts/{chart_id}.json"] = {
             "content": _json(spec), "editable": True, "name": spec.get("title") or chart_id,
-            "columns": columns, "made_in_run": True}
+            "columns": columns, "made_in_run": True, "note": _chart_note(spec.get("table") or "", columns)}
 
     def forget(self, *, tables: set[str] = frozenset(), charts: set[str] = frozenset(),
                references: set[str] = frozenset()) -> None:

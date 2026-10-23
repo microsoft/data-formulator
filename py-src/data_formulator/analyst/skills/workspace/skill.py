@@ -4,7 +4,6 @@ import json
 import io
 import hashlib
 import mimetypes
-from pathlib import PurePosixPath
 from urllib.parse import quote
 from typing import Any, Generator
 
@@ -20,11 +19,7 @@ from data_formulator.sandbox.session_imports import helper_warnings, sign_helper
 from data_formulator.analyst.skills.html_app.skill import (
     REACT_APP_SUFFIX, check_app_revision, replace_file_in_place,
 )
-from data_formulator.analyst.workspace_inputs import (
-    WorkspaceInputEngine,
-    normalize_external_references,
-    workspace_memory_is_fresh,
-)
+from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine
 from .data_loading import WorkspaceDataLoading
 
 
@@ -38,24 +33,22 @@ class WorkspaceSkill:
         args: dict[str, Any],
         ctx: SkillContext,
     ) -> ToolResult:
-        if name in {
-            "summarize_data_sources", "list_data", "find_data", "describe_data", "probe_data",
-        }:
+        if name == "probe_data":
             return self._data_loading.handle_tool(name, args, ctx)
         if name == "list_files":
             return ToolResult(text=json.dumps(SessionFiles(ctx).list(args.get("path") or ""), ensure_ascii=False))
         if name == "read_file":
             files = SessionFiles(ctx)
-            if args.get("paths"):
-                paths = [*([args["path"]] if args.get("path") else []), *args["paths"]]
-                return ToolResult(text=json.dumps(files.read_many(paths, args.get("limit", 400)), ensure_ascii=False))
-            return ToolResult(text=json.dumps(files.read(
-                args.get("path"), args.get("offset", 1), args.get("limit", 400)), ensure_ascii=False))
-        if name == "search_files":
-            return ToolResult(text=json.dumps(SessionFiles(ctx).search(
-                args.get("pattern"), args.get("path") or "", regex=bool(args.get("regex")),
-                case_sensitive=bool(args.get("case_sensitive")), glob=args.get("glob"),
-                max_results=args.get("max_results", 50)), ensure_ascii=False))
+            items = args.get("files")
+            if items is None:
+                # Older conversations read with path/paths/offset/limit.
+                items = ([{key: args[key] for key in ("path", "offset", "limit") if args.get(key) is not None}]
+                         if args.get("path") else []) + [{"path": path} for path in args.get("paths") or []]
+            return ToolResult(text=json.dumps(files.read_items(items), ensure_ascii=False, default=str))
+        if name == "search":
+            return ToolResult(text=SessionFiles(ctx).search(
+                args.get("query") or args.get("pattern") or "", args.get("path"), regex=bool(args.get("regex")),
+                max_results=args.get("max_results", 20)))
         if name == "move_file":
             moved = self._move_file(args, ctx)
             ctx.payload["workspace_inputs"] = WorkspaceInputEngine(
@@ -251,110 +244,6 @@ class WorkspaceSkill:
                 **({"replaces": replaces} if replaces else {}),
                 **self._helper_info(metadata.name),
             }, ensure_ascii=False))
-        input_tables = (ctx.payload or {}).get("input_tables") or []
-        input_tool_names = {
-            "list_workspace_items",
-            "read_workspace_item",
-            "search_workspace_items",
-        }
-        input_engine = (
-            WorkspaceInputEngine(ctx.workspace, input_tables)
-            if name in input_tool_names else None
-        )
-        if name == "list_workspace_items" and input_engine is not None:
-            scope = args.get("scope", "input")
-            query = str(args.get("query", "")).casefold().strip()
-            if scope == "input":
-                kinds = args.get("kinds")
-                local_kinds = [kind for kind in kinds if kind != "external-table-reference"] if kinds else None
-                result = json.loads(input_engine.list_items(
-                    kinds=local_kinds,
-                    query=args.get("query", ""),
-                )) if local_kinds or not kinds else {"inputs": [], "count": 0}
-                if not kinds or "data" in kinds or "external-table-reference" in kinds:
-                    result["inputs"].extend({
-                        "id": reference["id"], "kind": "external-table-reference",
-                        "display_name": reference["displayName"],
-                        "source_id": reference["connectorId"], "table_key": reference["tableKey"],
-                        "summary": reference.get("summary", {}),
-                        "capabilities": ["describe_data", "probe_data", "propose_data_operation"],
-                    } for reference in normalize_external_references(ctx.payload.get("external_references"))
-                        if not query or query in json.dumps(reference, ensure_ascii=False).casefold())
-                return ToolResult(text=json.dumps({
-                    "scope": scope,
-                    "items": result["inputs"],
-                    "count": len(result["inputs"]),
-                }, ensure_ascii=False))
-            if args.get("kinds"):
-                raise ValueError("kinds is only supported for input scope")
-            if scope == "memory":
-                items = [
-                    {
-                        "id": item.id,
-                        "name": item.name,
-                        "kind": item.kind,
-                        "media_type": item.media_type,
-                        "path": f"memory/{item.filename}",
-                        "description": item.description,
-                        "content_hash": item.content_hash,
-                        "row_count": item.row_count,
-                        "columns": [column.name for column in item.columns],
-                        "sources": [source.__dict__ for source in item.sources],
-                        "fresh": workspace_memory_is_fresh(item, ctx.workspace),
-                        "updated_at": item.updated_at.isoformat(),
-                    }
-                    for item in ctx.workspace.list_memory()
-                    if not query or query in item.name.casefold()
-                ]
-            elif scope == "temp":
-                items = []
-                for raw_path in ctx.workspace.list_scratch_files():
-                    path = PurePosixPath(str(raw_path))
-                    display_name = ctx.workspace.get_scratch_display_name(path.as_posix().removeprefix("scratch/"))
-                    if query and query not in path.name.casefold() and query not in (display_name or "").casefold():
-                        continue
-                    with ctx.workspace.resolve_scratch_file(path.as_posix().removeprefix("scratch/")).open("rb") as source:
-                        content_hash = hashlib.file_digest(source, "sha256").hexdigest()
-                    items.append({
-                        "id": f"temp:{path.as_posix()}",
-                        "name": path.name,
-                        **({"display_name": display_name} if display_name else {}),
-                        "kind": "temp",
-                        "content_hash": content_hash,
-                        "path": path.as_posix(),
-                        "capabilities": ["python"],
-                    })
-            else:
-                raise ValueError(f"Unsupported workspace item scope: {scope}")
-            return ToolResult(text=json.dumps({
-                "scope": scope,
-                "items": items,
-                "count": len(items),
-            }, ensure_ascii=False))
-        if name == "read_workspace_item" and input_engine is not None:
-            reference = next((reference for reference in normalize_external_references(ctx.payload.get("external_references"))
-                              if reference["id"] == args.get("item_id")), None)
-            if reference is not None:
-                return ToolResult(text=json.dumps({
-                    "reference": reference, "source_id": reference["connectorId"], "table_key": reference["tableKey"],
-                    "note": "Cached metadata only, not rows. Use describe_data for missing schema, probe_data for bounded evidence, "
-                            "or propose_data_operation to load a filtered subset for analysis. This reference is not a Python input.",
-                }, ensure_ascii=False))
-            return ToolResult(text=input_engine.read_item(
-                args.get("item_id", ""),
-                locator=args.get("locator"),
-                options=args.get("options"),
-                limit=args.get("limit", 200),
-            ))
-        if name == "search_workspace_items" and input_engine is not None:
-            return ToolResult(text=input_engine.search_items(
-                args.get("query", ""),
-                input_ids=args.get("item_ids"),
-                kinds=args.get("kinds"),
-                options=args.get("options"),
-                max_results=args.get("max_results", 20),
-                external_references=ctx.payload.get("external_references"),
-            ))
         return ToolResult(text=f"workspace has no tool '{name}'.")
 
     @staticmethod

@@ -172,7 +172,7 @@ class PowerBIDataLoader(ExternalDataLoader):
             "native_query_languages": ["dax"],
             "native_query_guidance": (
                 "One read-only DAX query: optional DEFINE (MEASURE/VAR/COLUMN/TABLE) then exactly one EVALUATE, "
-                "using table, column and measure names from describe_data, e.g. "
+                "using table, column and measure names from the model's sources/ file, e.g. "
                 "EVALUATE SUMMARIZECOLUMNS('Product'[Category], \"Sales\", [Sales]). Use it for measure-value "
                 "filters, TOPN/ranking or shapes the structured query cannot express. Maximum 10000 rows."
             ),
@@ -457,14 +457,14 @@ class PowerBIDataLoader(ExternalDataLoader):
         columns = query.get("columns") or []
         if not columns:
             raise ValueError(f"Select at least one dimension or measure of {source_table!r} in columns. "
-                             "Use describe_data to list fields.")
+                             "Read the model's sources/ file to list fields.")
         if len(set(columns)) != len(columns):
             raise ValueError("Each column may be selected only once.")
         by_name = {field["name"]: field for field in fields}
         unknown = [column for column in columns if column not in by_name]
         if unknown:
             raise ValueError(f"Unknown fields {unknown} for semantic model {source_table!r}. "
-                             "Use describe_data to list fields.")
+                             "Read the model's sources/ file to list fields.")
         selected = [by_name[column] for column in columns]
         dimensions = [field for field in selected if field["role"] != "measure"]
         measures = [field for field in selected if field["role"] == "measure"]
@@ -526,7 +526,7 @@ class PowerBIDataLoader(ExternalDataLoader):
         for item in filters:
             field = by_name.get(item.get("column"))
             if field is None:
-                raise ValueError(f"Unknown filter column {item.get('column')!r}. Filter on a dimension name from describe_data.")
+                raise ValueError(f"Unknown filter column {item.get('column')!r}. Filter on a dimension name from the model's sources/ file.")
             if field["role"] == "measure":
                 raise ValueError("Filters on measure values require a native dax query.")
             ref, op, value = field["ref"], str(item.get("op") or item.get("operator") or "").upper(), item.get("value")
@@ -577,7 +577,7 @@ class PowerBIDataLoader(ExternalDataLoader):
         if len(re.findall(r"\bEVALUATE\b", stripped, re.IGNORECASE)) != 1:
             raise ValueError("dax must contain exactly one EVALUATE (one result table).")
         if re.search(r"\bINFO\s*\.", stripped, re.IGNORECASE) or "$SYSTEM" in stripped.upper():
-            raise ValueError("dax may not query model metadata; use describe_data instead.")
+            raise ValueError("dax may not query model metadata; read the model's sources/ file instead.")
 
     # -- Results --------------------------------------------------------------
 

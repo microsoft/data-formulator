@@ -467,6 +467,7 @@
     "deletedItems": "{{names}} gelöscht",
     "listingFiles": "Dateien werden aufgelistet",
     "readingFile": "Wird gelesen",
+    "searchingSession": "Sitzung wird durchsucht",
     "searchingFiles": "Dateien werden durchsucht",
     "movingFile": "Wird verschoben",
     "movedFile": "{{from}} nach {{to}} verschoben",

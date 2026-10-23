@@ -810,9 +810,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         };
 
         // ── Route through the unified AnalystAgent (design-35/36) ──
-        // The unified agent can also write reports inside the same run, so we
-        // ship the available charts (same shape the report flow gets) for the
-        // report skill's inspect_chart.
+        // The chart ids a report edit may embed (chart://<id>). The agent reads
+        // charts and their data as session files, so no rows or code are sent.
         const streamUrl = getUrls().ANALYST_STREAMING;
         const availableCharts = charts
             .filter(c => c.chartType !== 'Table' && c.chartType !== 'Auto')
@@ -833,8 +832,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     chart_type: c.chartType,
                     encodings,
                     table_ref: tbl?.virtual?.tableId || c.tableRef,
-                    code: tbl?.derive?.code || '',
-                    chart_data: tbl ? { name: tbl.virtual?.tableId || tbl.id, rows: tbl.rows.slice(0, 50) } : undefined,
                 };
             });
         requestBody.charts = availableCharts;

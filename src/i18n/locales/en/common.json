@@ -468,6 +468,7 @@
     "deletedItems": "Deleted {{names}}",
     "listingFiles": "Listing files",
     "readingFile": "Reading",
+    "searchingSession": "Searching the session",
     "searchingFiles": "Searching files",
     "movingFile": "Moving",
     "movedFile": "Moved {{from}} to {{to}}",

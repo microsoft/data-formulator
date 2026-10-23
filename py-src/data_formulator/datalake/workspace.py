@@ -881,6 +881,64 @@ class Workspace:
             lambda metadata: removed.__setitem__(0, metadata.remove_memory(memory.id))
         )
         return removed[0]
+
+    def migrate_legacy_memory(self) -> list[str]:
+        """Move legacy memory into ordinary workspace files under ``memory/`` (design-docs/65).
+
+        Nothing writes memory any more; the agent reads files. A text memory becomes
+        ``memory/<name>.md`` with its description and sources as a front-matter header; a
+        table memory becomes ``memory/<name>.parquet`` with ``memory/<name>.md`` beside it
+        when it has a description or sources. Returns the new file names.
+        """
+        try:
+            memories = self.list_memory()
+        except Exception:
+            return []
+        moved: list[str] = []
+        taken = set(self.get_metadata().files)
+        for memory in memories:
+            suffix = ".parquet" if memory.kind == "table" else ".md"
+            stem = f"memory/{memory.name}"
+            name, number = f"{stem}{suffix}", 2
+            while name in taken or (suffix == ".parquet" and f"{name[:-len(suffix)]}.md" in taken):
+                name, number = f"{stem}_{number}{suffix}", number + 1
+            try:
+                content = self._read_memory_file(memory.filename)
+            except (OSError, ValueError, FileNotFoundError):
+                continue
+            header = [f"description: {json.dumps(memory.description, ensure_ascii=False)}"] if memory.description else []
+            if memory.sources:
+                header.append("sources:")
+                header += [f"  - {json.dumps(source.name, ensure_ascii=False)} ({source.input_id})"
+                           for source in memory.sources]
+            if memory.kind == "table":
+                self.save_workspace_file(content, name, memory.media_type, display_name=memory.name)
+                if header:
+                    note = name[:-len(".parquet")] + ".md"
+                    self.save_workspace_file(
+                        ("---\n" + "\n".join(header) + f"\n---\n\nNotes for {name}.\n").encode("utf-8"),
+                        note, "text/markdown", display_name=f"{memory.name} notes")
+                    taken.add(note)
+            else:
+                text = content.decode("utf-8", errors="replace")
+                if header:
+                    text = "---\n" + "\n".join(header) + "\n---\n\n" + text
+                self.save_workspace_file(text.encode("utf-8"), name, "text/markdown", display_name=memory.name)
+            taken.add(name)
+            self.delete_memory(memory.id)
+            moved.append(name)
+        return moved
+
+    def local_workspace_file(self, name: str) -> Path | None:
+        """A local path to a workspace file for streaming reads, or None when it has none."""
+        workspace_file = self.get_metadata().files.get(name)
+        if workspace_file is None:
+            return None
+        try:
+            path = self._confined_files.resolve(workspace_file.filename)
+        except ValueError:
+            return None
+        return path if path.is_file() else None
     
     
     def delete_table(self, table_name: str) -> bool:

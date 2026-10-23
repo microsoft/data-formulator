@@ -84,10 +84,9 @@ def test_workspace_owns_discovery_and_loading_without_an_extra_skill_gate() -> N
     assert meta.always_on is False
     assert meta.action_names == ("propose_data_operation",)
     assert set(meta.tool_names) == {
-        "create_file", "edit_file", "delete_items", "list_files", "read_file", "search_files", "move_file",
-        "create_data", "update_data", "list_workspace_items",
-        "read_workspace_item", "search_workspace_items",
-        "summarize_data_sources", "list_data", "find_data", "describe_data", "probe_data",
+        "create_file", "edit_file", "delete_items", "list_files", "read_file", "search", "move_file",
+        "create_data", "update_data",
+        "probe_data",
     }
     assert registry.tools_for(["meta"]) == registry.tools_for(["meta", "workspace"])
     assert {
@@ -149,7 +148,7 @@ def test_workspace_baseline_includes_loading_guidance(tmp_path: Path) -> None:
     assert "Retaining useful columns\nor finer detail" in prompt
     assert "are the only data that can be read directly" not in prompt
     assert "propose_data_operation" in agent._legal_actions()
-    assert "`summarize_data_sources({})` across connected sources" in prompt
+    assert "`list_files` of `sources/` (every connected source with its table count)" in prompt
     assert "Do not ask which source to inspect for a broad availability question" in prompt
 
 
@@ -215,12 +214,12 @@ def test_meta_profile_expands_runtime_capabilities_without_expanding_loaded_name
 
     assert agent._loaded_skills == {"meta"}
     assert agent._legal_actions() == frozenset({
-        "visualize", "ask_user", "long_response", "propose_data_operation",
+        "visualize", "ask_user", "long_response", "propose_data_operation", "write_report",
     })
     handlers = agent._loaded_skill_tool_map()
     assert isinstance(handlers["execute_python_script"], AnalysisSkill)
-    assert isinstance(handlers["list_workspace_items"], WorkspaceSkill)
-    assert handlers["find_data"] is handlers["list_workspace_items"]
+    assert isinstance(handlers["search"], WorkspaceSkill)
+    assert handlers["probe_data"] is handlers["search"]
     assert "read_connector_form" not in handlers
     prompt = agent._build_system_prompt()
     assert "[SKILL: meta] Always-on baseline" in prompt
@@ -235,7 +234,7 @@ def test_discovery_to_import_policy_preserves_confirmation_and_optional_question
     agent = AnalystAgent(client=None, workspace=_Workspace(tmp_path))
     agent._loaded_skills = {"meta"}
     prompt = agent._build_system_prompt() + "\n" + agent.registry.load_body("connected_data")
-    assert "search connected catalogs with `find_data` before asking the user" in prompt
+    assert "`search` connected catalogs before asking the user" in prompt
     assert "need not block a bounded catalog search" in prompt
     assert "Use one option with `user_review_needed: false` for a clear load" in prompt
     assert "multiple alternatives always require review" in prompt
@@ -246,7 +245,8 @@ def test_discovery_to_import_policy_preserves_confirmation_and_optional_question
         spec["function"]["name"]: spec["function"]
         for spec in agent.registry.tools_for(["meta"]) + agent.registry.action_tools_for(["meta"])
     }
-    assert "Search results are not loaded data" in specs["find_data"]["description"]
+    assert "then connected-source catalogs (sources/" in specs["search"]["description"]
+    assert not {"find_data", "describe_data", "list_data", "summarize_data_sources"} & set(specs)
     assert "following the connected_data skill" in specs["propose_data_operation"]["description"]
     assert "user_review_needed=false" in specs["propose_data_operation"]["description"]
     assert "user_review_needed" not in specs["propose_data_operation"]["parameters"]["required"]
@@ -256,15 +256,13 @@ def test_discovery_to_import_policy_preserves_confirmation_and_optional_question
 def test_tool_progress_args_are_useful_and_credential_safe() -> None:
     from data_formulator.analyst.agent import _tool_progress_args
 
-    assert _tool_progress_args("find_data", {
+    assert _tool_progress_args("search", {
         "query": "orders",
-        "source_id": "warehouse",
-        "path": ["public"],
+        "path": ["sources/warehouse/"],
         "password": "secret",
     }) == {
         "query": "orders",
-        "source_id": "warehouse",
-        "path": ["public"],
+        "path": ["sources/warehouse/"],
     }
     assert _tool_progress_args("list_connectors", {
         "source_type": "databricks",
@@ -311,7 +309,7 @@ def test_resume_keeps_workspace_loading_available_without_a_separate_gate(tmp_pa
 
     assert agent._loaded_skills == {"meta", "connected_data"}
     assert "propose_data_operation" in agent._legal_actions()
-    assert "find_data" in agent._loaded_skill_tool_map()
+    assert "probe_data" in agent._loaded_skill_tool_map()
 
 
 @pytest.mark.parametrize("has_system_prompt", [True, False])
@@ -363,7 +361,7 @@ def test_resume_refreshes_instructions_and_preserves_conversation(tmp_path: Path
     assert agent._run_payload["external_references"] == [reference]
     agent._build_system_prompt.assert_called_once()
     assert agent._loaded_skills == {"meta", "report", "connected_data"}
-    assert "find_data" in agent._loaded_skill_tool_map()
+    assert "probe_data" in agent._loaded_skill_tool_map()
     assert "write_report" in agent._legal_actions()
 
 
@@ -743,28 +741,26 @@ def test_proposal_rejects_exact_query_already_loaded_in_workspace(tmp_path: Path
     assert "recent_orders" in events[0]["message"]
 
 
-def test_skill_uses_shared_catalog_discovery(tmp_path: Path) -> None:
+def test_connected_catalogs_are_files_under_sources(tmp_path: Path) -> None:
     save_catalog(tmp_path, "warehouse", [{
         "name": "orders",
         "table_key": "public.orders",
         "path": ["public", "orders"],
-        "metadata": {"description": "Customer orders"},
+        "metadata": {"description": "Customer orders", "columns": [{"name": "order_id", "type": "int"}]},
     }])
     skill = build_registry().get_skill("workspace")
-    assert skill is not None
+    context = _context(_Workspace(tmp_path))
 
-    result = skill.handle_tool(
-        "find_data",
-        {"query": "orders", "source_id": "warehouse"},
-        _context(_Workspace(tmp_path)),
-    )
-
-    payload = json.loads(result.text)
-    assert payload["results"][0]["source_id"] == "warehouse"
-    assert payload["results"][0]["table_key"] == "public.orders"
+    found = skill.handle_tool("search", {"query": "orders", "path": ["sources/"]}, context).text
+    assert "## sources/warehouse/public/orders — table in warehouse" in found
+    listed = json.loads(skill.handle_tool("list_files", {"path": "sources/warehouse/"}, context).text)
+    assert listed["files"] == [{"path": "sources/warehouse/public/", "kind": "folder", "detail": "1 table"}]
+    view = json.loads(skill.handle_tool("read_file", {"files": [{"path": "sources/warehouse/public/orders"}]},
+                                        context).text)["files"][0]["content"]
+    assert "source_id: warehouse\ntable_key: public.orders" in view and "- order_id (int)" in view
 
 
-def test_phrase_search_falls_back_to_its_words_best_match_first(tmp_path: Path) -> None:
+def test_catalog_search_needs_every_word_or_a_regex(tmp_path: Path) -> None:
     save_catalog(tmp_path, "warehouse", [
         {"name": "aapl_stock.csv", "table_key": "aapl_stock.csv", "metadata": {"description": "Daily stock prices"}},
         {"name": "fuel.csv", "table_key": "fuel.csv", "metadata": {"description": "Weekly fuel prices"}},
@@ -772,15 +768,14 @@ def test_phrase_search_falls_back_to_its_words_best_match_first(tmp_path: Path) 
     ])
     skill = build_registry().get_skill("workspace")
 
-    def find(query: str) -> dict:
-        return json.loads(skill.handle_tool("find_data", {"query": query}, _context(_Workspace(tmp_path))).text)
+    def search(query: str, regex: bool = False) -> str:
+        return skill.handle_tool("search", {"query": query, "path": ["sources/"], "regex": regex},
+                                 _context(_Workspace(tmp_path))).text
 
-    payload = find("historical stock prices")
-    assert [hit["name"] for hit in payload["results"]] == ["aapl_stock.csv", "fuel.csv"]
-    assert payload["query"] == "historical stock prices"
-    assert "match any of its words" in payload["note"]
-    assert find("stock|nothing")["results"][0]["name"] == "aapl_stock.csv"
-    assert find("historical (records)")["results"] == []
+    assert search("historical stock prices").startswith("No matches")
+    assert "aapl_stock.csv" in search("stock prices") and "fuel.csv" not in search("stock prices")
+    assert "aapl_stock.csv" in search("stock|nothing", regex=True)
+    assert "fuel.csv" in search("prices") and "weather.csv" not in search("prices")
 
 
 def test_native_probe_is_validated_by_loader_and_bounded(tmp_path: Path) -> None:
@@ -868,51 +863,25 @@ def test_probe_budget_is_shared_within_run_and_isolated_between_runs(tmp_path: P
         isolated_budget = next(iter(isolated_state.values()))
         assert isolated_budget.remaining == 19
 
-def test_search_hits_carry_a_preview_and_uncached_ones_are_fetched_once(tmp_path: Path, monkeypatch) -> None:
-    import time
-    import data_formulator.data_operations.discovery as discovery
+def test_reading_a_table_without_cached_columns_fetches_them_live_without_caching(tmp_path: Path, monkeypatch) -> None:
     from data_formulator.datalake.catalog_cache import load_catalog
 
-    save_catalog(tmp_path, "warehouse", [
-        {"name": "sales_2024", "table_key": "sales_2024", "path": ["sales_2024"],
-         "metadata": {"columns": [{"name": "region", "type": "str"}, {"name": "amount", "type": "float"}],
-                      "row_count": 120, "sample_rows": [{"region": "N", "amount": 5.0, "note": "x" * 500}]}},
-        {"name": "sales_2025", "table_key": "sales_2025", "path": ["sales_2025"], "metadata": {}},
-        {"name": "sales_slow", "table_key": "sales_slow", "path": ["sales_slow"], "metadata": {}},
-    ])
+    save_catalog(tmp_path, "warehouse", [{"name": "sales_2025", "table_key": "sales_2025", "path": ["sales_2025"],
+                                          "metadata": {}}])
 
     class Loader:
         calls: list = []
 
         def get_metadata(self, path):
             self.calls.append(path)
-            if path == ["sales_slow"]:
-                time.sleep(1)
-            return {"columns": [{"name": "region", "type": "string"}], "row_count": 3,
-                    "sample_rows": [{"region": "S"}]}
+            return {"columns": [{"name": "region", "type": "string"}], "row_count": 3}
 
     loader = Loader()
     monkeypatch.setattr("data_formulator.data_connector.resolve_live_loader", lambda source_id: loader)
-    monkeypatch.setattr(discovery, "PREVIEW_LIVE_SECONDS", 0.3)
     skill = build_registry().get_skill("workspace")
+    view = json.loads(skill.handle_tool("read_file", {"files": [{"path": "sources/warehouse/sales_2025"}]},
+                                        _context(_Workspace(tmp_path))).text)["files"][0]["content"]
 
-    def find() -> dict:
-        found = json.loads(skill.handle_tool("find_data", {"query": "sales"}, _context(_Workspace(tmp_path))).text)
-        return {hit["name"]: hit.get("preview") for hit in found["results"]}
-
-    previews = find()
-    assert previews["sales_2024"]["columns"] == [{"name": "region", "type": "str"}, {"name": "amount", "type": "float"}]
-    assert previews["sales_2024"]["row_count"] == 120 and previews["sales_2024"]["sample_rows"][0]["note"].endswith("…")
-    assert previews["sales_2025"] == {"columns": [{"name": "region", "type": "string"}], "row_count": 3,
-                                      "sample_rows": [{"region": "S"}]}
-    # Too slow for the search: no preview, and the search did not wait for it.
-    assert previews["sales_slow"] is None
-    cached = {table["name"]: table["metadata"] for table in load_catalog(tmp_path, "warehouse")}
-    assert cached["sales_2025"]["columns"] == [{"name": "region", "type": "string"}] and "columns" not in cached["sales_slow"]
-    # What was fetched is cached, so the next search fetches only what is still missing.
-    loader.calls.clear()
-    find()
-    assert loader.calls == [["sales_slow"]]
-
-    monkeypatch.setattr(discovery, "PREVIEW_CHARS", 120)
-    assert find()["sales_2025"] == "omitted for size; use describe_data"
+    assert "metadata: live (fetched from the source; not cached)" in view and "- region (string)" in view
+    assert loader.calls == [["sales_2025"]]
+    assert "columns" not in load_catalog(tmp_path, "warehouse")[0]["metadata"]

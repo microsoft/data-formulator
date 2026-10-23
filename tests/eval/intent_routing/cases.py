@@ -29,8 +29,10 @@ _ACTION_MOVES = {
 }
 _INTERACT_MOVES = {"connector": "connect", "schedule": "schedule", "sessions": "session", "workflow": "workflow",
                    "data_operation": "load", "terminal": "terminal", "question": "ask"}
-SEARCH_TOOLS = {"find_data", "summarize_data_sources", "list_data", "describe_data", "probe_data",
-                "list_connectors"}
+# Catalog discovery: search covers sources/ by default and list_files browses it (design-docs/66);
+# the older discovery tools stay so earlier runs grade the same.
+SEARCH_TOOLS = {"search", "list_files", "find_data", "summarize_data_sources", "list_data", "describe_data",
+                "probe_data", "list_connectors"}
 
 
 def _detail(step: Step) -> str:

@@ -139,8 +139,10 @@ def test_terminal_acquired_data_can_be_analyzed_and_published_without_connector(
     assert not result["truncated"]
     skill = WorkspaceSkill()
     context = SkillContext(client=None, workspace=workspace, runtime=AnalystAgent(client=None, workspace=workspace))
-    items = json.loads(skill.handle_tool("list_workspace_items", {"scope": "temp"}, context).text)["items"]
-    acquired = next(item for item in items if item["path"] == "scratch/usage.csv")
+    listed = json.loads(skill.handle_tool("list_files", {"path": "scratch/"}, context).text)["files"]
+    assert [item["path"] for item in listed] == ["scratch/usage.csv"]
+    acquired = json.loads(skill.handle_tool("read_file", {"files": [{"path": "scratch/usage.csv"}]},
+                                            context).text)["files"][0]
     assert workspace.list_tables() == []
     published = json.loads(skill.handle_tool("create_data", {
         "table_name": "acquired_usage",

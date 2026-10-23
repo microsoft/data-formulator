@@ -1,10 +1,9 @@
 ---
 name: analysis
-description: Execute sandboxed Python and inspect analysis tables.
+description: Execute sandboxed Python over analysis tables and files.
 always_on: false
 tools:
   - execute_python_script
-  - inspect_source_data
 actions: []
 ---
 
@@ -15,8 +14,9 @@ actual workspace paths, not external reference IDs or connector addresses.
 Only `compute_ready: true` load outcomes are local computation inputs; follow
 the workspace policy to materialize a working dataset from a virtual outcome.
 
-- `inspect_source_data(table_names)` returns schema, statistics, and sample rows
-  for analysis input tables. Prefer it for basic inspection.
+- `read_file` of a table's `session/tables/<name>.json` returns schema, statistics, and sample
+  rows; `search` finds rows by their text (for example a code by its label). Prefer them for
+  basic inspection and look-ups.
 - `execute_python_script(code)` runs general-purpose sandboxed Python for data
   inspection, statistics, transformations, and assumption checks. Use `print()`
   to surface output. The namespace persists within an inspection cycle; do not

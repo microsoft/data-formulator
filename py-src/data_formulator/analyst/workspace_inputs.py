@@ -482,14 +482,14 @@ class WorkspaceInputEngine:
             if len(matches) < max_results and query.casefold() in metadata.casefold():
                 matches.append({
                     **source, "match_type": "metadata", "locator": {"metadata": True},
-                    "text": f"{reference['displayName']}: cached metadata matches; use read_workspace_item for details.",
+                    "text": f"{reference['displayName']}: cached metadata matches; read session/references/{reference['id']}.json with read_file for details.",
                 })
 
         return json.dumps(
             {"matches": matches, "count": len(matches), "errors": errors,
              **({"metadata_only_sources": reference_sources,
                  "note": "External references were searched only in cached metadata, not remote rows. "
-                         "No metadata match does not mean no matching records. Use describe_data for missing "
+                         "No metadata match does not mean no matching records. Read the table's sources/ file for missing "
                          "schema and probe_data with source_id and table_key to search remote values."}
                 if reference_sources else {})},
             ensure_ascii=False,

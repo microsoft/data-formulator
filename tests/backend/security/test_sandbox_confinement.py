@@ -62,6 +62,17 @@ def test_worker_keys_share_df_workspaces(tmp_path, monkeypatch):
     assert confinement.worker_key(None) == ""
 
 
+def test_demo_site_workspaces_share_the_worker(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_FORMULATOR_HOME", str(tmp_path))
+    (tmp_path / "users").mkdir()
+    roots = confinement.shared_read_roots()
+    # The sites folder exists before any demo session, so a worker started now can read later ones.
+    assert os.path.realpath(tmp_path / "sites") in roots
+    site_workspace = tmp_path / "sites" / "unesco" / "users" / "visitor" / "workspaces" / "a"
+    assert confinement.worker_key(str(site_workspace)) == confinement.SHARED
+    assert confinement.worker_key(str(tmp_path / "credentials")) != confinement.SHARED
+
+
 def test_worker_environment_drops_server_secrets(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-secret")
     monkeypatch.setenv("CREDENTIAL_VAULT_KEY", "vault")

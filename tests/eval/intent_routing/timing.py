@@ -100,9 +100,10 @@ def call_table(rows: list[dict]) -> list[str]:
 
 
 READ_TOOLS = {"read_file", "find_data", "describe_data", "list_files", "list_data", "summarize_data_sources",
-              "inspect_source_data", "inspect_chart", "list_connectors", "search_files",
-              "list_workspace_items", "read_workspace_item", "search_workspace_items", "probe_data", "list_workflows",
-              "list_sessions"}
+              "inspect_chart", "list_connectors", "search", "probe_data", "list_workflows", "list_sessions",
+              # tools of earlier runs (design-docs/65 replaced them)
+              "inspect_source_data", "search_files", "list_workspace_items", "read_workspace_item",
+              "search_workspace_items"}
 
 
 def purpose(call: dict) -> str:

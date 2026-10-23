@@ -8,8 +8,7 @@ when_to_use: >-
   answer or summary, even if it needs expansion (follow the meta response rules),
   or for producing a single new chart (use visualize).
 always_on: false
-tools:
-  - inspect_chart
+tools: []
 actions:
   - write_report
 ---
@@ -30,10 +29,10 @@ limitations and a takeaway when useful. Do not add sections just to fill a templ
 ## Grounding
 
 Check the evidence behind key claims before writing. Reuse verified findings and
-charts; inspect charts or source data when their meaning or values need confirmation.
-`inspect_chart` returns encodings, a data sample, transformation code, and a rendered
-image when available. Use the backing data for full-population claims, not just the
-preview. Create new charts or analysis only where needed for the requested report.
+charts; read a chart and its table together with `read_file` (`session/charts/<id>.json`
+gives the encodings; the table view gives the transformation code and sample rows)
+when their meaning or values need confirmation. Use the backing data for
+full-population claims, not just the sample. Create new charts or analysis only where needed for the requested report.
 Do not invent numbers or imply unsupported causation; distinguish findings from
 uncertainty and disclose material coverage limits.
 

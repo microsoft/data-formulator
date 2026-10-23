@@ -468,6 +468,7 @@
     "deletedItems": "{{names}} हटाया गया",
     "listingFiles": "फ़ाइलें सूचीबद्ध की जा रही हैं",
     "readingFile": "पढ़ा जा रहा है",
+    "searchingSession": "सत्र में खोजा जा रहा है",
     "searchingFiles": "फ़ाइलें खोजी जा रही हैं",
     "movingFile": "ले जाया जा रहा है",
     "movedFile": "{{from}} को {{to}} में ले जाया गया",

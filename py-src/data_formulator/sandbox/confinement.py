@@ -7,7 +7,8 @@ Audit hooks inside the worker are a guard rail, not a boundary (PEP 578), so on
 macOS and Linux each worker also runs under the operating system's sandbox:
 
 * Reads: the Python installation, system libraries, and workspaces: Data
-  Formulator's workspace folders (``users/``, ``workspaces/``), or one outside
+  Formulator's workspace folders (``users/``, ``workspaces/``, and demo sites'
+  ``sites/``), or one outside
   workspace such as a linked folder. Not the home directory (SSH keys, cloud
   credentials) or Data Formulator's credential store, configuration, logs, and
   schedules. The audit hook still limits each run to its own workspace.
@@ -78,11 +79,19 @@ SHARED = "shared"
 
 
 def shared_read_roots() -> list[str]:
-    """Data Formulator's workspace folders, readable by the shared worker (single-user local mode)."""
+    """Data Formulator's workspace folders, readable by the shared worker (single-user local mode):
+    ``users/``, ``workspaces/``, and ``sites/`` (each demo site's own ``users/``, see
+    :mod:`data_formulator.sites`)."""
     from data_formulator.datalake.workspace import get_data_formulator_home
 
     home = get_data_formulator_home()
-    return [os.path.realpath(home / name) for name in ("users", "workspaces") if (home / name).is_dir()]
+    try:
+        # A shared worker started before a demo's first session must still see it: bwrap binds
+        # only folders that exist, and later subfolders appear inside a bound one.
+        (home / "sites").mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    return [os.path.realpath(home / name) for name in ("users", "workspaces", "sites") if (home / name).is_dir()]
 
 
 def worker_key(workspace: str | None) -> str:

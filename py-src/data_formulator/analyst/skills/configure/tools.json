@@ -30,19 +30,6 @@
   {
     "type": "function",
     "function": {
-      "name": "list_workflows",
-      "description": "List saved and built-in workflows with their paths, overviews, run parameters, and schedules (cadence, status, next run, recent outcomes), plus whether scheduling is available and the server model connections a schedule can use. Use before scheduling or when the user asks which workflows or schedules exist.",
-      "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": [],
-        "additionalProperties": false
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "list_sessions",
       "description": "Find the user's saved sessions, newest first, with names, dates, counts, and a content summary (data, prompts, reports, workflows). Use query terms to search names and content.",
       "parameters": {
@@ -137,7 +124,7 @@
           },
           "replaces": {
             "type": "string",
-            "description": "Path of the user's saved workflow (origin user, from list_workflows) that this proposal revises. The form then lets the user update that workflow or save a new one. Omit for a new workflow."
+            "description": "Path of the user's saved workflow (saved by the user, under workflows/) that this proposal revises. The form then lets the user update that workflow or save a new one. Omit for a new workflow."
           },
           "schedule": {
             "type": "object",
@@ -166,7 +153,7 @@
               },
               "model_id": {
                 "type": "string",
-                "description": "Server model connection ID from list_workflows (scheduling.server_models)."
+                "description": "Server model connection ID from workflows/schedules.json (server_models)."
               },
               "setup": {
                 "type": "object",
@@ -215,7 +202,7 @@
         "properties": {
           "schedule_id": {
             "type": "string",
-            "description": "Existing schedule ID from list_workflows to revise. The form then lets the user update it or save a new schedule. Omit to create."
+            "description": "Existing schedule ID from workflows/schedules.json to revise. The form then lets the user update it or save a new schedule. Omit to create."
           },
           "name": {
             "type": "string",
@@ -223,7 +210,7 @@
           },
           "workflow": {
             "type": "string",
-            "description": "Saved workflow path from list_workflows. Omit when the user has not chosen; the form lists saved workflows to pick from."
+            "description": "Saved workflow path under workflows/ (list_files path workflows/). Omit when the user has not chosen; the form lists saved workflows to pick from."
           },
           "time": {
             "type": "string",
@@ -244,7 +231,7 @@
           },
           "model_id": {
             "type": "string",
-            "description": "Server model connection ID from list_workflows (scheduling.server_models)."
+            "description": "Server model connection ID from workflows/schedules.json (server_models)."
           },
           "setup": {
             "type": "object",

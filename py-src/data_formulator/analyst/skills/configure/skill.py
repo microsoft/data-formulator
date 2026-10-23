@@ -19,7 +19,6 @@ from . import automation, connections, sessions
 _TOOLS: dict[str, Callable[[dict[str, Any], SkillContext], dict[str, Any]]] = {
     "list_connectors": lambda args, ctx: connections.list_connectors(args),
     "read_connector_form": lambda args, ctx: connections.read_connector_form(ctx),
-    "list_workflows": lambda args, ctx: automation.list_workflows(ctx),
     "list_sessions": sessions.list_sessions,
 }
 

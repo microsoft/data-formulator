@@ -489,7 +489,7 @@ def derive_starter_questions_request():
 
 def _cancellable_agent_stream(events):
     from data_formulator.data_loader.query_runtime import QueryCancelled, QueryWorker, query_worker_scope
-    from data_formulator.error_handler import stream_error_event
+    from data_formulator.error_handler import flush_stream_warnings, stream_error_event
 
     signal = Event()
     messages = Queue(maxsize=32)
@@ -529,7 +529,9 @@ def _cancellable_agent_stream(events):
             try:
                 message = messages.get(timeout=0.5)
             except Empty:
-                yield json.dumps({"type": "heartbeat"}) + '\n'
+                # A long wait (e.g. a rate-limit backoff) may have a notice for the user now.
+                pending = flush_stream_warnings()
+                yield from pending or [json.dumps({"type": "heartbeat"}) + '\n']
                 continue
             if message is finished:
                 break

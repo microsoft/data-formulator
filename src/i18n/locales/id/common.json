@@ -468,6 +468,7 @@
     "deletedItems": "Dihapus: {{names}}",
     "listingFiles": "Mencantumkan file",
     "readingFile": "Membaca",
+    "searchingSession": "Mencari di sesi",
     "searchingFiles": "Mencari file",
     "movingFile": "Memindahkan",
     "movedFile": "Dipindahkan: {{from}} ke {{to}}",

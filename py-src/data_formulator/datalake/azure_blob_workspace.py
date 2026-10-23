@@ -435,6 +435,10 @@ class AzureBlobWorkspace(Workspace):
     def _read_workspace_file(self, filename: str) -> bytes:
         return self._download_bytes(self._workspace_file_blob_key(filename))
 
+    def local_workspace_file(self, name: str) -> Path | None:
+        """Blob-backed files have no local path; readers fall back to their bytes."""
+        return None
+
     def _delete_workspace_file(self, filename: str) -> None:
         blob_key = self._workspace_file_blob_key(filename)
         if self._blob_exists(blob_key):
