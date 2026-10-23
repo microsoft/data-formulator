@@ -31,11 +31,11 @@ export default defineConfig({
         manualChunks: {
           // Separate vendor chunks for better caching and parallel loading
           'vendor-react': ['react', 'react-dom', 'react-redux', 'redux', '@reduxjs/toolkit'],
-          'vendor-mui': ['@mui/material', '@mui/icons-material', '@mui/lab', '@emotion/react', '@emotion/styled'],
-          'vendor-vega': ['vega', 'vega-lite', 'vega-embed', 'react-vega'],
+          'vendor-mui': ['@mui/material', '@mui/icons-material', '@emotion/react', '@emotion/styled'],
+          'vendor-vega': ['vega', 'vega-lite', 'vega-embed'],
           'vendor-d3': ['d3'],
-          'vendor-utils': ['lodash', 'localforage', 'dompurify', 'validator'],
-          'vendor-editor': ['prismjs', 'prism-react-renderer', 'prettier'],
+          'vendor-utils': ['lodash', 'localforage', 'dompurify'],
+          'vendor-editor': ['prismjs'],
           'vendor-markdown': ['markdown-to-jsx', 'katex', 'react-katex'],
           'vendor-misc': ['exceljs', 'html2canvas', 'allotment', 'react-dnd', 'react-dnd-html5-backend', 'react-virtuoso'],
         }

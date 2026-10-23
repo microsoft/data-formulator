@@ -21,13 +21,14 @@ const EXCLUDED_FIELDS = new Set([
     'chartSynthesisInProgress',
     'tableLoadsInFlight',
     'pendingTableLoads',
-    'cleanInProgress', 'sessionLoading', 'sessionLoadingLabel',
+    'cleanInProgress', 'sessionLoading', 'sessionLoadingLabel', 'exampleFollowUps',
     // Starter-questions status is transient (loading/error); the questions
     // themselves are persisted, but the fetch status should reset on reload.
     'starterQuestionsStatus',
     // Thumbnails are derived from chart specs + table data; re-rendered
     // from the module cache on reload, so don't waste bandwidth saving them.
     'chartThumbnails',
+    'canvasFollow',
 ]);
 
 /** Debounce interval in milliseconds. */

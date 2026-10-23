@@ -80,6 +80,17 @@ describe('ClarificationPanel', () => {
     expect(screen.getByText('Reader access confirmed')).toBeVisible();
   });
 
+  it('steps through the other calls of the step', () => {
+    const calls = ['first', 'second', 'third'].map((id, index) => ({ id, createdAt: index, tool: 'execute_python_script',
+      purpose: `Call ${id}`, code: `print(${index})`, status: 'completed' as const }));
+    const onSelect = vi.fn();
+    render(<ToolActivityPanel execution={calls[1]} calls={calls} onSelect={onSelect} onClose={vi.fn()} />);
+    expect(screen.getByText('2/3')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'tool.previousCall' }));
+    fireEvent.click(screen.getByRole('button', { name: 'tool.nextCall' }));
+    expect(onSelect.mock.calls.map(([call]) => call.id)).toEqual(['first', 'third']);
+  });
+
   it('shows the selected Python call without a second disclosure', () => {
     render(<ToolActivityPanel onClose={vi.fn()}
       execution={{ id: 'compute', createdAt: 2, tool: 'execute_python_script', purpose: 'Compute total',

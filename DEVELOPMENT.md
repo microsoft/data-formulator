@@ -643,6 +643,12 @@ package. The alias is wired in `vite.config.ts` and `vitest.config.ts`.
 
     Open [http://localhost:5567](http://localhost:5567) to view it in the browser.
 
+- **Customize the home page (optional)**
+
+    A demo is a front page of your own at `/demo/<id>`, configured in a `profile.yaml` with no
+    rebuild. See [py-src/data_formulator/demos/README.md](py-src/data_formulator/demos/README.md);
+    the UIS demo at `/demo/unesco` is an example.
+
 
 ## Desktop installer validation
 
@@ -933,8 +939,8 @@ administrator-managed resources and policies. Managed mode is off by default.
 It does not change authentication, workspace storage, or the execution sandbox.
 It can be used locally for setup as well as on a hosted installation.
 
-Authorized administrators see **Admin** alongside **About** and **App**
-(or in the compact navigation menu). The page remains at `/configurations` for
+Authorized administrators see **Admin** alongside **App**
+(or in the compact navigation menu); other users see no page links. The page remains at `/configurations` for
 existing links. Ordinary users do not see it, and the backend denies configuration
 access unless both managed mode and administrator authorization are present.
 Personal Settings remains separate from installation administration.
@@ -946,7 +952,7 @@ and browser title. Long headings use smaller text and wrap. Clearing a field
 restores its default; the default tagline follows the selected UI language.
 These plain-text values are saved in installation configuration, not environment
 variables, and are visible to all users. Other open clients pick up changes on
-reload. About retains the original Data Formulator identity.
+reload.
 
 In single-user localhost identity mode, the local owner is the administrator.
 For hosted installations, configure an authentication provider and list verified

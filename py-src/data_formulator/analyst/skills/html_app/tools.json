@@ -7,6 +7,7 @@
       "parameters": {
         "type": "object",
         "properties": {
+          "plan_step": {"type": "integer", "minimum": 1, "description": "When working through a checklist plan: the number (1-based) of the plan step this result serves. Several results can serve one step; a step is checked off once you move on to a later step or finish."},
           "replaces": {
             "type": "string",
             "description": "The app's files/... path, equal to path. Only to fix an app the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the fixed app moves to after the latest request and the thread notes that it replaced the old one. Omit it for ordinary changes the user asks for."
@@ -63,6 +64,7 @@
       "parameters": {
         "type": "object",
         "properties": {
+          "plan_step": {"type": "integer", "minimum": 1, "description": "When working through a checklist plan: the number (1-based) of the plan step this result serves. Several results can serve one step; a step is checked off once you move on to a later step or finish."},
           "replaces": {
             "type": "string",
             "description": "The app's files/... path, equal to path. Only to fix an app the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the fixed app moves to after the latest request and the thread notes that it replaced the old one. Omit it for ordinary changes the user asks for."

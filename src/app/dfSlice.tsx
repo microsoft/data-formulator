@@ -3,7 +3,7 @@
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
 import { shallowEqual } from 'react-redux';
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, TextTurn, TerminalExecution, CodeExecution, InputTable, TableSemanticsInfo, LoadedTableNode, ProgressStep } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, DraftNode, InteractionEntry, DeriveStatus, TextTurn, TerminalExecution, CodeExecution, InputTable, TableSemanticsInfo, LoadedTableNode, ProgressStep } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { ArtifactSetNode, DictTable, FileNode, ReplacedArtifact, ExternalTableReference, ComputationInputSource, createConversationRootId, isConversationRootId } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
@@ -23,6 +23,7 @@ import { REHYDRATE } from 'redux-persist';
 import { setInputTablePreview } from './inputTablePreviewCache';
 import { materializeInputTablePreview, materializeTables } from './tableResolution';
 import { buildThreadGraph } from './threadGraph';
+import type { SiteConfig } from '../sites/types';
 
 enableMapSet();
 
@@ -73,6 +74,14 @@ export interface SSEMessage {
 export interface ServerConfig {
     APP_NAME?: string;
     APP_TAGLINE?: string;
+    /** Set when this hostname serves a site profile (py-src/data_formulator/sites). */
+    SITE?: SiteConfig;
+    /** Demos visitors can open on this server (installed, or installable from their page). */
+    DEMOS?: { id: string; name: string }[];
+    /** The standard app's name (APP_NAME is the demo's name on a demo page). */
+    STANDARD_APP_NAME?: string;
+    /** The demo `/` opens (`DF_SITE`), if any. */
+    DEFAULT_DEMO?: string | null;
     MANAGED_MODE?: boolean;
     CAN_CONFIGURE?: boolean;
     TERMINAL_MODE?: 'off' | 'ask' | 'auto';
@@ -134,7 +143,7 @@ export interface ModelConfig {
 
 
 export type FocusedId = 
-    | { type: 'conversation'; tableId: string; nodeIds?: string[] }
+    | { type: 'conversation'; tableId: string; nodeIds?: string[]; /** The thread's label, when opened from its header. */ label?: string }
     | { type: 'table'; tableId: string }
     | { type: 'reference'; referenceId: string }
     | { type: 'chart'; chartId: string }
@@ -144,6 +153,107 @@ export type FocusedId =
     | { type: 'text'; textId: string }
     | { type: 'draft'; draftId: string }
     | undefined;
+
+/**
+ * A tab over the canvas (design: browser-like). Whatever the canvas shows gets a tab; results an
+ * agent run adds get one too, `unseen` until the user visits them. Pinned tabs come first and stay.
+ */
+/**
+ * `pinned`: set when the user pins (true) or unpins (false) by dragging across the divider; unset,
+ * the tab follows `autoPinned`. `addedAt`/`viewedAt` order the recent tabs.
+ */
+export type CanvasTab = { key: string; target: Exclude<NonNullable<FocusedId>, { type: 'draft' } | { type: 'reference' }>;
+    pinned?: boolean; unseen?: boolean; addedAt?: number; viewedAt?: number };
+export const MAX_CANVAS_TABS = 40;
+/** Recent (unpinned) tabs kept by default; the strip shows as many as fill its width. */
+export const RECENT_CANVAS_TABS = 5;
+
+/** Reports and apps keep their place without the user pinning them. */
+export const autoPinned = (target: CanvasTab['target'], _textTurns: TextTurn[]): boolean => {
+    if (target.type === 'report') return true;
+    if (target.type === 'file') return /\.(html?|app\.jsx)$/i.test(target.fileName);
+    return false;
+};
+export const isCanvasTabPinned = (tab: CanvasTab, textTurns: TextTurn[]): boolean => tab.pinned ?? autoPinned(tab.target, textTurns);
+
+/**
+ * Split tabs into the strip's zones: pinned (list order), then a window of the last `slots` unpinned
+ * tabs (new ones join on the right), and history: the ones that scrolled off the left, nearest first.
+ * The active tab always shows; if it is further left, it takes the window's last place until the
+ * strip moves it to the end.
+ */
+export const arrangeCanvasTabs = (tabs: CanvasTab[], textTurns: TextTurn[], activeKey: string | undefined, slots = RECENT_CANVAS_TABS) => {
+    const pinned = tabs.filter(tab => isCanvasTabPinned(tab, textTurns));
+    const unpinned = tabs.filter(tab => !isCanvasTabPinned(tab, textTurns));
+    const count = Math.max(0, slots);
+    let recent = count ? unpinned.slice(-count) : [];
+    const active = unpinned.find(tab => tab.key === activeKey);
+    const activeOutside = !!active && count > 0 && !recent.includes(active);
+    if (activeOutside) recent = [...unpinned.filter(tab => tab !== active).slice(-(count - 1)), active!].slice(-count);
+    const shown = new Set(recent);
+    return { pinned, recent, history: unpinned.filter(tab => !shown.has(tab)).reverse(), activeOutside };
+};
+
+/** A strictly increasing time for tab ordering (two updates in one millisecond still order). */
+const tabClock = (state: DataFormulatorState): number =>
+    Math.max(Date.now(), ...state.canvasTabs.map(tab => Math.max(tab.viewedAt ?? 0, tab.addedAt ?? 0) + 1));
+
+export const canvasTabKey = (target: NonNullable<FocusedId>): string => {
+    switch (target.type) {
+        case 'chart': return `chart:${target.chartId}`;
+        case 'table': return `table:${target.tableId}`;
+        case 'file': return `file:${target.fileName}`;
+        case 'report': return `report:${target.reportId}`;
+        case 'external-table': return `external:${target.referenceId}`;
+        case 'conversation': return `conversation:${target.tableId}`;
+        case 'text': return `text:${target.textId}`;
+        case 'reference': return `reference:${target.referenceId}`;
+        case 'draft': return `draft:${target.draftId}`;
+    }
+};
+
+const isTabTarget = (target: FocusedId): target is CanvasTab['target'] =>
+    !!target && target.type !== 'draft' && target.type !== 'reference';
+
+/** A message with a view of its own (design-docs/58, rule 2); other messages show in the chat, beside what the canvas shows. */
+export const textTurnOwnsCanvas = (turn: TextTurn | undefined): boolean => !!turn && !!(turn.dataOperation || turn.form || turn.workflow
+    || (turn.textKind === 'explain' && turn.presentation === 'long_response'));
+
+/** Whether a saved tab still opens something: a message's tab only while the message has a view of its own. */
+const keepsCanvasTab = (tab: CanvasTab, textTurns: TextTurn[]): boolean =>
+    tab.target.type !== 'text' || textTurnOwnsCanvas(textTurns.find(turn => turn.id === (tab.target as { textId: string }).textId));
+
+/**
+ * Charts, loaded tables and the other artifacts open tabs; a derived table, a step on the way, doesn't,
+ * and neither does a message the chat shows (an answer, a question), only one with a view of its own.
+ */
+const opensCanvasTab = (state: DataFormulatorState, target: CanvasTab['target']): boolean => {
+    if (target.type === 'table') return !state.derivedTables.some(table => table.id === target.tableId);
+    if (target.type === 'text') return textTurnOwnsCanvas(state.textTurns.find(turn => turn.id === target.textId));
+    return true;
+};
+
+/**
+ * Add a tab (at the end) unless one is open; an open tab keeps its place (the strip, which knows
+ * what it shows, brings one back from its "…" history). Past the cap, the least recently seen
+ * unpinned, inactive tab goes.
+ */
+const ensureCanvasTab = (state: DataFormulatorState, target: CanvasTab['target'], unseen: boolean): CanvasTab => {
+    const key = canvasTabKey(target);
+    const existing = state.canvasTabs.find(item => item.key === key);
+    if (existing) {
+        existing.target = target;
+        return existing;
+    }
+    state.canvasTabs.push({ key, target, addedAt: tabClock(state), ...(unseen ? { unseen: true } : {}) });
+    while (state.canvasTabs.length > MAX_CANVAS_TABS) {
+        const { history } = arrangeCanvasTabs(state.canvasTabs, state.textTurns, state.canvasTabActive);
+        const drop = history.filter(item => item.key !== key).at(-1);
+        if (!drop) break;
+        state.canvasTabs = state.canvasTabs.filter(item => item.key !== drop.key);
+    }
+    return state.canvasTabs.find(item => item.key === key)!;
+};
 
 export const explanationContent = (content: string) => content;
 
@@ -228,6 +338,12 @@ export interface DataFormulatorState {
 
     focusedId: FocusedId;
 
+    /** Tabs over the canvas, in opening order; `canvasTabActive` is the one in view. */
+    canvasTabs: CanvasTab[];
+    canvasTabActive?: string;
+    /** The last focus change came from an agent run following its results, not from the user. */
+    canvasFollow?: boolean;
+
     viewMode: 'editor' | 'report';
 
     chartSynthesisInProgress: string[];
@@ -291,6 +407,9 @@ export interface DataFormulatorState {
     // Session loading overlay
     sessionLoading: boolean;
     sessionLoadingLabel: string;
+
+    /** Questions to continue an example session with, offered once when it opens; not saved. */
+    exampleFollowUps?: { title: string; questions: string[] };
 
     // Active workspace (null = show workspace picker)
     // id: stable identifier (folder name), displayName: user-facing name (can be renamed)
@@ -360,6 +479,10 @@ const initialState: DataFormulatorState = {
 
     focusedDataCleanBlockId: undefined,
     focusedId: undefined,
+
+    canvasTabs: [],
+    canvasTabActive: undefined,
+    canvasFollow: false,
 
     viewMode: 'editor',
 
@@ -987,6 +1110,13 @@ const interruptTurnProgress = (turn: TextTurn): TextTurn => ({
     codeExecutions: turn.codeExecutions?.map(execution => execution.status === 'running' ? { ...execution, status: 'interrupted' } : execution),
 });
 
+/** A run cut off by the reload takes the focus, so its retry is at hand. */
+const focusAfterInterruption = (drafts: DraftNode[] | undefined, focusedId: FocusedId | undefined): FocusedId | undefined => {
+    const interrupted = (drafts || []).filter(node => node.derive?.status === 'running' || node.derive?.status === 'clarifying')
+        .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))[0];
+    return interrupted ? { type: 'draft', draftId: interrupted.id } : focusedId;
+};
+
 /** The connector form owned by a text turn, if that turn holds one. */
 const connectorFormOf = (state: DataFormulatorState, turnId: string) => {
     const form = state.textTurns.find(turn => turn.id === turnId)?.form;
@@ -1002,6 +1132,9 @@ export const dataFormulatorSlice = createSlice({
         setSessionLoading: (state, action: PayloadAction<{loading: boolean, label?: string}>) => {
             state.sessionLoading = action.payload.loading;
             state.sessionLoadingLabel = action.payload.label || '';
+        },
+        setExampleFollowUps: (state, action: PayloadAction<DataFormulatorState['exampleFollowUps']>) => {
+            state.exampleFollowUps = action.payload?.questions.length ? action.payload : undefined;
         },
         setActiveWorkspace: (state, action: PayloadAction<DataFormulatorState['activeWorkspace']>) => {
             state.activeWorkspace = action.payload;
@@ -1193,15 +1326,20 @@ export const dataFormulatorSlice = createSlice({
                     // `chartThumbnails` in state). Strip the field on load so
                     // it doesn't get re-persisted; ChartRenderService will
                     // repopulate the thumbnail slice from the module cache.
-                    if (c && (c as any).thumbnail !== undefined) {
-                        const { thumbnail: _drop, ...rest } = c as any;
+                    // Style variants (the retired restyle agent) are dropped too.
+                    if (c && ['thumbnail', 'styleVariants', 'activeVariantId'].some(key => (c as any)[key] !== undefined)) {
+                        const { thumbnail: _drop, styleVariants: _variants, activeVariantId: _active, ...rest } = c as any;
                         return rest as Chart;
                     }
                     return c;
                 }),
                 conceptShelfItems: saved.conceptShelfItems || [],
                 focusedDataCleanBlockId: saved.focusedDataCleanBlockId || undefined,
-                focusedId: saved.focusedId || undefined,
+                focusedId: focusAfterInterruption(saved.draftNodes, saved.focusedId || undefined),
+                canvasTabs: Array.isArray(saved.canvasTabs) ? saved.canvasTabs.filter((tab: CanvasTab) => tab && typeof tab.key === 'string' && isTabTarget(tab.target)
+                    && keepsCanvasTab(tab, saved.textTurns || [])) : [],
+                canvasTabActive: typeof saved.canvasTabActive === 'string' ? saved.canvasTabActive : undefined,
+                canvasFollow: false,
                 config: { ...initialState.config, ...savedConfig },
                 dataCleanBlocks: saved.dataCleanBlocks || [],
                 analystChatPending: null,
@@ -1354,6 +1492,10 @@ export const dataFormulatorSlice = createSlice({
             state.fileNodes.forEach(node => { if (node.path === from) node.path = to; });
             state.workspaceItemOrder = state.workspaceItemOrder.map(key => key === `workspace-file-${from}` ? `workspace-file-${to}` : key);
             if (state.focusedId?.type === 'file' && state.focusedId.fileName === from) state.focusedId = { type: 'file', fileName: to };
+            const fromKey = canvasTabKey({ type: 'file', fileName: from });
+            const toKey = canvasTabKey({ type: 'file', fileName: to });
+            state.canvasTabs.forEach(tab => { if (tab.key === fromKey) { tab.key = toKey; tab.target = { type: 'file', fileName: to }; } });
+            if (state.canvasTabActive === fromKey) state.canvasTabActive = toKey;
         },
         removeFileNodes: (state, action: PayloadAction<string>) => {
             const removed = state.fileNodes.filter(node => node.path === action.payload);
@@ -1361,6 +1503,8 @@ export const dataFormulatorSlice = createSlice({
             state.fileNodes = state.fileNodes.filter(node => node.path !== action.payload);
             repairThreadEdges(state, removed);
             state.workspaceItemOrder = state.workspaceItemOrder.filter(key => key !== `workspace-file-${action.payload}`);
+            const fileTab = canvasTabKey({ type: 'file', fileName: action.payload });
+            state.canvasTabs = state.canvasTabs.filter(tab => tab.key !== fileTab);
             if (state.focusedId?.type === 'file' && state.focusedId.fileName === action.payload) {
                 state.focusedId = undefined;
             } else if (state.focusedId?.type === 'reference' && removedIds.has(state.focusedId.referenceId)) {
@@ -1645,12 +1789,6 @@ export const dataFormulatorSlice = createSlice({
                 // on `y` getting suggested again for `color`) and (b) surprise
                 // the user by inflating a 2-encoding chart into a 5-encoding
                 // one on type switch.  Empty channels are left for the user.
-
-                // Chart type changed — any active variant was authored against
-                // the old structure, so step out of it. The variants stay in
-                // the chip strip (marked stale) for the user to revisit.
-                chart.activeVariantId = undefined;
-
                 dfSelectors.replaceChart(state, chart);
             }
         },
@@ -1711,8 +1849,6 @@ export const dataFormulatorSlice = createSlice({
             for (const concept of concepts) {
                 if (!state.conceptShelfItems.some(item => item.name === concept.name)) state.conceptShelfItems.push(concept);
             }
-            const restyled = chart.chartType !== next.chartType || JSON.stringify(chart.encodingMap) !== JSON.stringify(next.encodingMap)
-                || JSON.stringify(chart.config || {}) !== JSON.stringify(next.config || {}) || chart.themeId !== next.themeId;
             chart.chartType = next.chartType;
             chart.encodingMap = next.encodingMap;
             chart.config = next.config;
@@ -1720,85 +1856,11 @@ export const dataFormulatorSlice = createSlice({
             chart.subtitle = next.subtitle;
             chart.titleKey = next.titleKey;
             chart.themeId = next.themeId;
-            if (restyled) chart.activeVariantId = undefined;
         },
         setChartTheme: (state, action: PayloadAction<{chartId: string, themeId: string | undefined}>) => {
             const chart = collectAllCharts(state).find(c => c.id === action.payload.chartId);
             if (!chart) return;
             chart.themeId = action.payload.themeId;
-            chart.activeVariantId = undefined;
-        },
-        // --- Style variants (see design-docs/28-chart-style-refinement-agent.md) ---
-        // Variants are user-authored "skins" of a chart's Vega-Lite spec. They live
-        // on Chart, persist with the session, and drive both the focused canvas
-        // (VisualizationView) and the thread thumbnail (ChartRenderService) so
-        // the preview reflects whichever variant the user has active.
-        addStyleVariant: (state, action: PayloadAction<{chartId: string, variant: ChartStyleVariant, activate?: boolean}>) => {
-            const { chartId, variant, activate } = action.payload;
-            const chart = collectAllCharts(state).find(c => c.id === chartId);
-            if (!chart) return;
-            if (!chart.styleVariants) chart.styleVariants = [];
-            chart.styleVariants.push(variant);
-            if (activate !== false) {
-                chart.activeVariantId = variant.id;
-            }
-        },
-        setActiveVariant: (state, action: PayloadAction<{chartId: string, variantId: string | undefined}>) => {
-            const { chartId, variantId } = action.payload;
-            const chart = collectAllCharts(state).find(c => c.id === chartId);
-            if (!chart) return;
-            chart.activeVariantId = variantId;
-        },
-        deleteStyleVariant: (state, action: PayloadAction<{chartId: string, variantId: string}>) => {
-            const { chartId, variantId } = action.payload;
-            const chart = collectAllCharts(state).find(c => c.id === chartId);
-            if (!chart || !chart.styleVariants) return;
-            chart.styleVariants = chart.styleVariants.filter(v => v.id !== variantId);
-            if (chart.activeVariantId === variantId) {
-                chart.activeVariantId = undefined;
-            }
-            if (chart.styleVariants.length === 0) {
-                chart.styleVariants = undefined;
-            }
-        },
-        renameStyleVariant: (state, action: PayloadAction<{chartId: string, variantId: string, label: string}>) => {
-            const { chartId, variantId, label } = action.payload;
-            const chart = collectAllCharts(state).find(c => c.id === chartId);
-            const v = chart?.styleVariants?.find(v => v.id === variantId);
-            if (v) v.label = label;
-        },
-        // Replace a variant's spec in place — used by the "refresh stale variant"
-        // flow (overlay in VisualizationView). The variant id stays the same so
-        // the chip doesn't visibly disappear and re-appear.
-        updateStyleVariant: (state, action: PayloadAction<{chartId: string, variantId: string, vlSpec: any, rationale?: string, encodingFingerprint?: string, configUI?: ChartStyleVariant['configUI']}>) => {
-            const { chartId, variantId, vlSpec, rationale, encodingFingerprint, configUI } = action.payload;
-            const chart = collectAllCharts(state).find(c => c.id === chartId);
-            const v = chart?.styleVariants?.find(v => v.id === variantId);
-            if (!v) return;
-            v.vlSpec = vlSpec;
-            if (rationale !== undefined) v.rationale = rationale;
-            if (encodingFingerprint !== undefined) v.encodingFingerprint = encodingFingerprint;
-            // The agent re-authored the controls; replace them and reset values
-            // so stale keys don't linger.
-            if (configUI !== undefined) {
-                v.configUI = configUI && configUI.length > 0 ? configUI : undefined;
-                v.configValues = undefined;
-            }
-        },
-        // Set the value of a single generative-UI control on a style variant.
-        // value === undefined removes the override (falls back to the control's
-        // defaultValue at render time).
-        updateVariantConfigValue: (state, action: PayloadAction<{chartId: string, variantId: string, key: string, value: any}>) => {
-            const { chartId, variantId, key, value } = action.payload;
-            const chart = collectAllCharts(state).find(c => c.id === chartId);
-            const v = chart?.styleVariants?.find(v => v.id === variantId);
-            if (!v) return;
-            if (value === undefined) {
-                if (v.configValues) delete v.configValues[key];
-            } else {
-                if (!v.configValues) v.configValues = {};
-                v.configValues[key] = value;
-            }
         },
         updateChartEncoding: (state, action: PayloadAction<{chartId: string, channel: Channel, encoding: EncodingItem}>) => {
             let chartId = action.payload.chartId;
@@ -1810,11 +1872,6 @@ export const dataFormulatorSlice = createSlice({
                 // The channel's binding changed — drop any Category-B override
                 // that depended on it (see resetDependentEncodingOverrides).
                 resetDependentEncodingOverrides(chart, channel);
-                // Auto-revert to default whenever the user edits the encoding so
-                // the canvas reflects what they're editing. Existing variants
-                // stay in the chip strip (now stale). See
-                // design-docs/28-chart-style-refinement-agent.md §4.7.
-                if (chart.activeVariantId) chart.activeVariantId = undefined;
             }
         },
         updateChartEncodingProp: (state, action: PayloadAction<{chartId: string, channel: Channel, prop: string, value: any}>) => {
@@ -1828,11 +1885,8 @@ export const dataFormulatorSlice = createSlice({
             if (chart) {
                 //TODO: check this, finding reference and directly update??
                 let encoding = chart.encodingMap[channel];
-                // Track whether the prop value actually changed so we only
-                // invalidate the active variant on real edits. Without this
-                // check, no-op dispatches (e.g. EncodingBox's auto-sort
-                // useEffect re-firing on chart switch) silently reset
-                // chart.activeVariantId back to "default".
+                // Track whether the prop value actually changed, so no-op dispatches (e.g. EncodingBox's
+                // auto-sort effect re-firing on chart switch) leave dependent overrides alone.
                 let changed = false;
                 if (prop == 'fieldID') {
                     if (encoding.fieldID !== value) changed = true;
@@ -1868,9 +1922,6 @@ export const dataFormulatorSlice = createSlice({
                 // action's `dependencies`) so a stale override can't keep
                 // winning over the shelf edit. See resetDependentEncodingOverrides.
                 if (changed) resetDependentEncodingOverrides(chart, channel);
-                // Auto-revert to default when the encoding actually changes
-                // (see above). No-op updates must NOT clear the variant.
-                if (changed && chart.activeVariantId) chart.activeVariantId = undefined;
             }
         },
         swapChartEncoding: (state, action: PayloadAction<{chartId: string, channel1: Channel, channel2: Channel}>) => {
@@ -1887,8 +1938,6 @@ export const dataFormulatorSlice = createSlice({
                 chart.encodingMap[channel2] = { fieldID: enc1.fieldID, aggregate: enc1.aggregate, sortBy: enc1.sortBy, sortOrder: enc1.sortOrder };
                 // Both channels' bindings changed — drop dependent overrides.
                 resetDependentEncodingOverrides(chart, channel1, channel2);
-                // Auto-revert to default when the encoding changes (see above).
-                if (chart.activeVariantId) chart.activeVariantId = undefined;
             }
         },
         addConceptItems: (state, action: PayloadAction<FieldItem[]>) => {
@@ -2120,9 +2169,88 @@ export const dataFormulatorSlice = createSlice({
         setDisplayedMessageIndex: (state, action: PayloadAction<number>) => {
             state.displayedMessageIdx = action.payload
         },
+        /** An agent run shows its newest result: like setFocused, but the result's tab stays unseen. */
+        followFocused: (state, action: PayloadAction<NonNullable<FocusedId>>) => {
+            const payload = action.payload;
+            state.focusedId = payload;
+            state.canvasFollow = true;
+            if (payload.type === 'chart' && state.viewMode === 'report') state.viewMode = 'editor';
+            if (payload.type === 'report') state.viewMode = 'report';
+            if (isTabTarget(payload) && opensCanvasTab(state, payload)) ensureCanvasTab(state, payload, true);
+        },
+        /** A result an agent run added while the user was elsewhere: a new, unseen tab, not focused. */
+        noteCanvasResult: (state, action: PayloadAction<NonNullable<FocusedId>>) => {
+            if (isTabTarget(action.payload) && opensCanvasTab(state, action.payload)) ensureCanvasTab(state, action.payload, true);
+        },
+        /**
+         * The canvas now shows `target`. It gets a tab (derived tables excepted) and becomes active. When the user moved focus,
+         * both the tab they left and the one they opened count as seen.
+         */
+        syncCanvasTab: (state, action: PayloadAction<FocusedId>) => {
+            const target = action.payload;
+            if (!isTabTarget(target)) { state.canvasTabActive = undefined; return; }
+            // A derived table shows without a tab of its own (unless it already has one).
+            if (!opensCanvasTab(state, target) && !state.canvasTabs.some(item => item.key === canvasTabKey(target))) {
+                state.canvasTabActive = undefined;
+                return;
+            }
+            const byUser = !state.canvasFollow;
+            if (byUser) {
+                const left = state.canvasTabs.find(item => item.key === state.canvasTabActive);
+                if (left) delete left.unseen;
+            }
+            const tab = ensureCanvasTab(state, target, !byUser);
+            if (byUser) { delete tab.unseen; tab.viewedAt = tabClock(state); }
+            state.canvasTabActive = tab.key;
+        },
+        /**
+         * Pin or unpin a tab (an explicit choice, so an auto-pinned report stays unpinned once unpinned);
+         * it goes before `beforeKey`, after `afterKey`, or last.
+         */
+        placeCanvasTab: (state, action: PayloadAction<{ key: string; pinned: boolean; beforeKey?: string; afterKey?: string }>) => {
+            const { key, pinned, beforeKey, afterKey } = action.payload;
+            const index = state.canvasTabs.findIndex(tab => tab.key === key);
+            if (index < 0) return;
+            const [tab] = state.canvasTabs.splice(index, 1);
+            tab.pinned = pinned;
+            // Unpinned, it joins the recent tabs as just seen, so it doesn't rotate straight out.
+            if (!pinned) tab.viewedAt = tabClock(state);
+            const before = beforeKey ? state.canvasTabs.findIndex(item => item.key === beforeKey) : -1;
+            const after = afterKey ? state.canvasTabs.findIndex(item => item.key === afterKey) : -1;
+            if (before >= 0) state.canvasTabs.splice(before, 0, tab);
+            else if (after >= 0) state.canvasTabs.splice(after + 1, 0, tab);
+            else state.canvasTabs.push(tab);
+        },
+        /** Drag a tab to another tab's place (it takes that slot; the others shift). */
+        moveCanvasTab: (state, action: PayloadAction<{ key: string; toKey: string }>) => {
+            const from = state.canvasTabs.findIndex(tab => tab.key === action.payload.key);
+            const to = state.canvasTabs.findIndex(tab => tab.key === action.payload.toKey);
+            if (from < 0 || to < 0 || from === to) return;
+            const [tab] = state.canvasTabs.splice(from, 1);
+            state.canvasTabs.splice(to, 0, tab);
+        },
+        /** Move a tab to the end, among the latest. */
+        touchCanvasTab: (state, action: PayloadAction<string>) => {
+            const index = state.canvasTabs.findIndex(tab => tab.key === action.payload);
+            if (index < 0 || index === state.canvasTabs.length - 1) return;
+            const [tab] = state.canvasTabs.splice(index, 1);
+            state.canvasTabs.push(tab);
+        },
+        closeCanvasTabs: (state, action: PayloadAction<string[]>) => {
+            const keys = new Set(action.payload);
+            state.canvasTabs = state.canvasTabs.filter(tab => !keys.has(tab.key));
+            if (state.canvasTabActive && keys.has(state.canvasTabActive)) state.canvasTabActive = undefined;
+        },
+        setCanvasTabPinned: (state, action: PayloadAction<{ key: string; pinned: boolean }>) => {
+            const tab = state.canvasTabs.find(item => item.key === action.payload.key);
+            if (!tab) return;
+            // Explicit either way, so an automatically pinned report can be unpinned.
+            tab.pinned = action.payload.pinned;
+        },
         setFocused: (state, action: PayloadAction<FocusedId>) => {
             const payload = action.payload;
             state.focusedId = payload;
+            state.canvasFollow = false;
 
             if (payload?.type === 'chart' && state.viewMode == 'report') {
                 state.viewMode = 'editor';
@@ -2436,6 +2564,7 @@ export const dataFormulatorSlice = createSlice({
             }
             if (!(incoming.__stateVersion > DF_STATE_VERSION)) incoming.__stateVersion = DF_STATE_VERSION;
             if (Array.isArray(incoming.draftNodes)) {
+                incoming.focusedId = focusAfterInterruption(incoming.draftNodes, incoming.focusedId);
                 incoming.draftNodes = incoming.draftNodes.map((node: DraftNode) => {
                     if (node.derive?.status === 'running' || node.derive?.status === 'clarifying') {
                         return {
@@ -2906,17 +3035,16 @@ export const dfSelectors = {
             const startId = focusedId.type === 'text' ? focusedId.textId : focusedId.draftId;
             const turn = textTurns.find(item => item.id === startId);
             // A message with its own view shows it while focused (design-docs/58, rule 2).
-            if (turn && (turn.dataOperation || turn.form || turn.workflow
-                || (turn.textKind === 'explain' && turn.presentation === 'long_response'))) {
-                return { type: 'text', textId: turn.id };
-            }
+            if (turn && textTurnOwnsCanvas(turn)) return { type: 'text', textId: turn.id };
             // Anything else shows the nearest earlier item; a chart the user was on stays in view within its table.
             const allCharts = [...userCharts, ...triggerCharts];
             const tableCanvas = (tableId: string): FocusedId => {
                 const sourceChart = turn?.sourceChartId ? allCharts.find(chart => chart.id === turn.sourceChartId) : undefined;
                 if (sourceChart?.tableRef === tableId) return { type: 'chart', chartId: sourceChart.id };
-                const tableCharts = allCharts.filter(chart => chart.tableRef === tableId);
-                const nearest = tableCharts[tableCharts.length - 1];
+                // The table's own latest chart, else a chart a derivation was asked from; an empty
+                // placeholder ("Auto") shows nothing, so the table itself is the better view.
+                const onTable = (charts: Chart[]) => charts.filter(chart => chart.tableRef === tableId && chart.chartType !== 'Auto');
+                const nearest = onTable(userCharts).at(-1) ?? onTable(triggerCharts).at(-1);
                 return nearest ? { type: 'chart', chartId: nearest.id } : { type: 'table', tableId };
             };
             const itemCanvas = (itemId: string | undefined, seen = new Set<string>()): FocusedId => {

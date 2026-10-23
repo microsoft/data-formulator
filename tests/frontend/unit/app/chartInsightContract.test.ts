@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { assembleVegaChart, extractFieldsFromEncodingMap } from "../../../../src/app/utils";
-import { Chart, computeInsightKey } from "../../../../src/components/ComponentType";
+import { FLINT_INPUT, assembleVegaChart, extractFieldsFromEncodingMap } from "../../../../src/app/utils";
+import { Chart, chartTitleFits, computeInsightKey } from "../../../../src/components/ComponentType";
 
 
 const chart = {
@@ -64,6 +64,18 @@ describe("chart insight contract", () => {
     expect(computeInsightKey(averaged)).not.toBe(original);
   });
 
+  it("keeps the title when x and y are swapped, but not when what the chart shows changes", () => {
+    const titled = { ...chart, title: "Sales by category", titleKey: computeInsightKey(chart) } as Chart;
+    const turned = { ...titled, encodingMap: { x: chart.encodingMap.y, y: chart.encodingMap.x } } as Chart;
+    const averaged = { ...titled, encodingMap: { ...chart.encodingMap, y: { ...chart.encodingMap.y, aggregate: "average" } } } as Chart;
+    const otherType = { ...turned, chartType: "Line Chart" } as Chart;
+    expect(chartTitleFits(titled)).toBe(true);
+    expect(chartTitleFits(turned)).toBe(true);
+    expect(chartTitleFits(averaged)).toBe(false);
+    expect(chartTitleFits(otherType)).toBe(false);
+    expect(chartTitleFits({ ...turned, title: undefined } as Chart)).toBe(false);
+  });
+
   it("passes title and subtitle through Flint assembly", () => {
     const spec = assembleVegaChart(
       "Bar Chart",
@@ -94,6 +106,20 @@ describe("chart insight contract", () => {
 
     expect(spec.title?.text).toBe("Revenue Concentrated in Product A");
     expect([spec.title?.subtitle].flat().join(" ")).toBe("US revenue by product, USD");
+  });
+
+  it("keeps the complete Flint input behind the chart for copying, off the Vega-Lite spec", () => {
+    const spec = assembleVegaChart("Bar Chart", chart.encodingMap,
+      [{ id: "category", name: "category", source: "original", tableRef: "table-1" },
+        { id: "value", name: "value", source: "original", tableRef: "table-1" }] as any,
+      [{ category: "A", value: 10 }],
+      { category: { type: "string", levels: [] }, value: { type: "number", levels: [] } } as any,
+      400, 300) as any;
+    const input = spec[FLINT_INPUT];
+    expect(input.data.values).toEqual([{ category: "A", value: 10 }]);
+    expect(input.chart_spec.chartType).toBe("Bar Chart");
+    expect(Object.keys(spec)).not.toContain(FLINT_INPUT);
+    expect(JSON.parse(JSON.stringify(input))).toEqual(input);
   });
 
   it("applies a Flint theme preset to the assembled base chart", () => {

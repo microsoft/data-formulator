@@ -40,6 +40,18 @@ describe('rehydrating a payload that predates a collection', () => {
         expect(history.progressSteps.map((step: any) => step.label)).toEqual(['✓ Creating chart', 'Running code']);
     });
 
+    it.each(['rehydrate', 'load'] as const)('focuses the run the reload cut off on %s', mode => {
+        const draft = (id: string, status: string, createdAt: number) => ({ kind: 'draft', id, parentNodeId: 'turn', createdAt,
+            derive: { status, trigger: { interaction: [] } } });
+        const restore = (draftNodes: object[]) => {
+            const saved = { textTurns: [], focusedId: { type: 'chart', chartId: 'chart' }, draftNodes };
+            return mode === 'rehydrate' ? rehydrate(saved) : dataFormulatorReducer(undefined, dfActions.loadState(saved));
+        };
+        expect(restore([draft('old', 'error', 1), draft('cut', 'running', 2)]).focusedId).toEqual({ type: 'draft', draftId: 'cut' });
+        const kept = restore([draft('old', 'error', 1)]);
+        expect(kept.focusedId).toEqual({ type: 'chart', chartId: 'chart' });
+    });
+
     it('backfills a missing array so consumers can read .length', () => {
         // Reproduces the desktop first-open crash: `draftNodes.length` in
         // useWorkspaceAutoName threw on a payload saved without the field.

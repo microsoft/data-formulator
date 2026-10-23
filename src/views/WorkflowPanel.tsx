@@ -2,6 +2,7 @@ import { ShimmerText, WorkflowGears } from '../components/FunComponents';
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
+import { CanvasHeader } from './CanvasHeader';
 import i18n from '../i18n';
 import { Alert, Box, Button, ButtonBase, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
     IconButton, Popover, TextField, Tooltip, Typography, alpha, useTheme } from '@mui/material';
@@ -31,6 +32,7 @@ import { getCachedChart } from '../app/chartCache';
 import { ApiRequestError, apiRequest, streamRequest } from '../app/apiClient';
 import { handleApiError } from '../app/errorHandler';
 import { getAgentLanguage, getUrls, resolveRecommendedChart } from '../app/utils';
+import { generateUUID } from '../app/identity';
 import { authoredFieldSemantics } from '../app/fieldSemantics';
 import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
 import { store } from '../app/store';
@@ -100,6 +102,13 @@ function workflowOutputIds(run: Run): string[] {
 }
 
 const deletedWorkflowRuns = new Set<string>();
+
+/** A one-line notice above a workflow list, sized like the list's text rather than a page-level alert. */
+const listNoticeSx = {
+    py: 0.25, px: 1, borderRadius: 1, alignItems: 'center', fontSize: textVar.xs, lineHeight: 1.45,
+    '& .MuiAlert-icon': { fontSize: iconVar.sm, mr: 0.75, py: 0.5, opacity: 0.85 },
+    '& .MuiAlert-message': { py: 0.5 },
+} as const;
 
 function workflowArtifacts(run: Run): NonNullable<NonNullable<TextTurn['workflow']>['artifacts']> {
     return (run.outputs || []).flatMap(output => {
@@ -469,7 +478,7 @@ function canAnswerWorkflowQuestion(turn: TextTurn) {
 async function replyWorkflowQuestion(turn: TextTurn, text: string, onAccepted?: () => void, messageId?: string) {
     const workflow = turn.workflow;
     if (workflow?.status !== 'paused' || workflow.terminalRequest || !text.trim()) throw new Error(i18n.t('workflow.notWaitingForReply'));
-    const replyId = workflow.interactionId || messageId || crypto.randomUUID();
+    const replyId = workflow.interactionId || messageId || generateUUID();
     await executeWorkflow({ run_id: workflow.runId, reply: text.trim() }, () => {
         // The question the run paused on stays in the chain, answered, before the reply.
         if (workflow.questions?.length) {
@@ -704,7 +713,9 @@ export const WorkflowRunObserver: React.FC = () => {
     return null;
 };
 
-export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; selected?: boolean; interactionOnly?: boolean; onCloseInteraction?: () => void }> = ({ turn, canvas = false, selected = false, interactionOnly = false, onCloseInteraction = () => {} }) => {
+export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; selected?: boolean; interactionOnly?: boolean; onCloseInteraction?: () => void;
+    /** The finished run's answer, previewed under the steps in the thread card. */
+    answer?: string }> = ({ turn, canvas = false, selected = false, interactionOnly = false, onCloseInteraction = () => {}, answer }) => {
     const { t } = useTranslation();
     const theme = useTheme();
     const readOnly = useSyncExternalStore(store.subscribe, () => !!store.getState().activeWorkspace?.readOnly);
@@ -958,7 +969,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
         const text = messageDraft.trim();
         if (!text || sendingMessage) return;
         setSendingMessage(true);
-        try { await sendWorkflowMessage(turn, text, crypto.randomUUID(), () => { setMessageAnchor(null); setMessageDraft(''); }); }
+        try { await sendWorkflowMessage(turn, text, generateUUID(), () => { setMessageAnchor(null); setMessageDraft(''); }); }
         catch (reason) { handleApiError(reason, 'Workflow message'); }
         finally { setSendingMessage(false); }
     };
@@ -992,29 +1003,30 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
     );
     return <Box data-workflow-progress={canvas || interactionOnly ? undefined : workflow.runId} onClick={event => event.stopPropagation()}
         sx={{ fontFamily: theme => canvas ? readingTypography.fontFamily : theme.typography.fontFamily, fontSize: canvas ? textVar.md : textVar.sm, lineHeight: 1.5, letterSpacing: 0,
-            ...(canvas ? { position: 'relative', width: '100%', height: '100%', boxSizing: 'border-box', minWidth: 0, overflow: 'hidden',
+            ...(canvas ? { position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', minWidth: 0, overflow: 'hidden',
                 color: readingTypography.color, '--df-text-xs': '0.75rem', '--df-text-sm': '0.8125rem', '--df-text-md': '0.875rem',
                 '& h2': { fontSize: '0.95rem', lineHeight: 1.4, letterSpacing: 0 },
                 '& h3': { fontSize: '0.875rem', lineHeight: 1.4, letterSpacing: 0 } } : { minWidth: 0, width: '100%' }) }}>
-        <Box data-workflow-scroll={canvas ? workflow.runId : undefined} sx={canvas ? { height: '100%', overflow: 'auto', boxSizing: 'border-box',
+        {/* Under the tabs the header only carries status and run controls; a finished run needs neither. */}
+        {canvas && !interactionOnly && workflow.status !== 'completed' && <CanvasHeader icon={<WorkflowGears running={workflow.status === 'running'} size={18} color="text.secondary" showTooltip={false} />} title={turn.displayId || t('workflow.fallbackName')}
+            meta={<Box component="span" sx={{ color: statusColor, textTransform: 'capitalize' }}>
+                {workflow.status === 'running' ? <ShimmerText tone="neutral" fontSize="inherit">{workflow.pauseRequested ? t('workflow.stopping') : workflow.planReviewPending ? t('workflow.reviewingPlan') : statusLabel('running')}</ShimmerText> : statusLabel(workflow.status)}
+            </Box>}
+            actions={<>
+                {!readOnly && workflow.status === 'running' && <Button size="small" disabled={workflow.pauseRequested} startIcon={<PauseIcon />} onClick={pauseWorkflow}
+                    sx={{ textTransform: 'none', fontSize: '0.8125rem' }}>{t('workflow.pause')}</Button>}
+                {!readOnly && workflow.status === 'paused' && <Button size="small" disabled={submitting} startIcon={needsReview ? <QuestionAnswerOutlinedIcon /> : <PlayArrowIcon />}
+                    sx={{ textTransform: 'none', fontSize: '0.8125rem' }}
+                    onClick={() => {
+                        if (workflow.terminalRequest) setApprovalOpen(true);
+                        else if (needsReview) store.dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }));
+                        else void resume({});
+                    }}>{needsReview ? t('workflow.reviewRequest') : t('workflow.resume')}</Button>}
+            </>} />}
+        <Box data-workflow-scroll={canvas ? workflow.runId : undefined} sx={canvas ? { flex: 1, minHeight: 0, overflow: 'auto', boxSizing: 'border-box',
             p: { xs: 2, sm: 3 }, '& > *': { maxWidth: 960, mx: 'auto' } } : { display: 'contents' }}>
         {!interactionOnly && <>
-        {canvas && <Box component="header" aria-label={t('workflow.statusTitle')} sx={{ mb: 1.5, overflowWrap: 'anywhere' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap' }}>
-                <Typography component="h1" sx={{ minWidth: 0, fontFamily: 'inherit', fontSize: '1.375rem', lineHeight: 1.25, fontWeight: 700, letterSpacing: 0 }}>{turn.displayId || t('workflow.fallbackName')}</Typography>
-                <Typography sx={{ fontSize: textVar.sm, color: statusColor, textTransform: 'capitalize' }}>
-                    {workflow.status === 'running' ? <ShimmerText tone="neutral" fontSize="inherit">{workflow.pauseRequested ? t('workflow.stopping') : workflow.planReviewPending ? t('workflow.reviewingPlan') : statusLabel('running')}</ShimmerText> : statusLabel(workflow.status)}
-                </Typography>
-                <Box sx={{ ml: 'auto' }}>
-                    {!readOnly && workflow.status === 'running' && <Button size="small" disabled={workflow.pauseRequested} startIcon={<PauseIcon />} onClick={pauseWorkflow}>{t('workflow.pause')}</Button>}
-                    {!readOnly && workflow.status === 'paused' && <Button size="small" disabled={submitting} startIcon={needsReview ? <QuestionAnswerOutlinedIcon /> : <PlayArrowIcon />}
-                        onClick={() => {
-                            if (workflow.terminalRequest) setApprovalOpen(true);
-                            else if (needsReview) store.dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }));
-                            else void resume({});
-                        }}>{needsReview ? t('workflow.reviewRequest') : t('workflow.resume')}</Button>}
-                </Box>
-            </Box>
+        {canvas && <Box component="header" aria-label={t('workflow.statusTitle')} sx={{ mb: 1.5, overflowWrap: 'anywhere', '&:empty': { display: 'none' } }}>
             {currentStep && workflow.status !== 'completed' && !workflow.planReviewPending && <Typography sx={{ mt: 1, fontSize: textVar.md }}>
                 <Box component="span" sx={{ color: 'text.secondary' }}>{t('workflow.stepOf', { current: currentStepIndex + 1, total: workflow.steps.length })} </Box>
                 {currentStep.description || currentStep.id.replaceAll('_', ' ')}
@@ -1046,7 +1058,9 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 }
             } catch (reason) { handleApiError(reason, 'Delete workflow node'); }
             finally { setDeleting(false); }
-        }} />}>{summary}</ThreadArtifactCard>}
+        }} />}>{summary}{answer && <Typography component="span" data-workflow-answer sx={{ display: '-webkit-box', mt: 0.75, pt: 0.75,
+            borderTop: 1, borderColor: 'divider', fontSize: textVar.sm, lineHeight: 1.45, color: 'text.primary', overflow: 'hidden',
+            WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflowWrap: 'anywhere' }}>{answer}</Typography>}</ThreadArtifactCard>}
         {canvas && <Box component="section" aria-label={t('workflow.summary')} sx={{ ...proseSx, mt: 2, pb: 1.5, borderBottom: 1, borderColor: 'divider',
             '& > h2': { mb: 0.75 } }}>
             {workflow.status === 'completed' ? <>
@@ -1387,7 +1401,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
             {groupId === 'user' && toolbar}
             </Box>
             )}
-            {landing && groupId === 'demo' && !model && <Alert severity="info" sx={{ mb: 1 }}>{t('workflow.selectModelToRun')}</Alert>}
+            {landing && groupId === 'demo' && !model && <Alert severity="info" sx={{ ...listNoticeSx, mb: 1 }}>{t('workflow.selectModelToRun')}</Alert>}
             <Box id={`workflow-${presentation}-group-${groupId}`} sx={{ mx: landing ? 0 : 0.75, mt: landing ? 0 : 1, display: 'grid', gap: landing ? 1 : 0.75,
                 ...(landing ? { gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))' } : {}) }}>
         {!group.length && <Typography sx={{ px: 1, py: 0.75, fontSize: textVar.xs, color: 'text.secondary' }}>
@@ -1455,7 +1469,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         </Box>
         {!landing && toolbar}
         <Box sx={{ overflowY: landing ? 'visible' : 'auto', minHeight: 0, pb: 1 }}>
-        {!landing && !model && <Alert severity="info" sx={{ mx: 1, mb: 1 }}>{t('workflow.selectModelToRun')}</Alert>}
+        {!landing && !model && <Alert severity="info" sx={{ ...listNoticeSx, mx: 0.75, mt: 1 }}>{t('workflow.selectModelToRun')}</Alert>}
         {renderGroups(landing ? ['demo', 'user', 'server'] : ['all'])}
         </Box>
         </>}

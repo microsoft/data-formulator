@@ -39,8 +39,7 @@ def _layer_state():
                                       "trigger": {"tableId": "table-sales"}}}],
         "tableSemantics": [{"tableId": "t-region", "fields": {"total": {"semanticType": "Revenue", "unit": "USD"}}}],
         "charts": [{"id": "chart-1", "chartType": "Bar Chart", "tableRef": "t-region", "title": "Totals",
-                    "encodingMap": {"x": {"fieldID": "f1"}, "y": {"fieldID": "f2", "aggregate": "sum"}},
-                    "styleVariants": [{"id": "v1"}]},
+                    "encodingMap": {"x": {"fieldID": "f1"}, "y": {"fieldID": "f2", "aggregate": "sum"}}},
                    {"id": "chart-auto", "chartType": "Auto", "tableRef": "t-region", "encodingMap": {}}],
         "conceptShelfItems": [{"id": "f1", "name": "region"}, {"id": "f2", "name": "total"}],
         "textTurns": [{"id": "ask", "prompt": "Totals by region", "parentNodeId": "table-sales", "createdAt": 1},
@@ -80,7 +79,7 @@ def test_index_lists_each_item_once_with_focus_and_flags(tmp_path) -> None:
     assert "Focus: `session/charts/chart-1.json` is on the canvas, the user is working in `session/threads/1.md`" in index
     assert ('- `session/tables/d_by_region.json` "By region" — derived from sales · 4 rows: region, total · 2 charts · '
             'used by a report · read by an app #') in index
-    assert ('- `session/charts/chart-1.json` "Totals" — Bar Chart, of d_by_region, user restyled, in a report, '
+    assert ('- `session/charts/chart-1.json` "Totals" — Bar Chart, of d_by_region, in a report, '
             'cannot replace: another chart was made from it [on canvas] #') in index
     # Placeholder charts and reports still being written are not listed; each item appears once.
     assert "chart-auto" not in index and "r-draft" not in index

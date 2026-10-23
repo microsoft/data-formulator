@@ -100,9 +100,7 @@ Workflow artifacts are retained for 30 days. The `data-formulator-windows-x64`
 artifact holds the unsigned Windows installer
 (`Data-Formulator-<version>-Windows-x64-Setup-unsigned.exe`), and
 `data-formulator-macos` holds an unsigned disk image and a portable
-`Data-Formulator-macOS.zip`. Tagged builds attach only the macOS portable zip to
-the corresponding [GitHub Release](https://github.com/microsoft/data-formulator/releases);
-the Windows installer is not published there. See
+`Data-Formulator-macOS.zip`. See
 [Desktop installer validation](DEVELOPMENT.md#desktop-installer-validation)
 for details.
 
@@ -122,7 +120,7 @@ Launch Data Formulator using the instructions for your operating system:
 > [!WARNING]
 > These are automated preview builds and are not currently code-signed or
 > notarized. Only bypass the operating-system warning when the download
-> came directly from this repository's workflow artifacts or releases.
+> came directly from this repository's workflow artifacts.
 
 - **Option 1: Install via uv (recommended)**
   

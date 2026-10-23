@@ -246,13 +246,15 @@ const quoteShellArgument = (argument: string) => {
 
 export const formatTerminalCommand = (argv: string[]) => argv.map(quoteShellArgument).join(' ');
 
-export const ExecutionCodeBlock = ({ code, language, label, copyLabel, result, compact = false, children }: {
+export const ExecutionCodeBlock = ({ code, language, label, copyLabel, result, compact = false, flush = false, children }: {
     code?: string;
     language: 'python' | 'bash' | 'json';
     label: string;
     copyLabel: string;
     result?: Record<string, unknown>;
     compact?: boolean;
+    /** Inside another box: no border, corners, or top margin of its own. */
+    flush?: boolean;
     children?: React.ReactNode;
 }) => {
     const { t } = useTranslation();
@@ -261,8 +263,8 @@ export const ExecutionCodeBlock = ({ code, language, label, copyLabel, result, c
         fontFamily: 'var(--df-font-mono)', fontSize: compact ? textVar.xxs : textVar.xs, fontWeight: 400,
         color: 'text.primary', lineHeight: 1.6, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
     const labelSx = { fontSize: textVar.xs, fontWeight: 400, lineHeight: 1.5, color: 'text.secondary' };
-    return <Box role="group" aria-label={label} sx={{ mt: 0.75, px: 1.25, py: 0.75, minWidth: 0,
-        border: '1px solid', borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper' }}>
+    return <Box role="group" aria-label={label} sx={{ mt: flush ? 0 : 0.75, px: 1.25, py: 0.75, minWidth: 0,
+        border: flush ? 0 : '1px solid', borderColor: 'divider', borderRadius: flush ? 0 : 1, bgcolor: 'background.paper' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Typography sx={labelSx}>{label}</Typography>
             {code !== undefined && <Tooltip title={copyStatus === 'idle' ? copyLabel : t(`terminal.copy.${copyStatus}`, {
@@ -299,12 +301,14 @@ export const ExecutionCodeBlock = ({ code, language, label, copyLabel, result, c
     </Box>;
 };
 
-export const TerminalExecutionView = ({ execution, onOpen, passive = false, defaultExpanded = false, detailsOnly = false }: {
+export const TerminalExecutionView = ({ execution, onOpen, passive = false, defaultExpanded = false, detailsOnly = false, flush = false }: {
     execution: TerminalExecution;
     onOpen?: () => void;
     passive?: boolean;
     defaultExpanded?: boolean;
     detailsOnly?: boolean;
+    /** Inside another box: the command block draws no border of its own. */
+    flush?: boolean;
 }) => {
     const { t } = useTranslation();
     const theme = useTheme();
@@ -386,7 +390,7 @@ export const TerminalExecutionView = ({ execution, onOpen, passive = false, defa
             </Tooltip>}
         </Box>}
         {!summaryOnly && <Collapse in={detailsOnly || expanded} unmountOnExit>
-            <ExecutionCodeBlock code={command} language="bash" result={result} compact={!detailsOnly}
+            <ExecutionCodeBlock code={command} language="bash" result={result} compact={!detailsOnly} flush={flush}
                 label={t('terminal.command', { defaultValue: 'Command' })}
                 copyLabel={t('terminal.copyCommand', { defaultValue: 'Copy command' })}>
                 <Typography sx={{ ...detailLabelSx, my: 0.5, overflowWrap: 'anywhere' }}>

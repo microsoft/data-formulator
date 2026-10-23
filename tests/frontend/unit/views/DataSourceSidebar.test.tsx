@@ -124,6 +124,7 @@ describe('DataSourceSidebar', () => {
         dispatch.mockReset();
         mockState.dataSourceSidebarTab = 'sources';
         mockState.serverConfig.DISABLE_DATA_CONNECTORS = false;
+        delete (mockState.serverConfig as { SITE?: unknown }).SITE;
         vi.stubGlobal('ResizeObserver', class {
             observe() {}
             unobserve() {}
@@ -571,5 +572,24 @@ describe('DataSourceSidebar', () => {
         expect(screen.queryByText('No grouping')).not.toBeInTheDocument();
         expect(screen.queryByText('Data source')).not.toBeInTheDocument();
         expect(screen.getByText('sidebar.sortRecentlyModifiedFirst')).toBeInTheDocument();
+    });
+
+    it.each([
+        { demo: false, rail: ['Upload data', 'Saved workspaces', 'Data connectors', 'knowledge.workflows', 'Schedules'] },
+        { demo: true, rail: ['Upload data', 'Saved workspaces'] },
+    ])('offers data connectors, workflows and schedules only outside demos (demo: $demo)', async ({ demo, rail }) => {
+        // A tab remembered from before must not reopen a hidden panel on a demo.
+        mockState.dataSourceSidebarTab = 'schedules';
+        if (demo) Object.assign(mockState.serverConfig, { SITE: { id: 'unesco', name: 'UIS', starters: [] } });
+        render(<DataSourceSidebar />);
+
+        const railButtons = ['Upload data', 'Saved workspaces', 'Data connectors', 'knowledge.workflows', 'Schedules']
+            .filter(name => screen.queryByRole('button', { name }));
+        expect(railButtons).toEqual(rail);
+        if (demo) {
+            expect(await screen.findByRole('button', { name: 'Sort sessions' })).toBeInTheDocument();
+        } else {
+            expect(screen.queryByRole('button', { name: 'Sort sessions' })).not.toBeInTheDocument();
+        }
     });
 });

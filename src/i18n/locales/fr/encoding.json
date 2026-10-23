@@ -75,9 +75,6 @@
     "autoSortServerError": "Impossible d’effectuer le tri automatique en raison d’un problème serveur.",
     "followUpChartPlaceholder": "Mettre à jour le style du graphique ou effectuer une analyse complémentaire",
     "refreshIdeas": "Actualiser les idées",
-    "stylePresetsTooltip": "Repenser le style du graphique en…",
-    "stylePresetsHeader": "Repenser le style du graphique en",
-    "stylePresetsHint": "Ou décrivez un style dans la zone de saisie — par ex. « utiliser une palette turquoise », « mettre le titre en gras », « faire pivoter les étiquettes des axes », « annoter le pic ».",
     "formulationSucceeded": "Formulation des données réussie pour {{fields}}.",
     "formulationFailed": "Échec de la formulation des données."
   }

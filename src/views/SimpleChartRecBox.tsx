@@ -21,16 +21,17 @@ import {
     MenuList,
     MenuItem,
     ClickAwayListener,
+    ButtonBase,
 } from '@mui/material';
 
 import { useDispatch, useSelector, useStore } from 'react-redux';
-import { DataFormulatorState, dfActions, dfSelectors, explanationContent, fetchCodeExpl, fetchColumnStats, fetchFieldSemanticType, generateFreshChart, generateStarterQuestions, GeneratedReport } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, type FocusedId, explanationContent, fetchCodeExpl, fetchColumnStats, fetchFieldSemanticType, generateFreshChart, generateStarterQuestions, GeneratedReport } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, translateBackend } from '../app/utils';
 import { authoredFieldSemantics } from '../app/fieldSemantics';
 import { streamRequest, apiRequest } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
-import { Chart, ClarificationResponse, ComputationInputSource, DictTable, DraftNode, FieldItem, createDictTable, computeInsightKey, TextTurn, TerminalExecution, CodeExecution, createConversationRootId, ProgressStep } from "../components/ComponentType";
+import { Chart, ClarificationResponse, ComputationInputSource, DictTable, DraftNode, FieldItem, createDictTable, computeInsightKey, TextTurn, TerminalExecution, CodeExecution, createConversationRootId, ProgressStep, PlanItem } from "../components/ComponentType";
 import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clarification';
 import { parseDataOperation } from '../dataOperations/models';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
@@ -39,10 +40,12 @@ import { toAnalystTableRef } from '../app/tableResolution';
 import { alpha } from '@mui/material/styles';
 import { WritingPencil } from '../components/FunComponents';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import { notifyWorkspaceFilesChanged } from '../app/workspaceService';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import BoltIcon from '@mui/icons-material/Bolt';
+import CloseIcon from '@mui/icons-material/Close';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import StopIcon from '@mui/icons-material/Stop';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
@@ -100,7 +103,20 @@ const StarterChip: FC<{ label: string; onClick: () => void; sx: any }> = ({ labe
     );
 };
 
-const AgentWorkingOverlay: FC<{ message?: string; theme: Theme; onCancel?: () => void; color?: 'primary' | 'warning'; sx?: Record<string, any> }> = ({ message, theme, onCancel, color = 'primary', sx }) => {
+/** "N new · Show latest": results the run produced after the user took over the focus. */
+const ShowLatestLink: FC<{ count: number; onShow: () => void }> = ({ count, onShow }) => {
+    const { t } = useTranslation();
+    return <ButtonBase onClick={onShow} sx={{ fontSize: textVar.xs, color: 'primary.main', borderRadius: '4px', px: 0.5,
+        '&:hover': { textDecoration: 'underline' } }}>
+        {t('chartRec.showLatest', { count, defaultValue: count === 1 ? '1 new result · Show latest' : '{{count}} new results · Show latest' })}
+    </ButtonBase>;
+};
+
+/** How long a result the run brought into view stays there before the next one replaces it. */
+const FOLLOW_MIN_VIEW_MS = 4000;
+
+const AgentWorkingOverlay: FC<{ message?: string; theme: Theme; onCancel?: () => void; color?: 'primary' | 'warning'; sx?: Record<string, any>;
+    latest?: { count: number; onShow: () => void } }> = ({ message, theme, onCancel, color = 'primary', sx, latest }) => {
     const { t } = useTranslation();
     // `message` is the running plan: steps joined by the STEP_SEP control char
     // ('\x1E'), which renders invisibly and would otherwise collapse every step
@@ -172,6 +188,7 @@ const AgentWorkingOverlay: FC<{ message?: string; theme: Theme; onCancel?: () =>
             }}>
                 {latestMessage}
             </Typography>
+            {latest && latest.count > 0 && <ShowLatestLink count={latest.count} onShow={latest.onShow} />}
             <LinearProgress sx={{
                 position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, borderRadius: '0 0 8px 8px',
                 backgroundColor: alpha(progressColor, 0.08),
@@ -209,6 +226,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
     // A focused running or paused workflow shows its pending interaction above the input.
     const chatWorkflow = useSelector(selectChatWorkflow);
+    const exampleFollowUps = useSelector((state: DataFormulatorState) => state.exampleFollowUps);
     const currentStore = useStore();
     const connectorParams = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams);
 
@@ -228,6 +246,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // "Selected answers: ..." prefix and prepended to the typed message).
     const [clarifyAnswers, setClarifyAnswers] = useState<Record<number, ClarificationResponse>>({});
     const [isChatFormulating, setIsChatFormulating] = useState(false);
+    // An example session's follow-up suggestions are offered until the user asks anything.
+    useEffect(() => {
+        if (isChatFormulating && exampleFollowUps) dispatch(dfActions.setExampleFollowUps(undefined));
+    }, [isChatFormulating, exampleFollowUps, dispatch]);
     const [pendingTerminal, setPendingTerminal] = useState<{
         proposal: TerminalProposal;
         trajectory: any[];
@@ -268,37 +290,96 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const runLastNodeRef = useRef<string | null>(null);
     // Guards a focused clarify turn from double-submitting once auto-answered.
     const textTurnSubmittedRef = useRef<string | null>(null);
-    const userChartFocusLockedRef = useRef(false);
-    const lastAutoFocusedChartIdRef = useRef<string | null>(null);
+    // Follow-along focus during a run: until the user steers (clicks, types, or scrolls the
+    // canvas after sending), each new result is focused; afterwards their focus is left alone
+    // and new results are counted for a "Show latest" link.
+    const userSteeredRef = useRef(false);
+    const lastFollowFocusAtRef = useRef(0);
+    const pendingFollowRef = useRef<FocusedId>(undefined);
+    const followTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [unseenResults, setUnseenResults] = useState<{ count: number; target?: FocusedId }>({ count: 0 });
     // Most recently focused CHART, so a pause's "Close (switch focus)" can hand
     // focus back to whatever chart the user was last looking at.
     const lastChartFocusRef = useRef<string | null>(null);
-    // Whether we've already auto-focused an artifact during the current
-    // agent run. We only jump focus once per run (to the FIRST generated
-    // chart), so the user isn't yanked around as further charts stream in.
-    // Subsequent artifacts rely on the "freshly created" highlight + NEW
-    // tag for discoverability instead.
-    const firstFocusedThisRunRef = useRef(false);
-
     useEffect(() => {
-        if (!isChatFormulating) {
-            userChartFocusLockedRef.current = false;
-            lastAutoFocusedChartIdRef.current = null;
-            firstFocusedThisRunRef.current = false;
-            return;
+        if (!isChatFormulating) return;
+        const steer = (event: Event) => {
+            // Scrolling only counts as reading inside the canvas, not while watching the thread.
+            if (event.type === 'wheel' && !(event.target as Element | null)?.closest?.('[data-canvas-pane]')) return;
+            userSteeredRef.current = true;
+        };
+        document.addEventListener('pointerdown', steer, true);
+        document.addEventListener('keydown', steer, true);
+        document.addEventListener('wheel', steer, { capture: true, passive: true });
+        return () => {
+            document.removeEventListener('pointerdown', steer, true);
+            document.removeEventListener('keydown', steer, true);
+            document.removeEventListener('wheel', steer, { capture: true });
+        };
+    }, [isChatFormulating]);
+    useEffect(() => () => { if (followTimerRef.current) clearTimeout(followTimerRef.current); }, []);
+
+    /** Focus a new result if the user hasn't steered this run; otherwise count it for "Show latest". */
+    const followFocus = (target: NonNullable<FocusedId>): boolean => {
+        // Every result gets a tab, unseen until visited, including any a burst skips past.
+        dispatch(dfActions.noteCanvasResult(target));
+        if (!shouldAutoFocusGeneratedChart(userSteeredRef.current)) {
+            setUnseenResults(previous => ({ count: previous.count + 1, target }));
+            return false;
         }
-        if (focusedId?.type === 'chart') {
-            if (focusedId.chartId !== lastAutoFocusedChartIdRef.current) {
-                userChartFocusLockedRef.current = true;
+        pendingFollowRef.current = target;
+        if (followTimerRef.current) return true;
+        const apply = () => {
+            followTimerRef.current = null;
+            const next = pendingFollowRef.current;
+            pendingFollowRef.current = undefined;
+            if (!next) return;
+            if (userSteeredRef.current) {
+                setUnseenResults(previous => ({ count: previous.count + 1, target: next }));
+                return;
             }
-        } else {
-            userChartFocusLockedRef.current = false;
+            lastFollowFocusAtRef.current = Date.now();
+            dispatch(dfActions.followFocused(next));
+        };
+        // Each followed result stays in view a moment; a burst lands on its newest.
+        const wait = lastFollowFocusAtRef.current + FOLLOW_MIN_VIEW_MS - Date.now();
+        if (wait <= 0) apply();
+        else followTimerRef.current = setTimeout(apply, wait);
+        return true;
+    };
+    const showLatestResult = () => {
+        const target = unseenResults.target;
+        userSteeredRef.current = false;
+        setUnseenResults({ count: 0 });
+        lastFollowFocusAtRef.current = Date.now();
+        if (target) {
+            dispatch(dfActions.setFocused(target));
+            if (target.type === 'report') dispatch(dfActions.setViewMode('report'));
         }
-    }, [focusedId, isChatFormulating]);
+    };
 
     // Stale draft detection is handled by loadState in dfSlice (marks running/clarifying drafts as interrupted)
 
     const inputCardRef = useRef<HTMLDivElement>(null);
+    // The input box, once it is on the page: what the follow-ups callout points at.
+    const [followUpsAnchor, setFollowUpsAnchor] = useState<HTMLDivElement | null>(null);
+    useEffect(() => { setFollowUpsAnchor(exampleFollowUps ? inputCardRef.current : null); }, [exampleFollowUps]);
+    // The hint steps aside once the user works elsewhere (the report, the thread): it folds into a
+    // small chip by the input, and opens again from the chip or the input.
+    const followUpsRef = useRef<HTMLDivElement>(null);
+    const [followUpsFolded, setFollowUpsFolded] = useState(false);
+    useEffect(() => { setFollowUpsFolded(false); }, [exampleFollowUps]);
+    useEffect(() => {
+        if (!exampleFollowUps) return;
+        const onPointerDown = (event: PointerEvent) => {
+            const target = event.target as Node | null;
+            if (!target) return;
+            if (followUpsRef.current?.contains(target)) return;
+            setFollowUpsFolded(!inputCardRef.current?.contains(target));
+        };
+        document.addEventListener('pointerdown', onPointerDown, true);
+        return () => document.removeEventListener('pointerdown', onPointerDown, true);
+    }, [exampleFollowUps]);
     // Ref to the chat textarea so getting-started starter prompts can seed
     // the input and immediately focus it for editing.
     const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -384,6 +465,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         }
         return [...ids];
     }, [defaultPrimaryTableIds, mentionedTableIds, inputTables]);
+    // The tables shown as chips: only those the user added, beyond the ones in view.
+    const mentionedChipIds = primaryTableIds.filter(id => !defaultPrimaryTableIds.includes(id));
 
     // Extract the filter text from after the last @ in the prompt
     const mentionFilter = React.useMemo(() => {
@@ -608,13 +691,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             }).map(table => table.id);
         };
 
-        // Seed the auto-focus baseline with whatever chart the user is
-        // currently looking at. Otherwise the lock effect would compare the
-        // current focused chart to `null` on run-start and trip immediately,
-        // blocking the first-artifact auto-focus.
-        lastAutoFocusedChartIdRef.current = focusedId?.type === 'chart' ? focusedId.chartId : null;
-        firstFocusedThisRunRef.current = false;
-        userChartFocusLockedRef.current = false;
+        // A new request starts following again.
+        userSteeredRef.current = false;
+        lastFollowFocusAtRef.current = 0;
+        pendingFollowRef.current = undefined;
+        if (followTimerRef.current) { clearTimeout(followTimerRef.current); followTimerRef.current = null; }
+        setUnseenResults({ count: 0 });
         // Capture the source chart for any TextTurn this run emits — its CANVAS
         // anchor (focusing the turn keeps this chart on the canvas, design-docs/41).
         // Fall back to the last-focused chart ONLY when it belongs to the asked-
@@ -808,6 +890,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
         // ── DraftNode tracking ──
         let currentDraftId: string | null = null;
+        // A failed run takes the focus, whatever the user is looking at, so its retry is at hand.
+        const failDraft = (draftId: string) => {
+            dispatch(dfActions.updateDeriveStatus({ nodeId: draftId, status: 'error' }));
+            dispatch(dfActions.setFocused({ type: 'draft', draftId }));
+        };
         const createNextDraft = (parentNodeId: string, parentTableId: string) => {
             const draftId = `draft-${runKey}-${Date.now()}`;
             dispatch(dfActions.createDraftNode({
@@ -950,8 +1037,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             dispatch(dfActions.saveGeneratedReport(inProgressReport));
             itemProduced(newId);
             if (replacedReport) dispatch(dfActions.deleteGeneratedReport(replacedReport.id));
-            dispatch(dfActions.setFocused({ type: 'report', reportId: newId }));
-            dispatch(dfActions.setViewMode('report'));
+            followFocus({ type: 'report', reportId: newId });
             reportId = newId;
             return newId;
         };
@@ -967,6 +1053,29 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         // produces follows it and becomes the head; the items one result brings
         // in together form one artifact set. The live draft always follows the head.
         let stepMessageId: string | null = null;
+        // The run's plan travels with the run, like a workflow run's card: it sits on the newest
+        // agent message (moved there as each step starts) and settles after the message that closes the run.
+        let planTurnId: string | null = null;
+        let planItems: PlanItem[] | null = null;
+        let planTitle: string | undefined;
+        const placePlan = (turnId: string) => {
+            if (!planItems) return;
+            if (!planTurnId) {
+                // A run resumed after an interruption plans again: its new plan replaces the
+                // unfinished one up the chain, so the thread doesn't show two copies.
+                const state = currentStore.getState() as DataFormulatorState;
+                const graph = dfSelectors.getThreadGraph(state);
+                for (let id: string | undefined = graph.parentOf(turnId); id; id = graph.parentOf(id)) {
+                    const earlier = state.textTurns.find(turn => turn.id === id);
+                    if (!earlier?.plan?.length) continue;
+                    if (earlier.plan.some(item => item.status === 'open')) dispatch(dfActions.updateTextTurn({ id, plan: undefined, planTitle: undefined }));
+                    break;
+                }
+            }
+            if (planTurnId && planTurnId !== turnId) dispatch(dfActions.updateTextTurn({ id: planTurnId, plan: undefined, planTitle: undefined }));
+            planTurnId = turnId;
+            dispatch(dfActions.updateTextTurn({ id: turnId, plan: planItems, planTitle }));
+        };
         let stepCount = 0;
         let setCount = 0;
         function chainHead(): string {
@@ -987,13 +1096,19 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             }));
             stepMessageId = turnId;
             advanceTo(turnId);
+            placePlan(turnId);
             return turnId;
         };
+        /** The agent's words beside its tool calls are its thinking; the step's message stays a short label. */
+        function flushNarration() {
+            const narration = pendingThought.trim();
+            pendingThought = '';
+            if (narration) addProgressStep(narration, 'thought');
+        }
         /** Move the step's finished thinking and tool steps onto its agent message; running steps stay live. */
         function settleStep(content?: string) {
-            const thought: ProgressStep[] = pendingThought
-                ? [{ id: `thought-${runKey}-${++progressCount}`, kind: 'thought', label: pendingThought, status: 'completed' }] : [];
-            const finished = [...thought, ...thinkingSteps.filter(step => step.status !== 'running')];
+            flushNarration();
+            const finished = thinkingSteps.filter(step => step.status !== 'running');
             if (!finished.length && content === undefined && !stepMessageId) return;
             const turnId = ensureStepMessage(content ?? '');
             const existing = (currentStore.getState() as DataFormulatorState).textTurns.find(turn => turn.id === turnId);
@@ -1071,6 +1186,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         /** Put a tool call on the step's agent message; a call awaiting approval pauses the run. */
         const addToolCall = (purpose: string, call: { execution?: TerminalExecution; codeExecution?: CodeExecution }, running: boolean) => {
             const turnId = ensureStepMessage(purpose);
+            // A step opened before its first call (e.g. to hold the plan) takes the call's purpose as its label.
+            if (purpose && !(currentStore.getState() as DataFormulatorState).textTurns.find(turn => turn.id === turnId)?.content) {
+                dispatch(dfActions.updateTextTurn({ id: turnId, content: purpose }));
+            }
             dispatch(dfActions.upsertTurnExecution({ turnId, ...call }));
             if (!running && currentDraftId) {
                 dispatch(dfActions.removeDraftNode(currentDraftId));
@@ -1086,6 +1205,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 parentNodeId: chainHead(), actionId, createdAt: Date.now() }));
             runLastNodeRef.current = turn.id;
             stepMessageId = null;
+            // The plan settles after whatever closes the run: an answer, a question, or a form.
+            placePlan(turn.id);
             if (currentDraftId) {
                 thinkingSteps = [];
                 pendingThought = '';
@@ -1278,7 +1399,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             item.connectorId === reference.connectorId && item.tableKey === reference.tableKey);
                     }).filter((reference): reference is NonNullable<typeof reference> => !!reference);
                     if (!operation.resultTableIds.length && operation.resultReferences?.length) {
-                        dispatch(dfActions.setFocused({ type: 'external-table', referenceId: operation.resultReferences[0].id }));
+                        followFocus({ type: 'external-table', referenceId: operation.resultReferences[0].id });
                     }
                     const { data } = operation.resultTableIds.length
                         ? await apiRequest(getUrls().LIST_TABLES, { method: 'GET' }) : { data: { tables: [] } };
@@ -1311,7 +1432,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     }
                     itemsProducedTogether(loadedIds);
                     const firstLoadedTable = loadedIds.find(id => id.startsWith(`loaded-table-${runKey}-`));
-                    if (firstLoadedTable) dispatch(dfActions.setFocused({ type: 'reference', referenceId: firstLoadedTable }));
+                    if (firstLoadedTable) followFocus({ type: 'reference', referenceId: firstLoadedTable });
                     if (operation.status === 'partially_loaded') {
                         dispatch(dfActions.addMessages({
                             timestamp: Date.now(),
@@ -1343,8 +1464,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 // report card already indicates that the report is being
                 // written, so the explicit step would be redundant.
                 if (pendingThought) {
-                    addProgressStep(pendingThought, 'thought');
-                    pendingThought = '';
+                    flushNarration();
                     if (currentDraftId) {
                         publishProgress();
                     }
@@ -1367,10 +1487,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     const fileName = file.path.slice('files/'.length);
                     notifyWorkspaceFilesChanged();
                     addFileItem(fileName, file.display_name || fileName, file.content_hash, result.replaces);
-                    dispatch(dfActions.setFocused({ type: 'file', fileName }));
+                    followFocus({ type: 'file', fileName });
                     if (pendingThought) {
-                        addProgressStep(pendingThought, 'thought');
-                        pendingThought = '';
+                        flushNarration();
                     }
                     addProgressStep(t(result.updated ? 'htmlApp.updated' : 'htmlApp.created', { title: file.display_name || fileName }), 'info');
                     if (currentDraftId) {
@@ -1399,6 +1518,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }
             }
 
+            // ── plan: the checklist the agent wrote (revised) or a step a delivered result checked off ──
+            // One card per run: it appears where the plan was first written and later revisions and ticks update it.
+            if (result.type === "plan" && Array.isArray(result.items)) {
+                planItems = result.items as PlanItem[];
+                if (typeof result.title === 'string' && result.title) planTitle = result.title;
+                placePlan(planTurnId || ensureStepMessage(''));
+            }
+
             // ── thinking_text: LLM reasoning alongside tool calls ──
             // Accumulate into pendingThought; don't create a visible step
             if (result.type === "thinking_text") {
@@ -1419,8 +1546,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 if (toolCallId && seenToolCalls.has(toolCallId)) return;
                 if (toolCallId) seenToolCalls.add(toolCallId);
                 if (pendingThought) {
-                    addProgressStep(pendingThought, 'thought');
-                    pendingThought = '';
+                    flushNarration();
                 }
                 const step = addProgressStep('', 'tool', 'running', { tool: result.tool, toolCallId,
                     executionId: result.execution_id || (result.tool === 'run_terminal' ? toolCallId : undefined) });
@@ -1533,7 +1659,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         addFileItem(fileName, file.display_name || file.name || fileName, file.content_hash, file.replaces);
                         // An app the agent edited comes into view, like a newly written one.
                         if (result.tool === 'edit_file' && file.app === true) {
-                            dispatch(dfActions.setFocused({ type: 'file', fileName }));
+                            followFocus({ type: 'file', fileName });
                             addProgressStep(t('htmlApp.updated', { title: file.display_name || fileName }), 'info');
                         }
                     }
@@ -1746,17 +1872,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     newChart.titleKey = computeInsightKey(newChart);
                 }
                 runCreatedChartIds.push(newChart.id);
-                // Mark as unread by default; cleared below if we auto-focus it
-                // (i.e. it's the first artifact this run) or by setFocused when
-                // the user clicks the card.
+                // Unread until focused — by following along, or by the user opening it.
                 newChart.unread = true;
                 createdCharts.push(newChart);
                 dispatch(dfActions.addChart(newChart));
-                if (!firstFocusedThisRunRef.current && shouldAutoFocusGeneratedChart(userChartFocusLockedRef.current)) {
-                    firstFocusedThisRunRef.current = true;
-                    lastAutoFocusedChartIdRef.current = newChart.id;
-                    dispatch(dfActions.setFocused({ type: 'chart', chartId: newChart.id }));
-                }
+                followFocus({ type: 'chart', chartId: newChart.id });
 
                 if (conceptsToAdd.length > 0) {
                     dispatch(dfActions.addConceptItems(conceptsToAdd));
@@ -1787,9 +1907,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         timestamp: Date.now(), type: 'error',
                         component: 'data-agent', value: errMsg,
                     }));
-                    if (currentDraftId) {
-                        dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
-                    }
+                    if (currentDraftId) failDraft(currentDraftId);
                     setIsChatFormulating(false);
                     agentAbortRef.current = null;
                     clearTimeout(timeoutId);
@@ -1839,10 +1957,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 } else {
                     const closingTurnId = emitClosingTurn(summary, result);
                     if (closingTurnId) {
-                        // Expand the answer once the run lands — the canvas still
-                        // resolves to the nearest chart, so this doesn't hide the
+                        // Expand the answer once the run lands (unless the user took over) — the
+                        // canvas still resolves to the nearest chart, so this doesn't hide the
                         // artifact the answer is about.
-                        dispatch(dfActions.setFocused({ type: 'text', textId: closingTurnId }));
+                        followFocus({ type: 'text', textId: closingTurnId });
                     }
                 }
             }
@@ -1898,7 +2016,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 from: 'data-agent', to: 'user', role: 'error',
                                 content: errMsg, timestamp: Date.now(),
                             }}));
-                            dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
+                            failDraft(currentDraftId);
                             currentDraftId = null;
                         }
                         return;
@@ -1957,7 +2075,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
                             from: 'data-agent', to: 'user', role: 'error', content: errorMessage, timestamp: Date.now(),
                         }}));
-                        dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
+                        failDraft(currentDraftId);
                     }
                     currentDraftId = null;
                 }
@@ -2182,6 +2300,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const focusedTextTurn = focusedId?.type === 'text'
         ? textTurns.find(tt => tt.id === focusedId.textId)
         : undefined;
+    // The calls of the viewed step, in order, to step through from its panel.
+    const viewingStepTurn = viewingToolActivity ? textTurns.find(turn => turn.id === viewingToolActivity.nodeId) : undefined;
+    const viewingStepCalls = [...(viewingStepTurn?.executions || []), ...(viewingStepTurn?.codeExecutions || [])]
+        .sort((left, right) => (left.createdAt ?? 0) - (right.createdAt ?? 0));
     const selectedExecution = viewingToolActivity ? ('code' in viewingToolActivity.execution
         ? textTurns.find(turn => turn.id === viewingToolActivity.nodeId)?.codeExecutions || []
         : textTurns.find(turn => turn.id === viewingToolActivity.nodeId)?.executions || [])
@@ -2206,6 +2328,28 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         return '';
     };
     const focusedDraftPrompt = focusedDraft ? runPromptOf(focusedDraft) : '';
+    /**
+     * A retry starts the request over, so the agent steps the cut-off attempt left after its
+     * last result are redone; drop them and retry from what remains. Returns the retry's parent.
+     */
+    const dropLeftoverSteps = (draft: DraftNode): string => {
+        let nodeId = draft.parentNodeId;
+        let childId = draft.id;
+        const leftovers: string[] = [];
+        for (;;) {
+            const turn = textTurns.find(item => item.id === nodeId);
+            const leftover = !!turn && !turn.prompt && !turn.form && !turn.dataOperation && !turn.workflow
+                && !turn.options?.length && turn.answered === undefined
+                && !!(turn.executions?.length || turn.codeExecutions?.length || turn.progressSteps?.length)
+                && threadGraph.childrenOf(turn.id).every(node => node.id === childId);
+            if (!turn || !leftover) break;
+            leftovers.push(turn.id);
+            childId = turn.id;
+            nodeId = turn.parentNodeId;
+        }
+        leftovers.forEach(id => dispatch(dfActions.removeTextTurn(id)));
+        return nodeId;
+    };
     const focusedDraftError = focusedDraft
         ? [...(focusedDraft.derive.trigger.interaction || [])].reverse().find(entry => entry.role === 'error')?.content
             || (focusedDraft.derive.status === 'interrupted'
@@ -2364,6 +2508,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         >
             {viewingToolActivity && selectedExecution && <ToolActivityPanel key={`${viewingToolActivity.nodeId}-${selectedExecution.id}`}
                 execution={selectedExecution}
+                calls={viewingStepCalls}
+                onSelect={execution => window.dispatchEvent(new CustomEvent('df-view-tool-activity',
+                    { detail: { nodeId: viewingToolActivity.nodeId, execution } }))}
                 onClose={() => setViewingToolActivity(null)} />}
             {!viewingToolActivity && chatWorkflow && (chatWorkflow.workflow?.status === 'running' || focusedId !== submittedPanelFocus) && <WorkflowProgress key={chatWorkflow.id} turn={chatWorkflow} interactionOnly
                 onCloseInteraction={() => setSubmittedPanelFocus(focusedId)} />}
@@ -2406,7 +2553,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     retryDisabled={isChatFormulating || !focusedDraftPrompt}
                     onClose={closeFocusedDraft}
                     onRetry={() => exploreFromChat(focusedDraftPrompt, {
-                        parentNodeId: focusedDraft.parentNodeId,
+                        parentNodeId: dropLeftoverSteps(focusedDraft),
                         sourceTableIds: focusedDraft.derive.source,
                         retry: true,
                     })}
@@ -2414,20 +2561,18 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             )}
             {/* Input area wrapper */}
             <Box sx={{ position: 'relative' }}>
-            {/* @-mention table chips and image attachments.
-                Skip the table-chip row entirely when there's only one root table —
-                there's nothing else the user could @-mention, so the chip is noise. */}
-            {((primaryTableIds.length > 0 && inputTables.length > 1) || attachedImages.length > 0 || attachedFiles.length > 0) && !isChatFormulating && (
+            {/* Chips only for context the user added: @-mentioned tables and attached images or files, as in
+                chat and coding agents. The table in view is implied (the canvas tab names it) and is still sent. */}
+            {(mentionedChipIds.length > 0 || attachedImages.length > 0 || attachedFiles.length > 0) && !isChatFormulating && (
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px', px: 0.5, pb: '2px' }}>
-                    {inputTables.length > 1 && primaryTableIds.map(id => {
+                    {mentionedChipIds.map(id => {
                         const tbl = tables.find(t => t.id === id);
-                        const isDefault = defaultPrimaryTableIds.includes(id);
                         return (
                             <Chip
                                 key={id}
                                 size="small"
                                 label={`@${tbl?.displayId || id}`}
-                                onDelete={isDefault ? undefined : () => setMentionedTableIds(prev => prev.filter(mid => mid !== id))}
+                                onDelete={() => setMentionedTableIds(prev => prev.filter(mid => mid !== id))}
                                 sx={{
                                     height: 20,
                                     fontSize: textVar.xxs,
@@ -2731,6 +2876,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     theme={theme}
                     color={'primary'}
                     onCancel={cancelAgent}
+                    latest={{ count: unseenResults.count, onShow: showLatestResult }}
                     sx={{
                         left: -10, right: -10, bottom: -4, borderRadius: 0,
                         // With nothing above it, cover the card's top padding too
@@ -2836,6 +2982,74 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         </Box>
     ) : null;
 
+    // ── Example-session follow-ups ───────────────────────────────────
+    // A callout when an example session opens: the user can continue the
+    // analysis with their own question or click one of these. It floats above
+    // the panes, starting over the input and reaching across into the canvas,
+    // with its pointer on the input.
+    // Styled as a plain tooltip (MUI's default dark fill, no border).
+    const calloutFill = alpha(theme.palette.grey[700], 0.92);
+    const calloutText = theme.palette.common.white;
+    const showFollowUps = !!exampleFollowUps && !workspaceReadOnly && !chatWorkflow && !isChatFormulating;
+    const followUpsBlock = showFollowUps && exampleFollowUps ? (
+        <Popper open={!!followUpsAnchor} anchorEl={followUpsAnchor} placement="top-start" style={{ zIndex: 1250 }}
+            modifiers={[{ name: 'offset', options: {
+                // Open, the hint sits mostly over the canvas (about 30% over the chat pane, 70% beyond),
+                // so it leaves the latest thread items in view; its pointer stays on the input.
+                offset: ({ reference, popper }: { reference: { width: number }; popper: { width: number } }) => followUpsFolded
+                    ? [20, 6] : [Math.max(20, reference.width - 0.3 * popper.width), 12] } }, { name: 'preventOverflow', options: { padding: 12 } }, { name: 'flip', enabled: false }]}>
+        <Box ref={followUpsRef}>
+        {followUpsFolded ? <ButtonBase onClick={() => setFollowUpsFolded(false)} sx={{
+            display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.375, borderRadius: '4px',
+            bgcolor: calloutFill, color: calloutText,
+            fontFamily: 'inherit', fontSize: textVar.xs, fontWeight: 500,
+            '&:hover, &.Mui-focusVisible': { bgcolor: theme.palette.grey[800] },
+        }}>
+            <TipsAndUpdatesIcon sx={{ fontSize: iconVar.sm }} />
+            {t('chartRec.followUpsFolded', { defaultValue: 'Follow-up ideas' })}
+        </ButtonBase> :
+        <Box role="note" aria-label={t('chartRec.followUpsTitle', { defaultValue: 'Follow-up suggestions' })} sx={{
+            position: 'relative', width: 'min(440px, calc(100vw - 32px))', boxSizing: 'border-box', px: 1.25, pt: 0.875, pb: 1, borderRadius: '4px',
+            bgcolor: calloutFill, color: calloutText,
+            animation: 'followUpsIn 0.22s ease-out',
+            '@keyframes followUpsIn': { from: { opacity: 0, transform: 'translateY(4px)' }, to: { opacity: 1, transform: 'none' } },
+            // The pointer toward the input box below, as on a tooltip arrow.
+            '&::after': {
+                content: '""', position: 'absolute', left: 24, bottom: -4, width: 8, height: 8, transform: 'rotate(45deg)',
+                bgcolor: calloutFill,
+            },
+        }}>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75 }}>
+                <TipsAndUpdatesIcon sx={{ fontSize: iconVar.sm, mt: '2px', flexShrink: 0, opacity: 0.85 }} />
+                <Typography sx={{ flex: 1, minWidth: 0, fontSize: textVar.xs, lineHeight: 1.5, color: 'inherit' }}>
+                    {t('chartRec.followUpsBody', { defaultValue: 'You can ask follow-up questions in the chat to continue the analysis: ask for new charts, explanations or a new report. Try these examples:' })}
+                </Typography>
+                <Tooltip title={t('chartRec.followUpsDismiss', { defaultValue: 'Dismiss suggestions' })}>
+                    <IconButton size="small" aria-label={t('chartRec.followUpsDismiss', { defaultValue: 'Dismiss suggestions' })}
+                        onClick={() => dispatch(dfActions.setExampleFollowUps(undefined))}
+                        sx={{ p: 0.25, mt: '-2px', mr: '-4px', color: alpha(calloutText, 0.75), flexShrink: 0,
+                            '&:hover': { color: calloutText, bgcolor: alpha(calloutText, 0.12) } }}>
+                        <CloseIcon sx={{ fontSize: iconVar.sm }} />
+                    </IconButton>
+                </Tooltip>
+            </Box>
+            <Box sx={{ mt: 0.5, pl: 2.5, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                {exampleFollowUps.questions.map(question => <ButtonBase key={question} onClick={() => submitChat(question)} sx={{
+                    display: 'inline-flex', alignItems: 'baseline', gap: 0.5, py: 0.25, borderRadius: '4px',
+                    fontFamily: 'inherit', fontSize: textVar.xs, lineHeight: 1.45, textAlign: 'left', color: 'inherit', fontWeight: 600,
+                    '& .follow-up-arrow': { transition: 'transform 0.12s' },
+                    '&:hover, &.Mui-focusVisible': { textDecoration: 'underline', textUnderlineOffset: '2px' },
+                    '&:hover .follow-up-arrow, &.Mui-focusVisible .follow-up-arrow': { transform: 'translateX(2px)' },
+                }}>
+                    <ArrowForwardRoundedIcon className="follow-up-arrow" sx={{ fontSize: iconVar.xs, alignSelf: 'center', flexShrink: 0 }} />
+                    {question}
+                </ButtonBase>)}
+            </Box>
+        </Box>}
+        </Box>
+        </Popper>
+    ) : null;
+
     return (
         <ClickAwayListener
             mouseEvent="onMouseDown"
@@ -2886,7 +3100,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             terminalResponse: { request_id: pending.proposal.id, decision },
                         }, undefined, { images: [], files: [] });
                     }} />}
-                {gettingStartedBlock}
+                {followUpsBlock}
+                {!followUpsBlock && gettingStartedBlock}
                 {/* The input box */}
                 {inputBox}
             </Box>

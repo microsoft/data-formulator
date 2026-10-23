@@ -69,6 +69,7 @@ from data_formulator.analyst.skills import (
 )
 from data_formulator.analyst.tools import build_tools
 from data_formulator.analyst.history import SessionHistory
+from data_formulator.analyst.plan import RunPlan, read_plan, split_plan
 from data_formulator.analyst.session_files import render_session_context, render_turn_context
 from data_formulator.analyst.session_layer import SessionLayer, load_saved_state
 from data_formulator.analyst.session_layer.layer import seen_versions
@@ -374,7 +375,7 @@ and actions become available only after loading; do not reload an active skill.
 
 ## Completing your work
 
-Stop when the request is satisfied. If essential input or authorization is missing,
+Stop when the request is satisfied and no step of your plan is left open. If essential input or authorization is missing,
 ask the user rather than repeating unsuccessful attempts without new evidence.
 
 {agent_exploration_rules}"""
@@ -465,6 +466,9 @@ class AnalystAgent:
         # where the last reminder was sent. New user input or a new workflow step resets both.
         self._progress_scope_start = 0
         self._progress_reminder_start = 0
+        # The run's checklist plan, read from the agent's narration (design-docs/64).
+        self._plan = RunPlan()
+        self._last_run_chart_id: str | None = None
 
     # ------------------------------------------------------------------
     # Helpers
@@ -617,6 +621,7 @@ class AnalystAgent:
             history = SessionHistory(self.workspace) if self.workspace is not None and hasattr(
                 self.workspace, "confined_scratch") else None
             continued, turn_start, self._run_end, self._delivered = False, None, None, False
+            self._plan = RunPlan()
             if trajectory is None:
                 stored, why = history.continuable(self.client.model) if history else (None, "no workspace")
                 if stored is None:
@@ -776,6 +781,7 @@ class AnalystAgent:
                 self._suppress_stream_channel = self._streamed_channels.get(
                     action_tool_call_id
                 )
+                self._last_run_chart_id = None
                 try:
                     observation = yield from self._dispatch_skill_action(
                         owner, action_type, action, trajectory, iteration, completed_steps,
@@ -788,6 +794,9 @@ class AnalystAgent:
                 )
                 if action_type in _DELIVERY_ACTIONS and observation and not observation.lstrip().startswith("[ERROR]"):
                     self._delivered = True
+                    result_id = (self._last_run_chart_id or action_type) if action_type == "visualize" else action_type
+                    if self._plan.record(action.get("plan_step"), result_id):
+                        yield self._plan.event(revised=False)
 
                 if observation is None:
                     # ── Terminal action → the run pauses ──────────────────────
@@ -1103,6 +1112,7 @@ class AnalystAgent:
         ``self._run_payload['charts']`` so the next dispatched skill ctx sees it.
         """
         chart_id = transform_result.get("chart_id")
+        self._last_run_chart_id = chart_id
         if not chart_id:
             return
         content = transform_result.get("content", {}) or {}
@@ -1639,6 +1649,26 @@ class AnalystAgent:
         self._progress_reminder_start = len(messages)
         return True
 
+    def _read_plan(self, content: str) -> Generator[Event, None, str]:
+        """Take a checklist the agent wrote as its plan (design-docs/64); return the remaining narration."""
+        items, title, narration = read_plan(content)
+        if items is not None:
+            self._plan.revise(items, title)
+            yield self._plan.event(revised=True)
+        return narration
+
+    def _remind_open_plan(self, messages: list[dict], content: str, choice) -> bool:
+        """Before a run ends with plan steps open, ask once to continue or strike them."""
+        reminder = self._plan.reminder()
+        if reminder is None:
+            return False
+        if content.strip():
+            reply: dict[str, Any] = {"role": "assistant", "content": content}
+            attach_reasoning_content(reply, choice.message)
+            messages.append(reply)
+        messages.append({"role": "user", "content": reminder})
+        return True
+
     def _current_tools(self) -> list[dict[str, Any]]:
         """The tool set offered this turn: baseline inspection tools plus
         load_skill + loaded skills' tools) plus the committing **action**
@@ -1745,8 +1775,9 @@ class AnalystAgent:
 
             # --- tool calls: partition into committing actions vs inspection ---
             if tool_calls:
-                if content.strip():
-                    yield {"type": "thinking_text", "content": content.strip()}
+                narration = yield from self._read_plan(content)
+                if narration:
+                    yield {"type": "thinking_text", "content": narration}
 
                 # A committing action is a tool call (visualize / delegate /
                 # write_report). Inspection tools (explore /
@@ -1954,6 +1985,10 @@ class AnalystAgent:
             # A stream with neither text nor tool calls is a provider failure
             # (e.g. throttled Responses streams end silently), not an answer.
             if not content.strip() and getattr(self, "_delivered", False):
+                if self._plan.finish():
+                    yield self._plan.event(revised=False)
+                if self._remind_open_plan(messages, content, choice):
+                    continue
                 # After a delivered chart, report, or app the request can be complete with nothing more to say.
                 logger.info("[AnalystAgent] Empty reply after a delivery ends the run")
                 yield {"type": "agent_action", "action_data": None, "reason": "done", "final_text": "",
@@ -1977,11 +2012,16 @@ class AnalystAgent:
             # as the summary). Record it as a plain assistant turn and signal
             # "done" to the outer loop.
             logger.info("[AnalystAgent] No action committed; final text ends the run")
+            final_text = yield from self._read_plan(content)
+            if self._plan.finish():
+                yield self._plan.event(revised=False)
+            if self._remind_open_plan(messages, content, choice):
+                continue
             final_msg: dict[str, Any] = {"role": "assistant", "content": content or None}
             attach_reasoning_content(final_msg, choice.message)
             messages.append(final_msg)
             yield {"type": "agent_action", "action_data": None, "reason": "done",
-                   "final_text": content.strip(), "llm_calls": llm_calls_in_cycle}
+                   "final_text": final_text, "llm_calls": llm_calls_in_cycle}
             return
 
 
@@ -2108,8 +2148,14 @@ class AnalystAgent:
                  latency_ms=0, status="ok")
         yield {"type": "agent_action", "action_data": action_data, "reason": "ok",
                "tool_call_id": chosen.id, "llm_calls": llm_calls_in_cycle,
-               "narration": (content or "").strip()}
+               "narration": split_plan(content)[1]}
         return True
+
+    @staticmethod
+    def _is_rate_limit_error(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        return ("rate limit" in msg or "rate_limit" in msg or "429" in msg
+                or "ratelimit" in type(exc).__name__.lower())
 
     @staticmethod
     def _is_transient_error(exc: Exception) -> bool:
@@ -2156,12 +2202,16 @@ class AnalystAgent:
                     logger.warning("[AnalystAgent] Context window exceeded; retrying with older tool output shortened")
                     continue
                 attempt += 1
-                if self._is_transient_error(e) and attempt < max_attempts:
-                    wait = self.execution_config.stream_open_backoff_seconds * 2 ** (attempt - 1)
+                rate_limited = self._is_rate_limit_error(e)
+                limit = self.execution_config.rate_limit_retries + 1 if rate_limited else max_attempts
+                if self._is_transient_error(e) and attempt < limit:
+                    backoff = (self.execution_config.rate_limit_backoff_seconds if rate_limited
+                               else self.execution_config.stream_open_backoff_seconds)
+                    wait = backoff * 2 ** (attempt - 1)
                     logger.warning(
                         "[AnalystAgent] Transient LLM error (attempt %d/%d), "
                         "retrying in %gs: %s",
-                        attempt, max_attempts, wait, e,
+                        attempt, limit, wait, e,
                     )
                     if cancel is not None:
                         cancel.wait(wait)

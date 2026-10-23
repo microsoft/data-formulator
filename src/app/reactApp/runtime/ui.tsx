@@ -121,7 +121,8 @@ export function FilterBar({ children, sticky }: { children?: React.ReactNode; st
         <Paper elevation={0} sx={{
             display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '10px 16px', px: 1.75, py: 1.25,
             border: `1px solid ${BORDER}`, borderRadius: 2, boxShadow: SHADOW,
-            ...(sticky ? { position: 'sticky', top: 8, zIndex: 5 } : {}),
+            // Pinned 8px below the top; a page-colored shadow fills that gap so scrolled content doesn't show above the bar.
+            ...(sticky ? { position: 'sticky', top: 8, zIndex: 5, boxShadow: `0 -8px 0 0 #f6f7f9, ${SHADOW}` } : {}),
         }}>{children}</Paper>
     );
 }

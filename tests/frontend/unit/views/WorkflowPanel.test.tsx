@@ -380,7 +380,7 @@ describe('Workflow session publication', () => {
                 trigger: { tableId: rootId, resultTableId: 'phase-counts', chart: undefined },
             } } as any));
         const { container } = renderThread();
-        expect(screen.getAllByRole('button', { name: 'view chat' })).toHaveLength(1);
+        expect(screen.getAllByRole('button', { name: 'Open as chat' })).toHaveLength(1);
         expect(container.querySelectorAll('[data-thread-item="loaded-incidents"]')).toHaveLength(1);
         const output = container.querySelector<HTMLElement>('[data-thread-item="loaded-incidents"]')!;
         const artifact = within(output).getByRole('button', { name: 'Incident Records' });
@@ -795,7 +795,7 @@ describe('Workflow session publication', () => {
         const expectThreadOrder = () => {
             expect(screen.getAllByText(/^thread\s*-\s*\d+$/i).map(heading => heading.textContent))
                 .toEqual([expect.stringMatching(/^thread\s*-\s*1$/i), expect.stringMatching(/^thread\s*-\s*2$/i)]);
-            const buttons = screen.getAllByRole('button', { name: 'view chat' });
+            const buttons = screen.getAllByRole('button', { name: 'Open as chat' });
             expect(buttons).toHaveLength(2);
             buttons.forEach((button, index) => {
                 fireEvent.click(button);
@@ -905,7 +905,7 @@ describe('Workflow session publication', () => {
             & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         expect(card.compareDocumentPosition(screen.getByText('Now compare next month.')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         expect(container.querySelectorAll(`[data-thread-item="textturn-${recordId}"]`)).toHaveLength(1);
-        expect(screen.getAllByRole('button', { name: 'view chat' })).toHaveLength(1);
+        expect(screen.getAllByRole('button', { name: 'Open as chat' })).toHaveLength(1);
     });
 
     it('keeps the workflow run on the canvas when its completion message is focused', async () => {
@@ -1842,10 +1842,9 @@ describe('Workflow session publication', () => {
         expect(text.indexOf('Category Values')).toBeLessThan(text.indexOf('completed · 3 tool calls'));
         expect(text.indexOf('notes.txt')).toBeLessThan(text.indexOf('Category Values'));
         expect(text.indexOf('Category Values')).toBeLessThan(text.indexOf('Native review', text.indexOf('Run workflow: Native review') + 'Run workflow: Native review'.length));
-        // KNOWN PRODUCT BUG (fails today): the completed record is the run's closing message, but the
-        // thread renders it only as the progress card, so its response never appears in the thread.
+        // The completed record is the run's closing message: one card, its steps and then its answer.
         expect(text.indexOf(snapshot.message)).toBeGreaterThan(text.lastIndexOf('notes.txt'));
-        expect(container.querySelector('[data-workflow-progress="native"]')!.textContent).not.toContain(snapshot.message);
+        expect(container.querySelector('[data-workflow-progress="native"] [data-workflow-answer]')!.textContent).toBe(snapshot.message);
     });
 
     it('does not crash on a previously saved chart whose table no longer exists', () => {
@@ -2096,9 +2095,9 @@ describe('Workflow session publication', () => {
         expect(container.querySelector('[data-workflow-scroll]')?.parentElement).toHaveStyle({
             '--df-text-md': '0.875rem', '--df-text-sm': '0.8125rem', '--df-text-xs': '0.75rem',
         });
-        // KNOWN PRODUCT BUG (fails today): WorkflowProgress titles the run from `turn.prompt`, which the
-        // run record no longer carries (the request message does), so the heading falls back to "Workflow".
-        expect(screen.getByRole('heading', { level: 1, name: 'Native review' })).toHaveStyle({ fontSize: '1.375rem' });
+        // The run's name is the canvas header's title; a completed run has no header.
+        if (state === 'completed') expect(container.querySelector('[data-canvas-header]')).toBeNull();
+        else expect(within(container.querySelector('[data-canvas-header]') as HTMLElement).getByRole('heading', { name: 'Native review' })).toBeVisible();
         expect(screen.getByText('Regional comparison chart')).not.toBeVisible();
         expect(screen.getByText('Summary report')).not.toBeVisible();
         const summary = screen.getByRole('region', { name: 'Workflow summary' });
@@ -2110,7 +2109,8 @@ describe('Workflow session publication', () => {
         } else if (state === 'paused') {
             const header = screen.getByRole('banner', { name: 'Workflow status' });
             expect(within(header).getByText('Choose which regions to include.')).toBeVisible();
-            expect(within(header).getByRole('button', { name: 'Resume' })).toBeVisible();
+            // Resume lives in the canvas header, beside the status.
+            expect(within(container.querySelector('[data-canvas-header]') as HTMLElement).getByRole('button', { name: 'Resume' })).toBeVisible();
             expect(within(header).getByText('Step 2 of 3:')).toBeVisible();
             expect(within(header).queryByText(/tool calls/)).toBeNull();
         }

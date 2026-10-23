@@ -1,0 +1,1592 @@
+{
+ "__stateVersion": 14,
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "d_out_3",
+   "displayId": "Recent high school completion by country",
+   "names": [
+    "country",
+    "year",
+    "value",
+    "qualifier",
+    "map_id",
+    "population_thousands"
+   ],
+   "rows": [
+    {
+     "country": "South Sudan",
+     "year": 2025,
+     "value": 2.1,
+     "qualifier": null,
+     "map_id": 728,
+     "population_thousands": 12066.964
+    },
+    {
+     "country": "Niger",
+     "year": 2025,
+     "value": 4.9,
+     "qualifier": null,
+     "map_id": 562,
+     "population_thousands": 27472.386
+    },
+    {
+     "country": "Central African Republic",
+     "year": 2025,
+     "value": 5.6,
+     "qualifier": null,
+     "map_id": 140,
+     "population_thousands": 5421.13
+    },
+    {
+     "country": "Chad",
+     "year": 2025,
+     "value": 6.6,
+     "qualifier": null,
+     "map_id": 148,
+     "population_thousands": 20727.802
+    },
+    {
+     "country": "Zimbabwe",
+     "year": 2025,
+     "value": 8.1,
+     "qualifier": null,
+     "map_id": 716,
+     "population_thousands": 16790.361
+    },
+    {
+     "country": "Mozambique",
+     "year": 2025,
+     "value": 8.6,
+     "qualifier": null,
+     "map_id": 508,
+     "population_thousands": 35133.838
+    },
+    {
+     "country": "Tanzania",
+     "year": 2025,
+     "value": 8.7,
+     "qualifier": null,
+     "map_id": 834,
+     "population_thousands": 69542.105
+    },
+    {
+     "country": "Somalia",
+     "year": 2025,
+     "value": 8.8,
+     "qualifier": null,
+     "map_id": 706,
+     "population_thousands": 19332.476
+    },
+    {
+     "country": "Equatorial Guinea",
+     "year": 2025,
+     "value": 9,
+     "qualifier": null,
+     "map_id": 226,
+     "population_thousands": 1915.415
+    },
+    {
+     "country": "Burundi",
+     "year": 2025,
+     "value": 10.2,
+     "qualifier": null,
+     "map_id": 108,
+     "population_thousands": 14220.671
+    },
+    {
+     "country": "Mali",
+     "year": 2025,
+     "value": 11.3,
+     "qualifier": null,
+     "map_id": 466,
+     "population_thousands": 24834.845
+    },
+    {
+     "country": "Vanuatu",
+     "year": 2025,
+     "value": 11.3,
+     "qualifier": null,
+     "map_id": 548,
+     "population_thousands": 331.47
+    },
+    {
+     "country": "Guinea-Bissau",
+     "year": 2025,
+     "value": 12.7,
+     "qualifier": null,
+     "map_id": 624,
+     "population_thousands": 2225.316
+    },
+    {
+     "country": "Sierra Leone",
+     "year": 2025,
+     "value": 13.3,
+     "qualifier": null,
+     "map_id": 694,
+     "population_thousands": 8731.14
+    },
+    {
+     "country": "Papua New Guinea",
+     "year": 2025,
+     "value": 14.2,
+     "qualifier": null,
+     "map_id": 598,
+     "population_thousands": 10669.942
+    },
+    {
+     "country": "Liberia",
+     "year": 2025,
+     "value": 14.2,
+     "qualifier": null,
+     "map_id": 430,
+     "population_thousands": 5672.242
+    },
+    {
+     "country": "Madagascar",
+     "year": 2025,
+     "value": 14.6,
+     "qualifier": null,
+     "map_id": 450,
+     "population_thousands": 32351.522
+    },
+    {
+     "country": "Ethiopia",
+     "year": 2025,
+     "value": 15.4,
+     "qualifier": null,
+     "map_id": 231,
+     "population_thousands": 133764.511
+    },
+    {
+     "country": "Burkina Faso",
+     "year": 2025,
+     "value": 16,
+     "qualifier": null,
+     "map_id": 854,
+     "population_thousands": 23811.646
+    },
+    {
+     "country": "Senegal",
+     "year": 2025,
+     "value": 16.2,
+     "qualifier": null,
+     "map_id": 686,
+     "population_thousands": 18715.895
+    },
+    {
+     "country": "Côte d'Ivoire",
+     "year": 2025,
+     "value": 16.9,
+     "qualifier": null,
+     "map_id": 384,
+     "population_thousands": 32320.672
+    },
+    {
+     "country": "Uganda",
+     "year": 2025,
+     "value": 17.8,
+     "qualifier": null,
+     "map_id": 800,
+     "population_thousands": 50698.092
+    },
+    {
+     "country": "Malawi",
+     "year": 2025,
+     "value": 18.1,
+     "qualifier": null,
+     "map_id": 454,
+     "population_thousands": 21934.44
+    },
+    {
+     "country": "Benin",
+     "year": 2025,
+     "value": 18.3,
+     "qualifier": null,
+     "map_id": 204,
+     "population_thousands": 14637.545
+    },
+    {
+     "country": "Haiti",
+     "year": 2025,
+     "value": 18.5,
+     "qualifier": null,
+     "map_id": 332,
+     "population_thousands": 11839.919
+    },
+    {
+     "country": "Belize",
+     "year": 2025,
+     "value": 19.5,
+     "qualifier": null,
+     "map_id": 84,
+     "population_thousands": 420.046
+    },
+    {
+     "country": "Kiribati",
+     "year": 2025,
+     "value": 21.4,
+     "qualifier": null,
+     "map_id": 296,
+     "population_thousands": 135.509
+    },
+    {
+     "country": "Togo",
+     "year": 2025,
+     "value": 22.1,
+     "qualifier": null,
+     "map_id": 768,
+     "population_thousands": 9618.079
+    },
+    {
+     "country": "Cameroon",
+     "year": 2025,
+     "value": 22.7,
+     "qualifier": null,
+     "map_id": 120,
+     "population_thousands": 29499.946
+    },
+    {
+     "country": "Rwanda",
+     "year": 2025,
+     "value": 22.7,
+     "qualifier": null,
+     "map_id": 646,
+     "population_thousands": 14406.786
+    },
+    {
+     "country": "Gabon",
+     "year": 2025,
+     "value": 22.8,
+     "qualifier": null,
+     "map_id": 266,
+     "population_thousands": 2566.041
+    },
+    {
+     "country": "Mauritania",
+     "year": 2025,
+     "value": 23,
+     "qualifier": null,
+     "map_id": 478,
+     "population_thousands": 5242.27
+    },
+    {
+     "country": "Myanmar",
+     "year": 2025,
+     "value": 24.4,
+     "qualifier": null,
+     "map_id": 104,
+     "population_thousands": 54679.701
+    },
+    {
+     "country": "Angola",
+     "year": 2025,
+     "value": 24.4,
+     "qualifier": null,
+     "map_id": 24,
+     "population_thousands": 38458.843
+    },
+    {
+     "country": "Guinea",
+     "year": 2025,
+     "value": 25,
+     "qualifier": null,
+     "map_id": 324,
+     "population_thousands": 14928.03
+    },
+    {
+     "country": "Cambodia",
+     "year": 2025,
+     "value": 25.6,
+     "qualifier": null,
+     "map_id": 116,
+     "population_thousands": 17744.518
+    },
+    {
+     "country": "DR Congo",
+     "year": 2025,
+     "value": 26.4,
+     "qualifier": null,
+     "map_id": 180,
+     "population_thousands": 111036.378
+    },
+    {
+     "country": "Morocco",
+     "year": 2025,
+     "value": 27,
+     "qualifier": null,
+     "map_id": 504,
+     "population_thousands": 38261.062
+    },
+    {
+     "country": "Zambia",
+     "year": 2025,
+     "value": 28,
+     "qualifier": null,
+     "map_id": 894,
+     "population_thousands": 21612.363
+    },
+    {
+     "country": "Lesotho",
+     "year": 2025,
+     "value": 28.4,
+     "qualifier": null,
+     "map_id": 426,
+     "population_thousands": 2350.397
+    },
+    {
+     "country": "Congo",
+     "year": 2025,
+     "value": 32,
+     "qualifier": null,
+     "map_id": 178,
+     "population_thousands": 6408.294
+    },
+    {
+     "country": "Sudan",
+     "year": 2025,
+     "value": 33.6,
+     "qualifier": null,
+     "map_id": 729,
+     "population_thousands": 50849.352
+    },
+    {
+     "country": "Gambia",
+     "year": 2025,
+     "value": 34,
+     "qualifier": null,
+     "map_id": 270,
+     "population_thousands": 2791.07
+    },
+    {
+     "country": "Suriname",
+     "year": 2025,
+     "value": 34.5,
+     "qualifier": null,
+     "map_id": 740,
+     "population_thousands": 637.118
+    },
+    {
+     "country": "Djibouti",
+     "year": 2025,
+     "value": 35.1,
+     "qualifier": null,
+     "map_id": 262,
+     "population_thousands": 1176.572
+    },
+    {
+     "country": "Comoros",
+     "year": 2025,
+     "value": 35.9,
+     "qualifier": null,
+     "map_id": 174,
+     "population_thousands": 874.749
+    },
+    {
+     "country": "El Salvador",
+     "year": 2025,
+     "value": 36.1,
+     "qualifier": null,
+     "map_id": 222,
+     "population_thousands": 6352.401
+    },
+    {
+     "country": "Afghanistan",
+     "year": 2025,
+     "value": 36.3,
+     "qualifier": null,
+     "map_id": 4,
+     "population_thousands": 43250.33
+    },
+    {
+     "country": "Lao People's Democratic Republic",
+     "year": 2025,
+     "value": 36.4,
+     "qualifier": null,
+     "map_id": 418,
+     "population_thousands": 7821.964
+    },
+    {
+     "country": "Syrian Arab Republic",
+     "year": 2025,
+     "value": 36.8,
+     "qualifier": null,
+     "map_id": 760,
+     "population_thousands": 25170.891
+    },
+    {
+     "country": "Namibia",
+     "year": 2025,
+     "value": 37.6,
+     "qualifier": null,
+     "map_id": 516,
+     "population_thousands": 3062.109
+    },
+    {
+     "country": "Eswatini",
+     "year": 2025,
+     "value": 37.7,
+     "qualifier": null,
+     "map_id": 748,
+     "population_thousands": 1249.337
+    },
+    {
+     "country": "Bangladesh",
+     "year": 2025,
+     "value": 38.9,
+     "qualifier": null,
+     "map_id": 50,
+     "population_thousands": 174617.26
+    },
+    {
+     "country": "Pakistan",
+     "year": 2025,
+     "value": 39,
+     "qualifier": null,
+     "map_id": 586,
+     "population_thousands": 253202.738
+    },
+    {
+     "country": "Nicaragua",
+     "year": 2025,
+     "value": 39.5,
+     "qualifier": null,
+     "map_id": 558,
+     "population_thousands": 6962.209
+    },
+    {
+     "country": "Yemen",
+     "year": 2025,
+     "value": 39.9,
+     "qualifier": null,
+     "map_id": 887,
+     "population_thousands": 41179.068
+    },
+    {
+     "country": "Maldives",
+     "year": 2025,
+     "value": 40.5,
+     "qualifier": null,
+     "map_id": 462,
+     "population_thousands": 528.754
+    },
+    {
+     "country": "Guatemala",
+     "year": 2025,
+     "value": 40.8,
+     "qualifier": null,
+     "map_id": 320,
+     "population_thousands": 18547.526
+    },
+    {
+     "country": "Kenya",
+     "year": 2025,
+     "value": 41.6,
+     "qualifier": null,
+     "map_id": 404,
+     "population_thousands": 56981.395
+    },
+    {
+     "country": "Nepal",
+     "year": 2025,
+     "value": 42.5,
+     "qualifier": null,
+     "map_id": 524,
+     "population_thousands": 29628.159
+    },
+    {
+     "country": "Uruguay",
+     "year": 2025,
+     "value": 42.6,
+     "qualifier": null,
+     "map_id": 858,
+     "population_thousands": 3385.696
+    },
+    {
+     "country": "Venezuela (Bolivarian Republic of)",
+     "year": 2025,
+     "value": 44.5,
+     "qualifier": null,
+     "map_id": 862,
+     "population_thousands": 28460.161
+    },
+    {
+     "country": "Ghana",
+     "year": 2025,
+     "value": 47.2,
+     "qualifier": null,
+     "map_id": 288,
+     "population_thousands": 34746.37
+    },
+    {
+     "country": "Honduras",
+     "year": 2025,
+     "value": 48.1,
+     "qualifier": null,
+     "map_id": 340,
+     "population_thousands": 10916.015
+    },
+    {
+     "country": "Tunisia",
+     "year": 2025,
+     "value": 48.5,
+     "qualifier": null,
+     "map_id": 788,
+     "population_thousands": 12313.958
+    },
+    {
+     "country": "Algeria",
+     "year": 2025,
+     "value": 50.7,
+     "qualifier": null,
+     "map_id": 12,
+     "population_thousands": 47131.52
+    },
+    {
+     "country": "Viet Nam",
+     "year": 2025,
+     "value": 52,
+     "qualifier": null,
+     "map_id": 704,
+     "population_thousands": 101300.081
+    },
+    {
+     "country": "South Africa",
+     "year": 2025,
+     "value": 54.1,
+     "qualifier": null,
+     "map_id": 710,
+     "population_thousands": 64386.489
+    },
+    {
+     "country": "Sao Tome and Principe",
+     "year": 2025,
+     "value": 55.1,
+     "qualifier": null,
+     "map_id": 678,
+     "population_thousands": 237.888
+    },
+    {
+     "country": "Mauritius",
+     "year": 2025,
+     "value": 56,
+     "qualifier": null,
+     "map_id": 480,
+     "population_thousands": 1269.821
+    },
+    {
+     "country": "Timor-Leste",
+     "year": 2025,
+     "value": 56.7,
+     "qualifier": null,
+     "map_id": 626,
+     "population_thousands": 1409.551
+    },
+    {
+     "country": "Iraq",
+     "year": 2025,
+     "value": 57.2,
+     "qualifier": null,
+     "map_id": 368,
+     "population_thousands": 46526.127
+    },
+    {
+     "country": "Nigeria",
+     "year": 2025,
+     "value": 57.8,
+     "qualifier": null,
+     "map_id": 566,
+     "population_thousands": 235087.814
+    },
+    {
+     "country": "Costa Rica",
+     "year": 2025,
+     "value": 58,
+     "qualifier": null,
+     "map_id": 188,
+     "population_thousands": 5141.745
+    },
+    {
+     "country": "Fiji",
+     "year": 2025,
+     "value": 59,
+     "qualifier": null,
+     "map_id": 242,
+     "population_thousands": 931.024
+    },
+    {
+     "country": "Samoa",
+     "year": 2025,
+     "value": 61.2,
+     "qualifier": null,
+     "map_id": 882,
+     "population_thousands": 218.697
+    },
+    {
+     "country": "Mexico",
+     "year": 2025,
+     "value": 61.6,
+     "qualifier": null,
+     "map_id": 484,
+     "population_thousands": 131413.615
+    },
+    {
+     "country": "Malaysia",
+     "year": 2025,
+     "value": 63.3,
+     "qualifier": null,
+     "map_id": 458,
+     "population_thousands": 35771.105
+    },
+    {
+     "country": "Panama",
+     "year": 2025,
+     "value": 64.2,
+     "qualifier": null,
+     "map_id": 591,
+     "population_thousands": 4543.666
+    },
+    {
+     "country": "Dominican Republic",
+     "year": 2025,
+     "value": 64.7,
+     "qualifier": null,
+     "map_id": 214,
+     "population_thousands": 11475.126
+    },
+    {
+     "country": "India",
+     "year": 2025,
+     "value": 65.1,
+     "qualifier": null,
+     "map_id": 356,
+     "population_thousands": 1457435.338
+    },
+    {
+     "country": "Botswana",
+     "year": 2025,
+     "value": 65.4,
+     "qualifier": null,
+     "map_id": 72,
+     "population_thousands": 2541.726
+    },
+    {
+     "country": "Iceland",
+     "year": 2025,
+     "value": 66.4,
+     "qualifier": null,
+     "map_id": 352,
+     "population_thousands": 396.051
+    },
+    {
+     "country": "Bosnia and Herzegovina",
+     "year": 2025,
+     "value": 66.5,
+     "qualifier": null,
+     "map_id": 70,
+     "population_thousands": 3152.826
+    },
+    {
+     "country": "Colombia",
+     "year": 2025,
+     "value": 67.1,
+     "qualifier": null,
+     "map_id": 170,
+     "population_thousands": 53163.026
+    },
+    {
+     "country": "Argentina",
+     "year": 2025,
+     "value": 68.6,
+     "qualifier": null,
+     "map_id": 32,
+     "population_thousands": 45774.54
+    },
+    {
+     "country": "Paraguay",
+     "year": 2025,
+     "value": 68.7,
+     "qualifier": null,
+     "map_id": 600,
+     "population_thousands": 6971.54
+    },
+    {
+     "country": "Jordan",
+     "year": 2025,
+     "value": 70.1,
+     "qualifier": null,
+     "map_id": 400,
+     "population_thousands": 11574.809
+    },
+    {
+     "country": "Guyana",
+     "year": 2025,
+     "value": 70.7,
+     "qualifier": null,
+     "map_id": 328,
+     "population_thousands": 833.541
+    },
+    {
+     "country": "Brazil",
+     "year": 2025,
+     "value": 72.2,
+     "qualifier": null,
+     "map_id": 76,
+     "population_thousands": 212422.689
+    },
+    {
+     "country": "Thailand",
+     "year": 2025,
+     "value": 72.7,
+     "qualifier": null,
+     "map_id": 764,
+     "population_thousands": 71646.814
+    },
+    {
+     "country": "Indonesia",
+     "year": 2025,
+     "value": 72.8,
+     "qualifier": null,
+     "map_id": 360,
+     "population_thousands": 284622.217
+    },
+    {
+     "country": "Philippines",
+     "year": 2025,
+     "value": 73.5,
+     "qualifier": null,
+     "map_id": 608,
+     "population_thousands": 116316.292
+    },
+    {
+     "country": "Cuba",
+     "year": 2025,
+     "value": 74.1,
+     "qualifier": null,
+     "map_id": 192,
+     "population_thousands": 10958.973
+    },
+    {
+     "country": "Spain",
+     "year": 2025,
+     "value": 74.8,
+     "qualifier": null,
+     "map_id": 724,
+     "population_thousands": 47905.238
+    },
+    {
+     "country": "Iran (Islamic Republic of)",
+     "year": 2025,
+     "value": 75.5,
+     "qualifier": null,
+     "map_id": 364,
+     "population_thousands": 92020.698
+    },
+    {
+     "country": "Palestine",
+     "year": 2025,
+     "value": 76.1,
+     "qualifier": null,
+     "map_id": 275,
+     "population_thousands": 5540.46
+    },
+    {
+     "country": "Denmark",
+     "year": 2025,
+     "value": 76.7,
+     "qualifier": null,
+     "map_id": 208,
+     "population_thousands": 5990.921
+    },
+    {
+     "country": "Bhutan",
+     "year": 2025,
+     "value": 76.8,
+     "qualifier": null,
+     "map_id": 64,
+     "population_thousands": 793.943
+    },
+    {
+     "country": "Ecuador",
+     "year": 2025,
+     "value": 77.7,
+     "qualifier": null,
+     "map_id": 218,
+     "population_thousands": 18212.798
+    },
+    {
+     "country": "Türkiye",
+     "year": 2025,
+     "value": 78.1,
+     "qualifier": null,
+     "map_id": 792,
+     "population_thousands": 87575.935
+    },
+    {
+     "country": "Netherlands",
+     "year": 2025,
+     "value": 80,
+     "qualifier": null,
+     "map_id": 528,
+     "population_thousands": 18291.929
+    },
+    {
+     "country": "Norway",
+     "year": 2025,
+     "value": 80.8,
+     "qualifier": null,
+     "map_id": 578,
+     "population_thousands": 5603.541
+    },
+    {
+     "country": "Germany",
+     "year": 2025,
+     "value": 80.9,
+     "qualifier": null,
+     "map_id": 276,
+     "population_thousands": 84408.921
+    },
+    {
+     "country": "Luxembourg",
+     "year": 2025,
+     "value": 81.7,
+     "qualifier": null,
+     "map_id": 442,
+     "population_thousands": 676.868
+    },
+    {
+     "country": "Romania",
+     "year": 2025,
+     "value": 81.9,
+     "qualifier": null,
+     "map_id": 642,
+     "population_thousands": 18962.338
+    },
+    {
+     "country": "Bolivia (Plurinational State of)",
+     "year": 2025,
+     "value": 82.5,
+     "qualifier": null,
+     "map_id": 68,
+     "population_thousands": 12497.806
+    },
+    {
+     "country": "Serbia",
+     "year": 2025,
+     "value": 82.8,
+     "qualifier": null,
+     "map_id": 688,
+     "population_thousands": 6714.098
+    },
+    {
+     "country": "Portugal",
+     "year": 2025,
+     "value": 83.1,
+     "qualifier": null,
+     "map_id": 620,
+     "population_thousands": 10419.934
+    },
+    {
+     "country": "Malta",
+     "year": 2025,
+     "value": 84,
+     "qualifier": null,
+     "map_id": 470,
+     "population_thousands": 542.82
+    },
+    {
+     "country": "Trinidad and Tobago",
+     "year": 2025,
+     "value": 84.8,
+     "qualifier": null,
+     "map_id": 780,
+     "population_thousands": 1509.808
+    },
+    {
+     "country": "Tajikistan",
+     "year": 2025,
+     "value": 85.2,
+     "qualifier": null,
+     "map_id": 762,
+     "population_thousands": 10690.149
+    },
+    {
+     "country": "Estonia",
+     "year": 2025,
+     "value": 85.9,
+     "qualifier": null,
+     "map_id": 233,
+     "population_thousands": 1353.866
+    },
+    {
+     "country": "Austria",
+     "year": 2025,
+     "value": 86.1,
+     "qualifier": null,
+     "map_id": 40,
+     "population_thousands": 9116.871
+    },
+    {
+     "country": "Tonga",
+     "year": 2025,
+     "value": 86.2,
+     "qualifier": null,
+     "map_id": 776,
+     "population_thousands": 103.972
+    },
+    {
+     "country": "North Macedonia",
+     "year": 2025,
+     "value": 86.3,
+     "qualifier": null,
+     "map_id": 807,
+     "population_thousands": 1818.506
+    },
+    {
+     "country": "Hungary",
+     "year": 2025,
+     "value": 86.3,
+     "qualifier": null,
+     "map_id": 348,
+     "population_thousands": 9662.547
+    },
+    {
+     "country": "Belgium",
+     "year": 2025,
+     "value": 86.3,
+     "qualifier": null,
+     "map_id": 56,
+     "population_thousands": 11749.845
+    },
+    {
+     "country": "Peru",
+     "year": 2025,
+     "value": 86.7,
+     "qualifier": null,
+     "map_id": 604,
+     "population_thousands": 34400.805
+    },
+    {
+     "country": "Chile",
+     "year": 2025,
+     "value": 86.9,
+     "qualifier": null,
+     "map_id": 152,
+     "population_thousands": 19815.112
+    },
+    {
+     "country": "Bulgaria",
+     "year": 2025,
+     "value": 87.2,
+     "qualifier": null,
+     "map_id": 100,
+     "population_thousands": 6737.155
+    },
+    {
+     "country": "Italy",
+     "year": 2025,
+     "value": 87.5,
+     "qualifier": null,
+     "map_id": 380,
+     "population_thousands": 59250.593
+    },
+    {
+     "country": "Latvia",
+     "year": 2025,
+     "value": 87.5,
+     "qualifier": null,
+     "map_id": 428,
+     "population_thousands": 1864.05
+    },
+    {
+     "country": "France",
+     "year": 2025,
+     "value": 87.6,
+     "qualifier": null,
+     "map_id": 250,
+     "population_thousands": 66600.902
+    },
+    {
+     "country": "Egypt",
+     "year": 2025,
+     "value": 88.2,
+     "qualifier": null,
+     "map_id": 818,
+     "population_thousands": 117498.106
+    },
+    {
+     "country": "Canada",
+     "year": 2025,
+     "value": 88.4,
+     "qualifier": null,
+     "map_id": 124,
+     "population_thousands": 39946.376
+    },
+    {
+     "country": "Albania",
+     "year": 2025,
+     "value": 88.9,
+     "qualifier": null,
+     "map_id": 8,
+     "population_thousands": 2781.868
+    },
+    {
+     "country": "Montenegro",
+     "year": 2025,
+     "value": 89,
+     "qualifier": null,
+     "map_id": 499,
+     "population_thousands": 637.522
+    },
+    {
+     "country": "Sweden",
+     "year": 2025,
+     "value": 89.1,
+     "qualifier": null,
+     "map_id": 752,
+     "population_thousands": 10632.92
+    },
+    {
+     "country": "Australia",
+     "year": 2025,
+     "value": 89.1,
+     "qualifier": null,
+     "map_id": 36,
+     "population_thousands": 26844.964
+    },
+    {
+     "country": "Finland",
+     "year": 2025,
+     "value": 89.8,
+     "qualifier": null,
+     "map_id": 246,
+     "population_thousands": 5622.577
+    },
+    {
+     "country": "China",
+     "year": 2025,
+     "value": 89.8,
+     "qualifier": null,
+     "map_id": 156,
+     "population_thousands": 1417733.636
+    },
+    {
+     "country": "Mongolia",
+     "year": 2025,
+     "value": 90.3,
+     "qualifier": null,
+     "map_id": 496,
+     "population_thousands": 3496.81
+    },
+    {
+     "country": "UK",
+     "year": 2025,
+     "value": 90.3,
+     "qualifier": null,
+     "map_id": 826,
+     "population_thousands": 69353.34
+    },
+    {
+     "country": "Czechia",
+     "year": 2025,
+     "value": 90.4,
+     "qualifier": null,
+     "map_id": 203,
+     "population_thousands": 10680.164
+    },
+    {
+     "country": "Russian Federation",
+     "year": 2025,
+     "value": 91.4,
+     "qualifier": null,
+     "map_id": 643,
+     "population_thousands": 144435.265
+    },
+    {
+     "country": "Poland",
+     "year": 2025,
+     "value": 91.8,
+     "qualifier": null,
+     "map_id": 616,
+     "population_thousands": 38366.664
+    },
+    {
+     "country": "Jamaica",
+     "year": 2025,
+     "value": 92,
+     "qualifier": null,
+     "map_id": 388,
+     "population_thousands": 2838.528
+    },
+    {
+     "country": "Qatar",
+     "year": 2025,
+     "value": 92.1,
+     "qualifier": null,
+     "map_id": 634,
+     "population_thousands": 3084.394
+    },
+    {
+     "country": "Lithuania",
+     "year": 2025,
+     "value": 92.3,
+     "qualifier": null,
+     "map_id": 440,
+     "population_thousands": 2851.406
+    },
+    {
+     "country": "Georgia",
+     "year": 2025,
+     "value": 92.5,
+     "qualifier": null,
+     "map_id": 268,
+     "population_thousands": 3807.501
+    },
+    {
+     "country": "Republic of Moldova",
+     "year": 2025,
+     "value": 92.8,
+     "qualifier": null,
+     "map_id": 498,
+     "population_thousands": 3089.95
+    },
+    {
+     "country": "Switzerland",
+     "year": 2025,
+     "value": 93,
+     "qualifier": null,
+     "map_id": 756,
+     "population_thousands": 8945.893
+    },
+    {
+     "country": "Slovenia",
+     "year": 2025,
+     "value": 93.2,
+     "qualifier": null,
+     "map_id": 705,
+     "population_thousands": 2118.169
+    },
+    {
+     "country": "Israel",
+     "year": 2025,
+     "value": 93.2,
+     "qualifier": null,
+     "map_id": 376,
+     "population_thousands": 9452.225
+    },
+    {
+     "country": "Cyprus",
+     "year": 2025,
+     "value": 93.3,
+     "qualifier": null,
+     "map_id": 196,
+     "population_thousands": 1364.727
+    },
+    {
+     "country": "Slovakia",
+     "year": 2025,
+     "value": 93.3,
+     "qualifier": null,
+     "map_id": 703,
+     "population_thousands": 5493.946
+    },
+    {
+     "country": "Kyrgyzstan",
+     "year": 2025,
+     "value": 93.4,
+     "qualifier": null,
+     "map_id": 417,
+     "population_thousands": 7241.424
+    },
+    {
+     "country": "United States of America",
+     "year": 2025,
+     "value": 93.5,
+     "qualifier": null,
+     "map_id": 840,
+     "population_thousands": 346373.57
+    },
+    {
+     "country": "Saint Lucia",
+     "year": 2025,
+     "value": 94.2,
+     "qualifier": null,
+     "map_id": 662,
+     "population_thousands": 179.964
+    },
+    {
+     "country": "Armenia",
+     "year": 2025,
+     "value": 94.4,
+     "qualifier": null,
+     "map_id": 51,
+     "population_thousands": 2963.243
+    },
+    {
+     "country": "Belarus",
+     "year": 2025,
+     "value": 94.6,
+     "qualifier": null,
+     "map_id": 112,
+     "population_thousands": 9027.494
+    },
+    {
+     "country": "Ireland",
+     "year": 2025,
+     "value": 95.1,
+     "qualifier": null,
+     "map_id": 372,
+     "population_thousands": 5282.61
+    },
+    {
+     "country": "Greece",
+     "year": 2025,
+     "value": 95.2,
+     "qualifier": null,
+     "map_id": 300,
+     "population_thousands": 9959.112
+    },
+    {
+     "country": "Turkmenistan",
+     "year": 2025,
+     "value": 95.4,
+     "qualifier": null,
+     "map_id": 795,
+     "population_thousands": 7558.294
+    },
+    {
+     "country": "Barbados",
+     "year": 2025,
+     "value": 95.7,
+     "qualifier": null,
+     "map_id": 52,
+     "population_thousands": 282.559
+    },
+    {
+     "country": "Azerbaijan",
+     "year": 2025,
+     "value": 95.9,
+     "qualifier": null,
+     "map_id": 31,
+     "population_thousands": 10368.366
+    },
+    {
+     "country": "Ukraine",
+     "year": 2025,
+     "value": 97.2,
+     "qualifier": null,
+     "map_id": 804,
+     "population_thousands": 38279.183
+    },
+    {
+     "country": "Kazakhstan",
+     "year": 2025,
+     "value": 97.9,
+     "qualifier": null,
+     "map_id": 398,
+     "population_thousands": 20720.934
+    },
+    {
+     "country": "Croatia",
+     "year": 2025,
+     "value": 98.2,
+     "qualifier": null,
+     "map_id": 191,
+     "population_thousands": 3861.315
+    },
+    {
+     "country": "Uzbekistan",
+     "year": 2025,
+     "value": 99,
+     "qualifier": null,
+     "map_id": 860,
+     "population_thousands": 36713.264
+    },
+    {
+     "country": "Republic of Korea",
+     "year": 2025,
+     "value": 99.3,
+     "qualifier": null,
+     "map_id": 410,
+     "population_thousands": 51697.094
+    }
+   ],
+   "metadata": {
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "value": {
+     "type": "number",
+     "levels": []
+    },
+    "qualifier": {
+     "type": "boolean",
+     "levels": []
+    },
+    "map_id": {
+     "type": "integer",
+     "levels": []
+    },
+    "population_thousands": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\nout=duckdb.sql(\"\"\"WITH completion AS (SELECT * FROM read_parquet('data/sdg4_national.parquet') WHERE indicator_id='CR.MOD.3' AND year BETWEEN 2020 AND 2025 AND value IS NOT NULL AND coalesce(magnitude,'') NOT IN ('NA','SUPP','INCLUDED') QUALIFY row_number() OVER(PARTITION BY COUNTRY_ID ORDER BY year DESC)=1), pop AS (SELECT COUNTRY_ID,value AS population_thousands FROM read_parquet('data/dem_national.parquet') WHERE indicator_id='200101' AND year BETWEEN 2020 AND 2025 QUALIFY row_number() OVER(PARTITION BY COUNTRY_ID ORDER BY year DESC)=1) SELECT a.country,a.year,a.value,a.qualifier,c.map_id,p.population_thousands FROM completion a JOIN read_parquet('data/countries.parquet') c USING(COUNTRY_ID) JOIN pop p USING(COUNTRY_ID) WHERE p.population_thousands>=100 AND c.map_id IS NOT NULL ORDER BY a.value\"\"\").df()\nout['country']=out.country.replace({'Democratic Republic of the Congo':'DR Congo','United Republic of Tanzania':'Tanzania','United Kingdom of Great Britain and Northern Ireland':'UK'})\nout['value']=out.value.round(1)",
+    "codeSignature": "cff9de2dae2cba3a53d4fcf3b8a568eddcbf06d29703b5f69b1a6db3a10442ec",
+    "outputVariable": "out",
+    "source": [
+     "sdg4_national",
+     "dem_national",
+     "countries"
+    ],
+    "inputSources": [
+     {
+      "id": "data:2d7b684ff39ac6e542b1af59e828d4f3:sdg4_national",
+      "kind": "data",
+      "displayName": "sdg4_national"
+     },
+     {
+      "id": "data:3bfeafe1536e0211b109193b1e492f81:countries",
+      "kind": "data",
+      "displayName": "countries"
+     },
+     {
+      "id": "data:0d178bacfd5229b81a7a675622924763:dem_national",
+      "kind": "data",
+      "displayName": "dem_national"
+     }
+    ],
+    "trigger": {
+     "tableId": "sdg4_national",
+     "resultTableId": "d_out_3",
+     "chart": {
+      "id": "chart-1792307067562",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "sdg4_national",
+      "source": "trigger"
+     }
+    },
+    "explanation": {
+     "status": "ok",
+     "concepts": [
+      {
+       "field": "value",
+       "explanation": "`value = round(value, 1)` (completion rate rounded to one decimal place)."
+      }
+     ],
+     "agent": "CodeExplanationAgent"
+    }
+   },
+   "virtual": {
+    "tableId": "d_out_3",
+    "rowCount": 162
+   },
+   "description": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792307048893_step_1",
+   "createdAt": 1792307067645
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-57556db269ab",
+   "chartType": "Choropleth",
+   "encodingMap": {
+    "id": {
+     "fieldID": "concept-map_id-1792307067645-0.9095956281136525",
+     "dtype": "nominal"
+    },
+    "color": {
+     "fieldID": "concept-value-1792307006382-0.7865765719088531",
+     "dtype": "quantitative"
+    },
+    "detail": {
+     "channel": "detail",
+     "bin": false
+    }
+   },
+   "tableRef": "d_out_3",
+   "source": "user",
+   "title": "High school completion across countries",
+   "subtitle": "Latest estimates, 2020–2025 • Girls and boys combined • UIS, February 2026 release",
+   "titleKey": "Choropleth|color:concept-value-1792307006382-0.7865765719088531:|detail::|id:concept-map_id-1792307067645-0.9095956281136525:",
+   "unread": false,
+   "themeId": "datawrapper"
+  },
+  {
+   "id": "chart-9fa579ec979b",
+   "chartType": "Bar Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-value-1792307006382-0.7865765719088531",
+     "dtype": "quantitative"
+    },
+    "y": {
+     "fieldID": "concept-country-1792307067645-0.8625743059302777",
+     "dtype": "nominal",
+     "sortOrder": "descending",
+     "sortBy": "x"
+    },
+    "color": {
+     "channel": "color",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "d_out_3",
+   "source": "user",
+   "title": "High school completion across countries: highest first",
+   "subtitle": "Latest estimates, 2020–2025 • Girls and boys combined • UIS, February 2026 release",
+   "unread": false,
+   "themeId": "datawrapper",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-value-1792307006382-0.7865765719088531:|y:concept-country-1792307067645-0.8625743059302777:"
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-country-1792307067645-0.8625743059302777",
+   "name": "country",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-map_id-1792307067645-0.9095956281136525",
+   "name": "map_id",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-value-1792307006382-0.7865765719088531",
+   "name": "value",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792307048893_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1792307048893_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Where do young people finish high school least often?",
+   "parentNodeId": "conversation-root:e31847d2-ea04-460a-8414-357f3db7249b",
+   "actionId": "exploreDataFromNL_1792307048893",
+   "createdAt": 1792307048893
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792307048893_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1792307048893_step_1",
+   "textKind": "explain",
+   "content": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792307048893_prompt",
+   "actionId": "exploreDataFromNL_1792307048893",
+   "createdAt": 1792307067644,
+   "startedAt": 1792307048893,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1792307048893-1",
+     "kind": "tool",
+     "label": "Reading: session/tables/sdg4_national.json, session/tables/count…",
+     "status": "completed",
+     "tool": "read_file",
+     "toolCallId": "call_fgWSwyEnSypDMpI3pKfPSAAO"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792307048893-2",
+     "kind": "chart",
+     "label": "creating chart...",
+     "status": "completed"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792307048893_1792307075547",
+   "displayId": "textTurn_exploreDataFromNL_1792307048893_closing",
+   "textKind": "explain",
+   "content": "**South Sudan has the lowest estimated high school completion rate among countries with data: just 2% in 2025.** The lowest rates are concentrated in sub-Saharan Africa.\n\nThe five lowest are:\n- **South Sudan:** 2.1%\n- **Niger:** 4.9%\n- **Central African Republic:** 5.6%\n- **Chad:** 6.6%\n- **Zimbabwe:** 8.1%\n\nHere, “high school” means upper secondary education. The map uses each country’s latest estimate from 2020–2025—all available values were for 2025—and combines girls and boys. Some countries lack estimates; territories with fewer than 100,000 people are excluded.\n\nSource: UIS, February 2026 release.",
+   "parentNodeId": "d_out_3",
+   "actionId": "exploreDataFromNL_1792307048893",
+   "createdAt": 1792307075547,
+   "startedAt": 1792307048893,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "d_out_3",
+   "fields": {
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "displayName": "Country"
+     }
+    },
+    "year": {
+     "semanticType": "Year",
+     "displayName": "Year",
+     "authored": {
+      "displayName": "Year"
+     }
+    },
+    "value": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "intrinsicDomain": [
+      0,
+      100
+     ],
+     "displayName": "High school completion (%)",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "intrinsicDomain": [
+       0,
+       100
+      ],
+      "displayName": "High school completion (%)"
+     }
+    },
+    "qualifier": {
+     "semanticType": "Unknown"
+    },
+    "map_id": {
+     "semanticType": "ID"
+    },
+    "population_thousands": {
+     "semanticType": "Count",
+     "unit": "thousand people"
+    }
+   }
+  }
+ ],
+ "activeWorkspace": {
+  "id": "education-sdg4-e20",
+  "displayName": "More young people finish school, but reading lags"
+ },
+ "focusedId": {
+  "type": "chart",
+  "chartId": "chart-57556db269ab"
+ }
+}

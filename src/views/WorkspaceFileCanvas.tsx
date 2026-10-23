@@ -1,9 +1,10 @@
 import React, { FC, Suspense, useEffect, useRef, useState } from 'react';
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, IconButton, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
 import WrapTextIcon from '@mui/icons-material/WrapText';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import CodeIcon from '@mui/icons-material/Code';
+import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import { floatingPillSx } from '../app/tokens';
 import { useDispatch, useSelector } from 'react-redux';
 import { CompactMarkdown } from './InteractionEntryCard';
 import { MarkdownEditor } from '../components/MarkdownEditor';
@@ -13,7 +14,6 @@ import DownloadIcon from '@mui/icons-material/FileDownloadOutlined';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import { useTranslation } from 'react-i18next';
-import { Table, TableBody, TableCell, TableHead, TableRow } from '@mui/material';
 
 import {
     downloadWorkspaceFile,
@@ -27,7 +27,6 @@ import {
     type WorkspaceFilePreview,
 } from '../app/workspaceService';
 import { iconVar, textVar } from '../app/layout';
-import { floatingAppControlsRight, floatingPillSx } from '../app/tokens';
 
 const WorkspaceWorkbookPreview = React.lazy(() => import('./WorkspaceWorkbookPreview').then(module => ({
     default: module.WorkspaceWorkbookPreview,
@@ -94,6 +93,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
     const [saving, setSaving] = useState(false);
     const [discardOpen, setDiscardOpen] = useState(false);
     const [renameOpen, setRenameOpen] = useState(false);
+    const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
     const [newName, setNewName] = useState(fileName);
     const [renaming, setRenaming] = useState(false);
     const [renameError, setRenameError] = useState('');
@@ -107,9 +107,6 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
     const hasPreview = isMarkdown || isApp;
     const [appReloadKey, setAppReloadKey] = useState(0);
     const dirty = textFile !== null && textFile.content !== textFile.savedContent;
-    // A canvas app previews full-bleed with floating controls; the file bar returns
-    // for source editing or whenever there is something to save.
-    const appChromeless = floatingAppControls && isApp && mode === 'preview' && textFile !== null && !sourceFile && !dirty && !saveError;
     // Only agent-editable workspace apps can be repaired with edit_file.
     const repairRequest = (errors: string[], hash: string) =>
         `The app files/${fileName} shows these errors:\n${errors.map(error => `- ${error}`).join('\n')}\n`
@@ -197,7 +194,8 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
             cancelled = true;
             if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
-    }, [fileName, isPdf, isMarkdown, hasPreview, draftKey, fileRevision, temporary, sourceFile]);
+    // Reload once the workspace is known: a read sent before then fails and shows only a raw preview.
+    }, [fileName, isPdf, isMarkdown, hasPreview, draftKey, fileRevision, temporary, sourceFile, workspace?.id]);
 
     const save = async () => {
         if (!textFile || readOnly || saving || discardOpen || renameOpen || renaming) return;
@@ -248,6 +246,12 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
         }
     };
 
+    // One title rule: the file's display name (e.g. an app's title), with its filename as context.
+    const displayName = useSelector((state: DataFormulatorState) => state.fileNodes.find(node => node.path === fileName)?.displayName);
+    const baseName = temporary ? fileName.slice('scratch/'.length) : fileName;
+    const headerTitle = displayName && displayName !== baseName ? displayName : baseName;
+    const headerMeta = [headerTitle !== baseName ? baseName : '', temporary ? 'Temporary' : ''].filter(Boolean).join(' · ');
+
     const handleDownload = async () => {
         const blob = sourceFile ?? await downloadWorkspaceFile(fileName);
         const url = URL.createObjectURL(blob);
@@ -265,100 +269,92 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 if (dirty) void save();
             }
         }} sx={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', bgcolor: 'background.default', display: 'flex', flexDirection: 'column' }}>
-            {appChromeless && <Box role="group" aria-label="App controls" sx={{
-                // Sits left of the canvas pane's close button, which floats at the same corner.
-                position: 'absolute', top: 8, right: floatingAppControlsRight + 34, zIndex: 15, display: 'flex', alignItems: 'center', gap: 0.5,
-            }}>
-                <Tooltip title={readOnly ? t('htmlApp.viewSource') : t('htmlApp.editSource')}>
-                    <IconButton size="small" aria-label={readOnly ? t('htmlApp.viewSource') : t('htmlApp.editSource')} onClick={() => setMode('edit')} sx={floatingPillSx}>
-                        <CodeIcon sx={{ fontSize: iconVar.lg }} />
-                    </IconButton>
-                </Tooltip>
-                <Tooltip title={t('htmlApp.reload')}>
+            {/* The file's name at the top left, quiet, as in a code editor; a running app shows none. Its
+                tools float at the top right, as on charts; rename and download sit behind ⋯. */}
+            {!(textFile && isApp && mode === 'preview') && <Box data-file-title title={fileName} sx={{ position: 'absolute', top: 10, left: 20, right: 300,
+                zIndex: 9, height: 30, display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0, pointerEvents: 'none' }}>
+                <Typography component="span" sx={{ fontSize: '0.8125rem', fontWeight: 500, color: 'text.primary', flexShrink: 1, minWidth: 0,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{headerTitle}</Typography>
+                {headerMeta && <Typography component="span" sx={{ fontSize: '0.75rem', color: 'text.secondary', flexShrink: 100, minWidth: 0,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--df-font-mono)' }}>{headerMeta}</Typography>}
+            </Box>}
+            <Box data-file-actions sx={{ position: 'absolute', top: 10, right: 20, zIndex: 10, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                {dirty && <Box component="span" role="status" aria-label="Unsaved changes" title="Unsaved changes"
+                    sx={{ width: 7, height: 7, mr: 0.5, borderRadius: '50%', bgcolor: 'text.secondary' }} />}
+                {textFile && dirty && !temporary && !sourceFile && <>
+                    <Button aria-label="Save file" size="small" variant="contained" disableElevation onClick={save} disabled={saving || renaming || workspace?.readOnly}
+                        sx={{ position: 'relative', minWidth: 0, height: 30, px: 1.5, borderRadius: '15px', fontSize: '0.8125rem', textTransform: 'none' }}>
+                        <Box component="span" sx={{ visibility: saving ? 'hidden' : 'visible' }}>Save</Box>
+                        {saving && <CircularProgress size={14} sx={{ position: 'absolute', top: '50%', left: '50%', mt: '-7px', ml: '-7px' }} />}
+                    </Button>
+                    <Button aria-label="Discard changes" size="small" color="inherit" onClick={() => setDiscardOpen(true)} disabled={saving || renaming}
+                        sx={{ ...floatingPillSx, minWidth: 0, height: 30, px: 1.5, borderRadius: '15px', fontSize: '0.8125rem', textTransform: 'none' }}>Discard</Button>
+                </>}
+                {textFile && hasPreview && <ToggleButtonGroup exclusive value={mode} size="small" aria-label="File view"
+                    onChange={(_, value) => { if (value) setMode(value); }}
+                    // Same height and pill as the round buttons beside it; the selected half is an inset chip.
+                    sx={{ ...floatingPillSx, boxSizing: 'border-box', height: 30, borderRadius: '15px', p: '3px', gap: '2px', alignItems: 'center',
+                        '&:hover': { backgroundColor: 'background.paper' },
+                        '& .MuiToggleButtonGroup-grouped': { m: 0, border: 0, borderRadius: '11px !important' },
+                        '& .MuiToggleButton-root': { minHeight: 0, height: 22, px: 1.25, py: 0, fontSize: '0.75rem', textTransform: 'none',
+                            lineHeight: '22px', color: 'text.secondary', '&:hover': { bgcolor: 'action.hover' } },
+                        '& .MuiToggleButton-root.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary',
+                            '&:hover': { bgcolor: 'action.selected' } } }}>
+                    <ToggleButton value="edit" aria-label={readOnly ? 'View source' : 'Edit source'}>{readOnly ? 'Source' : 'Edit'}</ToggleButton>
+                    <ToggleButton value="preview" aria-label={isApp ? t('htmlApp.previewApp') : 'Preview Markdown'}>Preview</ToggleButton>
+                </ToggleButtonGroup>}
+                {textFile && isApp && mode === 'preview' && <Tooltip title={t('htmlApp.reload')}>
                     <IconButton size="small" aria-label={t('htmlApp.reload')} onClick={() => setAppReloadKey(value => value + 1)} sx={floatingPillSx}>
                         <RefreshIcon sx={{ fontSize: iconVar.lg }} />
                     </IconButton>
+                </Tooltip>}
+                {textFile && (!hasPreview || mode === 'edit') && <Tooltip title="Wrap lines">
+                    <IconButton size="small" aria-label="Wrap lines" aria-pressed={lineWrap} onClick={() => setLineWrap(value => !value)}
+                        sx={{ ...floatingPillSx, ...(lineWrap ? { color: 'primary.main' } : {}) }}>
+                        <WrapTextIcon sx={{ fontSize: iconVar.lg }} />
+                    </IconButton>
+                </Tooltip>}
+                <Tooltip title={t('canvas.more', { defaultValue: 'More' })}>
+                    <IconButton size="small" aria-label={t('canvas.more', { defaultValue: 'More' })} onClick={event => setMoreAnchor(event.currentTarget)} sx={floatingPillSx}>
+                        <MoreHorizIcon sx={{ fontSize: iconVar.lg }} />
+                    </IconButton>
                 </Tooltip>
-            </Box>}
-            {!appChromeless && <Box sx={{
-                minHeight: 36, flexShrink: 0, display: 'grid', alignItems: 'center', gap: 1,
-                gridTemplateColumns: isPdf && !textFile ? 'minmax(0, 1fr) auto minmax(40px, 1fr)' : 'minmax(0, 1fr)',
-                pl: 1.5, pr: 5, py: 0.25, boxSizing: 'border-box', borderBottom: '1px solid', borderColor: 'divider',
-                '& .MuiIconButton-root': { width: 28, height: 28, borderRadius: 1, flexShrink: 0 },
-                '& .MuiButton-root': { minHeight: 28, px: 0.75, fontSize: textVar.md, flexShrink: 0 },
-                '& .MuiSvgIcon-root': { fontSize: iconVar.md },
-            }}>
-                <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                    <Typography component="h2" noWrap sx={{ minWidth: 0, fontSize: textVar.md, fontWeight: 500 }}>
-                        {temporary ? fileName.slice('scratch/'.length) : fileName}
-                    </Typography>
-                    {temporary && <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', flexShrink: 0 }}>Temporary</Typography>}
-                    {!temporary && !sourceFile && <Tooltip title="Rename file"><span><IconButton aria-label="Rename file" size="small" disabled={workspace?.readOnly || saving || renaming} onClick={() => {
-                        setNewName(fileName);
-                        setRenameError('');
-                        setRenameOpen(true);
-                    }}><EditOutlinedIcon /></IconButton></span></Tooltip>}
-                    {dirty && <Tooltip title="Unsaved changes"><Box role="status" aria-label="Unsaved changes" sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'text.secondary', flexShrink: 0 }} /></Tooltip>}
-                    <Box sx={{ flex: 1 }} />
-                    {textFile && <>
-                        <Box role="group" aria-label="View controls" sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
-                            {hasPreview && <ToggleButtonGroup exclusive value={mode} size="small" aria-label="File view"
-                                onChange={(_, value) => { if (value) setMode(value); }}
-                                sx={{ flexShrink: 0, '& .MuiToggleButton-root': { minHeight: 28, px: 1, py: 0.25, fontSize: textVar.md, textTransform: 'none', lineHeight: 1.4, border: 0, borderRadius: '4px !important' } }}>
-                                <ToggleButton value="edit" aria-label={readOnly ? 'View source' : 'Edit source'}>{readOnly ? 'Source' : 'Edit'}</ToggleButton>
-                                <ToggleButton value="preview" aria-label={isApp ? t('htmlApp.previewApp') : 'Preview Markdown'}>Preview</ToggleButton>
-                            </ToggleButtonGroup>}
-                            {isApp && mode === 'preview' && <Tooltip title={t('htmlApp.reload')}>
-                                <IconButton aria-label={t('htmlApp.reload')} onClick={() => setAppReloadKey(value => value + 1)}><RefreshIcon /></IconButton>
-                            </Tooltip>}
-                            {(!hasPreview || mode === 'edit') && <Tooltip title="Wrap lines">
-                                <IconButton aria-label="Wrap lines" aria-pressed={lineWrap} onClick={() => setLineWrap(value => !value)} color={lineWrap ? 'primary' : 'default'}><WrapTextIcon /></IconButton>
-                            </Tooltip>}
-                        </Box>
-                        <Box aria-hidden="true" sx={{ width: '1px', height: 16, bgcolor: 'divider', flexShrink: 0, mx: 0.25 }} />
-                        {!temporary && !sourceFile && <Box role="group" aria-label="File changes" sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
-                            <Tooltip title="Save file (Cmd/Ctrl+S)"><span><Button aria-label="Save file" size="small" onClick={save} disabled={!dirty || saving || renaming || workspace?.readOnly} sx={{ position: 'relative' }}>
-                                <Box component="span" sx={{ visibility: saving ? 'hidden' : 'visible' }}>Save</Box>
-                                {saving && <CircularProgress size={14} sx={{ position: 'absolute', top: '50%', left: '50%', mt: '-7px', ml: '-7px' }} />}
-                            </Button></span></Tooltip>
-                            <Tooltip title="Discard unsaved changes"><span><Button aria-label="Discard changes" size="small" color="inherit" onClick={() => setDiscardOpen(true)} disabled={!dirty || saving || renaming}>
-                                Discard
-                            </Button></span></Tooltip>
-                        </Box>}
-                        {!temporary && !sourceFile && <Box aria-hidden="true" sx={{ width: '1px', height: 16, bgcolor: 'divider', flexShrink: 0, mx: 0.25 }} />}
-                    </>}
-                    <Tooltip title={t('dataThread.downloadFile', { defaultValue: 'Download file' })}>
-                        <IconButton size="small" onClick={handleDownload} aria-label={t('dataThread.downloadFile', { defaultValue: 'Download file' })}>
-                            <DownloadIcon fontSize="small" />
+                <Menu anchorEl={moreAnchor} open={!!moreAnchor} onClose={() => setMoreAnchor(null)}
+                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
+                    {!temporary && !sourceFile && <MenuItem disabled={workspace?.readOnly || saving || renaming}
+                        onClick={() => { setMoreAnchor(null); setNewName(fileName); setRenameError(''); setRenameOpen(true); }}>
+                        <ListItemIcon><EditOutlinedIcon /></ListItemIcon>
+                        <ListItemText>{t('canvas.rename', { defaultValue: 'Rename' })}</ListItemText>
+                    </MenuItem>}
+                    <MenuItem onClick={() => { setMoreAnchor(null); void handleDownload(); }}>
+                        <ListItemIcon><DownloadIcon /></ListItemIcon>
+                        <ListItemText>{t('dataThread.downloadFile', { defaultValue: 'Download file' })}</ListItemText>
+                    </MenuItem>
+                </Menu>
+            </Box>
+            {isPdf && !textFile && <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, flexShrink: 0,
+                py: 0.25, borderBottom: '1px solid', borderColor: 'divider' }}>
+                <Typography sx={{ minWidth: 72, textAlign: 'center', fontSize: textVar.sm, color: 'text.secondary' }}>
+                    {pdfPageCount ? `${pdfPageNumber} / ${pdfPageCount}` : '—'}
+                </Typography>
+                <Box sx={{ width: '1px', height: 18, flexShrink: 0, bgcolor: 'divider', mx: 0.5 }} />
+                <Tooltip title="Zoom out">
+                    <span>
+                        <IconButton size="small" disabled={pdfScale <= 0.75} onClick={() => setPdfScale(value => Math.max(0.75, value - 0.25))}>
+                            <ZoomOutIcon sx={{ fontSize: iconVar.md }} />
                         </IconButton>
-                    </Tooltip>
-                </Box>
-                {isPdf && !textFile && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
-                        <Typography sx={{ minWidth: 72, textAlign: 'center', fontSize: textVar.sm, color: 'text.secondary' }}>
-                            {pdfPageCount ? `${pdfPageNumber} / ${pdfPageCount}` : '—'}
-                        </Typography>
-                        <Box sx={{ width: '1px', height: 18, flexShrink: 0, bgcolor: 'divider', mx: 0.5 }} />
-                        <Tooltip title="Zoom out">
-                            <span>
-                                <IconButton size="small" disabled={pdfScale <= 0.75} onClick={() => setPdfScale(value => Math.max(0.75, value - 0.25))}>
-                                    <ZoomOutIcon sx={{ fontSize: iconVar.md }} />
-                                </IconButton>
-                            </span>
-                        </Tooltip>
-                        <Typography sx={{ minWidth: 40, textAlign: 'center', fontSize: textVar.xs, color: 'text.secondary' }}>
-                            {Math.round(pdfScale * 100)}%
-                        </Typography>
-                        <Tooltip title="Zoom in">
-                            <span>
-                                <IconButton size="small" disabled={pdfScale >= 2} onClick={() => setPdfScale(value => Math.min(2, value + 0.25))}>
-                                    <ZoomInIcon sx={{ fontSize: iconVar.md }} />
-                                </IconButton>
-                            </span>
-                        </Tooltip>
-                    </Box>
-                )}
-                {isPdf && !textFile && <Box />}
+                    </span>
+                </Tooltip>
+                <Typography sx={{ minWidth: 40, textAlign: 'center', fontSize: textVar.xs, color: 'text.secondary' }}>
+                    {Math.round(pdfScale * 100)}%
+                </Typography>
+                <Tooltip title="Zoom in">
+                    <span>
+                        <IconButton size="small" disabled={pdfScale >= 2} onClick={() => setPdfScale(value => Math.min(2, value + 0.25))}>
+                            <ZoomInIcon sx={{ fontSize: iconVar.md }} />
+                        </IconButton>
+                    </span>
+                </Tooltip>
             </Box>}
             <Dialog open={renameOpen} onClose={() => { if (!renaming) setRenameOpen(false); }} maxWidth="xs" fullWidth aria-labelledby="rename-file-title">
                 <DialogTitle id="rename-file-title">Rename file</DialogTitle>
@@ -386,7 +382,9 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 </DialogActions>
             </Dialog>
             {saveError && <Alert severity="error">{saveError}</Alert>}
-            <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', bgcolor: '#fafafa' }}>
+            <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', bgcolor: '#fafafa',
+                // Room for the floating tools, except an app preview, which they float over.
+                pt: textFile && isApp && mode === 'preview' ? 0 : 6, boxSizing: 'border-box' }}>
                 {!loading && workbookFile && <Suspense fallback={<LoadingStatus label={t('dataThread.loadingFilePreview', { defaultValue: 'Loading file preview...' })} sx={{ height: '100%', p: 2 }} />}>
                     <WorkspaceWorkbookPreview file={workbookFile} fileName={fileName} errorLabel={t('dataThread.previewUnavailable', {
                         defaultValue: 'A quick preview is not available for this file type.',
@@ -397,8 +395,8 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 {!loading && textFile && (isApp && mode === 'preview'
                     ? <Suspense fallback={<LoadingStatus label={t('dataThread.loadingFilePreview', { defaultValue: 'Loading file preview...' })} sx={{ height: '100%', p: 2 }} />}>
                         {isReactApp
-                            ? <ReactAppPreview source={textFile.content} title={fileName} reloadKey={appReloadKey} reserveTopRight={appChromeless} onAskFix={askAgentToFix} />
-                            : <HtmlAppPreview html={textFile.content} title={fileName} reloadKey={appReloadKey} reserveTopRight={appChromeless} onAskFix={askAgentToFix} />}
+                            ? <ReactAppPreview source={textFile.content} title={fileName} reloadKey={appReloadKey} onAskFix={askAgentToFix} />
+                            : <HtmlAppPreview html={textFile.content} title={fileName} reloadKey={appReloadKey} onAskFix={askAgentToFix} />}
                     </Suspense>
                     : isMarkdown && mode === 'preview'
                     ? <Box sx={{ height: '100%', overflow: 'auto', px: 3, py: 2, boxSizing: 'border-box', fontSize: textVar.md, overflowWrap: 'anywhere', '& img': { maxWidth: '100%' }, '& pre': { overflow: 'auto' } }}>
@@ -426,15 +424,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 )}
                 {!loading && preview && (
                     <Box sx={{ height: '100%', overflow: 'auto', p: 2.5, boxSizing: 'border-box' }}>
-                        {preview.kind === 'table' ? <>
-                            <Typography sx={{ mb: 1, fontSize: textVar.sm, color: 'text.secondary' }}>{preview.row_count?.toLocaleString()} rows</Typography>
-                            <Table size="small" stickyHeader aria-label={fileName} sx={{ '& td, & th': { fontSize: textVar.sm, minWidth: 100, maxWidth: 320, overflowWrap: 'anywhere' } }}>
-                                <TableHead><TableRow>{preview.columns?.map(column => <TableCell key={column}>{column}</TableCell>)}</TableRow></TableHead>
-                                <TableBody>{preview.rows?.map((row, index) => <TableRow key={index}>{preview.columns?.map(column =>
-                                    <TableCell key={column}>{row[column] == null ? '' : typeof row[column] === 'object' ? JSON.stringify(row[column]) : String(row[column])}</TableCell>
-                                )}</TableRow>)}</TableBody>
-                            </Table>
-                        </> : <Typography component="pre" sx={{
+                        {preview.kind === 'table' ? <TablePreview fileName={fileName} preview={preview} /> : <Typography component="pre" sx={{
                             width: '100%', maxWidth: 960, mx: 'auto', my: 0,
                             whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
                             fontFamily: isCodeLike ? 'var(--df-font-mono)' : 'inherit',
@@ -467,4 +457,41 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
             </Box>
         </Box>
     );
+};
+const formatCell = (value: unknown): string => {
+    if (value == null) return '';
+    if (typeof value === 'number') return Number.isInteger(value) ? String(value)
+        : value.toLocaleString(undefined, { maximumFractionDigits: 4 });
+    return typeof value === 'object' ? JSON.stringify(value) : String(value);
+};
+
+/** A tabular file's first rows, compact like the data grid: one line per cell, numbers right-aligned. */
+export const TablePreview: FC<{ fileName: string; preview: WorkspaceFilePreview }> = ({ fileName, preview }) => {
+    const { t } = useTranslation();
+    const columns = preview.columns || [];
+    const rows = preview.rows || [];
+    const numeric = new Set(columns.filter(column => rows.some(row => row[column] != null)
+        && rows.every(row => row[column] == null || typeof row[column] === 'number')));
+    const total = preview.row_count ?? rows.length;
+    const cellSx = { px: 1.25, py: '5px', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        borderBottom: '1px solid', borderColor: 'divider', textAlign: 'left' } as const;
+    return <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <Typography sx={{ mb: 1, fontSize: textVar.xs, color: 'text.secondary', flexShrink: 0 }}>
+            {t('dataThread.tablePreviewSummary', { defaultValue: '{{rows}} rows · {{columns}} columns', rows: total.toLocaleString(), columns: columns.length })}
+            {rows.length < total && ` · ${t('dataThread.tablePreviewShowing', { defaultValue: 'showing the first {{count}}', count: rows.length })}`}
+        </Typography>
+        <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', border: '1px solid', borderColor: 'divider', borderRadius: '6px', bgcolor: 'background.paper' }}>
+            <Box component="table" aria-label={fileName} sx={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: '100%',
+                fontSize: textVar.sm, lineHeight: 1.5, '& tbody tr:hover td': { bgcolor: 'action.hover' } }}>
+                <thead><tr>{columns.map(column => <Box component="th" key={column} title={column} sx={{ ...cellSx,
+                    position: 'sticky', top: 0, zIndex: 1, bgcolor: 'grey.50', fontSize: textVar.xs, fontWeight: 600,
+                    color: 'text.secondary', textAlign: numeric.has(column) ? 'right' : 'left' }}>{column}</Box>)}</tr></thead>
+                <tbody>{rows.map((row, index) => <tr key={index}>{columns.map(column => {
+                    const text = formatCell(row[column]);
+                    return <Box component="td" key={column} title={text} sx={{ ...cellSx, color: 'text.primary',
+                        ...(numeric.has(column) ? { textAlign: 'right', fontVariantNumeric: 'tabular-nums' } : {}) }}>{text}</Box>;
+                })}</tr>)}</tbody>
+            </Box>
+        </Box>
+    </Box>;
 };

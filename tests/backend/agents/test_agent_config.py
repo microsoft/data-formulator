@@ -17,6 +17,8 @@ def test_analyst_execution_defaults():
         "empty_response_backoff_seconds": 3.0,
         "stream_open_retries": 2,
         "stream_open_backoff_seconds": 1.0,
+        "rate_limit_retries": 3,
+        "rate_limit_backoff_seconds": 10.0,
         "outer_iteration_multiplier": 3,
         "min_outer_iterations": 12,
     }

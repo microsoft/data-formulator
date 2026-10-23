@@ -21,6 +21,9 @@ datas += collect_data_files(
         "data_loader/guides/*.md",
     ],
 )
+# Shipped demos: profile, images, story seeds and the build.py the app runs to install them.
+datas += collect_data_files("data_formulator", includes=["demos/**/*"], excludes=["**/__pycache__/**"],
+                            include_py_files=True)
 binaries = []
 hiddenimports = collect_submodules("data_formulator")
 

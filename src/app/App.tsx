@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ScrollFadeEdge, useScrollFade } from '../components/ScrollFade';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux";
@@ -28,6 +29,7 @@ import {
     Tooltip,
     Typography,
     Box,
+    ButtonBase,
     Toolbar,
     Divider,
     DialogTitle,
@@ -41,7 +43,6 @@ import {
     Menu,
     MenuItem,
     TextField,
-    SvgIcon,
     IconButton,
     Select,
     FormControl,
@@ -50,6 +51,7 @@ import {
     ListItemText,
     CircularProgress,
     LinearProgress,
+    GlobalStyles,
 } from '@mui/material';
 
 
@@ -60,7 +62,7 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
 
 import { DataFormulatorFC } from '../views/DataFormulator';
-import { LayoutProvider } from './LayoutProvider';
+import { LayoutProvider, useLayout, type DensityPreference } from './LayoutProvider';
 import { createDfTheme } from './theme';
 import { MIN_SUPPORTED } from './layout';
 import { useAutoSave } from './useAutoSave';
@@ -72,6 +74,7 @@ import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import {
     createBrowserRouter,
     Link as RouterLink,
+    Navigate,
     Outlet,
     RouterProvider,
     useLocation,
@@ -79,7 +82,6 @@ import {
     useRouteError,
     useSearchParams,
 } from "react-router-dom";
-import { About } from '../views/About';
 import { ConfigurationView } from '../views/ConfigurationView';
 import { MessageSnackbar } from '../views/MessageSnackbar';
 import { ChartRenderService } from '../views/ChartRenderService';
@@ -96,6 +98,8 @@ import SaveIcon from '@mui/icons-material/Save';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { getUrls } from './utils';
+import { APP_PATH, DEMO_ID } from './demo';
+import { AppSwitcher, destinationItems, useAppDestinations, type AppDestination } from './AppSwitcher';
 import { apiRequest } from './apiClient';
 import { listWorkspaces, deleteWorkspace, onWorkspaceListChanged } from './workspaceService';
 import { leaveSession, openSession } from './sessionThunks';
@@ -109,7 +113,6 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import UploadIcon from '@mui/icons-material/Upload';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import YouTubeIcon from '@mui/icons-material/YouTube';
 import PublicIcon from '@mui/icons-material/Public';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
@@ -118,13 +121,6 @@ import { useTranslation } from 'react-i18next';
 import { SUPPORTED_UI_LANGUAGES } from '../i18n';
 import { syncVegaLocale } from '../i18n/vega-locale';
 import { iconVar, textVar } from './layout';
-
-// Discord Icon Component
-const DiscordIcon: FC<{ sx?: any }> = ({ sx }) => (
-    <SvgIcon sx={sx} viewBox="0 0 24 24">
-        <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515a.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0a12.64 12.64 0 0 0-.617-1.25a.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057a19.9 19.9 0 0 0 5.993 3.03a.078.078 0 0 0 .084-.028a14.09 14.09 0 0 0 1.226-1.994a.076.076 0 0 0-.041-.106a13.107 13.107 0 0 1-1.872-.892a.077.077 0 0 1-.008-.128a10.2 10.2 0 0 0 .372-.292a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127a12.299 12.299 0 0 1-1.873.892a.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028a19.839 19.839 0 0 0 6.002-3.03a.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419c0-1.333.956-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419c0-1.333.955-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.946 2.418-2.157 2.418z" fill="currentColor"/>
-    </SvgIcon>
-);
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
     color: 'black',
@@ -308,15 +304,16 @@ const LanguageMenuItems: React.FC<{ onSelect: () => void }> = ({ onSelect }) => 
     );
 };
 
-/** Compact replacement for the About / App top-nav buttons. */
-const PageNavMenu: React.FC<{ isAboutPage: boolean; isAdministrationPage: boolean; canAdminister: boolean; appName: string }> = ({ isAboutPage, isAdministrationPage, canAdminister, appName }) => {
+/** Compact replacement for the App / Admin top-nav buttons (shown only when Admin is available). */
+const PageNavMenu: React.FC<{ isAdministrationPage: boolean; appName: string; destinations: AppDestination[]; onGoHome: (event: React.MouseEvent) => void }> = ({
+    isAdministrationPage, appName, destinations, onGoHome,
+}) => {
     const { t } = useTranslation();
     const navigate = useNavigate();
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const pages = [
-        { to: '/about', label: t('appBar.about'), selected: isAboutPage },
-        { to: '/app', label: t('appBar.app'), selected: !isAboutPage && !isAdministrationPage },
-        ...(canAdminister ? [{ to: '/configurations', label: t('appBar.admin', { defaultValue: 'Admin' }), selected: isAdministrationPage }] : []),
+        { to: APP_PATH, label: t('appBar.app'), selected: !isAdministrationPage },
+        { to: '/configurations', label: t('appBar.admin', { defaultValue: 'Admin' }), selected: isAdministrationPage },
     ];
     const currentLabel = pages.find(page => page.selected)?.label ?? '';
 
@@ -336,7 +333,7 @@ const PageNavMenu: React.FC<{ isAboutPage: boolean; isAdministrationPage: boolea
                 }}
             >
                 <Box sx={{ minWidth: 0, textAlign: 'left', maxWidth: { xs: 160, sm: 320 } }}>
-                    <Typography noWrap component="h1" title={appName} sx={{ fontSize: textVar.xl, fontWeight: 300, lineHeight: 1.2, letterSpacing: 0 }}>
+                    <Typography noWrap component="h1" title={appName} sx={{ fontSize: textVar.xl, fontWeight: 400, lineHeight: 1.2, letterSpacing: 0 }}>
                         {appName}
                     </Typography>
                 </Box>
@@ -369,6 +366,8 @@ const PageNavMenu: React.FC<{ isAboutPage: boolean; isAdministrationPage: boolea
                         </ListItemText>
                     </MenuItem>
                 ))}
+                {destinations.length > 0 && <Divider />}
+                {destinationItems(destinations.filter(destination => !destination.current), onGoHome, () => setAnchorEl(null))}
             </Menu>
         </>
     );
@@ -376,9 +375,6 @@ const PageNavMenu: React.FC<{ isAboutPage: boolean; isAdministrationPage: boolea
 
 const EXTERNAL_LINKS = {
     github: 'https://github.com/microsoft/data-formulator',
-    youtube: 'https://youtu.be/3ndlwt0Wi3c',
-    pip: 'https://pypi.org/project/data-formulator/',
-    discord: 'https://discord.gg/mYCZMQKYZb',
 };
 
 /**
@@ -627,10 +623,14 @@ const WorkspaceMenu: React.FC = () => {
     return (
         <>
             <Tooltip title={t('workspace.sessionTooltip', { name: activeWorkspace?.id || '' })} placement="bottom">
-                <Box 
+                <ButtonBase
+                    disableRipple
                     onClick={() => !diskPersistenceDisabled && setPickerOpen(true)}
                     sx={{ 
-                        display: 'flex', alignItems: 'center', gap: 0.5,
+                        display: 'flex', alignItems: 'center', gap: 0.5, textAlign: 'left',
+                        '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
+                        // Shrinks with a narrow toolbar so long session names truncate instead of overlapping.
+                        minWidth: 0, maxWidth: '100%',
                         cursor: 'pointer',
                         px: 1,
                         py: 0.25,
@@ -643,13 +643,14 @@ const WorkspaceMenu: React.FC = () => {
                         fontSize: textVar.lg, 
                         fontWeight: 500, 
                         color: 'text.primary',
+                        minWidth: 0,
                         maxWidth: 280,
                         letterSpacing: '0.01em',
                     }}>
                         {activeWorkspace?.displayName || activeWorkspace?.id}
                     </Typography>
                     <KeyboardArrowDownIcon className="ws-chevron" sx={{ fontSize: iconVar.md, color: 'text.secondary', opacity: 0.4, transition: 'opacity 0.15s' }} />
-                </Box>
+                </ButtonBase>
             </Tooltip>
             <WorkspacePickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} />
         </>
@@ -660,6 +661,32 @@ const WorkspaceMenu: React.FC = () => {
 const useExitSession = () => {
     const dispatch = useDispatch<AppDispatch>();
     return useCallback(() => dispatch(leaveSession()), [dispatch]);
+};
+
+/** `/`: the standard app, or the server's default demo (`DF_SITE`), which loads as its own page. */
+const HomePage: React.FC = () => {
+    const defaultDemo = useSelector((state: DataFormulatorState) => state.serverConfig.DEFAULT_DEMO);
+    const redirect = !DEMO_ID && !!defaultDemo;
+    useEffect(() => {
+        if (redirect) window.location.replace(`/demo/${defaultDemo}${window.location.search}${window.location.hash}`);
+    }, [redirect, defaultDemo]);
+    return redirect ? null : <DataFormulatorFC />;
+};
+
+/**
+ * The logo and app name go to the landing page: the open session is saved
+ * and closed, and Admin switches back to the app. Modified clicks keep
+ * the link's default (e.g. open in a new tab).
+ */
+const useGoHome = (onAppPage: boolean) => {
+    const dispatch = useDispatch<AppDispatch>();
+    const navigate = useNavigate();
+    return useCallback(async (event: React.MouseEvent) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+        event.preventDefault();
+        if (dfSelectors.selectInSession(store.getState())) await dispatch(leaveSession());
+        if (!onAppPage) navigate(APP_PATH);
+    }, [dispatch, navigate, onAppPage]);
 };
 
 const ExitSessionButton: React.FC = () => {
@@ -721,13 +748,17 @@ const ConfigDialog: React.FC<{
     const [paletteKey, setPaletteKey] = useState(
         (config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey
     );
+    // UI size is a per-browser preference: Auto follows the window width, the others pin it.
+    const { densityPreference, setDensityPreference } = useLayout();
+    const [displaySize, setDisplaySize] = useState<DensityPreference>(densityPreference);
 
     const hasChanges = formulateTimeoutSeconds !== config.formulateTimeoutSeconds || 
                       defaultChartWidth !== config.defaultChartWidth ||
                       defaultChartHeight !== config.defaultChartHeight ||
                       maxStretchFactor !== config.maxStretchFactor ||
                       frontendRowLimit !== config.frontendRowLimit ||
-                      paletteKey !== ((config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey);
+                      paletteKey !== ((config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey) ||
+                      displaySize !== densityPreference;
 
     return (
         <>
@@ -793,6 +824,24 @@ const ConfigDialog: React.FC<{
                                     );
                                 })}
                             </Select>
+                        </FormControl>
+                        <FormControl fullWidth size="small">
+                            <InputLabel id="display-size-label" sx={{ fontSize: textVar.md }}>{t('config.displaySize')}</InputLabel>
+                            <Select
+                                labelId="display-size-label"
+                                value={displaySize}
+                                label={t('config.displaySize')}
+                                onChange={(e) => setDisplaySize(e.target.value as DensityPreference)}
+                                sx={{ fontSize: textVar.md }}
+                            >
+                                {([['auto', 'displaySizeAuto'], ['compact', 'displaySizeSmall'], ['reference', 'displaySizeMedium'],
+                                    ['comfortable', 'displaySizeLarge']] as const).map(([value, key]) => (
+                                    <MenuItem key={value} value={value} sx={{ fontSize: textVar.md }}>{t(`config.${key}`)}</MenuItem>
+                                ))}
+                            </Select>
+                            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                                {t('config.displaySizeHint')}
+                            </Typography>
                         </FormControl>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                             <Box sx={{ flex: 1 }}>
@@ -947,6 +996,7 @@ const ConfigDialog: React.FC<{
                         setMaxStretchFactor(2.0);
                         setFrontendRowLimit(rowLimitDefault);
                         setPaletteKey(defaultPaletteKey);
+                        setDisplaySize('auto');
                     }}>{t('session.resetToDefault')}</Button>
                     <Button onClick={() => setOpen(false)}>{t('app.cancel')}</Button>
                     <Button 
@@ -958,6 +1008,7 @@ const ConfigDialog: React.FC<{
                             || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > rowLimitMax}
                         onClick={() => {
                             dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey}));
+                            setDensityPreference(displaySize);
                             setOpen(false);
                         }}
                     >
@@ -993,7 +1044,7 @@ const ErrorBoundaryFallback: React.FC = () => {
                 maxWidth: 640, px: 2,
             }}>
                 <Typography color="gray">
-                    {t('workspace.errorOccurred')} <Link href="/app">{t('workspace.refreshSession')}</Link>{'. '}{t('workspace.errorPersistHint')}
+                    {t('workspace.errorOccurred')} <Link href={APP_PATH}>{t('workspace.refreshSession')}</Link>{'. '}{t('workspace.errorPersistHint')}
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     {(detail || stack) && (
@@ -1050,6 +1101,7 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
     missing_token_endpoint: 'auth.ssoErrorMissingEndpoint',
 };
 
+
 const AppShell: FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const { t } = useTranslation();
@@ -1081,11 +1133,10 @@ const AppShell: FC = () => {
     useWorkspaceAutoName();
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
 
-    const isAboutPage = location.pathname === '/about';
     const isAdministrationPage = location.pathname === '/configurations';
     const canAdminister = !!serverConfig.MANAGED_MODE && !!serverConfig.CAN_CONFIGURE;
     const appName = getToolName(serverConfig.APP_NAME);
-    const isAppPage = !isAboutPage && !isAdministrationPage;
+    const isAppPage = !isAdministrationPage;
 
     // The desktop canvas (threads, encoding shelf, viz cards) genuinely needs
     // room, so the app shell floors content at MIN_SUPPORTED. Landing and phone
@@ -1101,10 +1152,18 @@ const AppShell: FC = () => {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [logsOpen, setLogsOpen] = useState(false);
     const exitSession = useExitSession();
+    const goHome = useGoHome(isAppPage);
+    const destinations = useAppDestinations();
     const inSession = isAppPage && inWorkspaceSession;
+    const shellScrollRef = useRef<HTMLDivElement | null>(null);
+    const { moreAbove, moreBelow, moreLeft, moreRight, update: updateShellFade } = useScrollFade(shellScrollRef, location.pathname);
+    const shellFade = { top: moreAbove, bottom: moreBelow, left: moreLeft, right: moreRight };
 
     return (
-        <Box sx={{
+        // The shell scrolls when the window is below the supported size; the
+        // fades mark the hidden side like other scrolling surfaces.
+        <Box sx={{ position: 'absolute', inset: 0 }}>
+        <Box ref={shellScrollRef} onScroll={updateShellFade} sx={{
             position: 'absolute',
             backgroundColor: 'rgba(255, 255, 255, 0.3)',
             top: 0,
@@ -1128,15 +1187,48 @@ const AppShell: FC = () => {
                 overflow: 'hidden'
             }}>
                 <AppBar position="static">
-                    <Toolbar ref={toolbarRef} variant="dense" sx={{ height: 40, minHeight: 36, position: 'relative', pl: '0px !important' }}>
-                        <Box sx={{ width: 40, minWidth: 40, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    <Toolbar ref={toolbarRef} variant="dense" sx={{ height: 40, minHeight: 36, position: 'relative', pl: '0px !important',
+                        // Controls are shorter than the bar and centred in it; stretch each one's hit area to the
+                        // bar's full height, so a pointer thrown to the top edge (maximized window) still lands on it.
+                        '& :is(a, button)': { position: 'relative' },
+                        '& :is(a, button)::after': { content: '""', position: 'absolute', left: 0, right: 0, top: '50%', height: 40, transform: 'translateY(-50%)' },
+                        // A click that moves a pixel would otherwise drag the link or logo, or select the name, and not click.
+                        userSelect: 'none',
+                    }} onDragStart={(event) => event.preventDefault()}>
+                        <Box
+                            component={RouterLink}
+                            to={APP_PATH}
+                            onClick={goHome}
+                            aria-label={t('appBar.home', { defaultValue: 'Home' })}
+                            title={t('appBar.home', { defaultValue: 'Home' })}
+                            sx={{ width: 40, minWidth: 40, height: 36, display: 'flex', justifyContent: 'center', alignItems: 'center' }}
+                        >
                             <Box component="img" sx={{ height: 20, display: 'block', transform: 'translateY(-2px)' }} alt="" src={dfLogo} />
                         </Box>
                         {isCompactToolbar ? (
-                            <PageNavMenu isAboutPage={isAboutPage} isAdministrationPage={isAdministrationPage} canAdminister={canAdminister} appName={appName} />
+                            canAdminister ? (
+                                <PageNavMenu isAdministrationPage={isAdministrationPage} appName={appName}
+                                    destinations={destinations} onGoHome={goHome} />
+                            ) : destinations.length > 0 ? (
+                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} compact />
+                            ) : (
+                                <Button component={RouterLink} to={APP_PATH} onClick={goHome} color="inherit"
+                                    sx={{ textTransform: 'none', minWidth: 0, px: 0.75, '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' } }}>
+                                    <Typography noWrap component="h1" title={appName}
+                                        sx={{ maxWidth: { xs: 160, sm: 320 }, fontSize: textVar.xl, fontWeight: 400, lineHeight: 1.2, letterSpacing: 0 }}>
+                                        {appName}
+                                    </Typography>
+                                </Button>
+                            )
                         ) : (
-                        <>
-                        <Button component={RouterLink} to="/app" sx={{
+                        // Brand and page links share a text baseline, whatever the font's metrics.
+                        <Box sx={{ display: 'flex', alignItems: 'baseline', minWidth: 0 }}>
+                        {destinations.length > 0 ? (
+                            <Box sx={{ display: { xs: 'none', sm: 'block' }, minWidth: 0 }}>
+                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} />
+                            </Box>
+                        ) : (
+                        <Button component={RouterLink} to={APP_PATH} onClick={goHome} sx={{
                             display: "flex", flexDirection: "row", textTransform: "none",
                             alignItems: 'center',
                             backgroundColor: 'transparent',
@@ -1148,24 +1240,26 @@ const AppShell: FC = () => {
                             }
                         }} color="inherit">
                             <Box sx={{ minWidth: 0, maxWidth: 360, textAlign: 'left', display: { xs: 'none', sm: 'block' } }}>
-                                <Typography noWrap component="h1" title={appName} sx={{ fontWeight: 300, lineHeight: 1.2, letterSpacing: 0 }}>
+                                <Typography noWrap component="h1" title={appName} sx={{ fontWeight: 400, lineHeight: 1.2, letterSpacing: 0 }}>
                                     {appName}
                                 </Typography>
                             </Box>
                         </Button>
-                        <Box
-                            sx={{
-                                ml: 2,
-                                height: '28px',
-                                my: 'auto',
-                                display: 'flex',
-                            }}
-                        >
-                            <TopNavButton to="/about" label={t('appBar.about')} selected={isAboutPage} />
-                            <TopNavButton to="/app" label={t('appBar.app')} selected={isAppPage} />
-                            {canAdminister && <TopNavButton to="/configurations" label={t('appBar.admin', { defaultValue: 'Admin' })} selected={isAdministrationPage} />}
+                        )}
+                        {canAdminister && (
+                            <Box
+                                sx={{
+                                    ml: 2,
+                                    height: '28px',
+                                    display: 'flex',
+                                    alignItems: 'baseline',
+                                }}
+                            >
+                                <TopNavButton to={APP_PATH} label={t('appBar.app')} selected={isAppPage} />
+                                <TopNavButton to="/configurations" label={t('appBar.admin', { defaultValue: 'Admin' })} selected={isAdministrationPage} />
+                            </Box>
+                        )}
                         </Box>
-                        </>
                         )}
                         {/* Workspace name — session indicator/switcher. Centered
                             absolutely when there is room, otherwise it flows
@@ -1252,121 +1346,6 @@ const AppShell: FC = () => {
                                 )}
                             </Box>
                         )}
-                        {isAboutPage && isCompactToolbar && (
-                            <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center' }}>
-                                {serverConfig.IS_LOCAL_MODE && (
-                                    <LogViewerDialog open={logsOpen} onOpenChange={setLogsOpen} hideTrigger />
-                                )}
-                                <ToolbarOverflowMenu
-                                    items={[
-                                        ...(serverConfig.IS_LOCAL_MODE ? [{
-                                            key: 'logs',
-                                            label: t('logs.viewLogs', { defaultValue: 'View backend log' }),
-                                            icon: <TerminalOutlinedIcon fontSize="small" />,
-                                            onClick: () => setLogsOpen(true),
-                                        }] : []),
-                                        {
-                                            key: 'video',
-                                            label: t('appBar.watchVideo'),
-                                            icon: <YouTubeIcon fontSize="small" />,
-                                            href: EXTERNAL_LINKS.youtube,
-                                        },
-                                        {
-                                            key: 'github',
-                                            label: t('appBar.viewOnGitHub'),
-                                            icon: <GitHubIcon fontSize="small" />,
-                                            href: EXTERNAL_LINKS.github,
-                                        },
-                                        {
-                                            key: 'pip',
-                                            label: t('appBar.pipInstall'),
-                                            icon: <Box component="img" src="/pip-logo.svg" sx={{ width: 20, height: 20 }} alt="" />,
-                                            href: EXTERNAL_LINKS.pip,
-                                        },
-                                        {
-                                            key: 'discord',
-                                            label: t('appBar.joinDiscord'),
-                                            icon: <DiscordIcon sx={{ fontSize: 20 }} />,
-                                            href: EXTERNAL_LINKS.discord,
-                                        },
-                                    ]}
-                                />
-                            </Box>
-                        )}
-                        {isAboutPage && !isCompactToolbar && (
-                            <Box sx={{ ml: 'auto', display: 'flex', gap: 0.5 }}>
-                                <LanguageSwitcher />
-                                {serverConfig.IS_LOCAL_MODE && <LogViewerDialog />}
-                                <Tooltip title={t('appBar.watchVideo')}>
-                                    <IconButton
-                                        component="a"
-                                        href="https://youtu.be/3ndlwt0Wi3c"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        aria-label={t('appBar.watchVideo')}
-                                        sx={{
-                                            color: 'inherit',
-                                            '&:hover': {
-                                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                            }
-                                        }}
-                                    >
-                                        <YouTubeIcon fontSize="small" />
-                                    </IconButton>
-                                </Tooltip>
-                                <Tooltip title={t('appBar.viewOnGitHub')}>
-                                    <IconButton
-                                        component="a"
-                                        href="https://github.com/microsoft/data-formulator"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        aria-label={t('appBar.viewOnGitHub')}
-                                        sx={{
-                                            color: 'inherit',
-                                            '&:hover': {
-                                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                            }
-                                        }}
-                                    >
-                                        <GitHubIcon fontSize="small" />
-                                    </IconButton>
-                                </Tooltip>
-                                <Tooltip title={t('appBar.pipInstall')}>
-                                    <IconButton
-                                        component="a"
-                                        href="https://pypi.org/project/data-formulator/"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        aria-label={t('appBar.pipInstall')}
-                                        sx={{
-                                            color: 'inherit',
-                                            '&:hover': {
-                                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                            }
-                                        }}
-                                    >
-                                        <Box component="img" src="/pip-logo.svg" sx={{ width: 20, height: 20 }} alt="pip logo" />
-                                    </IconButton>
-                                </Tooltip>
-                                <Tooltip title={t('appBar.joinDiscord')}>
-                                    <IconButton
-                                        component="a"
-                                        href="https://discord.gg/mYCZMQKYZb"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        aria-label={t('appBar.joinDiscord')}
-                                        sx={{
-                                            color: 'inherit',
-                                            '&:hover': {
-                                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                            }
-                                        }}
-                                    >
-                                        <DiscordIcon sx={{ fontSize: 20 }} />
-                                    </IconButton>
-                                </Tooltip>
-                            </Box>
-                        )}
                         <AuthButton />
                     </Toolbar>
                 </AppBar>
@@ -1376,6 +1355,8 @@ const AppShell: FC = () => {
                 <MessageSnackbar />
                 <ChartRenderService />
             </Box>
+        </Box>
+        {(['top', 'bottom', 'left', 'right'] as const).map(edge => <ScrollFadeEdge key={edge} edge={edge} visible={shellFade[edge]} />)}
         </Box>
     );
 }
@@ -1556,15 +1537,16 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             children: [
                 {
                     index: true,
-                    element: <DataFormulatorFC />,
+                    element: <HomePage />,
                 },
                 {
                     path: "app",
                     element: <DataFormulatorFC />,
                 },
                 {
+                    // The About page was removed; keep old links working.
                     path: "about",
-                    element: <About />,
+                    element: <Navigate to={APP_PATH} replace />,
                 },
                 {
                     path: "configurations",
@@ -1580,6 +1562,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     return (
         <ThemeProvider theme={theme}>
+            {/* Plain elements (buttons, links, spans outside Typography) take the theme font, not the browser serif. */}
+            <GlobalStyles styles={theme => ({ 'html, body': { fontFamily: theme.typography.fontFamily } })} />
             <LayoutProvider>
                 {configLoaded && authChecked ? (
                     <RouterProvider router={router} />

@@ -55,6 +55,9 @@ class AnalystExecutionConfig:
     empty_response_backoff_seconds: float = 3.0
     stream_open_retries: int = 2
     stream_open_backoff_seconds: float = 1.0
+    # A provider's token rate limit resets per minute; short retries cannot outlast it.
+    rate_limit_retries: int = 3
+    rate_limit_backoff_seconds: float = 10.0
     outer_iteration_multiplier: int = 3
     min_outer_iterations: int = 12
 
@@ -63,11 +66,11 @@ class AnalystExecutionConfig:
             value = getattr(self, name)
             if type(value) is not int or value < 1:
                 raise ValueError(f"{name} must be a positive integer")
-        for name in ("empty_response_retries", "stream_open_retries"):
+        for name in ("empty_response_retries", "stream_open_retries", "rate_limit_retries"):
             value = getattr(self, name)
             if type(value) is not int or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
-        for name in ("empty_response_backoff_seconds", "stream_open_backoff_seconds"):
+        for name in ("empty_response_backoff_seconds", "stream_open_backoff_seconds", "rate_limit_backoff_seconds"):
             value = getattr(self, name)
             if type(value) not in (int, float) or not isfinite(value) or value < 0:
                 raise ValueError(f"{name} must be a finite non-negative number")
@@ -99,7 +102,6 @@ AGENT_REASONING_EFFORT: dict[str, ReasoningEffort] = {
     "data_clean":          "minimal",  # extract tables from text
     "workflow_distill":  "minimal",  # summarise an analysis context
     "chart_insight":       "minimal",  # title + 1–3 takeaways from a chart
-    "chart_restyle":       "minimal",  # apply style edits to a Vega-Lite spec
     "code_explanation":    "minimal",  # describe derived fields
     "sort_data":           "minimal",  # natural-order sort a small list
     "simple":              "minimal",  # workspace_name

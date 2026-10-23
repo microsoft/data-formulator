@@ -170,7 +170,6 @@ const SAVED_STATE_AUTO_FOLD_PATHS = [
     ['draftNodes', '*', 'derive', 'trigger', 'interaction'],
     ['draftNodes', '*', 'derive', 'pendingClarification', 'trajectory'],
     // Generated visual/report payloads.
-    ['charts', '*', 'styleVariants'],
     ['generatedReports', '*', 'inspectionSteps'],
     // Structured artifacts: keep turn identity, kind, status, and parent visible.
     ['textTurns', '*', 'options'],

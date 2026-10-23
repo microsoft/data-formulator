@@ -107,7 +107,7 @@ ok = SandboxSession.restore_namespace(new_session, save_dir, workspace_path)
 
 1. 向 worker 发送一段 collect 代码，遍历 `globals()` 收集用户变量
 2. 变量通过 multiprocessing Pipe（pickle 序列化）传回 host 进程
-3. **host 端写入文件**——worker 的审计钩子禁止一切文件写入（`"open"` 事件 mode != `"r"`），
+3. **host 端写入文件**——worker 的审计钩子拒绝 `"open"` 事件中的写入 mode 或数字 flags，
    所以必须由 host 接收 DataFrame 对象后写 parquet
 4. 返回 `True` 表示成功保存，`False` 表示无用户变量可保存
 
@@ -160,12 +160,43 @@ save/restore 决策通过 `self._tool_loop_exit_reason` 标记实现：`_tool_lo
   如果 agent 在 save 后进程崩溃导致未清理，新对话开始时 `run()` 也会清理
 - DataLoadingAgent 不需要跨 turn 持久化（无 resume 机制），仅使用 within-turn 持久化
 
-## 安全保证
+## 执行策略与安全边界
+
+普通数据读取保持兼容：`pd.read_csv("sample.csv")`、`pd.read_parquet("sample.parquet")`
+和 `open("sample.csv", "rb")` 均可读取当前 workspace 内的文件，持久化 session 的后续
+调用仍可复用 DataFrame。生成结果由 host 保存，而不是让 snippet 写文件。
+
+`local` worker 的审计策略：
+
+- 所有 `"open"` 事件都检查数字 flags，包括 `os.open()` 的 `mode=None`；拒绝写入、
+  创建、截断和追加。只读文件访问必须位于当前 workspace、Python 库目录或允许的 runtime 文件。
+- 没有 workspace 时，仅允许库/runtime 读取，而不是放开宿主文件系统。
+- 低层 `os.open()` 读取需传入绝对路径，例如
+  `os.open(os.path.abspath("sample.csv"), os.O_RDONLY)`。审计事件不包含 `dir_fd`，
+  因此无法可靠授权相对路径；普通 `open()` / pandas 的相对路径读取不受影响。
+- 拒绝 `open(fd, ...)` 这种无法验证目标路径的 descriptor 读取；已授权的
+  `os.open()` 返回值仍可通过 `os.read()` 读取。
+- 拒绝进程创建事件族，并禁用已缓存的 `_posixsubprocess.fork_exec` 和
+  `subprocess._fork_exec` 入口；仅增加 import 黑名单无法拦截缓存模块。
+
+**这些检查是加固措施，不是任意 Python 的安全边界。** Python audit hooks 不能可靠隔离
+不可信的 Python/native code；预加载的 native 库（包括 `ctypes`）和可变的进程状态仍需
+考虑。代码签名证明来源，不证明生成代码安全；固定的开发签名密钥也不能用于可信授权。
+
+本次加固不改变部署选择或强制要求 OS confinement。Azure App Service 的 Python/code
+部署仍可运行，但 audit-only worker **不能作为多用户安全隔离的最终方案**。
+后续部署必须验证独立的执行隔离环境：仅授予当前 workspace 的只读访问、排除服务凭据、
+限制网络和进程权限、审查 worker 与 host 的通信边界，并在隔离不可用时拒绝执行。
+当前可选的 OS confinement 和共享 workspace read roots 也需要完成逐 workspace 隔离验证，
+不能仅凭启用 Seatbelt/Bubblewrap 就认为多用户隔离已解决。
+
+### Session 生命周期
 
 - **作用域**: namespace 持久化严格限定在单次 agent turn（一次 `with SandboxSession()` 块）内
 - **跨 turn 保存**: 仅在 `tool_rounds_exhausted` 时触发，保存到用户 workspace 的受限目录
 - **自动清理**: context manager 的 `__exit__` 保证 turn 结束时清空 namespace 并归还 worker；新对话时自动清理 `_explore_ns/`
-- **进程隔离**: 不同 session 使用不同 worker 进程，天然内存隔离
+- **worker 复用**: 活跃 session 独占 worker，但结束后进程可能被复用；
+  清空 namespace 不等同于清空所有模块状态，也不是跨用户安全隔离
 - **超时处理**: 执行超时后 worker 被 kill，session 标记为 closed，namespace 随进程消亡
 - **错误恢复**: 单次执行报错（如 `NameError`）不会杀死 session，后续调用仍可使用已有变量
 
@@ -187,4 +218,4 @@ save/restore 决策通过 `self._tool_loop_exit_reason` 标记实现：`_tool_lo
 - [ ] 确认不会跨用户请求复用 session（session 的生命周期 = 一次 agent turn）
 - [ ] 新增的 agent 如果有 agentic loop + 多次 sandbox 调用，应该接入 `SandboxSession`
 - [ ] 如果 agent 支持 resume trajectory，考虑是否需要跨 turn 的 save/restore
-- [ ] 运行 `python -m pytest tests/backend/security/test_sandbox.py -q` 验证
+- [ ] 运行 `uv run pytest tests/backend/security/test_sandbox.py tests/backend/security/test_sandbox_security.py tests/backend/security/test_sandbox_confinement.py -q` 验证正常读取、session 持久化和拒绝规则

@@ -275,6 +275,7 @@ def _register_blueprints():
     from data_formulator.routes.model_endpoints import model_endpoints_bp
     from data_formulator.routes.workspace_files import workspace_files_bp
     from data_formulator.routes.apps import apps_bp
+    from data_formulator.sites.routes import site_bp
 
     # Register blueprints
     app.register_blueprint(tables_bp)
@@ -285,6 +286,9 @@ def _register_blueprints():
     app.register_blueprint(logs_bp)
     app.register_blueprint(model_endpoints_bp)
     app.register_blueprint(workspace_files_bp)
+    app.register_blueprint(site_bp)
+    from data_formulator.sites import warn_about_missing_sites
+    warn_about_missing_sites()
 
     # Initialise pluggable authentication (reads AUTH_PROVIDER env var)
     from data_formulator.auth.identity import init_auth, get_active_provider
@@ -435,6 +439,20 @@ def get_app_config():
         "DEV_MODE": args.get('dev', False),
         "WORKSPACE_BACKEND": workspace_backend,
     }
+
+    from data_formulator.sites import current_site, default_demo, demo_status, site_frontend_config
+    from data_formulator.sites.install import can_install, listed_demos
+    config["DEFAULT_DEMO"] = default_demo()
+    config["DEMOS"] = listed_demos()
+    config["STANDARD_APP_NAME"] = config["APP_NAME"]
+    site = current_site()
+    if site:
+        site_config = site_frontend_config(site)
+        site_config["status"] = demo_status(site)
+        site_config["can_install"] = can_install(site)
+        config["SITE"] = site_config
+        config["APP_NAME"] = site_config["name"] or config["APP_NAME"]
+        config["APP_TAGLINE"] = site_config["tagline"] or config["APP_TAGLINE"]
 
     from data_formulator.auth.identity import is_local_mode
     config["IS_LOCAL_MODE"] = is_local_mode()

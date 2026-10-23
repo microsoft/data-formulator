@@ -6,6 +6,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import { assembleVegaLite } from 'flint-chart';
+import { mergeableLayerSorts, resolveColumnSorts } from '../../chartSort';
+import { choroplethRegion, keepUnmatchedRegions } from '../../chartMaps';
 
 import { appConfig, bridge, errorMessage, reportError, type Row } from './bridge';
 import { optionalModule } from './optional/register';
@@ -167,10 +169,10 @@ function FlintChartBody(props: FlintChartProps) {
             }
             Object.assign(semantic_types, semanticTypes);
             Object.assign(field_display_names, labels);
-            const normalized = Object.fromEntries(Object.entries(encodings)
-                .map(([channel, encoding]) => [channel, typeof encoding === 'string' ? { field: encoding } : encoding]));
+            const normalized = resolveColumnSorts(Object.fromEntries(Object.entries(encodings)
+                .map(([channel, encoding]) => [channel, typeof encoding === 'string' ? { field: encoding } : encoding])), data);
             const target = { width: Math.max(160, width - 80), height };
-            const compiled = assembleVegaLite({
+            const compiled = mergeableLayerSorts(keepUnmatchedRegions(assembleVegaLite({
                 data: { values: data },
                 semantic_types: semantic_types as any,
                 chart_spec: {
@@ -180,12 +182,13 @@ function FlintChartBody(props: FlintChartProps) {
                     canvasSize: { width: Math.max(160, width - 40), height: Math.round(height * 1.4) },
                     ...(title ? { title } : {}),
                     ...(subtitle ? { subtitle } : {}),
-                    ...(chartProperties ? { chartProperties } : {}),
+                    ...((properties => properties ? { chartProperties: properties } : {})(
+                        choroplethRegion(chartType, normalized as Record<string, { field?: string }>, data, chartProperties))),
                 } as any,
                 options: { addTooltips: true },
                 ...(theme ? { theme_spec: theme } : {}),
                 ...(Object.keys(field_display_names).length ? { field_display_names } : {}),
-            } as any) as Record<string, any>;
+            } as any) as Record<string, any>));
             // Flint sizes the plot area; fit the whole chart, legend included, to the card.
             // Step-sized discrete axes keep their step and scroll inside the card instead.
             const composite = ['facet', 'repeat', 'concat', 'hconcat', 'vconcat'].some(key => key in compiled);

@@ -112,7 +112,7 @@
     "msgEncodingEmpty": "데이터 필드를 차트 빌더에 추가하거나 원하는 것을 설명해주세요!",
     "msgUnavailable": "시각화를 만들려면 데이터를 가공하세요!",
     "msgSynthesizing": "종합 진행 중...",
-    "msgWarning": "AI 생성 결과는 부정확할 수 있으니 확인해주세요!",
+    "aiDisclaimer": "AI는 실수할 수 있습니다. 중요한 결과는 확인하세요.",
     "templateGroups": {
       "table": "테이블",
       "scatter": "산점도",

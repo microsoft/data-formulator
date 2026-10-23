@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
@@ -21,11 +21,14 @@ vi.mock('../../../../src/app/sessionThunks', () => ({
         dispatch(dfActions.setWorkspaceFileCount(1));
         return true;
     }),
+    leaveSession: vi.fn(() => async (dispatch: any) => {
+        dispatch(dfActions.resetState());
+    }),
 }));
 
 import { claimSession, registerSessionHolder, sessionUrl, TAB_ID } from '../../../../src/app/sessionTabs';
 import { useSessionTabs } from '../../../../src/app/useSessionTabs';
-import { openSession } from '../../../../src/app/sessionThunks';
+import { leaveSession, openSession } from '../../../../src/app/sessionThunks';
 import { saveWorkspaceState } from '../../../../src/app/workspaceService';
 
 /** A second browser tab: another channel instance on the same name. */
@@ -75,16 +78,26 @@ describe('session tab coordination', () => {
 describe('useSessionTabs', () => {
     const Probe: React.FC = () => { useSessionTabs(); return null; };
     const renderAt = (url: string) => {
-        const router = createMemoryRouter([{ path: '/app', element: <Probe /> }], { initialEntries: [url] });
+        const router = createMemoryRouter(
+            [{ path: '/app', element: <Probe /> }, { path: '/about', element: <Probe /> }],
+            { initialEntries: [url] },
+        );
         render(<Provider store={testStore.current}><RouterProvider router={router} /></Provider>);
         return router;
     };
+    /** Enter a session the way the UI does: state changes, the URL follows. */
+    const enter = (id: string) => act(() => {
+        testStore.current.dispatch(dfActions.setActiveWorkspace({ id, displayName: id }));
+        testStore.current.dispatch(dfActions.setWorkspaceFileCount(1));
+    });
+    const activeId = () => testStore.current.getState().activeWorkspace?.id;
     beforeEach(() => {
         testStore.current = configureStore({
             reducer: dataFormulatorReducer,
             middleware: getDefaultMiddleware => getDefaultMiddleware({ serializableCheck: false, immutableCheck: false }),
         });
         vi.mocked(openSession).mockClear();
+        vi.mocked(leaveSession).mockClear();
         vi.mocked(saveWorkspaceState).mockClear();
     });
 
@@ -114,5 +127,73 @@ describe('useSessionTabs', () => {
 
         expect(saveWorkspaceState).toHaveBeenCalledOnce();
         expect(testStore.current.getState().activeWorkspace).toMatchObject({ id: 'mine', readOnly: true, openElsewhere: true });
+    });
+
+    it('adds a history entry when entering a session so Back returns to the landing page', async () => {
+        const router = renderAt('/app');
+        await enter('sales');
+        await waitFor(() => expect(router.state.location.search).toBe('?session=sales'));
+        expect(router.state.historyAction).toBe('PUSH');
+
+        await act(() => router.navigate(-1));
+        await waitFor(() => expect(leaveSession).toHaveBeenCalledOnce());
+        expect(activeId()).toBeUndefined();
+        expect(router.state.location.search).toBe('');
+
+        await act(() => router.navigate(1));
+        await waitFor(() => expect(activeId()).toBe('sales'));
+        expect(openSession).toHaveBeenCalledWith('sales');
+        expect(router.state.location.search).toBe('?session=sales');
+    });
+
+    it('moves between sessions with Back and Forward', async () => {
+        const router = renderAt('/app');
+        await enter('a');
+        await waitFor(() => expect(router.state.location.search).toBe('?session=a'));
+        await enter('b');
+        await waitFor(() => expect(router.state.location.search).toBe('?session=b'));
+
+        await act(() => router.navigate(-1));
+        await waitFor(() => expect(activeId()).toBe('a'));
+        expect(openSession).toHaveBeenLastCalledWith('a');
+        expect(leaveSession).not.toHaveBeenCalled();
+    });
+
+    it('corrects the URL in place when Back points at a session that cannot open', async () => {
+        const router = renderAt('/app');
+        await enter('gone');
+        await waitFor(() => expect(router.state.location.search).toBe('?session=gone'));
+        await act(() => router.navigate(-1));
+        await waitFor(() => expect(activeId()).toBeUndefined());
+
+        vi.mocked(openSession).mockImplementationOnce(() => async () => false);
+        await act(() => router.navigate(1));
+        await waitFor(() => expect(router.state.location.search).toBe(''));
+        expect(router.state.historyAction).toBe('REPLACE');
+        expect(activeId()).toBeUndefined();
+    });
+
+    it('keeps the session when switching to another page', async () => {
+        const router = renderAt('/app');
+        await enter('sales');
+        await waitFor(() => expect(router.state.location.search).toBe('?session=sales'));
+
+        await act(() => router.navigate('/about'));
+        await waitFor(() => expect(router.state.location.search).toBe('?session=sales'));
+        expect(router.state.location.pathname).toBe('/about');
+        expect(leaveSession).not.toHaveBeenCalled();
+        expect(activeId()).toBe('sales');
+    });
+
+    it('treats only back/forward as leaving, not a link that drops the session query', async () => {
+        const router = renderAt('/app');
+        await enter('sales');
+        await waitFor(() => expect(router.state.location.search).toBe('?session=sales'));
+
+        await act(() => router.navigate('/app'));
+        await waitFor(() => expect(router.state.location.search).toBe('?session=sales'));
+        expect(router.state.historyAction).toBe('REPLACE');
+        expect(leaveSession).not.toHaveBeenCalled();
+        expect(activeId()).toBe('sales');
     });
 });

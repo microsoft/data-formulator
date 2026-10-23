@@ -97,10 +97,13 @@ def get_user_home(identity_id: str) -> Path:
     """Return the per-user home directory: DATA_FORMULATOR_HOME/users/<safe_id>/.
 
     Shared helper used by workspace_factory, data_connector, and any
-    code that needs per-user storage paths.
+    code that needs per-user storage paths. Requests for a site (see
+    ``data_formulator.sites``) use DATA_FORMULATOR_HOME/sites/<site>/users/<safe_id>/.
     """
+    from data_formulator.sites import site_scope
+
     safe_id = sanitize_identity_dirname(identity_id)
-    return get_data_formulator_home() / "users" / safe_id
+    return site_scope(get_data_formulator_home()) / "users" / safe_id
 
 
 def sanitize_identity_dirname(identity_id: str) -> str:
@@ -206,6 +209,17 @@ def workspace_file_path(name: str) -> str:
                 or any(ord(character) < 32 or ord(character) == 127 for character in segment)):
             raise ValueError(f"Invalid file name: {name!r}")
     return name
+
+
+def _session_archive_segment(segment: str) -> str:
+    """One path component from a session ZIP: kept if it is a safe workspace name, else sanitized."""
+    try:
+        workspace_file_path(segment)
+        if "/" not in segment and not any(character in segment for character in '<>:"|?*'):
+            return segment
+    except ValueError:
+        pass
+    return secure_filename(segment)
 
 
 def agent_file_path_error(name: Any) -> str | None:
@@ -441,6 +455,37 @@ class Workspace:
 
     def _read_workspace_file(self, filename: str) -> bytes:
         return self._confined_files.resolve(filename).read_bytes()
+
+    def repair_legacy_file_names(self) -> int:
+        """Move files back to the names their metadata records.
+
+        Session imports used to sanitize every path component (``DEM README.md``
+        became ``DEM_README.md`` on disk) while the metadata kept the original
+        name, so those files could not be opened. Returns how many were moved.
+        """
+        repaired = 0
+        try:
+            files = list(self.get_metadata().files.values())
+        except Exception:
+            return 0
+        for workspace_file in files:
+            legacy_name = "/".join(secure_filename(part) for part in workspace_file.filename.split("/"))
+            if legacy_name == workspace_file.filename:
+                continue
+            try:
+                expected = self._confined_files.resolve(workspace_file.filename)
+                legacy = self._confined_files.resolve(legacy_name)
+            except ValueError:
+                continue
+            if expected.exists() or not legacy.is_file():
+                continue
+            expected.parent.mkdir(parents=True, exist_ok=True)
+            legacy.rename(expected)
+            self._remove_empty_file_folders(legacy.parent)
+            repaired += 1
+        if repaired:
+            logger.info("Restored %d workspace file name(s) changed by an earlier session import", repaired)
+        return repaired
 
     def _delete_workspace_file(self, filename: str) -> None:
         path = self._confined_files.resolve(filename)
@@ -1553,14 +1598,18 @@ class Workspace:
                         rel = entry[len("workspace/"):]
                         if not rel:
                             continue
-                        # Sanitize each path component individually to preserve
-                        # directory structure (e.g., "data/sales.parquet")
-                        # while still guarding against zip-slip / path traversal.
-                        parts = [secure_filename(p) for p in rel.split("/")]
+                        # Keep each component's name when it is already a safe
+                        # file name — workspace files may contain spaces, and
+                        # renaming them would orphan their metadata entries —
+                        # and sanitize anything else. Together with the
+                        # containment check below this guards against zip-slip.
+                        parts = [_session_archive_segment(p) for p in rel.split("/")]
                         parts = [p for p in parts if p]
                         if not parts:
                             continue
                         dest = ws_tmp.joinpath(*parts)
+                        if not dest.resolve().is_relative_to(ws_tmp.resolve()):
+                            continue
                         dest.parent.mkdir(parents=True, exist_ok=True)
                         dest.write_bytes(zf.read(entry))
                     self.restore_workspace_snapshot(ws_tmp)

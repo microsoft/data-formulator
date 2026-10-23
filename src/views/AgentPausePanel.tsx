@@ -36,6 +36,7 @@ import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded';
 import CodeIcon from '@mui/icons-material/Code';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { useTranslation } from 'react-i18next';
 import { AgentToyIcon } from './AgentToyIcon';
@@ -187,6 +188,8 @@ interface AgentPauseShellProps {
     onClose: () => void;
     /** Deprecated: delete is handled from the thread card directly. */
     onDelete?: () => void;
+    /** Controls beside the close button. */
+    headerActions?: ReactNode;
     children: ReactNode;
 }
 
@@ -196,6 +199,7 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
     icon,
     accentColor,
     onClose,
+    headerActions,
     children,
 }) => {
     const theme = useTheme();
@@ -241,6 +245,7 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
                 }}>
                     {title}
                 </Typography>
+                {headerActions}
                 <Tooltip title={closeTooltip}>
                     <IconButton
                         size="small"
@@ -898,7 +903,7 @@ interface ExplanationPanelProps {
  * but carries no inputs or actions — it's purely "here's what I said",
  * dismissible by the header's delete button or by focusing another item.
  */
-const StepToolCall: FC<{ execution: TerminalExecution | CodeExecution }> = ({ execution }) => {
+export const StepToolCall: FC<{ execution: TerminalExecution | CodeExecution }> = ({ execution }) => {
     const { t } = useTranslation();
     const isCode = 'code' in execution;
     const purpose = execution.purpose || t(isCode ? 'tool.pythonCode' : 'terminal.command', {
@@ -918,10 +923,32 @@ const StepToolCall: FC<{ execution: TerminalExecution | CodeExecution }> = ({ ex
     </Box>;
 };
 
-export const ToolActivityPanel: FC<{ execution: TerminalExecution | CodeExecution; onClose: () => void }> = ({ execution, onClose }) => {
+/** One tool call's code or command and result; steps through the other calls of its step. */
+export const ToolActivityPanel: FC<{
+    execution: TerminalExecution | CodeExecution;
+    calls?: (TerminalExecution | CodeExecution)[];
+    onSelect?: (execution: TerminalExecution | CodeExecution) => void;
+    onClose: () => void;
+}> = ({ execution, calls = [], onSelect, onClose }) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const isCode = 'code' in execution;
+    const position = calls.findIndex(call => call.id === execution.id);
+    const step = (offset: number) => calls[position + offset] && onSelect?.(calls[position + offset]);
+    const navSx = { p: 0, width: 16, height: 16, color: theme.palette.text.secondary, '&:hover': { color: theme.palette.primary.main } };
+    const headerActions = calls.length > 1 && position >= 0 && onSelect ? <Box sx={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+        <IconButton size="small" disabled={position === 0} onClick={() => step(-1)} sx={navSx}
+            aria-label={t('tool.previousCall', { defaultValue: 'Previous call' })}>
+            <ChevronLeftIcon sx={{ fontSize: iconVar.sm }} />
+        </IconButton>
+        <Typography component="span" sx={{ fontSize: textVar.xxs, color: 'text.secondary', minWidth: 24, textAlign: 'center' }}>
+            {position + 1}/{calls.length}
+        </Typography>
+        <IconButton size="small" disabled={position === calls.length - 1} onClick={() => step(1)} sx={navSx}
+            aria-label={t('tool.nextCall', { defaultValue: 'Next call' })}>
+            <ChevronRightIcon sx={{ fontSize: iconVar.sm }} />
+        </IconButton>
+    </Box> : undefined;
 
     return <AgentPauseShell
         icon={isCode ? <CodeIcon sx={{ fontSize: textVar.xl, color: theme.palette.primary.main }} />
@@ -930,6 +957,7 @@ export const ToolActivityPanel: FC<{ execution: TerminalExecution | CodeExecutio
         title={t(isCode ? 'tool.pythonCode' : 'terminal.command', { defaultValue: isCode ? 'Python code' : 'Command' })}
         closeTooltip={t('chartRec.pauseClose')}
         onClose={onClose}
+        headerActions={headerActions}
     >
         <PauseScrollRegion defaultMaxHeight="clamp(120px, 32vh, 360px)" sx={{ pb: '8px', pl: '20px', pr: '8px', fontSize: textVar.sm }}>
             <StepToolCall key={execution.id} execution={execution} />

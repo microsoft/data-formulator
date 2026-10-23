@@ -201,7 +201,8 @@
     padding: 10px 14px; background: var(--df-surface);
     border: 1px solid var(--df-border); border-radius: var(--df-radius-md); box-shadow: var(--df-shadow-sm);
 }
-.df-toolbar.is-sticky { position: sticky; top: 8px; z-index: 5; }
+/* Pinned 8px below the top; a page-colored shadow fills that gap so scrolled content doesn't show above the bar. */
+.df-toolbar.is-sticky { position: sticky; top: 8px; z-index: 5; box-shadow: 0 -8px 0 0 var(--df-canvas), var(--df-shadow-sm); }
 .df-field { display: flex; flex-direction: column; gap: 4px; min-width: 140px; font-size: var(--df-text-sm); font-weight: 500; color: var(--df-text); }
 .df-field > :is(select, input:not([type=checkbox], [type=radio])) { width: 100%; }
 .df-field > input[type=range] { height: var(--df-control-height); }

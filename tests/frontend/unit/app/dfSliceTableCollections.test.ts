@@ -182,7 +182,7 @@ describe("split table collections", () => {
     expect(state.derivedTables[0].derive?.source).toEqual(["orders"]);
   });
 
-  it("stores a Flint theme and returns an active custom variant to the base chart", () => {
+  it("stores a Flint theme on the chart", () => {
     let state = dataFormulatorReducer(
       undefined,
       dfActions.addChart({
@@ -191,7 +191,6 @@ describe("split table collections", () => {
         tableRef: "orders",
         source: "user",
         encodingMap: {},
-        activeVariantId: "variant-1",
       } as any)
     );
 
@@ -201,7 +200,6 @@ describe("split table collections", () => {
     );
 
     expect(state.charts[0].themeId).toBe("nyt");
-    expect(state.charts[0].activeVariantId).toBeUndefined();
   });
 
   it("stores inferred field semantics separately from physical metadata", () => {

@@ -16,7 +16,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
-import { Chart, FieldItem, VariantConfigControl } from '../components/ComponentType';
+import { Chart, FieldItem } from '../components/ComponentType';
 import { getChartTemplate } from '../components/ChartTemplates';
 import { ChartEncoding, ChartOption, EncodingActionDef } from 'flint-chart';
 import { ConfigSlider } from './EncodingShelfCard';
@@ -105,9 +105,8 @@ function buildEncodings(
 }
 
 /**
- * Normalized control shape that both chart-template properties (ChartPropertyDef)
- * and variant generative-UI controls (VariantConfigControl) map onto, so the
- * same renderers handle either source.
+ * Normalized control shape that chart-template properties (ChartPropertyDef) and
+ * encoding actions map onto, so the same renderers handle either source.
  */
 type QuickControl = {
     key: string;
@@ -140,103 +139,73 @@ export const ChartQuickConfig: FC<ChartQuickConfigProps> = function ({ chartId, 
 
     if (!chart) return null;
 
-    // When a style variant is active, the chart-template config no longer maps
-    // to what's rendered (variants are agent-authored specs that bypass the
-    // compiler). Show the variant's own generative-UI controls instead — or
-    // nothing if the variant didn't ship any.
-    const activeVariant = chart.activeVariantId
-        ? chart.styleVariants?.find(v => v.id === chart.activeVariantId)
-        : undefined;
-
     let controls: QuickControl[];
     let getValue: (control: QuickControl) => any;
     let commit: (control: QuickControl, value: any) => void;
 
-    if (activeVariant) {
-        const configUI = activeVariant.configUI;
-        controls = (configUI ?? []).map((c: VariantConfigControl) => ({
-            key: c.key,
-            label: c.label,
-            type: c.type,
-            min: c.type === 'continuous' ? c.min : undefined,
-            max: c.type === 'continuous' ? c.max : undefined,
-            step: c.type === 'continuous' ? c.step : undefined,
-            options: c.type === 'discrete' ? c.options : undefined,
-            defaultValue: c.defaultValue,
+    const template = getChartTemplate(chart.chartType);
+    const encodingActions = template?.encodingActions ?? [];
+
+    // Encoding view used both for type-aware applicability checks and for
+    // deriving an action's displayed value from the base encoding.
+    const encodingsView = buildEncodings(chart, conceptShelfItems, tableMetadata);
+
+    // Category-A controls: chart-native config (chart.config). Flint already
+    // evaluated each property's applicability (structural channel-assignment
+    // and data-aware preconditions like log-scale eligibility) and resolved
+    // its value, so the host just renders the applicable ones seeded from
+    // `value`. See ChartOption / getChartOptions.
+    const propControls: QuickControl[] = (options ?? [])
+        .filter(opt => opt.applicable)
+        .map(opt => ({
+            key: opt.key,
+            label: opt.label,
+            type: opt.type,
+            min: opt.type === 'continuous' ? opt.min : undefined,
+            max: opt.type === 'continuous' ? opt.max : undefined,
+            step: opt.type === 'continuous' ? opt.step : undefined,
+            options: opt.type === 'discrete' ? opt.options : undefined,
+            defaultValue: opt.defaultValue,
+            value: opt.value,
         }));
-        getValue = (control) => {
-            const cv = activeVariant.configValues;
-            return cv && control.key in cv ? cv[control.key] : control.defaultValue;
-        };
-        commit = (control, value) => dispatch(dfActions.updateVariantConfigValue({
-            chartId, variantId: activeVariant.id, key: control.key, value,
+
+    // Category-B controls: encoding actions. The chosen value is stored as
+    // a config override (chart.config[key]) and composed onto the encoding
+    // by the compiler at assemble time — not written into the encoding map.
+    // A single `isApplicable` predicate gates visibility: it inspects the
+    // base encodings, so it covers both channel assignment (is a channel
+    // bound?) and type fit (e.g. Sort needs a discrete category axis).
+    const actionControls: QuickControl[] = encodingActions
+        .filter(action => !action.isApplicable || action.isApplicable({ encodings: encodingsView }))
+        .map(action => ({
+            key: action.key,
+            label: action.label,
+            type: action.control.type,
+            min: action.control.type === 'continuous' ? action.control.min : undefined,
+            max: action.control.type === 'continuous' ? action.control.max : undefined,
+            step: action.control.type === 'continuous' ? action.control.step : undefined,
+            options: action.control.type === 'discrete' ? action.control.options : undefined,
+            encodingAction: action,
         }));
-    } else {
-        const template = getChartTemplate(chart.chartType);
-        const encodingActions = template?.encodingActions ?? [];
 
-        // Encoding view used both for type-aware applicability checks and for
-        // deriving an action's displayed value from the base encoding.
-        const encodingsView = buildEncodings(chart, conceptShelfItems, tableMetadata);
-
-        // Category-A controls: chart-native config (chart.config). Flint already
-        // evaluated each property's applicability (structural channel-assignment
-        // and data-aware preconditions like log-scale eligibility) and resolved
-        // its value, so the host just renders the applicable ones seeded from
-        // `value`. See ChartOption / getChartOptions.
-        const propControls: QuickControl[] = (options ?? [])
-            .filter(opt => opt.applicable)
-            .map(opt => ({
-                key: opt.key,
-                label: opt.label,
-                type: opt.type,
-                min: opt.type === 'continuous' ? opt.min : undefined,
-                max: opt.type === 'continuous' ? opt.max : undefined,
-                step: opt.type === 'continuous' ? opt.step : undefined,
-                options: opt.type === 'discrete' ? opt.options : undefined,
-                defaultValue: opt.defaultValue,
-                value: opt.value,
-            }));
-
-        // Category-B controls: encoding actions. The chosen value is stored as
-        // a config override (chart.config[key]) and composed onto the encoding
-        // by the compiler at assemble time — not written into the encoding map.
-        // A single `isApplicable` predicate gates visibility: it inspects the
-        // base encodings, so it covers both channel assignment (is a channel
-        // bound?) and type fit (e.g. Sort needs a discrete category axis).
-        const actionControls: QuickControl[] = encodingActions
-            .filter(action => !action.isApplicable || action.isApplicable({ encodings: encodingsView }))
-            .map(action => ({
-                key: action.key,
-                label: action.label,
-                type: action.control.type,
-                min: action.control.type === 'continuous' ? action.control.min : undefined,
-                max: action.control.type === 'continuous' ? action.control.max : undefined,
-                step: action.control.type === 'continuous' ? action.control.step : undefined,
-                options: action.control.type === 'discrete' ? action.control.options : undefined,
-                encodingAction: action,
-            }));
-
-        controls = [...propControls, ...actionControls];
-        // Encoding-action value is a configuration *override* stored in
-        // chart.config (keyed by the action key), exactly like a chart property.
-        // It is NOT written into the encoding map — Flint composes the override
-        // onto the encodings at assemble time (applyEncodingOverrides). When no
-        // override is set, fall back to the value derived from the base encoding.
-        // For chart properties, `control.value` is Flint's resolved value (host
-        // choice if set, else the engine's recommended default) so an "auto"
-        // recommendation is reflected without re-deriving it here.
-        getValue = (control) => control.encodingAction
-            ? (chart.config?.[control.key] ?? control.encodingAction.get(encodingsView))
-            : chart.config?.[control.key] ?? control.value ?? control.defaultValue;
-        commit = (control, value) => {
-            // Both categories commit the same way: a value in chart.config.
-            // Category A tweaks the assembled spec; Category B is composed onto
-            // the encodings by the compiler. The host stays out of the transform.
-            dispatch(dfActions.updateChartConfig({ chartId, key: control.key, value }));
-        };
-    }
-
+    controls = [...propControls, ...actionControls];
+    // Encoding-action value is a configuration *override* stored in
+    // chart.config (keyed by the action key), exactly like a chart property.
+    // It is NOT written into the encoding map — Flint composes the override
+    // onto the encodings at assemble time (applyEncodingOverrides). When no
+    // override is set, fall back to the value derived from the base encoding.
+    // For chart properties, `control.value` is Flint's resolved value (host
+    // choice if set, else the engine's recommended default) so an "auto"
+    // recommendation is reflected without re-deriving it here.
+    getValue = (control) => control.encodingAction
+        ? (chart.config?.[control.key] ?? control.encodingAction.get(encodingsView))
+        : chart.config?.[control.key] ?? control.value ?? control.defaultValue;
+    commit = (control, value) => {
+        // Both categories commit the same way: a value in chart.config.
+        // Category A tweaks the assembled spec; Category B is composed onto
+        // the encodings by the compiler. The host stays out of the transform.
+        dispatch(dfActions.updateChartConfig({ chartId, key: control.key, value }));
+    };
     return (
         <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%', pt: 2, pb: 1 }}>
         <Box sx={{

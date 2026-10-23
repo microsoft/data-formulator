@@ -274,8 +274,8 @@ class SessionLayer:
                                  and table["id"] in ((other.get("derive") or {}).get("source") or [])), None)
             authored = [chart for chart in charts if chart.get("source") != "trigger"]
             agent_chart, later = (authored[0], authored[1:]) if authored else (None, [])
-            edited = bool(agent_chart) and (bool(agent_chart.get("styleVariants")) or bool(
-                agent_chart.get("titleKey") and agent_chart["titleKey"] != encoding_fingerprint(agent_chart)))
+            edited = bool(agent_chart) and bool(
+                agent_chart.get("titleKey") and agent_chart["titleKey"] != encoding_fingerprint(agent_chart))
             report = next((report for report in all_reports if report.get("triggerTableId") == table["id"]
                            or any(f"chart://{id}" in (report.get("content") or "") for id in chart_ids)), None)
             name = self.table_name(table)
@@ -598,6 +598,12 @@ class SessionLayer:
                     if isinstance(step, dict) and step.get("kind") == "thought" and step.get("label")]
         if thoughts:
             lines.append(f"  - *Agent thinking:* {_clip(' '.join(thoughts), 1500)}")
+        plan = [item for item in turn.get("plan") or [] if isinstance(item, dict) and item.get("text")]
+        if plan:
+            marks = {"done": "[x]", "dropped": "[dropped]"}
+            title = f"{_clip(str(turn['planTitle']), 120)}: " if turn.get("planTitle") else ""
+            lines.append(f"  - *Plan:* {title}" + "; ".join(
+                f"{marks.get(item.get('status'), '[ ]')} {_clip(str(item['text']), 200)}" for item in plan))
         if turn.get("content"):
             # The agent message right before a derived table is that table's instruction.
             follower = next(iter(self.graph.followers_of(turn["id"])), None)
@@ -821,8 +827,6 @@ class SessionLayer:
                 continue
             table = self.table_by_id[chart["tableRef"]]
             flags = [str(chart.get("chartType")), f"of {self.table_name(table)}"]
-            if chart.get("styleVariants"):
-                flags.append("user restyled")
             if self.reports_showing(chart["id"]):
                 flags.append("in a report")
             blocked = self._blocked().get(chart["tableRef"])

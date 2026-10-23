@@ -112,7 +112,7 @@
     "msgEncodingEmpty": "Ajoutez des champs de données au constructeur de graphiques ou décrivez ce que vous souhaitez !",
     "msgUnavailable": "Formulez vos données pour créer la visualisation !",
     "msgSynthesizing": "Synthèse en cours…",
-    "msgWarning": "Les résultats générés par l'IA peuvent être inexacts, vérifiez-les !",
+    "aiDisclaimer": "L'IA peut se tromper. Vérifiez les résultats importants.",
     "templateGroups": {
       "table": "Table",
       "scatter": "Nuage de points",

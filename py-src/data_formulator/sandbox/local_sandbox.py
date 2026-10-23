@@ -58,8 +58,8 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
 
     # Mutable container: the audit hook reads this to know which
     # workspace directory is currently allowed for file reads.
-    # Set before each exec(), cleared after.  When None, only
-    # library-level opens (pre-import phase) are permitted.
+    # Set before each exec(), cleared after. When None, only
+    # library/runtime reads are permitted.
     _allowed_workspace = [None]
 
     # Build a set of directories that should always be readable
@@ -111,24 +111,50 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
     except ImportError:
         pass
 
+    # Cached imports skip the import audit event. Older CPython versions also
+    # emit no audit event from the native fork_exec entry point itself.
+    def _forbid_process_creation(*args, **kwargs):
+        raise OSError("process creation forbidden in sandbox")
+
+    for _module_name, _attribute in (
+        ("_posixsubprocess", "fork_exec"),
+        ("subprocess", "_fork_exec"),
+    ):
+        _module = _sys.modules.get(_module_name)
+        if _module is not None and hasattr(_module, _attribute):
+            setattr(_module, _attribute, _forbid_process_creation)
+
+    _write_open_flags = (
+        os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
+        | (getattr(os, "O_TMPFILE", 0) & ~getattr(os, "O_DIRECTORY", 0))
+    )
+
     # Install audit hooks once -- they persist for the process lifetime.
     def block_mischief(event, arg):
         if type(event) != str:
             raise RuntimeError("bad audit event")
-        # Block file writes (only allow reading)
-        if event == "open" and type(arg[1]) == str and arg[1] not in ("r", "rb"):
-            raise IOError("file write forbidden")
-        # Restrict file reads to the workspace directory during code execution.
-        # Always allow reads from Python library directories (stdlib, site-packages).
-        if (event == "open" and type(arg[1]) == str and arg[1] in ("r", "rb")
-                and _allowed_workspace[0] is not None):
-            resolved = os.path.realpath(arg[0])
-            if (not resolved.startswith(_allowed_workspace[0])
+        if event == "open":
+            path, mode, flags = arg
+            # os.open() supplies mode=None; the flags must be checked even
+            # when a string mode is present.
+            if (type(flags) is not int or flags & _write_open_flags
+                    or (mode is not None and (type(mode) is not str or mode not in ("r", "rb")))):
+                raise OSError("file write forbidden")
+            if not isinstance(path, (str, bytes)):
+                raise OSError("file read via an unverified descriptor forbidden")
+            path = os.fsdecode(path)
+            # The audit event omits dir_fd. A relative low-level open could
+            # refer to a different directory than the worker's cwd.
+            if mode is None and not os.path.isabs(path):
+                raise OSError("file read requires an absolute path for low-level opens")
+            resolved = os.path.realpath(path)
+            if (not (_allowed_workspace[0] is not None
+                     and resolved.startswith(_allowed_workspace[0]))
                     and not resolved.startswith(_allowed_lib_prefixes)
                     and resolved not in _allowed_runtime_files):
-                raise IOError(f"file read outside workspace forbidden: {arg[0]}")
+                raise OSError(f"file read outside workspace forbidden: {path}")
         # Block dangerous filesystem / process operations
-        _blocked_prefixes = ("subprocess", "shutil", "winreg", "webbrowser")
+        _blocked_prefixes = ("subprocess", "_posixsubprocess", "shutil", "winreg", "webbrowser")
         if event.split(".")[0] in _blocked_prefixes:
             raise IOError("potentially dangerous, filesystem-accessing functions forbidden")
         # Block dangerous os operations (process execution, signals,
@@ -141,7 +167,8 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
             "os.kill", "os.killpg", "os.startfile",
             "os.putenv", "os.unsetenv",
         })
-        if event in _blocked_os_events:
+        if (event in _blocked_os_events
+                or event.startswith(("os.exec", "os.spawn", "os.posix_spawn", "os.fork"))):
             raise IOError("dangerous os operation forbidden in sandbox")
         # Block network access — code should only transform data, not
         # make outbound connections (prevents data exfiltration). An OS-confined
@@ -155,7 +182,10 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
         # Block import of dangerous modules (allow re-import of ctypes
         # since scipy/sklearn pre-loaded it for BLAS access).
         if event == "import" and type(arg[0]) == str:
-            _blocked_modules = ("subprocess", "shutil", "ctypes", "multiprocessing", "signal", "resource")
+            _blocked_modules = (
+                "subprocess", "_posixsubprocess", "shutil", "ctypes",
+                "multiprocessing", "signal", "resource",
+            )
             if not allow_network:
                 _blocked_modules += ("socket", "http", "urllib", "requests")
             mod_name = arg[0].split(".")[0]
@@ -224,11 +254,8 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
                 _persistent_ns = namespace
 
         try:
-            # Security: code is HMAC-SHA256 signed by the server when first generated
-            # by AI agents (see code_signing.py). The /refresh-derived-data endpoint
-            # verifies the signature before forwarding code here, ensuring only
-            # server-originated code is executed. Additional audit hooks above block
-            # file writes, network access, subprocess spawning, and dangerous imports.
+            # Refresh signatures verify provenance, not safety. Audit hooks are
+            # defense in depth, not containment for arbitrary Python/native code.
             exec(code, namespace)  # nosec  # codeql[py/code-injection]
         except KeyboardInterrupt:
             captured = namespace.get("_captured")
@@ -810,5 +837,3 @@ class LocalSandbox(Sandbox):
                     f"(worker exit code: {exit_code})"
                 ),
             }
-
-
