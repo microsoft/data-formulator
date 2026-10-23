@@ -151,15 +151,21 @@ def _enforce_deployment_restrictions():
 
 ## 7. Sandbox 部署
 
-多用户或云部署中，`not_a_sandbox` 会让 LLM 生成的 Python 代码在宿主进程直接执行，可能绕过所有路径检查。
+LLM 生成的 Python 必须视为不可信代码。当前支持 `SANDBOX=local` 和
+`SANDBOX=docker`，但选择 backend 本身并不证明多用户隔离成立。
 
 部署要求：
 
-- `WORKSPACE_BACKEND == "local"` 时允许桌面单用户模式使用 `not_a_sandbox`。
-- `WORKSPACE_BACKEND != "local"` 时必须使用 `SANDBOX=docker` 或 `SANDBOX=local`。
-- 新部署模板应默认选择隔离沙箱。
+- `local` 使用 worker subprocess 和 audit hooks，在可用时附加 OS confinement；
+  audit-only 模式仅是加固，不是任意 Python/native code 的安全边界。
+- 多用户执行环境应只允许读取当前 workspace，不得授予所有用户的 workspace 根目录。
+- `docker` 或独立执行服务需要验证实际挂载、凭据、网络和 worker/host 通信隔离，
+  不能把整个 Web 服务运行在一个容器中等同于每次代码执行的独立隔离。
 
-应用启动时已有安全检查：多用户模式搭配 `not_a_sandbox` 会输出 critical 日志。当前实现是告警而非硬阻断，因此生产部署还必须在部署配置或启动脚本层强制 `SANDBOX=local` / `SANDBOX=docker`。
+当前 `local` 在 OS confinement 不可用或启动失败时仍可退回 audit-only，以保留部署兼容性。
+生产隔离的强制启用需要单独验证和部署；在完成之前不能宣称已安全隔离恶意代码。
+正常 workspace CSV/Parquet 读取不应被阻断。具体读取策略和分阶段部署限制见
+[Sandbox Session](12-sandbox-session.md#执行策略与安全边界)。
 
 ## 8. 测试要求
 
@@ -175,7 +181,6 @@ def _enforce_deployment_restrictions():
 
 - `tests/backend/data/test_local_folder_loader.py`
 - `tests/backend/security/test_scratch_serve.py`
-- `tests/backend/agents/test_tool_path_safety.py`
 - `tests/backend/security/test_local_folder_deployment.py`
 - `tests/backend/security/test_startup_safety.py`
 - `tests/backend/security/test_confined_dir_extended.py`
@@ -190,7 +195,7 @@ def _enforce_deployment_restrictions():
 - [ ] 下载 route 是否用 `ConfinedDir.resolve()` 做检查并传给 `send_file()`？
 - [ ] 上传 route 是否同时使用 `secure_filename()` 和 `ConfinedDir.resolve()`？
 - [ ] 读取宿主文件系统的 Loader 是否注册了多用户禁用规则？
-- [ ] 多用户部署是否启用了 `docker` 或 `local` sandbox？
+- [ ] 多用户部署是否验证了逐 workspace 的 OS 隔离，而非仅依赖 audit hooks？
 
 ## 10. 已迁移清单
 
@@ -201,12 +206,6 @@ def _enforce_deployment_restrictions():
 | `datalake/workspace.py` | `__init__` | 创建 `_confined_root` / `_confined_data` / `_confined_scratch`，暴露属性 |
 | `datalake/workspace.py` | `get_file_path` | `self._confined_data.resolve(basename)` |
 | `datalake/workspace.py` | `__init__` (legacy root) | `ConfinedDir(root).resolve(safe_id)` |
-| `agent_data_loading_chat.py` | `_execute_tool` | `workspace.confined_root` + `workspace.confined_scratch` |
-| `agent_data_loading_chat.py` | `_tool_read_file` | `workspace_jail.resolve(rel_path)` |
-| `agent_data_loading_chat.py` | `_tool_list_directory` | `workspace_jail.resolve(rel_path)` |
-| `agent_data_loading_chat.py` | `_tool_write_file` | `scratch_jail.resolve(filename)` |
-| `agent_data_loading_chat.py` | `_tool_execute_python` | `workspace.confined_scratch.resolve(safe_name + ".csv")` |
-| `agent_data_loading_chat.py` | `_preview_scratch_files` | `workspace.confined_root.resolve(file_path)` |
 | `routes/agents.py` | `scratch_serve` | `workspace.confined_scratch.resolve(filename)` |
 | `routes/agents.py` | `scratch_upload` | `workspace.confined_scratch.resolve(final_name)` |
 | `cached_azure_blob_workspace.py` | `_cache_path` | `self._cache_jail.resolve(filename)` |

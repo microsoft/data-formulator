@@ -1,0 +1,3822 @@
+{
+ "__stateVersion": 14,
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "d_result",
+   "displayId": "Research investment trends in leading economies",
+   "names": [
+    "indicator_id",
+    "COUNTRY_ID",
+    "country",
+    "year",
+    "value",
+    "magnitude",
+    "qualifier",
+    "date"
+   ],
+   "rows": [
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 1996,
+     "value": 0.56014,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1996-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 1997,
+     "value": 0.63467,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1997-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 1998,
+     "value": 0.64185,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1998-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 1999,
+     "value": 0.74295,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1999-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2000,
+     "value": 0.88409,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2001,
+     "value": 0.92948,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2002,
+     "value": 1.04418,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2003,
+     "value": 1.10465,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2004,
+     "value": 1.19732,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2005,
+     "value": 1.29008,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2006,
+     "value": 1.34923,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2007,
+     "value": 1.35321,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2008,
+     "value": 1.4233,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2009,
+     "value": 1.6366,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2010,
+     "value": 1.68456,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2011,
+     "value": 1.75244,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2012,
+     "value": 1.88095,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2013,
+     "value": 1.96246,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2014,
+     "value": 1.98475,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2015,
+     "value": 2.01703,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2016,
+     "value": 2.0595,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2017,
+     "value": 2.07771,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2018,
+     "value": 2.10232,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2019,
+     "value": 2.20144,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2020,
+     "value": 2.35712,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2021,
+     "value": 2.38165,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2022,
+     "value": 2.4945,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2023,
+     "value": 2.57729,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 1996,
+     "value": 2.13663,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1996-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 1997,
+     "value": 2.18161,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1997-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 1998,
+     "value": 2.20748,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1998-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 1999,
+     "value": 2.32772,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1999-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2000,
+     "value": 2.38654,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2001,
+     "value": 2.3792,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2002,
+     "value": 2.40856,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2003,
+     "value": 2.44232,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2004,
+     "value": 2.40278,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2005,
+     "value": 2.40266,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2006,
+     "value": 2.43043,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2007,
+     "value": 2.41918,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2008,
+     "value": 2.57152,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2009,
+     "value": 2.68864,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2010,
+     "value": 2.67632,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2011,
+     "value": 2.75016,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2012,
+     "value": 2.82499,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2013,
+     "value": 2.78067,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2014,
+     "value": 2.82218,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2015,
+     "value": 2.87725,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2016,
+     "value": 2.88393,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2017,
+     "value": 2.9886,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2018,
+     "value": 3.05057,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2019,
+     "value": 3.11256,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2020,
+     "value": 3.0897,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2021,
+     "value": 3.0786,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2022,
+     "value": 3.07096,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2023,
+     "value": 3.1539,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 1996,
+     "value": 2.4753,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1996-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 1997,
+     "value": 2.69533,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1997-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 1998,
+     "value": 2.80723,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1998-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 1999,
+     "value": 3.21199,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1999-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2000,
+     "value": 3.81316,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2001,
+     "value": 4.05338,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2002,
+     "value": 3.99197,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2003,
+     "value": 3.76142,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2004,
+     "value": 3.74703,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2005,
+     "value": 3.91123,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2006,
+     "value": 4.01416,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2007,
+     "value": 4.28533,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2008,
+     "value": 4.24165,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2009,
+     "value": 4.01799,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2010,
+     "value": 3.8421,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2011,
+     "value": 3.91608,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2012,
+     "value": 4.06028,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2013,
+     "value": 4.10651,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2014,
+     "value": 4.19613,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2015,
+     "value": 4.29761,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2016,
+     "value": 4.59051,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2017,
+     "value": 4.74032,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2018,
+     "value": 4.91965,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2019,
+     "value": 5.35528,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2020,
+     "value": 5.83209,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2021,
+     "value": 5.75725,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2022,
+     "value": 6.17831,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2023,
+     "value": 6.34589,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 1996,
+     "value": 2.64303,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1996-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 1997,
+     "value": 2.72177,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1997-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 1998,
+     "value": 2.82745,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1998-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 1999,
+     "value": 2.84672,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1999-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2000,
+     "value": 2.85841,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2001,
+     "value": 2.92348,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2002,
+     "value": 2.96514,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2003,
+     "value": 2.99319,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2004,
+     "value": 2.98125,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2005,
+     "value": 3.13092,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2006,
+     "value": 3.22766,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2007,
+     "value": 3.29257,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2008,
+     "value": 3.29224,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2009,
+     "value": 3.1959,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2010,
+     "value": 3.10495,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2011,
+     "value": 3.20537,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2012,
+     "value": 3.1737,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2013,
+     "value": 3.27895,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2014,
+     "value": 3.36788,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2015,
+     "value": 3.24071,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2016,
+     "value": 3.10665,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2017,
+     "value": 3.16636,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2018,
+     "value": 3.2192,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2019,
+     "value": 3.21824,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2020,
+     "value": 3.26556,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2021,
+     "value": 3.27383,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2022,
+     "value": 3.40053,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2023,
+     "value": 3.44125,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 1996,
+     "value": 2.14233,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1996-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 1997,
+     "value": 2.17409,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1997-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 1998,
+     "value": 2.03608,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1998-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 1999,
+     "value": 1.9446,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1999-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2000,
+     "value": 2.0494,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2001,
+     "value": 2.19872,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2002,
+     "value": 2.13042,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2003,
+     "value": 2.19657,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2004,
+     "value": 2.35292,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2005,
+     "value": 2.42725,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2006,
+     "value": 2.61516,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2007,
+     "value": 2.75895,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2008,
+     "value": 2.86774,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2009,
+     "value": 3.02145,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2010,
+     "value": 3.17913,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2011,
+     "value": 3.44409,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2012,
+     "value": 3.6852,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2013,
+     "value": 3.77487,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2014,
+     "value": 3.88983,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2015,
+     "value": 3.78907,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2016,
+     "value": 3.78638,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2017,
+     "value": 4.07341,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2018,
+     "value": 4.27155,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2019,
+     "value": 4.36379,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2020,
+     "value": 4.5214,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2021,
+     "value": 4.59673,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2022,
+     "value": 4.84753,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2023,
+     "value": 4.94352,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 1996,
+     "value": 2.45013,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1996-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 1997,
+     "value": 2.47714,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1997-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 1998,
+     "value": 2.49621,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1998-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 1999,
+     "value": 2.54362,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1999-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2000,
+     "value": 2.61982,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2001,
+     "value": 2.63715,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2002,
+     "value": 2.54746,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2003,
+     "value": 2.55014,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2004,
+     "value": 2.48685,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2005,
+     "value": 2.50192,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2006,
+     "value": 2.54545,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2007,
+     "value": 2.61516,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2008,
+     "value": 2.74481,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2009,
+     "value": 2.7918,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2010,
+     "value": 2.71443,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2011,
+     "value": 2.73803,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2012,
+     "value": 2.67272,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2013,
+     "value": 2.69591,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2014,
+     "value": 2.70882,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2015,
+     "value": 2.77328,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2016,
+     "value": 2.83677,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2017,
+     "value": 2.88315,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2018,
+     "value": 2.98956,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2019,
+     "value": 3.14297,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2020,
+     "value": 3.41788,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2021,
+     "value": 3.4689,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2022,
+     "value": 3.48736,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2023,
+     "value": 3.44716,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2023-01-01T00:00:00.000"
+    }
+   ],
+   "metadata": {
+    "indicator_id": {
+     "type": "string",
+     "levels": []
+    },
+    "COUNTRY_ID": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "value": {
+     "type": "number",
+     "levels": []
+    },
+    "magnitude": {
+     "type": "boolean",
+     "levels": []
+    },
+    "qualifier": {
+     "type": "boolean",
+     "levels": []
+    },
+    "date": {
+     "type": "date",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import pandas as pd\nd=pd.read_parquet('data/rd_sdg_national.parquet')\nnames={'KOR':'South Korea','ISR':'Israel','USA':'US','JPN':'Japan','DEU':'Germany','CHN':'China'}\nresult=d[(d.indicator_id=='EXPGDP.TOT') & d.COUNTRY_ID.isin(names) & (d.year<=2023)].copy()\nresult['country']=result.COUNTRY_ID.map(names)\nresult['date']=pd.to_datetime(result.year.astype(int).astype(str)+'-01-01')",
+    "codeSignature": "92024b66eab562338ce077eb8fe36326f96d7b95b6d55564ffd2806967fe8429",
+    "outputVariable": "result",
+    "source": [
+     "rd_sdg_national"
+    ],
+    "inputSources": [
+     {
+      "id": "data:e2d392aa9fac7f3712262b0e9ae08869:rd_sdg_national",
+      "kind": "data",
+      "displayName": "rd_sdg_national"
+     }
+    ],
+    "trigger": {
+     "tableId": "rd_sdg_national",
+     "resultTableId": "d_result",
+     "chart": {
+      "id": "chart-1792308545562",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "rd_sdg_national",
+      "source": "trigger"
+     }
+    },
+    "explanation": {
+     "status": "ok",
+     "concepts": [
+      {
+       "field": "date",
+       "explanation": "Convert each year to a date on January 1: `date = to_datetime(string(year) + '-01-01')`."
+      }
+     ],
+     "agent": "CodeExplanationAgent"
+    }
+   },
+   "virtual": {
+    "tableId": "d_result",
+    "rowCount": 168
+   },
+   "description": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792308499055_step_1",
+   "createdAt": 1792308546075
+  },
+  {
+   "kind": "table",
+   "id": "d_result_2",
+   "displayId": "Research workforce trends in selected economies",
+   "names": [
+    "indicator_id",
+    "COUNTRY_ID",
+    "country",
+    "year",
+    "value",
+    "magnitude",
+    "qualifier",
+    "date"
+   ],
+   "rows": [
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 1996,
+     "value": 447.0994,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1996-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 1997,
+     "value": 476.21305,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1997-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 1998,
+     "value": 389.62565,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1998-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 1999,
+     "value": 422.97614,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1999-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2000,
+     "value": 549.57477,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2001,
+     "value": 582.78825,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2002,
+     "value": 631.73478,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2003,
+     "value": 667.9285,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2004,
+     "value": 713.42588,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2005,
+     "value": 856.65892,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2006,
+     "value": 931.20148,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2007,
+     "value": 1076.73747,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2008,
+     "value": 1197.58885,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2009,
+     "value": 861.24883,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2010,
+     "value": 898.85545,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2011,
+     "value": 972.01743,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2012,
+     "value": 1028.98334,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2013,
+     "value": 1079.63795,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2014,
+     "value": 1101.80087,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2015,
+     "value": 1162.7108,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2016,
+     "value": 1208.86205,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2017,
+     "value": 1235.84935,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2018,
+     "value": 1317.48914,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2019,
+     "value": 1483.85803,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2020,
+     "value": 1600.30633,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2021,
+     "value": 1685.97511,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2022,
+     "value": 1849.23669,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2023,
+     "value": 2107.27003,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 1996,
+     "value": 2801.62099,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1996-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 1997,
+     "value": 2862.8306,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1997-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 1998,
+     "value": 2884.30523,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1998-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 1999,
+     "value": 3120.9,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1999-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2000,
+     "value": 3154.48437,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2001,
+     "value": 3230.26868,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2002,
+     "value": 3240.75467,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2003,
+     "value": 3275.18656,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2004,
+     "value": 3290.96185,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2005,
+     "value": 3315.75626,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2006,
+     "value": 3411.78697,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2007,
+     "value": 3573.67338,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2008,
+     "value": 3726.67445,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2009,
+     "value": 3916.78276,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2010,
+     "value": 4056.42386,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2011,
+     "value": 4191.51741,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2012,
+     "value": 4355.567,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2013,
+     "value": 4380.38742,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2014,
+     "value": 4336.01915,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2015,
+     "value": 4755.29531,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2016,
+     "value": 4839.84645,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2017,
+     "value": 5058.39528,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2018,
+     "value": 5209.2143,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2019,
+     "value": 5398.63462,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2020,
+     "value": 5390.05249,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2021,
+     "value": 5520.57631,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2022,
+     "value": 5801.62324,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2023,
+     "value": 5926.07432,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 1996,
+     "value": 4906.38735,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1996-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 1997,
+     "value": 4959.03285,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1997-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 1998,
+     "value": 5164.5008,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1998-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 1999,
+     "value": 5201.03384,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1999-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2000,
+     "value": 5102.41299,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2001,
+     "value": 5136.2064,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2002,
+     "value": 4891.16889,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2003,
+     "value": 5113.02549,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2004,
+     "value": 5117.27802,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2005,
+     "value": 5322.47485,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2006,
+     "value": 5352.83117,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2007,
+     "value": 5344.2381,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2008,
+     "value": 5125.12165,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2009,
+     "value": 5114.01193,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2010,
+     "value": 5117.18164,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2011,
+     "value": 5123.33234,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2012,
+     "value": 5048.63399,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2013,
+     "value": 5166.83422,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2014,
+     "value": 5351.53211,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2015,
+     "value": 5198.48902,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2016,
+     "value": 5232.70894,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2017,
+     "value": 5319.83455,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2018,
+     "value": 5339.51713,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2019,
+     "value": 5376.11987,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2020,
+     "value": 5450.44287,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2021,
+     "value": 5589.76698,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2022,
+     "value": 5629.79566,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2023,
+     "value": 5608.63075,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 1996,
+     "value": 2186.08907,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1996-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 1997,
+     "value": 2241.82853,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1997-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 1998,
+     "value": 2007.82828,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1998-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 1999,
+     "value": 2161.01827,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1999-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2000,
+     "value": 2324.08478,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2001,
+     "value": 2906.71111,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2002,
+     "value": 3007.81714,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2003,
+     "value": 3189.96825,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2004,
+     "value": 3281.04385,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2005,
+     "value": 3763.23464,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2006,
+     "value": 4173.2456,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2007,
+     "value": 4614.74679,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2008,
+     "value": 4892.49313,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2009,
+     "value": 5037.92837,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2010,
+     "value": 5429.43919,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2011,
+     "value": 5908.82443,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2012,
+     "value": 6393.34374,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2013,
+     "value": 6457.88851,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2014,
+     "value": 6867.33385,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2015,
+     "value": 7020.43916,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2016,
+     "value": 7057.16003,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2017,
+     "value": 7453.21918,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2018,
+     "value": 7918.46916,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2019,
+     "value": 8328.96727,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2020,
+     "value": 8620.009,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2021,
+     "value": 9071.4503,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2022,
+     "value": 9434.7613,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2023,
+     "value": 9471.82543,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 1997,
+     "value": 4169.89584,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1997-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 1999,
+     "value": 4508.76656,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1999-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2001,
+     "value": 5177.98913,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2003,
+     "value": 5389.38189,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2004,
+     "value": 5434.9691,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2005,
+     "value": 6103.30894,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2006,
+     "value": 6159.34885,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2007,
+     "value": 5026.89783,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2008,
+     "value": 5468.69683,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2009,
+     "value": 5110.718,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2010,
+     "value": 5279.17412,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2011,
+     "value": 5172.47477,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2012,
+     "value": 5196.71759,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2013,
+     "value": 6717.6193,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2014,
+     "value": 6909.46438,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2015,
+     "value": 6846.13413,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2016,
+     "value": 7143.443,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2017,
+     "value": 7316.6476,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2018,
+     "value": 7425.66896,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2019,
+     "value": 7685.83827,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2020,
+     "value": 7754.64384,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2021,
+     "value": 8159.79705,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2022,
+     "value": 8639.24439,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2023,
+     "value": 8910.73864,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 1996,
+     "value": 3206.67656,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1996-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 1997,
+     "value": 3310.87683,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1997-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 1998,
+     "value": 3472.48581,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1998-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 1999,
+     "value": 3547.1262,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "1999-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2000,
+     "value": 3556.3917,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2001,
+     "value": 3598.59475,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2002,
+     "value": 3645.74808,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2003,
+     "value": 3851.4654,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2004,
+     "value": 3710.14634,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2005,
+     "value": 3635.29099,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2006,
+     "value": 3674.19384,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2007,
+     "value": 3624.05411,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2008,
+     "value": 3751.46069,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2009,
+     "value": 3877.89208,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2010,
+     "value": 3643.92768,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2011,
+     "value": 3754.88228,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2012,
+     "value": 3734.6577,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2013,
+     "value": 3815.20951,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2014,
+     "value": 3915.0339,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2015,
+     "value": 3949.66371,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2016,
+     "value": 3897.11007,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2017,
+     "value": 4020.59227,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2018,
+     "value": 4322.78826,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2019,
+     "value": 4367.20971,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2020,
+     "value": 4567.79267,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2021,
+     "value": 4900.77179,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2022,
+     "value": 4937.49441,
+     "magnitude": null,
+     "qualifier": null,
+     "date": "2022-01-01T00:00:00.000"
+    }
+   ],
+   "metadata": {
+    "indicator_id": {
+     "type": "string",
+     "levels": []
+    },
+    "COUNTRY_ID": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "value": {
+     "type": "number",
+     "levels": []
+    },
+    "magnitude": {
+     "type": "boolean",
+     "levels": []
+    },
+    "qualifier": {
+     "type": "boolean",
+     "levels": []
+    },
+    "date": {
+     "type": "date",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import pandas as pd\nd=pd.read_parquet('data/rd_sdg_national.parquet')\nnames={'KOR':'South Korea','USA':'US','JPN':'Japan','DEU':'Germany','CHN':'China','SWE':'Sweden'}\nresult=d[(d.indicator_id=='RESDEN.INHAB.TFTE') & d.COUNTRY_ID.isin(names) & (d.year<=2023)].copy()\nresult['country']=result.COUNTRY_ID.map(names)\nresult['date']=pd.to_datetime(result.year.astype(int).astype(str)+'-01-01')",
+    "codeSignature": "795ab759e7c53a4dd838fecf09b4770783f4caa79c223103bf07ddbda56bab24",
+    "outputVariable": "result",
+    "source": [
+     "rd_sdg_national"
+    ],
+    "inputSources": [
+     {
+      "id": "data:e2d392aa9fac7f3712262b0e9ae08869:rd_sdg_national",
+      "kind": "data",
+      "displayName": "rd_sdg_national"
+     }
+    ],
+    "trigger": {
+     "tableId": "d_result",
+     "resultTableId": "d_result_2",
+     "chart": {
+      "id": "chart-1792308549256",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "d_result",
+      "source": "trigger"
+     }
+    },
+    "explanation": {
+     "status": "ok",
+     "concepts": [
+      {
+       "field": "date",
+       "explanation": "`date = January 1 of year`"
+      }
+     ],
+     "agent": "CodeExplanationAgent"
+    }
+   },
+   "virtual": {
+    "tableId": "d_result_2",
+    "rowCount": 163
+   },
+   "description": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792308499055_step_2",
+   "createdAt": 1792308553269
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-bc7843265ae7",
+   "chartType": "Line Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-date-1792308546075-0.7474874589636237",
+     "dtype": "temporal"
+    },
+    "y": {
+     "fieldID": "concept-value-1792308546075-0.028224717727207138",
+     "dtype": "quantitative"
+    },
+    "color": {
+     "fieldID": "concept-country-1792308546075-0.3624084484355673",
+     "dtype": "nominal"
+    },
+    "strokeDash": {
+     "channel": "strokeDash",
+     "bin": false
+    },
+    "detail": {
+     "channel": "detail",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "d_result",
+   "source": "user",
+   "title": "Research spending as a share of the economy",
+   "subtitle": "1996–2023; spending by businesses, government and other institutions",
+   "titleKey": "Line Chart|color:concept-country-1792308546075-0.3624084484355673:|column::|detail::|opacity::|row::|strokeDash::|x:concept-date-1792308546075-0.7474874589636237:|y:concept-value-1792308546075-0.028224717727207138:",
+   "unread": false,
+   "themeId": "datawrapper",
+   "config": {
+    "includeZero_y": true
+   }
+  },
+  {
+   "id": "chart-5913c551be2d",
+   "chartType": "Line Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-date-1792308546075-0.7474874589636237",
+     "dtype": "temporal"
+    },
+    "y": {
+     "fieldID": "concept-value-1792308546075-0.028224717727207138",
+     "dtype": "quantitative"
+    },
+    "color": {
+     "fieldID": "concept-country-1792308546075-0.3624084484355673",
+     "dtype": "nominal"
+    },
+    "strokeDash": {
+     "channel": "strokeDash",
+     "bin": false
+    },
+    "detail": {
+     "channel": "detail",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "d_result_2",
+   "source": "user",
+   "title": "Researchers relative to population",
+   "subtitle": "Full-time-equivalent researchers, 1996–2023",
+   "titleKey": "Line Chart|color:concept-country-1792308546075-0.3624084484355673:|column::|detail::|opacity::|row::|strokeDash::|x:concept-date-1792308546075-0.7474874589636237:|y:concept-value-1792308546075-0.028224717727207138:",
+   "unread": false,
+   "themeId": "datawrapper",
+   "config": {
+    "includeZero_y": true
+   }
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-country-1792308546075-0.3624084484355673",
+   "name": "country",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-value-1792308546075-0.028224717727207138",
+   "name": "value",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-date-1792308546075-0.7474874589636237",
+   "name": "date",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308499055_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1792308499055_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "How did South Korea become a research leader?",
+   "parentNodeId": "conversation-root:0a780cf2-59a6-49c2-839a-5af91396f395",
+   "actionId": "exploreDataFromNL_1792308499055",
+   "createdAt": 1792308499055
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308499055_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1792308499055_step_1",
+   "textKind": "explain",
+   "content": "Check South Korea’s research trends and comparable countries’ latest observations.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792308499055_prompt",
+   "actionId": "exploreDataFromNL_1792308499055",
+   "createdAt": 1792308523865,
+   "startedAt": 1792308499055,
+   "codeExecutions": [
+    {
+     "id": "code_exploreDataFromNL_1792308499055_1",
+     "tool": "execute_python_script",
+     "purpose": "Check South Korea’s research trends and comparable countries’ latest observations.",
+     "code": "import pandas as pd\nd=pd.read_parquet('data/rd_sdg_national.parquet')\nk=d[d.COUNTRY_ID=='KOR']\nprint(k.to_string(index=False))\nfor ind in d.indicator_id.unique():\n t=d[(d.indicator_id==ind)&(d.year>=2021)].sort_values('year').groupby('COUNTRY_ID').tail(1).sort_values('value',ascending=False)\n print(ind,t.head(12)[['country','year','value']].to_string(index=False))",
+     "status": "completed",
+     "createdAt": 1792308523865,
+     "output": "     indicator_id COUNTRY_ID           country  year      value magnitude qualifier\n       EXPGDP.TOT        KOR Republic of Korea  1996    2.14233      None      None\n       EXPGDP.TOT        KOR Republic of Korea  1997    2.17409      None      None\n       EXPGDP.TOT        KOR Republic of Korea  1998    2.03608      None      None\n       EXPGDP.TOT        KOR Republic of Korea  1999    1.94460      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2000    2.04940      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2001    2.19872      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2002    2.13042      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2003    2.19657      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2004    2.35292      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2005    2.42725      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2006    2.61516      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2007    2.75895      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2008    2.86774      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2009    3.02145      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2010    3.17913      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2011    3.44409      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2012    3.68520      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2013    3.77487      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2014    3.88983      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2015    3.78907      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2016    3.78638      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2017    4.07341      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2018    4.27155      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2019    4.36379      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2020    4.52140      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2021    4.59673      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2022    4.84753      None      None\n       EXPGDP.TOT        KOR Republic of Korea  2023    4.94352      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  1996 2186.08907      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  1997 2241.82853      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  1998 2007.82828      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  1999 2161.01827      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2000 2324.08478      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2001 2906.71111      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2002 3007.81714      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2003 3189.96825      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2004 3281.04385      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2005 3763.23464      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2006 4173.24560      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2007 4614.74679      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2008 4892.49313      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2009 5037.92837      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2010 5429.43919      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2011 5908.82443      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2012 6393.34374      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2013 6457.88851      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2014 6867.33385      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2015 7020.43916      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2016 7057.16003      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2017 7453.21918      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2018 7918.46916      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2019 8328.96727      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2020 8620.00900      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2021 9071.45030      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2022 9434.76130      None      None\nRESDEN.INHAB.TFTE        KOR Republic of Korea  2023 9471.82543      None      None\nEXPGDP.TOT                  country  year   value\n                  Israel  2023 6.34589\n           Liechtenstein  2023 6.00984\n       Republic of Korea  2023 4.94352\n                  Sweden  2023 3.59978\nUnited States of America  2023 3.44716\n                   Japan  2023 3.44125\n                 Belgium  2023 3.27235\n                 Austria  2023 3.25517\n             Switzerland  2023 3.22178\n                 Germany  2023 3.15390\n                 Finland  2023 3.09380\n                 Denmark  2023 3.04841\nRESDEN.INHAB.TFTE           country  year       value\n    Liechtenstein  2023 18129.75165\nRepublic of Korea  2023  9471.82543\n           Sweden  2023  8910.73864\n          Denmark  2023  8837.51688\n        Singapore  2022  8781.74332\n          Finland  2023  8314.89822\n           Norway  2023  7450.59492\n          Austria  2023  6633.64894\n      Netherlands  2023  6563.33599\n      Switzerland  2023  6107.95842\n          Belgium  2023  5990.12849\n         Portugal  2023  5983.27041\n"
+    }
+   ],
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1792308499055-1",
+     "kind": "thought",
+     "label": "I’ll compare South Korea’s research spending and workforce over time with other leading countries.",
+     "status": "completed"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792308499055-2",
+     "kind": "tool",
+     "label": "Reading: session/tables/rd_sdg_indicators.json, session/tables/r…",
+     "status": "completed",
+     "tool": "read_file",
+     "toolCallId": "call_rZIe2Y6vn4lbpCYe1pFnHc3U"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792308499055-3",
+     "kind": "tool",
+     "label": "running code... Check South Korea’s research trends and comparable countries’ latest observations.",
+     "status": "completed",
+     "tool": "execute_python_script",
+     "toolCallId": "call_vyHcofnIAFsmaHpJEQ7Tccyu",
+     "executionId": "code_exploreDataFromNL_1792308499055_1"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792308499055-4",
+     "kind": "chart",
+     "label": "creating chart...",
+     "status": "completed"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308499055_step_2",
+   "displayId": "textTurn_exploreDataFromNL_1792308499055_step_2",
+   "textKind": "explain",
+   "content": "",
+   "parentNodeId": "d_result",
+   "actionId": "exploreDataFromNL_1792308499055",
+   "createdAt": 1792308553268,
+   "startedAt": 1792308499055,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1792308499055-5",
+     "kind": "chart",
+     "label": "creating chart...",
+     "status": "completed"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308499055_1792308573618",
+   "displayId": "textTurn_exploreDataFromNL_1792308499055_closing",
+   "textKind": "explain",
+   "content": "**South Korea became a research leader by combining long-term investment in skills with an industrial shift from adopting technology to developing it.** Public research institutions and engineering education helped build the foundations; export-oriented companies then developed major research operations in electronics, semiconductors and other advanced industries.\n\nThe available data show how strongly that commitment grew:\n- **Research spending more than doubled relative to the economy:** from **2.14% of GDP in 1996 to 4.94% in 2023**, well above Japan, Germany and the US.\n- **Its research workforce expanded even faster:** from **2,186 to 9,472 full-time-equivalent researchers per million people**—more than four times as many.\n\nThe story is sustained accumulation, not a single breakthrough: South Korea built both the money and the people needed for research over decades.\n\nThese figures measure research capacity, not the quality of discoveries, and cannot establish which policies caused the rise; the historical explanation is context beyond this dataset.",
+   "parentNodeId": "d_result_2",
+   "actionId": "exploreDataFromNL_1792308499055",
+   "createdAt": 1792308573618,
+   "startedAt": 1792308499055,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "d_result",
+   "fields": {
+    "indicator_id": {
+     "semanticType": "ID"
+    },
+    "COUNTRY_ID": {
+     "semanticType": "Country"
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "displayName": "Country"
+     }
+    },
+    "year": {
+     "semanticType": "Year"
+    },
+    "value": {
+     "semanticType": "Percentage",
+     "unit": "% of GDP",
+     "intrinsicDomain": [
+      0,
+      100
+     ],
+     "displayName": "Research spending (% of GDP)",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "% of GDP",
+      "displayName": "Research spending (% of GDP)"
+     }
+    },
+    "magnitude": {
+     "semanticType": "Unknown"
+    },
+    "qualifier": {
+     "semanticType": "Unknown"
+    },
+    "date": {
+     "semanticType": "Year",
+     "displayName": "Year",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Year"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "d_result_2",
+   "fields": {
+    "indicator_id": {
+     "semanticType": "ID"
+    },
+    "COUNTRY_ID": {
+     "semanticType": "Country"
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "displayName": "Country"
+     }
+    },
+    "year": {
+     "semanticType": "Year"
+    },
+    "value": {
+     "semanticType": "Quantity",
+     "unit": "per million people",
+     "displayName": "Researchers per million people",
+     "authored": {
+      "semanticType": "Quantity",
+      "unit": "per million people",
+      "displayName": "Researchers per million people"
+     }
+    },
+    "magnitude": {
+     "semanticType": "Unknown"
+    },
+    "qualifier": {
+     "semanticType": "Unknown"
+    },
+    "date": {
+     "semanticType": "Year",
+     "displayName": "Year",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Year"
+     }
+    }
+   }
+  }
+ ],
+ "activeWorkspace": {
+  "id": "science-s22",
+  "displayName": "South Korea's research push overtakes Japan and the US"
+ },
+ "focusedId": {
+  "type": "chart",
+  "chartId": "chart-bc7843265ae7"
+ }
+}

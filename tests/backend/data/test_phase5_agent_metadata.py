@@ -81,58 +81,36 @@ class TestWorkspaceSearch:
         assert len(results) <= 1
 
 
-# ── Catalog cache ────────────────────────────────────────────────────
+# ── get_field_summary values ─────────────────────────────────────────
 
-class TestCatalogCache:
-    def test_save_and_load(self):
-        from data_formulator.datalake.catalog_cache import save_catalog, load_catalog
-        with tempfile.TemporaryDirectory() as tmp:
-            tables = [
-                {"name": "t1", "metadata": {"columns": [{"name": "a"}]}},
-                {"name": "t2", "metadata": {"description": "desc"}},
-            ]
-            save_catalog(tmp, "pg:prod", tables)
-            loaded = load_catalog(tmp, "pg:prod")
-            assert loaded is not None
-            assert len(loaded) == 2
-            assert loaded[0]["name"] == "t1"
+class TestFieldSummaryValues:
+    """The distinct values shown for a column: sorted, without missing ones."""
 
-    def test_load_nonexistent_returns_none(self):
-        from data_formulator.datalake.catalog_cache import load_catalog
-        with tempfile.TemporaryDirectory() as tmp:
-            assert load_catalog(tmp, "no-such") is None
+    @staticmethod
+    def _values(df, column, sample=7):
+        from data_formulator.agents.agent_utils import get_field_summary
+        return get_field_summary(column, df, sample).split("values: ", 1)[1]
 
-    def test_delete_catalog(self):
-        from data_formulator.datalake.catalog_cache import save_catalog, delete_catalog, load_catalog
-        with tempfile.TemporaryDirectory() as tmp:
-            save_catalog(tmp, "src1", [{"name": "t"}])
-            delete_catalog(tmp, "src1")
-            assert load_catalog(tmp, "src1") is None
+    def test_missing_values_are_left_out_and_do_not_break_the_order(self):
+        import numpy as np
+        import pandas as pd
+        df = pd.DataFrame({
+            "year": [np.nan, 1990.0, np.nan, 2024.0, 1970.0, np.nan, 2001.0, 1985.0, np.nan, 2010.0],
+            "when": pd.to_datetime(["2024-01-02", None, "2021-01-01", None, "2024-01-02", None, None, None, None, None]),
+            "count": pd.array([5, None, 1, 9, None, 3, 3, None, 1, 5], dtype="Int64"),
+            "kind": pd.Categorical(["x", "z", None, "y", "x", None, "y", "z", "x", None]),
+        })
+        assert self._values(df, "year") == "1970.0, 1985.0, 1990.0, 2001.0, 2010.0, 2024.0"
+        assert self._values(df, "year", sample=4) == "1970.0, 1985.0, ..., 2010.0, 2024.0"
+        assert self._values(df, "when") == "2021-01-01T00:00:00.000000000, 2024-01-02T00:00:00.000000000"
+        assert self._values(df, "count") == "1, 3, 5, 9"
+        assert self._values(df, "kind") == "x, y, z"
 
-    def test_search_catalog_cache(self):
-        from data_formulator.datalake.catalog_cache import save_catalog, search_catalog_cache
-        with tempfile.TemporaryDirectory() as tmp:
-            save_catalog(tmp, "pg", [
-                {"name": "users", "metadata": {"description": "User accounts", "columns": [
-                    {"name": "email", "description": "User email address"},
-                ]}},
-                {"name": "orders", "metadata": {"columns": [
-                    {"name": "order_id"},
-                ]}},
-            ])
-            results = search_catalog_cache(tmp, "email")
-            assert len(results) == 1
-            assert results[0]["name"] == "users"
-            assert "email" in results[0]["matched_columns"]
-
-    def test_search_excludes_imported_tables(self):
-        from data_formulator.datalake.catalog_cache import save_catalog, search_catalog_cache
-        with tempfile.TemporaryDirectory() as tmp:
-            save_catalog(tmp, "pg", [
-                {"name": "orders", "metadata": {"description": "order data", "columns": []}},
-            ])
-            results = search_catalog_cache(tmp, "order", exclude_tables={"orders"})
-            assert len(results) == 0
+    def test_unhashable_and_unsortable_cells_still_summarize(self):
+        import pandas as pd
+        df = pd.DataFrame({"json": [{"a": 1}, [1, 2], {"a": 1}, None, "x"], "mixed": [1, "a", 2.5, None, 1]})
+        assert sorted(self._values(df, "json").split(", ")) == sorted(['"[1', '2]"', "x", "{'a': 1}"])
+        assert sorted(self._values(df, "mixed").split(", ")) == ["1", "2.5", "a"]
 
 
 # ── get_field_summary with column_description ────────────────────────
@@ -145,13 +123,6 @@ class TestFieldSummaryWithDescription:
         line = get_field_summary("x", df, 5)
         assert "x -- type:" in line
         assert "(" not in line
-
-    def test_with_description(self):
-        import pandas as pd
-        from data_formulator.agents.agent_utils import get_field_summary
-        df = pd.DataFrame({"x": [1, 2, 3]})
-        line = get_field_summary("x", df, 5, column_description="Primary key")
-        assert "(Primary key)" in line
 
     def test_with_verbose_name(self):
         import pandas as pd
@@ -181,17 +152,6 @@ class TestFieldSummaryWithDescription:
         assert "amount [金额] -- type:" in line
         assert "(Transaction amount)" in line
         assert "[calc: SUM(payments.amount)]" in line
-
-    def test_only_source_description(self):
-        """When only column_description exists, it's shown in parens."""
-        import pandas as pd
-        from data_formulator.agents.agent_utils import get_field_summary
-        df = pd.DataFrame({"x": [1]})
-        line = get_field_summary(
-            "x", df, 5,
-            column_description="From source",
-        )
-        assert "(From source)" in line
 
 
 # ── generate_data_summary with system description ────────────────────
@@ -359,36 +319,3 @@ class TestMergeSourceMetadataEmptyClear:
         assert meta.columns[0].description == "Keep me too"
 
 
-# ── Progressive context — inspect_source_data level adjustment ────────
-
-class TestProgressiveContext:
-    """Verify inspect_source_data keeps bounded samples for each table."""
-
-    def test_few_tables_includes_samples(self):
-        """Few tables include bounded sample rows."""
-        from data_formulator.agents.context import handle_inspect_source_data
-        import pandas as pd
-
-        workspace = MagicMock()
-        workspace.read_data_as_df.return_value = pd.DataFrame({"a": [1, 2, 3]})
-        workspace.get_relative_data_file_path.return_value = "data/t.parquet"
-        workspace.get_metadata.return_value = None
-
-        tables = [{"name": "t1"}, {"name": "t2"}]
-        result = handle_inspect_source_data(["t1", "t2"], tables, workspace)
-        assert "Sample" in result or "sample" in result.lower()
-
-    def test_many_tables_include_bounded_samples(self):
-        """>3 tables still include per-table bounded sample rows."""
-        from data_formulator.agents.context import handle_inspect_source_data
-        import pandas as pd
-
-        workspace = MagicMock()
-        workspace.read_data_as_df.return_value = pd.DataFrame({"a": [1, 2, 3]})
-        workspace.get_relative_data_file_path.return_value = "data/t.parquet"
-        workspace.get_metadata.return_value = None
-
-        tables = [{"name": f"t{i}"} for i in range(5)]
-        names = [f"t{i}" for i in range(5)]
-        result = handle_inspect_source_data(names, tables, workspace)
-        assert "Sample" in result

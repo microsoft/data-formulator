@@ -1,0 +1,1122 @@
+{
+ "__stateVersion": 14,
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "d_result_2",
+   "displayId": "Recent primary reading proficiency by country",
+   "names": [
+    "COUNTRY_ID",
+    "country",
+    "year",
+    "value",
+    "qualifier",
+    "map_id"
+   ],
+   "rows": [
+    {
+     "COUNTRY_ID": "MKD",
+     "country": "North Macedonia",
+     "year": 2021,
+     "value": 69.9594242106,
+     "qualifier": null,
+     "map_id": 807
+    },
+    {
+     "COUNTRY_ID": "MLT",
+     "country": "Malta",
+     "year": 2021,
+     "value": 90.2430011013,
+     "qualifier": null,
+     "map_id": 470
+    },
+    {
+     "COUNTRY_ID": "NZL",
+     "country": "New Zealand",
+     "year": 2021,
+     "value": 89.8775494199,
+     "qualifier": null,
+     "map_id": 554
+    },
+    {
+     "COUNTRY_ID": "OMN",
+     "country": "Oman",
+     "year": 2021,
+     "value": 62.2040856961,
+     "qualifier": null,
+     "map_id": 512
+    },
+    {
+     "COUNTRY_ID": "PAK",
+     "country": "Pakistan",
+     "year": 2023,
+     "value": 24.19,
+     "qualifier": null,
+     "map_id": 586
+    },
+    {
+     "COUNTRY_ID": "URY",
+     "country": "Uruguay",
+     "year": 2019,
+     "value": 43.8,
+     "qualifier": null,
+     "map_id": 858
+    },
+    {
+     "COUNTRY_ID": "ARG",
+     "country": "Argentina",
+     "year": 2019,
+     "value": 31.9,
+     "qualifier": null,
+     "map_id": 32
+    },
+    {
+     "COUNTRY_ID": "AUT",
+     "country": "Austria",
+     "year": 2021,
+     "value": 95.9233458612,
+     "qualifier": null,
+     "map_id": 40
+    },
+    {
+     "COUNTRY_ID": "CYP",
+     "country": "Cyprus",
+     "year": 2021,
+     "value": 91.7917204219,
+     "qualifier": null,
+     "map_id": 196
+    },
+    {
+     "COUNTRY_ID": "EGY",
+     "country": "Egypt",
+     "year": 2023,
+     "value": 34.09,
+     "qualifier": null,
+     "map_id": 818
+    },
+    {
+     "COUNTRY_ID": "ITA",
+     "country": "Italy",
+     "year": 2021,
+     "value": 97.182657285,
+     "qualifier": null,
+     "map_id": 380
+    },
+    {
+     "COUNTRY_ID": "NIC",
+     "country": "Nicaragua",
+     "year": 2019,
+     "value": 13,
+     "qualifier": null,
+     "map_id": 558
+    },
+    {
+     "COUNTRY_ID": "TCD",
+     "country": "Chad",
+     "year": 2019,
+     "value": 7.6,
+     "qualifier": null,
+     "map_id": 148
+    },
+    {
+     "COUNTRY_ID": "BEL",
+     "country": "Belgium",
+     "year": 2021,
+     "value": 94.3109595543,
+     "qualifier": null,
+     "map_id": 56
+    },
+    {
+     "COUNTRY_ID": "ECU",
+     "country": "Ecuador",
+     "year": 2019,
+     "value": 26.1,
+     "qualifier": null,
+     "map_id": 218
+    },
+    {
+     "COUNTRY_ID": "GTM",
+     "country": "Guatemala",
+     "year": 2019,
+     "value": 15.9,
+     "qualifier": null,
+     "map_id": 320
+    },
+    {
+     "COUNTRY_ID": "KHM",
+     "country": "Cambodia",
+     "year": 2019,
+     "value": 11,
+     "qualifier": null,
+     "map_id": 116
+    },
+    {
+     "COUNTRY_ID": "PER",
+     "country": "Peru",
+     "year": 2019,
+     "value": 49,
+     "qualifier": null,
+     "map_id": 604
+    },
+    {
+     "COUNTRY_ID": "SRB",
+     "country": "Serbia",
+     "year": 2021,
+     "value": 92.8025866013,
+     "qualifier": null,
+     "map_id": 688
+    },
+    {
+     "COUNTRY_ID": "TUR",
+     "country": "Türkiye",
+     "year": 2021,
+     "value": 85.8912077721,
+     "qualifier": null,
+     "map_id": 792
+    },
+    {
+     "COUNTRY_ID": "VNM",
+     "country": "Viet Nam",
+     "year": 2019,
+     "value": 82,
+     "qualifier": null,
+     "map_id": 704
+    },
+    {
+     "COUNTRY_ID": "COG",
+     "country": "Congo",
+     "year": 2019,
+     "value": 33.6,
+     "qualifier": null,
+     "map_id": 178
+    },
+    {
+     "COUNTRY_ID": "MEX",
+     "country": "Mexico",
+     "year": 2019,
+     "value": 41.7,
+     "qualifier": null,
+     "map_id": 484
+    },
+    {
+     "COUNTRY_ID": "ARE",
+     "country": "United Arab Emirates",
+     "year": 2021,
+     "value": 75.0267489765,
+     "qualifier": null,
+     "map_id": 784
+    },
+    {
+     "COUNTRY_ID": "BDI",
+     "country": "Burundi",
+     "year": 2019,
+     "value": 4.5,
+     "qualifier": null,
+     "map_id": 108
+    },
+    {
+     "COUNTRY_ID": "CUB",
+     "country": "Cuba",
+     "year": 2019,
+     "value": 44.5,
+     "qualifier": null,
+     "map_id": 192
+    },
+    {
+     "COUNTRY_ID": "GBR",
+     "country": "UK",
+     "year": 2021,
+     "value": 97.031062619,
+     "qualifier": null,
+     "map_id": 826
+    },
+    {
+     "COUNTRY_ID": "SLB",
+     "country": "Solomon Islands",
+     "year": 2021,
+     "value": 52.78,
+     "qualifier": null,
+     "map_id": 90
+    },
+    {
+     "COUNTRY_ID": "POL",
+     "country": "Poland",
+     "year": 2021,
+     "value": 97.2101671002,
+     "qualifier": null,
+     "map_id": 616
+    },
+    {
+     "COUNTRY_ID": "ZMB",
+     "country": "Zambia",
+     "year": 2023,
+     "value": 9.7,
+     "qualifier": null,
+     "map_id": 894
+    },
+    {
+     "COUNTRY_ID": "BRA",
+     "country": "Brazil",
+     "year": 2019,
+     "value": 43.5,
+     "qualifier": null,
+     "map_id": 76
+    },
+    {
+     "COUNTRY_ID": "CIV",
+     "country": "Côte d'Ivoire",
+     "year": 2019,
+     "value": 22,
+     "qualifier": null,
+     "map_id": 384
+    },
+    {
+     "COUNTRY_ID": "FJI",
+     "country": "Fiji",
+     "year": 2021,
+     "value": 59.55,
+     "qualifier": null,
+     "map_id": 242
+    },
+    {
+     "COUNTRY_ID": "GIN",
+     "country": "Guinea",
+     "year": 2019,
+     "value": 22.2,
+     "qualifier": null,
+     "map_id": 324
+    },
+    {
+     "COUNTRY_ID": "IRN",
+     "country": "Iran",
+     "year": 2021,
+     "value": 58.5979524614,
+     "qualifier": null,
+     "map_id": 364
+    },
+    {
+     "COUNTRY_ID": "KAZ",
+     "country": "Kazakhstan",
+     "year": 2021,
+     "value": 90.6979649997,
+     "qualifier": null,
+     "map_id": 398
+    },
+    {
+     "COUNTRY_ID": "LTU",
+     "country": "Lithuania",
+     "year": 2021,
+     "value": 97.1104757414,
+     "qualifier": null,
+     "map_id": 440
+    },
+    {
+     "COUNTRY_ID": "MAC",
+     "country": "Macao",
+     "year": 2021,
+     "value": 95.9180011273,
+     "qualifier": null,
+     "map_id": 446
+    },
+    {
+     "COUNTRY_ID": "NGA",
+     "country": "Nigeria",
+     "year": 2023,
+     "value": 19.97,
+     "qualifier": null,
+     "map_id": 566
+    },
+    {
+     "COUNTRY_ID": "PSE",
+     "country": "Palestine",
+     "year": 2023,
+     "value": 42.27,
+     "qualifier": null,
+     "map_id": 275
+    },
+    {
+     "COUNTRY_ID": "RUS",
+     "country": "Russia",
+     "year": 2021,
+     "value": 98.3620875251,
+     "qualifier": null,
+     "map_id": 643
+    },
+    {
+     "COUNTRY_ID": "SGP",
+     "country": "Singapore",
+     "year": 2021,
+     "value": 96.6597646761,
+     "qualifier": null,
+     "map_id": 702
+    },
+    {
+     "COUNTRY_ID": "TGO",
+     "country": "Togo",
+     "year": 2019,
+     "value": 19.4,
+     "qualifier": null,
+     "map_id": 768
+    },
+    {
+     "COUNTRY_ID": "BGR",
+     "country": "Bulgaria",
+     "year": 2021,
+     "value": 92.8798667466,
+     "qualifier": null,
+     "map_id": 100
+    },
+    {
+     "COUNTRY_ID": "COL",
+     "country": "Colombia",
+     "year": 2019,
+     "value": 37.5,
+     "qualifier": null,
+     "map_id": 170
+    },
+    {
+     "COUNTRY_ID": "KIR",
+     "country": "Kiribati",
+     "year": 2021,
+     "value": 13.75,
+     "qualifier": null,
+     "map_id": 296
+    },
+    {
+     "COUNTRY_ID": "NLD",
+     "country": "Netherlands",
+     "year": 2021,
+     "value": 96.4455520069,
+     "qualifier": null,
+     "map_id": 528
+    },
+    {
+     "COUNTRY_ID": "PAN",
+     "country": "Panama",
+     "year": 2019,
+     "value": 17.5,
+     "qualifier": null,
+     "map_id": 591
+    },
+    {
+     "COUNTRY_ID": "PHL",
+     "country": "Philippines",
+     "year": 2019,
+     "value": 10,
+     "qualifier": null,
+     "map_id": 608
+    },
+    {
+     "COUNTRY_ID": "SLV",
+     "country": "El Salvador",
+     "year": 2019,
+     "value": 29.4,
+     "qualifier": null,
+     "map_id": 222
+    },
+    {
+     "COUNTRY_ID": "TUV",
+     "country": "Tuvalu",
+     "year": 2021,
+     "value": 32.09,
+     "qualifier": null,
+     "map_id": 798
+    },
+    {
+     "COUNTRY_ID": "USA",
+     "country": "United States",
+     "year": 2021,
+     "value": 94.5066386551,
+     "qualifier": null,
+     "map_id": 840
+    },
+    {
+     "COUNTRY_ID": "CAN",
+     "country": "Canada",
+     "year": 2021,
+     "value": 98.7772908682,
+     "qualifier": null,
+     "map_id": 124
+    },
+    {
+     "COUNTRY_ID": "GAB",
+     "country": "Gabon",
+     "year": 2019,
+     "value": 76.3,
+     "qualifier": null,
+     "map_id": 266
+    },
+    {
+     "COUNTRY_ID": "PRY",
+     "country": "Paraguay",
+     "year": 2019,
+     "value": 18.8,
+     "qualifier": null,
+     "map_id": 600
+    },
+    {
+     "COUNTRY_ID": "COK",
+     "country": "Cook Islands",
+     "year": 2021,
+     "value": 74.67,
+     "qualifier": null,
+     "map_id": 184
+    },
+    {
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2021,
+     "value": 93.5873729906,
+     "qualifier": null,
+     "map_id": 276
+    },
+    {
+     "COUNTRY_ID": "FIN",
+     "country": "Finland",
+     "year": 2021,
+     "value": 96.4830954377,
+     "qualifier": null,
+     "map_id": 246
+    },
+    {
+     "COUNTRY_ID": "LSO",
+     "country": "Lesotho",
+     "year": 2023,
+     "value": 10.8,
+     "qualifier": null,
+     "map_id": 426
+    },
+    {
+     "COUNTRY_ID": "MMR",
+     "country": "Myanmar",
+     "year": 2019,
+     "value": 11,
+     "qualifier": null,
+     "map_id": 104
+    },
+    {
+     "COUNTRY_ID": "MNE",
+     "country": "Montenegro",
+     "year": 2021,
+     "value": 86.9081390822,
+     "qualifier": null,
+     "map_id": 499
+    },
+    {
+     "COUNTRY_ID": "PLW",
+     "country": "Palau",
+     "year": 2021,
+     "value": 93.54,
+     "qualifier": null,
+     "map_id": 585
+    },
+    {
+     "COUNTRY_ID": "PNG",
+     "country": "Papua New Guinea",
+     "year": 2021,
+     "value": 48.41,
+     "qualifier": null,
+     "map_id": 598
+    },
+    {
+     "COUNTRY_ID": "TKL",
+     "country": "Tokelau",
+     "year": 2021,
+     "value": 71.79,
+     "qualifier": null,
+     "map_id": 772
+    },
+    {
+     "COUNTRY_ID": "BEN",
+     "country": "Benin",
+     "year": 2019,
+     "value": 45.5,
+     "qualifier": null,
+     "map_id": 204
+    },
+    {
+     "COUNTRY_ID": "ESP",
+     "country": "Spain",
+     "year": 2021,
+     "value": 95.2306112075,
+     "qualifier": null,
+     "map_id": 724
+    },
+    {
+     "COUNTRY_ID": "FSM",
+     "country": "Micronesia (Federated States of)",
+     "year": 2021,
+     "value": 39.19,
+     "qualifier": null,
+     "map_id": 583
+    },
+    {
+     "COUNTRY_ID": "HUN",
+     "country": "Hungary",
+     "year": 2021,
+     "value": 94.132489554,
+     "qualifier": null,
+     "map_id": 348
+    },
+    {
+     "COUNTRY_ID": "LVA",
+     "country": "Latvia",
+     "year": 2021,
+     "value": 94.2878982228,
+     "qualifier": null,
+     "map_id": 428
+    },
+    {
+     "COUNTRY_ID": "NER",
+     "country": "Niger",
+     "year": 2019,
+     "value": 14.4,
+     "qualifier": null,
+     "map_id": 562
+    },
+    {
+     "COUNTRY_ID": "PRT",
+     "country": "Portugal",
+     "year": 2021,
+     "value": 94.1775759888,
+     "qualifier": null,
+     "map_id": 620
+    },
+    {
+     "COUNTRY_ID": "BFA",
+     "country": "Burkina Faso",
+     "year": 2019,
+     "value": 33,
+     "qualifier": null,
+     "map_id": 854
+    },
+    {
+     "COUNTRY_ID": "BHR",
+     "country": "Bahrain",
+     "year": 2021,
+     "value": 71.183332924,
+     "qualifier": null,
+     "map_id": 48
+    },
+    {
+     "COUNTRY_ID": "HND",
+     "country": "Honduras",
+     "year": 2019,
+     "value": 16.2,
+     "qualifier": null,
+     "map_id": 340
+    },
+    {
+     "COUNTRY_ID": "MAR",
+     "country": "Morocco",
+     "year": 2021,
+     "value": 40.5830312108,
+     "qualifier": null,
+     "map_id": 504
+    },
+    {
+     "COUNTRY_ID": "SAU",
+     "country": "Saudi Arabia",
+     "year": 2021,
+     "value": 71.0714361174,
+     "qualifier": null,
+     "map_id": 682
+    },
+    {
+     "COUNTRY_ID": "SVK",
+     "country": "Slovakia",
+     "year": 2021,
+     "value": 93.6521802734,
+     "qualifier": null,
+     "map_id": 703
+    },
+    {
+     "COUNTRY_ID": "ALB",
+     "country": "Albania",
+     "year": 2021,
+     "value": 92.119408639,
+     "qualifier": null,
+     "map_id": 8
+    },
+    {
+     "COUNTRY_ID": "AZE",
+     "country": "Azerbaijan",
+     "year": 2021,
+     "value": 67.432620858,
+     "qualifier": null,
+     "map_id": 31
+    },
+    {
+     "COUNTRY_ID": "CMR",
+     "country": "Cameroon",
+     "year": 2019,
+     "value": 30.2,
+     "qualifier": null,
+     "map_id": 120
+    },
+    {
+     "COUNTRY_ID": "DOM",
+     "country": "Dominican Republic",
+     "year": 2019,
+     "value": 16.4,
+     "qualifier": null,
+     "map_id": 214
+    },
+    {
+     "COUNTRY_ID": "JOR",
+     "country": "Jordan",
+     "year": 2021,
+     "value": 46.6363145565,
+     "qualifier": null,
+     "map_id": 400
+    },
+    {
+     "COUNTRY_ID": "KEN",
+     "country": "Kenya",
+     "year": 2023,
+     "value": 25.5,
+     "qualifier": null,
+     "map_id": 404
+    },
+    {
+     "COUNTRY_ID": "LAO",
+     "country": "Lao People's Democratic Republic",
+     "year": 2019,
+     "value": 2,
+     "qualifier": null,
+     "map_id": 418
+    },
+    {
+     "COUNTRY_ID": "COD",
+     "country": "DR Congo",
+     "year": 2019,
+     "value": 9.2,
+     "qualifier": null,
+     "map_id": 180
+    },
+    {
+     "COUNTRY_ID": "CRI",
+     "country": "Costa Rica",
+     "year": 2019,
+     "value": 54,
+     "qualifier": null,
+     "map_id": 188
+    },
+    {
+     "COUNTRY_ID": "GEO",
+     "country": "Georgia",
+     "year": 2021,
+     "value": 87.1588739723,
+     "qualifier": null,
+     "map_id": 268
+    },
+    {
+     "COUNTRY_ID": "SEN",
+     "country": "Senegal",
+     "year": 2019,
+     "value": 41.1,
+     "qualifier": null,
+     "map_id": 686
+    },
+    {
+     "COUNTRY_ID": "UZB",
+     "country": "Uzbekistan",
+     "year": 2021,
+     "value": 69.8382246682,
+     "qualifier": null,
+     "map_id": 860
+    },
+    {
+     "COUNTRY_ID": "HKG",
+     "country": "Hong Kong",
+     "year": 2021,
+     "value": 98.2799216798,
+     "qualifier": null,
+     "map_id": 344
+    },
+    {
+     "COUNTRY_ID": "HRV",
+     "country": "Croatia",
+     "year": 2021,
+     "value": 98.0772820966,
+     "qualifier": null,
+     "map_id": 191
+    },
+    {
+     "COUNTRY_ID": "MDG",
+     "country": "Madagascar",
+     "year": 2019,
+     "value": 6.3,
+     "qualifier": null,
+     "map_id": 450
+    },
+    {
+     "COUNTRY_ID": "NIU",
+     "country": "Niue",
+     "year": 2021,
+     "value": 80.97,
+     "qualifier": null,
+     "map_id": 570
+    },
+    {
+     "COUNTRY_ID": "SVN",
+     "country": "Slovenia",
+     "year": 2021,
+     "value": 94.3763799426,
+     "qualifier": null,
+     "map_id": 705
+    },
+    {
+     "COUNTRY_ID": "TON",
+     "country": "Tonga",
+     "year": 2021,
+     "value": 20.1,
+     "qualifier": null,
+     "map_id": 776
+    },
+    {
+     "COUNTRY_ID": "CZE",
+     "country": "Czechia",
+     "year": 2021,
+     "value": 96.0113332581,
+     "qualifier": null,
+     "map_id": 203
+    },
+    {
+     "COUNTRY_ID": "FRA",
+     "country": "France",
+     "year": 2021,
+     "value": 93.8626074703,
+     "qualifier": null,
+     "map_id": 250
+    },
+    {
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2021,
+     "value": 87.9578925414,
+     "qualifier": null,
+     "map_id": 376
+    },
+    {
+     "COUNTRY_ID": "MHL",
+     "country": "Marshall Islands",
+     "year": 2021,
+     "value": 39.66,
+     "qualifier": null,
+     "map_id": 584
+    },
+    {
+     "COUNTRY_ID": "MYS",
+     "country": "Malaysia",
+     "year": 2019,
+     "value": 58,
+     "qualifier": null,
+     "map_id": 458
+    },
+    {
+     "COUNTRY_ID": "QAT",
+     "country": "Qatar",
+     "year": 2021,
+     "value": 80.3926208689,
+     "qualifier": null,
+     "map_id": 634
+    },
+    {
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2021,
+     "value": 95.2764600019,
+     "qualifier": null,
+     "map_id": 752
+    }
+   ],
+   "metadata": {
+    "COUNTRY_ID": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "value": {
+     "type": "number",
+     "levels": []
+    },
+    "qualifier": {
+     "type": "boolean",
+     "levels": []
+    },
+    "map_id": {
+     "type": "integer",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\nresult=duckdb.sql(\"WITH latest AS (SELECT COUNTRY_ID, country, year, value, qualifier FROM read_parquet('data/sdg4_national.parquet') WHERE indicator_id='READ.PRIMARY' AND year BETWEEN 2018 AND 2023 AND value IS NOT NULL AND (magnitude IS NULL OR magnitude <> 'NA') QUALIFY row_number() OVER(PARTITION BY COUNTRY_ID ORDER BY year DESC)=1) SELECT l.*, c.map_id FROM latest l JOIN read_parquet('data/countries.parquet') c USING(COUNTRY_ID) WHERE c.map_id IS NOT NULL\").df()\nresult['country']=result['country'].replace({'Russian Federation':'Russia','United Kingdom of Great Britain and Northern Ireland':'UK','United States of America':'United States','China, Hong Kong Special Administrative Region':'Hong Kong','China, Macao Special Administrative Region':'Macao','Iran (Islamic Republic of)':'Iran','Democratic Republic of the Congo':'DR Congo','United Republic of Tanzania':'Tanzania'})",
+    "codeSignature": "e10e876599c128a759ed38785c3b2c4d1b40aaa34bcdfd13e5025c88e7b9c111",
+    "outputVariable": "result",
+    "source": [
+     "sdg4_national",
+     "countries"
+    ],
+    "inputSources": [
+     {
+      "id": "data:2d7b684ff39ac6e542b1af59e828d4f3:sdg4_national",
+      "kind": "data",
+      "displayName": "sdg4_national"
+     },
+     {
+      "id": "data:3bfeafe1536e0211b109193b1e492f81:countries",
+      "kind": "data",
+      "displayName": "countries"
+     }
+    ],
+    "trigger": {
+     "tableId": "sdg4_national",
+     "resultTableId": "d_result_2",
+     "chart": {
+      "id": "chart-1792308420718",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "sdg4_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "d_result_2",
+    "rowCount": 102
+   },
+   "description": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792308394272_step_1",
+   "createdAt": 1792308422410
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-fceb698edd3d",
+   "chartType": "Choropleth",
+   "encodingMap": {
+    "id": {
+     "fieldID": "concept-map_id-1792308422410-0.03699392541619928",
+     "dtype": "nominal"
+    },
+    "color": {
+     "fieldID": "concept-value-1792308422410-0.7461161454640569",
+     "dtype": "quantitative"
+    },
+    "detail": {
+     "channel": "detail",
+     "bin": false
+    }
+   },
+   "tableRef": "d_result_2",
+   "source": "user",
+   "title": "Where students reach minimum reading proficiency",
+   "subtitle": "Latest assessment per country, 2018–2023; both sexes; UIS, February 2026 release",
+   "titleKey": "Choropleth|color:concept-value-1792308422410-0.7461161454640569:|detail::|id:concept-map_id-1792308422410-0.03699392541619928:",
+   "unread": false,
+   "themeId": "datawrapper"
+  },
+  {
+   "id": "chart-0eec2272b9db",
+   "chartType": "Bar Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-value-1792308422410-0.7461161454640569",
+     "dtype": "quantitative"
+    },
+    "y": {
+     "fieldID": "concept-country-1792308422410-0.17066923614841145",
+     "dtype": "nominal",
+     "sortOrder": "descending",
+     "sortBy": "x"
+    },
+    "color": {
+     "channel": "color",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "d_result_2",
+   "source": "user",
+   "title": "Where students reach minimum reading proficiency: highest first",
+   "subtitle": "Latest assessment per country, 2018–2023; both sexes; UIS, February 2026 release",
+   "unread": false,
+   "themeId": "datawrapper",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-value-1792308422410-0.7461161454640569:|y:concept-country-1792308422410-0.17066923614841145:"
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-country-1792308422410-0.17066923614841145",
+   "name": "country",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-value-1792308422410-0.7461161454640569",
+   "name": "value",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-map_id-1792308422410-0.03699392541619928",
+   "name": "map_id",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308394272_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1792308394272_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Where do most children reach a minimum reading level by the end of primary school?",
+   "parentNodeId": "conversation-root:fad77e9e-b43f-4532-9a84-a10a860d01ec",
+   "actionId": "exploreDataFromNL_1792308394272",
+   "createdAt": 1792308394272
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308394272_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1792308394272_step_1",
+   "textKind": "explain",
+   "content": "Identify countries with high reading proficiency using their latest assessments from 2018–2023.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792308394272_prompt",
+   "actionId": "exploreDataFromNL_1792308394272",
+   "createdAt": 1792308414759,
+   "startedAt": 1792308394272,
+   "codeExecutions": [
+    {
+     "id": "code_exploreDataFromNL_1792308394272_1",
+     "tool": "execute_python_script",
+     "purpose": "Identify countries with high reading proficiency using their latest assessments from 2018–2023.",
+     "code": "import duckdb\nn=duckdb.sql(\"SELECT country, COUNTRY_ID, year, value FROM read_parquet('data/sdg4_national.parquet') WHERE indicator_id='READ.PRIMARY' AND year BETWEEN 2018 AND 2023 AND value IS NOT NULL AND (magnitude IS NULL OR magnitude <> 'NA') QUALIFY row_number() OVER(PARTITION BY COUNTRY_ID ORDER BY year DESC)=1 ORDER BY value DESC\").df()\nprint('Countries:',len(n),'Above 50%:',sum(n.value>50));print(n.head(20).to_string(index=False))",
+     "status": "completed",
+     "createdAt": 1792308414759,
+     "output": "Countries: 102 Above 50%: 55\n                                             country COUNTRY_ID  year     value\n                                              Canada        CAN  2021 98.777291\n                                  Russian Federation        RUS  2021 98.362088\n      China, Hong Kong Special Administrative Region        HKG  2021 98.279922\n                                             Croatia        HRV  2021 98.077282\n                                              Poland        POL  2021 97.210167\n                                               Italy        ITA  2021 97.182657\n                                           Lithuania        LTU  2021 97.110476\nUnited Kingdom of Great Britain and Northern Ireland        GBR  2021 97.031063\n                                           Singapore        SGP  2021 96.659765\n                                             Finland        FIN  2021 96.483095\n                                         Netherlands        NLD  2021 96.445552\n                                             Czechia        CZE  2021 96.011333\n                                             Austria        AUT  2021 95.923346\n          China, Macao Special Administrative Region        MAC  2021 95.918001\n                                              Sweden        SWE  2021 95.276460\n                                               Spain        ESP  2021 95.230611\n                            United States of America        USA  2021 94.506639\n                                            Slovenia        SVN  2021 94.376380\n                                             Belgium        BEL  2021 94.310960\n                                              Latvia        LVA  2021 94.287898\n"
+    }
+   ],
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1792308394272-1",
+     "kind": "tool",
+     "label": "Reading: session/tables/countries.json",
+     "status": "completed",
+     "tool": "read_file",
+     "toolCallId": "call_A1oOJkymkmVXePDcn5DJJkgL"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792308394272-2",
+     "kind": "tool",
+     "label": "running code... Identify countries with high reading proficiency using their latest assessments from 2018–2023.",
+     "status": "completed",
+     "tool": "execute_python_script",
+     "toolCallId": "call_OUUskUvQFOwKJm072dHztD4y",
+     "executionId": "code_exploreDataFromNL_1792308394272_1"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792308394272-3",
+     "kind": "chart",
+     "label": "creating chart...",
+     "status": "completed"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308394272_1792308427881",
+   "displayId": "textTurn_exploreDataFromNL_1792308394272_closing",
+   "textKind": "explain",
+   "content": "**Nearly all students reach that level in Canada and several European countries, as well as Singapore and Hong Kong.**\n\nIn their 2021 assessments, **99% in Canada**, **98% in Russia and Croatia**, and **97% in Poland, Italy, the UK and Singapore** met minimum reading proficiency by the end of primary school.\n\nThe map uses each country’s latest assessment from **2018–2023**. Data cover 102 countries and territories; blank areas mean missing recent data, not low proficiency, and these results describe students—not all children.\n\n*Source: UIS, February 2026 release.*",
+   "parentNodeId": "d_result_2",
+   "actionId": "exploreDataFromNL_1792308394272",
+   "createdAt": 1792308427881,
+   "startedAt": 1792308394272,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "d_result_2",
+   "fields": {
+    "COUNTRY_ID": {
+     "displayName": "Country code",
+     "authored": {
+      "displayName": "Country code"
+     }
+    },
+    "country": {
+     "displayName": "Country",
+     "authored": {
+      "displayName": "Country"
+     }
+    },
+    "year": {
+     "displayName": "Assessment year",
+     "authored": {
+      "displayName": "Assessment year"
+     }
+    },
+    "value": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "intrinsicDomain": [
+      0,
+      100
+     ],
+     "displayName": "Students meeting minimum reading proficiency (%)",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "intrinsicDomain": [
+       0,
+       100
+      ],
+      "displayName": "Students meeting minimum reading proficiency (%)"
+     }
+    },
+    "qualifier": {
+     "displayName": "Estimate flag",
+     "authored": {
+      "displayName": "Estimate flag"
+     }
+    },
+    "map_id": {
+     "displayName": "Country map ID",
+     "authored": {
+      "displayName": "Country map ID"
+     }
+    }
+   }
+  }
+ ],
+ "activeWorkspace": {
+  "id": "education-sdg4-e22",
+  "displayName": "Two in five primary pupils fall short in reading"
+ },
+ "focusedId": {
+  "type": "chart",
+  "chartId": "chart-fceb698edd3d"
+ }
+}

@@ -184,101 +184,6 @@ class TestMainstreamOIDCProviderContracts:
         assert result.email == contract["claims"]["email"]
         assert result.raw_token == token
 
-    def test_jwks_jwt_validation_accepts_missing_optional_email_claim(
-        self,
-        app,
-        monkeypatch,
-        rsa_private_key,
-        rsa_public_key_pem,
-        contract,
-    ):
-        provider = _configure_provider(monkeypatch, contract)
-        mock_jwks = MagicMock()
-        mock_signing_key = MagicMock()
-        mock_signing_key.key = serialization.load_pem_public_key(
-            rsa_public_key_pem,
-        )
-        mock_jwks.get_signing_key_from_jwt.return_value = mock_signing_key
-        provider._jwks_client = mock_jwks
-
-        optional_email_contract = {
-            **contract,
-            "claims": {
-                key: value for key, value in contract["claims"].items()
-                if key != "email"
-            },
-        }
-        token = _sign_contract_jwt(rsa_private_key, optional_email_contract)
-        with app.test_request_context(
-            headers={"Authorization": f"Bearer {token}"},
-        ):
-            result = provider.authenticate(flask.request)
-
-        assert result is not None
-        assert result.user_id == contract["subject"]
-        assert result.email is None
-
-    def test_userinfo_fallback_accepts_provider_userinfo_response(
-        self,
-        app,
-        monkeypatch,
-        contract,
-    ):
-        if not contract["userinfo_url"]:
-            pytest.skip(f"{contract['id']} does not expose a UserInfo endpoint")
-
-        monkeypatch.setenv("OIDC_ISSUER_URL", contract["issuer"])
-        monkeypatch.setenv("OIDC_CLIENT_ID", CLIENT_ID)
-        monkeypatch.setenv("OIDC_USERINFO_URL", contract["userinfo_url"])
-        provider = OIDCProvider()
-
-        userinfo = {
-            "sub": contract["subject"],
-            "name": contract["claims"]["name"],
-            "email": contract["claims"]["email"],
-        }
-        with patch(
-            "data_formulator.auth.providers.oidc.urllib.request.urlopen",
-            return_value=_urlopen_response(userinfo),
-        ) as urlopen:
-            with app.test_request_context(
-                headers={"Authorization": "Bearer opaque-access-token"},
-            ):
-                result = provider.authenticate(flask.request)
-
-        assert result is not None
-        assert result.user_id == contract["subject"]
-        assert result.email == contract["claims"]["email"]
-        request = urlopen.call_args[0][0]
-        assert request.full_url == contract["userinfo_url"]
-        assert request.headers["Authorization"] == "Bearer opaque-access-token"
-
-    def test_backend_gateway_uses_provider_authorization_endpoint(
-        self,
-        gateway_app,
-        contract,
-    ):
-        client = gateway_app.test_client()
-        with patch(
-            "data_formulator.auth.gateways.oidc_gateway._get_oidc_config",
-            return_value=_gateway_config(contract),
-        ):
-            resp = client.get("/api/auth/oidc/login")
-
-        assert resp.status_code == 302
-        location = resp.headers["Location"]
-        parsed = urllib.parse.urlparse(location)
-        assert f"{parsed.scheme}://{parsed.netloc}{parsed.path}" == (
-            contract["authorize_url"]
-        )
-
-        query = urllib.parse.parse_qs(parsed.query)
-        assert query["client_id"] == [CLIENT_ID]
-        assert query["response_type"] == ["code"]
-        assert query["scope"] == ["openid profile email offline_access"]
-        assert query["redirect_uri"][0].endswith("/auth/callback")
-        assert query["state"][0]
-
     def test_backend_gateway_exchanges_code_and_stores_userinfo(
         self,
         gateway_app,
@@ -339,3 +244,108 @@ class TestMainstreamOIDCProviderContracts:
                 assert sso["user"]["sub"] == contract["subject"]
             else:
                 assert sso["user"] is None
+
+
+# Provider-independent code paths: one representative contract is enough.
+_REPRESENTATIVE_CONTRACT = next(
+    contract for contract in OIDC_PROVIDER_CONTRACTS if contract["userinfo_url"]
+)
+
+
+@pytest.mark.parametrize(
+    "contract",
+    [_REPRESENTATIVE_CONTRACT],
+    ids=_contract_ids([_REPRESENTATIVE_CONTRACT]),
+)
+class TestRepresentativeOIDCProviderContract:
+    def test_jwks_jwt_validation_accepts_missing_optional_email_claim(
+        self,
+        app,
+        monkeypatch,
+        rsa_private_key,
+        rsa_public_key_pem,
+        contract,
+    ):
+        provider = _configure_provider(monkeypatch, contract)
+        mock_jwks = MagicMock()
+        mock_signing_key = MagicMock()
+        mock_signing_key.key = serialization.load_pem_public_key(
+            rsa_public_key_pem,
+        )
+        mock_jwks.get_signing_key_from_jwt.return_value = mock_signing_key
+        provider._jwks_client = mock_jwks
+
+        optional_email_contract = {
+            **contract,
+            "claims": {
+                key: value for key, value in contract["claims"].items()
+                if key != "email"
+            },
+        }
+        token = _sign_contract_jwt(rsa_private_key, optional_email_contract)
+        with app.test_request_context(
+            headers={"Authorization": f"Bearer {token}"},
+        ):
+            result = provider.authenticate(flask.request)
+
+        assert result is not None
+        assert result.user_id == contract["subject"]
+        assert result.email is None
+
+    def test_userinfo_fallback_accepts_provider_userinfo_response(
+        self,
+        app,
+        monkeypatch,
+        contract,
+    ):
+        monkeypatch.setenv("OIDC_ISSUER_URL", contract["issuer"])
+        monkeypatch.setenv("OIDC_CLIENT_ID", CLIENT_ID)
+        monkeypatch.setenv("OIDC_USERINFO_URL", contract["userinfo_url"])
+        provider = OIDCProvider()
+
+        userinfo = {
+            "sub": contract["subject"],
+            "name": contract["claims"]["name"],
+            "email": contract["claims"]["email"],
+        }
+        with patch(
+            "data_formulator.auth.providers.oidc.urllib.request.urlopen",
+            return_value=_urlopen_response(userinfo),
+        ) as urlopen:
+            with app.test_request_context(
+                headers={"Authorization": "Bearer opaque-access-token"},
+            ):
+                result = provider.authenticate(flask.request)
+
+        assert result is not None
+        assert result.user_id == contract["subject"]
+        assert result.email == contract["claims"]["email"]
+        request = urlopen.call_args[0][0]
+        assert request.full_url == contract["userinfo_url"]
+        assert request.headers["Authorization"] == "Bearer opaque-access-token"
+
+    def test_backend_gateway_uses_provider_authorization_endpoint(
+        self,
+        gateway_app,
+        contract,
+    ):
+        client = gateway_app.test_client()
+        with patch(
+            "data_formulator.auth.gateways.oidc_gateway._get_oidc_config",
+            return_value=_gateway_config(contract),
+        ):
+            resp = client.get("/api/auth/oidc/login")
+
+        assert resp.status_code == 302
+        location = resp.headers["Location"]
+        parsed = urllib.parse.urlparse(location)
+        assert f"{parsed.scheme}://{parsed.netloc}{parsed.path}" == (
+            contract["authorize_url"]
+        )
+
+        query = urllib.parse.parse_qs(parsed.query)
+        assert query["client_id"] == [CLIENT_ID]
+        assert query["response_type"] == ["code"]
+        assert query["scope"] == ["openid profile email offline_access"]
+        assert query["redirect_uri"][0].endswith("/auth/callback")
+        assert query["state"][0]

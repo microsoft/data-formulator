@@ -7,15 +7,12 @@ Only available in local deployment mode (backend bound to localhost).
 Uses ConfinedDir to ensure all file access stays within the connected root directory.
 """
 
-import json
 import logging
 import os
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
 import pyarrow as pa
-import pyarrow.csv as pa_csv
 import pyarrow.parquet as pq
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS
@@ -69,6 +66,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
         ]
 
     AUTH_GUIDE = "local_folder.md"
+    QUERY_EXECUTION = "local_file_scan"
 
     @staticmethod
     def catalog_hierarchy() -> list[dict[str, str]]:
@@ -91,6 +89,12 @@ class LocalFolderDataLoader(ExternalDataLoader):
             self.recursive = bool(recursive_val)
         self.file_pattern = params.get("file_pattern", "")
         self._jail: ConfinedDir | None = None
+
+    def _root_jail(self) -> ConfinedDir:
+        """The root folder as a jail, built on first use: callers may skip ``test_connection``."""
+        if self._jail is None:
+            self._jail = ConfinedDir(self.root_dir, mkdir=False)
+        return self._jail
 
     def test_connection(self) -> bool:
         """Validate the root directory exists and is readable."""
@@ -124,7 +128,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
         # Navigate to the target directory
         if path:
             try:
-                target = self._jail / "/".join(path)
+                target = self._root_jail() / "/".join(path)
             except ValueError:
                 return []
             if not target.is_dir():
@@ -152,7 +156,11 @@ class LocalFolderDataLoader(ExternalDataLoader):
                     node_type="namespace",
                     path=rel_parts,
                 ))
-            elif child.is_file() and child.suffix.lower() in SUPPORTED_EXTENSIONS:
+            elif child.is_file():
+                try:
+                    self._root_jail() / "/".join(rel_parts)
+                except ValueError:
+                    continue
                 if self.file_pattern and not child.match(self.file_pattern):
                     continue
                 if filter and filter.lower() not in child.name.lower():
@@ -171,34 +179,32 @@ class LocalFolderDataLoader(ExternalDataLoader):
         if not path:
             return {}
         try:
-            resolved = self._jail / "/".join(path)
+            resolved = self._root_jail() / "/".join(path)
         except ValueError:
             return {}
         if not resolved.is_file():
             return {}
 
         meta = self._file_metadata(resolved)
+        if meta.get("artifact_kind") == "file":
+            return meta
+        if resolved.suffix.lower() == ".parquet":
+            meta["inspection"] = {"schema_source": "footer", "row_count_status": "exact", "sample_status": "not_requested"}
+            return meta
 
         # Read a small sample for preview
         try:
-            table = self.fetch_data_as_arrow("/".join(path), {"size": 5})
-            sample_df = table.to_pandas()
-            meta["columns"] = [
-                {"name": c, "type": str(sample_df[c].dtype)}
-                for c in sample_df.columns
-            ]
-            meta["sample_rows"] = df_to_safe_records(sample_df)
-            meta["row_count"] = meta.get("row_count") or len(sample_df)
+            preview = self.preview_data("/".join(path), purpose="agent")
+            meta["columns"] = preview["columns"]
+            meta["sample_rows"] = preview["rows"]
+            meta["inspection"] = preview["inspection"]
         except Exception as exc:
             logger.debug("Sample read failed for %s: %s", path, exc)
 
         return meta
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
-        """Return data files as 'tables', with subdirectories as namespaces."""
-        if self._jail is None:
-            self._jail = ConfinedDir(self.root_dir, mkdir=False)
-
+        """Return catalog entries with file artifacts identified in metadata."""
         results: list[dict[str, Any]] = []
         pattern = self.file_pattern or "*"
 
@@ -210,13 +216,14 @@ class LocalFolderDataLoader(ExternalDataLoader):
         for filepath in sorted(candidates):
             if not filepath.is_file():
                 continue
-            if filepath.suffix.lower() not in SUPPORTED_EXTENSIONS:
-                continue
-            if filepath.name.startswith("."):
-                continue
-
             rel = filepath.relative_to(self.root_dir)
+            if any(part.startswith(".") for part in rel.parts):
+                continue
             name = str(rel)
+            try:
+                self._root_jail() / name
+            except ValueError:
+                continue
 
             if table_filter and table_filter.lower() not in name.lower():
                 continue
@@ -230,54 +237,62 @@ class LocalFolderDataLoader(ExternalDataLoader):
 
         return results
 
+    def read_file(self, source_path: str, max_bytes: int = 128 * 1024 * 1024) -> bytes:
+        resolved = self._root_jail() / source_path
+        if any(part.startswith(".") for part in Path(source_path).parts):
+            raise ValueError("Hidden files are not available")
+        if not resolved.is_file():
+            raise ValueError("Source is not a file")
+        with resolved.open("rb") as source:
+            content = source.read(max_bytes + 1)
+        if len(content) > max_bytes:
+            raise ValueError("File exceeds the workspace file size limit")
+        return content
+
+    def preview_data(self, source_table: str, import_options: dict[str, Any] | None = None,
+                     *, purpose: str = "ui") -> dict[str, Any]:
+        resolved = self._root_jail() / source_table
+        if not resolved.is_file():
+            raise ValueError("Source is not a file")
+        if resolved.suffix.lower() not in SUPPORTED_EXTENSIONS - {".xlsx", ".xls"}:
+            raise ValueError("File artifacts must use the file preview")
+        return probe_utils.preview_file(probe_utils.register_file_scan, str(resolved), import_options, purpose=purpose)
+
     def fetch_data_as_arrow(
         self,
         source_table: str,
         import_options: dict[str, Any] | None = None,
     ) -> pa.Table:
         """Read a file from the connected folder into an Arrow table."""
-        if self._jail is None:
-            self._jail = ConfinedDir(self.root_dir, mkdir=False)
-
-        resolved = self._jail / source_table
         opts = import_options or {}
-        size = opts.get("size", 1_000_000)
+        return self.query_data_as_arrow(source_table, probe_utils.query_from_import_options(opts),
+                                        min(opts.get("size", 1_000_000), MAX_IMPORT_ROWS))
 
-        ext = resolved.suffix.lower()
-        if ext == ".parquet":
-            table = pq.read_table(str(resolved))
-        elif ext in (".csv", ".tsv"):
-            # ``.tsv`` is tab-separated; pyarrow's read_csv defaults to a comma
-            # delimiter, so without this a TSV collapses into a single column
-            # (e.g. "id\trate" stays one field). Keep comma for ``.csv``.
-            parse_options = (
-                pa_csv.ParseOptions(delimiter="\t") if ext == ".tsv" else None
-            )
-            table = pa_csv.read_csv(str(resolved), parse_options=parse_options)
-        elif ext in (".json", ".jsonl"):
-            import pyarrow.json as pa_json
-            table = pa_json.read_json(str(resolved))
-        elif ext in (".xlsx", ".xls"):
-            df = pd.read_excel(str(resolved))
-            table = pa.Table.from_pandas(df)
-        else:
-            raise ValueError(f"Unsupported file type: {ext}")
+    def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
+        import duckdb
 
-        # Store total before slicing so callers can get the real count
-        self._last_total_rows = table.num_rows
-
-        if table.num_rows > size:
-            table = table.slice(0, size)
-
-        logger.info(
-            "Fetched %d rows from local file: %s",
-            table.num_rows, source_table,
-        )
-        return table
+        resolved = self._root_jail() / source_table
+        if not resolved.is_file():
+            raise ValueError("Source is not a file")
+        if resolved.suffix.lower() in (".xlsx", ".xls"):
+            raise ValueError("File artifacts must use the file preview or file import")
+        self._last_total_rows = None
+        sql = probe_utils.compile_probe_sql(query, limit, dialect=probe_utils.DUCKDB)
+        with duckdb.connect(config=probe_utils.duckdb_query_config()) as connection:
+            if resolved.suffix.lower() == ".parquet":
+                self._last_total_rows = pq.ParquetFile(str(resolved)).metadata.num_rows
+            probe_utils.register_file_scan(connection, str(resolved))
+            return connection.execute(sql).fetch_arrow_table()
 
     def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
-        """Read the file into DuckDB and compute the SPJQ there."""
-        return probe_utils.run_probe_on_duckdb(self, path, query, scan_size=MAX_IMPORT_ROWS)
+        if not path:
+            return {"error": "probe requires a non-empty table path"}
+        limit = probe_utils.clamp_probe_limit(query.get("limit"))
+        try:
+            result = self.query_data_as_arrow("/".join(path), query, limit)
+            return probe_utils.shape_probe_payload(result, limit, exact=True)
+        except Exception as exc:
+            return {"error": f"probe failed: {exc}"}
 
     # -- Helpers -----------------------------------------------------------
 
@@ -290,6 +305,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
             return {}
 
         meta: dict[str, Any] = {
+            "artifact_kind": "table" if ext in SUPPORTED_EXTENSIONS - {".xlsx", ".xls"} else "file",
             "file_size": stat.st_size,
             "modified": stat.st_mtime,
             "file_type": ext.lstrip("."),
@@ -304,36 +320,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
                     {"name": schema.field(i).name, "type": str(schema.field(i).type)}
                     for i in range(len(schema))
                 ]
-            elif ext in (".csv", ".tsv"):
-                with open(filepath, "r", errors="replace") as f:
-                    header = f.readline().strip()
-                sep = "\t" if ext == ".tsv" else ","
-                meta["columns"] = [
-                    {"name": c.strip().strip('"'), "type": "string"}
-                    for c in header.split(sep)
-                    if c.strip()
-                ]
-                meta["row_count"] = None
-            elif ext in (".json", ".jsonl"):
-                with open(filepath, "r", errors="replace") as f:
-                    first_line = f.readline().strip()
-                if first_line:
-                    try:
-                        obj = json.loads(first_line)
-                        if isinstance(obj, dict):
-                            meta["columns"] = [
-                                {"name": k, "type": type(v).__name__}
-                                for k, v in obj.items()
-                            ]
-                        elif isinstance(obj, list) and obj and isinstance(obj[0], dict):
-                            meta["columns"] = [
-                                {"name": k, "type": type(v).__name__}
-                                for k, v in obj[0].items()
-                            ]
-                    except json.JSONDecodeError:
-                        pass
-                meta["row_count"] = None
-            elif ext in (".xlsx", ".xls"):
+            elif ext in SUPPORTED_EXTENSIONS:
                 meta["row_count"] = None
         except Exception as exc:
             logger.debug("Metadata extraction failed for %s: %s", filepath, exc)

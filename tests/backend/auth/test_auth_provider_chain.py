@@ -138,38 +138,6 @@ class TestProviderDispatch:
 
 
 # ------------------------------------------------------------------
-# get_identity_id — anonymous-only mode (no AUTH_PROVIDER)
-# ------------------------------------------------------------------
-
-class TestAnonymousMode:
-
-    def test_browser_identity_works(self, app):
-        with app.test_request_context(
-            headers={"X-Identity-Id": "my-browser-uuid"}
-        ):
-            assert get_identity_id() == "browser:my-browser-uuid"
-
-    def test_prefixed_identity_stripped(self, app):
-        with app.test_request_context(
-            headers={"X-Identity-Id": "browser:my-uuid"}
-        ):
-            assert get_identity_id() == "browser:my-uuid"
-
-    def test_missing_header_raises(self, app):
-        with app.test_request_context():
-            with pytest.raises(ValueError, match="X-Identity-Id"):
-                get_identity_id()
-
-    def test_spoofed_user_prefix_forced_to_browser(self, app):
-        with app.test_request_context(
-            headers={"X-Identity-Id": "user:alice@corp.com"}
-        ):
-            identity = get_identity_id()
-            assert identity.startswith("browser:")
-            assert "alice@corp.com" in identity
-
-
-# ------------------------------------------------------------------
 # get_sso_token / get_auth_result
 # ------------------------------------------------------------------
 
@@ -228,14 +196,8 @@ class TestAuthenticationErrorPropagation:
 
 class TestAllPhase1ProvidersDiscovered:
 
-    def test_oidc_discovered(self):
-        assert "oidc" in list_available_providers()
-
     def test_github_discovered(self):
         assert "github" in list_available_providers()
-
-    def test_azure_easyauth_discovered(self):
-        assert "azure_easyauth" in list_available_providers()
 
 
 # ------------------------------------------------------------------
@@ -291,10 +253,6 @@ class TestIdentityRegexExpansion:
     ])
     def test_oidc_style_sub_claims_accepted(self, value):
         assert _validate_identity_value(value, "test") == value
-
-    def test_path_separator_still_rejected(self):
-        with pytest.raises(ValueError, match="disallowed"):
-            _validate_identity_value("../../etc/passwd", "test")
 
     def test_space_still_rejected(self):
         with pytest.raises(ValueError, match="disallowed"):

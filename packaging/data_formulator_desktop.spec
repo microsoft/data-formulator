@@ -17,9 +17,13 @@ datas += collect_data_files(
     includes=[
         "analyst/skills/**/SKILL.md",
         "analyst/skills/**/tools.json",
+        "analyst/chart_catalog.json",
         "data_loader/guides/*.md",
     ],
 )
+# Shipped demos: profile, images, story seeds and the build.py the app runs to install them.
+datas += collect_data_files("data_formulator", includes=["demos/**/*"], excludes=["**/__pycache__/**"],
+                            include_py_files=True)
 binaries = []
 hiddenimports = collect_submodules("data_formulator")
 
@@ -37,7 +41,11 @@ for package in (
     "tiktoken_ext",
     "webview",
 ):
-    package_datas, package_binaries, package_hiddenimports = collect_all(package)
+    package_datas, package_binaries, package_hiddenimports = collect_all(
+        package,
+        include_py_files=False,
+        exclude_datas=["include/**", "includes/**", "src/**", "tests/**"] if package == "pyarrow" else None,
+    )
     datas += package_datas
     binaries += package_binaries
     hiddenimports += package_hiddenimports
@@ -98,7 +106,7 @@ def _configure_windows_runtime(a):
 
 def _verify_windows_runtime():
     """Post-build check: the bundled assembly must exist and be byte-identical."""
-    bundle = project_root / "dist" / "Data Formulator" / "_internal" / "pythonnet" / "runtime" / "Python.Runtime.dll"
+    bundle = Path(DISTPATH) / "Data Formulator" / "_internal" / "pythonnet" / "runtime" / "Python.Runtime.dll"
     if not bundle.exists():
         raise SystemExit(f"Windows bundle is missing {bundle}; the WinForms backend will fail at startup")
     if hashlib.sha256(bundle.read_bytes()).digest() != hashlib.sha256(_pythonnet_runtime_dll().read_bytes()).digest():

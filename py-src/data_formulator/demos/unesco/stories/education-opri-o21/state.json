@@ -1,0 +1,1408 @@
+{
+ "__stateVersion": 14,
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "d_out_2",
+   "displayId": "Host countries for international higher education students",
+   "names": [
+    "COUNTRY_ID",
+    "country",
+    "year",
+    "value",
+    "qualifier",
+    "map_id",
+    "students_thousands"
+   ],
+   "rows": [
+    {
+     "COUNTRY_ID": "BFA",
+     "country": "Burkina Faso",
+     "year": 2023,
+     "value": 4091,
+     "qualifier": null,
+     "map_id": 854,
+     "students_thousands": 4.091
+    },
+    {
+     "COUNTRY_ID": "BHR",
+     "country": "Bahrain",
+     "year": 2023,
+     "value": 5475,
+     "qualifier": null,
+     "map_id": 48,
+     "students_thousands": 5.475
+    },
+    {
+     "COUNTRY_ID": "LIE",
+     "country": "Liechtenstein",
+     "year": 2021,
+     "value": 831,
+     "qualifier": null,
+     "map_id": 438,
+     "students_thousands": 0.831
+    },
+    {
+     "COUNTRY_ID": "MAR",
+     "country": "Morocco",
+     "year": 2023,
+     "value": 25252,
+     "qualifier": null,
+     "map_id": 504,
+     "students_thousands": 25.252
+    },
+    {
+     "COUNTRY_ID": "RWA",
+     "country": "Rwanda",
+     "year": 2023,
+     "value": 7944,
+     "qualifier": null,
+     "map_id": 646,
+     "students_thousands": 7.944
+    },
+    {
+     "COUNTRY_ID": "SAU",
+     "country": "Saudi Arabia",
+     "year": 2022,
+     "value": 64874,
+     "qualifier": null,
+     "map_id": 682,
+     "students_thousands": 64.874
+    },
+    {
+     "COUNTRY_ID": "SVK",
+     "country": "Slovakia",
+     "year": 2023,
+     "value": 21262,
+     "qualifier": null,
+     "map_id": 703,
+     "students_thousands": 21.262
+    },
+    {
+     "COUNTRY_ID": "CHE",
+     "country": "Switzerland",
+     "year": 2023,
+     "value": 66189,
+     "qualifier": null,
+     "map_id": 756,
+     "students_thousands": 66.189
+    },
+    {
+     "COUNTRY_ID": "KGZ",
+     "country": "Kyrgyzstan",
+     "year": 2023,
+     "value": 72853,
+     "qualifier": null,
+     "map_id": 417,
+     "students_thousands": 72.853
+    },
+    {
+     "COUNTRY_ID": "MEX",
+     "country": "Mexico",
+     "year": 2023,
+     "value": 72888,
+     "qualifier": null,
+     "map_id": 484,
+     "students_thousands": 72.888
+    },
+    {
+     "COUNTRY_ID": "BEL",
+     "country": "Belgium",
+     "year": 2023,
+     "value": 57281,
+     "qualifier": null,
+     "map_id": 56,
+     "students_thousands": 57.281
+    },
+    {
+     "COUNTRY_ID": "ECU",
+     "country": "Ecuador",
+     "year": 2023,
+     "value": 7398,
+     "qualifier": null,
+     "map_id": 218,
+     "students_thousands": 7.398
+    },
+    {
+     "COUNTRY_ID": "GTM",
+     "country": "Guatemala",
+     "year": 2023,
+     "value": 2192,
+     "qualifier": null,
+     "map_id": 320,
+     "students_thousands": 2.192
+    },
+    {
+     "COUNTRY_ID": "KHM",
+     "country": "Cambodia",
+     "year": 2021,
+     "value": 513,
+     "qualifier": null,
+     "map_id": 116,
+     "students_thousands": 0.513
+    },
+    {
+     "COUNTRY_ID": "SRB",
+     "country": "Serbia",
+     "year": 2023,
+     "value": 11419,
+     "qualifier": null,
+     "map_id": 688,
+     "students_thousands": 11.419
+    },
+    {
+     "COUNTRY_ID": "TUR",
+     "country": "Turkey",
+     "year": 2023,
+     "value": 301634,
+     "qualifier": null,
+     "map_id": 792,
+     "students_thousands": 301.634
+    },
+    {
+     "COUNTRY_ID": "VNM",
+     "country": "Viet Nam",
+     "year": 2022,
+     "value": 7760,
+     "qualifier": null,
+     "map_id": 704,
+     "students_thousands": 7.76
+    },
+    {
+     "COUNTRY_ID": "BTN",
+     "country": "Bhutan",
+     "year": 2021,
+     "value": 4393,
+     "qualifier": null,
+     "map_id": 64,
+     "students_thousands": 4.393
+    },
+    {
+     "COUNTRY_ID": "COK",
+     "country": "Cook Islands",
+     "year": 2023,
+     "value": 0,
+     "qualifier": null,
+     "map_id": 184,
+     "students_thousands": 0
+    },
+    {
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2023,
+     "value": 423197,
+     "qualifier": null,
+     "map_id": 276,
+     "students_thousands": 423.197
+    },
+    {
+     "COUNTRY_ID": "FIN",
+     "country": "Finland",
+     "year": 2023,
+     "value": 30346,
+     "qualifier": null,
+     "map_id": 246,
+     "students_thousands": 30.346
+    },
+    {
+     "COUNTRY_ID": "IND",
+     "country": "India",
+     "year": 2023,
+     "value": 45700,
+     "qualifier": null,
+     "map_id": 356,
+     "students_thousands": 45.7
+    },
+    {
+     "COUNTRY_ID": "MCO",
+     "country": "Monaco",
+     "year": 2023,
+     "value": 990,
+     "qualifier": null,
+     "map_id": 492,
+     "students_thousands": 0.99
+    },
+    {
+     "COUNTRY_ID": "NOR",
+     "country": "Norway",
+     "year": 2023,
+     "value": 14141,
+     "qualifier": null,
+     "map_id": 578,
+     "students_thousands": 14.141
+    },
+    {
+     "COUNTRY_ID": "EST",
+     "country": "Estonia",
+     "year": 2023,
+     "value": 4869,
+     "qualifier": null,
+     "map_id": 233,
+     "students_thousands": 4.869
+    },
+    {
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2023,
+     "value": 181821,
+     "qualifier": null,
+     "map_id": 392,
+     "students_thousands": 181.821
+    },
+    {
+     "COUNTRY_ID": "POL",
+     "country": "Poland",
+     "year": 2023,
+     "value": 89677,
+     "qualifier": null,
+     "map_id": 616,
+     "students_thousands": 89.677
+    },
+    {
+     "COUNTRY_ID": "TKM",
+     "country": "Turkmenistan",
+     "year": 2023,
+     "value": 53,
+     "qualifier": null,
+     "map_id": 795,
+     "students_thousands": 0.053
+    },
+    {
+     "COUNTRY_ID": "TUN",
+     "country": "Tunisia",
+     "year": 2023,
+     "value": 9496,
+     "qualifier": null,
+     "map_id": 788,
+     "students_thousands": 9.496
+    },
+    {
+     "COUNTRY_ID": "ARE",
+     "country": "United Arab Emirates",
+     "year": 2023,
+     "value": 237034,
+     "qualifier": null,
+     "map_id": 784,
+     "students_thousands": 237.034
+    },
+    {
+     "COUNTRY_ID": "AUS",
+     "country": "Australia",
+     "year": 2023,
+     "value": 467074,
+     "qualifier": null,
+     "map_id": 36,
+     "students_thousands": 467.074
+    },
+    {
+     "COUNTRY_ID": "BDI",
+     "country": "Burundi",
+     "year": 2023,
+     "value": 6035,
+     "qualifier": null,
+     "map_id": 108,
+     "students_thousands": 6.035
+    },
+    {
+     "COUNTRY_ID": "CUB",
+     "country": "Cuba",
+     "year": 2023,
+     "value": 6513,
+     "qualifier": null,
+     "map_id": 192,
+     "students_thousands": 6.513
+    },
+    {
+     "COUNTRY_ID": "DNK",
+     "country": "Denmark",
+     "year": 2023,
+     "value": 29674,
+     "qualifier": null,
+     "map_id": 208,
+     "students_thousands": 29.674
+    },
+    {
+     "COUNTRY_ID": "GBR",
+     "country": "UK",
+     "year": 2023,
+     "value": 748461,
+     "qualifier": null,
+     "map_id": 826,
+     "students_thousands": 748.461
+    },
+    {
+     "COUNTRY_ID": "GRC",
+     "country": "Greece",
+     "year": 2023,
+     "value": 26327,
+     "qualifier": null,
+     "map_id": 300,
+     "students_thousands": 26.327
+    },
+    {
+     "COUNTRY_ID": "ISL",
+     "country": "Iceland",
+     "year": 2023,
+     "value": 2089,
+     "qualifier": null,
+     "map_id": 352,
+     "students_thousands": 2.089
+    },
+    {
+     "COUNTRY_ID": "THA",
+     "country": "Thailand",
+     "year": 2023,
+     "value": 29928,
+     "qualifier": null,
+     "map_id": 764,
+     "students_thousands": 29.928
+    },
+    {
+     "COUNTRY_ID": "TTO",
+     "country": "Trinidad and Tobago",
+     "year": 2023,
+     "value": 1177,
+     "qualifier": null,
+     "map_id": 780,
+     "students_thousands": 1.177
+    },
+    {
+     "COUNTRY_ID": "ARG",
+     "country": "Argentina",
+     "year": 2023,
+     "value": 126566,
+     "qualifier": null,
+     "map_id": 32,
+     "students_thousands": 126.566
+    },
+    {
+     "COUNTRY_ID": "AUT",
+     "country": "Austria",
+     "year": 2023,
+     "value": 87009.5625,
+     "qualifier": null,
+     "map_id": 40,
+     "students_thousands": 87.0095625
+    },
+    {
+     "COUNTRY_ID": "BLR",
+     "country": "Belarus",
+     "year": 2023,
+     "value": 21867,
+     "qualifier": null,
+     "map_id": 112,
+     "students_thousands": 21.867
+    },
+    {
+     "COUNTRY_ID": "CYP",
+     "country": "Cyprus",
+     "year": 2023,
+     "value": 11795,
+     "qualifier": null,
+     "map_id": 196,
+     "students_thousands": 11.795
+    },
+    {
+     "COUNTRY_ID": "EGY",
+     "country": "Egypt",
+     "year": 2023,
+     "value": 86848,
+     "qualifier": null,
+     "map_id": 818,
+     "students_thousands": 86.848
+    },
+    {
+     "COUNTRY_ID": "ITA",
+     "country": "Italy",
+     "year": 2023,
+     "value": 106450,
+     "qualifier": null,
+     "map_id": 380,
+     "students_thousands": 106.45
+    },
+    {
+     "COUNTRY_ID": "NIC",
+     "country": "Nicaragua",
+     "year": 2023,
+     "value": 3263,
+     "qualifier": null,
+     "map_id": 558,
+     "students_thousands": 3.263
+    },
+    {
+     "COUNTRY_ID": "ZAF",
+     "country": "South Africa",
+     "year": 2023,
+     "value": 38481,
+     "qualifier": null,
+     "map_id": 710,
+     "students_thousands": 38.481
+    },
+    {
+     "COUNTRY_ID": "BLZ",
+     "country": "Belize",
+     "year": 2023,
+     "value": 36,
+     "qualifier": null,
+     "map_id": 84,
+     "students_thousands": 0.036
+    },
+    {
+     "COUNTRY_ID": "BMU",
+     "country": "Bermuda",
+     "year": 2023,
+     "value": 43,
+     "qualifier": null,
+     "map_id": 60,
+     "students_thousands": 0.043
+    },
+    {
+     "COUNTRY_ID": "BRN",
+     "country": "Brunei Darussalam",
+     "year": 2023,
+     "value": 577,
+     "qualifier": null,
+     "map_id": 96,
+     "students_thousands": 0.577
+    },
+    {
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2023,
+     "value": 200892,
+     "qualifier": null,
+     "map_id": 156,
+     "students_thousands": 200.892
+    },
+    {
+     "COUNTRY_ID": "CZE",
+     "country": "Czechia",
+     "year": 2023,
+     "value": 56276,
+     "qualifier": null,
+     "map_id": 203,
+     "students_thousands": 56.276
+    },
+    {
+     "COUNTRY_ID": "DZA",
+     "country": "Algeria",
+     "year": 2023,
+     "value": 3618,
+     "qualifier": null,
+     "map_id": 12,
+     "students_thousands": 3.618
+    },
+    {
+     "COUNTRY_ID": "FRA",
+     "country": "France",
+     "year": 2023,
+     "value": 276217.21875,
+     "qualifier": null,
+     "map_id": 250,
+     "students_thousands": 276.21721875
+    },
+    {
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2023,
+     "value": 13597,
+     "qualifier": null,
+     "map_id": 376,
+     "students_thousands": 13.597
+    },
+    {
+     "COUNTRY_ID": "LKA",
+     "country": "Sri Lanka",
+     "year": 2023,
+     "value": 1773,
+     "qualifier": null,
+     "map_id": 144,
+     "students_thousands": 1.773
+    },
+    {
+     "COUNTRY_ID": "MHL",
+     "country": "Marshall Islands",
+     "year": 2022,
+     "value": 48,
+     "qualifier": null,
+     "map_id": 584,
+     "students_thousands": 0.048
+    },
+    {
+     "COUNTRY_ID": "MYS",
+     "country": "Malaysia",
+     "year": 2023,
+     "value": 109036,
+     "qualifier": null,
+     "map_id": 458,
+     "students_thousands": 109.036
+    },
+    {
+     "COUNTRY_ID": "QAT",
+     "country": "Qatar",
+     "year": 2023,
+     "value": 18762,
+     "qualifier": null,
+     "map_id": 634,
+     "students_thousands": 18.762
+    },
+    {
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2023,
+     "value": 34661.390625,
+     "qualifier": null,
+     "map_id": 752,
+     "students_thousands": 34.661390625
+    },
+    {
+     "COUNTRY_ID": "ARM",
+     "country": "Armenia",
+     "year": 2023,
+     "value": 6680,
+     "qualifier": null,
+     "map_id": 51,
+     "students_thousands": 6.68
+    },
+    {
+     "COUNTRY_ID": "HKG",
+     "country": "China, Hong Kong Special Administrative Region",
+     "year": 2023,
+     "value": 63688,
+     "qualifier": null,
+     "map_id": 344,
+     "students_thousands": 63.688
+    },
+    {
+     "COUNTRY_ID": "HRV",
+     "country": "Croatia",
+     "year": 2023,
+     "value": 5929,
+     "qualifier": null,
+     "map_id": 191,
+     "students_thousands": 5.929
+    },
+    {
+     "COUNTRY_ID": "MDG",
+     "country": "Madagascar",
+     "year": 2023,
+     "value": 816,
+     "qualifier": null,
+     "map_id": 450,
+     "students_thousands": 0.816
+    },
+    {
+     "COUNTRY_ID": "NAM",
+     "country": "Namibia",
+     "year": 2022,
+     "value": 2132,
+     "qualifier": null,
+     "map_id": 516,
+     "students_thousands": 2.132
+    },
+    {
+     "COUNTRY_ID": "SVN",
+     "country": "Slovenia",
+     "year": 2023,
+     "value": 8499,
+     "qualifier": null,
+     "map_id": 705,
+     "students_thousands": 8.499
+    },
+    {
+     "COUNTRY_ID": "TZA",
+     "country": "United Republic of Tanzania",
+     "year": 2022,
+     "value": 1205,
+     "qualifier": null,
+     "map_id": 834,
+     "students_thousands": 1.205
+    },
+    {
+     "COUNTRY_ID": "UKR",
+     "country": "Ukraine",
+     "year": 2023,
+     "value": 50865,
+     "qualifier": null,
+     "map_id": 804,
+     "students_thousands": 50.865
+    },
+    {
+     "COUNTRY_ID": "BGR",
+     "country": "Bulgaria",
+     "year": 2023,
+     "value": 19250,
+     "qualifier": null,
+     "map_id": 100,
+     "students_thousands": 19.25
+    },
+    {
+     "COUNTRY_ID": "CHL",
+     "country": "Chile",
+     "year": 2023,
+     "value": 19891,
+     "qualifier": null,
+     "map_id": 152,
+     "students_thousands": 19.891
+    },
+    {
+     "COUNTRY_ID": "COL",
+     "country": "Colombia",
+     "year": 2022,
+     "value": 5448,
+     "qualifier": null,
+     "map_id": 170,
+     "students_thousands": 5.448
+    },
+    {
+     "COUNTRY_ID": "MDA",
+     "country": "Republic of Moldova",
+     "year": 2023,
+     "value": 5536,
+     "qualifier": null,
+     "map_id": 498,
+     "students_thousands": 5.536
+    },
+    {
+     "COUNTRY_ID": "MNG",
+     "country": "Mongolia",
+     "year": 2023,
+     "value": 3593,
+     "qualifier": null,
+     "map_id": 496,
+     "students_thousands": 3.593
+    },
+    {
+     "COUNTRY_ID": "NLD",
+     "country": "Netherlands",
+     "year": 2021,
+     "value": 135535,
+     "qualifier": null,
+     "map_id": 528,
+     "students_thousands": 135.535
+    },
+    {
+     "COUNTRY_ID": "PAN",
+     "country": "Panama",
+     "year": 2022,
+     "value": 6103,
+     "qualifier": null,
+     "map_id": 591,
+     "students_thousands": 6.103
+    },
+    {
+     "COUNTRY_ID": "SLV",
+     "country": "El Salvador",
+     "year": 2023,
+     "value": 938,
+     "qualifier": null,
+     "map_id": 222,
+     "students_thousands": 0.938
+    },
+    {
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2023,
+     "value": 956923.125,
+     "qualifier": null,
+     "map_id": 840,
+     "students_thousands": 956.923125
+    },
+    {
+     "COUNTRY_ID": "WSM",
+     "country": "Samoa",
+     "year": 2023,
+     "value": 134,
+     "qualifier": null,
+     "map_id": 882,
+     "students_thousands": 0.134
+    },
+    {
+     "COUNTRY_ID": "LBN",
+     "country": "Lebanon",
+     "year": 2023,
+     "value": 34178,
+     "qualifier": null,
+     "map_id": 422,
+     "students_thousands": 34.178
+    },
+    {
+     "COUNTRY_ID": "MKD",
+     "country": "North Macedonia",
+     "year": 2023,
+     "value": 6178,
+     "qualifier": null,
+     "map_id": 807,
+     "students_thousands": 6.178
+    },
+    {
+     "COUNTRY_ID": "MLT",
+     "country": "Malta",
+     "year": 2023,
+     "value": 6242.2001953125,
+     "qualifier": null,
+     "map_id": 470,
+     "students_thousands": 6.2422001953
+    },
+    {
+     "COUNTRY_ID": "NZL",
+     "country": "New Zealand",
+     "year": 2023,
+     "value": 36407.01953125,
+     "qualifier": null,
+     "map_id": 554,
+     "students_thousands": 36.4070195313
+    },
+    {
+     "COUNTRY_ID": "OMN",
+     "country": "Oman",
+     "year": 2023,
+     "value": 3149,
+     "qualifier": null,
+     "map_id": 512,
+     "students_thousands": 3.149
+    },
+    {
+     "COUNTRY_ID": "TCA",
+     "country": "Turks and Caicos Islands",
+     "year": 2022,
+     "value": 183,
+     "qualifier": null,
+     "map_id": 796,
+     "students_thousands": 0.183
+    },
+    {
+     "COUNTRY_ID": "URY",
+     "country": "Uruguay",
+     "year": 2023,
+     "value": 4207,
+     "qualifier": null,
+     "map_id": 858,
+     "students_thousands": 4.207
+    },
+    {
+     "COUNTRY_ID": "CAN",
+     "country": "Canada",
+     "year": 2023,
+     "value": 389181,
+     "qualifier": null,
+     "map_id": 124,
+     "students_thousands": 389.181
+    },
+    {
+     "COUNTRY_ID": "SMR",
+     "country": "San Marino",
+     "year": 2023,
+     "value": 774,
+     "qualifier": null,
+     "map_id": 674,
+     "students_thousands": 0.774
+    },
+    {
+     "COUNTRY_ID": "ALB",
+     "country": "Albania",
+     "year": 2023,
+     "value": 2012,
+     "qualifier": null,
+     "map_id": 8,
+     "students_thousands": 2.012
+    },
+    {
+     "COUNTRY_ID": "AND",
+     "country": "Andorra",
+     "year": 2023,
+     "value": 304,
+     "qualifier": null,
+     "map_id": 20,
+     "students_thousands": 0.304
+    },
+    {
+     "COUNTRY_ID": "AZE",
+     "country": "Azerbaijan",
+     "year": 2023,
+     "value": 7052,
+     "qualifier": null,
+     "map_id": 31,
+     "students_thousands": 7.052
+    },
+    {
+     "COUNTRY_ID": "BWA",
+     "country": "Botswana",
+     "year": 2023,
+     "value": 2172,
+     "qualifier": null,
+     "map_id": 72,
+     "students_thousands": 2.172
+    },
+    {
+     "COUNTRY_ID": "CMR",
+     "country": "Cameroon",
+     "year": 2023,
+     "value": 7392,
+     "qualifier": null,
+     "map_id": 120,
+     "students_thousands": 7.392
+    },
+    {
+     "COUNTRY_ID": "DOM",
+     "country": "Dominican Republic",
+     "year": 2023,
+     "value": 10265,
+     "qualifier": null,
+     "map_id": 214,
+     "students_thousands": 10.265
+    },
+    {
+     "COUNTRY_ID": "JOR",
+     "country": "Jordan",
+     "year": 2023,
+     "value": 38875,
+     "qualifier": null,
+     "map_id": 400,
+     "students_thousands": 38.875
+    },
+    {
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2023,
+     "value": 127624,
+     "qualifier": null,
+     "map_id": 410,
+     "students_thousands": 127.624
+    },
+    {
+     "COUNTRY_ID": "LCA",
+     "country": "Saint Lucia",
+     "year": 2023,
+     "value": 383,
+     "qualifier": null,
+     "map_id": 662,
+     "students_thousands": 0.383
+    },
+    {
+     "COUNTRY_ID": "SUR",
+     "country": "Suriname",
+     "year": 2021,
+     "value": 0,
+     "qualifier": null,
+     "map_id": 740,
+     "students_thousands": 0
+    },
+    {
+     "COUNTRY_ID": "SYC",
+     "country": "Seychelles",
+     "year": 2023,
+     "value": 0,
+     "qualifier": null,
+     "map_id": 690,
+     "students_thousands": 0
+    },
+    {
+     "COUNTRY_ID": "BEN",
+     "country": "Benin",
+     "year": 2022,
+     "value": 3972,
+     "qualifier": null,
+     "map_id": 204,
+     "students_thousands": 3.972
+    },
+    {
+     "COUNTRY_ID": "BGD",
+     "country": "Bangladesh",
+     "year": 2022,
+     "value": 2281,
+     "qualifier": null,
+     "map_id": 50,
+     "students_thousands": 2.281
+    },
+    {
+     "COUNTRY_ID": "ESP",
+     "country": "Spain",
+     "year": 2023,
+     "value": 102162,
+     "qualifier": null,
+     "map_id": 724,
+     "students_thousands": 102.162
+    },
+    {
+     "COUNTRY_ID": "HUN",
+     "country": "Hungary",
+     "year": 2023,
+     "value": 41730,
+     "qualifier": null,
+     "map_id": 348,
+     "students_thousands": 41.73
+    },
+    {
+     "COUNTRY_ID": "LVA",
+     "country": "Latvia",
+     "year": 2023,
+     "value": 10080,
+     "qualifier": null,
+     "map_id": 428,
+     "students_thousands": 10.08
+    },
+    {
+     "COUNTRY_ID": "PRT",
+     "country": "Portugal",
+     "year": 2023,
+     "value": 56775,
+     "qualifier": null,
+     "map_id": 620,
+     "students_thousands": 56.775
+    },
+    {
+     "COUNTRY_ID": "BIH",
+     "country": "Bosnia and Herzegovina",
+     "year": 2023,
+     "value": 6081,
+     "qualifier": null,
+     "map_id": 70,
+     "students_thousands": 6.081
+    },
+    {
+     "COUNTRY_ID": "GEO",
+     "country": "Georgia",
+     "year": 2023,
+     "value": 25105,
+     "qualifier": null,
+     "map_id": 268,
+     "students_thousands": 25.105
+    },
+    {
+     "COUNTRY_ID": "IRL",
+     "country": "Ireland",
+     "year": 2022,
+     "value": 27159,
+     "qualifier": null,
+     "map_id": 372,
+     "students_thousands": 27.159
+    },
+    {
+     "COUNTRY_ID": "LUX",
+     "country": "Luxembourg",
+     "year": 2023,
+     "value": 4169.5,
+     "qualifier": null,
+     "map_id": 442,
+     "students_thousands": 4.1695
+    },
+    {
+     "COUNTRY_ID": "ROU",
+     "country": "Romania",
+     "year": 2023,
+     "value": 36216,
+     "qualifier": null,
+     "map_id": 642,
+     "students_thousands": 36.216
+    },
+    {
+     "COUNTRY_ID": "SEN",
+     "country": "Senegal",
+     "year": 2023,
+     "value": 25658,
+     "qualifier": null,
+     "map_id": 686,
+     "students_thousands": 25.658
+    },
+    {
+     "COUNTRY_ID": "UZB",
+     "country": "Uzbekistan",
+     "year": 2023,
+     "value": 4935,
+     "qualifier": null,
+     "map_id": 860,
+     "students_thousands": 4.935
+    },
+    {
+     "COUNTRY_ID": "BRA",
+     "country": "Brazil",
+     "year": 2023,
+     "value": 25186,
+     "qualifier": null,
+     "map_id": 76,
+     "students_thousands": 25.186
+    },
+    {
+     "COUNTRY_ID": "CIV",
+     "country": "Côte d'Ivoire",
+     "year": 2023,
+     "value": 4298,
+     "qualifier": null,
+     "map_id": 384,
+     "students_thousands": 4.298
+    },
+    {
+     "COUNTRY_ID": "GHA",
+     "country": "Ghana",
+     "year": 2023,
+     "value": 4765,
+     "qualifier": null,
+     "map_id": 288,
+     "students_thousands": 4.765
+    },
+    {
+     "COUNTRY_ID": "GIN",
+     "country": "Guinea",
+     "year": 2023,
+     "value": 1327,
+     "qualifier": null,
+     "map_id": 324,
+     "students_thousands": 1.327
+    },
+    {
+     "COUNTRY_ID": "IRN",
+     "country": "Iran",
+     "year": 2022,
+     "value": 130591,
+     "qualifier": null,
+     "map_id": 364,
+     "students_thousands": 130.591
+    },
+    {
+     "COUNTRY_ID": "LTU",
+     "country": "Lithuania",
+     "year": 2023,
+     "value": 11009,
+     "qualifier": null,
+     "map_id": 440,
+     "students_thousands": 11.009
+    },
+    {
+     "COUNTRY_ID": "MAC",
+     "country": "China, Macao Special Administrative Region",
+     "year": 2023,
+     "value": 34160,
+     "qualifier": null,
+     "map_id": 446,
+     "students_thousands": 34.16
+    },
+    {
+     "COUNTRY_ID": "MUS",
+     "country": "Mauritius",
+     "year": 2023,
+     "value": 2781,
+     "qualifier": null,
+     "map_id": 480,
+     "students_thousands": 2.781
+    },
+    {
+     "COUNTRY_ID": "PSE",
+     "country": "Palestine",
+     "year": 2023,
+     "value": 0,
+     "qualifier": null,
+     "map_id": 275,
+     "students_thousands": 0
+    },
+    {
+     "COUNTRY_ID": "RUS",
+     "country": "Russia",
+     "year": 2023,
+     "value": 336453,
+     "qualifier": null,
+     "map_id": 643,
+     "students_thousands": 336.453
+    },
+    {
+     "COUNTRY_ID": "SGP",
+     "country": "Singapore",
+     "year": 2023,
+     "value": 71239,
+     "qualifier": null,
+     "map_id": 702,
+     "students_thousands": 71.239
+    },
+    {
+     "COUNTRY_ID": "TGO",
+     "country": "Togo",
+     "year": 2021,
+     "value": 40825,
+     "qualifier": null,
+     "map_id": 768,
+     "students_thousands": 40.825
+    }
+   ],
+   "metadata": {
+    "COUNTRY_ID": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "value": {
+     "type": "number",
+     "levels": []
+    },
+    "qualifier": {
+     "type": "boolean",
+     "levels": []
+    },
+    "map_id": {
+     "type": "integer",
+     "levels": []
+    },
+    "students_thousands": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\nout=duckdb.sql(\"\"\"WITH latest AS (SELECT COUNTRY_ID,country,year,value,qualifier FROM read_parquet('data/opri_national.parquet') WHERE indicator_id='26637' AND year BETWEEN 2021 AND 2023 AND value IS NOT NULL AND (magnitude IS NULL OR magnitude<>'NA') QUALIFY row_number() OVER(PARTITION BY COUNTRY_ID ORDER BY year DESC)=1) SELECT l.*, c.map_id FROM latest l LEFT JOIN read_parquet('data/countries.parquet') c USING(COUNTRY_ID)\"\"\").df()\nout['country']=out.country.replace({'United States of America':'US','United Kingdom of Great Britain and Northern Ireland':'UK','Russian Federation':'Russia','Iran (Islamic Republic of)':'Iran','Republic of Korea':'South Korea','Türkiye':'Turkey'})\nout=out.dropna(subset=['map_id'])\nout['map_id']=out.map_id.astype(int)\nout['students_thousands']=out.value/1000",
+    "codeSignature": "ce8cf1609ef656ac18837ece80eb80c4d5e33e5b8d84163b8b3f5a47ba3b254a",
+    "outputVariable": "out",
+    "source": [
+     "opri_national",
+     "countries"
+    ],
+    "inputSources": [
+     {
+      "id": "data:94096f91d7de3239e62527e1e64383be:opri_national",
+      "kind": "data",
+      "displayName": "opri_national"
+     },
+     {
+      "id": "data:3bfeafe1536e0211b109193b1e492f81:countries",
+      "kind": "data",
+      "displayName": "countries"
+     }
+    ],
+    "trigger": {
+     "tableId": "opri_national",
+     "resultTableId": "d_out_2",
+     "chart": {
+      "id": "chart-1792308167267",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "opri_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "d_out_2",
+    "rowCount": 123
+   },
+   "description": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792308091512_step_1",
+   "createdAt": 1792308174825
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-379430f55c40",
+   "chartType": "Choropleth",
+   "encodingMap": {
+    "id": {
+     "fieldID": "concept-map_id-1792308174825-0.7643720042078505",
+     "dtype": "nominal"
+    },
+    "color": {
+     "fieldID": "concept-students_thousands-1792308174825-0.11544347902768215",
+     "dtype": "quantitative"
+    },
+    "detail": {
+     "channel": "detail",
+     "bin": false
+    }
+   },
+   "tableRef": "d_out_2",
+   "source": "user",
+   "title": "Where international students study",
+   "subtitle": "Higher education • latest reports, 2021–2023 • UIS, February 2026 release",
+   "titleKey": "Choropleth|color:concept-students_thousands-1792308174825-0.11544347902768215:|detail::|id:concept-map_id-1792308174825-0.7643720042078505:",
+   "unread": false,
+   "themeId": "datawrapper"
+  },
+  {
+   "id": "chart-de1f6150d427",
+   "chartType": "Bar Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-students_thousands-1792308174825-0.11544347902768215",
+     "dtype": "quantitative"
+    },
+    "y": {
+     "fieldID": "concept-country-1792308174825-0.052753812135948874",
+     "dtype": "nominal",
+     "sortOrder": "descending",
+     "sortBy": "x"
+    },
+    "color": {
+     "channel": "color",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "d_out_2",
+   "source": "user",
+   "title": "Where international students study: highest first",
+   "subtitle": "Higher education • latest reports, 2021–2023 • UIS, February 2026 release",
+   "unread": false,
+   "themeId": "datawrapper",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-students_thousands-1792308174825-0.11544347902768215:|y:concept-country-1792308174825-0.052753812135948874:"
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-country-1792308174825-0.052753812135948874",
+   "name": "country",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-map_id-1792308174825-0.7643720042078505",
+   "name": "map_id",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-students_thousands-1792308174825-0.11544347902768215",
+   "name": "students_thousands",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308091512_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1792308091512_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Where do students who study abroad go?",
+   "parentNodeId": "conversation-root:a9531947-d3f4-476e-b0fb-9caa4bf09ff2",
+   "actionId": "exploreDataFromNL_1792308091512",
+   "createdAt": 1792308091512
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308091512_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1792308091512_step_1",
+   "textKind": "explain",
+   "content": "Find the largest host countries using their latest reports in 2021–2023.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792308091512_prompt",
+   "actionId": "exploreDataFromNL_1792308091512",
+   "createdAt": 1792308131974,
+   "startedAt": 1792308091513,
+   "codeExecutions": [
+    {
+     "id": "code_exploreDataFromNL_1792308091512_1",
+     "tool": "execute_python_script",
+     "purpose": "Find the largest host countries using their latest reports in 2021–2023.",
+     "code": "import duckdb\nq=\"\"\"SELECT COUNTRY_ID,country,year,value,qualifier FROM read_parquet('data/opri_national.parquet') WHERE indicator_id='26637' AND year BETWEEN 2021 AND 2023 AND value IS NOT NULL AND (magnitude IS NULL OR magnitude<>'NA') QUALIFY row_number() OVER(PARTITION BY COUNTRY_ID ORDER BY year DESC)=1 ORDER BY value DESC\"\"\"\nd=duckdb.sql(q).df()\nprint(d.head(15).to_string(index=False));print('countries',len(d));print(d.year.value_counts().to_string())",
+     "status": "completed",
+     "createdAt": 1792308131974,
+     "output": "COUNTRY_ID                                              country  year        value qualifier\n       USA                             United States of America  2023 956923.12500      None\n       GBR United Kingdom of Great Britain and Northern Ireland  2023 748461.00000      None\n       AUS                                            Australia  2023 467074.00000      None\n       DEU                                              Germany  2023 423197.00000      None\n       CAN                                               Canada  2023 389181.00000      None\n       RUS                                   Russian Federation  2023 336453.00000      None\n       TUR                                              Türkiye  2023 301634.00000      None\n       FRA                                               France  2023 276217.21875      None\n       ARE                                 United Arab Emirates  2023 237034.00000      None\n       CHN                                                China  2023 200892.00000      None\n       JPN                                                Japan  2023 181821.00000      None\n       NLD                                          Netherlands  2021 135535.00000      None\n       IRN                           Iran (Islamic Republic of)  2022 130591.00000      None\n       KOR                                    Republic of Korea  2023 127624.00000      None\n       ARG                                            Argentina  2023 126566.00000      None\ncountries 123\nyear\n2023    105\n2022     12\n2021      6\n"
+    }
+   ],
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1792308091512-1",
+     "kind": "tool",
+     "label": "Reading: session/tables/opri_national.json",
+     "status": "completed",
+     "tool": "read_file",
+     "toolCallId": "call_I7GR3eisdhq1nm6UExwG6Qly"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792308091512-2",
+     "kind": "tool",
+     "label": "Reading: session/tables/countries.json",
+     "status": "completed",
+     "tool": "read_file",
+     "toolCallId": "call_LcYXOddnoondw0nBFUfNcwph"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792308091512-3",
+     "kind": "tool",
+     "label": "running code... Find the largest host countries using their latest reports in 2021–2023.",
+     "status": "completed",
+     "tool": "execute_python_script",
+     "toolCallId": "call_2wvoC8ZgQ13DW5y6C1lia1FK",
+     "executionId": "code_exploreDataFromNL_1792308091512_1"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792308091512-4",
+     "kind": "chart",
+     "label": "creating chart...",
+     "status": "completed"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308091512_1792308181031",
+   "displayId": "textTurn_exploreDataFromNL_1792308091512_closing",
+   "textKind": "explain",
+   "content": "**The US and UK are the largest destinations for students studying abroad.** The leading hosts in 2023 were:\n\n| Destination | International students |\n|---|---:|\n| US | 957,000 |\n| UK | 748,000 |\n| Australia | 467,000 |\n| Germany | 423,000 |\n| Canada | 389,000 |\n\nRussia, Turkey and France came next. These figures count international students in higher education.\n\nThe map uses each destination’s latest report from **2021–2023**; countries without recent data are left blank. Source: UIS, February 2026 release.",
+   "parentNodeId": "d_out_2",
+   "actionId": "exploreDataFromNL_1792308091512",
+   "createdAt": 1792308181031,
+   "startedAt": 1792308091513,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "d_out_2",
+   "fields": {
+    "country": {
+     "displayName": "Destination",
+     "authored": {
+      "displayName": "Destination"
+     }
+    },
+    "year": {
+     "semanticType": "Year",
+     "displayName": "Reporting year",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Reporting year"
+     }
+    },
+    "map_id": {
+     "displayName": "Country",
+     "authored": {
+      "displayName": "Country"
+     }
+    },
+    "students_thousands": {
+     "semanticType": "Quantity",
+     "unit": "thousand students",
+     "displayName": "International students (thousands)",
+     "authored": {
+      "semanticType": "Quantity",
+      "unit": "thousand students",
+      "displayName": "International students (thousands)"
+     }
+    }
+   }
+  }
+ ],
+ "activeWorkspace": {
+  "id": "education-opri-o21",
+  "displayName": "Students abroad have more than tripled since 2000"
+ },
+ "focusedId": {
+  "type": "chart",
+  "chartId": "chart-379430f55c40"
+ }
+}

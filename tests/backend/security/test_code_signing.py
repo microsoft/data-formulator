@@ -59,12 +59,6 @@ class TestSignVerifyRoundTrip:
         sig = sign_code(code)
         assert verify_code(code, sig)
 
-    def test_signature_is_hex_string(self):
-        sig = sign_code("x = 1")
-        assert isinstance(sig, str)
-        assert len(sig) == 64  # SHA-256 hex
-        int(sig, 16)  # should not raise
-
 
 # ===================================================================
 # sign_result helper

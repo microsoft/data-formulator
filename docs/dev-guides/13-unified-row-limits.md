@@ -42,7 +42,6 @@ flowchart TD
 |------|---|------|------|
 | `MAX_IMPORT_ROWS` | 2,000,000 | `py-src/data_formulator/data_loader/external_data_loader.py` | 后端硬上限，所有 DataLoader 强制执行 |
 | `DEFAULT_ROW_LIMIT` | 2,000,000 | `src/app/dfSlice.tsx` | 前端默认值（Workspace 模式） |
-| `DEFAULT_ROW_LIMIT_EPHEMERAL` | 20,000 | `src/app/dfSlice.tsx` | 前端默认值（Ephemeral 模式，浏览器性能保守策略） |
 | `max_display_rows` | 10,000 | `py-src/data_formulator/app.py` CLI 参数 | Agent 执行结果返回前端的**展示**行数上限，不限制存储 |
 
 ---

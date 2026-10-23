@@ -5,13 +5,13 @@
 
 This is the single user-facing data agent that replaces the separate
 ``DataAgent`` (structured-action visualization loop) and ``ReportGenAgent``
-(streaming report writer). It hosts a set of **core actions** plus a registry
+(streaming report writer). It hosts baseline capability actions plus a registry
 of **skills** that unlock additional **gated actions** on demand. See
 ``design-docs/35-unified-agent-skills-architecture.md`` and the action turn
 model in ``design-docs/36-artifact-turn-model.md``.
 
 Architecture (a vanilla tool-calling loop, plus the skills layer):
-  - **Inspection tools** (``execute_python_script``, ``inspect_source_data``, ``load_skill``,
+  - **Inspection tools** (``execute_python_script``, ``load_skill``, the workspace file tools,
     plus skill-private tools) are called via the tool-calling API to gather
     information. Parallel-safe, internal, no side effects.
   - **Committing actions** (``visualize``, ``delegate``) render a user-visible
@@ -30,29 +30,34 @@ routes the chosen action to the owning skill's ``handle_action(...)``, feeds the
 returned observation back, and forwards the channel-tagged events.
 """
 
+import hashlib
 import json
 import logging
+import os
 import re
+import contextvars
+import queue
+import threading
 import time
 import uuid
+from dataclasses import asdict, replace
+from itertools import chain, count
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Generator
 
-from data_formulator.agent_config import reasoning_effort_for
+import pandas as pd
+
+from data_formulator.agent_config import ANALYST_EXECUTION_DEFAULTS, AnalystExecutionConfig, reasoning_effort_for
 from data_formulator.agents.agent_utils import (
     accumulate_reasoning_content,
+    accumulate_reasoning_items,
     attach_reasoning_content,
     ensure_output_variable_in_code,
 )
-from data_formulator.agents.context import (
-    build_focused_thread_context,
-    build_lightweight_table_context,
-    build_peripheral_thread_context,
-    handle_inspect_source_data,
-)
 from data_formulator.agents.client_utils import Client
 from data_formulator.datalake.parquet_utils import df_to_safe_records
+from data_formulator.datalake.workspace_metadata import MemorySource
 
 from data_formulator.analyst.skills import (
     Event,
@@ -62,17 +67,153 @@ from data_formulator.analyst.skills import (
     build_registry,
 )
 from data_formulator.analyst.tools import build_tools
+from data_formulator.analyst.history import SessionHistory
+from data_formulator.analyst.plan import RunPlan, read_plan, split_plan
+from data_formulator.analyst.session_files import render_session_context, render_turn_context
+from data_formulator.analyst.session_layer import SessionLayer, load_saved_state
+from data_formulator.analyst.session_layer.layer import seen_versions
+from data_formulator.analyst.workspace_inputs import (
+    WorkspaceInputManifest,
+    build_workspace_input_manifest,
+    normalize_external_references,
+)
 
 logger = logging.getLogger(__name__)
 
 _AGENT_ID = "analyst"
+_COMPACTED_NOTE = "[Earlier output shortened to fit the model's context window.]"
 
-# The always-on baseline skill, auto-loaded at the start of every run. It owns
-# the built-in tools (execute_python_script / inspect_source_data) and the always-available
-# actions (visualize / delegate) plus the base prompt body (its SKILL.md). The
-# shell hardcodes nothing about those actions — legality is derived from
-# whichever skills are loaded.
-_CORE_SKILL = "core"
+
+# Actions whose success can complete a request on its own.
+_DELIVERY_ACTIONS = frozenset({"visualize", "write_report", "write_app", "write_html_app"})
+
+
+class ModelStreamStalled(TimeoutError):
+    """The model stream sent nothing within its deadline; a call has no side effects, so it can be retried."""
+
+
+def _stream_deadline(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _first_chunk_deadline() -> float:
+    return _stream_deadline("DF_MODEL_FIRST_CHUNK_SECONDS", 90.0)
+
+
+_MAX_RETRY_AFTER_SECONDS = 60.0
+_RETRY_AFTER_TEXT = re.compile(r"retry after (\d+(?:\.\d+)?)\s*(milliseconds?|ms|seconds?|secs?|s)\b", re.I)
+
+
+def _retry_after_seconds(exc: BaseException) -> float | None:
+    """How long a rate-limited provider asked us to wait (``retry-after-ms`` / ``retry-after`` headers,
+    or "retry after N seconds" in the message), searched through wrapped exceptions; None if not said."""
+    pending, seen = [exc], set()
+    while pending:
+        error = pending.pop(0)
+        if error is None or id(error) in seen:
+            continue
+        seen.add(id(error))
+        for headers in (getattr(error, "litellm_response_headers", None),
+                        getattr(getattr(error, "response", None), "headers", None),
+                        getattr(error, "headers", None)):
+            if not hasattr(headers, "get"):
+                continue
+            try:
+                if (value := headers.get("retry-after-ms")) is not None:
+                    return float(value) / 1000
+                if (value := headers.get("retry-after")) is not None:
+                    try:
+                        return float(value)
+                    except ValueError:
+                        from email.utils import parsedate_to_datetime
+                        return max(parsedate_to_datetime(value).timestamp() - time.time(), 0.0)
+            except (TypeError, ValueError, OverflowError):
+                continue
+        if match := _RETRY_AFTER_TEXT.search(str(error)):
+            amount, unit = float(match.group(1)), match.group(2).lower()
+            return amount / 1000 if unit.startswith("m") else amount
+        pending += [getattr(error, "original_exception", None), error.__cause__, error.__context__]
+    return None
+
+
+_STREAM_END = object()
+
+
+class _PrimedStream:
+    """A provider stream whose first chunk is read up front; closing still closes the provider stream.
+
+    With deadlines, a background thread reads the stream and each chunk must arrive in time: the
+    first within ``deadline`` seconds, later ones within ``idle`` seconds of the previous. A provider
+    stream can stall before or partway through a response (observed for minutes), and nothing else
+    would end the wait."""
+
+    def __init__(self, source, deadline: float | None = None, idle: float | None = None):
+        self._source = source
+        self._queue: queue.Queue | None = None
+        if deadline is None:
+            self._chunks = iter(source)
+            self._head = [chunk for chunk in [next(self._chunks, None)] if chunk is not None]
+            return
+        self._queue = queue.Queue()
+        self._idle = idle if idle is not None else _stream_deadline("DF_MODEL_IDLE_SECONDS", 180.0)
+
+        def pump() -> None:
+            try:
+                for chunk in source:
+                    self._queue.put(("chunk", chunk))
+                self._queue.put(("end", None))
+            except BaseException as error:  # handed to the reader
+                self._queue.put(("error", error))
+
+        threading.Thread(target=contextvars.copy_context().run, args=(pump,), daemon=True,
+                         name="model-stream").start()
+        first = self._next(deadline)
+        self._head = [] if first is _STREAM_END else [first]
+        self._ended = first is _STREAM_END
+
+    def _next(self, timeout: float):
+        try:
+            kind, value = self._queue.get(timeout=timeout)
+        except queue.Empty:
+            self.close()
+            raise ModelStreamStalled(f"Model stream timed out: nothing arrived for {timeout:g}s.") from None
+        if kind == "error":
+            raise value
+        return _STREAM_END if kind == "end" else value
+
+    def __iter__(self):
+        if self._queue is None:
+            return chain(self._head, self._chunks)
+        return self._read()
+
+    def _read(self):
+        yield from self._head
+        if self._ended:
+            return
+        while (chunk := self._next(self._idle)) is not _STREAM_END:
+            yield chunk
+
+    def close(self):
+        close = getattr(self._source, "close", None)
+        if close:
+            try:
+                close()
+            except ValueError:
+                pass  # still being read by the stream thread; it ends with its connection
+
+_PROGRESS_REMINDER_INTERVAL = 16
+_PROGRESS_REMINDER = (
+    "[Automatic message] You have been working on {scope} for {turns} turns. Briefly take stock: what concrete "
+    "results do you have, are you repeating an approach that is not working, and what is the most direct next step? "
+    "If you are blocked or need a decision, {escalation}. Otherwise, continue."
+)
+
+# The always-on baseline profile. It composes concrete capability skills but
+# owns no tools, actions, schemas, or handlers itself.
+_META_SKILL = "meta"
 
 # Banner stamped at the START of a loaded skill's body message. It is the single
 # contract between the emitter (_load_skill_into_context) and the resume parser
@@ -81,6 +222,43 @@ _CORE_SKILL = "core"
 # emitted match — never the same text pasted by a user or echoed by the model.
 _SKILL_LOADED_BANNER = "[SKILL LOADED: {name}]"
 _SKILL_LOADED_RE = re.compile(r"^\[SKILL LOADED: ([^\]]+)\]")
+_SKILL_PRELOADED_PREFIX = "[SKILL: "
+_SKILL_PRELOADED_SUFFIX = " Preloaded for this run"
+
+_TOOL_PROGRESS_ARG_KEYS: dict[str, tuple[str, ...]] = {
+    "probe_data": ("source_id", "table_key", "query"),
+    "list_connectors": ("source_type",),
+    "list_sessions": ("query",),
+    "search_data_tables": ("query",),
+    "search_knowledge": ("query",),
+    "create_file": ("filename", "display_name"),
+    "edit_file": ("path", "display_name"),
+    "delete_items": ("items",),
+    "list_files": ("path",),
+    "read_file": ("files", "path", "paths"),
+    "search": ("query", "path"),
+    "move_file": ("path", "new_path"),
+}
+
+
+def _tool_progress_args(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Return model arguments safe and useful for user-facing progress."""
+    progress_args = {
+        key: args[key]
+        for key in _TOOL_PROGRESS_ARG_KEYS.get(tool_name, ())
+        if key in args
+    }
+    if tool_name == "probe_data" and isinstance(progress_args.get("query"), dict):
+        query = progress_args["query"]
+        progress_args["query"] = {
+            key: query[key]
+            for key in ("aggregates", "group_by", "limit")
+            if key in query
+        }
+        filters = query.get("filters")
+        if isinstance(filters, list) and filters:
+            progress_args["query"]["filter_count"] = len(filters)
+    return progress_args
 
 # ── Action-argument coercion ──────────────────────────────────────────────
 # Weaker models sometimes JSON-encode a nested action argument as a string
@@ -92,7 +270,7 @@ _SKILL_LOADED_RE = re.compile(r"^\[SKILL LOADED: ([^\]]+)\]")
 def _rescue_unpack_json_strings(data: dict) -> None:
     """In-place: parse values that are JSON-encoded strings back to objects."""
     for key in (
-        "chart", "input_tables", "questions", "options", "followups",
+        "chart", "input_sources", "input_tables", "questions", "options", "followups",
         "field_metadata", "field_display_names",
     ):
         val = data.get(key)
@@ -101,6 +279,18 @@ def _rescue_unpack_json_strings(data: dict) -> None:
                 data[key] = json.loads(val)
             except (json.JSONDecodeError, ValueError):
                 pass
+
+
+def _missing_action_fields(required: list[str], action_data: dict[str, Any]) -> list[str]:
+    """Return missing action fields, including provenance compatibility rules."""
+    missing = []
+    for field in required:
+        if field == "input_sources":
+            if "input_sources" not in action_data and "input_tables" not in action_data:
+                missing.append(field)
+        elif field not in action_data or not action_data.get(field):
+            missing.append(field)
+    return missing
 
 
 # ── Live tool-argument streaming (design-docs/36 §5) ───────────────────────
@@ -170,62 +360,33 @@ class _StreamingArgExtractor:
 # stop criteria. This is the agent's own contract, so it lives here as code (not
 # as a skill body). ``_build_system_prompt`` fills the ``{...}`` slots via plain
 # string substitution (NOT str.format — braces elsewhere stay literal). The
-# always-loaded ``core`` skill's SKILL.md (the concrete tools + action schemas)
+# always-loaded ``meta`` bundle and its included capability guidance
 # is appended after this frame, unformatted, exactly like any other skill body.
 SYSTEM_PROMPT = """\
 You are an autonomous data analyst agent.
 
-Your goal is to help the user by exploring their data, producing visualizations,
-and — when asked — packaging the findings (e.g. into a written report). You
-operate in a loop: gather what you need with inspection tools, take an **action**
-when you want to act on the data, read its result, and repeat — then stop by
-giving your final answer in plain text.
+Help the user analyze available data, acquire missing inputs, and deliver the
+requested charts, files, or reports. Read each result before choosing a dependent
+step; stop when the requested work is complete.
 
-## Tools vs. actions
+Data Formulator is a visual analysis workspace: analyze through useful visualizations,
+not only tables and prose.
 
-Everything you do is a function/tool call, but calls come in two kinds and
-keeping them straight is essential:
+## Tool Execution
 
-- **Inspection tools** (internal — for gathering information). Functions like
-  `execute_python_script`, `inspect_source_data`, `inspect_chart`, and `load_skill` that
-  inspect data or load instructions *before* you act. Their results return to
-  you and are **not** shown to the user. They commit nothing and are
-  **independent** — none depends on another's result — so call as many as you
-  need, across as many rounds as you need, until you have enough to act.
-- **Actions** (committing — shown to the user). A discrete operation like
-  `visualize`, `ask_user`, `delegate`, and (once the report skill is loaded)
-  `write_report`. Each renders a user-visible surface, and its result is
-  returned to you just like a tool result so you can react to it.
+- Read, discovery, computation, and skill-loading tools return evidence or
+    instructions. Use their results to answer the user or choose the next step.
+- File and data tools also return results, but create or revise durable workspace outputs.
+- Actions deliver results or request interaction. `visualize`, `write_report`, and
+    unambiguous data loads return observations so you can continue. Questions, data
+    loads needing review and connector forms pause for the user.
+- Plain text with no tool calls ends the run; `long_response` also finishes it.
+    Choose the response form using the baseline workflows below.
 
-**Actions are sequential — take exactly one, then wait for its result.** This is
-the key difference from inspection tools: those are independent, but each
-action's result shapes your next decision — the chart you'd draw next depends on
-what this one reveals — so choosing two at once would make the second a blind
-guess, decided before you've seen the first's outcome. Do all your inspection
-first, then commit the single action that fits.
-
-Treat each action like one turn in a back-and-forth: **you act → its result
-answers → you act again.** Even when you're planning a sequence of charts,
-surface them one at a time so each reacts to the last. (If you do emit several
-actions at once, only the first runs and the rest are discarded — batching only
-loses work.)
-
-**To finish, reply with plain text and no action.** Plain text is your
-**closing answer** — the run is over and you expect nothing further (the user's
-next message starts a fresh turn). Use it whenever you've done what was asked,
-including answering a question you fully resolved.
-
-**Whenever you expect the user to reply — a question, a clarification, or a set
-of choices — use the `ask_user` action instead.** It renders a question widget
-and pauses the run for their reply, so the conversation resumes in the same
-turn. `ask_user` accepts free-text questions (no clickable options required), so
-reach for it for *any* followup-seeking turn, not only structured choices. Keep
-your reasoning and explanations in your reply text, not inside `ask_user`. Plain
-text never asks for input; `ask_user` always does. There is no separate "stop"
-or "summary" action: you stop by simply not acting.
-
-The concrete actions available to you — and how to use each well — are
-described in the capability sections below.
+Call an action alone, with any accompanying prose: only the first action executes,
+and all sibling calls, including non-action tools, are discarded. Observe its
+result before choosing another action. Wait for prerequisites before dependent
+calls; do not claim success from intent or a pending proposal.
 
 ## Understanding your context
 
@@ -233,27 +394,16 @@ described in the capability sections below.
 
 ## Skills (load on demand)
 
-Your baseline capabilities come from the **core** skill, which is **always loaded
-automatically** (you'll see it below as `[SKILL: core]`). Beyond that baseline,
-extra capabilities are packaged as **extension skills** — each one unlocks an
-additional action (and sometimes extra tools), but only after you load it:
-1. Call the `load_skill("<name>")` tool — this reads the skill's instructions into
-   your context and unlocks its action(s) and any tools it provides.
-2. Follow those instructions and call the action it unlocks (its tool only
-   appears once the skill is loaded).
-
-Calling an extension skill's action **before** loading the skill will not
-execute — you'll be asked to load it first. Extension skills available this run
-(load the one whose `when to use` fits):
+The `[SKILL: meta]` baseline is already active. For an additional capability below,
+call `load_skill` with its name, then follow the returned instructions. Its tools
+and actions become available only after loading; do not reload an active skill.
 
 {skills_block}
 
-## Working within your budget
+## Completing your work
 
-- You have a budget of **{max_iterations} actions** for this run — a **hard
-    ceiling, not a target**.
-- Match the response depth to the user's request. Create charts that materially
-    contribute to the answer, and stop when the answer is sufficient.
+Stop when the request is satisfied and no step of your plan is left open. If essential input or authorization is missing,
+ask the user rather than repeating unsuccessful attempts without new evidence.
 
 {agent_exploration_rules}"""
 
@@ -264,7 +414,11 @@ execute — you'll be asked to load it first. Extension skills available this ru
 
 
 class AnalystAgent:
-    """Unified data analyst agent — core actions + on-demand skills."""
+    """Unified data analyst agent with baseline and on-demand skills.
+
+    max_iterations and max_repair_attempts are accepted for compatibility
+    but do not impose execution limits.
+    """
 
     def __init__(
         self,
@@ -274,23 +428,32 @@ class AnalystAgent:
         agent_exploration_rules: str = "",
         agent_coding_rules: str = "",
         language_instruction: str = "",
-        max_iterations: int = 5,
-        max_repair_attempts: int = 2,
+        max_iterations: int | None = None,
+        max_repair_attempts: int | None = None,
         identity_id: str | None = None,
+        execution_config: AnalystExecutionConfig | None = None,
+        workspace_id: str | None = None,
     ):
         self.client = client
         self.workspace = workspace
-        self.registry = skill_registry or build_registry()
+        self.identity_id = identity_id
+        self.workspace_id = workspace_id
+        from data_formulator.configuration import terminal_mode
+        self.registry = (skill_registry or build_registry()).with_terminal_policy(terminal_mode())
         self.agent_exploration_rules = agent_exploration_rules
         self.agent_coding_rules = agent_coding_rules
         self.language_instruction = language_instruction
-        self.max_iterations = max_iterations
-        self.max_repair_attempts = max_repair_attempts
+        config = execution_config if execution_config is not None else ANALYST_EXECUTION_DEFAULTS
+        self.execution_config = replace(config, max_actions=max_iterations) if max_iterations is not None else config
+        self.max_iterations = self.execution_config.max_actions
 
         from data_formulator.agents.reasoning_log import (
             ReasoningLogger, _NullReasoningLogger,
         )
         self._session_id = uuid.uuid4().hex[:12]
+        if client is not None and getattr(client, "prompt_cache_key", "") is None:
+            client.prompt_cache_key = hashlib.sha256(
+                f"{identity_id}:{workspace_id or self._session_id}".encode()).hexdigest()[:32]
         if identity_id:
             try:
                 self._reasoning_log = ReasoningLogger(
@@ -304,7 +467,6 @@ class AnalystAgent:
 
         self._knowledge_store = None
         self._injected_knowledge: list[dict[str, Any]] = []
-        self._injected_rules: list[str] = []
         _user_home = getattr(workspace, "user_home", None)
         if _user_home:
             try:
@@ -327,6 +489,13 @@ class AnalystAgent:
         # skill's duplicate (buffered) emission of the same content.
         self._streamed_channels: dict[str, str] = {}
         self._suppress_stream_channel: str | None = None
+        # Trajectory indexes for the soft progress reminder: where the current request/step began and
+        # where the last reminder was sent. New user input or a new workflow step resets both.
+        self._progress_scope_start = 0
+        self._progress_reminder_start = 0
+        # The run's checklist plan, read from the agent's narration (design-docs/64).
+        self._plan = RunPlan()
+        self._last_run_chart_id: str | None = None
 
     # ------------------------------------------------------------------
     # Helpers
@@ -339,16 +508,46 @@ class AnalystAgent:
     def _legal_actions(self) -> frozenset[str]:
         """The set of committing actions currently legal to emit.
 
-        Every legal action is owned by a *loaded* skill. ``core`` is always
-        loaded, so its baseline actions are always legal; a gated skill's
-        actions become legal once that skill is loaded.
+        Every legal action is owned by an active concrete skill. ``meta`` is
+        always loaded and activates its included baseline capabilities; a gated
+        skill's actions become legal once that profile is loaded.
         """
         legal: set[str] = set()
-        for name in self._loaded_skills:
+        for name in self.registry.expanded_names(self._loaded_skills):
             meta = self.registry.metas.get(name)
             if meta:
                 legal.update(meta.action_names)
         return frozenset(legal)
+
+    def _system_skills(self) -> set[str]:
+        """Skills whose guidance is part of the system prompt: fixed for the deployment, not the request."""
+        return {name for name in ("terminal",) if self.registry.has(name)}
+
+    def _preload_messages(self, skills: set[str]) -> list[dict]:
+        """Skill messages for skills a request needs before its first call and does not have yet."""
+        messages = []
+        for name in sorted(skills - self._loaded_skills):
+            ok, _, message = self._build_skill_body_message(name)
+            if ok and message is not None:
+                messages.append(message)
+        return messages
+
+    def _initial_loaded_skills(
+        self,
+        workspace_inputs: WorkspaceInputManifest,
+        connector_form: dict[str, Any] | None = None,
+    ) -> set[str]:
+        """Return the skill gates that must be open before the first LLM call.
+
+        A request made while a connector form owns the canvas preloads
+        ``configure`` so the agent can read and revise that form in place. A
+        session with no data or files preloads ``connected_data``: any analysis
+        starts by finding data.
+        """
+        empty = workspace_inputs is not None and not workspace_inputs.data and not workspace_inputs.files
+        return ({_META_SKILL} | ({"terminal"} if self.registry.has("terminal") else set())
+                | ({"configure"} if connector_form and self.registry.has("configure") else set())
+                | ({"connected_data"} if empty and self.registry.has("connected_data") else set()))
 
     # ------------------------------------------------------------------
     # Public API
@@ -358,15 +557,15 @@ class AnalystAgent:
         self,
         input_tables: list[dict[str, Any]],
         user_question: str,
-        focused_thread: list[dict[str, Any]] | None = None,
-        other_threads: list[dict[str, Any]] | None = None,
         trajectory: list[dict] | None = None,
         completed_step_count: int = 0,
-        primary_tables: list[str] | None = None,
         attached_images: list[str] | None = None,
         charts: list[dict[str, Any]] | None = None,
         scratch_files: list[str] | None = None,
         conversation_id: str = "",
+        connector_form: dict[str, Any] | None = None,
+        external_references: list[dict[str, Any]] | None = None,
+        session_state: dict[str, Any] | None = None,
     ) -> Generator[dict[str, Any], None, None]:
         """Run the unified analyst loop.
 
@@ -386,22 +585,44 @@ class AnalystAgent:
         total_llm_calls = 0
         completed_steps: list[dict[str, Any]] = []
         iteration = completed_step_count
-        final_status = "max_iterations"
+        final_status = "success"
+        if hasattr(self.workspace, "migrate_legacy_memory"):
+            # Legacy memory becomes ordinary files the agent lists, reads and searches (design-docs/65).
+            self.workspace.migrate_legacy_memory()
+        workspace_files = sorted(
+            self.workspace.list_workspace_files(), key=lambda item: item.name.lower(),
+        )
+        workspace_inputs = build_workspace_input_manifest(
+            input_tables,
+            workspace_files,
+            self.workspace,
+        )
 
-        # Reset per-run skill + payload state. ``core`` is auto-loaded: its
-        # baseline tools + actions are always available and its SKILL.md body is
-        # appended to the system frame (see _build_system_prompt). Gated skills
-        # are added to this set as the model loads them. The payload carries
+        # Reset per-run skill + payload state. ``meta`` includes the workspace
+        # capability for both existing inputs and new data loading. Other gated
+        # skills are added as the model loads them. The payload carries
         # everything a dispatched skill handler needs to build its own context
-        # (e.g. the report skill rebuilds [AVAILABLE CHARTS] + thread
-        # context).
-        self._loaded_skills = {_CORE_SKILL}
+        # (e.g. the report skill's chart and thread context).
+        preloads = self._initial_loaded_skills(workspace_inputs, connector_form)
+        self._loaded_skills = {_META_SKILL} | (self._system_skills() & preloads)
         self._run_payload = {
+            # Artifacts the agent may replace to fix one the user wants fixed, and this run's own
+            # (skill contexts copy the payload but share this dict), see analyst/replacement.py.
+            "run_artifacts": {},
+            # What the session holds, for delete_items (see analyst/deletion.py).
+            # The session as agent-shaped views (design-docs/61): the browser's state, or the saved one
+            # for runs without a browser.
+            "session_layer": SessionLayer(
+                session_state if isinstance(session_state, dict) else load_saved_state(self.identity_id, self.workspace_id),
+                self.workspace),
             "input_tables": input_tables,
+            "external_references": normalize_external_references(external_references),
+            "workspace_inputs": workspace_inputs,
+            "scratch_files": self.workspace.list_scratch_files(),
             "charts": charts or [],
-            "focused_thread": focused_thread,
-            "other_threads": other_threads,
-            "primary_tables": primary_tables,
+            "connector_form": connector_form,
+            "identity_id": self.identity_id,
+            "workspace_id": self.workspace_id,
             "conversation_id": conversation_id,
             # Skill instances are registry singletons, so mutable per-run state
             # belongs here. SkillContext receives shallow payload copies; this
@@ -418,58 +639,82 @@ class AnalystAgent:
                 user_question=user_question,
                 input_tables=[t.get("name", "") for t in input_tables],
                 model=self.client.model,
+                execution_config=asdict(self.execution_config),
                 rules_injected=[
                     r for r in [self.agent_exploration_rules, self.agent_coding_rules] if r
                 ],
                 knowledge_injected=[],
             )
 
+            resuming = trajectory is not None
+            # The session's conversation (design-docs/63): a request continues it when it can.
+            history = SessionHistory(self.workspace) if self.workspace is not None and hasattr(
+                self.workspace, "confined_scratch") else None
+            continued, turn_start, self._run_end, self._delivered = False, None, None, False
+            self._plan = RunPlan()
             if trajectory is None:
-                ns_dir = self._explore_ns_dir()
-                if ns_dir.exists():
-                    import shutil
-                    shutil.rmtree(ns_dir, ignore_errors=True)
-
+                stored, why = history.continuable(self.client.model) if history else (None, "no workspace")
+                if stored is None:
+                    ns_dir = self._explore_ns_dir()
+                    if ns_dir.exists():
+                        import shutil
+                        shutil.rmtree(ns_dir, ignore_errors=True)
+                else:
+                    self._rehydrate_loaded_skills(stored)
+                    continued = True
+                logger.info("[AnalystAgent] %s", "continuing the session's conversation" if continued
+                            else f"fresh start ({why})")
                 trajectory = self._build_initial_messages(
-                    input_tables, user_question, focused_thread, other_threads,
-                    primary_tables=primary_tables,
-                    attached_images=attached_images,
-                    charts=charts,
-                    scratch_files=scratch_files,
+                    user_question, attached_images=attached_images, scratch_files=scratch_files,
+                    history=stored, preloads=self._preload_messages(preloads),
                 )
+                turn_start = 1 + len(stored or [])
                 rlog.log(
                     "context_built",
+                    continued=continued,
                     system_prompt_tokens=len(trajectory[0].get("content", "")) // 4 if trajectory else 0,
                     user_msg_tokens=len(str(trajectory[1].get("content", ""))) // 4 if len(trajectory) > 1 else 0,
                     total_tables=len(input_tables),
-                    primary_tables=primary_tables or [],
-                    knowledge_rules_injected=self._injected_rules,
                     knowledge_injected=self._injected_knowledge,
                 )
 
-                if self._injected_rules or self._injected_knowledge:
+                if self._injected_knowledge:
                     yield {
                         "type": "context_info",
-                        "rules_injected": self._injected_rules,
                         "knowledge_injected": [
                             {"category": k["category"], "title": k["title"]}
                             for k in self._injected_knowledge
                         ],
                     }
             else:
-                # Resume: the trajectory is the single source of truth. A loaded
-                # skill is just its ``[SKILL LOADED: <name>]`` body sitting in
-                # history (kept for free via prefix caching), so re-open the gate
-                # for every skill whose body is still present. This keeps
-                # ``_loaded_skills`` in sync with what the model actually sees,
-                # avoiding a "body present but gate closed" contradiction.
                 self._rehydrate_loaded_skills(trajectory)
+                system_message = {"role": "system", "content": self._build_system_prompt(
+                    has_attached_images=bool(attached_images),
+                )}
+                if trajectory and trajectory[0].get("role") == "system":
+                    trajectory[0] = system_message
+                else:
+                    trajectory.insert(0, system_message)
 
-            action_budget = self.max_iterations  # hard ceiling on committing actions
-            actions_committed = completed_step_count  # resume-aware count
-            hard_ceiling = iteration + max(self.max_iterations * 3, 12)
+            if resuming:
+                paused = history.take_paused(conversation_id) if history else None
+                if paused is not None:
+                    continued, turn_start = bool(paused.get("continued")), int(paused.get("start") or 1)
+                # What changed in the session while the run was paused, before the user's reply.
+                changes = self._run_payload["session_layer"].changes(seen_versions(trajectory))
+                at = max((index for index, message in enumerate(trajectory) if message.get("role") == "assistant"),
+                         default=len(trajectory) - 1) + 1
+                # Tool results stay right after the call they answer.
+                while at < len(trajectory) and trajectory[at].get("role") == "tool":
+                    at += 1
+                trajectory[at:at] = [*self._preload_messages(preloads), {"role": "user", "content": changes}]
+            self._reset_progress_reminder(trajectory)
 
-            while iteration < hard_ceiling:
+            def commit() -> None:
+                if history is not None and turn_start is not None:
+                    history.commit(self.client.model, trajectory[turn_start:], continued=continued)
+
+            while True:
                 iteration += 1
 
                 # --- THINK: call LLM with tools, get the next action ------
@@ -499,22 +744,20 @@ class AnalystAgent:
                     # The normal close: the model answered in plain text and
                     # committed nothing. That final text IS the completion (the
                     # frontend renders it as the run's summary). An LLM API error
-                    # is fatal; the tool-round backstop also lands here.
+                    # is fatal.
                     if action_reason == "llm_error":
                         final_status = "llm_error"
+                        # The classified provider error is user-safe; the generic code would hide it.
                         yield self._error_event(
                             iteration,
                             action_error or "LLM API error",
-                            message_code="agent.llmApiError",
+                            message_code="" if action_error else "agent.llmApiError",
                         )
                         self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
                         return
 
-                    final_status = (
-                        "tool_rounds_exhausted"
-                        if action_reason == "tool_rounds_exhausted"
-                        else "success"
-                    )
+                    final_status = "success"
+                    commit()
                     yield {
                         "type": "completion",
                         "iteration": iteration,
@@ -530,9 +773,8 @@ class AnalystAgent:
                 action_type = action.get("action")
                 logger.info(f"[AnalystAgent] Iteration {iteration}: action={action_type}")
 
-                # --- GATE: every action is owned by a skill; its owner must be
-                #     loaded. ``core`` is always loaded, so its actions pass
-                #     straight through.
+                # --- GATE: every action is owned by a concrete skill; that
+                #     owner must be active directly or through a loaded bundle.
                 owner = self.registry.action_owner(action_type)
                 if owner is None:
                     legal = ", ".join(sorted(self._legal_actions()))
@@ -546,7 +788,7 @@ class AnalystAgent:
                         message_code="agent.unknownAction",
                     )
                     continue
-                if owner not in self._loaded_skills:
+                if not self.registry.is_active(self._loaded_skills, owner):
                     # Gate closed — tell the model to load the skill, no execution.
                     self._set_action_observation(
                         trajectory, action_tool_call_id,
@@ -569,6 +811,7 @@ class AnalystAgent:
                 self._suppress_stream_channel = self._streamed_channels.get(
                     action_tool_call_id
                 )
+                self._last_run_chart_id = None
                 try:
                     observation = yield from self._dispatch_skill_action(
                         owner, action_type, action, trajectory, iteration, completed_steps,
@@ -579,6 +822,11 @@ class AnalystAgent:
                 self._set_action_observation(
                     trajectory, action_tool_call_id, observation,
                 )
+                if action_type in _DELIVERY_ACTIONS and observation and not observation.lstrip().startswith("[ERROR]"):
+                    self._delivered = True
+                    result_id = (self._last_run_chart_id or action_type) if action_type == "visualize" else action_type
+                    if self._plan.record(action.get("plan_step"), result_id):
+                        yield self._plan.event(revised=False)
 
                 if observation is None:
                     # ── Terminal action → the run pauses ──────────────────────
@@ -587,52 +835,19 @@ class AnalystAgent:
                     # own terminal surface (a question widget) and the run waits
                     # for the user. Stop here; their next message starts a fresh
                     # turn. No completion event — the interact event is the close.
+                    # A deliverable that completed the run joins the conversation; a pause
+                    # joins it when its resumed run finishes.
+                    if self._run_end == "interact":
+                        if history is not None and turn_start is not None:
+                            history.remember_paused(conversation_id, turn_start, continued)
+                    else:
+                        commit()
                     self._log_session_end(
                         rlog, "success", iteration, total_llm_calls, session_start_time,
                     )
                     return
 
-                actions_committed += 1
-                remaining = action_budget - actions_committed
-                if remaining <= 0:
-                    # Hard action ceiling reached — stop and let the user steer.
-                    final_status = "max_iterations"
-                    yield {
-                        "type": "completion",
-                        "iteration": iteration,
-                        "status": "max_iterations",
-                        "content": {
-                            "summary": "Reached the maximum number of actions for this run.",
-                            "summary_code": "agent.maxIterationsSummary",
-                            "total_steps": len(completed_steps),
-                        },
-                    }
-                    self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
-                    return
-                if remaining == 1:
-                    trajectory.append({
-                        "role": "user",
-                        "content": (
-                            "[SYSTEM] You have 1 action left in your budget. Make it "
-                            "count, or wrap up by giving your final answer in plain "
-                            "text (which ends the run)."
-                        ),
-                    })
                 continue
-
-            # Runaway backstop — too many non-committing rounds without finishing.
-            final_status = "max_iterations"
-            self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
-            yield {
-                "type": "completion",
-                "iteration": iteration,
-                "status": "max_iterations",
-                "content": {
-                    "summary": "Reached the maximum number of exploration steps.",
-                    "summary_code": "agent.maxIterationsSummary",
-                    "total_steps": len(completed_steps),
-                },
-            }
         finally:
             rlog.close()
 
@@ -644,7 +859,7 @@ class AnalystAgent:
         """Re-open skill gates for bodies still present in a resumed trajectory.
 
         A skill is "loaded" iff its ``[SKILL LOADED: <name>]`` body is in
-        context. On resume ``_loaded_skills`` has just been reset to ``{core}``,
+        context. On resume ``_loaded_skills`` has just been reset to ``{meta}``,
         so scan the (persisted) trajectory for those banners and re-add every
         known skill whose body survived. Unknown names are ignored — only the
         registry decides what is real.
@@ -661,6 +876,20 @@ class AnalystAgent:
             m = _SKILL_LOADED_RE.match(content)
             if m:
                 name = self.registry.canonical_name(m.group(1).strip())
+                if self.registry.has(name):
+                    self._loaded_skills.add(name)
+                    body = self.registry.load_body(name)
+                    # Refresh guidance that changed (e.g. terminal policy); unchanged messages stay byte-identical,
+                    # so the provider's cache of the conversation still applies.
+                    if name in {"terminal", "workspace", "connected_data"} and body not in content:
+                        message["content"] = _SKILL_LOADED_BANNER.format(name=name) + "\n" + body
+                else:
+                    message["content"] = "Application capability guidance is no longer available under the current policy."
+            for candidate in content.split(_SKILL_PRELOADED_PREFIX)[1:]:
+                name, separator, remainder = candidate.partition("]")
+                if not separator or not remainder.startswith(_SKILL_PRELOADED_SUFFIX):
+                    continue
+                name = self.registry.canonical_name(name.strip())
                 if self.registry.has(name):
                     self._loaded_skills.add(name)
 
@@ -717,7 +946,7 @@ class AnalystAgent:
         tools_line = (
             f" New tools available: {', '.join(tool_names)}.\n" if tool_names else ""
         )
-        # Mirror the ``[SKILL: <name>]`` header the core body gets in
+        # Mirror the ``[SKILL: <name>]`` header the baseline body gets in
         # _build_system_prompt, so every capability bundle reads as one family —
         # here ``[SKILL LOADED: <name>]`` marks one that just became active. The
         # banner is built from the shared template so resume-time rehydration
@@ -774,7 +1003,7 @@ class AnalystAgent:
             )
             return (
                 f"[SKILL ERROR] The '{skill_name}' skill cannot render "
-                f"'{action_type}'. Choose a core action instead."
+                f"'{action_type}'. Choose an available action instead."
             )
 
         ctx = SkillContext(
@@ -797,6 +1026,8 @@ class AnalystAgent:
         observation = yield from self._route_skill_events(
             gen, iteration, trajectory, completed_steps,
         )
+        if "workspace_inputs" in ctx.payload:
+            self._run_payload["workspace_inputs"] = ctx.payload["workspace_inputs"]
         return observation
 
     def _route_skill_events(
@@ -848,6 +1079,8 @@ class AnalystAgent:
                         or (etype == "text_delta" and ev.get("channel") == suppress_channel)
                     ))
                 )
+                if etype in ("completion", "interact"):
+                    self._run_end = etype
                 if not drop:
                     if etype == "result":
                         content = ev.get("content", {}) or {}
@@ -864,6 +1097,8 @@ class AnalystAgent:
                 ev = gen.send(None)
         except StopIteration as stop:
             return stop.value  # the skill's observation string (or None)
+        finally:
+            gen.close()
 
     def _set_action_observation(
         self, messages: list[dict], tool_call_id: str | None, observation: str | None,
@@ -901,17 +1136,17 @@ class AnalystAgent:
         reference and inspect it within the same run.
 
         The entry mirrors the shape the frontend forwards for pre-existing charts
-        (``chart_id`` / ``chart_type`` / ``encodings`` / ``table_ref`` / ``code`` /
-        ``chart_data``). Charts are read by the agent from their encodings + sample
-        data (and code), not a rendered image. The mutation lands on
+        (``chart_id`` / ``chart_type`` / ``encodings`` / ``table_ref``), so a report
+        edit may embed it. The agent reads the chart as ``session/charts/<id>.json``
+        (added to the session layer below). The mutation lands on
         ``self._run_payload['charts']`` so the next dispatched skill ctx sees it.
         """
         chart_id = transform_result.get("chart_id")
+        self._last_run_chart_id = chart_id
         if not chart_id:
             return
         content = transform_result.get("content", {}) or {}
         table_name = (content.get("virtual", {}) or {}).get("table_name", "")
-        rows = content.get("rows", []) or []
         charts = self._run_payload.setdefault("charts", [])
         if any(c.get("chart_id") == chart_id for c in charts):
             return
@@ -920,15 +1155,87 @@ class AnalystAgent:
             "chart_type": chart_spec.get("type") or chart_spec.get("chart_type") or "Unknown",
             "encodings": dict(chart_spec.get("encodings", {}) or {}),
             "table_ref": table_name,
-            "code": transform_result.get("code", ""),
-            "chart_data": {"name": table_name, "rows": rows[:50]},
         })
+        # Editable as a session file for the rest of the run (when its type is a catalog name).
+        from data_formulator.analyst.session_edits import chart_catalog
+        from data_formulator.analyst.session_layer import session_layer
+        chart_type = chart_spec.get("chart_type") or chart_spec.get("type")
+        layer = session_layer(self._run_payload)
+        if layer is not None and chart_type in chart_catalog()["chart_types"]:
+            goal = transform_result.get("refined_goal", {}) or {}
+            encodings = {channel: (value if isinstance(value, dict) else {"field": value})
+                         for channel, value in (chart_spec.get("encodings") or {}).items() if value}
+            spec = {"chart_type": chart_type, "table": table_name,
+                    **{key: goal[key] for key in ("title", "subtitle") if goal.get(key)},
+                    "encodings": encodings, **({"config": chart_spec["config"]} if chart_spec.get("config") else {})}
+            layer.add_run_chart(chart_id, spec, [str(column) for column in goal.get("output_fields") or []])
 
     def run_explore_code(
-        self, code: str, input_tables: list[dict[str, Any]],
+        self, code: str, input_tables: list[dict[str, Any]], output_variable: str | None = None,
     ) -> dict[str, Any]:
         """Public alias so skills can run explore code via ``ctx.runtime``."""
-        return self._run_explore_code(code, input_tables)
+        return self._run_explore_code(code, input_tables, output_variable=output_variable)
+
+    def materialize_memory_table(
+        self,
+        code: str,
+        output_variable: str,
+        name: str,
+        sources: list[MemorySource],
+        *,
+        description: str | None = None,
+        memory_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Run code and persist one named DataFrame as workspace memory."""
+        from data_formulator.sandbox import create_sandbox
+
+        code, _, _ = ensure_output_variable_in_code(code, output_variable)
+        try:
+            from flask import current_app
+            sandbox_mode = current_app.config.get("CLI_ARGS", {}).get("sandbox", "local")
+        except (ImportError, RuntimeError):
+            sandbox_mode = "local"
+
+        try:
+            result = create_sandbox(sandbox_mode).run_python_code(
+                code=code,
+                workspace=self.workspace,
+                output_variable=output_variable,
+            )
+            if result.get("status") != "ok":
+                return {
+                    "status": "error",
+                    "error": str(result.get("content", "Unknown error")),
+                }
+            frame = result.get("content")
+            if not isinstance(frame, pd.DataFrame):
+                return {
+                    "status": "error",
+                    "error": f"{output_variable} must be a pandas DataFrame",
+                }
+            memory = self.workspace.write_memory_table(
+                frame,
+                name,
+                sources=sources,
+                description=description,
+                memory_id=memory_id,
+            )
+            return {
+                "status": "ok",
+                "memory": {
+                    "id": memory.id,
+                    "name": memory.name,
+                    "kind": memory.kind,
+                    "path": f"memory/{memory.filename}",
+                    "content_hash": memory.content_hash,
+                    "row_count": memory.row_count,
+                    "columns": [column.name for column in memory.columns],
+                    "source_count": len(memory.sources),
+                },
+            }
+        except Exception as exc:
+            logger.warning("[AnalystAgent] Saving table memory failed", exc_info=exc)
+            return {"status": "error", "error": str(exc)}
 
     # ------------------------------------------------------------------
     # Sandbox execution substrate
@@ -938,6 +1245,7 @@ class AnalystAgent:
         self,
         code: str,
         input_tables: list[dict[str, Any]],
+        output_variable: str | None = None,
     ) -> dict[str, Any]:
         """Run explore code in sandbox, capturing stdout."""
         capture_code = (
@@ -950,6 +1258,7 @@ class AnalystAgent:
             "_sys.stdout = _old_stdout\n"
             "_pack = {\n"
             "    'stdout': _captured.getvalue(),\n"
+            + (f"    'output': globals()[{output_variable!r}],\n" if output_variable else "") +
             "}\n"
         )
 
@@ -958,6 +1267,8 @@ class AnalystAgent:
                 import os as _os
                 workspace_path = _os.path.abspath(str(local_path))
                 allowed_objects = {"_pack": None}
+                from data_formulator.sandbox.session_imports import with_session_imports
+                capture_code = with_session_imports(capture_code, self.workspace, workspace_path)
 
                 session = getattr(self, "_explore_session", None)
                 if session is not None:
@@ -984,7 +1295,11 @@ class AnalystAgent:
                     stdout = str(stdout)
                 if len(stdout) > 8000:
                     stdout = stdout[:8000] + "\n... (truncated)"
-                return {"status": "ok", "stdout": stdout}
+                return {"status": "ok", "stdout": stdout,
+                    **({"output": pack.get("output")} if output_variable else {})}
+            elif raw.get("status") == "interrupted":
+                return {"status": "interrupted", "error": raw.get("error_message", "Python execution interrupted."),
+                        "stdout": raw.get("stdout", "")}
             else:
                 err = raw.get("error_message", raw.get("content", "Unknown error"))
                 logger.warning(
@@ -1018,7 +1333,8 @@ class AnalystAgent:
         try:
             from flask import current_app
             sandbox_mode = current_app.config.get('CLI_ARGS', {}).get('sandbox', 'local')
-            max_display_rows = current_app.config['CLI_ARGS'].get('max_display_rows', 5000)
+            from data_formulator.configuration import effective_limit
+            max_display_rows = effective_limit('max_display_rows')
         except (ImportError, RuntimeError):
             sandbox_mode = 'local'
             max_display_rows = 5000
@@ -1045,9 +1361,18 @@ class AnalystAgent:
                 return {"status": "error", "error_message": str(error_message)}
 
             full_df = execution_result['content']
+            # Pivots often yield int/float labels (years); workspace storage and
+            # chart encodings address columns by string name.
+            if hasattr(full_df, "columns") and not all(isinstance(c, str) for c in full_df.columns):
+                full_df = full_df.rename(columns=str)
             row_count = len(full_df)
 
             chart_encodings = chart_spec.get("encodings", {})
+            # Charts show tooltips for all fields automatically; a multi-field
+            # tooltip list is not a channel encoding, so drop it rather than fail.
+            if isinstance(chart_encodings, dict) and isinstance(chart_encodings.get("tooltip"), list):
+                chart_encodings = {k: v for k, v in chart_encodings.items() if k != "tooltip"}
+                chart_spec = {**chart_spec, "encodings": chart_encodings}
 
             def _missing_encoding(field: Any) -> bool:
                 # field is normally a column-name string. Weak models sometimes
@@ -1071,6 +1396,8 @@ class AnalystAgent:
             ]
             if missing_fields:
                 available = list(full_df.columns)
+                if any(isinstance(field, list) for field in chart_encodings.values()):
+                    missing_fields.append("(each channel takes one field, not a list)")
                 return {
                     "status": "error",
                     "error_message": (
@@ -1117,7 +1444,7 @@ class AnalystAgent:
                 # Backend-minted, run-stable chart id. Forwarded to the frontend
                 # in the ``result`` event so it adopts this id verbatim — the same
                 # id the agent can embed in a same-run report (``chart://<id>``)
-                # and pass to ``inspect_chart``. NOT derived from the table name
+                # and read as ``session/charts/<id>.json``. NOT derived from the table name
                 # (one table may back many charts).
                 "chart_id": f"chart-{uuid.uuid4().hex[:12]}",
                 "code": code,
@@ -1140,7 +1467,9 @@ class AnalystAgent:
 
         except Exception as e:
             logger.error("[AnalystAgent] Visualize execution error", exc_info=e)
-            return {"status": "error", "error_message": "Visualization execution failed"}
+            from data_formulator.security.sanitize import sanitize_error_message
+            return {"status": "error", "error_message": "Visualization execution failed: "
+                    + sanitize_error_message(f"{type(e).__name__}: {e}")[:300]}
 
     # ------------------------------------------------------------------
     # Message construction
@@ -1148,11 +1477,7 @@ class AnalystAgent:
 
     def _build_system_prompt(
         self,
-        has_primary_tables: bool = False,
-        has_focused_thread: bool = False,
-        has_other_threads: bool = False,
         has_attached_images: bool = False,
-        has_charts: bool = False,
     ) -> str:
         rules_block = ""
         if self.agent_exploration_rules and self.agent_exploration_rules.strip():
@@ -1162,45 +1487,33 @@ class AnalystAgent:
                 + "\n\nPlease follow the above rules when exploring data."
             )
 
-        context_lines = []
-        if has_primary_tables:
-            context_lines.append(
-                "- **[PRIMARY TABLE(S)]**: The table(s) the user is focused on. "
-                "Prioritize these, but freely use other available tables if needed."
-            )
-            context_lines.append(
-                "- **[OTHER AVAILABLE TABLES]**: Additional tables in the workspace."
-            )
-        else:
-            context_lines.append(
-                "- **[AVAILABLE TABLES]**: All tables in the workspace."
-            )
+        context_lines = [
+            "- The request shows the session as files, each under its path: **[SESSION INDEX]** "
+            "(everything in the session once — threads, tables, charts, reports, connected-source "
+            "references, workspace and scratch files — with what the user is looking at and flags such "
+            "as \"used by a report\" or \"cannot replace\"), **[SESSION NOTES]** (your notes), "
+            "**[ON THE CANVAS]** (what the user is looking at), **[ITS DATA]** (the tables behind it), and "
+            "**[THE THREAD YOU ARE CONTINUING]** "
+            "(its latest steps), then **[USER QUESTION]**. They are the same files read_file returns; read "
+            "or search the others for detail.",
+            "- Requests in a session continue one conversation. A later request (and a paused run when it "
+            "resumes) starts with **[SESSION CHANGES]**: what changed since your last look — including your own "
+            "new work and the user's edits — and where the user is now (canvas and thread), with what is on the "
+            "canvas when it is new or changed. Only what it lists changed: reuse what you already read and computed, "
+            "and reread only changed items you rely on. The user may switch threads between requests; work from "
+            "where they are now.",
+            "- Charts in the session already exist: build on them or reference them; do not re-create an "
+            "equivalent chart. When asked to deliver a report or narrative document, write it with `write_report` "
+            "and embed those charts by id rather than producing equivalent visualizations. An ordinary "
+            "summary can be answered directly without report delivery.",
+            "- Cite inputs by the name or path you see (a table name or `session/tables/<name>.json`, a "
+            "`files/...` path). `replaces` takes the id in a session path (table name, chart id, report id) or "
+            "a `files/...` path, only to fix what the user says is wrong — never to explore.",
+        ]
         context_lines.append(
-            "  Use `inspect_source_data` to get detailed stats and sample rows. "
-            "Use `execute_python_script` for custom computations."
+            "- **[USER ATTACHMENT(S)]**, when present, are images the user attached to the request. "
+            "Refer to them when relevant to the user's question."
         )
-        if has_focused_thread:
-            context_lines.append(
-                "- **[FOCUSED THREAD]**: The thread the user is continuing. "
-                "Build on this — do not repeat visualizations already created here."
-            )
-        if has_other_threads:
-            context_lines.append(
-                "- **[OTHER THREADS]**: Brief summaries of other exploration threads in this workspace. "
-            )
-        if has_charts:
-            context_lines.append(
-                "- **[AVAILABLE CHARTS]**: Charts the user already created (with their "
-                "ids, types, and encodings). These already exist — build on them or "
-                "reference them; do not re-create an equivalent chart. When asked to "
-                "write up / summarize / report on the exploration, load the `report` "
-                "skill and embed these by id rather than producing new visualizations."
-            )
-        if has_attached_images:
-            context_lines.append(
-                "- **[USER ATTACHMENT(S)]**: Image(s) provided by the user. "
-                "Refer to these when relevant to the user's question."
-            )
         context_guide = "\n".join(context_lines)
 
         # The skill catalog is static capability config (fixed at agent build,
@@ -1216,31 +1529,32 @@ class AnalystAgent:
         substitutions = {
             "{context_guide}": context_guide,
             "{skills_block}": skills_block,
-            "{max_iterations}": str(self.max_iterations),
             "{agent_exploration_rules}": rules_block,
         }
         prompt = SYSTEM_PROMPT
         for slot, value in substitutions.items():
             prompt = prompt.replace(slot, value)
 
-        # Append the always-loaded ``core`` skill's capability body (the concrete
-        # tools + action schemas). It is plain content — no placeholders — and is
+        # Append the always-loaded ``meta`` bundle body, composed by the registry
+        # from its cross-capability guidance and included capability bodies. It is
         # framed with the same ``[SKILL: <name>]`` header as on-demand skills (see
         # _load_skill_into_context) so every capability bundle reads as one family:
-        # core is the always-active baseline, gated skills announce themselves when
+        # meta is the always-active baseline; gated skills announce themselves when
         # loaded.
-        core_body = self.registry.load_body(_CORE_SKILL)
+        meta_body = self.registry.load_body(_META_SKILL)
         prompt += (
-            f"\n\n[SKILL: {_CORE_SKILL}] Always-on baseline — these tools and "
-            f"actions are active for the whole run.\n\n{core_body}"
+            f"\n\n[SKILL: {_META_SKILL}] Always-on baseline — these tools and "
+            f"actions are active for the whole run.\n\n{meta_body}"
         )
-
-        if self._knowledge_store:
-            knowledge_rules = self._knowledge_store.load_always_apply_rules()
-            self._injected_rules = [r["title"] for r in knowledge_rules]
-            prompt += self._knowledge_store.format_rules_block(knowledge_rules)
-        else:
-            self._injected_rules = []
+        # Only skills fixed for the deployment belong here, so the prompt is the same on every request of a
+        # session (a provider caches the conversation only up to the first difference). Skills a request
+        # needs up front arrive as skill messages (``_preload_messages``), like skills loaded on demand.
+        for name in sorted(self._system_skills()):
+            body = self.registry.load_body(name)
+            prompt += (
+                f"\n\n[SKILL: {name}] Preloaded for this run — its tools and "
+                f"actions are active now.\n\n{body}"
+            )
 
         if self.agent_coding_rules and self.agent_coding_rules.strip():
             prompt += (
@@ -1254,49 +1568,22 @@ class AnalystAgent:
 
     def _build_initial_messages(
         self,
-        input_tables: list[dict[str, Any]],
         user_question: str,
-        focused_thread: list[dict[str, Any]] | None = None,
-        other_threads: list[dict[str, Any]] | None = None,
-        primary_tables: list[str] | None = None,
         attached_images: list[str] | None = None,
-        charts: list[dict[str, Any]] | None = None,
         scratch_files: list[str] | None = None,
+        history: list[dict] | None = None,
+        preloads: list[dict] | None = None,
     ) -> list[dict]:
-        """Build the initial messages with 3-tier context."""
-        table_summaries = self._build_lightweight_table_context(input_tables, primary_tables=primary_tables)
-
-        focused_block = ""
-        if focused_thread:
-            focused_block = self._build_focused_thread_context(focused_thread)
-
-        peripheral_block = ""
-        if other_threads:
-            peripheral_block = self._build_peripheral_thread_context(other_threads)
-
-        if primary_tables:
-            user_content = f"{table_summaries}\n\n"
-        else:
-            user_content = f"[AVAILABLE TABLES]\n\n{table_summaries}\n\n"
-        if focused_block:
-            user_content += f"{focused_block}\n\n"
-        if peripheral_block:
-            user_content += f"{peripheral_block}\n\n"
-
-        # Surface the charts the user already created so the agent treats them as
-        # existing material — to build on, reference, or report from — rather than
-        # re-creating them. The chart_ids here are exactly what the report skill's
-        # ``inspect_chart`` / ``![caption](chart://chart_id)`` embeds expect.
-        charts_block = self._build_available_charts_context(charts)
-        if charts_block:
-            user_content += f"{charts_block}\n\n"
+        """The system prompt, then one message: the session as files (design-docs/61), then the request.
+        Continuing a session's conversation (design-docs/63), the stored ``history`` comes before the message,
+        which then holds only what changed and where the user is. ``preloads`` are skill messages for this
+        request, placed just before it."""
+        from types import SimpleNamespace
 
         self._injected_knowledge = []
-        if self._knowledge_store:
-            always_apply_rules = self._knowledge_store.load_always_apply_rules()
-            if always_apply_rules:
-                rules_text = "\n\n".join([f"### {r['title']}\n{r['body']}" for r in always_apply_rules])
-                user_content += f"[USER RULES - MUST FOLLOW]\n\n{rules_text}\n\n"
+        ctx = SimpleNamespace(workspace=self.workspace, payload=getattr(self, "_run_payload", None) or {})
+        context = render_turn_context(ctx, history) if history is not None else render_session_context(ctx)
+        user_content = f"{context}\n\n" if context else ""
 
         # Non-image attachments were uploaded to the workspace scratch/ folder
         # (raw bytes). Surface them and the two natural uses: read as context
@@ -1312,19 +1599,16 @@ class AnalystAgent:
                 "Read them with execute_python_script "
                 "(e.g. pd.read_excel('scratch/<name>') or "
                 "pd.read_csv('scratch/<name>')) to use as temporary context for "
-                "your analysis. Only tables materialized by a supported data "
-                "operation become workspace inputs.\n\n"
+                "your analysis. Use create_data for reusable workspace datasets "
+                "and update_data for explicit revisions to agent-created data. "
+                "Use create_file/edit_file for durable workspace documents and exports. "
+                "Prioritize relevant user-managed sources.\n\n"
             )
 
+        # The request comes last.
         user_content += f"[USER QUESTION]\n\n{user_question}"
 
-        system_prompt = self._build_system_prompt(
-            has_primary_tables=bool(primary_tables),
-            has_focused_thread=bool(focused_thread),
-            has_other_threads=bool(other_threads),
-            has_attached_images=bool(attached_images),
-            has_charts=bool(charts_block),
-        )
+        system_prompt = self._build_system_prompt(has_attached_images=bool(attached_images))
 
         has_images = bool(attached_images) and len(attached_images) > 0
 
@@ -1335,62 +1619,10 @@ class AnalystAgent:
             for img in attached_images:
                 if img.startswith("data:"):
                     content_parts.append({"type": "image_url", "image_url": {"url": img, "detail": "low"}})
-            return [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": content_parts},
-            ]
+            question: dict = {"role": "user", "content": content_parts}
         else:
-            return [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content},
-            ]
-
-    def _build_focused_thread_context(
-        self, focused_thread: list[dict[str, Any]]
-    ) -> str:
-        return build_focused_thread_context(focused_thread)
-
-    def _build_peripheral_thread_context(
-        self, other_threads: list[dict[str, Any]]
-    ) -> str:
-        return build_peripheral_thread_context(other_threads)
-
-    @staticmethod
-    def _build_available_charts_context(
-        charts: list[dict[str, Any]] | None,
-    ) -> str:
-        """Render the ``[AVAILABLE CHARTS]`` block from the chart descriptors.
-
-        Mirrors the legacy report agent's listing (id, type, encodings, table
-        ref) so chart_ids stay stable across the run — the report skill's
-        ``inspect_chart`` and ``chart://chart_id`` embeds reference these ids.
-        Returns ``""`` when there are no charts.
-        """
-        if not charts:
-            return ""
-        lines = ["[AVAILABLE CHARTS]"]
-        for c in charts:
-            chart_id = c.get("chart_id")
-            if not chart_id:
-                continue
-            enc_str = ", ".join(
-                f"{k}: {v}" for k, v in (c.get("encodings") or {}).items() if v
-            )
-            lines.append(
-                f"  - {chart_id}: {c.get('chart_type', 'Unknown')}"
-                + (f" ({enc_str})" if enc_str else "")
-                + f" → table: {c.get('table_ref', '?')}"
-            )
-        return "\n".join(lines) if len(lines) > 1 else ""
-
-    def _build_lightweight_table_context(
-        self, input_tables: list[dict[str, Any]], primary_tables: list[str] | None = None
-    ) -> str:
-        return build_lightweight_table_context(
-            input_tables,
-            self.workspace,
-            primary_tables,
-        )
+            question = {"role": "user", "content": user_content}
+        return [{"role": "system", "content": system_prompt}, *(history or []), *(preloads or []), question]
 
     # ------------------------------------------------------------------
     # LLM interaction (with internal tool-calling loop)
@@ -1405,9 +1637,6 @@ class AnalystAgent:
         """Call the LLM with tools, run the inspection tool rounds internally,
         and surface the single committing action the turn ends with (as an
         ``agent_action`` event)."""
-        max_tool_rounds = 12
-        max_json_retries = 1
-        json_retries = 0
         messages = trajectory
         llm_calls_in_cycle = 0
 
@@ -1417,7 +1646,7 @@ class AnalystAgent:
         ns_dir = self._explore_ns_dir()
         ws_path = str(self.workspace.confined_scratch.root.parent)
 
-        with SandboxSession() as explore_session:
+        with SandboxSession(ws_path) as explore_session:
             self._explore_session = explore_session
 
             if ns_dir.exists():
@@ -1427,24 +1656,51 @@ class AnalystAgent:
                 import shutil
                 shutil.rmtree(ns_dir, ignore_errors=True)
 
-            self._tool_loop_exit_reason = None
             yield from self._tool_loop(
-                messages, max_tool_rounds, max_json_retries, json_retries,
-                llm_calls_in_cycle, rlog, input_tables, outer_iteration,
+                messages, llm_calls_in_cycle, rlog, input_tables, outer_iteration,
             )
-
-            if self._tool_loop_exit_reason == "tool_rounds_exhausted":
-                saved = explore_session.save_namespace(ns_dir, ws_path)
-                if saved:
-                    logger.info("[AnalystAgent] Saved explore namespace to %s", ns_dir)
 
             self._explore_session = None
 
+    def _reset_progress_reminder(self, messages: list[dict]) -> None:
+        self._progress_scope_start = self._progress_reminder_start = len(messages)
+
+    def _remind_progress_if_due(self, messages: list[dict], scope: str, escalation: str) -> bool:
+        """Append a soft reminder after every interval of model rounds; it never restricts tools or stops the run."""
+        def rounds(start: int) -> int:
+            return sum(message.get("role") == "assistant" for message in messages[start:])
+        if rounds(self._progress_reminder_start) < _PROGRESS_REMINDER_INTERVAL:
+            return False
+        messages.append({"role": "user", "content": _PROGRESS_REMINDER.format(
+            scope=scope, turns=rounds(self._progress_scope_start), escalation=escalation)})
+        self._progress_reminder_start = len(messages)
+        return True
+
+    def _read_plan(self, content: str) -> Generator[Event, None, str]:
+        """Take a checklist the agent wrote as its plan (design-docs/64); return the remaining narration."""
+        items, title, narration = read_plan(content)
+        if items is not None:
+            self._plan.revise(items, title)
+            yield self._plan.event(revised=True)
+        return narration
+
+    def _remind_open_plan(self, messages: list[dict], content: str, choice) -> bool:
+        """Before a run ends with plan steps open, ask once to continue or strike them."""
+        reminder = self._plan.reminder()
+        if reminder is None:
+            return False
+        if content.strip():
+            reply: dict[str, Any] = {"role": "assistant", "content": content}
+            attach_reasoning_content(reply, choice.message)
+            messages.append(reply)
+        messages.append({"role": "user", "content": reminder})
+        return True
+
     def _current_tools(self) -> list[dict[str, Any]]:
-        """The tool set offered this turn: inspection tools (core tools +
+        """The tool set offered this turn: baseline inspection tools plus
         load_skill + loaded skills' tools) plus the committing **action**
-        tools of loaded skills (core's visualize/delegate always; write_report
-        once the report skill is loaded). The model gathers with inspection tools
+        tools of loaded skills (visualize/ask_user always; write_report
+        always on). The model gathers with inspection tools
         and acts with at most one action per turn."""
         extra_tools = self.registry.tools_for(self._loaded_skills)
         action_tools = self.registry.action_tools_for(self._loaded_skills)
@@ -1459,11 +1715,11 @@ class AnalystAgent:
         loaded skills. Tool names come from the registry's ``tools.json`` specs;
         the value is the skill processor that handles them."""
         mapping: dict[str, Any] = {}
-        for name in self._loaded_skills:
+        for name in self.registry.expanded_names(self._loaded_skills):
             skill = self.registry.get_skill(name)
             if skill is None:
                 continue
-            for spec in self.registry.tools_for([name]):
+            for spec in self.registry._specs_split(name)[0]:
                 fn_name = spec.get("function", {}).get("name")
                 if fn_name:
                     mapping[fn_name] = skill
@@ -1471,13 +1727,17 @@ class AnalystAgent:
 
     def _tool_loop(
         self,
-        messages, max_tool_rounds, max_json_retries, json_retries,
+        messages,
         llm_calls_in_cycle, rlog, input_tables, outer_iteration,
     ):
         """Inner tool-calling loop, wrapped by _get_next_action in a
         SandboxSession context manager."""
-        for round_idx in range(max_tool_rounds):
+        empty_responses = 0
+        stalled = 0
+        for round_idx in count():
             llm_calls_in_cycle += 1
+            if self._remind_progress_if_due(messages, "this request", "ask the user"):
+                rlog.log("progress_reminder", iteration=outer_iteration, round=round_idx + 1)
             tools = self._current_tools()
             rlog.log("llm_request", iteration=outer_iteration,
                      round=round_idx + 1,
@@ -1486,6 +1746,17 @@ class AnalystAgent:
             llm_t0 = time.time()
             try:
                 response = yield from self._stream_llm(messages, tools)
+            except ModelStreamStalled as exc:
+                # Nothing shown to the user yet (no live report text): the round can simply be asked again.
+                if not self._streamed_channels and stalled < 2:
+                    stalled += 1
+                    logger.warning("[AnalystAgent] %s Retrying the round (%d).", exc, stalled)
+                    continue
+                llm_latency = int((time.time() - llm_t0) * 1000)
+                logger.error("[AnalystAgent] LLM call stalled", exc_info=exc)
+                yield {"type": "agent_action", "action_data": None, "reason": "llm_error",
+                       "error_message": "The model stopped responding. Please retry.", "llm_calls": llm_calls_in_cycle}
+                return
             except Exception as exc:
                 llm_latency = int((time.time() - llm_t0) * 1000)
                 rlog.log("llm_response", iteration=outer_iteration,
@@ -1531,12 +1802,13 @@ class AnalystAgent:
 
             # --- tool calls: partition into committing actions vs inspection ---
             if tool_calls:
-                if content.strip():
-                    yield {"type": "thinking_text", "content": content.strip()}
+                narration = yield from self._read_plan(content)
+                if narration:
+                    yield {"type": "thinking_text", "content": narration}
 
                 # A committing action is a tool call (visualize / delegate /
-                # write_report). Inspection tools (explore /
-                # inspect_source_data / inspect_chart / load_skill) gather. A turn
+                # write_report). Inspection tools (execute_python_script /
+                # read_file / search / load_skill) gather. A turn
                 # ends with exactly ONE action; the harness enforces that here.
                 action_names = self.registry.action_names()
                 action_calls = [tc for tc in tool_calls
@@ -1597,10 +1869,14 @@ class AnalystAgent:
                     yield {
                         "type": "tool_start",
                         "tool": tool_name,
+                        "tool_call_id": tc.id,
+                        "args": _tool_progress_args(tool_name, tool_args),
                         "purpose": tool_args.get("purpose") if tool_name == "execute_python_script" else None,
                         "code": tool_args.get("code") if tool_name == "execute_python_script" else None,
-                        "table_names": tool_args.get("table_names") if tool_name == "inspect_source_data" else None,
                         "skill": tool_args.get("name") if tool_name == "load_skill" else None,
+                        "query": tool_args.get("query") if tool_name in (
+                            "search_data_tables", "search_knowledge", "search",
+                        ) else None,
                     }
 
                     tool_t0 = time.time()
@@ -1618,20 +1894,10 @@ class AnalystAgent:
                         yield {
                             "type": "tool_result",
                             "tool": tool_name,
+                            "tool_call_id": tc.id,
                             "status": tool_status,
                             "stdout": result.get("stdout", ""),
                             "error": result.get("error"),
-                        }
-                    elif tool_name == "inspect_source_data":
-                        table_names = tool_args.get("table_names", [])
-                        tool_content = handle_inspect_source_data(
-                            table_names, input_tables or [], self.workspace,
-                        )
-                        yield {
-                            "type": "tool_result",
-                            "tool": tool_name,
-                            "status": "ok",
-                            "stdout": tool_content,
                         }
                     elif tool_name == "load_skill":
                         skill_name = self.registry.canonical_name(tool_args.get("name", ""))
@@ -1654,6 +1920,7 @@ class AnalystAgent:
                         yield {
                             "type": "tool_result",
                             "tool": tool_name,
+                            "tool_call_id": tc.id,
                             "status": tool_status,
                             "stdout": message,
                             "error": None if ok else message,
@@ -1666,9 +1933,12 @@ class AnalystAgent:
                             language_instruction=self.language_instruction,
                             trajectory=messages,
                             payload=dict(self._run_payload),
+                            runtime=self,
                         )
                         try:
                             result = skill.handle_tool(tool_name, tool_args, skill_ctx)
+                            if tool_name in {"create_data", "update_data", "create_file", "edit_file", "delete_items", "move_file"}:
+                                self._run_payload["workspace_inputs"] = skill_ctx.payload["workspace_inputs"]
                         except Exception as exc:
                             logger.warning("[AnalystAgent] Skill tool %r failed", tool_name, exc_info=exc)
                             result = ToolResult(text=f"Tool '{tool_name}' failed: {exc}")
@@ -1679,6 +1949,7 @@ class AnalystAgent:
                         yield {
                             "type": "tool_result",
                             "tool": tool_name,
+                            "tool_call_id": tc.id,
                             "status": tool_status,
                             "stdout": tool_content,
                         }
@@ -1725,6 +1996,29 @@ class AnalystAgent:
                 logger.info("[AnalystAgent] Executed %d inspection tool call(s), looping back to LLM", len(readonly_calls))
                 continue
 
+            # A stream with neither text nor tool calls is a provider failure
+            # (e.g. throttled Responses streams end silently), not an answer.
+            if not content.strip() and getattr(self, "_delivered", False):
+                if self._plan.finish():
+                    yield self._plan.event(revised=False)
+                if self._remind_open_plan(messages, content, choice):
+                    continue
+                # After a delivered chart, report, or app the request can be complete with nothing more to say.
+                logger.info("[AnalystAgent] Empty reply after a delivery ends the run")
+                yield {"type": "agent_action", "action_data": None, "reason": "done", "final_text": "",
+                       "llm_calls": llm_calls_in_cycle}
+                return
+            if not content.strip():
+                empty_responses += 1
+                if empty_responses <= self.execution_config.empty_response_retries:
+                    logger.warning("[AnalystAgent] Empty LLM response; retrying (%d)", empty_responses)
+                    time.sleep(self.execution_config.empty_response_backoff_seconds * empty_responses)
+                    continue
+                yield {"type": "agent_action", "action_data": None, "reason": "llm_error",
+                   "error_message": "The model returned an empty response, possibly due to provider rate limits. Please retry shortly.",
+                       "llm_calls": llm_calls_in_cycle}
+                return
+
             # --- no tool calls — the model gave a plain-text answer ----------
             # In this turn model, committing no action is the NORMAL way to end
             # the run: the agent has nothing more to do and answers in prose.
@@ -1732,19 +2026,18 @@ class AnalystAgent:
             # as the summary). Record it as a plain assistant turn and signal
             # "done" to the outer loop.
             logger.info("[AnalystAgent] No action committed; final text ends the run")
+            final_text = yield from self._read_plan(content)
+            if self._plan.finish():
+                yield self._plan.event(revised=False)
+            if self._remind_open_plan(messages, content, choice):
+                continue
             final_msg: dict[str, Any] = {"role": "assistant", "content": content or None}
             attach_reasoning_content(final_msg, choice.message)
             messages.append(final_msg)
             yield {"type": "agent_action", "action_data": None, "reason": "done",
-                   "final_text": content.strip(), "llm_calls": llm_calls_in_cycle}
+                   "final_text": final_text, "llm_calls": llm_calls_in_cycle}
             return
 
-        # --- tool rounds exhausted ---
-        logger.warning("[AnalystAgent] Exceeded %d tool rounds without committing an action", max_tool_rounds)
-        self._tool_loop_exit_reason = "tool_rounds_exhausted"
-        yield {"type": "agent_action", "action_data": None, "reason": "tool_rounds_exhausted",
-               "llm_calls": llm_calls_in_cycle}
-        return
 
     def _commit_action(
         self,
@@ -1807,7 +2100,7 @@ class AnalystAgent:
         # Pre-dispatch completeness check (belt-and-suspenders on top of the
         # skill handler's own validation). Missing fields → correct + retry.
         required = self.registry.action_required_fields(chosen_name)
-        missing = [f for f in required if not action_data.get(f)]
+        missing = _missing_action_fields(required, action_data)
         if missing:
             correction = (
                 f"The '{chosen_name}' action is missing required field(s): "
@@ -1869,10 +2162,14 @@ class AnalystAgent:
                  latency_ms=0, status="ok")
         yield {"type": "agent_action", "action_data": action_data, "reason": "ok",
                "tool_call_id": chosen.id, "llm_calls": llm_calls_in_cycle,
-               "narration": (content or "").strip()}
+               "narration": split_plan(content)[1]}
         return True
 
-    _MAX_LLM_RETRIES = 3
+    @staticmethod
+    def _is_rate_limit_error(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        return ("rate limit" in msg or "rate_limit" in msg or "429" in msg
+                or "ratelimit" in type(exc).__name__.lower())
 
     @staticmethod
     def _is_transient_error(exc: Exception) -> bool:
@@ -1900,27 +2197,73 @@ class AnalystAgent:
         (``drop_params=True``); the first-wins cardinality guard remains as a
         belt-and-suspenders net.
         """
-        last_exc: Exception | None = None
-        for attempt in range(self._MAX_LLM_RETRIES):
+        max_attempts = self.execution_config.stream_open_retries + 1
+        cancel = getattr(self, "cancel", None)
+        attempt = 0
+        while True:
+            if cancel is not None and cancel.is_set():
+                raise InterruptedError("Model request interrupted.")
             try:
-                return self.client.get_completion_with_tools(
+                source = self.client.get_completion_with_tools(
                     messages, tools=tools, stream=True,
-                    reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model),
+                    reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model, getattr(self.client, "reasoning_effort", None)),
                     parallel_tool_calls=False,
                 )
+                # Responses streams send the request lazily, so request errors surface on the first chunk.
+                return _PrimedStream(source, deadline=_first_chunk_deadline())
             except Exception as e:
-                last_exc = e
-                if self._is_transient_error(e) and attempt < self._MAX_LLM_RETRIES - 1:
-                    wait = 2 ** attempt
+                if self._is_context_window_error(e) and self._compact_tool_results(messages):
+                    logger.warning("[AnalystAgent] Context window exceeded; retrying with older tool output shortened")
+                    continue
+                attempt += 1
+                rate_limited = self._is_rate_limit_error(e)
+                limit = self.execution_config.rate_limit_retries + 1 if rate_limited else max_attempts
+                if self._is_transient_error(e) and attempt < limit:
+                    backoff = (self.execution_config.rate_limit_backoff_seconds if rate_limited
+                               else self.execution_config.stream_open_backoff_seconds)
+                    wait = backoff * 2 ** (attempt - 1)
+                    asked = _retry_after_seconds(e) if rate_limited else None
+                    if asked is not None:
+                        wait = min(max(asked, 1.0), _MAX_RETRY_AFTER_SECONDS)
                     logger.warning(
                         "[AnalystAgent] Transient LLM error (attempt %d/%d), "
-                        "retrying in %ds: %s",
-                        attempt + 1, self._MAX_LLM_RETRIES, wait, e,
+                        "retrying in %gs%s: %s",
+                        attempt, limit, wait, "" if asked is None else f" (provider asked for {asked:g}s)", e,
                     )
-                    time.sleep(wait)
+                    if rate_limited:
+                        from data_formulator.error_handler import collect_stream_warning
+                        collect_stream_warning(
+                            f"The AI model is busy (rate limit reached). Retrying in {wait:.0f} seconds…",
+                            message_code="LLM_RATE_LIMIT_RETRY",
+                        )
+                    if cancel is not None:
+                        cancel.wait(wait)
+                    else:
+                        time.sleep(wait)
                     continue
                 raise
-        raise last_exc  # pragma: no cover
+
+    @staticmethod
+    def _is_context_window_error(exc: Exception) -> bool:
+        from data_formulator.error_handler import classify_and_wrap_llm_error
+        from data_formulator.errors import ErrorCode
+        return classify_and_wrap_llm_error(exc).code == ErrorCode.LLM_CONTEXT_TOO_LONG
+
+    @staticmethod
+    def _compact_tool_results(messages: list[dict]) -> bool:
+        """Shorten older tool results in place, keeping the latest two before
+        touching them; False when nothing is left to shorten."""
+        tool_indexes = [index for index, message in enumerate(messages) if message.get("role") == "tool"]
+        for keep in (2, 0):
+            changed = False
+            for index in tool_indexes[:len(tool_indexes) - keep]:
+                content = messages[index].get("content")
+                if isinstance(content, str) and len(content) > 600 and not content.endswith(_COMPACTED_NOTE):
+                    messages[index] = {**messages[index], "content": f"{content[:300]}\n...\n{_COMPACTED_NOTE}"}
+                    changed = True
+            if changed:
+                return True
+        return False
 
     def _stream_llm(
         self, messages: list[dict], tools: list[dict],
@@ -1950,11 +2293,13 @@ class AnalystAgent:
 
         content_parts: list[str] = []
         reasoning_acc: str | None = None
+        reasoning_items: list[dict] = []
         finish_reason = "stop"
         # idx -> {"id", "name", "arguments"}
         tool_calls_acc: dict[int, dict[str, Any]] = {}
         # idx -> {"active", "channel", "extractor", "announced"} for streaming actions
         streamers: dict[int, dict[str, Any]] = {}
+        available_tool_names = {tool["function"]["name"] for tool in tools}
 
         for chunk in stream:
             if not getattr(chunk, "choices", None):
@@ -1967,6 +2312,7 @@ class AnalystAgent:
                 finish_reason = choice0.finish_reason
 
             reasoning_acc = accumulate_reasoning_content(reasoning_acc, delta)
+            reasoning_items = accumulate_reasoning_items(reasoning_items, delta)
 
             content = getattr(delta, "content", None)
             if content:
@@ -1986,7 +2332,8 @@ class AnalystAgent:
                     arg_delta = getattr(fn, "arguments", None)
                     if arg_delta:
                         slot["arguments"] += arg_delta
-                yield from self._forward_stream_delta(slot, streamers)
+                if slot["name"] in available_tool_names:
+                    yield from self._forward_stream_delta(slot, streamers)
 
         # Reconstruct a non-streaming-shaped response for the loop.
         tool_call_objs: list[Any] = []
@@ -2001,6 +2348,7 @@ class AnalystAgent:
             content="".join(content_parts) or None,
             tool_calls=tool_call_objs or None,
             reasoning_content=reasoning_acc,
+            reasoning_items=reasoning_items,
         )
         choice = SimpleNamespace(message=message, finish_reason=finish_reason)
         return SimpleNamespace(choices=[choice])

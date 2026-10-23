@@ -208,10 +208,8 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             setAutoSortResult(levels);
 
             if (!chart.chartType.includes("Area") && levels && levels.length > 0) {
-                // Only dispatch when sortBy actually needs updating. Otherwise this
-                // effect re-fires on every chart switch and the resulting no-op
-                // dispatch silently clears chart.activeVariantId in the reducer
-                // (because updateChartEncodingProp resets variants on any edit).
+                // Only dispatch when sortBy actually needs updating; this effect
+                // re-fires on every chart switch.
                 const nextSortBy = JSON.stringify(levels);
                 if (encoding.sortBy !== nextSortBy) {
                     updateEncProp('sortBy', nextSortBy);
@@ -312,18 +310,19 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 aria-labelledby="data-type-option-radio-buttons-group"
                 name="data-type-option-radio-buttons-group"
                 value={encoding.dtype || "auto"}
-                sx={{ width: 160 }}
+                sx={{ width: 200 }}
                 onChange={(event) => { 
                     if (event.target.value == "auto") {
                         updateEncProp("dtype", undefined);
                     } else {
-                        updateEncProp("dtype", event.target.value as "quantitative" | "qualitative" | "temporal");
+                        updateEncProp("dtype", event.target.value as "quantitative" | "nominal" | "ordinal" | "temporal");
                     }
                 }}
             >
                 {radioLabel(getIconFromDtype("auto"), "auto", `dtype-auto`, 40, false, "auto")}
                 {radioLabel(getIconFromDtype("quantitative"), "quantitative", `dtype-quantitative`, 40, false, "quantitative")}
                 {radioLabel(getIconFromDtype("nominal"), "nominal", `dtype-nominal`, 40, false, "nominal")}
+                {radioLabel(getIconFromDtype("ordinal"), "ordinal", `dtype-ordinal`, 40, false, "ordinal")}
                 {radioLabel(getIconFromDtype("temporal"), "temporal", `dtype-temporal`, 40, false, "temporal")}
             </RadioGroup>
         </FormControl>

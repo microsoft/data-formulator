@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from uuid import uuid4
 
 import flask
@@ -58,7 +59,7 @@ _LLM_CODE_PATTERNS: list[tuple[str, str, bool]] = [
      ErrorCode.LLM_AUTH_FAILED, False),
     (r"429|rate.?limit|too many requests|quota",
      ErrorCode.LLM_RATE_LIMIT, True),
-    (r"context.{0,10}length|too many tokens|max.{0,10}tokens|token limit|maximum context",
+    (r"context.{0,10}(length|window)|input tokens exceed|prompt is too long|too many tokens|max.{0,10}tokens|token limit|maximum context",
      ErrorCode.LLM_CONTEXT_TOO_LONG, False),
     (r"model.{0,20}not.{0,5}found|model.{0,20}does not exist|no such model|decommissioned|deprecated model",
      ErrorCode.LLM_MODEL_NOT_FOUND, False),
@@ -81,8 +82,15 @@ def classify_and_wrap_llm_error(exc: Exception) -> AppError:
     The original exception text is preserved in ``detail`` for server-side
     logging but is **never** included in the client-facing ``message``.
     """
-    safe_message = classify_llm_error(exc)
     text = str(exc).lower()
+    if "unknown items in responses api response: []" in text:
+        return AppError(
+            ErrorCode.LLM_SERVICE_ERROR,
+            "Could not read the model's response. Try again.",
+            detail=str(exc),
+            retry=False,
+        )
+    safe_message = classify_llm_error(exc)
 
     error_code = ErrorCode.LLM_UNKNOWN_ERROR
     retry = False
@@ -134,6 +142,9 @@ def stream_error_event(error: AppError | Exception) -> str:
 # Streaming warning event
 # ---------------------------------------------------------------------------
 
+# Agent streams collect warnings in a worker thread and flush them from the request thread too.
+_stream_warnings_lock = threading.Lock()
+
 def stream_warning_event(
     message: str,
     *,
@@ -166,15 +177,16 @@ def collect_stream_warning(message: str, *, detail: str = "", message_code: str 
     :func:`flush_stream_warnings`.
     """
     try:
-        warnings = getattr(g, "_stream_warnings", None)
-        if warnings is None:
-            g._stream_warnings = warnings = []
         entry: dict = {"message": message}
         if detail:
             entry["detail"] = detail
         if message_code:
             entry["message_code"] = message_code
-        warnings.append(entry)
+        with _stream_warnings_lock:
+            warnings = getattr(g, "_stream_warnings", None)
+            if warnings is None:
+                g._stream_warnings = warnings = []
+            warnings.append(entry)
     except RuntimeError:
         pass
 
@@ -184,12 +196,14 @@ def flush_stream_warnings() -> list[str]:
 
     Call this inside a streaming generator (wrapped with
     ``stream_with_context``) to inject pending warnings into the stream.
+    Safe to call from the request thread while an agent thread collects.
     """
     try:
-        warnings = getattr(g, "_stream_warnings", None)
-        if not warnings:
-            return []
-        g._stream_warnings = []
+        with _stream_warnings_lock:
+            warnings = getattr(g, "_stream_warnings", None)
+            if not warnings:
+                return []
+            g._stream_warnings = []
         return [
             json.dumps({"type": "warning", "warning": w}, ensure_ascii=False) + "\n"
             for w in warnings
