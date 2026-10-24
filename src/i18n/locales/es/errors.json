@@ -1,0 +1,32 @@
+{
+  "errors": {
+    "authRequired": "Se requiere autenticación",
+    "authExpired": "La sesión ha caducado. Vuelve a iniciar sesión",
+    "accessDenied": "Acceso denegado",
+    "invalidRequest": "Solicitud no válida",
+    "tableNotFound": "No se encontró la tabla",
+    "fileParseError": "No se pudo analizar el archivo cargado",
+    "fileTooLarge": "El archivo es demasiado grande",
+    "validationError": "Error de validación",
+    "llmAuthFailed": "Error de autenticación; comprueba tu clave de API",
+    "llmRateLimit": "Se superó el límite de solicitudes; espera e inténtalo de nuevo",
+    "llmContextTooLong": "La entrada es demasiado larga; reduce el tamaño de los datos o la longitud de la instrucción",
+    "llmModelNotFound": "No se encontró el modelo; comprueba el nombre del modelo",
+    "llmTimeout": "La solicitud agotó el tiempo de espera; comprueba la conexión e inténtalo de nuevo",
+    "llmServiceError": "El servicio del modelo devolvió un error; inténtalo de nuevo más tarde",
+    "llmContentFiltered": "El filtro de seguridad del contenido bloqueó la solicitud",
+    "llmUnknownError": "Error en la solicitud al modelo",
+    "connectorAuthFailed": "Error de autenticación de la fuente de datos",
+    "dbConnectionFailed": "Error al conectar con la fuente de datos",
+    "dbQueryError": "Error en la consulta a la base de datos",
+    "dataLoadError": "No se pudieron cargar los datos",
+    "connectorError": "Error del conector de datos",
+    "codeExecutionError": "Se produjo un error durante la ejecución del código",
+    "agentError": "El agente encontró un error",
+    "catalogSyncTimeout": "Se agotó el tiempo de espera de la sincronización del catálogo; inténtalo de nuevo",
+    "catalogNotFound": "No se encontró el conector o no está conectado",
+    "internalError": "Se produjo un error inesperado",
+    "serviceUnavailable": "El servicio no está disponible temporalmente",
+    "storageFull": "El almacenamiento del espacio de trabajo está lleno. Libera espacio en disco e inténtalo de nuevo."
+  }
+}
