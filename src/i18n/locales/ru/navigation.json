@@ -1,0 +1,18 @@
+{
+  "navigation": {
+    "startExploration": "Начать исследование",
+    "installLocally": "Установить локально",
+    "tryOnlineDemo": "Попробовать онлайн-демонстрацию",
+    "video": "Видео",
+    "github": "GitHub",
+    "contactUs": "Связаться с нами",
+    "termsOfUse": "Условия использования",
+    "about": "О программе",
+    "home": "Главная",
+    "data": "Данные",
+    "visualization": "Визуализация",
+    "report": "Отчёт",
+    "chat": "Чат",
+    "agentRules": "Правила агента"
+  }
+}
