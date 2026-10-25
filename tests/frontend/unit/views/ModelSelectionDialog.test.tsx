@@ -174,10 +174,10 @@ describe('Model connection form', () => {
         fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Provider' }));
         const listbox = await screen.findByRole('listbox');
         expect(Array.from(listbox.children).map(child => child.textContent)).toEqual([
-            'Sign in', 'OpenRouter', 'GitHub Copilot', 'ChatGPT', 'API', 'OpenAI', 'Azure', 'Anthropic', 'Google Gemini', 'Ollama', 'OrcaRouter', 'Cheaper Inference',
+            'Sign in', 'OpenRouter', 'GitHub Copilot', 'ChatGPT', 'API', 'OpenAI', 'Azure', 'Anthropic', 'Google Gemini', 'Ollama', 'OrcaRouter', 'Cheaper Inference', 'Runcrate',
         ]);
         expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual([
-            'OpenRouter', 'GitHub Copilot', 'ChatGPT', 'OpenAI', 'Azure', 'Anthropic', 'Google Gemini', 'Ollama', 'OrcaRouter', 'Cheaper Inference',
+            'OpenRouter', 'GitHub Copilot', 'ChatGPT', 'OpenAI', 'Azure', 'Anthropic', 'Google Gemini', 'Ollama', 'OrcaRouter', 'Cheaper Inference', 'Runcrate',
         ]);
         const openRouter = screen.getByRole('option', { name: 'OpenRouter' });
         act(() => openRouter.focus());
