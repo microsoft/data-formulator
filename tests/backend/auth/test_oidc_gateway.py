@@ -165,6 +165,39 @@ class TestOIDCCallback:
             assert "sso" in sess
             assert sess["sso"]["access_token"] == "sso-access-tok"
 
+    def _callback(self, client, tokens: dict, userinfo: dict | None):
+        with client.session_transaction() as sess:
+            sess["_oauth_state"] = "valid-state"
+        token_resp = MagicMock(ok=True)
+        token_resp.json.return_value = {"access_token": "sso-access-tok", "expires_in": 3600, **tokens}
+        userinfo_resp = MagicMock(ok=userinfo is not None)
+        userinfo_resp.json.return_value = userinfo
+        with patch("data_formulator.auth.gateways.oidc_gateway.http.post", return_value=token_resp), \
+             patch("data_formulator.auth.gateways.oidc_gateway.http.get", return_value=userinfo_resp):
+            return client.get("/auth/callback?code=auth-code&state=valid-state")
+
+    def test_callback_takes_subject_from_id_token_when_userinfo_fails(self, client):
+        import jwt
+        id_token = jwt.encode({"sub": "user-7", "name": "Bo"}, "k", algorithm="HS256")
+        resp = self._callback(client, {"id_token": id_token}, None)
+        assert resp.headers["Location"].endswith("/")
+        with client.session_transaction() as sess:
+            assert sess["sso"]["user"]["sub"] == "user-7"
+            assert sess["sso"]["user"]["name"] == "Bo"
+
+    def test_callback_ignores_userinfo_for_another_subject(self, client):
+        import jwt
+        id_token = jwt.encode({"sub": "user-7"}, "k", algorithm="HS256")
+        self._callback(client, {"id_token": id_token}, {"sub": "someone-else", "email": "x@example.com"})
+        with client.session_transaction() as sess:
+            assert sess["sso"]["user"] == {"sub": "user-7"}
+
+    def test_callback_without_any_subject_is_rejected(self, client):
+        resp = self._callback(client, {}, None)
+        assert "auth_error=token_exchange_failed" in resp.headers["Location"]
+        with client.session_transaction() as sess:
+            assert "sso" not in sess
+
     def test_callback_token_exchange_failure(self, client):
         with client.session_transaction() as sess:
             sess["_oauth_state"] = "valid-state"
@@ -244,13 +277,25 @@ class TestOIDCStatus:
                 "access_token": "valid-tok",
                 "refresh_token": None,
                 "expires_at": time.time() + 3600,
-                "user": {"name": "Alice"},
+                "user": {"sub": "user-42", "name": "Alice"},
             }
         resp = client.get("/api/auth/oidc/status")
         data = resp.get_json()
         assert data["status"] == "success"
         data = data["data"]
         assert data["authenticated"] is True
+
+    def test_status_without_subject_is_not_authenticated(self, client):
+        with client.session_transaction() as sess:
+            import time
+            sess["sso"] = {
+                "access_token": "valid-tok",
+                "refresh_token": None,
+                "expires_at": time.time() + 3600,
+                "user": None,
+            }
+        data = client.get("/api/auth/oidc/status").get_json()["data"]
+        assert data["authenticated"] is False
 
     def test_status_not_authenticated(self, client):
         resp = client.get("/api/auth/oidc/status")

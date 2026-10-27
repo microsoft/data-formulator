@@ -675,7 +675,17 @@ def analyst_streaming():
             if terminal_proposal is not None:
                 from data_formulator.analyst.skills.terminal.skill import run_command
 
-                if terminal_response["decision"] == "approve":
+                if terminal_response["decision"] == "approve" and terminal_proposal.get("background"):
+                    # An approved background task starts on its own and outlives this request.
+                    from data_formulator.analyst.skills.terminal.skill import start_background
+                    terminal_proposal["decision"] = "approve"
+                    try:
+                        terminal_result = start_background(terminal_proposal, scratch_dir=workspace.confined_scratch.root,
+                                                           owner=identity_id, workspace_id=get_active_workspace_id() or "",
+                                                           conversation=conversation_id)
+                    except (OSError, ValueError) as exc:
+                        terminal_result = {"error": str(exc), "exit_code": None}
+                elif terminal_response["decision"] == "approve":
                     terminal_proposal["decision"] = "approve"
                     yield json.dumps({"type": "tool_start", "tool": "run_terminal",
                                       "tool_call_id": terminal_proposal["id"],
@@ -820,6 +830,7 @@ def analyst_streaming():
                 session_state=content.get("session_state"),
                 conversation_id=conversation_id,
                 connector_form=content.get("connector_form"),
+                references=content.get("references"),
             ):
                 yield json.dumps(event, ensure_ascii=False) + '\n'
 

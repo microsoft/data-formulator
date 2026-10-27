@@ -469,7 +469,7 @@
    "id": "textTurn_exploreDataFromNL_1792310955278_1792310977519",
    "displayId": "textTurn_exploreDataFromNL_1792310955278_closing",
    "textKind": "explain",
-   "content": "**Women are at least half of researchers in 23 countries**, using each country’s latest reported headcount share from **2019–2024**. Myanmar has the highest share at **76.5%**, followed by Kyrgyzstan (**61.4%**) and Azerbaijan (**60.6%**).\n\nThe countries highlighted on the map are:\n- **Europe and Central Asia:** Albania, Armenia, Azerbaijan, Bosnia and Herzegovina, Georgia, Kazakhstan, Kyrgyzstan, Moldova, Montenegro, North Macedonia and Serbia.\n- **Other parts of Asia:** Mongolia, Myanmar, the Philippines and Kuwait.\n- **Africa:** Algeria, Lesotho and Tunisia.\n- **Latin America:** Argentina, Cuba, Paraguay, Uruguay and Venezuela.\n\nRecent data cover 107 countries; unshaded countries either fall below half or lack recent data.",
+   "content": "**Women are at least half of researchers in 23 countries.** Myanmar has the highest share at **76.5%**, followed by Kyrgyzstan (**61.4%**) and Azerbaijan (**60.6%**). Eleven of the 23 are in Eastern Europe, the Caucasus and Central Asia, and five in Latin America.\n\nThe map uses each country's latest figure from 2019–2024; unshaded countries are below half or have no recent data. Source: UIS, February 2026 release.",
    "parentNodeId": "d_result_2",
    "actionId": "exploreDataFromNL_1792310955278",
    "createdAt": 1792310977519,
@@ -534,7 +534,7 @@
  ],
  "activeWorkspace": {
   "id": "science-s21",
-  "displayName": "Women are still only a third of researchers"
+  "displayName": "Women are at least half of researchers in 23 countries"
  },
  "focusedId": {
   "type": "chart",

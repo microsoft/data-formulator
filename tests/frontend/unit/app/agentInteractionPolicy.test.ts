@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifyInputSourceTransition,
+  referencedAskEnd,
   resolveConversationParentNodeId,
   resolveDerivedTriggerTableId,
   resolveRunParentNodeId,
@@ -23,6 +24,27 @@ describe('agent interaction policy', () => {
     expect(resolveRunParentNodeId(null, null, CONVERSATION_ROOT_ID)).toBe(CONVERSATION_ROOT_ID);
     expect(resolveRunParentNodeId(null, 'derived-orders')).toBe('derived-orders');
     expect(resolveRunParentNodeId('textTurn-question')).toBe('textTurn-question');
+  });
+
+  it('adds a request about an earlier table to the end of its thread instead of branching there', () => {
+    const table = (id: string, parentNodeId?: string, createdAt = 0) => ({ id, parentNodeId, createdAt, derive: { trigger: { tableId: 'root' } } } as any);
+    const turn = (id: string, parentNodeId: string, createdAt: number) => ({ id, parentNodeId, createdAt } as any);
+    // ask → step → first → ask-2 → step-2 → second → closing; a later branch off `first` is not this thread.
+    const graph = new ThreadGraph({
+      tables: [table('first', 'step', 3), table('second', 'step-2', 6)],
+      turns: [turn('ask', 'conversation-root:a', 1), turn('step', 'ask', 2), turn('ask-2', 'first', 4), turn('step-2', 'ask-2', 5),
+        turn('closing', 'second', 7), turn('branch', 'first', 8)],
+    });
+    expect(referencedAskEnd('first', graph)).toBe('closing');
+    // The latest item continues from itself as usual; an unknown one is left alone.
+    expect(referencedAskEnd('closing', graph)).toBeUndefined();
+    expect(referencedAskEnd('missing', graph)).toBeUndefined();
+    // A thread still running at its end keeps today's behaviour.
+    const running = new ThreadGraph({ tables: [table('first', 'step', 3)],
+      turns: [turn('ask', 'conversation-root:a', 1), turn('step', 'ask', 2), turn('ask-2', 'first', 4)],
+      drafts: [{ id: 'live', parentNodeId: 'ask-2', createdAt: 5 } as any] } as any);
+    expect(referencedAskEnd('first', running)).toBeUndefined();
+    expect(referencedAskEnd('first', graph, id => id !== 'closing')).toBeUndefined();
   });
 
   it('continues the open conversation after a focused table, or starts from the table once it led on', () => {

@@ -249,6 +249,8 @@ class TableSource:
     parquet: Path | None = None
     frame: Callable[[], "pd.DataFrame"] | None = None
     sheet: str | None = None
+    # Listed by the session, but the workspace holds no data for it.
+    missing: bool = False
     _columns: list[str] | None = None
     _count: int | None = None
 
@@ -296,6 +298,9 @@ class TableSource:
 
     def read_rows(self, rows: Any, columns: list[str] | None = None) -> dict[str, Any]:
         """Rows ``rows`` ("1790-1800"), optionally only ``columns``, as a flat table."""
+        if self.missing:
+            from data_formulator.analyst.session_layer.layer import MISSING_TABLE_DATA
+            raise ValueError(f"{self.path}: {MISSING_TABLE_DATA}")
         first, last = parse_range(rows, "rows")
         names = self.columns()
         if columns:
@@ -347,7 +352,7 @@ def table_source(files: "SessionFiles", path: str, sheet: str | None = None) -> 
             if table is None:
                 return None
             return TableSource(path, name=name, display=str(table.get("displayId") or name),
-                               code=layer.table_code(name),
+                               code=layer.table_code(name), missing=True,
                                _columns=[column["name"] for column in layer.table_columns(table)], _count=0)
         view = files.session_view(path) or {}
         source = TableSource(path, name=name, display=str(view.get("name") or name),
@@ -506,7 +511,8 @@ def _table_section(source: TableSource, matcher: Matcher, limit: int) -> Section
     if column_hits:
         matched_in.append("column names: " + ", ".join(column_hits))
     total = source.row_count() if source.has_rows else 0
-    shape = f"{total:,} {'row' if total == 1 else 'rows'}" if source.has_rows else "no stored rows"
+    shape = (f"{total:,} {'row' if total == 1 else 'rows'}" if source.has_rows
+             else "data missing from the workspace" if source.missing else "no stored rows")
     ui = f' "{source.display}"' if source.display and source.display not in (
         PurePosixPath(source.path).name, PurePosixPath(source.path).stem) else ""
     header = (f"## {source.path}{ui} — table, {shape}"

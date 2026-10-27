@@ -168,6 +168,71 @@ def workspace_memory_is_fresh(
     return True
 
 
+def _data_input(name: str, metadata: Any | None) -> WorkspaceInputRef:
+    content_hash = getattr(metadata, "content_hash", None)
+    data_id = _input_id("data", name, content_hash)
+    source_name = None
+    if metadata is not None:
+        source_name = metadata.original_name or metadata.source_file
+        if source_name is None and metadata.source_type == "upload":
+            source_name = metadata.filename
+    source = None
+    if source_name:
+        source = InputSource(
+            name=source_name,
+            input_id=data_id,
+            media_type=mimetypes.guess_type(source_name)[0],
+            content_hash=content_hash,
+            locator=getattr(metadata, "import_options", None),
+        )
+    return WorkspaceInputRef(
+        id=data_id,
+        kind="data",
+        display_name=name,
+        media_type="application/vnd.data-formulator.table",
+        size_bytes=getattr(metadata, "file_size", None),
+        content_hash=content_hash,
+        capabilities=("preview", "read", "search", "schema", "sample", "python"),
+        source=source,
+        sources=(source,) if source else (),
+        path=f"data/{metadata.filename}" if metadata is not None else None,
+    )
+
+
+def workspace_table_input(workspace: Any, input_id: str) -> WorkspaceInputRef | None:
+    """Any workspace table named by `input_id`, including derived ones the run's scoped data leaves out.
+
+    Accepts a table name, a `session/tables/<name>.json` or `data/<file>` path, or a `data:[<hash>:]<name>` id.
+    A hash that no longer matches the table is refused, like a stale scoped input.
+    """
+    if workspace is None or not input_id:
+        return None
+    text, expected_hash = input_id.strip(), None
+    if text.startswith("session/tables/") and text.endswith(".json"):
+        text = text.removeprefix("session/tables/").removesuffix(".json")
+    elif text.startswith("data:"):
+        parts = text.split(":", 2)
+        if len(parts) == 3:
+            expected_hash, text = parts[1], parts[2]
+        else:
+            text = parts[1]
+        text = unquote(text)
+    elif text.startswith("data/"):
+        filename = text.removeprefix("data/")
+        try:
+            names = workspace.list_tables()
+        except Exception:
+            return None
+        text = next((name for name in names if getattr(workspace.get_table_metadata(name), "filename", None) == filename),
+                    Path(filename).stem)
+    metadata = workspace.get_table_metadata(text) if text else None
+    if metadata is None:
+        return None
+    if expected_hash is not None and expected_hash != metadata.content_hash:
+        raise ValueError(f"Input changed since it was read: {input_id}. Use the table name {text}.")
+    return _data_input(getattr(metadata, "name", None) or text, metadata)
+
+
 def build_workspace_input_manifest(
     input_tables: list[dict[str, Any]],
     workspace_files: list[Any],
@@ -181,36 +246,7 @@ def build_workspace_input_manifest(
         if not name:
             continue
         metadata = workspace.get_table_metadata(name) if workspace is not None else None
-        content_hash = getattr(metadata, "content_hash", None)
-        data_id = _input_id("data", name, content_hash)
-        source_name = None
-        if metadata is not None:
-            source_name = metadata.original_name or metadata.source_file
-            if source_name is None and metadata.source_type == "upload":
-                source_name = metadata.filename
-        source = None
-        if source_name:
-            source = InputSource(
-                name=source_name,
-                input_id=data_id,
-                media_type=mimetypes.guess_type(source_name)[0],
-                content_hash=content_hash,
-                locator=getattr(metadata, "import_options", None),
-            )
-        inputs.append(
-            WorkspaceInputRef(
-                id=data_id,
-                kind="data",
-                display_name=name,
-                media_type="application/vnd.data-formulator.table",
-                size_bytes=getattr(metadata, "file_size", None),
-                content_hash=content_hash,
-                capabilities=("preview", "read", "search", "schema", "sample", "python"),
-                source=source,
-                sources=(source,) if source else (),
-                path=f"data/{metadata.filename}" if metadata is not None else None,
-            )
-        )
+        inputs.append(_data_input(name, metadata))
 
     if workspace is not None:
         for memory in workspace.list_memory():

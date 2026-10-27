@@ -60,8 +60,9 @@ import {
     type WorkspaceFile,
 } from '../app/workspaceService';
 import { useDataRefresh } from '../app/useDataRefresh';
-import { ViewBorderStyle } from '../app/tokens';
-import { StreamIcon, TableIcon } from '../icons';
+import { iconTone, ViewBorderStyle } from '../app/tokens';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import { FileTypeIcon, StreamIcon, TableIcon } from '../icons';
 import { ArtifactMenuButton } from './DataThreadCards';
 import { RefreshDataDialog } from './RefreshDataDialog';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
@@ -77,7 +78,6 @@ const SHELF_MAX_HEIGHT = 'min(40vh, 360px)';
 const IMPORT_GROUP_OPEN_LIMIT = 3;
 // Indent per folder level: one icon plus the row gap, so contents line up under the folder's name.
 const ROW_INDENT_PX = 18;
-const ICON_COLOR = 'rgba(0,0,0,0.4)';
 
 // Mirror DataThread's timeline geometry so the shelf's rail lines up with the
 // thread rails below it.
@@ -470,6 +470,13 @@ export const SourceTableShelf: FC<{
     const tables = useSelector(dfSelectors.getAllTables);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    const tablesMissingData = useSelector((state: DataFormulatorState) => state.tablesMissingData);
+    const missingDataIcon = (tableId: string) => tablesMissingData.includes(tableId)
+        ? <Tooltip title={t('dataThread.tableDataMissingTooltip')}>
+            <WarningAmberIcon role="img" aria-label={t('dataThread.tableDataMissingTooltip')}
+                sx={{ width: 14, height: 14, color: 'warning.main' }} />
+        </Tooltip>
+        : undefined;
     const canvasTarget = useSelector(dfSelectors.selectCanvasTarget);
     const externalReferences = useSelector((state: DataFormulatorState) => state.externalTableReferences);
     const pendingTableLoads = useSelector((state: DataFormulatorState) => state.pendingTableLoads);
@@ -815,20 +822,20 @@ export const SourceTableShelf: FC<{
         const highlighted = selected || highlightedTableIds.includes(tbl.id);
         const name = tbl.displayId || tbl.id;
         const originalName = tbl.source?.originalTableName || tbl.virtual?.tableId;
-        const iconSx = { width: 14, height: 14, color: highlighted ? theme.palette.primary.main : ICON_COLOR };
+        const iconSx = { width: 14, height: 14, color: highlighted ? theme.palette.primary.main : iconTone.rest };
         return <WorkspaceRow key={`shelf-card-${tbl.id}`} rowProps={{ 'data-table-id': tbl.id }}
-            icon={isStreaming
-                ? <StreamIcon sx={{ ...iconSx, color: highlighted ? theme.palette.success.main : ICON_COLOR,
+            icon={missingDataIcon(tbl.id) ?? (isStreaming
+                ? <StreamIcon sx={{ ...iconSx, color: highlighted ? theme.palette.success.main : iconTone.rest,
                     animation: 'pulse 2s infinite',
                     '@keyframes pulse': { '0%': { opacity: 1 }, '50%': { opacity: 0.4 }, '100%': { opacity: 1 } } }} />
-                : <TableIcon sx={iconSx} />}
+                : <TableIcon sx={iconSx} />)}
             label={name} title={originalName && originalName !== name ? `${name} (${originalName})` : name}
             selected={selected}
             onClick={() => dispatch(dfActions.setFocused({ type: 'table', tableId: tbl.id }))}
             actions={<ArtifactMenuButton tooltip={t('dataThread.moreOptions')}
                 label={t('dataThread.fileActions', { name, defaultValue: `Actions for ${name}` })}
                 onClick={anchorEl => handleOpenTableMenu(tbl, anchorEl)} />} />;
-    }), [visibleTables, highlightedTableIds, focusedTableId, focusedId, theme, t]);
+    }), [visibleTables, highlightedTableIds, focusedTableId, focusedId, tablesMissingData, theme, t]);
 
     // Files in folders are grouped under their top-level folder.
     const fileFolder = (workspaceFile: WorkspaceFile) => !workspaceFile.temporary && workspaceFile.name.includes('/')
@@ -839,6 +846,7 @@ export const SourceTableShelf: FC<{
             : folder ? workspaceFile.name.slice(folder.length + 1) : workspaceFile.name;
         return {
             key: `workspace-file-${workspaceFile.name}`,
+            path: workspaceFile.name,
             folder,
             artifactType: 'file' as const,
             title: workspaceFile.display_name || fileName,
@@ -853,6 +861,7 @@ export const SourceTableShelf: FC<{
         const title = externalReferenceTitle(reference);
         return {
             key: reference.id,
+            path: undefined as string | undefined,
             folder: undefined as string | undefined,
             artifactType: 'table' as const,
             title,
@@ -873,13 +882,13 @@ export const SourceTableShelf: FC<{
         const importToggleSx = { display: 'flex', width: '100%', justifyContent: 'flex-start', gap: 0.5, py: '2px',
             pl: `${(depth + 1) * ROW_INDENT_PX + 4}px`, color: 'text.secondary', fontSize: textVar.xs,
             '&:hover': { color: 'text.primary' }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } };
-        const iconColor = artifact.selected ? theme.palette.primary.main : ICON_COLOR;
+        const iconColor = artifact.selected ? theme.palette.primary.main : iconTone.rest;
         return (
         <Box key={artifact.key}>
             <WorkspaceRow rowProps={{ 'data-workspace-item': artifact.key }} depth={depth}
                 icon={artifact.artifactType === 'table'
                     ? <TableIcon sx={{ width: 14, height: 14, color: iconColor }} />
-                    : <InsertDriveFileOutlinedIcon sx={{ width: 14, height: 14, color: iconColor }} />}
+                    : <FileTypeIcon path={artifact.path || ''} size={14} active={artifact.selected} sx={{ color: iconTone.rest }} />}
                 label={artifact.title}
                 title={artifact.notes ? `${artifact.title} (${artifact.notes})` : artifact.title}
                 // A file's name, when it has a display name, is in the row's tooltip rather than beside it.
@@ -911,7 +920,7 @@ export const SourceTableShelf: FC<{
                             const name = table.displayId || table.id;
                             return <Box component="li" key={table.id}>
                                 <WorkspaceRow rowProps={{ 'data-workspace-import': table.id }} depth={depth + 1}
-                                    icon={<TableIcon sx={{ width: 14, height: 14, color: selected ? theme.palette.primary.main : ICON_COLOR }} />}
+                                    icon={missingDataIcon(table.id) ?? <TableIcon sx={{ width: 14, height: 14, color: selected ? theme.palette.primary.main : iconTone.rest }} />}
                                     label={name} title={`${name}${table.displayId !== table.id ? ` (${table.id})` : ''}`}
                                     selected={selected}
                                     onClick={() => dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }))}
@@ -1022,7 +1031,7 @@ export const SourceTableShelf: FC<{
                     {pendingTableLoads.flatMap(load => load.names.map((name, index) => (
                         <Box key={`${load.id}-${index}`} role="status" aria-label={t('dataThread.loadingTable', { name, defaultValue: 'Loading {{name}}' })}>
                             <WorkspaceRow dimmed label={name}
-                                icon={<TableIcon sx={{ width: 14, height: 14, color: ICON_COLOR }} />}
+                                icon={<TableIcon sx={{ width: 14, height: 14, color: iconTone.rest }} />}
                                 note={<InlineLoadingStatus label={t('common.loading', { defaultValue: 'Loading...' })}
                                     sx={{ fontSize: textVar.xs, gap: 0.5 }} />} />
                         </Box>

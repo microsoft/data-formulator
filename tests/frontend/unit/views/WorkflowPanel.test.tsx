@@ -684,6 +684,75 @@ describe('Workflow session publication', () => {
         expect(selectChatWorkflow(store.getState())).toBeUndefined();
     });
 
+    it('adds a request about an earlier chart to the end of its thread, with the chart as a reference', async () => {
+        store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
+        store.dispatch(dfActions.selectModel('test-model'));
+        const turn = (id: string, parentNodeId: string, createdAt: number, extra: Record<string, unknown>) =>
+            dfActions.addTextTurn({ kind: 'text', id, displayId: id, textKind: 'explain', content: '', parentNodeId, createdAt, ...extra } as any);
+        const table = (id: string, parentNodeId: string) => ({ kind: 'table', id, displayId: id, names: ['value'], metadata: {},
+            rows: [{ value: 1 }], parentNodeId, derive: { source: [], code: '', dialog: [], trigger: { tableId: 'root', resultTableId: id } } }) as any;
+        // ask → step → first (charted) → ask-2 → step-2 → second → closing
+        store.dispatch(turn('ask', 'conversation-root:gas', 1, { prompt: 'Prices over time' }));
+        store.dispatch(turn('step', 'ask', 2, { content: 'Weekly prices' }));
+        store.dispatch(dfActions.addTableToStore(table('first', 'step')));
+        store.dispatch(dfActions.addChart({ id: 'chart-first', chartType: 'Line Chart', tableRef: 'first', source: 'user',
+            encodingMap: {}, title: 'Weekly prices' } as any));
+        store.dispatch(turn('ask-2', 'first', 4, { prompt: 'Premium gap' }));
+        store.dispatch(turn('step-2', 'ask-2', 5, { content: 'Gap' }));
+        store.dispatch(dfActions.addTableToStore(table('second', 'step-2')));
+        store.dispatch(turn('closing', 'second', 7, { content: 'Done.' }));
+        store.dispatch(dfActions.setFocused({ type: 'chart', chartId: 'chart-first' }));
+        let finish!: () => void;
+        const pending = new Promise<void>(resolve => { finish = resolve; });
+        vi.mocked(streamRequest).mockImplementation(async function* () {
+            yield { type: 'placement', new_thread: true, title: 'Diesel' } as any;
+            await pending;
+            yield { type: 'completion', status: 'success', content: { summary: 'Done.' } } as any;
+        });
+        renderThread();
+        // The chart is offered as the message's reference before sending.
+        expect(document.querySelector('[data-ask-reference]')).toHaveTextContent('Weekly prices');
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Use a log scale here' } });
+        fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        const body = JSON.parse(String((vi.mocked(streamRequest).mock.calls[0][1] as any)?.body ?? '{}'));
+        expect(body.references).toEqual([{ kind: 'chart', id: 'chart-first', label: 'Weekly prices' }]);
+        const request = () => store.getState().textTurns.find(item => item.prompt === 'Use a log scale here')!;
+        expect(request().references).toEqual([{ kind: 'chart', id: 'chart-first', label: 'Weekly prices' }]);
+        // The chart stays in view; the agent then opened a thread of its own, from the chart's table.
+        expect(store.getState().focusedId).toEqual({ type: 'chart', chartId: 'chart-first' });
+        await waitFor(() => expect(request().parentNodeId).toBe('first'));
+        await act(async () => { finish(); });
+    });
+
+    it('adds a request about an earlier chart at the end of its thread when the agent continues it', async () => {
+        store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
+        store.dispatch(dfActions.selectModel('test-model'));
+        const turn = (id: string, parentNodeId: string, createdAt: number, extra: Record<string, unknown>) =>
+            dfActions.addTextTurn({ kind: 'text', id, displayId: id, textKind: 'explain', content: '', parentNodeId, createdAt, ...extra } as any);
+        const table = (id: string, parentNodeId: string) => ({ kind: 'table', id, displayId: id, names: ['value'], metadata: {},
+            rows: [{ value: 1 }], parentNodeId, derive: { source: [], code: '', dialog: [], trigger: { tableId: 'root', resultTableId: id } } }) as any;
+        store.dispatch(turn('ask', 'conversation-root:gas', 1, { prompt: 'Prices over time' }));
+        store.dispatch(turn('step', 'ask', 2, { content: 'Weekly prices' }));
+        store.dispatch(dfActions.addTableToStore(table('first', 'step')));
+        store.dispatch(turn('ask-2', 'first', 4, { prompt: 'Premium gap' }));
+        store.dispatch(turn('step-2', 'ask-2', 5, { content: 'Gap' }));
+        store.dispatch(dfActions.addTableToStore(table('second', 'step-2')));
+        store.dispatch(turn('closing', 'second', 7, { content: 'Done.' }));
+        store.dispatch(dfActions.setFocused({ type: 'table', tableId: 'first' }));
+        vi.mocked(streamRequest).mockImplementation(async function* () {
+            yield { type: 'completion', status: 'success', content: { summary: 'Done.' } } as any;
+        });
+        renderThread();
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Explain this table' } });
+        fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        const request = store.getState().textTurns.find(item => item.prompt === 'Explain this table')!;
+        expect(request).toMatchObject({ parentNodeId: 'closing', references: [{ kind: 'table', id: 'first', label: 'first' }] });
+        // One thread: nothing branched.
+        expect(buildThreads(dfSelectors.getThreadGraph(store.getState()))).toHaveLength(1);
+    });
+
     it.each(['workflow', 'chart', 'table'])('places a new analyst request after the focused %s artifact', async target => {
         store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
         store.dispatch(dfActions.selectModel('test-model'));
@@ -2030,7 +2099,7 @@ describe('Workflow session publication', () => {
         }
     });
 
-    it('keeps a preview timeline with instructions and execution details closed by default', async () => {
+    it('shows step instructions as prose and keeps tool calls closed by default', async () => {
         const snapshot = run();
         snapshot.outputs = [];
         snapshot.instance!.steps!.push({ id: 'report', description: 'Explain the findings', instructions: 'Write the final report.' });
@@ -2040,15 +2109,62 @@ describe('Workflow session publication', () => {
         expect(screen.queryByRole('tablist')).toBeNull();
         const report = within(container.querySelector('[data-workflow-step="report"]') as HTMLElement);
         expect(report.getByText('pending')).toBeVisible();
-        expect(report.getByText('Write the final report.')).not.toBeVisible();
-        fireEvent.click(report.getByText('Execution details'));
         expect(report.getByText('Write the final report.')).toBeVisible();
-        expect(report.getByText('No activity yet.')).toBeVisible();
-        fireEvent.click(report.getByText('Execution details'));
+        expect(container.querySelector('[data-workflow-step="report"] [data-workflow-execution]')).toBeNull();
         await publishWorkflowRun({ ...snapshot, step_id: 'report' }, 'session');
         rerender(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
-        expect(report.getByText('Write the final report.')).not.toBeVisible();
+        const execution = container.querySelector('[data-workflow-step="report"] [data-workflow-execution]')!;
+        expect(execution).not.toHaveAttribute('open');
+        expect(execution.querySelector('summary')).toHaveTextContent('0 tool calls');
+        expect(report.getByText('No activity yet.')).not.toBeVisible();
+        fireEvent.click(execution.querySelector('summary')!);
+        expect(report.getByText('No activity yet.')).toBeVisible();
         expect(report.getByRole('progressbar', { name: 'Current step running' })).toBeVisible();
+    });
+
+    it('caps long step prose with one show-more toggle per step', async () => {
+        const snapshot = run();
+        snapshot.outputs = [];
+        snapshot.instance!.steps![1].checkers = [{ id: 'accuracy', condition: 'Totals reconcile to the source data.' }];
+        await publishWorkflowRun(snapshot, 'session');
+        const scrollHeight = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get')
+            .mockImplementation(function (this: HTMLElement) { return this.closest('[data-workflow-step="analyze"]') ? 200 : 0; });
+        const clientHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(60);
+        try {
+            const { container } = render(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
+            const gather = within(container.querySelector('[data-workflow-step="analyze"]') as HTMLElement);
+            expect(within(container.querySelector('[data-workflow-step="gather"]') as HTMLElement).queryByRole('button', { name: 'Show more' })).toBeNull();
+            expect(gather.getAllByRole('button', { name: 'Show more' })).toHaveLength(1);
+            fireEvent.click(gather.getByRole('button', { name: 'Show more' }));
+            expect(gather.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
+            fireEvent.click(gather.getByRole('button', { name: 'Show less' }));
+            expect(gather.getByRole('button', { name: 'Show more' })).toHaveAttribute('aria-expanded', 'false');
+        } finally {
+            scrollHeight.mockRestore();
+            clientHeight.mockRestore();
+        }
+    });
+
+    it('shows checks only for the current step and summarizes finished ones', async () => {
+        const snapshot = run();
+        snapshot.outputs = [];
+        snapshot.instance!.steps![0].checkers = [{ id: 'coverage', condition: 'Regions are covered.' }];
+        snapshot.instance!.steps![1].checkers = [{ id: 'accuracy', condition: 'Totals reconcile.' }];
+        snapshot.instance!.steps!.push({ id: 'report', instructions: 'Write the report', checkers: [{ id: 'cited', condition: 'Claims cite evidence.' }] });
+        snapshot.checks = { ...snapshot.checks, accuracy: { status: 'failed', explanation: 'Totals differ', evidence_ids: [] } };
+        await publishWorkflowRun(snapshot, 'session');
+        const { container } = render(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
+        const step = (id: string) => container.querySelector(`[data-workflow-step="${id}"]`)!;
+        expect(step('gather').querySelector('[data-workflow-checks] summary')).toHaveTextContent('All checks passed');
+        expect(screen.getByText('Regions are covered.')).not.toBeVisible();
+        expect(step('analyze').querySelector('[data-workflow-checks]')!.tagName).not.toBe('DETAILS');
+        expect(screen.getByText('Totals reconcile.')).toBeVisible();
+        expect(step('analyze')).toHaveTextContent('Totals reconcile. — Totals differ');
+        expect(step('report').querySelector('[data-workflow-checks]')).toBeNull();
+        expect(screen.queryByText('Claims cite evidence.')).toBeNull();
+        expect(step('gather').querySelector('[data-workflow-block]')).toHaveStyle('border-color: rgba(46, 125, 50, 0.4)');
+        expect(step('analyze').querySelector('[data-workflow-block]')).toHaveStyle('border-color: #1976d2');
+        expect(step('report').querySelector('[data-workflow-block]')).toHaveStyle('border-color: rgba(0, 0, 0, 0.12)');
     });
 
     it('resets step progress to pending when the revised plan needs review', async () => {
@@ -2169,7 +2285,8 @@ describe('Workflow session publication', () => {
         expect(within(step).queryByRole('tab')).toBeNull();
         const execution = step.querySelector('[data-workflow-execution]')!;
         expect(execution).not.toHaveAttribute('open');
-        fireEvent.click(within(step).getByText('Execution details'));
+        expect(execution.querySelector('summary')).toHaveTextContent('4 tool calls');
+        fireEvent.click(execution.querySelector('summary')!);
         expect(execution).toHaveAttribute('open');
         const live = step.querySelector('[data-workflow-running-tool="live"]')!;
         expect(live.querySelector('summary')).toBeVisible();
@@ -2204,14 +2321,14 @@ describe('Workflow session publication', () => {
         expect(completed).toHaveAttribute('open');
         expect(completed.querySelector('code.language-python')).toBeVisible();
         expect(step.querySelector('[data-workflow-call="computed"]')).not.toHaveAttribute('open');
-        fireEvent.click(within(step).getByText('Execution details'));
+        fireEvent.click(execution.querySelector('summary')!);
         await publishWorkflowRun({ ...snapshot, activity: 'Still comparing medians' }, 'session');
         rerender(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
         expect(execution).not.toHaveAttribute('open');
         expect(live).not.toBeVisible();
     });
 
-    it('groups calls and checks by step and reveals their evidence on demand', async () => {
+    it('lists checks with their evidence and keeps calls behind the step disclosure', async () => {
         const snapshot = run();
         snapshot.status = 'completed';
         snapshot.outputs = [];
@@ -2229,26 +2346,35 @@ describe('Workflow session publication', () => {
         const gather = container.querySelector('[data-workflow-step="gather"]')!;
         const analyze = container.querySelector('[data-workflow-step="analyze"]')!;
         expect(screen.getByRole('list', { name: 'Workflow plan timeline' }).children).toHaveLength(2);
-        expect(screen.getByText('Collect data')).not.toBeVisible();
         expect(screen.getByText('Collect comparable observations for the requested regions.')).toBeVisible();
-        const actionPreview = screen.getByText('Collect data');
         expect(within(gather as HTMLElement).queryByRole('tab')).toBeNull();
-        expect(actionPreview).not.toBeVisible();
-        expect(screen.getByText('Requested dates and regions are covered.')).not.toBeVisible();
-        expect(screen.getByText('Totals reconcile to the source data.')).not.toBeVisible();
-        fireEvent.click(within(gather as HTMLElement).getByText('Execution details'));
-        expect(screen.getByText('Requested dates and regions are covered.')).toBeVisible();
-        expect(actionPreview).toBeVisible();
         expect(gather.querySelector('[data-workflow-action]')).toHaveTextContent('Collect data');
+        expect(screen.getByText('Collect data')).toBeVisible();
+        const gatherChecks = gather.querySelector('[data-workflow-checks]')!;
+        const analyzeChecks = analyze.querySelector('[data-workflow-checks]')!;
+        expect(gatherChecks.tagName).toBe('DETAILS');
+        expect(gatherChecks).not.toHaveAttribute('open');
+        expect(gatherChecks.querySelector('summary')).toHaveTextContent('All checks passed');
+        expect(analyzeChecks.querySelector('summary')).toHaveTextContent('0 of 1 checks passed');
+        expect(screen.getByText('Requested dates and regions are covered.')).not.toBeVisible();
+        fireEvent.click(gatherChecks.querySelector('summary')!);
+        expect(screen.getByText('Requested dates and regions are covered.')).toBeVisible();
+        expect(screen.getByText('Totals reconcile to the source data.')).not.toBeVisible();
+        expect(screen.getByLabelText('coverage: passed')).toBeVisible();
         expect(screen.getByLabelText('accuracy: pending')).not.toBeVisible();
-        expect(screen.getByText('Before this step · On failure: gather')).not.toBeVisible();
-        expect(screen.getByText('Observed rows')).not.toBeVisible();
+        expect(gather.querySelector('[data-workflow-check="coverage"]')).toHaveTextContent('Requested dates and regions are covered. — Observed rows');
+        // A check that only revisits its own step needs no failure note.
+        expect(screen.getByText('Before this step')).toBeVisible();
+        expect(container.textContent).not.toContain('On failure');
+        const execution = gather.querySelector('[data-workflow-execution]')!;
+        expect(execution.querySelector('summary')).toHaveTextContent('1 tool call');
         expect(screen.getByText('Returns reconciled')).not.toBeVisible();
         expect(gather.querySelector('[data-workflow-call="gathered"]')).toBeTruthy();
-        expect(gather.textContent).toContain('Observed rows');
         expect(gather.textContent).not.toContain('Returns reconciled');
         expect(analyze.querySelector('[data-workflow-call="analyzed"]')).toBeTruthy();
         expect(screen.getByText('Unassigned calls (1)').closest('details')!.textContent).toContain('Older result without step metadata');
+        expect(gather.querySelector('[data-workflow-activity]')).not.toBeVisible();
+        fireEvent.click(execution.querySelector('summary')!);
         expect(gather.querySelector('[data-workflow-activity]')).toBeVisible();
         fireEvent.click(within(gather as HTMLElement).getByText('Call 1: fetch live data'));
         const inputOutput = within(gather as HTMLElement).getByRole('group', { name: 'Tool input' });
@@ -2256,15 +2382,10 @@ describe('Workflow session publication', () => {
         expect(inputOutput).toHaveTextContent('Input not retained for this call.');
         expect(within(inputOutput).queryByRole('button', { name: 'Copy input' })).toBeNull();
         expect(JSON.parse(inputOutput.querySelector('pre')!.textContent!)).toEqual({ rows: 61, metadata: { source: 'live' } });
-        expect(screen.getByText('Observed rows')).not.toBeVisible();
-        fireEvent.click(gather.querySelector('[data-workflow-check="coverage"] summary')!);
-        expect(screen.getByText('Observed rows')).toBeVisible();
-        expect(screen.getByText('Before this step · On failure: gather')).toBeVisible();
-        expect(screen.getByText('Collect data')).toBeVisible();
         expect(within(gather as HTMLElement).queryByText('No outputs yet.')).toBeNull();
-        fireEvent.click(within(gather as HTMLElement).getByText('Execution details'));
-        expect(screen.getByText('Collect data')).not.toBeVisible();
-        expect(screen.getByText('Observed rows')).not.toBeVisible();
+        fireEvent.click(execution.querySelector('summary')!);
+        expect(gather.querySelector('[data-workflow-activity]')).not.toBeVisible();
+        expect(screen.getByText('Collect data')).toBeVisible();
         expect(container.textContent!.indexOf('Final verified response')).toBeLessThan(container.textContent!.indexOf('Unassigned calls'));
     });
 

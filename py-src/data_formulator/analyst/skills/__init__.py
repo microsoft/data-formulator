@@ -118,7 +118,7 @@ class SkillRegistry:
             for collection in (registry.metas, registry.skills, registry.tool_specs, registry._doc_paths):
                 collection.pop("terminal", None)
         elif "terminal" in registry.metas:
-            registry.metas["terminal"] = replace(registry.metas["terminal"], always_on=True)
+            # Enabled, it loads on demand like other gated skills (preloaded when a session has no data yet).
             for spec in registry.tool_specs.get("terminal", []):
                 spec["function"]["description"] += (
                     " Each invocation requires exact-command approval." if mode == "ask" else
@@ -230,8 +230,8 @@ class SkillRegistry:
         for name in self.gated_skill_names():
             meta = self.metas[name]
             blurb = (meta.when_to_use or meta.description or "").strip().replace("\n", " ")
-            unlocks = ", ".join(meta.action_names) if meta.action_names else "(no actions)"
-            lines.append(f"- **{name}** — unlocks `{unlocks}`. {blurb}")
+            unlocks = f"unlocks `{', '.join(meta.action_names)}`. " if meta.action_names else ""
+            lines.append(f"- **{name}** — {unlocks}{blurb}")
         return "\n".join(lines)
 
     def load_body(self, name: str) -> str:

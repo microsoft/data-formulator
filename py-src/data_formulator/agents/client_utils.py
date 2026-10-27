@@ -1,4 +1,5 @@
 import json
+from collections import OrderedDict
 import litellm
 import logging
 import os
@@ -40,6 +41,10 @@ def effective_api_base(endpoint, api_base):
 
 
 _translate_responses_chunk = OpenAiResponsesToChatCompletionStreamIterator.translate_responses_chunk_to_openai_stream
+# Each streaming message's phase (``commentary`` before tool calls, ``final_answer`` for the answer), by item id,
+# from its ``output_item.added`` event until it is done; bounded in case a stream ends early.
+_message_phases: "OrderedDict[str, str]" = OrderedDict()
+_MAX_MESSAGE_PHASES = 256
 
 
 def _translate_responses_chunk_or_raise(chunk, *args, **kwargs):
@@ -48,6 +53,9 @@ def _translate_responses_chunk_or_raise(chunk, *args, **kwargs):
     LiteLLM's Responses bridge turns them into empty chunks and then adds
     ``finish_reason='stop'``, so a rate-limited or truncated request would look
     like a model that chose to reply with nothing.
+
+    It also drops the phase the Responses API gives each message; keep it on the message's text deltas as
+    ``delta.provider_specific_fields["phase"]``, so a caller can stream an answer while it is written.
     """
     kind = chunk.get("type") if isinstance(chunk, dict) else None
     kind = getattr(kind, "value", kind)
@@ -55,7 +63,21 @@ def _translate_responses_chunk_or_raise(chunk, *args, **kwargs):
         response = chunk.get("response") or {}
         detail = response.get("error") or response.get("incomplete_details") or chunk.get("error") or chunk
         raise ValueError(f"Model response {kind.removeprefix('response.')}: {json.dumps(detail, default=str)[:500]}")
-    return _translate_responses_chunk(chunk, *args, **kwargs)
+    if kind in ("response.output_item.added", "response.output_item.done"):
+        item = chunk.get("item") or {}
+        if item.get("type") == "message" and item.get("id"):
+            if kind == "response.output_item.done":
+                _message_phases.pop(item["id"], None)
+            elif item.get("phase"):
+                _message_phases[item["id"]] = item["phase"]
+                while len(_message_phases) > _MAX_MESSAGE_PHASES:
+                    _message_phases.popitem(last=False)
+    translated = _translate_responses_chunk(chunk, *args, **kwargs)
+    if kind == "response.output_text.delta" and (phase := _message_phases.get(chunk.get("item_id"))):
+        choices = getattr(translated, "choices", None) or []
+        if choices and getattr(choices[0], "delta", None) is not None:
+            choices[0].delta.provider_specific_fields = {"phase": phase}
+    return translated
 
 
 OpenAiResponsesToChatCompletionStreamIterator.translate_responses_chunk_to_openai_stream = staticmethod(_translate_responses_chunk_or_raise)

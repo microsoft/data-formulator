@@ -1032,6 +1032,19 @@
         }
       }
     },
+    "Calendar Heatmap": {
+      "channels": [
+        "x",
+        "color"
+      ],
+      "options": {
+        "cornerRadius": {
+          "type": "continuous",
+          "min": 0,
+          "max": 8
+        }
+      }
+    },
     "Bar Table": {
       "channels": [
         "y",

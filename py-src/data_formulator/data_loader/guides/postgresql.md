@@ -1,19 +1,15 @@
 **Example**
 
-`postgres` at `localhost:5432`, database `mydb`
+host: `localhost` · port: `5432` · user: `postgres` · database: `mydb`
 
 **Credentials**
 
-Use a PostgreSQL account with `SELECT` access to the tables you need. For a local server, the password may be blank. For a remote server, ask the database administrator for the host, port, username, and password.
+Use an account with `SELECT` access to the tables you need. A local server may have no password. For a remote server, get the details from your database administrator.
 
 **Scope**
 
-Leave `database` empty to browse all accessible databases, or enter one to open its schemas and tables directly.
+Leave `database` empty to browse every database, or enter one to open its schemas directly.
 
 **Check**
 
-Confirm that PostgreSQL is running, then test the same details with:
-
-```bash
-psql -U <user> -h <host> -p <port> -d <database>
-```
+Test the same details with `psql -U <user> -h <host> -p <port> -d <database>`.

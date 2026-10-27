@@ -5,27 +5,30 @@
       "password": "无密码请留空",
       "host": "服务器地址",
       "port": "服务器端口",
-      "database": "数据库名称（留空可浏览所有数据库）",
-      "authInstructions": "**示例：** user: `root` · host: `localhost` · port: `3306` · database: `mydb`\n\n**本地环境：** 确保 MySQL 正在运行 — `brew services list`（macOS）或 `systemctl status mysql`（Linux）。如未设密码，密码留空即可。\n\n**远程环境：** 向数据库管理员获取主机、端口、用户名和密码。确保服务器允许远程连接且您的 IP 已加入白名单。\n\n**范围：** *database* 留空可浏览服务器上所有数据库；填入则直接进入该数据库的表列表。\n\n**排查：** 用 `mysql -u <user> -p -h <host> -P <port> <database>` 测试连接"
+      "database": "数据库名称",
+      "database_hint": "留空可浏览所有数据库。",
+      "authInstructions": "**示例**\n\nhost: `localhost` · port: `3306` · user: `root` · database: `mydb`\n\n**凭据**\n\n使用能读取所需表的账号。本地服务器可能没有密码。对于远程服务器，请向数据库管理员获取连接信息，并确认你的 IP 允许连接。\n\n**范围**\n\n将 `database` 留空可浏览所有数据库，或填写某个数据库以直接打开其中的表。\n\n**检查**\n\n用相同的信息运行 `mysql -u <user> -p -h <host> -P <port>` 进行测试。"
     },
     "mssql": {
-      "server": "SQL Server 主机地址或实例名",
-      "database": "数据库名称（留空可浏览所有数据库）",
-      "user": "用户名（使用 Entra ID / Windows 认证时留空）",
-      "password": "密码（使用 Entra ID / Windows 认证时留空）",
-      "port": "SQL Server 端口（默认 1433）",
-      "encrypt": "启用加密（yes/no）",
-      "trust_server_certificate": "信任服务器证书（yes/no）",
+      "server": "主机名或实例",
+      "database": "数据库名称",
+      "database_hint": "留空可浏览所有数据库。",
+      "user": "用户名",
+      "password": "密码",
+      "port": "1433",
+      "encrypt": "是或否",
+      "trust_server_certificate": "是或否",
       "connection_timeout": "连接超时时间（秒）",
-      "authInstructions": "**Microsoft Entra ID（推荐）：** 先在终端运行一次 `az login`，然后启动 Data Formulator。选择 *Microsoft Entra ID*，只填写 `server`（和可选的 `database`），用户名/密码留空 — 会自动使用你的 Azure CLI 凭据。也支持通过 `DefaultAzureCredential` 使用托管标识、VS Code 和环境凭据。\n\n> 你的 Entra 身份必须已获授权访问该数据库，例如管理员运行 `CREATE USER [you@contoso.com] FROM EXTERNAL PROVIDER;` 并授予相应角色。\n\n**示例（Entra ID）：** server: `myserver.database.windows.net` · database: `mydb`（用户名/密码留空）\n\n**SQL Server 认证：** 选择 *SQL Server 认证* 并提供用户名和密码。\n\n**示例（SQL 认证）：** server: `localhost` · database: `mydb` · user: `sa` · password: `MyP@ss` · port: `1433`\n\n**Windows 认证（仅 Windows）：** 选择 *Windows 认证* 并将用户名/密码留空。\n\n**驱动：** Microsoft SQL Server 驱动已随 Data Formulator 提供，无需单独安装 ODBC 驱动。使用 Entra ID 时，请安装 Azure CLI 并运行 `az login`。\n\n**排查：** 用 `az account show` 确认已登录。确保 SQL Server 服务正在运行且 TCP/IP 已启用。用 `sqlcmd -S <server> -d <database> -U <user> -P <password>` 测试 SQL 认证。"
+      "authInstructions": "**示例**\n\nserver: `myserver.database.windows.net` · database: `mydb`\n\n**登录**\n\n- **Microsoft Entra ID:** 推荐用于 Azure SQL。运行 [`az login`](https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively)，并将用户和密码留空。\n- **SQL Server authentication:** 填写 SQL 登录名和密码。\n- **Windows authentication:** 仅限 Windows；使用你的 Windows 账号。\n\n**访问权限**\n\n管理员必须为你的身份授予数据库访问权限。以 Entra ID 为例：`CREATE USER [you@contoso.com] FROM EXTERNAL PROVIDER;`\n\n**检查**\n\n`az account show` 会显示 Entra ID 将使用的账号。对于本地服务器，请确认 SQL Server 正在运行且已启用 TCP/IP。"
     },
     "postgresql": {
       "user": "PostgreSQL 用户名",
       "password": "无密码请留空",
       "host": "PostgreSQL 主机地址",
       "port": "PostgreSQL 端口",
-      "database": "数据库名称（留空可浏览所有数据库）",
-      "authInstructions": "**示例：** user: `postgres` · host: `localhost` · port: `5432` · database: `mydb`\n\n**本地环境：** 确保 PostgreSQL 正在运行 — `brew services list`（macOS）或 `systemctl status postgresql`（Linux）。如未设密码，密码留空即可。\n\n**远程环境：** 向数据库管理员获取主机、端口、用户名和密码。用户需要对目标表拥有 SELECT 权限。\n\n**范围：** *database* 留空可浏览服务器上所有数据库；填入则直接进入该数据库的 schema/表列表。\n\n**排查：** 用 `psql -U <user> -h <host> -p <port> -d <database>` 测试连接"
+      "database": "数据库名称",
+      "database_hint": "留空可浏览所有数据库。",
+      "authInstructions": "**示例**\n\nhost: `localhost` · port: `5432` · user: `postgres` · database: `mydb`\n\n**凭据**\n\n使用对所需表拥有 `SELECT` 权限的账号。本地服务器可能没有密码。对于远程服务器，请向数据库管理员获取连接信息。\n\n**范围**\n\n将 `database` 留空可浏览所有数据库，或填写某个数据库以直接打开其中的架构。\n\n**检查**\n\n用相同的信息运行 `psql -U <user> -h <host> -p <port> -d <database>` 进行测试。"
     },
     "mongodb": {
       "host": "服务器地址",
@@ -33,84 +36,108 @@
       "username": "无认证请留空",
       "password": "无认证请留空",
       "database": "数据库名称",
-      "collection": "留空可列出所有集合",
-      "authSource": "认证数据库（默认为目标数据库）",
-      "authInstructions": "**示例：** host: `localhost` · port: `27017` · database: `mydb` · collection: `users`\n\n**本地环境：** 确保 MongoDB 正在运行。如未启用认证，用户名和密码留空即可。\n\n**远程环境：** 向数据库管理员获取主机、端口、用户名和密码。\n\n**排查：** 用 `mongosh --host <host> --port <port>` 测试连接"
+      "collection": "集合名称",
+      "collection_hint": "留空可列出所有集合。",
+      "authSource": "admin",
+      "authSource_hint": "仅当该用户定义在其他数据库中时填写。",
+      "authInstructions": "**示例**\n\nhost: `localhost` · port: `27017` · database: `mydb`\n\n**登录**\n\n对于未启用访问控制的本地服务器，选择 **No authentication**。否则，填写能读取该数据库的用户；仅当该用户定义在其他数据库（通常是 `admin`）中时才设置 `authSource`。\n\n**范围**\n\n将 `collection` 留空可浏览数据库中的所有集合。\n\n**检查**\n\n用 `mongosh --host <host> --port <port>` 测试服务器。"
     },
     "cosmosdb": {
       "endpoint": "Cosmos DB 帐户端点 URL",
       "key": "帐户密钥或模拟器密钥",
       "database": "数据库名称",
       "container": "留空可列出所有容器",
-      "authInstructions": "**示例：** endpoint: `https://myaccount.documents.azure.com:443/` · database: `mydb`\n\n**Azure 设置：** 在 Azure 门户的 Cosmos DB 帐户 → *密钥* 中找到端点和密钥。\n\n**本地模拟器：** 端点使用 `https://localhost:8081`，配合模拟器内置密钥。\n\n**排查：** 确保帐户防火墙允许您的 IP，或通过允许的网络连接。"
+      "authInstructions": "**示例**\n\nendpoint: `https://myaccount.documents.azure.com:443/` · database: `mydb`\n\n**凭据**\n\n在 Azure 门户中账号的 **Keys** 页面复制终结点和只读密钥。使用本地模拟器时，填写 `https://localhost:8081` 和模拟器密钥。\n\n**范围**\n\n将 `container` 留空可浏览数据库中的所有容器。\n\n**检查**\n\n如果连接被拒绝，请确认账号防火墙允许你的 IP。"
     },
     "bigquery": {
       "project_id": "Google Cloud 项目 ID",
-      "dataset_id": "数据集 ID — 留空查看全部，或指定一个或多个（逗号分隔）",
-      "credentials_path": "服务帐户 JSON 密钥文件路径（可选）",
-      "location": "BigQuery 区域（默认 US）",
-      "authInstructions": "**示例：** project_id: `my-gcp-project` · dataset_id: `analytics` · credentials_path: `/path/to/key.json` · location: `US`\n\n**方式 1 — 应用默认凭据（推荐）：**\n安装 [Google Cloud SDK](https://cloud.google.com/sdk/docs/install)，然后运行 `gcloud auth application-default login`。`credentials_path` 留空。\n\n**方式 2 — 服务帐户密钥文件：**\n在 Google Cloud 控制台创建服务帐户，下载 JSON 密钥，将完整路径填入 `credentials_path`。授予 **BigQuery Data Viewer** 和 **BigQuery Job User** 角色。\n\n**方式 3 — 环境变量：**\n将 `GOOGLE_APPLICATION_CREDENTIALS` 设为服务帐户 JSON 文件路径。`credentials_path` 留空。"
+      "dataset_id": "analytics",
+      "dataset_id_hint": "留空表示所有数据集；多个请用逗号分隔。",
+      "credentials_path": "/path/to/key.json",
+      "location": "US",
+      "authInstructions": "**示例**\n\nproject_id: `my-gcp-project` · dataset_id: `analytics` · location: `US`\n\n**登录**\n\n- **Application default credentials:** 推荐。安装 [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) 并运行 `gcloud auth application-default login`，或设置 `GOOGLE_APPLICATION_CREDENTIALS`。\n- **Service account file:** 填写该账号 JSON 密钥文件的路径。\n\n**访问权限**\n\n该身份需要数据集上的 **BigQuery Data Viewer** 和项目上的 **BigQuery Job User**。\n\n**范围**\n\n将 `dataset_id` 留空可浏览所有数据集，或填写以逗号分隔的 ID。将 `location` 设为数据集所在的位置。"
     },
     "athena": {
-      "aws_profile": "~/.aws/credentials 中的 AWS 配置文件名（设置后无需 access key）",
-      "aws_access_key_id": "AWS 访问密钥 ID（使用 aws_profile 时不需要）",
-      "aws_secret_access_key": "AWS 秘密访问密钥（使用 aws_profile 时不需要）",
-      "aws_session_token": "AWS 会话令牌（临时凭据时必填）",
+      "aws_profile": "default",
+      "aws_access_key_id": "访问密钥 ID",
+      "aws_secret_access_key": "秘密访问密钥",
+      "aws_session_token": "会话令牌",
+      "aws_session_token_hint": "仅用于临时凭据。",
       "region_name": "AWS 区域",
-      "workgroup": "Athena 工作组名称（查询结果位置从工作组配置获取）",
-      "output_location": "S3 查询结果输出位置（如 s3://bucket/path/）。留空则使用工作组配置。",
-      "database": "默认查询数据库/目录",
-      "query_timeout": "查询执行超时时间（秒，默认 300 = 5 分钟）",
-      "authInstructions": "**示例（配置文件）：** aws_profile: `default` · region_name: `us-east-1` · workgroup: `primary` · database: `my_database`\n\n**示例（密钥）：** aws_access_key_id: `AKIA...` · aws_secret_access_key: `wJalr...` · region_name: `us-east-1`\n\n**方式 1 — AWS 配置文件（推荐）：**\n将 `aws_profile` 设为 `~/.aws/credentials` 中的配置文件名。用 `aws configure --profile <name>` 设置。无需 access key。\n\n**方式 2 — 显式凭据：**\n直接输入 `aws_access_key_id` 和 `aws_secret_access_key`。临时凭据需额外填 `aws_session_token`。\n\n**所需 IAM 权限：** `athena:StartQueryExecution`、`athena:GetQueryExecution`、`athena:GetQueryResults`、`athena:GetWorkGroup`、`athena:ListDatabases`、`athena:ListTableMetadata`，以及数据和结果桶的 S3/Glue 权限。"
+      "workgroup": "primary",
+      "output_location": "s3://bucket/path/",
+      "output_location_hint": "留空则使用工作组的结果位置。",
+      "database": "数据库名称",
+      "database_hint": "留空可浏览所有数据库。",
+      "query_timeout": "300",
+      "query_timeout_hint": "单位为秒。",
+      "authInstructions": "**示例**\n\nregion_name: `us-east-1` · workgroup: `primary` · aws_profile: `default`\n\n**登录**\n\n- **AWS profile:** 推荐。填写 `~/.aws/credentials` 中的配置文件名；可用 `aws configure --profile <name>` 创建。\n- **Access keys:** 填写访问密钥 ID 和密钥。临时凭据还需要会话令牌。\n\n**访问权限**\n\n该身份需要能运行 Athena 查询、读取 Glue 目录，并能读写存放数据和查询结果的 S3 位置。\n\n**范围**\n\n将 `database` 留空可浏览所有数据库。除非在高级设置中设置 `output_location`，否则结果会写入工作组配置的位置。"
     },
     "kusto": {
-      "kusto_cluster": "例如 https://mycluster.region.kusto.windows.net",
-      "kusto_database": "数据库名称（必填）",
+      "kusto_cluster": "https://mycluster.region.kusto.windows.net",
+      "kusto_database": "数据库名称",
       "client_id": "仅服务主体",
       "client_secret": "仅服务主体",
       "tenant_id": "仅服务主体",
-      "authInstructions": "**方式 1 — 使用 Microsoft 登录（推荐）：** 使用自己的身份登录并沿用现有 Kusto 权限。服务器配置 `KUSTO_OAUTH_CLIENT_ID` 后会显示此选项。\n\n**方式 2 — Azure 默认身份：** 使用 Azure CLI 登录（`az login`）、托管标识、VS Code 凭据或环境凭据。\n\n**方式 3 — 服务主体：** 提供具有集群访问权限的 `client_id`、`client_secret` 和 `tenant_id`。\n\n无论选择哪种身份，都必须预先拥有所选 Kusto 数据库的数据平面访问权限。"
+      "authInstructions": "**示例**\n\nkusto_cluster: `https://help.kusto.windows.net` · kusto_database: `Samples`\n\n**登录**\n\n- **Microsoft sign-in:** 以你自己的身份登录。服务器已配置时才会显示。\n- **Azure default identity:** 在本地使用你的 [`az login`](https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively) 会话，在 Azure 中使用[托管标识](https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/overview)。登录后可从列表中选择订阅、集群和数据库。\n- **Service principal:** 填写应用的 `client_id`、`client_secret` 和 `tenant_id`。\n\n**访问权限**\n\n该身份至少需要数据库的查看者（viewer）权限；仅登录并不会授予该权限。\n\n**检查**\n\n`az account show` 会显示当前账号和租户。"
     },
     "databricks": {
-      "server_hostname": "例如 adb-1234567890.11.azuredatabricks.net",
-      "http_path": "SQL 仓库 HTTP 路径，例如 /sql/1.0/warehouses/abc123",
-      "catalog": "Unity Catalog 名称（留空则浏览所有 catalog）",
-      "schema": "架构名称（留空则浏览该 catalog 下所有架构）",
-      "access_token": "Databricks 个人访问令牌（dapi...）",
-      "authInstructions": "**在哪里找到这些值：** 在 Databricks 工作区中打开 **SQL → SQL Warehouses**（左侧栏），点击你的仓库，进入 **Connection details** 选项卡，从中复制 **Server hostname** 和 **HTTP path**。\n\n**访问令牌：** 点击右上角头像 → **Settings → Developer → Access tokens → Generate new token**，令牌以 `dapi` 开头且仅显示一次。\n\n**权限：** 该令牌所属用户需要对目标 Unity Catalog 对象拥有 `USE CATALOG` / `USE SCHEMA` 和 `SELECT` 权限。\n\n**范围：** 将 *catalog* 和 *schema* 留空可浏览你有权访问的全部内容，或填写以直接进入指定的 catalog/架构 —— 例如可试用内置的 `samples` catalog → `nyctaxi` → `trips`。\n\n**没有账号？** Databricks Free Edition 免费、无服务器，并内置 `samples` catalog，无需配置集群或仓库。"
+      "server_hostname": "adb-1234567890.11.azuredatabricks.net",
+      "http_path": "/sql/1.0/warehouses/abc123",
+      "catalog": "Catalog 名称",
+      "catalog_hint": "留空可浏览所有 catalog。",
+      "schema": "架构名称",
+      "schema_hint": "留空可浏览该 catalog 中的所有架构。",
+      "access_token": "dapi…",
+      "authInstructions": "**示例**\n\nserver_hostname: `dbc-a1b2c3d4-e5f6.cloud.databricks.com` · http_path: `/sql/1.0/warehouses/abc123`\n\n**连接**\n\n在 Databricks 中打开 **SQL Warehouses**，选择你的仓库，然后从 **Connection details** 复制 `server_hostname` 和 `http_path`。\n\n**凭据**\n\n在 **Settings → Developer → Access tokens** 中创建个人访问令牌，令牌以 `dapi` 开头。\n\n**访问权限**\n\n令牌所属用户需要对要读取的表拥有 `USE CATALOG`、`USE SCHEMA` 和 `SELECT` 权限。\n\n**范围**\n\n将 `catalog` 和 `schema` 留空可浏览全部内容，或填写它们以直接打开某个架构。"
     },
     "superset": {
-      "url": "Superset 基础 URL（如 https://bi.company.com）",
-      "username": "Superset 用户名（使用 SSO 时可选）",
-      "password": "Superset 密码（使用 SSO 时可选）",
-      "authInstructions": "**示例：** url: `https://bi.company.com` · username: `admin` · password: `***`\n\n**设置：** 提供 Superset 实例的基础 URL 以及拥有至少 **Gamma** 角色（数据集读取权限）的用户凭据。\n\n**SSO：** 如果您的 Superset 使用 SSO，请使用 SSO 桥接流程代替密码认证（通过 `PLG_SUPERSET_SSO_LOGIN_URL` 配置）。"
+      "url": "https://bi.company.com",
+      "username": "用户名",
+      "password": "密码",
+      "authInstructions": "**示例**\n\nurl: `https://bi.company.com`\n\n**凭据**\n\n使用至少拥有 **Gamma** 角色、并能读取所需数据集的账号。如果你的 Superset 使用 SSO，请改用 SSO 登录；当服务器设置了 `PLG_SUPERSET_SSO_LOGIN_URL` 时会显示该选项。\n\n**检查**\n\n使用基础 URL，而不是仪表板或图表的链接。"
     },
     "azure_blob": {
       "account_name": "Azure 存储帐户名",
       "container_name": "Azure Blob 容器名",
-      "connection_string": "Azure 存储连接字符串（account_name + 凭据的替代方案）",
-      "credential_chain": "Azure 凭据提供程序有序列表（cli;managed_identity;env）",
+      "connection_string": "DefaultEndpointsProtocol=https;AccountName=…",
+      "credential_chain": "cli;managed_identity;env",
+      "credential_chain_hint": "按顺序尝试的 Azure 凭据提供程序。",
       "account_key": "Azure 存储帐户密钥",
       "sas_token": "Azure SAS 令牌",
       "endpoint": "Azure 端点覆盖",
-      "authInstructions": "**示例（连接字符串）：** connection_string: `DefaultEndpointsProtocol=https;AccountName=...` · container_name: `mydata`\n\n**示例（帐户密钥）：** account_name: `mystorageacct` · container_name: `mydata` · account_key: `abc123...`\n\n**方式 1 — 连接字符串（最简单）：**\n从 Azure 门户 → 存储帐户 → 访问密钥 获取。填入 `connection_string` 即可，`account_name` 可省略。\n\n**方式 2 — 帐户密钥：**\n从 Azure 门户 → 存储帐户 → 访问密钥 获取。使用 `account_name` + `account_key`。\n\n**方式 3 — SAS 令牌（推荐用于受限访问）：**\n从 Azure 门户 → 存储帐户 → 共享访问签名 生成。使用 `account_name` + `sas_token`。可设置时间和权限范围。\n\n**方式 4 — Azure CLI / 托管标识（最安全）：**\n仅需提供 `account_name` + `container_name`。需要 `az login` 或托管标识。\n\n**支持格式：** CSV、Parquet、JSON、JSONL"
+      "authInstructions": "**示例**\n\naccount_name: `mystorageacct` · container_name: `mydata`\n\n**登录**\n\n- **Azure identity:** 推荐。在本地使用你的 [`az login`](https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively) 会话，在 Azure 中使用[托管标识](https://learn.microsoft.com/azure/storage/blobs/authorize-managed-identity)。\n- **SAS token:** 有时效的令牌，允许列出和读取该容器。\n- **Connection string** 或 **Account key:** 在 Azure 门户的 **Storage account → Access keys** 中获取。\n\n**访问权限**\n\nAzure 身份需要在该容器上拥有 [Storage Blob Data Reader](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/storage#storage-blob-data-reader) 角色。\n\n**文件**\n\nCSV、TSV、Parquet、JSON 和 JSONL。"
     },
     "s3": {
       "aws_access_key_id": "AWS 访问密钥 ID",
       "aws_secret_access_key": "AWS 秘密访问密钥",
-      "aws_session_token": "AWS 会话令牌（临时凭据时必填）",
+      "aws_session_token": "会话令牌",
+      "aws_session_token_hint": "仅用于临时凭据。",
       "region_name": "AWS 区域",
       "bucket": "S3 桶名称",
-      "authInstructions": "**示例：** aws_access_key_id: `AKIA...` · aws_secret_access_key: `wJalr...` · region_name: `us-east-1` · bucket: `my-data-bucket`\n\n**获取凭据：** AWS 控制台 → IAM → 用户 → 安全凭据 → 创建访问密钥 → 选择「在 AWS 之外运行的应用程序」。\n\n**所需权限：** 桶的 `s3:GetObject` 和 `s3:ListBucket` 权限。\n\n**支持格式：** CSV、Parquet、JSON、JSONL"
+      "authInstructions": "**示例**\n\nregion_name: `us-east-1` · bucket: `my-data-bucket`\n\n**登录**\n\n- **Access keys:** 在 **IAM → Users → Security credentials → Create access key** 中创建。临时凭据还需要会话令牌。\n- **AWS default credentials:** 使用你本地的 AWS 配置，例如 `aws configure`、环境变量或实例角色。\n\n**访问权限**\n\n该身份需要存储桶上的 `s3:ListBucket` 和文件上的 `s3:GetObject` 权限。\n\n**文件**\n\nCSV、TSV、Parquet、JSON 和 JSONL。"
     },
     "local_folder": {
-      "root_dir": "要浏览的本地目录绝对路径",
+      "root_dir": "/path/to/folder",
       "recursive": "包含子目录中的文件",
-      "file_pattern": "文件过滤模式（如 '*.csv'）",
-      "authInstructions": "将 `root_dir` 指向包含数据文件的本地目录。\n\n**支持格式：** CSV、TSV、Parquet、JSON、JSONL、Excel（.xlsx/.xls）\n\n点击 **浏览** 打开文件夹选择器，或直接粘贴目录路径。"
+      "file_pattern": "*.csv",
+      "authInstructions": "**文件夹**\n\n使用 **Browse** 选择文件夹，或粘贴其完整路径。开启递归扫描可包含子文件夹，并可在高级设置中用文件模式筛选文件，例如 `*.csv`。\n\n**文件**\n\nCSV、TSV、Parquet、JSON 和 JSONL 会作为表加载。Excel、Markdown、PDF 等其他文件可以预览，并作为文件复制到工作区。"
     },
     "_common": {
-      "table_filter": "按关键词过滤表（如 'sales'）"
+      "table_filter": "例如 sales",
+      "table_filter_hint": "只列出名称包含这些关键词的表。"
+    },
+    "clickhouse": {
+      "authInstructions": "**示例**\n\nhost: `localhost` · port: `8123` · username: `default`\n\n**连接**\n\nClickHouse Cloud 使用端口 `8443` 并开启 `secure`。自托管服务器通常使用 HTTP 端口 `8123`。\n\n**凭据**\n\n使用能读取所需数据库的账号。本地安装时，`default` 通常没有密码。\n\n**范围**\n\n将 `database` 留空可浏览所有数据库，或填写某个数据库以直接打开其中的表。"
+    },
+    "cube": {
+      "authInstructions": "**示例**\n\napi_url: `http://localhost:4000`\n\n**凭据**\n\n填写 API 令牌：使用部署的 `CUBEJS_API_SECRET` 签名的 JWT。其安全上下文决定你可以查询哪些数据。开发模式（`CUBEJS_DEV_MODE=true`）下的本地服务器无需令牌。\n\n**检查**\n\n使用 REST API 的 URL，而不是 Playground 页面；URL 不含路径时会自动添加 `/cubejs-api`。只会列出公开的 cube 和 view。"
+    },
+    "powerbi": {
+      "authInstructions": "**示例**\n\nworkspace: `Sales Analytics`\n\n**工作区**\n\n填写工作区名称，或其 URL 中的 ID（`.../groups/<id>/...`）。\n\n**登录**\n\n- **Azure default identity:** 推荐。使用能打开这些模型的账号运行 `az login`；你的权限和行级安全性都会生效。\n- **Service principal:** 已添加到工作区的 Entra 应用的客户端 ID、密钥和租户 ID。它无法查询使用行级安全性或 SSO 的模型。\n\n**访问权限**\n\n你需要每个语义模型的 **Read** 和 **Build** 权限。Power BI 管理员必须启用 *Dataset Execute Queries REST API*；使用服务主体时还需启用 *Allow service principals to use Power BI APIs*。\n\n**限制**\n\n每个用户每分钟 120 次查询，每个结果最多 10,000 行。不支持 Azure Analysis Services 中的模型。"
+    },
+    "sample_datasets": {
+      "authInstructions": "内置示例数据集无需任何设置或凭据。打开连接器即可浏览示例并导入表。"
     }
   }
 }

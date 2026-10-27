@@ -14,12 +14,9 @@ import { Box, ButtonBase, IconButton, ListItemIcon, ListItemText, Menu, MenuItem
 import CloseIcon from '@mui/icons-material/Close';
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 import PushPinIcon from '@mui/icons-material/PushPin';
-import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
-import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import ArticleIcon from '@mui/icons-material/Article';
-import HtmlIcon from '@mui/icons-material/Html';
-import { chartFamilyIcon, InsightIcon, TableIcon } from '../icons';
+import { chartFamilyIcon, FileTypeIcon, FormIcon, InsightIcon, isAppFile, TableIcon } from '../icons';
 import { WorkflowGears } from '../components/FunComponents';
 import { AgentToyIcon } from './AgentToyIcon';
 import { useDispatch, useSelector } from 'react-redux';
@@ -46,7 +43,7 @@ type Target = CanvasTab['target'];
  */
 const tabTone = (target: Target): string => {
     if (target.type === 'chart' || target.type === 'table' || target.type === 'external-table') return 'primary.main';
-    if (target.type === 'report' || (target.type === 'file' && /\.(html?|app\.jsx)$/i.test(target.fileName))) return 'secondary.main';
+    if (target.type === 'report' || (target.type === 'file' && isAppFile(target.fileName))) return 'secondary.main';
     return 'text.secondary';
 };
 
@@ -89,8 +86,8 @@ const useTabLabel = () => {
             case 'table': return { title: tableName(target.tableId), icon: <TableIcon sx={glyphSx} /> };
             case 'file': {
                 const node = fileNodes.find(item => item.path === target.fileName);
-                const Glyph = /\.html?$/i.test(target.fileName) ? HtmlIcon : /\.app\.jsx$/i.test(target.fileName) ? DashboardOutlinedIcon : InsertDriveFileOutlinedIcon;
-                return { title: node?.displayName || target.fileName.split('/').pop() || target.fileName, icon: <Glyph sx={glyphSx} /> };
+                return { title: node?.displayName || target.fileName.split('/').pop() || target.fileName,
+                    icon: <FileTypeIcon path={target.fileName} size={glyphSx.width} /> };
             }
             case 'report': return { title: reports.find(item => item.id === target.reportId)?.title || t('report.untitled'), icon: <ArticleIcon sx={glyphSx} /> };
             case 'external-table': {
@@ -108,7 +105,7 @@ const useTabLabel = () => {
                     || (turn?.content || '').replace(/[#*`>|]/g, ' ').replace(/\s+/g, ' ').trim();
                 const icon = turn?.workflow || turn?.form?.kind === 'workflow'
                     ? <WorkflowGears running={turn.workflow?.status === 'running'} size={14} color="currentColor" showTooltip={false} />
-                    : turn?.form ? <InsertDriveFileOutlinedIcon sx={glyphSx} /> : <AgentToyIcon sx={glyphSx} />;
+                    : turn?.form ? <FormIcon sx={glyphSx} /> : <AgentToyIcon sx={glyphSx} />;
                 return { title: title || t('canvas.response', { defaultValue: 'Response' }), icon };
             }
             default: return { title: '', icon: <AgentToyIcon sx={glyphSx} /> };

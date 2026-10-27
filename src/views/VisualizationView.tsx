@@ -49,7 +49,7 @@ import '../scss/VisualizationView.scss';
 import '../scss/DataView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, explanationContent } from '../app/dfSlice';
-import { FLINT_INPUT, assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
+import { FLINT_INPUT, Size, assembleVegaChart, chartCanvasBox, containScale, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
 import { displayRowsCache } from '../app/displayRowsCache';
 import { apiRequest } from '../app/apiClient';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
@@ -577,6 +577,23 @@ const scaleSpecFonts = (spec: any, factor: number): void => {
     walk(spec);
 };
 
+/**
+ * The CSS size Vega drew at: its inline style on a HiDPI canvas, else the
+ * element's own width/height (a 1× canvas, or an SVG). Read from what Vega set,
+ * not from layout, so `max-width: 100%` on the host can't clip it.
+ */
+const drawnCssSize = (drawn: HTMLElement): Size => {
+    const px = (value: string | null | undefined) => {
+        const n = value ? parseFloat(value) : NaN;
+        return Number.isFinite(n) && n > 0 ? n : undefined;
+    };
+    const rect = drawn.getBoundingClientRect();
+    return {
+        width: px(drawn.style.width) ?? px(drawn.getAttribute('width')) ?? rect.width,
+        height: px(drawn.style.height) ?? px(drawn.getAttribute('height')) ?? rect.height,
+    };
+};
+
 /** Main chart uses vega-embed (interactive tooltips). Static toSVG() removes hover behavior. */
 const VegaChartRenderer: FC<{
     chart: Chart;
@@ -606,9 +623,11 @@ const VegaChartRenderer: FC<{
     const elementId = `focused-chart-element-${chart.id}`;
     // Bumped when a render lands, so the display-scale effect can re-apply.
     const [renderTick, setRenderTick] = useState(0);
-    // Vega's own CSS width for the current render — the baseline the shrink is
+    // Vega's own CSS size for the current render — the baseline the shrink is
     // measured against. Captured in the embed callback, never re-derived.
-    const naturalWidthRef = useRef<number | null>(null);
+    const naturalSizeRef = useRef<Size | null>(null);
+    // The box Flint laid this render out for, magnified with the render.
+    const boxRef = useRef<Size | undefined>(undefined);
     const [assemblyError, setAssemblyError] = useState<string>();
 
     useEffect(() => {
@@ -667,6 +686,7 @@ const VegaChartRenderer: FC<{
             scaleSpecSize(spec, scaleFactor);
             scaleSpecFonts(spec, scaleFactor);
         }
+        const box = chartCanvasBox(spec);
 
         onSpecReady?.(spec);
 
@@ -690,13 +710,17 @@ const VegaChartRenderer: FC<{
                     return;
                 }
                 embedResult.current = result;
-                // Record Vega's own CSS width before anything rescales it. It
-                // must be read here: Vega writes the width *inline*, so clearing
+                // Record Vega's own CSS size before anything rescales it. It
+                // must be read here: Vega writes the size *inline*, so clearing
                 // that style later doesn't reveal a natural size, it removes the
-                // sizing and leaves the backing-store width (devicePixelRatio
+                // sizing and leaves the backing-store size (devicePixelRatio
                 // times too large on HiDPI).
                 const drawn = el.querySelector('canvas, svg') as HTMLElement | null;
-                naturalWidthRef.current = drawn ? drawn.getBoundingClientRect().width : null;
+                naturalSizeRef.current = drawn ? drawnCssSize(drawn) : null;
+                boxRef.current = box && {
+                    width: box.width * scaleFactor,
+                    height: box.height * scaleFactor,
+                };
                 setRenderTick(t => t + 1);
             })
             .catch((err) => {
@@ -717,13 +741,16 @@ const VegaChartRenderer: FC<{
 
     // Resize the drawn canvas instead of recompiling. Overriding Vega's inline
     // width (with `height: auto` from the wrapper) scales the chart uniformly
-    // and only ever downsamples, so it stays crisp.
+    // and only ever downsamples, so it stays crisp. Two shrinks compose: the
+    // user's zoom, and Flint's contract that the host contains the drawing in
+    // the box it was laid out for (title, keys and axes may run past it).
     useEffect(() => {
         const el = document.getElementById(elementId);
         const drawn = el?.querySelector('canvas, svg') as HTMLElement | null;
-        const natural = naturalWidthRef.current;
+        const natural = naturalSizeRef.current;
         if (!drawn || !natural) return;
-        drawn.style.width = `${Math.round(natural * displayScale)}px`;
+        const fit = containScale(natural, boxRef.current);
+        drawn.style.width = `${Math.round(natural.width * displayScale * fit)}px`;
     }, [displayScale, renderTick, elementId]);
 
     if (chart.chartType === "Auto") {
@@ -870,8 +897,15 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     // recompile the chart every frame — and a width resting near a step
     // boundary would flip between two ceilings. The chart resizes once, when
     // the drag stops.
+    //
+    // The user's stretch setting is the upper bound: a narrow panel can lower
+    // the stretch, a wide one never raises it past what the user chose. The
+    // factor comes from the width only; the box height follows it.
     const settledCanvasWidth = useSettledValue(canvasContentWidth);
-    const chartStretch = chartStretchCeiling(settledCanvasWidth, config.defaultChartWidth);
+    const chartStretch = Math.min(
+        config.maxStretchFactor ?? 1.5,
+        chartStretchCeiling(settledCanvasWidth, config.defaultChartWidth),
+    );
 
     const dispatch = useDispatch();
 

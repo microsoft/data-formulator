@@ -98,9 +98,9 @@ starters:
     stories:
       - id: education-sdg4-e20
         label: Finishing school
-        headline: More young people finish school, but reading lags
-        dek: Six in 10 young people now finish high school, up from under four in 10 in 2000. Yet four in 10
-          pupils leave primary without basic reading skills.
+        headline: Finishing high school is rarest in sub-Saharan Africa
+        dek: In South Sudan, just 2 in 100 young people finish high school. Niger, the Central African Republic
+          and Chad are all below 7 in 100.
         featured: true
         prompt: "Where do young people finish high school least often?"
         file: stories/education-sdg4-e20.zip
@@ -109,18 +109,16 @@ starters:
         - Do girls or boys finish school more often?
         - Is completion lower in rural areas?
         stack:
-        - label: Completion since 2000
+        - label: On the map
           image: stories/education-sdg4-e20-stack-1.png
-        - label: Where it ends early
+        - label: Ranked
           image: stories/education-sdg4-e20-stack-2.png
-        - label: Reading skills
-          image: stories/education-sdg4-e20-stack-3.png
         image: stories/education-sdg4-e20.png
       - id: education-sdg4-e21
         label: Rich and poor
-        headline: Poorest children half as likely to finish high school
-        dek: 'Across 89 countries, 32% of the poorest fifth finish upper secondary versus 70% of the richest.
-          In Nigeria the gap is 74 points: 16% versus 90%.'
+        headline: In Nigeria, the rich–poor gap in finishing school is widest
+        dek: 'In Nigeria, 90% of children from the richest fifth of families finish high school, but only 16%
+          from the poorest: the widest gap of 87 countries. Laos and Ghana come next.'
         prompt: "Where is the gap between rich and poor children in finishing school biggest?"
         file: stories/education-sdg4-e21.zip
         follow_ups:
@@ -130,9 +128,9 @@ starters:
         image: stories/education-sdg4-e21.png
       - id: education-sdg4-e22
         label: Learning to read
-        headline: Two in five primary pupils fall short in reading
-        dek: 'In 2019, 58% of pupils reached minimum reading proficiency by the end of primary school: 97% in
-          Europe and North America, 30% in Sub-Saharan Africa.'
+        headline: Where nearly every pupil learns to read
+        dek: By the end of primary school, 99% of pupils in Canada reach minimum reading proficiency, and 97–98%
+          in several European countries and Singapore.
         prompt: "Where do most children reach a minimum reading level by the end of primary school?"
         file: stories/education-sdg4-e22.zip
         follow_ups:
@@ -142,9 +140,9 @@ starters:
         image: stories/education-sdg4-e22.png
       - id: education-sdg4-e23
         label: Schools without power
-        headline: One in five primary schools still has no power
-        dek: About 78% of primary schools worldwide had electricity in 2024. In Chad, 99% lack it, and computers
-          for teaching are almost absent in Burkina Faso and Pakistan.
+        headline: In Chad, 99% of primary schools have no power
+        dek: Schools without electricity are concentrated in sub-Saharan Africa. After Chad come Niger (92%) and
+          DR Congo (90%).
         prompt: "Where are schools still without power?"
         file: stories/education-sdg4-e23.zip
         follow_ups:
@@ -183,29 +181,27 @@ starters:
     stories:
       - id: education-opri-o20
         label: Out of school
-        headline: 'Progress stalls: 273 million children out of school'
-        dek: The number fell by a third after 2000, then crept back up after 2017. Nearly half are teenagers
-          of upper-secondary age.
+        headline: India has the most children out of school, about 50 million
+        dek: India, Pakistan and Ethiopia have the most children and young people out of school, about 50, 23
+          and 15 million.
         featured: true
         prompt: "Where do out-of-school children and young people live? Show me on a map."
         file: stories/education-opri-o20.zip
         follow_ups:
-        - Which countries have the most children out of school?
+        - How has the number of children out of school changed since 2000?
         - How has the number changed in sub-Saharan Africa?
         - What share of primary-age children are out of school in each region?
         stack:
-        - label: Out of school over time
+        - label: On the map
           image: stories/education-opri-o20-stack-1.png
-        - label: Where they live
+        - label: Ranked
           image: stories/education-opri-o20-stack-2.png
-        - label: Girls and boys
-          image: stories/education-opri-o20-stack-3.png
         image: stories/education-opri-o20.png
       - id: education-opri-o21
         label: Students abroad
-        headline: Students abroad have more than tripled since 2000
-        dek: 7.3 million students studied abroad in 2023, up from 2.1 million. Most head to the US and Britain;
-          China and India send by far the most.
+        headline: The US and UK host the most students from abroad
+        dek: In 2023 the US hosted 957,000 international students and the UK 748,000, followed by Australia,
+          Germany and Canada.
         prompt: "Where do students who study abroad go?"
         file: stories/education-opri-o21.zip
         follow_ups:
@@ -216,8 +212,8 @@ starters:
       - id: education-opri-o22
         label: Adults who cannot read
         headline: 739 million adults still cannot read
-        dek: In 2024, 739 million adults lacked basic literacy, nearly two-thirds of them women; about three
-          in four live in Southern Asia or sub-Saharan Africa.
+        dek: In 2024, 739 million adults could not read and write a simple statement. Nearly two-thirds of
+          them were women.
         prompt: "How many adults can't read?"
         file: stories/education-opri-o22.zip
         follow_ups:
@@ -228,8 +224,8 @@ starters:
       - id: education-opri-o23
         label: Years in school
         headline: From 14 years of school to fewer than two
-        dek: Adults aged 25 and over average 14.3 years of schooling in Germany but 1.6 in Mali. Namibia and
-          Brazil are among countries that gained three to five years since 2000.
+        dek: Adults aged 25 and over average 14 years of schooling in the US, 8 in China and 7.3 in India,
+          but 1.6 in Mali.
         prompt: "How many years of school do adults have, on average?"
         file: stories/education-opri-o23.zip
         follow_ups:
@@ -268,9 +264,9 @@ starters:
     stories:
       - id: science-s20
         label: The world's research
-        headline: World research spending climbs, but Africa falls behind
-        dek: The world spent 1.92% of GDP on research in 2023. Israel and South Korea lead; East Asia has nearly
-          caught up with Europe and North America, Sub-Saharan Africa hasn't.
+        headline: Israel and South Korea spend the most on research
+        dek: Israel spends 6.35% of its GDP on research and South Korea 4.94%, ahead of Sweden, the US and
+          Japan.
         featured: true
         prompt: "Which countries spend the most on research?"
         file: stories/science-s20.zip
@@ -279,18 +275,16 @@ starters:
         - Which African countries spend the most on research?
         - Do countries with more researchers spend more on research?
         stack:
-        - label: World spending
+        - label: On the map
           image: stories/science-s20-stack-1.png
-        - label: Top spenders
+        - label: Ranked
           image: stories/science-s20-stack-2.png
-        - label: Researchers
-          image: stories/science-s20-stack-3.png
         image: stories/science-s20.png
       - id: science-s21
         label: Women in research
-        headline: Women are still only a third of researchers
-        dek: Women were 31.4% of researchers worldwide in 2023, up about two points in a decade, yet they are
-          at least half in 23 countries, from Myanmar to Argentina.
+        headline: Women are at least half of researchers in 23 countries
+        dek: Myanmar leads at 76.5%, then Kyrgyzstan and Azerbaijan. Most of the 23 are in Eastern Europe,
+          the Caucasus and Central Asia, or Latin America.
         prompt: "Where are women at least half of researchers?"
         file: stories/science-s21.zip
         follow_ups:
@@ -299,27 +293,27 @@ starters:
         - Are women more often researchers at universities or in business?
         image: stories/science-s21.png
       - id: science-s22
-        label: Korea's research boom
-        headline: South Korea's research push overtakes Japan and the US
-        dek: South Korea's research spending rose from 2.14% of GDP in 1996 to 4.94% in 2023, second only to
-          Israel, while its researchers per million quadrupled to 9,472.
-        prompt: "How did South Korea become a research leader?"
+        label: Korea's research rank
+        headline: 'South Korea: second in research spending, first in researchers'
+        dek: South Korea spends 4.94% of its GDP on research, behind only Israel, and has 9,472 researchers per
+          million people, the most of any country except tiny Liechtenstein.
+        prompt: "Where does South Korea rank in research today?"
         file: stories/science-s22.zip
         follow_ups:
-        - How has China's research spending grown over the same years?
-        - Which other countries spend more than 3% of GDP on research?
+        - How has South Korea's research spending changed since 2000?
         - Compare researchers per million people in South Korea and Germany.
+        - Which other countries spend more than 3% of GDP on research?
         image: stories/science-s22.png
       - id: science-s23
-        label: Asia catches up
-        headline: East Asia closes in on North America in research
-        dek: East Asia's research spending rose from 1.82% to 2.83% of GDP between 2000 and 2023, pulling well
-          ahead of Europe. South Korea led the climb.
-        prompt: "Is Asia catching up with Europe and North America in research?"
+        label: China and the US
+        headline: China is catching up with the US in research
+        dek: China spent 2.58% of its GDP on research in 2023, against 3.45% in the US. In 2000 its share was
+          only a third of the US level.
+        prompt: "How does China compare with the US in research?"
         file: stories/science-s23.zip
         follow_ups:
-        - How does Southern Asia compare with East Asia?
-        - Show research spending in Latin America over time.
+        - Is Asia catching up with Europe and North America in research?
+        - How does India compare with China?
         - Which countries have the most researchers per million people?
         image: stories/science-s23.png
   - id: culture
@@ -359,18 +353,16 @@ starters:
         - Has heritage spending grown since 2017?
         - How does spending compare across Europe?
         stack:
-        - label: Typical spending
+        - label: On the map
           image: stories/culture-c20-stack-1.png
-        - label: Top spenders
+        - label: Ranked
           image: stories/culture-c20-stack-2.png
-        - label: Spending and wealth
-          image: stories/culture-c20-stack-3.png
         image: stories/culture-c20.png
       - id: culture-c21
         label: Who pays
         headline: Who pays for heritage? Mostly national governments
         dek: In 30 of 37 reporting countries, national governments outspend local ones. In Belgium, towns and
-          cities supply 88%. Private money is usually a small share.
+          cities supply 88%.
         prompt: "Who pays for heritage: national or local governments?"
         file: stories/culture-c21.zip
         follow_ups:
@@ -380,9 +372,9 @@ starters:
         image: stories/culture-c21.png
       - id: culture-c22
         label: Monuments or nature
-        headline: Most heritage money goes to culture, not nature
-        dek: In 14 of 18 reporting countries, cultural heritage gets more than nature. Finland spent $297 per
-          person on culture and $6 on nature; Switzerland spends most on nature.
+        headline: Only four countries spend more on nature than on monuments
+        dek: Colombia puts 90% of its heritage spending into nature, followed by Estonia, Georgia and Ecuador.
+          The other 14 reporting countries spend more on cultural heritage.
         prompt: "Where does nature get the bigger share of heritage spending?"
         file: stories/culture-c22.zip
         follow_ups:
@@ -392,13 +384,13 @@ starters:
         image: stories/culture-c22.png
       - id: culture-c23
         label: After the pandemic
-        headline: 'Heritage budgets since the pandemic: 17 up, 14 down'
-        dek: Of 31 countries reporting, 17 spend more per person on heritage than before COVID-19. Finland added
-          the most, $88 per person; Hungary cut the most, $63.
-        prompt: "Are governments spending more on heritage than before the pandemic?"
+        headline: Finland added the most heritage spending since the pandemic
+        dek: Finland spends $88 more per person on heritage than before COVID-19 and Switzerland $56 more,
+          followed by Slovakia, Ecuador and Canada.
+        prompt: "Which countries added the most to heritage spending per person since before the pandemic?"
         file: stories/culture-c23.zip
         follow_ups:
+        - Which countries cut heritage spending since the pandemic?
         - How did heritage spending change in 2020?
-        - Show spending over time for the countries that cut the most.
-        - Did private heritage spending recover after COVID-19?
+        - Show heritage spending over time for Finland and Switzerland.
         image: stories/culture-c23.png

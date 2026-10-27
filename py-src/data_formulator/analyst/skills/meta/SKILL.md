@@ -17,13 +17,10 @@ actions: [ask_user, long_response]
 ## Common Workflows
 
 Choose the next useful step from the user's goal and the data already available.
-Analysis, workspace, and visualization tools below are ready to use; no skill
-load is needed for these workflows, except that finding or loading data beyond the
-session needs the `connected_data` skill's guidance first.
-
-Choose data by relevance, whether loaded or externally referenced. Follow the
-`connected_data` skill (load it first) to choose an acquisition route, resolve access, and continue to the requested
-result; do not hand an available loading step back to the user.
+Analysis, workspace, and visualization tools below are ready to use without loading
+a skill; data beyond the session needs `connected_data` first (Data Beyond the Session).
+Choose data by relevance, whether loaded or externally referenced, and do not hand an
+available loading step back to the user.
 
 | User goal | Workflow | Done when |
 |---|---|---|

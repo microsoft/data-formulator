@@ -204,7 +204,7 @@
    "id": "textTurn_exploreDataFromNL_1792310909066_1792310965504",
    "displayId": "textTurn_exploreDataFromNL_1792310909066_closing",
    "textKind": "explain",
-   "content": "About **739 million adults worldwide** lacked basic literacy in **2024**, the latest year available. Here, adults means people aged **15 and older**, and basic literacy means being able to read and write a simple statement with understanding.\n\nOf these, about **466 million were women** and **273 million were men**—women accounted for **63%**.\n\nSource: UNESCO Institute for Statistics, February 2026 release. These are global estimates, not a direct count of everyone’s reading ability.",
+   "content": "**About 739 million adults worldwide could not read and write a simple statement in 2024.** Nearly two-thirds were women: about **466 million women** and **273 million men**.\n\nAdults means people aged 15 and older. Source: UIS, February 2026 release.",
    "parentNodeId": "d_output",
    "actionId": "exploreDataFromNL_1792310909066",
    "createdAt": 1792310965505,

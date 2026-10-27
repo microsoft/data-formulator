@@ -28,13 +28,14 @@ import { batch, useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, SSEMessage, GeneratedReport } from '../app/dfSlice';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { extractErrorMessage } from '../app/errorHandler';
-import { Chart, ComputationInputSource, DictTable, DraftNode, InteractionEntry, TextTurn, LoadedTableNode, FileNode, isConversationRootId, ProgressStep } from "../components/ComponentType";
+import { Chart, CodeExecution, ComputationInputSource, DictTable, DraftNode, InteractionEntry, TextTurn, LoadedTableNode, FileNode, isConversationRootId, ProgressStep } from "../components/ComponentType";
+import { codeCallsOf } from "../app/toolCalls";
 import { buildThreads, type ThreadSpec } from '../app/threadGraph';
 import { classifyInputSourceTransition, shouldShowInputSourceTransition } from '../app/agentInteractionPolicy';
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
 import { ScrollFadeEdge, useScrollFade } from '../components/ScrollFade';
-import { splitThreadRuns } from './threadLayout';
+import { THREAD_SEGMENT_BUDGET, wrapThreadBlocks } from './threadLayout';
 import { loadTable } from '../app/tableThunks';
 import { AppDispatch } from '../app/store';
 import { WorkflowProgress } from './WorkflowPanel';
@@ -47,7 +48,10 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import PersonIcon from '@mui/icons-material/Person';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
-import { TableIcon, InsightIcon, StreamIcon, AgentIcon, chartFamilyIcon } from '../icons';
+import { AppMiniature, ReportMiniature } from '../components/ArtifactMiniatures';
+import { THREAD_DECK_HEIGHT, ThreadDeck, ThreadOutput } from '../components/ThreadDeck';
+import { keyframes } from '@mui/system';
+import { TableIcon, InsightIcon, StreamIcon, AgentIcon, chartFamilyIcon, FileTypeIcon, FormIcon, isAppFile } from '../icons';
 
 
 import _ from 'lodash';
@@ -62,11 +66,12 @@ import { getConversationSourceKey } from './threadProvenance';
 import { findLeadIn, findRevealTarget, revealDelta } from './threadReveal';
 
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
-import HtmlIcon from '@mui/icons-material/Html';
-import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import AddIcon from '@mui/icons-material/Add';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardDoubleArrowDownIcon from '@mui/icons-material/KeyboardDoubleArrowDown';
+import CheckIcon from '@mui/icons-material/Check';
+import KeyboardDoubleArrowUpIcon from '@mui/icons-material/KeyboardDoubleArrowUp';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import CodeIcon from '@mui/icons-material/Code';
@@ -93,7 +98,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import CallMergeIcon from '@mui/icons-material/CallMerge';
 
-import { transition, radius, borderColor, conversationWidth } from '../app/tokens';
+import { transition, radius, borderColor, conversationWidth, iconTone } from '../app/tokens';
 
 import { SimpleChartRecBox } from './SimpleChartRecBox';
 import { InteractionEntryCard, getEntryGutterIcon, getDefaultGutterIcon, PlanStepsView, RunPlanChecklist } from './InteractionEntryCard';
@@ -103,15 +108,15 @@ import { useLayout } from '../app/LayoutProvider';
 /** Pick the icon component for a step line based on known prefixes. */
 // Re-exported from InteractionEntryCard — kept here for backward compat with gutter icon logic
 
-const openToolActivity = (nodeId: string, execution: NonNullable<TextTurn['executions']>[number] | NonNullable<TextTurn['codeExecutions']>[number]) => {
+const openToolActivity = (nodeId: string, execution: NonNullable<TextTurn['executions']>[number] | CodeExecution) => {
     window.dispatchEvent(new CustomEvent('df-view-tool-activity', { detail: { nodeId, execution } }));
 };
 
 const ToolActivitySelectionContext = React.createContext<{ nodeId: string; executionId: string } | null>(null);
 
-type ToolCall = NonNullable<TextTurn['executions']>[number] | NonNullable<TextTurn['codeExecutions']>[number];
+type ToolCall = NonNullable<TextTurn['executions']>[number] | CodeExecution;
 /** The tool calls of one agent step. */
-type ToolStep = { nodeId: string; executions: NonNullable<TextTurn['executions']>; codeExecutions: NonNullable<TextTurn['codeExecutions']> };
+type ToolStep = { nodeId: string; executions: NonNullable<TextTurn['executions']>; codeExecutions: CodeExecution[] };
 
 /** Tool calls folded into one row; consecutive tool-only steps share a row. */
 const ToolActivityRow: React.FC<{ steps: ToolStep[]; label: string; active?: boolean;
@@ -190,9 +195,15 @@ const PlanCompletedIcon: FC<{ sx?: unknown }> = () => <CheckCircleOutlineIcon sx
 /** The active step of a run's progress; shimmers while the run works on it. */
 export const ThinkingStepsBanner = (steps: (ProgressStep | string)[], sx?: SxProps, active: boolean = true) => {
     const lastStep = steps.length > 0 ? steps[steps.length - 1] : '';
+    // Between steps the run shows the one it just finished, with a spinner after it for what comes next.
+    const between = active && typeof lastStep !== 'string' && lastStep.status !== 'running';
     return (
         <Box sx={{ ...sx }}>
-            <PlanStepsView steps={lastStep ? [lastStep] : []} activeLastStep={active} />
+            <PlanStepsView steps={lastStep ? [lastStep] : []} activeLastStep={active}
+                trailing={between ? <>
+                    <CheckIcon sx={{ width: 10, height: 10, flexShrink: 0, mt: '2px', color: 'success.main' }} />
+                    <CircularProgress size={8} thickness={6} sx={{ flexShrink: 0, mt: '3px', ml: '2px', color: 'text.disabled' }} />
+                </> : undefined} />
         </Box>
     );
 };
@@ -539,6 +550,7 @@ const ThreadResponseCard: FC<ThreadResponseCardProps> = ({
     return (
         <Box
             onClick={onSelect}
+            data-selected={selected || undefined}
             sx={{
                 width: '100%',
                 minWidth: 0,
@@ -610,8 +622,16 @@ const ThreadResponseCard: FC<ThreadResponseCardProps> = ({
     );
 };
 
+const unfoldRun = keyframes`
+    from { transform: translateY(-10px); opacity: 0; }
+    to { transform: none; opacity: 1; }`;
+
 /** One line of a collapsed thread's preview. */
 type ThreadPreviewLine = { role: 'user' | 'agent' | 'item'; text: string };
+/** A step still at work, shown under a collapsed thread: running, or waiting on the user. */
+type LiveStatus = 'running' | 'waiting';
+/** What a collapsed thread, or part of one, shows: its charts, counts and lines. */
+type ThreadNodeSummary = { outputs: ThreadOutput[]; lines: ThreadPreviewLine[] };
 
 let SingleThreadGroupView: FC<{
     // The thread to render: its nodes in order (design-docs/58).
@@ -621,13 +641,19 @@ let SingleThreadGroupView: FC<{
     threadSummary?: string,
     // A collapsed thread's requests, responses, and results, one per line.
     threadLines?: ThreadPreviewLine[],
+    // What the thread produced (charts, reports, apps) in order; a collapsed thread shows them as a deck.
+    threadOutputs?: ThreadOutput[],
+    // The user just collapsed or expanded this thread: play the transition.
+    animateToggle?: boolean,
     // Whether the focused item is in this thread.
     containsFocus?: boolean,
     historyCollapsed?: boolean,
     onToggleHistory?: () => void,
     layoutKey?: string,
-    // A sub-thread shows only these runs [start, end) of its thread; runs are tagged for measuring.
-    runRange?: [number, number],
+    // The turns that start the thread's blocks: each starts a run (a request and all it produced).
+    blockStarts?: Set<string>,
+    // A sub-thread shows only its runs from the block starting at `start` up to the one at `end`.
+    segment?: { start?: string; end?: string },
     chartElements: { tableId: string, chartId: string, element: any }[];
     // The focused node and everything above it.
     highlightedNodeIds: Set<string>;
@@ -638,11 +664,14 @@ let SingleThreadGroupView: FC<{
     threadName,
     threadSummary,
     threadLines = [],
+    threadOutputs = [],
+    animateToggle = false,
     containsFocus = false,
     historyCollapsed = false,
     onToggleHistory,
     layoutKey,
-    runRange = [0, Infinity],
+    blockStarts,
+    segment,
     chartElements,
     highlightedNodeIds,
     sx
@@ -714,7 +743,7 @@ let SingleThreadGroupView: FC<{
         deleteLabel: t('dataThread.deleteTable'),
     });
 
-    type TimelineItem = { outputNodeId?: string; key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'artifact' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; gutterIcon?: React.ReactNode; artifactTone?: 'agent' | 'error'; secondaryActivity?: boolean };
+    type TimelineItem = { outputNodeId?: string; turnId?: string; live?: LiveStatus; key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'artifact' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; gutterIcon?: React.ReactNode; artifactTone?: 'agent' | 'error'; secondaryActivity?: boolean };
     let timelineItems: (TimelineItem & { exchangeId?: string })[] = [];
     // The open row of consecutive tool-only steps (see activityRow).
     let toolGroup: { item: TimelineItem; steps: ToolStep[]; labels: TextTurn[] } | null = null;
@@ -797,7 +826,7 @@ let SingleThreadGroupView: FC<{
                                 '&:disabled': { color: 'inherit', cursor: 'default', textDecoration: 'none' },
                             }}>
                             {source.kind === 'file'
-                                ? <InsertDriveFileOutlinedIcon sx={{ fontSize: textVar.xs, color: 'inherit' }} />
+                                ? <FileTypeIcon path={source.displayName} size={textVar.xs} sx={{ color: 'inherit' }} />
                                 : <TableIcon sx={{ fontSize: textVar.xs, color: 'inherit' }} />}
                             <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {source.kind === 'file' ? source.displayName.replace(/^\/?scratch\//, '') : sourceTableOf(source)?.displayId || source.displayName}
@@ -870,12 +899,12 @@ let SingleThreadGroupView: FC<{
         const isGenerating = report.status === 'generating';
         const gutterIcon = isGenerating
             ? <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.secondary.main }} />
-            : <ArticleIcon sx={{ width: 14, height: 14, color: rowHL ? theme.palette.secondary.main : 'rgba(0,0,0,0.3)' }} />;
+            : <ArticleIcon sx={{ width: 14, height: 14, color: rowHL ? theme.palette.secondary.main : iconTone.muted }} />;
         return {
             key: `report-${report.id}`, outputNodeId: report.id, type: 'artifact' as const, highlighted: rowHL,
             reportId: report.id, gutterIcon,
             element: <ThreadArtifactCard artifactType="report" title={report.title || t('report.untitled')}
-                selected={isFocused}
+                selected={isFocused} preview={<ReportMiniature chartIds={report.selectedChartIds || []} />}
                 notes={isGenerating ? t('report.composing') : undefined}
                 onClick={() => dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }))}
                 actions={<ArtifactDeleteButton label={t('dataThread.deleteReport')}
@@ -885,17 +914,15 @@ let SingleThreadGroupView: FC<{
     const pushFile = (file: FileNode, highlighted: boolean) => {
         const selected = focusedId?.type === 'reference' ? focusedId.referenceId === file.id
             : canvasTarget?.type === 'file' && canvasTarget.fileName === file.path;
-        const isHtmlApp = /\.html?$/i.test(file.path);
-        const isApp = isHtmlApp || /\.app\.jsx$/i.test(file.path);
-        const FileGlyph = isHtmlApp ? HtmlIcon : isApp ? DashboardOutlinedIcon : InsertDriveFileOutlinedIcon;
-        const accent = isApp ? 'secondary.main' : 'primary.main';
+        const isApp = isAppFile(file.path);
+        const rowHL = highlighted || selected;
         timelineItems.push({
-            key: file.id, outputNodeId: file.id, type: 'artifact', highlighted: highlighted || selected,
-            // The HTML wordmark is short and wide; enlarge it without moving the gutter.
-            gutterIcon: <FileGlyph sx={{ width: isHtmlApp ? 22 : 14, height: isHtmlApp ? 22 : 14, m: isHtmlApp ? '-4px' : 0,
-                color: selected ? accent : 'text.secondary' }} />,
+            key: file.id, outputNodeId: file.id, type: 'artifact', highlighted: rowHL,
+            gutterIcon: <FileTypeIcon path={file.path} size={14}
+                sx={{ color: rowHL ? (isApp ? 'secondary.main' : 'primary.main') : iconTone.muted }} />,
             element: <Box className="data-thread-card-wrapper" sx={{ display: 'flex', width: '100%', minWidth: 0 }}>
-                    <ThreadArtifactCard artifactType={isApp ? 'app' : 'file'} title={file.displayName} selected={selected} notes={file.notes}
+                    <ThreadArtifactCard artifactType={isApp ? 'app' : 'file'} title={file.displayName} selected={selected}
+                        preview={isApp ? <AppMiniature path={file.path} version={file.contentHash} /> : undefined} notes={file.notes}
                         onClick={() => dispatch(dfActions.setFocused({ type: 'file', fileName: file.path }))}
                         actions={<ArtifactDeleteButton label={t('dataThread.deleteFile', { defaultValue: 'Delete file' })}
                             disabled={deletingFiles.has(file.path)} onClick={() => void deleteFile(file.path)} />} />
@@ -921,11 +948,12 @@ let SingleThreadGroupView: FC<{
     const pushUserMessage = (turn: TextTurn, highlighted: boolean) => {
         const content = turn.workflowMessage?.kind === 'steering' ? `(steering) ${turn.prompt}` : turn.prompt!;
         const entry: InteractionEntry = { from: 'user', to: 'data-agent', role: 'prompt', content,
-            ...(turn.attachments?.length ? { attachments: turn.attachments } : {}), timestamp: turn.createdAt };
+            ...(turn.attachments?.length ? { attachments: turn.attachments } : {}),
+            ...(turn.references?.length ? { references: turn.references } : {}), timestamp: turn.createdAt };
         const card = <InteractionEntryCard entry={entry} highlighted={focusedId?.type !== 'conversation' && highlighted} />;
         // A prompt nothing answers (its replies were deleted) can be removed too.
         timelineItems.push({
-            key: `textturn-prompt-${turn.id}-0`, type: 'trigger', highlighted, interactionEntry: entry,
+            key: `textturn-prompt-${turn.id}-0`, turnId: turn.id, type: 'trigger', highlighted, interactionEntry: entry,
             element: threadGraph.childrenOf(turn.id).length ? card : <Box data-user-message sx={{ position: 'relative', minWidth: 0,
                 '& [data-message-delete]': { opacity: 0, transition: transition.fast },
                 '&:hover [data-message-delete], &:focus-within [data-message-delete]': { opacity: 1 } }}>
@@ -942,7 +970,8 @@ let SingleThreadGroupView: FC<{
     // `open` replaces what selecting the message does (e.g. a step's message opens its tool calls).
     const buildTextTurnTimelineItem = (turn: TextTurn, highlighted: boolean, open?: { onSelect: () => void; selected: boolean }) => {
         const workflow = turn.workflow;
-        const isFocused = open ? open.selected : focusedId?.type === 'text' && focusedId.textId === turn.id;
+        // An open tool call is the selection; the focused message gives way to it.
+        const isFocused = open ? open.selected : !toolSelection && focusedId?.type === 'text' && focusedId.textId === turn.id;
         const openTurn = open?.onSelect ?? (() => {
             dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }));
         });
@@ -955,14 +984,14 @@ let SingleThreadGroupView: FC<{
         const hasDependents = threadGraph.childrenOf(turn.id).length > 0;
         const awaitingAnswer = !turn.answered && ((turn.options?.length ?? 0) > 0 || !!turn.form);
         const iconColor = focusedId?.type !== 'conversation' && rowHL
-            ? theme.palette.primary.main : 'rgba(0,0,0,0.15)';
+            ? theme.palette.primary.main : iconTone.muted;
         const gutterIcon = workflow
             ? <WorkflowGears running={workflow.status === 'running'} color={workflow.status === 'paused'
                 ? theme.palette.warning.main : rowHL ? theme.palette.primary.main : theme.palette.text.secondary} />
             : turn.form?.kind === 'workflow'
             ? <WorkflowGears running={false} color={iconColor} />
             : turn.form
-            ? <InsertDriveFileOutlinedIcon sx={{ width: 14, height: 14, color: iconColor }} />
+            ? <FormIcon sx={{ width: 14, height: 14, color: iconColor }} />
             : getEntryGutterIcon(
                 { from: 'data-agent', to: 'user', role: turn.textKind === 'clarify' && turn.answered ? 'explain' : turn.textKind, content: '' },
                 iconColor,
@@ -986,8 +1015,12 @@ let SingleThreadGroupView: FC<{
                 onDelete={hasDependents ? undefined : () => dispatch(dfActions.removeTextTurn(turn.id))}
             />
         );
+        const live: LiveStatus | undefined = workflow?.status === 'running' ? 'running'
+            : workflow?.status === 'paused' || (!workflow && !turn.answered && (turn.textKind === 'clarify' || turn.dataOperation
+                || (turn.form && turn.form.kind !== 'workflow')))
+                ? 'waiting' : undefined;
         return {
-            key: `textturn-${turn.id}`, type: 'artifact' as const, highlighted: rowHL,
+            key: `textturn-${turn.id}`, turnId: turn.id, live, type: 'artifact' as const, highlighted: rowHL,
             artifactTone: 'agent' as const, gutterIcon,
             element: <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '6px', width: '100%', minWidth: 0 }}>
                 <Box sx={{ flex: 1, minWidth: 0 }}>{card}</Box>
@@ -1011,7 +1044,8 @@ let SingleThreadGroupView: FC<{
     };
     const pushAgentMessageContent = (turn: TextTurn, highlighted: boolean, nextNodeId: string | undefined) => {
         const executions = turn.executions || [];
-        const codeExecutions = turn.codeExecutions || [];
+        // The thread shows code and commands; reads and searches stay in the conversation view.
+        const codeExecutions = codeCallsOf(turn);
         const hasToolCalls = executions.length > 0 || codeExecutions.length > 0;
         const isWidget = !!(turn.form || turn.dataOperation || turn.workflow || turn.options?.length);
         // Before a derived table, the message's text shows as the table's instruction card.
@@ -1036,23 +1070,25 @@ let SingleThreadGroupView: FC<{
             const labels = group ? [...group.labels, turn] : [turn];
             const calls = steps.flatMap(item => [...item.executions, ...item.codeExecutions]);
             const running = calls.some(call => call.status === 'running');
+            const awaiting = calls.some(call => call.status === 'awaiting_approval');
             // What the agent said it was doing (unless that is the next table's instruction), else
             // what its latest call did.
             const label = (instructionFollows ? undefined : labels.map(item => item.content).find(Boolean))
                 || [...calls].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)).at(-1)?.purpose
                 || t('dataThread.toolActivity', { defaultValue: 'Tool activity' });
+            const liveOf = (): LiveStatus | undefined => awaiting ? 'waiting' : running ? 'running' : undefined;
             const lastId = steps[steps.length - 1].nodeId;
             const element = <ToolActivityRow key={steps[0].nodeId} steps={steps} active={running} label={label}
                 onSelect={openToolActivity}
                 onDelete={threadGraph.childrenOf(lastId).length ? undefined
                     : () => [...steps].reverse().forEach(item => dispatch(dfActions.removeTextTurn(item.nodeId)))} />;
             if (group) {
-                Object.assign(group.item, { element, isRunning: running, highlighted: group.item.highlighted || highlighted });
+                Object.assign(group.item, { element, isRunning: running, live: liveOf(), highlighted: group.item.highlighted || highlighted });
                 group.steps = steps;
                 group.labels = labels;
                 return;
             }
-            const item = { key, type: 'trigger' as const, highlighted, secondaryActivity: true, isRunning: running, element };
+            const item = { key, type: 'trigger' as const, highlighted, secondaryActivity: true, isRunning: running, live: liveOf(), element };
             timelineItems.push(item);
             toolGroup = merge ? { item, steps, labels } : null;
         };
@@ -1127,12 +1163,13 @@ let SingleThreadGroupView: FC<{
                 : (draft.derive.runningPlan || '').split('\x1E').filter((line: string) => line.trim());
             // Steps and calls the message before the draft already lists are not repeated here.
             const parentTurn = turnById.get(parent || '');
-            const parentCalls = [...(parentTurn?.executions || []), ...(parentTurn?.codeExecutions || [])];
+            const parentCalls = [...(parentTurn?.executions || []), ...codeCallsOf(parentTurn)];
             const parentStepIds = new Set((parentTurn?.progressSteps || []).map(step => step.id));
             const shownOnParent = (step: ProgressStep | string) => typeof step !== 'string' && (parentStepIds.has(step.id)
                 || (!!step.executionId && parentCalls.some(call => call.id === step.executionId)));
             const planLines = steps.filter(step => !shownOnParent(step));
             const animated = status === 'running';
+            const live: LiveStatus = status === 'clarifying' ? 'waiting' : 'running';
             // A run with a plan shows it here as its one live row (like a workflow run's card):
             // the spinner in the gutter, the current step, and the latest activity under it.
             const livePlanTurn = livePlanTurnId ? turnById.get(livePlanTurnId) : undefined;
@@ -1140,7 +1177,7 @@ let SingleThreadGroupView: FC<{
             if (livePlan?.length) {
                 const activity = planLines.length ? ThinkingStepsBanner(planLines, { pt: 0.5 }, animated) : undefined;
                 timelineItems.push({
-                    key: `agent-thinking-${draft.id}`, type: 'trigger', highlighted: false, isRunning: animated,
+                    key: `agent-thinking-${draft.id}`, type: 'trigger', highlighted: false, isRunning: animated, live,
                     element: <RunPlanChecklist items={livePlan} title={livePlanTurn?.planTitle} active activity={activity} defaultExpanded />,
                 });
                 return;
@@ -1151,7 +1188,7 @@ let SingleThreadGroupView: FC<{
                 planLines.push(t('dataThread.thinking'));
             }
             timelineItems.push({
-                key: `agent-thinking-${draft.id}`, type: 'trigger', highlighted, isRunning: animated,
+                key: `agent-thinking-${draft.id}`, type: 'trigger', highlighted, isRunning: animated, live,
                 element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }, animated),
             });
             return;
@@ -1312,11 +1349,11 @@ let SingleThreadGroupView: FC<{
         pushItem(id, index);
     }
 
-    const collapsedActivityIndicator = historyCollapsed && timelineItems.some(item => item.isRunning)
-        ? <CircularProgress size={12} aria-label={t('terminal.running', { defaultValue: 'Running' })} /> : null;
 
     // Timeline rendering helper
     const TIMELINE_WIDTH = 14;
+    // The timeline's grey, off the focused chain.
+    const RAIL_GREY = 'rgba(0,0,0,0.12)';
     const TIMELINE_GAP = '4px'; // gap between timeline and card content
     const DOT_SIZE = 6;
     const CARD_PY = '6px'; // vertical padding for each timeline row
@@ -1348,7 +1385,7 @@ let SingleThreadGroupView: FC<{
         const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
         const color = item.highlighted 
             ? theme.palette.primary.main
-            : 'rgba(0,0,0,0.15)';
+            : iconTone.muted;
 
         // Artifact output rows (reports today, future skill outputs) carry
         // their own precomputed gutter dot from the artifact factory.
@@ -1388,7 +1425,7 @@ let SingleThreadGroupView: FC<{
             if (isStreaming) {
                 return <StreamIcon sx={{ 
                     ...iconSx, 
-                    color: item.highlighted ? theme.palette.success.main : 'rgba(0,0,0,0.15)',
+                    color: item.highlighted ? theme.palette.success.main : iconTone.muted,
                     animation: 'pulse 2s infinite',
                     '@keyframes pulse': {
                         '0%': { opacity: 1 },
@@ -1436,21 +1473,19 @@ let SingleThreadGroupView: FC<{
     // Whether the thread header is highlighted (any non-used-table item in this thread is highlighted)
     const headerHL = timelineItems.some(item => item.highlighted && item.type !== 'used-table');
     // A collapsed thread's timeline takes the highlight only when it holds the focused item.
-    const timelineHL = historyCollapsed ? containsFocus : headerHL;
+    let timelineHL = historyCollapsed ? containsFocus : headerHL;
 
+    // One timeline line: blue on the focused chain, grey elsewhere; dashed all along a collapsed thread.
+    const railColor = (on: boolean) => on ? alpha(theme.palette.primary.main, 0.6) : RAIL_GREY;
+    const rail = (on: boolean) => `2px ${historyCollapsed ? 'dashed' : 'solid'} ${railColor(on)}`;
     const renderTimelineItem = (item: typeof timelineItems[0], index: number, isLast: boolean, nextHighlighted: boolean) => {
         const isTrigger = item.type === 'trigger' || item.type === 'leaf-trigger';
         const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
         const isChart = item.type === 'chart';
         const isMerge = item.type === 'merge';
-        const dashedColor = item.highlighted ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
-        const dashedWidth = '2px';
-        const dashedStyle = 'solid';
-        // Bottom connector uses unhighlighted style if next item isn't highlighted
-        const bottomHighlighted = item.highlighted && nextHighlighted;
-        const bottomDashedColor = bottomHighlighted ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
-        const bottomDashedWidth = '2px';
-        const bottomDashedStyle = 'solid';
+        const topRail = rail(index === 0 ? lineHL : item.highlighted);
+        // The connector below stays grey unless the next item is on the chain too.
+        const bottomRail = rail(item.highlighted && nextHighlighted);
         // No dimming or background — rely on timeline color + card border for highlighting
         const rowHighlightSx = {};
 
@@ -1458,7 +1493,7 @@ let SingleThreadGroupView: FC<{
             return <Box key={`timeline-row-${item.key}`} data-thread-item={item.key} data-thread-on-chain={item.highlighted || undefined} data-secondary-activity
                 sx={{ display: 'flex', minWidth: 0 }}>
                 <Box data-activity-gutter sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
-                    <Box sx={{ borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                    <Box sx={{ borderLeft: topRail }} />
                 </Box>
                 <Box sx={{ flex: 1, minWidth: 0, py: 0.25, pl: TIMELINE_GAP, pr: CARD_CONTENT_PR }}>{item.element}</Box>
             </Box>;
@@ -1475,11 +1510,11 @@ let SingleThreadGroupView: FC<{
                         width: TIMELINE_WIDTH, flexShrink: 0,
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                     }}>
-                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: topRail }} />
                         <Box sx={{ flexShrink: 0, zIndex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <CallMergeIcon sx={{ fontSize: iconVar.xs, color: item.highlighted ? theme.palette.primary.main : 'rgba(0,0,0,0.15)', transform: 'rotate(180deg)' }} />
+                            <CallMergeIcon sx={{ fontSize: iconVar.xs, color: item.highlighted ? theme.palette.primary.main : iconTone.muted, transform: 'rotate(180deg)' }} />
                         </Box>
-                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />}
+                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: bottomRail }} />}
                         {isLast && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, py: '4px', pl: TIMELINE_GAP, pr: CARD_CONTENT_PR, display: 'flex', alignItems: 'center' }}>
@@ -1495,7 +1530,7 @@ let SingleThreadGroupView: FC<{
             const isFromUser = entry ? entry.from === 'user' : false;
             const iconColor = item.highlighted
                 ? (isFromUser ? theme.palette.custom.main : theme.palette.primary.main)
-                : 'rgba(0,0,0,0.15)';
+                : iconTone.muted;
             const gutterIcon = item.isRunning
                 ? <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />
                 : item.isClarifying
@@ -1519,11 +1554,11 @@ let SingleThreadGroupView: FC<{
                         width: TIMELINE_WIDTH, flexShrink: 0, 
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                     }}>
-                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: topRail }} />
                         <Box sx={{ flexShrink: 0, zIndex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             {gutterIcon}
                         </Box>
-                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />}
+                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: bottomRail }} />}
                         {isLast && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP, pr: CARD_CONTENT_PR }}>
@@ -1541,11 +1576,11 @@ let SingleThreadGroupView: FC<{
                         width: TIMELINE_WIDTH, flexShrink: 0,
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                     }}>
-                        <Box sx={{ width: 0, flex: '1 1 0', borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                        <Box sx={{ width: 0, flex: '1 1 0', borderLeft: topRail }} />
                         <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             {getTimelineDot(item)}
                         </Box>
-                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />}
+                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: bottomRail }} />}
                         {isLast && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP, pr: CARD_CONTENT_PR }}>
@@ -1564,19 +1599,12 @@ let SingleThreadGroupView: FC<{
                     display: 'flex', flexDirection: 'column', alignItems: 'center',
                     position: 'relative',
                 }}>
-                    {(() => {
-                        // When connecting to the header (index 0), match the header's highlight state
-                        const useHeader = index === 0;
-                        const topColor = useHeader ? (headerHL ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)') : dashedColor;
-                        const topWidth = '2px';
-                        const topStyle = dashedStyle;
-                        return <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: `${topWidth} ${topStyle} ${topColor}` }} />;
-                    })()}
+                    <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: topRail }} />
                     <Box sx={{ flexShrink: 0, zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         {getTimelineDot(item)}
                     </Box>
                     {!isLast && (
-                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: bottomRail }} />
                     )}
                     {isLast && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
                 </Box>
@@ -1593,15 +1621,6 @@ let SingleThreadGroupView: FC<{
 
     const threadActive = focusedId?.type === 'conversation' && focusedId.tableId === conversationTargetId;
     const showItemFocus = focusedId?.type !== 'conversation';
-    // Open the thread as a chat: a muted icon, blue while that conversation is on the canvas.
-    const conversationButtonSx = {
-        flexShrink: 0, p: '3px', ml: 'auto',
-        color: threadActive ? 'primary.main' : 'text.disabled',
-        bgcolor: threadActive ? alpha(theme.palette.primary.main, 0.08) : 'transparent',
-        '& svg': { fontSize: iconVar.md },
-        '&:hover': { color: threadActive ? 'primary.main' : 'text.secondary', bgcolor: alpha(theme.palette.text.primary, 0.06) },
-        '&.Mui-focusVisible': { outline: `2px solid ${theme.palette.text.secondary}`, outlineOffset: 2 },
-    };
     const flowBlocks: { key: string; indices: number[]; exchangeId?: string; outputNodeId?: string }[] = [];
     timelineItems.forEach((item, index) => {
         const key = item.outputNodeId ? `output-${item.outputNodeId}` : item.exchangeId || item.key;
@@ -1619,12 +1638,84 @@ let SingleThreadGroupView: FC<{
     // A request and everything it produced, through its plan or closing answer, is one run. Columns
     // prefer to break between runs, as text wraps between words: a run that fits in a column moves
     // whole to the next one, and only a run taller than a column breaks inside.
-    const flowRuns: { key: string; blocks: typeof flowBlocks }[] = [];
+    const flowRuns: { key: string; startTurnId?: string; blocks: typeof flowBlocks }[] = [];
     for (const block of flowBlocks) {
-        const startsRun = timelineItems[block.indices[0]].key.startsWith('textturn-prompt-');
-        if (startsRun || flowRuns.length === 0) flowRuns.push({ key: block.key, blocks: [] });
+        const first = timelineItems[block.indices[0]];
+        const startsRun = first.key.startsWith('textturn-prompt-') && (!blockStarts || blockStarts.has(first.turnId!));
+        if (startsRun || flowRuns.length === 0) flowRuns.push({ key: block.key, startTurnId: startsRun ? first.turnId : undefined, blocks: [] });
         flowRuns[flowRuns.length - 1].blocks.push(block);
     }
+    const runAt = (turnId: string | undefined, otherwise: number) => {
+        if (!turnId) return otherwise;
+        const index = flowRuns.findIndex(run => run.startTurnId === turnId);
+        return index < 0 ? flowRuns.length : index;
+    };
+    const runRange: [number, number] = [runAt(segment?.start, 0), runAt(segment?.end, flowRuns.length)];
+    const partial = runRange[0] > 0 || runRange[1] < flowRuns.length;
+    const rangeBlocks = flowRuns.slice(runRange[0], runRange[1]).flatMap(run => run.blocks);
+    // A collapsed part still at work shows that run: the request being worked on and what it is doing, or
+    // what it waits for. Only the thread's open end can wait on the user.
+    const liveTail = (() => {
+        if (!historyCollapsed) return undefined;
+        const indices = rangeBlocks.flatMap(block => block.indices);
+        const lastMessage = timelineItems.reduce((last, item, index) => item.turnId ? index : last, -1);
+        const at = [...indices].reverse().find(index => {
+            const live = timelineItems[index].live;
+            return live === 'running' || (live === 'waiting' && (timelineItems[index].isRunning || index >= lastMessage));
+        });
+        if (at === undefined) return undefined;
+        const prompt = [...indices].reverse().find(index => index <= at && timelineItems[index].key.startsWith('textturn-prompt-'));
+        return { status: timelineItems[at].live!, at, prompt };
+    })();
+    // Focusing an output, here or from elsewhere (the workspace, a canvas tab), leaves a collapsed thread
+    // collapsed; its tile in the mosaic is outlined instead.
+    const selectedOutputId = !historyCollapsed || !showItemFocus ? undefined
+        : focusedId?.type === 'chart' ? focusedId.chartId
+        : focusedId?.type === 'report' ? focusedId.reportId
+        : focusedId?.type === 'reference' ? focusedId.referenceId
+        : focusedId?.type === 'text' ? focusedId.textId
+        : focusedId?.type === 'file' || canvasTarget?.type === 'file'
+            ? threadOutputs.find(output => 'path' in output
+                && output.path === (focusedId?.type === 'file' ? focusedId.fileName : canvasTarget?.type === 'file' ? canvasTarget.fileName : ''))?.id
+        : undefined;
+    // A sub-thread lights up only for what it shows itself.
+    if (partial) timelineHL = historyCollapsed
+        ? threadOutputs.some(output => output.id === selectedOutputId)
+        : rangeBlocks.some(block => block.indices.some(index => timelineItems[index].highlighted && timelineItems[index].type !== 'used-table'));
+    // The thread head's text (label, chevron, chat icon) shares one tone, and its circle and every stretch of
+    // its line another: all blue while its conversation is open or it holds the focused item, grey otherwise.
+    const lineHL = threadActive || (showItemFocus && timelineHL);
+    const headTone = lineHL ? theme.palette.primary.main : theme.palette.text.disabled;
+    // Off the focused chain the head's circle is as light as the line and the icons on it.
+    const headMark = lineHL ? theme.palette.primary.main : iconTone.muted;
+    const lineTone = railColor(lineHL);
+    const conversationButtonSx = {
+        flexShrink: 0, p: '3px', color: headTone,
+        '& svg': { fontSize: iconVar.md },
+        '&:hover': { color: lineHL ? headTone : 'text.primary', bgcolor: alpha(theme.palette.text.primary, 0.06) },
+        '&.Mui-focusVisible': { outline: `2px solid ${theme.palette.text.secondary}`, outlineOffset: 2 },
+    };
+    const focusOutput = (output: ThreadOutput) => dispatch(dfActions.setFocused(
+        output.kind === 'report' ? { type: 'report', reportId: output.id }
+        : output.kind === 'app' || output.kind === 'file' ? { type: 'file', fileName: output.path }
+        : output.kind === 'workflow' ? { type: 'text', textId: output.id }
+        : { type: 'chart', chartId: output.id }));
+
+    // The end of the thread's line: "expand" under a collapsed thread; "collapse" under an open one, shown
+    // only while the thread is hovered (or the button has keyboard focus).
+    const threadEndToggle = (arrowColor: string) => onToggleHistory && <ButtonBase data-thread-expand={historyCollapsed || undefined}
+        data-thread-collapse={!historyCollapsed || undefined} aria-expanded={!historyCollapsed} onClick={onToggleHistory}
+        sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', pr: 0.75, borderRadius: '4px',
+            fontSize: textVar.xxs, color: 'text.secondary', transition: transition.fast,
+            '& [data-expand-arrow]': { color: arrowColor, transition: transition.fast },
+            '&:hover': { color: 'primary.main', '& [data-expand-arrow]': { color: 'primary.main' } },
+            '&.Mui-focusVisible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1 } }}>
+        <Box component="span" data-expand-arrow sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+            {historyCollapsed ? <KeyboardDoubleArrowDownIcon sx={{ fontSize: 16 }} /> : <KeyboardDoubleArrowUpIcon sx={{ fontSize: 16 }} />}
+        </Box>
+        <Box component="span" sx={{ ml: '4px' }}>
+            {historyCollapsed ? t('dataThread.expand', { defaultValue: 'expand' }) : t('dataThread.collapse', { defaultValue: 'collapse' })}</Box>
+    </ButtonBase>;
 
     return <Box data-thread-active={threadActive ? 'true' : 'false'} data-thread-highlighted={shouldHighlightThread ? 'true' : 'false'}
         data-thread-entry={layoutKey} sx={{ ...sx,
@@ -1642,18 +1733,15 @@ let SingleThreadGroupView: FC<{
                 },
             } : {}),
             padding: '6px',
+            '& [data-thread-collapse]': { opacity: 0, transition: transition.fast },
+            '&:hover [data-thread-collapse], & [data-thread-collapse].Mui-focusVisible': { opacity: 1 },
+            '@media (hover: none)': { '& [data-thread-collapse]': { opacity: 1 } },
         }}
         >
         <div style={{ padding: '2px 4px', marginTop: 0, direction: 'ltr' }}>
             {(() => {
-                const hlColor = theme.palette.primary.main;
-                const nhColor = 'rgba(0,0,0,0.35)';
-                const lineHL = threadActive || (showItemFocus && timelineHL);
-                const connColor = lineHL ? alpha(hlColor, 0.6) : 'rgba(0,0,0,0.1)';
-                const connWidth = '2px';
-                const connStyle = 'solid';
-                // A sub-thread continues its thread: the line runs in from above (dashed) instead of
-                // starting at a circle, and its label is quieter.
+                // A sub-thread continues its thread: the line runs in from above instead of starting at a
+                // circle, and its label is quieter.
                 const continued = runRange[0] > 0;
                 return (
                 <Box data-thread-flow-header data-thread-continued={continued || undefined} sx={{ display: 'flex', flexDirection: 'row', breakAfter: 'avoid' }}>
@@ -1662,24 +1750,23 @@ let SingleThreadGroupView: FC<{
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                     }}>
                         {continued
-                            ? <Box aria-hidden="true" sx={{ width: 0, flex: '1 1 0', minHeight: 14, borderLeft: `${connWidth} dashed ${connColor}` }} />
+                            ? <Box aria-hidden="true" sx={{ width: 0, flex: '1 1 0', minHeight: 14, borderLeft: rail(lineHL) }} />
                             : <>
                                 <Box sx={{ flex: '1 1 0', minHeight: 6 }} />
                                 <Box aria-hidden="true" sx={{ width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    color: lineHL ? hlColor : 'rgba(0,0,0,0.15)' }}>
+                                    color: headMark }}>
                                     <Box component="span" sx={{ width: 8, height: 8, borderRadius: '50%',
                                         border: '1.5px solid currentColor', boxSizing: 'content-box' }} />
                                 </Box>
                             </>}
-                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 10, borderLeft: `${connWidth} ${connStyle} ${connColor}` }} />
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 10, borderLeft: rail(lineHL) }} />
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', pl: 0.5, gap: 0.5 }}>
                         <ButtonBase disabled={!onToggleHistory} onClick={onToggleHistory} aria-expanded={!historyCollapsed}
                             aria-label={historyCollapsed ? t('dataThread.expandThread', { defaultValue: 'Expand thread' }) : t('dataThread.collapseThread', { defaultValue: 'Collapse thread' })}
                             sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.25, borderRadius: 0.5, px: 0.25, ml: -0.25,
-                                color: lineHL ? hlColor : continued ? 'text.disabled' : 'text.secondary',
-                                '& .thread-chevron': { color: 'text.disabled' },
-                                '&:hover, &:hover .thread-chevron': { color: 'text.primary' },
+                                color: headTone,
+                                '&:hover': { color: lineHL ? headTone : 'text.primary' },
                                 '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
                             <Typography component="span" sx={{ minWidth: 0, color: 'inherit',
                                 fontSize: textVar.xs, fontWeight: continued ? 600 : 700,
@@ -1692,63 +1779,49 @@ let SingleThreadGroupView: FC<{
                                 ? <ChevronRightIcon className="thread-chevron" sx={{ fontSize: 16 }} />
                                 : <KeyboardArrowDownIcon className="thread-chevron" sx={{ fontSize: 16 }} />)}
                         </ButtonBase>
-                        <Tooltip title={t('dataThread.openAsChat', { defaultValue: 'Open as chat' })}>
+                        <Box sx={{ flex: 1 }} />
+                        {/* The whole thread's chat, so only its first part offers it. */}
+                        {!continued && <Tooltip title={t('dataThread.openAsChat', { defaultValue: 'Open as chat' })}>
                             <IconButton size="small" aria-label={t('dataThread.openAsChat', { defaultValue: 'Open as chat' })}
                                 aria-pressed={threadActive} sx={conversationButtonSx} onClick={openThreadConversation}>
                                 <ForumOutlinedIcon />
                             </IconButton>
-                        </Tooltip>
-                        {collapsedActivityIndicator}
+                        </Tooltip>}
                     </Box>
                 </Box>
                 );
             })()}
-            {/* A collapsed thread is one button on a dotted timeline: its first turn, how many more, and
-                its latest response, one muted line each. One hover lifts all of it; a click expands it. */}
-            {historyCollapsed && (threadLines.length > 0 || threadSummary) && (() => {
-                const lines = threadLines.length ? threadLines : [{ role: 'user' as const, text: threadSummary! }];
-                const hidden = lines.length > 2 ? lines.length - 2 : 0;
-                const shown: (ThreadPreviewLine | { more: number })[] = hidden
-                    ? [lines[0], { more: hidden }, lines[lines.length - 1]] : lines;
-                const lineSx = { display: 'block', minWidth: 0, fontSize: textVar.xs, lineHeight: 1.5, color: 'text.secondary',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', transition: transition.fast } as const;
-                return <Box component="button" type="button" data-thread-summary aria-expanded={false}
-                    onClick={onToggleHistory} disabled={!onToggleHistory} title={lines.map(line => line.text).join('\n')}
-                    sx={{ display: 'flex', alignItems: 'stretch', width: '100%', minWidth: 0,
-                        p: 0, m: 0, border: 0, background: 'transparent', textAlign: 'left', fontFamily: theme.typography.fontFamily,
-                        cursor: onToggleHistory ? 'pointer' : undefined,
-                        '& [data-thread-collapsed-gutter]': { color: showItemFocus && timelineHL ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.2)' },
-                        '&:hover': {
-                            '& [data-thread-collapsed-gutter]': { color: showItemFocus && timelineHL ? theme.palette.primary.main : 'text.secondary' },
-                            '& [data-thread-preview-line]': { color: 'text.primary' },
-                            '& [data-thread-preview-more], & [data-thread-collapsed-more]': { color: 'text.secondary' },
-                        },
-                        '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 } }}>
-                    <Box component="span" aria-hidden="true" data-thread-collapsed-gutter sx={{ width: TIMELINE_WIDTH, flexShrink: 0,
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', transition: transition.fast }}>
-                        <Box component="span" sx={{ width: 0, flex: 1, minHeight: 8, borderLeft: '2px dotted currentColor' }} />
-                        <KeyboardArrowDownIcon sx={{ fontSize: 14, color: 'inherit', mb: '1px' }} />
+            {/* A collapsed thread on its timeline: its first request and everything it made. The line
+                ends in the expand button, its arrow on the line and its label beside it. */}
+            {historyCollapsed && (threadOutputs.length > 0 || threadLines.length > 0 || !!threadSummary) && (() => {
+                const lineColor = lineTone;
+                return <>
+                    <Box sx={{ display: 'flex', alignItems: 'stretch', minWidth: 0 }}>
+                        <Box component="span" aria-hidden="true" data-thread-collapsed-gutter sx={{ width: TIMELINE_WIDTH, flexShrink: 0,
+                            display: 'flex', justifyContent: 'center', color: lineColor }}>
+                            <Box component="span" sx={{ width: 0, height: '100%', borderLeft: rail(lineHL) }} />
+                        </Box>
+                        <Box sx={{ flex: 1, minWidth: 0, ml: '4px', mr: `${TIMELINE_WIDTH}px`, mt: 0.5, mb: 0.5 }}>
+                            <ThreadDeck outputs={threadOutputs} heading={threadLines.find(line => line.role === 'user')?.text || threadSummary}
+                                selectedId={selectedOutputId} onSelect={focusOutput} animate={animateToggle} />
+                        </Box>
                     </Box>
-                    <Box component="span" sx={{ flex: 1, minWidth: 0, ml: '4px', mr: `${TIMELINE_WIDTH}px`, mt: 0.5,
-                        display: 'flex', flexDirection: 'column' }}>
-                        {shown.map((line, index) => 'more' in line
-                            ? <Typography key={index} component="span" data-thread-preview-more sx={{ ...lineSx, color: 'text.disabled', fontStyle: 'italic' }}>
-                                {t('dataThread.moreTurns', { count: line.more, defaultValue: '… {{count}} more turns' })}
-                            </Typography>
-                            : <Typography key={index} component="span" data-thread-preview-line data-role={line.role}
-                                sx={{ ...lineSx, fontWeight: line.role === 'user' ? 500 : 400 }}>
-                                {line.text}
-                            </Typography>)}
-                        <Typography component="span" data-thread-collapsed-more sx={{ ...lineSx, mt: 0.25, color: 'text.disabled',
-                            fontSize: textVar.xxs, fontStyle: 'italic' }}>
-                            {t('dataThread.clickToExpand', { defaultValue: 'Click to expand' })}
-                        </Typography>
-                    </Box>
-                </Box>;
+                    {/* The run still at work, drawn as in the open thread: its request, then what it is doing. */}
+                    {liveTail && <Box data-thread-live-tail data-waiting={liveTail.status === 'waiting' || undefined} sx={{ minWidth: 0, mt: 0.5 }}>
+                        {[liveTail.prompt, liveTail.at].filter((index): index is number => index !== undefined
+                            && !(index === liveTail.prompt && timelineItems[index].interactionEntry?.content === (threadLines.find(line => line.role === 'user')?.text || threadSummary)))
+                            .map((index, position, shown) => renderTimelineItem({ ...timelineItems[index], highlighted: lineHL },
+                                index, false, lineHL && position < shown.length - 1))}
+                    </Box>}
+                    {threadEndToggle(lineColor)}
+                </>;
             })()}
             {!historyCollapsed && flowRuns.map((run, runIndex) => runIndex < runRange[0] || runIndex >= runRange[1] ? null
-                : <Box key={run.key} data-thread-flow-run={run.key} data-thread-run-of={thread.key} data-thread-run-index={runIndex}
-                sx={{ breakInside: 'avoid', breakBefore: runIndex === runRange[0] ? 'avoid' : 'auto', minWidth: 0 }}>
+                : <Box key={run.key} data-thread-flow-run={run.key}
+                sx={{ breakInside: 'avoid', breakBefore: runIndex === runRange[0] ? 'avoid' : 'auto', minWidth: 0,
+                    // Expanding deals the thread back out: runs drop into place one after another.
+                    ...(animateToggle ? { animation: `${unfoldRun} 260ms cubic-bezier(0.2, 0.8, 0.2, 1) ${Math.min(runIndex - runRange[0], 6) * 35}ms both`,
+                        '@media (prefers-reduced-motion: reduce)': { animation: 'none' } } : {}) }}>
                 {run.blocks.map(block => <Box key={block.key} data-thread-flow-block={block.key}
                     sx={{ breakInside: 'avoid', minWidth: 0 }}>
                     {block.indices.map(index => {
@@ -1760,6 +1833,7 @@ let SingleThreadGroupView: FC<{
                     })}
                 </Box>)}
             </Box>)}
+            {!historyCollapsed && rangeBlocks.length > 0 && threadEndToggle(lineTone)}
         </div>
     </Box>
     }
@@ -1884,6 +1958,7 @@ function estimateThreadHeight(
 function computeThreadColumnLayout(
     heights: number[],
     numColumns: number,
+    columnHeight: number,
 ): number[][] {
     if (heights.length === 0) return [];
     if (heights.length === 1) return [[0]];
@@ -1891,16 +1966,17 @@ function computeThreadColumnLayout(
     const cols = Math.min(numColumns, heights.length);
     if (cols <= 1) return [heights.map((_, i) => i)];
 
-    return layoutPreserveOrder(heights, cols);
+    return layoutPreserveOrder(heights, cols, columnHeight);
 }
 
 /**
- * Balanced layout *preserving* thread order.
- *
- * Uses binary-search on the maximum column height to find the tightest
- * contiguous partitioning of threads into ≤ numColumns groups.
+ * Column layout *preserving* thread order, filling from the left: each column takes
+ * pieces up to `columnHeight` (the visible height) before the next one starts, so new
+ * content lands below the old instead of reshuffling it. When everything can't fit that
+ * way, the columns balance: binary search finds the tightest contiguous partitioning
+ * into ≤ numColumns groups.
  */
-function layoutPreserveOrder(heights: number[], numColumns: number): number[][] {
+function layoutPreserveOrder(heights: number[], numColumns: number, columnHeight: number): number[][] {
     const maxH = Math.max(...heights);
     const totalH = heights.reduce((s, h) => s + h, 0);
 
@@ -1926,8 +2002,8 @@ function layoutPreserveOrder(heights: number[], numColumns: number): number[][] 
         if (canPartition(mid)) hi = mid; else lo = mid + 1;
     }
 
-    // Build the actual partition with the optimal target
-    const target = lo;
+    // Build the actual partition, filling each column to the visible height first
+    const target = Math.max(lo, columnHeight);
     const columns: number[][] = [[]];
     let cur = 0;
     for (let i = 0; i < heights.length; i++) {
@@ -2006,7 +2082,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     let textTurnsForHome = useSelector((state: DataFormulatorState) => state.textTurns);
     const threadGraph = useSelector(dfSelectors.getThreadGraph);
     // The thread node the user is on (design-docs/58): the thread highlights it
-    // and the chain above it, and opens the thread that holds it.
+    // and the chain above it; a collapsed thread shows it just below.
     const focusNodeId = useSelector(dfSelectors.getFocusNodeId);
     // The focused node's chain; a set on it counts as a whole, since what follows continues from all its members.
     const highlightedNodeIds = useMemo(
@@ -2035,7 +2111,6 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         }
         return [...ids];
     }, [tables, highlightedNodeIds, threadGraph, focusedTableId]);
-    const focusedThreadAnchor = focusNodeId;
 
     // A data-operation turn replaces the canvas, so no table is "on screen" —
     // the table above stays a context highlight rather than a selection.
@@ -2136,24 +2211,30 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     }, [textTurnsForHome]);
     useEffect(() => {
         if (!latestPromptId) return;
-        return revealInThread(viewport => viewport.querySelector<HTMLElement>(`[data-thread-item="${CSS.escape(`textturn-prompt-${latestPromptId}-0`)}"]`));
+        return revealInThread(viewport => viewport.querySelector<HTMLElement>(`[data-thread-item="${CSS.escape(`textturn-prompt-${latestPromptId}-0`)}"]`)
+            // In a collapsed thread, the request shows under it with the run.
+            ?? viewport.querySelector<HTMLElement>('[data-thread-live-tail]'));
     }, [latestPromptId, revealInThread]);
     // Column geometry follows density: bigger text needs a wider card, or table
     // names truncate. DataFormulator snaps the pane from the same tokens.
     const { tokens: threadTokens } = useLayout();
     const [expandedColumns, setExpandedColumns] = useState(false);
     const [threadExpansion, setThreadExpansion] = useState<Record<string, boolean>>({});
-    // Keys found during render; the effects below persist them as explicit expansion.
+    // The thread the user just collapsed or expanded, so only it plays the transition (once).
+    const [toggledThreadKey, setToggledThreadKey] = useState<string>();
+    const toggledTimer = useRef<ReturnType<typeof setTimeout>>();
+    const markThreadToggled = (key: string) => {
+        setToggledThreadKey(key);
+        clearTimeout(toggledTimer.current);
+        toggledTimer.current = setTimeout(() => setToggledThreadKey(undefined), 600);
+    };
+    useEffect(() => () => clearTimeout(toggledTimer.current), []);
+    // The latest thread, found during render; the effect below persists it as explicitly expanded.
     const latestThreadKeyRef = useRef<string>();
-    const focusedThreadKeyRef = useRef<string>();
     useEffect(() => {
         const key = latestThreadKeyRef.current;
         if (key) setThreadExpansion(previous => key in previous ? previous : { ...previous, [key]: true });
     });
-    useEffect(() => {
-        const key = focusedThreadKeyRef.current;
-        if (key) setThreadExpansion(previous => previous[key] ? previous : { ...previous, [key]: true });
-    }, [focusedThreadAnchor]);
     // Must run before the save effect so a workspace switch reads storage before it is overwritten.
     const workspaceId = activeWorkspace?.id;
     useEffect(() => {
@@ -2169,12 +2250,34 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         const entries = Object.entries(threadExpansion).filter(([key]) => key.startsWith(`${workspaceId}:`));
         if (entries.length) localStorage.setItem(`df_thread_expansion:${workspaceId}`, JSON.stringify(Object.fromEntries(entries)));
     }, [threadExpansion, workspaceId]);
+    // Where each long thread breaks into sub-threads (the turns that start them), kept once made.
+    const [threadBreaks, setThreadBreaks] = useState<Record<string, string[]>>({});
+    // Breaks found during render; the effect below keeps them.
+    const pendingBreaksRef = useRef<Record<string, string[]>>({});
+    useEffect(() => {
+        if (!workspaceId) return;
+        try {
+            const saved = JSON.parse(localStorage.getItem(`df_thread_segments:${workspaceId}`) || '{}');
+            const valid = Object.entries(saved ?? {}).filter((entry): entry is [string, string[]] =>
+                Array.isArray(entry[1]) && entry[1].every(id => typeof id === 'string'));
+            setThreadBreaks(Object.fromEntries(valid));
+        } catch { /* ignore unreadable entries */ }
+    }, [workspaceId]);
+    useEffect(() => {
+        const pending = pendingBreaksRef.current;
+        if (!workspaceId || !Object.keys(pending).length) return;
+        pendingBreaksRef.current = {};
+        setThreadBreaks(previous => {
+            const next = { ...previous, ...pending };
+            const own = Object.entries(next).filter(([key]) => key.startsWith(`${workspaceId}:`));
+            localStorage.setItem(`df_thread_segments:${workspaceId}`, JSON.stringify(Object.fromEntries(own)));
+            return next;
+        });
+    });
     const [containerWidth, setContainerWidth] = useState(0);
     const [threadPanelHeight, setThreadPanelHeight] = useState(600);
     const [measuredShelfHeight, setMeasuredShelfHeight] = useState<number>();
     const [measuredEntryHeights, setMeasuredEntryHeights] = useState<Record<string, number>>({});
-    // Each thread's run heights, in order; where a long thread may break into sub-threads.
-    const [measuredRunHeights, setMeasuredRunHeights] = useState<Record<string, number[]>>({});
     const layoutSignatureRef = useRef<string>();
     const [isDragOver, setIsDragOver] = useState(false);
 
@@ -2321,7 +2424,6 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         ? 2
         : fittableThreadColumnsFor(containerWidth, threadTokens);
 
-    const segmentHeight = threadPanelHeight * 1.5;
     const shelfHeight = inputTables.length || workspaceFiles.length || externalReferenceCount || pendingTableCount
         ? measuredShelfHeight ?? estimateThreadHeight(inputTables.length + workspaceFiles.length + externalReferenceCount + pendingTableCount, 1, 0)
         : 0;
@@ -2346,11 +2448,16 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         historyCollapsed?: boolean;
         threadSummary?: string;
         threadLines?: ThreadPreviewLine[];
+        threadOutputs?: ThreadOutput[];
         threadLabel?: string;
         threadName?: string;
         containsFocus?: boolean;
-        // A sub-thread of a long thread: the runs it shows (see splitThreadRuns).
-        runRange?: [number, number];
+        // A sub-thread of a long thread: its blocks (see wrapThreadBlocks) and their nodes.
+        blockStarts?: Set<string>;
+        segment?: { start?: string; end?: string };
+        segmentNodeIds?: string[];
+        // Where this entry's open/collapsed state is kept: the thread's, or its sub-thread's.
+        toggleKey?: string;
     };
     const threadSummaryOf = (thread: ThreadSpec) => {
         for (const id of thread.nodeIds) {
@@ -2364,8 +2471,48 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         }
         return tableById.get(thread.rootId)?.displayId || '';
     };
-    /** A collapsed thread read as lines: each user request, agent response, and result in order. */
-    const threadLinesOf = (thread: ThreadSpec): ThreadPreviewLine[] => {
+    /**
+     * The artifacts some thread nodes produced, in order: each chart (standing for its table), each
+     * derived or loaded table with no chart, and each report, app, file and workflow definition. A
+     * sub-thread holds about THREAD_SEGMENT_BUDGET of them; the collapsed view shows all but the tables.
+     */
+    const threadOutputsOf = (nodeIds: string[]): ThreadOutput[] => {
+        const outputs: ThreadOutput[] = [];
+        for (const id of nodeIds.flatMap(nodeId => [nodeId, ...threadGraph.membersOf(nodeId)])) {
+            const kind = threadGraph.kindOf(id);
+            if (kind === 'report') {
+                const report = threadReports.find(item => item.id === id);
+                if (report) outputs.push({ kind: 'report', id, title: report.title || t('report.untitled'), chartIds: report.selectedChartIds || [] });
+            } else if (kind === 'file') {
+                const file = fileNodes.find(item => item.id === id);
+                if (file) outputs.push(isAppFile(file.path)
+                    ? { kind: 'app', id, title: file.displayName, path: file.path, version: file.contentHash }
+                    : { kind: 'file', id, title: file.displayName, path: file.path });
+            } else if (kind === 'workflow-definition') {
+                const form = turnByIdTop.get(id)?.form;
+                if (form?.kind === 'workflow') outputs.push({ kind: 'workflow', id, title: form.workflow.definition.name,
+                    icon: <WorkflowGears running={false} color="currentColor" /> });
+            } else if (kind === 'table' || kind === 'loaded-table') {
+                const node = kind === 'loaded-table' ? loadedTableNodes.find(item => item.id === id) : undefined;
+                // A source table roots the thread; it isn't something the thread made.
+                if (kind === 'table' && !tableById.get(id)?.derive) continue;
+                const tableId = node ? node.tableId : id;
+                const own = chartElements.filter(element => element.tableId === tableId);
+                for (const element of own) {
+                    const chart = charts.find(item => item.id === element.chartId);
+                    outputs.push({ id: element.chartId, title: chart?.title || chart?.chartType });
+                }
+                if (!own.length) {
+                    const reference = node?.external ? externalReferencesTop.find(item => item.id === node.tableId) : undefined;
+                    const title = reference ? externalReferenceTitle(reference) : tableById.get(tableId)?.displayId;
+                    if (title) outputs.push({ kind: 'table', id, title });
+                }
+            }
+        }
+        return outputs;
+    };
+    /** Collapsed thread nodes read as lines: each user request, agent response, and result in order. */
+    const threadLinesOf = (nodeIds: string[], rootId?: string): ThreadPreviewLine[] => {
         const nameOf = (id: string): string => {
             switch (threadGraph.kindOf(id)) {
                 case 'table': return tableById.get(id)?.displayId || '';
@@ -2386,23 +2533,51 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         };
         const plain = (text: string) => text.replace(/[#*`>|_]/g, ' ').replace(/\s+/g, ' ').trim();
         const lines: ThreadPreviewLine[] = [];
-        for (const id of thread.nodeIds) {
+        for (const id of nodeIds) {
             const turn = turnByIdTop.get(id);
             if (turn && threadGraph.kindOf(id) === 'turn') {
                 if (turn.prompt) lines.push({ role: 'user', text: plain(turn.prompt) });
                 if (turn.content) lines.push({ role: 'agent', text: plain(turn.content) });
-            } else if (threadGraph.isItem(id) && !(id === thread.rootId && !tableById.get(id)?.derive)) {
+            } else if (threadGraph.isItem(id) && !(id === rootId && !tableById.get(id)?.derive)) {
                 const name = nameOf(id);
                 if (name) lines.push({ role: 'item', text: `→ ${name}` });
             }
         }
         return lines.filter(line => line.text);
     };
+    /**
+     * Whether a turn starts a block: a user request, but not one that continues the work before it
+     * (steering or replying to a running workflow, or answering a question or form).
+     */
+    const startsBlock = (id: string) => {
+        const turn = turnByIdTop.get(id);
+        if (!turn?.prompt || threadGraph.kindOf(id) !== 'turn' || turn.workflowMessage) return false;
+        const asked = turnByIdTop.get(turn.parentNodeId || '');
+        return !(asked && (asked.textKind === 'clarify' || asked.form || asked.dataOperation || asked.workflow?.questions?.length));
+    };
+    /** A thread's blocks in order: each request with everything it produced, then the next. */
+    const threadBlocksOf = (thread: ThreadSpec) => {
+        const blocks: { start?: string; nodeIds: string[] }[] = [];
+        for (const id of thread.nodeIds) {
+            const last = blocks[blocks.length - 1];
+            if (!last || (startsBlock(id) && last.start)) blocks.push({ start: startsBlock(id) ? id : undefined, nodeIds: [id] });
+            else {
+                last.nodeIds.push(id);
+                // What comes before the first request belongs to its block.
+                if (!last.start && startsBlock(id)) last.start = id;
+            }
+        }
+        return blocks;
+    };
+    const summarizeNodes = (nodeIds: string[], rootId?: string): ThreadNodeSummary => {
+        // A bare table isn't worth a tile in the collapsed view.
+        return { outputs: threadOutputsOf(nodeIds).filter(output => output.kind !== 'table'), lines: threadLinesOf(nodeIds, rootId) };
+    };
     const startedAt = (thread: ThreadSpec) => threadGraph.nodes.get(thread.nodeIds[0])?.createdAt ?? 0;
     const latestThread = threadSpecs.reduce<ThreadSpec | undefined>((latest, thread) =>
         !latest || startedAt(thread) >= startedAt(latest) ? thread : latest, undefined);
     latestThreadKeyRef.current = undefined;
-    focusedThreadKeyRef.current = undefined;
+    pendingBreaksRef.current = {};
     let allThreadEntries: ThreadEntry[] = [];
     // The shelf is not a thread, but it occupies the top of the first column,
     // so it packs alongside the threads as slot 0.
@@ -2414,24 +2589,40 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         const isLatest = thread === latestThread;
         if (isLatest) latestThreadKeyRef.current = expansionKey;
         const containsFocus = !!focusNodeId && thread.nodeIds.some(id => id === focusNodeId || threadGraph.membersOf(id).includes(focusNodeId));
-        if (containsFocus) focusedThreadKeyRef.current = expansionKey;
         const expanded = threadExpansion[expansionKey] ?? isLatest;
+        const summary = summarizeNodes(thread.nodeIds, thread.rootId);
         const entry: ThreadEntry = {
-            key: thread.key, thread, expansionKey,
+            key: thread.key, thread, expansionKey, toggleKey: expansionKey,
             historyCollapsed: !expanded,
             threadSummary: threadSummaryOf(thread).replace(/\s+/g, ' ').trim(),
-            threadLines: threadLinesOf(thread),
+            threadLines: summary.lines,
+            threadOutputs: summary.outputs,
             containsFocus,
             threadLabel: t('dataThread.threadIndex', { index: String(index + 1) }),
             threadName: t('dataThread.threadIndex', { index: String(index + 1) }),
         };
-        // A long open thread breaks into sub-threads at its runs, each with its own header, and
-        // they pack into columns like threads do.
-        const starts = expanded ? splitThreadRuns(measuredRunHeights[thread.key] || [], segmentHeight) : [0];
-        starts.forEach((start, part) => allThreadEntries.push(part === 0
-            ? { ...entry, ...(starts.length > 1 ? { runRange: [0, starts[1]] as [number, number] } : {}) }
-            : { ...entry, key: `${thread.key}#${start}`, runRange: [start, starts[part + 1] ?? Infinity],
-                threadLabel: t('dataThread.threadIndex', { index: `${index + 1}.${part + 1}` }) }));
+        // A long thread breaks into sub-threads by what it made, at its blocks, like words wrapping
+        // on a line; each sub-thread has its own header, opens and collapses on its own, and packs into
+        // columns like threads do. Breaks once made are kept (sealed), so later turns or edits move none.
+        const blocks = threadBlocksOf(thread);
+        const sealed = (threadBreaks[expansionKey] || []).map(id => blocks.findIndex(block => block.start === id));
+        const starts = wrapThreadBlocks(blocks.map(block => threadOutputsOf(block.nodeIds).length), THREAD_SEGMENT_BUDGET, sealed);
+        const breaks = starts.slice(1).map(start => blocks[start].start!);
+        if (breaks.join() !== (threadBreaks[expansionKey] || []).join()) pendingBreaksRef.current[expansionKey] = breaks;
+        if (starts.length === 1) { allThreadEntries.push(entry); return; }
+        const blockStarts = new Set(blocks.flatMap(block => block.start ? [block.start] : []));
+        starts.forEach((start, part) => {
+            const end = starts[part + 1];
+            const segmentNodeIds = blocks.slice(start, end).flatMap(block => block.nodeIds);
+            const toggleKey = `${expansionKey}#${part ? blocks[start].start : 0}`;
+            const own = summarizeNodes(segmentNodeIds, thread.rootId);
+            allThreadEntries.push({ ...entry, toggleKey, historyCollapsed: !(threadExpansion[toggleKey] ?? expanded),
+                blockStarts, segment: { start: part ? blocks[start].start : undefined, end: end === undefined ? undefined : blocks[end].start },
+                segmentNodeIds, threadLines: own.lines, threadOutputs: own.outputs,
+                threadSummary: own.lines.find(line => line.role === 'user')?.text ?? own.lines[0]?.text ?? '',
+                ...(part > 0 ? { key: `${thread.key}#${blocks[start].start}`,
+                    threadLabel: t('dataThread.threadIndex', { index: `${index + 1}.${part + 1}` }) } : {}) });
+        });
     });
     const entryLayoutKey = (entry: ThreadEntry) => `${entry.key}:${entry.historyCollapsed ? 'collapsed' : 'expanded'}`;
 
@@ -2482,11 +2673,17 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             threadName={entry.threadName}
             threadSummary={entry.threadSummary}
             threadLines={entry.threadLines}
+            threadOutputs={entry.threadOutputs}
+            animateToggle={entry.toggleKey === toggledThreadKey}
             containsFocus={entry.containsFocus}
             historyCollapsed={entry.historyCollapsed}
-            onToggleHistory={() => setThreadExpansion(previous => ({ ...previous, [entry.expansionKey!]: !!entry.historyCollapsed }))}
+            onToggleHistory={() => {
+                setThreadExpansion(previous => ({ ...previous, [entry.toggleKey!]: !!entry.historyCollapsed }));
+                markThreadToggled(entry.toggleKey!);
+            }}
             layoutKey={entryLayoutKey(entry)}
-            runRange={entry.runRange}
+            blockStarts={entry.blockStarts}
+            segment={entry.segment}
             chartElements={chartElements}
             highlightedNodeIds={highlightedNodeIds}
             sx={entrySx} />;
@@ -2518,17 +2715,6 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             if (measuredEntryHeights[key] !== height) entryHeightUpdates[key] = height;
         }
         if (Object.keys(entryHeightUpdates).length) setMeasuredEntryHeights(previous => ({ ...previous, ...entryHeightUpdates }));
-        if (relayout) {
-            const runs: Record<string, number[]> = {};
-            for (const element of threadScrollRef.current?.querySelectorAll<HTMLElement>('[data-thread-run-of]') || []) {
-                if (element.offsetHeight <= 0) continue;
-                (runs[element.dataset.threadRunOf!] ??= [])[Number(element.dataset.threadRunIndex)] = element.offsetHeight;
-            }
-            const runUpdates = Object.fromEntries(Object.entries(runs)
-                .map(([key, heights]) => [key, Array.from(heights, height => height ?? 0)] as const)
-                .filter(([key, heights]) => heights.join() !== (measuredRunHeights[key] || []).join()));
-            if (Object.keys(runUpdates).length) setMeasuredRunHeights(previous => ({ ...previous, ...runUpdates }));
-        }
     });
 
     useEffect(() => {
@@ -2547,11 +2733,9 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         if (entry.isShelf) return Math.ceil(shelfHeight);
         const measured = measuredEntryHeights[entryLayoutKey(entry)];
         if (measured !== undefined) return measured;
-        if (entry.historyCollapsed) return 42 + Math.min(3, entry.threadLines?.length ?? 0) * 20 + 22;
-        // A sub-thread is its runs plus a header.
-        if (entry.runRange) return (measuredRunHeights[entry.thread!.key] || []).slice(...entry.runRange)
-            .reduce((sum, height) => sum + height, 48);
-        const ids = entry.thread!.nodeIds.flatMap(id => [id, ...threadGraph.membersOf(id)]);
+        if (entry.historyCollapsed) return 42 + (entry.threadOutputs?.length ? THREAD_DECK_HEIGHT
+            : Math.min(3, entry.threadLines?.length ?? 0) * 20 + 22);
+        const ids = (entry.segmentNodeIds ?? entry.thread!.nodeIds).flatMap(id => [id, ...threadGraph.membersOf(id)]);
         const chartCount = ids.reduce((sum, id) => {
             const tableId = tableById.has(id) ? id : threadGraph.nodes.get(id)?.tableId;
             return sum + chartElements.filter(chart => chart.tableId === tableId).length;
@@ -2559,7 +2743,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         return Math.ceil(estimateThreadHeight(ids.filter(id => threadGraph.isItem(id)).length,
             ids.filter(id => threadGraph.isMessage(id)).length, chartCount));
     });
-    const entrySegments = computeThreadColumnLayout(entryHeights, fittableColumns)
+    const entrySegments = computeThreadColumnLayout(entryHeights, fittableColumns, threadPanelHeight)
         .map(indices => indices.map(index => allThreadEntries[index]));
 
     let view = hasContent ? (
@@ -2575,7 +2759,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             height: 'calc(100% - 16px)',
             width: panelWidth,
         }}>
-            <Box data-thread-column-flow data-thread-segment-height={segmentHeight} sx={{
+            <Box data-thread-column-flow sx={{
                 display: 'grid',
                 gridTemplateColumns: `repeat(${fittableColumns}, minmax(0, 1fr))`,
                 alignItems: 'start',

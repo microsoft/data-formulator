@@ -32,6 +32,7 @@ import { radius, borderColor } from '../app/tokens';
 import { textVar } from '../app/layout';
 import { useDispatch, useSelector } from 'react-redux';
 import { dfActions, dfSelectors } from '../app/dfSlice';
+import { ThreadReferenceChips } from '../components/ThreadReferenceIcon';
 import { getCachedChart } from '../app/chartCache';
 
 export const workspaceFileFromHref = (href: string): string | null => {
@@ -465,7 +466,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
     if (entry.from === 'user' && (entry.role === 'prompt' || entry.role === 'instruction')) {
         const palette = theme.palette.custom;
         const isExploreIdeas = isExploreIdeasEntry(entry);
-        if (isExploreIdeas && !entry.attachments?.length) return null;
+        if (isExploreIdeas && !entry.attachments?.length && !entry.references?.length) return null;
         // Provenance for multi-input derivations is rendered as a structural
         // "merge node" in the timeline gutter (see DataThread), so the
         // instruction card itself stays free of chip-strip chrome.
@@ -513,6 +514,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         ))}
                     </Box>
                 )}
+                {entry.references && entry.references.length > 0 && <ThreadReferenceChips references={entry.references} sx={{ mt: 0.5 }} />}
             </Box>
         );
     }

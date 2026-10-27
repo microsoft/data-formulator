@@ -236,9 +236,12 @@ def test_analyst_gates_setup_actions_until_configure_loads_and_streams_the_form(
 
     client = MagicMock()
     client.model = "test-model"
-    agent = AnalystAgent(client=client, workspace=Workspace(IDENTITY, root_dir=tmp_path / "ws"),
-                         identity_id=IDENTITY, workspace_id="session_current")
-    assert agent._initial_loaded_skills(None) == {"meta"} | ({"terminal"} if agent.registry.has("terminal") else set())
+    import pandas as pd
+    workspace = Workspace(IDENTITY, root_dir=tmp_path / "ws")
+    # A session with data: setup guidance loads on demand (an empty session starts with it).
+    workspace.write_parquet(pd.DataFrame({"title": ["Heat"]}), "movies")
+    agent = AnalystAgent(client=client, workspace=workspace, identity_id=IDENTITY, workspace_id="session_current")
+    assert agent._initial_loaded_skills(None) == {"meta"}
     assert "configure" in agent._initial_loaded_skills(None, {"form_id": "form-1"})
     observations = []
 
@@ -253,7 +256,7 @@ def test_analyst_gates_setup_actions_until_configure_loads_and_streams_the_form(
                "action_data": {"action": "propose_session_changes", "open_session_id": "session_movies", "user_review_needed": False}}
 
     agent._get_next_action = next_action
-    events = list(agent.run([], "Open my movies session"))
+    events = list(agent.run([{"name": "movies", "rows": []}], "Open my movies session"))
 
     assert any("[GATED]" in message and "configure" in message for message in observations)
     interact = next(event for event in events if event["type"] == "interact")

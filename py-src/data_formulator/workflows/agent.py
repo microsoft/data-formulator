@@ -73,7 +73,9 @@ WORKSPACE_TOOLS = {"create_data", "update_data", "create_file", "edit_file", "mo
 PUBLISHED_TOOLS = {"create_data", "update_data", "create_file", "edit_file", "move_file", "delete_items"}
 # Runs may open a connection form for missing access, but never author workflows or manage app setup.
 RUN_EXCLUDED_TOOLS = {"long_response", "propose_workflow", "read_connector_form", "update_connector_form",
-                      "list_sessions", "propose_schedule", "propose_session_changes"}
+                      "list_sessions", "propose_schedule", "propose_session_changes",
+                      # Background tasks belong to chat runs for now; a workflow run is already a server job.
+                      "start_task", "wait_tasks", "stop_task"}
 for skill_name, names in (("workspace", WORKSPACE_TOOLS), ("visualization", {"visualize"})):
     schema_path = Path(__file__).parents[1] / "analyst" / "skills" / skill_name / "tools.json"
     TOOLS.extend(item for item in json.loads(schema_path.read_text(encoding="utf-8")) if item["function"]["name"] in names)
@@ -210,6 +212,9 @@ def model_retry_delay(exc: Exception, attempt: int) -> float | None:
 
 
 class WorkflowAgent(AnalystAgent):
+    # Its run loop executes one call per response (it records only the first).
+    PARALLEL_TOOL_CALLS = False
+
     def __init__(self, client, workspace, state: dict, checkpoint, cancel: Event, identity_id: str,
                  workspace_id: str | None = None):
         super().__init__(client, workspace, identity_id=identity_id, workspace_id=workspace_id,

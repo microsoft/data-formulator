@@ -246,8 +246,12 @@ class SessionFiles:
         if path.startswith(WORKFLOWS):
             return self._workflow_detail(path)
         if kind == "table" and self.layer is not None:
-            rows, columns = self.layer.table_shape(path[len("session/tables/"):-len(".json")])
-            return f"{rows:,} rows × {columns} columns" if rows is not None else ""
+            name = path[len("session/tables/"):-len(".json")]
+            rows, columns = self.layer.table_shape(name)
+            shape = f"{rows:,} rows × {columns} columns" if rows is not None else ""
+            if self.layer.table_data_missing(name):
+                return f"data missing from the workspace (listed as {shape})" if shape else "data missing from the workspace"
+            return shape
         if not path.startswith("files/") or self.workspace is None:
             return ""
         name = path[len("files/"):]

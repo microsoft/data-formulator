@@ -325,6 +325,8 @@ def _register_blueprints():
 
     from data_formulator.routes.workflows import workflow_bp
     app.register_blueprint(workflow_bp)
+    from data_formulator.routes.tasks import task_bp
+    app.register_blueprint(task_bp)
     from data_formulator.routes.schedules import schedule_bp
     app.register_blueprint(schedule_bp)
 

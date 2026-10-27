@@ -22,6 +22,7 @@ import {
     alpha,
 } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
@@ -32,7 +33,7 @@ import { AgentToyIcon } from './AgentToyIcon';
 import { CONNECTOR_ACTION_URLS } from '../app/utils';
 import { apiRequest, type ApiError } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
-import Markdown from 'markdown-to-jsx';
+import { SetupGuide } from '../components/SetupGuide';
 
 import { useDispatch, useSelector } from 'react-redux';
 import { dfActions } from '../app/dfSlice';
@@ -62,6 +63,11 @@ function extractConnectError(body: any, fallback: string): string {
     }
     return body.message ?? fallback;
 }
+
+
+/** Renders `backtick` spans in short connector hints as code. */
+const withInlineCode = (text: string): React.ReactNode =>
+    text.split(/(`[^`]+`)/).map((part, index) => index % 2 ? <code key={index}>{part.slice(1, -1)}</code> : part);
 
 type DraftTextFieldProps = Omit<React.ComponentProps<typeof TextField>, 'value' | 'onChange'> & {
     value: string;
@@ -174,6 +180,14 @@ export const DataLoaderForm: React.FC<{
         return t(`loader.${loaderTypeKey}.${paramDef.name}`, {
             defaultValue: t(`loader._common.${paramDef.name}`, { defaultValue: fallback }),
         });
+    };
+    // A short note under a field ("Leave empty to browse all databases."), kept out of the placeholder.
+    const getParamHint = (name: string) => compact && !comfortableSpacing ? '' : t(`loader.${loaderTypeKey}.${name}_hint`, {
+        defaultValue: t(`loader._common.${name}_hint`, { defaultValue: '' }),
+    });
+    const paramHint = (name: string) => {
+        const hint = getParamHint(name);
+        return hint ? <Typography variant="body2" sx={{ fontSize: '0.75rem', color: 'text.secondary', mt: 0.5 }}>{hint}</Typography> : null;
     };
     const localizedAuthInstructions = t(`loader.${loaderTypeKey}.authInstructions`, {
         defaultValue: authInstructions.trim(),
@@ -814,11 +828,12 @@ export const DataLoaderForm: React.FC<{
         fontSize: bodyFontSize,
         ...(comfortableSpacing ? { py: 0.5, px: 1.5, minHeight: 32 } : compact ? { py: 0.25, minHeight: 0 } : {}),
     };
-    const disclosureSx = comfortableSpacing ? {
+    // Section toggles (advanced settings, setup notes) read as text with a chevron, not as fields.
+    const disclosureSx = comfortableSpacing || !compact ? {
         backgroundColor: 'transparent', borderRadius: 0, overflow: 'visible',
         '& .MuiAccordionSummary-root': {
             minHeight: 32, px: 0, width: 'fit-content', maxWidth: '100%',
-            flexDirection: 'row-reverse', gap: 0.5, color: 'text.secondary',
+            flexDirection: 'row-reverse', gap: 0.5, color: compact || comfortableSpacing ? 'text.secondary' : 'text.primary',
         },
         '& .MuiAccordionSummary-content': { my: 0 },
         '& .MuiAccordionDetails-root': { px: 0, pt: 1.5, pb: 0 },
@@ -829,7 +844,8 @@ export const DataLoaderForm: React.FC<{
             minWidth: 0,
             maxWidth: '100%',
             fontFamily: theme.typography.fontFamily,
-            fontSize: bodyFontSize,
+            // The reference column stays a step smaller than the form it explains.
+            fontSize: compact ? bodyFontSize : '0.8125rem',
             lineHeight: 1.6,
             color: 'text.primary',
             '& *': { fontSize: 'inherit', lineHeight: 'inherit' },
@@ -856,32 +872,22 @@ export const DataLoaderForm: React.FC<{
             '& a': { color: 'primary.main', overflowWrap: 'anywhere' },
             '& ul, & ol': { paddingLeft: 2.5, margin: '10px 0' },
             '& li': { marginBottom: 0.5 },
-            '& strong': { fontWeight: 600 },
+            '& strong': { fontWeight: 500, color: 'text.primary' },
             '& h1, & h2, & h3, & h4': { fontWeight: 600, margin: '14px 0 6px' },
+            '& blockquote': { m: 0, mt: 0.75, pl: 1.25, borderLeft: '2px solid', borderColor: 'divider' },
         })}>
-            <Markdown options={{
-                overrides: {
-                    a: {
-                        props: {
-                            target: '_blank',
-                            rel: 'noopener noreferrer',
-                        },
-                    },
-                },
-            }}>
-                {setupDetailsContent}
-            </Markdown>
+            <SetupGuide content={setupDetailsContent} />
         </Box>
     ) : null;
 
-    // Escape hatch when the guide isn't enough: hand the user to the data agent
-    // chat, which can inspect local config, run checks and fill the form.
+    // The other way to set up: hand the user to the data agent's chat, which can
+    // inspect local config, run checks and fill in the connection there.
     const askAgentButton = onAskAgent ? (
         <Button
             size="small"
-            variant="contained"
-            disableElevation
+            variant="text"
             startIcon={<AgentToyIcon sx={{ fontSize: `${iconVar.md} !important` }} />}
+            endIcon={<ArrowForwardIcon sx={{ fontSize: `${iconVar.sm} !important` }} />}
             onClick={() => {
                 onAskAgent(t('db.askAgentPrompt', {
                     connector: loaderTypeKey,
@@ -895,18 +901,20 @@ export const DataLoaderForm: React.FC<{
                 lineHeight: 1.5,
                 minWidth: 0,
                 minHeight: 0,
-                py: 0.5,
+                py: 0.375,
                 px: 1.25,
-                borderRadius: 1,
+                borderRadius: 999,
                 whiteSpace: 'nowrap',
-                bgcolor: 'primary.main',
-                color: 'primary.contrastText',
-                '&:hover': { bgcolor: 'primary.dark' },
-                // MUI's default start-icon margins are sized for a 14px label.
+                fontWeight: 500,
+                color: 'primary.main',
+                bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
+                '&:hover': { bgcolor: (theme) => alpha(theme.palette.primary.main, 0.14) },
+                // MUI's default icon margins are sized for a 14px label.
                 '& .MuiButton-startIcon': { ml: 0, mr: 0.5 },
+                '& .MuiButton-endIcon': { ml: 0.5, mr: 0 },
             }}
         >
-            {t('db.askAgent', { defaultValue: 'Ask agent' })}
+            {t('db.askAgent', { defaultValue: 'Ask agent to set this up' })}
         </Button>
     ) : null;
 
@@ -966,10 +974,14 @@ export const DataLoaderForm: React.FC<{
             }}>
                 <Box sx={{ minWidth: 0 }}>
                 {formFieldsBefore && <Box sx={{ mb: fieldGap }}>{formFieldsBefore}</Box>}
-                {formTitle && (
-                    <Typography variant="subtitle1" sx={{ fontSize: titleFontSize, fontWeight: 600, lineHeight: 1.5, mb: 1.5 }}>
-                        {formTitle}
-                    </Typography>
+                {(formTitle || askAgentButton) && (
+                    // Filling the form and asking the agent are two ways to the same connection.
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', columnGap: 1.5, rowGap: 0.75, mb: 1.5 }}>
+                        {formTitle && <Typography variant="subtitle1" sx={{ fontSize: titleFontSize, fontWeight: 600, lineHeight: 1.5 }}>
+                            {formTitle}
+                        </Typography>}
+                        {askAgentButton}
+                    </Box>
                 )}
                     {(() => {
                         const hasTiers = paramDefs.some(p => p.tier);
@@ -998,6 +1010,7 @@ export const DataLoaderForm: React.FC<{
                                                 onDraftChange={(value) => updateParamDraft(paramDef.name, value)}
                                                 onCommit={(value) => commitParamDraft(paramDef.name, value)}
                                             />}
+                                            {paramHint(paramDef.name)}
                                         </Box>
                                     ))}
                                     <Portal container={actionContainer} disablePortal={!actionContainer}><Button variant="contained" size="small" disabled={isConnecting}
@@ -1036,6 +1049,7 @@ export const DataLoaderForm: React.FC<{
                                             </Box>
                                         )}
                                     </Box>
+                                    {paramHint(paramDef.name)}
                                 </Box>
                             );
                             return (
@@ -1236,6 +1250,16 @@ export const DataLoaderForm: React.FC<{
                         const showConnectAction = (!hasDelegated || selectedAuthParams.length > 0)
                             && (!browseKusto || hasGuidedDatabase);
 
+                        // Where-to-connect comes before how-to-sign-in, unless the sign-in choice changes
+                        // everything below it: on local Kusto, a CLI identity browses subscriptions, clusters
+                        // and databases, while other paths type them in. Keyed on the connector rather than the
+                        // sign-in state, so the form never reorders midway.
+                        const authDrivesFields = loaderTypeKey === 'kusto' && isLocalMode && authPaths.some(path => path.cli_login);
+                        const orderSx = (order: number) => authDrivesFields ? { order } : {};
+                        // The dialog and the canvas card attach the chosen method's details to its tab; the inline chat card stays flat.
+                        const authPanel = (!compact || comfortableSpacing) && authPaths.length > 1 && Boolean(selectedAuthPath?.description
+                            || (isLocalMode && selectedAuthPath?.cli_login) || hasDelegated || selectedAuthParams.length > 0);
+
                         const advancedSettings = advancedConnectionParams.length > 0 && (
                             <Accordion disableGutters elevation={0} expanded={showAdvancedConnection}
                                 onChange={() => setShowAdvancedConnection(value => !value)}
@@ -1259,8 +1283,11 @@ export const DataLoaderForm: React.FC<{
 
                         return (
                             <Box sx={{ display: 'grid', gap: sectionGap, width: '100%' }}>
-                                {browseKusto && <Box sx={{ display: 'grid', gap: 1, ...(comfortableSpacing ? { order: 1 } : {}) }}>
+                                {browseKusto && <Box sx={{ display: 'grid', gap: 1, ...orderSx(1) }}>
                                     {browseKusto && <>
+                                        <Box>
+                                        {/* Labelled like the fields below it; the chat card floats its labels instead. */}
+                                        {!comfortableSpacing && <Typography variant="body2" sx={labelSx}>{t('model.azureSubscription')}</Typography>}
                                         <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
                                             <Autocomplete fullWidth size="small" options={azureSubscriptions}
                                                 sx={{ minWidth: 0, flex: 1 }}
@@ -1276,7 +1303,8 @@ export const DataLoaderForm: React.FC<{
                                                     dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: 'kusto_cluster', paramValue: '' }));
                                                     dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: 'kusto_database', paramValue: '' }));
                                                 }}
-                                                renderInput={inputParams => <TextField {...inputParams} label={t('model.azureSubscription')} sx={fieldSx} />}
+                                                renderInput={inputParams => <TextField {...inputParams} sx={fieldSx}
+                                                    {...(comfortableSpacing ? { label: t('model.azureSubscription') } : { placeholder: t('db.selectSubscription', { defaultValue: 'Select a subscription' }) })} />}
                                             />
                                             <Tooltip title={t('db.refreshClusters', { defaultValue: 'Refresh Azure clusters' })}><span>
                                                 <IconButton size="small" aria-label={t('db.refreshClusters', { defaultValue: 'Refresh Azure clusters' })}
@@ -1289,6 +1317,7 @@ export const DataLoaderForm: React.FC<{
                                                         else setSubscriptionRefresh(current => current + 1);
                                                     }}><RefreshIcon fontSize="small" /></IconButton>
                                             </span></Tooltip>
+                                        </Box>
                                         </Box>
                                         {(subscriptionsLoading || clustersLoading) && <Box role="status" sx={{ display: 'flex', gap: 0.75, alignItems: 'center', color: 'text.secondary' }}>
                                             <CircularProgress size={12} color="inherit" />
@@ -1307,16 +1336,16 @@ export const DataLoaderForm: React.FC<{
                                     </>}
                                 </Box>}
                                 {visibleConnectionParams.length > 0 && (
-                                    <Box sx={{ display: 'grid', gap: sectionGap, ...(comfortableSpacing ? { order: 1 } : {}) }}>
+                                    <Box sx={{ display: 'grid', gap: sectionGap, ...orderSx(1) }}>
                                         {renderParamGrid(visibleConnectionParams)}
                                         {advancedSettings}
                                     </Box>
                                 )}
 
-                                {filterParams.length > 0 && (!browseKusto || hasGuidedDatabase) && <Box sx={comfortableSpacing ? { order: 2 } : undefined}>{renderParamGrid(filterParams)}</Box>}
+                                {filterParams.length > 0 && (!browseKusto || hasGuidedDatabase) && <Box sx={orderSx(2)}>{renderParamGrid(filterParams)}</Box>}
 
                                 {/* Auth path selection reveals only the selected path's credential fields. */}
-                                <Box sx={{ display: 'grid', gap: sectionGap, ...(comfortableSpacing ? { order: 0 } : {}) }}>
+                                <Box sx={{ display: 'grid', gap: sectionGap, ...orderSx(0) }}>
                                     {authPaths.length > 1 && (
                                         <ToggleButtonGroup
                                             exclusive
@@ -1328,7 +1357,7 @@ export const DataLoaderForm: React.FC<{
                                                 selectAuthPath(value);
                                             }}
                                             aria-label={t('db.tierAuth')}
-                                            sx={(theme) => ({
+                                            sx={(theme) => compact && !comfortableSpacing ? ({
                                                 '& .MuiToggleButton-root': {
                                                     textTransform: 'none',
                                                     color: 'text.secondary',
@@ -1343,6 +1372,17 @@ export const DataLoaderForm: React.FC<{
                                                         '&:hover': { backgroundColor: alpha(theme.palette.primary.main, 0.14) },
                                                     },
                                                 },
+                                            }) : ({
+                                                // The standard toggle group, as in the model settings.
+                                                ...(authPanel ? {
+                                                    '& .MuiToggleButtonGroup-firstButton': { borderBottomLeftRadius: 0 },
+                                                    '& .MuiToggleButtonGroup-lastButton': { borderBottomRightRadius: 0 },
+                                                } : {}),
+                                                '& .MuiToggleButton-root': {
+                                                    textTransform: 'none', fontSize: comfortableSpacing ? '0.875rem' : bodyFontSize, py: 0.625,
+                                                    color: 'text.primary',
+                                                    ...(comfortableSpacing ? { minHeight: 36, minWidth: 0, overflowWrap: 'anywhere' } : {}),
+                                                },
                                             })}
                                         >
                                             {authPaths.map(path => (
@@ -1356,18 +1396,30 @@ export const DataLoaderForm: React.FC<{
                                         </ToggleButtonGroup>
                                     )}
 
-                                    {authPaths.length > 1 && selectedAuthPath?.description && (
+                                    {/* The chosen tab's description and fields sit in a panel hanging from the tab,
+                                        so it's clear they belong to that sign-in method. */}
+                                    <Box sx={authPanel ? {
+                                        display: 'grid', gap: sectionGap, mt: -sectionGap, px: 2, py: 1.75,
+                                        border: 1, borderTop: 0, borderColor: 'divider', borderBottomLeftRadius: 4, borderBottomRightRadius: 4,
+                                    } : { display: 'contents' }}>
+                                    {authPaths.length > 1 && selectedAuthPath?.description && (compact && !comfortableSpacing ? (
                                         <Box sx={(theme) => ({
                                             display: 'flex', alignItems: 'flex-start', gap: 1,
-                                            px: compact ? 1 : 1.5, py: compact ? 0.75 : 1.25,
-                                            backgroundColor: alpha(theme.palette.primary.main, 0.06),
+                                            px: 1, py: 0.75, backgroundColor: alpha(theme.palette.primary.main, 0.06),
                                         })}>
-                                            <InfoOutlinedIcon sx={{ fontSize: compact ? 15 : 17, color: 'primary.main', mt: '2px', flexShrink: 0 }} />
+                                            <InfoOutlinedIcon sx={{ fontSize: 15, color: 'primary.main', mt: '2px', flexShrink: 0 }} />
                                             <Typography variant="body2" sx={{ fontSize: bodyFontSize, lineHeight: 1.5 }}>
-                                                {selectedAuthPath.description}
+                                                {withInlineCode(selectedAuthPath.description)}
                                             </Typography>
                                         </Box>
-                                    )}
+                                    ) : (
+                                        <Typography variant="body2" sx={{
+                                            fontSize: bodyFontSize, lineHeight: 1.5, color: 'text.secondary',
+                                            '& code': { fontFamily: 'var(--df-font-mono)', fontSize: '0.92em', color: 'text.primary' },
+                                        }}>
+                                            {withInlineCode(selectedAuthPath.description)}
+                                        </Typography>
+                                    ))}
 
                                     {isLocalMode && selectedAuthPath?.cli_login && (
                                         <Box sx={{ display: 'grid', gap: 0.75 }}>
@@ -1379,11 +1431,7 @@ export const DataLoaderForm: React.FC<{
                                             </Typography>}
                                             {cliLoginStatus?.signed_in ? (
                                                 <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 2, rowGap: 0.75 }}>
-                                                {comfortableSpacing ? <Typography variant="caption" color="success.main" sx={{ overflowWrap: 'anywhere', flex: '1 1 200px', minWidth: 0 }}>
-                                                    {t('model.azureAccount', {
-                                                        user: cliLoginStatus.account?.user || t('db.cliLoginCurrentAccount', { defaultValue: 'your current account' }),
-                                                    })}
-                                                </Typography> : <Box sx={(theme) => ({
+                                                {<Box sx={(theme) => ({
                                                     display: 'flex', alignItems: 'center', gap: 1,
                                                     flex: '1 1 200px', minWidth: 0, overflowWrap: 'anywhere',
                                                     px: compact ? 1 : 1.5, py: compact ? 0.625 : 1,
@@ -1392,7 +1440,10 @@ export const DataLoaderForm: React.FC<{
                                                 })}>
                                                     <CheckCircleOutlineIcon sx={{ fontSize: compact ? 15 : 17, flexShrink: 0 }} />
                                                     <Typography variant="body2" sx={{ fontSize: bodyFontSize, color: 'inherit' }}>
-                                                        {t('db.cliLoginReady', {
+                                                        {browseKusto ? t('db.cliSignedInAs', {
+                                                            user: cliLoginStatus.account?.user || t('db.cliLoginCurrentAccount', { defaultValue: 'your current account' }),
+                                                            defaultValue: 'Signed in as {{user}}.',
+                                                        }) : t('db.cliLoginReady', {
                                                             user: cliLoginStatus.account?.user || t('db.cliLoginCurrentAccount', { defaultValue: 'your current account' }),
                                                             defaultValue: 'Signed in as {{user}}. You are ready to connect.',
                                                         })}
@@ -1454,6 +1505,7 @@ export const DataLoaderForm: React.FC<{
                                         /* Manual credentials only */
                                         renderParamGrid(selectedAuthParams)
                                     )}
+                                    </Box>
 
                                     </Box>
 
@@ -1466,7 +1518,7 @@ export const DataLoaderForm: React.FC<{
                                         gap: compact ? 1 : 1.5,
                                         width: '100%',
                                         mt: compact ? 0 : 1,
-                                        ...(comfortableSpacing ? { order: 3 } : {}),
+                                        ...orderSx(3),
                                     }}>
                                         <Portal container={actionContainer} disablePortal={!actionContainer}><Button
                                             variant="contained" color="primary" size="small"
@@ -1500,16 +1552,8 @@ export const DataLoaderForm: React.FC<{
                     })()}
                     {!showSideGuide && setupDetailsContent && (
                         <Box sx={{ mt: comfortableSpacing ? 0 : compact ? 1.5 : 3 }}>
-                            {askAgentButton && (
-                                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 0.5 }}>
-                                    {askAgentButton}
-                                </Box>
-                            )}
-                        {comfortableSpacing ? <Box sx={{
-                            mt: 2, p: 2, borderRadius: 1,
-                            bgcolor: 'action.hover',
-                        }}>
-                            <Typography variant="body2" sx={{ fontSize: bodyFontSize, fontWeight: 500, color: 'text.secondary', mb: 0.75 }}>
+                        {comfortableSpacing ? <Box sx={{ mt: 1, pt: 2.5, borderTop: 1, borderColor: 'divider' }}>
+                            <Typography variant="subtitle1" sx={{ fontSize: '0.9375rem', fontWeight: 600, lineHeight: 1.5, mb: 1 }}>
                                 {t('db.setupDetails', { defaultValue: 'Setup details' })}
                             </Typography>
                             {setupGuideBody}
@@ -1543,25 +1587,24 @@ export const DataLoaderForm: React.FC<{
                     )}
                 </Box>
                 {showSideGuide && (
-                    <Box sx={(theme) => ({
+                    // A reference column beside the form: set apart by a rule, not a filled panel, so the
+                    // form's inputs stay the only shaded surfaces.
+                    <Box sx={{
                         minWidth: 0,
                         maxWidth: '100%',
                         overflow: 'hidden',
-                        border: '1px solid',
+                        borderLeft: '1px solid',
                         borderColor: 'divider',
-                        borderRadius: 1,
-                        backgroundColor: alpha(theme.palette.text.primary, 0.035),
-                    })}>
+                    }}>
                         <Box sx={{
                             display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1,
-                            px: 2.25, py: 1.5, borderBottom: '1px solid', borderColor: 'divider', backgroundColor: 'background.paper',
+                            pl: 3, pb: 0.5,
                         }}>
                             <Typography variant="subtitle1" sx={{ fontSize: titleFontSize, fontWeight: 600, lineHeight: 1.5 }}>
                                 {t('db.setupDetails', { defaultValue: 'Setup details' })}
                             </Typography>
-                            {askAgentButton}
                         </Box>
-                        <Box sx={{ minWidth: 0, px: 2.25, py: 2 }}>
+                        <Box sx={{ minWidth: 0, pl: 3, pt: 1 }}>
                             {setupGuideBody}
                         </Box>
                     </Box>

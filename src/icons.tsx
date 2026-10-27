@@ -9,29 +9,172 @@ import BarChartIcon from '@mui/icons-material/BarChart';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
 import PieChartOutlineIcon from '@mui/icons-material/PieChartOutline';
-import GridOnIcon from '@mui/icons-material/GridOn';
-import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined';
+import AlignHorizontalLeftIcon from '@mui/icons-material/AlignHorizontalLeft';
+import AreaChartIcon from '@mui/icons-material/AreaChart';
+import CandlestickChartIcon from '@mui/icons-material/CandlestickChart';
+import InsightsIcon from '@mui/icons-material/Insights';
+import MultilineChartIcon from '@mui/icons-material/MultilineChart';
+import PublicIcon from '@mui/icons-material/Public';
+import RadarIcon from '@mui/icons-material/Radar';
+import SpeedIcon from '@mui/icons-material/Speed';
+import StackedBarChartIcon from '@mui/icons-material/StackedBarChart';
+import StackedLineChartIcon from '@mui/icons-material/StackedLineChart';
+import TimelineIcon from '@mui/icons-material/Timeline';
+import ViewTimelineOutlinedIcon from '@mui/icons-material/ViewTimelineOutlined';
+import WaterfallChartIcon from '@mui/icons-material/WaterfallChart';
+import type { Theme } from '@mui/material';
+import { SETI_COLORS, SETI_GLYPHS, SetiGlyph, SetiGlyphName } from './setiIcons';
+import { BrandIcon, CONNECTOR_BRANDS } from './connectorBrands';
 
 // ── MUI domain icon re-exports ──────────────────────────────────────────
 // Centralized so every file imports domain icons from one place.
 // Chart-template icons (managed in ChartTemplates.tsx) are NOT included.
-export { default as TableIcon } from '@mui/icons-material/TableRowsOutlined';
+/** A table: an outlined grid with a header row, drawn in strokes to sit with the outlined icons around it. */
+export const TableIcon: React.FC<SvgIconProps> = props => (
+    <SvgIcon data-testid="TableIcon" {...props} viewBox="0 0 24 24">
+        <g fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            {/* One path, so the lines don't darken where they cross under semi-transparent colours. */}
+            <path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM3 10h18M3 15h18M9 10v10M15 10v10" />
+        </g>
+    </SvgIcon>
+);
 export { default as StreamIcon } from '@mui/icons-material/Stream';
 export { default as AgentIcon } from '@mui/icons-material/PrecisionManufacturing';
 export { default as InsightIcon } from '@mui/icons-material/Insights';
-export { default as AnchorIcon } from '@mui/icons-material/Anchor';
 export { default as FolderOpenIcon } from '@mui/icons-material/FolderOpen';
 
+/** A form the agent asks the user to fill (connect a source, answer setup questions): a clipboard with lines. */
+export { default as FormIcon } from '@mui/icons-material/AssignmentOutlined';
+
+// Cell shades for the heatmap glyph: values cooling away from one corner, so it reads as data, not a table.
+const HEATMAP_SHADES = [[1, 0.7, 0.35], [0.7, 0.45, 0.25], [0.35, 0.25, 0.15]];
+
+/** A heatmap: a 3×3 grid of cells in varying shades of the current colour. */
+export const HeatmapIcon: React.FC<SvgIconProps> = props => (
+    <SvgIcon data-testid="HeatmapIcon" {...props} viewBox="0 0 24 24">
+        {HEATMAP_SHADES.flatMap((row, r) => row.map((opacity, c) =>
+            <rect key={`${r}-${c}`} x={3 + c * 6.5} y={3 + r * 6.5} width={5.5} height={5.5} rx={1.25} opacity={opacity} />))}
+    </SvgIcon>
+);
+
+// ── Chart family icons ──────────────────────────────────────────────────
+
+export interface ChartFamily {
+    Icon: React.ElementType;
+    /** The family's colour. Not used yet: chart glyphs take the standard state colours (see `iconTone`). */
+    color: string;
+}
+
+// First match wins, so specific names come before the words they contain ("heatmap" before "map").
+const CHART_FAMILIES: [RegExp, ChartFamily][] = [
+    [/^auto$/, { Icon: InsightsIcon, color: SETI_COLORS.blue }],
+    [/kpi/, { Icon: SpeedIcon, color: SETI_COLORS.yellow }],
+    [/heatmap|custom rect/, { Icon: HeatmapIcon, color: SETI_COLORS.orange }],
+    [/map|choropleth/, { Icon: PublicIcon, color: SETI_COLORS.green }],
+    [/candlestick|box ?plot|violin/, { Icon: CandlestickChartIcon, color: SETI_COLORS.red }],
+    [/waterfall/, { Icon: WaterfallChartIcon, color: SETI_COLORS.blue }],
+    [/gantt/, { Icon: ViewTimelineOutlinedIcon, color: SETI_COLORS.purple }],
+    [/radar/, { Icon: RadarIcon, color: SETI_COLORS.purple }],
+    [/pie|rose|donut/, { Icon: PieChartOutlineIcon, color: SETI_COLORS.pink }],
+    [/bar table/, { Icon: BarChartIcon, color: SETI_COLORS.blue }],
+    [/pyramid|bullet/, { Icon: AlignHorizontalLeftIcon, color: SETI_COLORS.blue }],
+    [/stacked bar/, { Icon: StackedBarChartIcon, color: SETI_COLORS.blue }],
+    [/streamgraph/, { Icon: StackedLineChartIcon, color: SETI_COLORS.purple }],
+    [/area|density/, { Icon: AreaChartIcon, color: SETI_COLORS.purple }],
+    [/bump/, { Icon: MultilineChartIcon, color: SETI_COLORS.green }],
+    [/connected scatter/, { Icon: TimelineIcon, color: SETI_COLORS.orange }],
+    [/scatter|regression|point|dot|strip/, { Icon: ScatterPlotIcon, color: SETI_COLORS.orange }],
+    [/line|slope|sparkline|ecdf/, { Icon: ShowChartIcon, color: SETI_COLORS.green }],
+    [/table/, { Icon: TableIcon, color: SETI_COLORS.greyLight }],
+];
+// Bar, grouped bar, histogram, lollipop, and anything unrecognised.
+const DEFAULT_CHART_FAMILY: ChartFamily = { Icon: BarChartIcon, color: SETI_COLORS.blue };
+
+/** A chart type's family: its glyph and (reserved) colour. */
+export const chartFamily = (chartType: string): ChartFamily =>
+    CHART_FAMILIES.find(([pattern]) => pattern.test(chartType.toLowerCase()))?.[1] ?? DEFAULT_CHART_FAMILY;
+
 /** The chart family glyph for a chart type (thread rail, canvas tabs). */
-export const chartFamilyIcon = (chartType: string): React.ElementType => {
-    const ct = chartType.toLowerCase();
-    if (ct.includes('scatter') || ct.includes('point') || ct.includes('dot') || ct.includes('boxplot')) return ScatterPlotIcon;
-    if (ct.includes('line') || ct.includes('regression')) return ShowChartIcon;
-    if (ct.includes('pie')) return PieChartOutlineIcon;
-    if (ct.includes('heatmap')) return GridOnIcon;
-    if (ct.includes('table')) return TableRowsOutlinedIcon;
-    // Bar, histogram, stacked, grouped, pyramid, and default
-    return BarChartIcon;
+export const chartFamilyIcon = (chartType: string): React.ElementType => chartFamily(chartType).Icon;
+
+// ── Workspace file-type icons ───────────────────────────────────────────
+// VS Code's default (Seti) file icons. They are grey like the rest of the UI and take their
+// language colour when the file is selected.
+
+interface FileType {
+    glyph: SetiGlyphName;
+    color?: string;
+    /** An app the workspace runs (HTML or React). */
+    app?: boolean;
+}
+
+const { blue, green, orange, pink, purple, red, yellow, greyLight } = SETI_COLORS;
+const FILE_TYPES: [RegExp, FileType][] = [
+    [/\.app\.jsx$/i, { glyph: 'react', color: blue, app: true }],
+    [/\.html?$/i, { glyph: 'html', color: orange, app: true }],
+    [/\.(py|pyw|pyi)$/i, { glyph: 'python', color: blue }],
+    [/\.ipynb$/i, { glyph: 'notebook', color: blue }],
+    [/\.sql$/i, { glyph: 'db', color: pink }],
+    [/\.(md|markdown|mdx)$/i, { glyph: 'markdown', color: blue }],
+    [/\.(r|rmd)$/i, { glyph: 'R', color: blue }],
+    [/\.(ts|mts|cts)$/i, { glyph: 'typescript', color: blue }],
+    [/\.(jsx|tsx)$/i, { glyph: 'react', color: blue }],
+    [/\.(js|mjs|cjs)$/i, { glyph: 'javascript', color: yellow }],
+    [/\.(css|scss|sass|less)$/i, { glyph: 'css', color: blue }],
+    [/\.php$/i, { glyph: 'php', color: purple }],
+    [/\.(json|jsonl|ndjson|geojson|topojson)$/i, { glyph: 'json', color: yellow }],
+    [/\.(csv|tsv|parquet|arrow|feather)$/i, { glyph: 'csv', color: green }],
+    [/\.(xlsx?|xlsm)$/i, { glyph: 'xls', color: green }],
+    [/\.ya?ml$/i, { glyph: 'yml', color: purple }],
+    [/\.(toml|ini|cfg|conf|env)$/i, { glyph: 'config', color: greyLight }],
+    [/\.(sh|bash|zsh|ps1|bat|cmd)$/i, { glyph: 'shell', color: green }],
+    [/\.svg$/i, { glyph: 'svg', color: purple }],
+    [/\.(png|jpe?g|gif|webp|bmp|ico|tiff?|avif)$/i, { glyph: 'image', color: purple }],
+    [/\.pdf$/i, { glyph: 'pdf', color: red }],
+    [/\.(docx?|rtf|odt)$/i, { glyph: 'word', color: blue }],
+    [/\.(zip|gz|tgz|tar|7z|rar|bz2|xz)$/i, { glyph: 'zip', color: greyLight }],
+    [/\.(mp3|wav|ogg|flac|m4a)$/i, { glyph: 'audio', color: purple }],
+    [/\.(mp4|mov|webm|avi|mkv)$/i, { glyph: 'video', color: pink }],
+    [/\.xml$/i, { glyph: 'xml', color: orange }],
+    [/\.java$/i, { glyph: 'java', color: red }],
+    [/\.(c|h)$/i, { glyph: 'c', color: blue }],
+    [/\.(cc|cpp|cxx|hpp)$/i, { glyph: 'cpp', color: blue }],
+    [/\.rb$/i, { glyph: 'ruby', color: red }],
+];
+
+const fileType = (path: string): FileType =>
+    FILE_TYPES.find(([pattern]) => pattern.test(path))?.[1] ?? { glyph: 'default' };
+
+/** Whether a workspace file is an app the workspace runs (an HTML page or a `.app.jsx`). */
+export const isAppFile = (path: string): boolean => !!fileType(path).app;
+
+/**
+ * A workspace file's type glyph (thread, tabs, workspace, file header, workflows). At rest it takes
+ * the colour the caller gives (`sx` or the parent's); `active` (the file is selected or open) gives it
+ * its language colour, or `activeColor` for types without one.
+ */
+export const FileTypeIcon: React.FC<{
+    path: string;
+    size: number | string;
+    active?: boolean;
+    activeColor?: string;
+    sx?: SxProps<Theme>;
+}> = ({ path, size, active, activeColor = 'primary.main', sx }) => {
+    const maskId = `seti-${React.useId().replace(/[^\w-]/g, '')}`;
+    const { glyph, color } = fileType(path);
+    const { viewBox, paths, knockout }: SetiGlyph = SETI_GLYPHS[glyph];
+    const shapes = paths.map((shape, index) => <path key={index} d={shape.d} opacity={shape.opacity} transform={shape.transform}
+        fillRule={shape.evenodd ? 'evenodd' : undefined} />);
+    return <SvgIcon data-testid="FileTypeIcon" data-file-glyph={glyph} viewBox={viewBox} sx={[{ width: size, height: size, fontSize: size, flexShrink: 0 },
+        ...(Array.isArray(sx) ? sx : [sx]), active ? { color: color ?? activeColor } : {}]}>
+        {knockout ? <>
+            <mask id={maskId}>
+                <rect x="-100000" y="-100000" width="200000" height="200000" fill="#fff" />
+                {knockout.map((d, index) => <path key={index} d={d} fill="#000" />)}
+            </mask>
+            <g mask={`url(#${maskId})`}>{shapes}</g>
+        </> : shapes}
+    </SvgIcon>;
 };
 
 // ── Data-loader / connector category icons ──────────────────────────────
@@ -96,29 +239,32 @@ const GenericDBIcon: React.FC<SvgIconProps> = (props) => (
 
 import FolderOpenIconMui from '@mui/icons-material/FolderOpen';
 
-/** Map source_type string to a category icon. */
-const CONNECTOR_ICON_MAP: Record<string, React.FC<SvgIconProps>> = {
+/** A brand logo from Simple Icons, drawn in the surrounding colour like the category icons. */
+const brandIcon = ({ title, path }: BrandIcon): React.FC<SvgIconProps> => {
+    const Icon: React.FC<SvgIconProps> = props => <SvgIcon {...props} viewBox="0 0 24 24"><title>{title}</title><path d={path} /></SvgIcon>;
+    Icon.displayName = `${title.replace(/\W/g, '')}Icon`;
+    return Icon;
+};
+
+/** Map source_type string to its brand logo where Simple Icons has one, otherwise to a category icon. */
+export const CONNECTOR_ICON_MAP: Record<string, React.FC<SvgIconProps>> = {
     // Relational databases
-    mysql: RelationalDBIcon,
-    postgresql: RelationalDBIcon,
     mssql: RelationalDBIcon,
     // Document stores
-    mongodb: DocumentStoreIcon,
     cosmosdb: DocumentStoreIcon,
     // Cloud storage
     s3: CloudStorageIcon,
     azure_blob: CloudStorageIcon,
     // Query engines
-    bigquery: QueryEngineIcon,
     kusto: QueryEngineIcon,
     athena: QueryEngineIcon,
-    databricks: QueryEngineIcon,
     // BI / dashboards / semantic layers
-    superset: DashboardIcon,
     cube: DashboardIcon,
     powerbi: DashboardIcon,
     // Local
     local_folder: FolderOpenIconMui,
+    // Brands: mysql, postgresql, mongodb, clickhouse, sqlite, databricks, bigquery, superset
+    ...Object.fromEntries(Object.entries(CONNECTOR_BRANDS).map(([type, brand]) => [type, brandIcon(brand)])),
 };
 
 /** Category sort order for data source sidebar. Lower = higher in the list.

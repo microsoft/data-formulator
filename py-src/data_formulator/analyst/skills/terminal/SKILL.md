@@ -9,8 +9,8 @@ when_to_use: >-
    can retrieve data needed for the user's task, without requiring a connector.
    Only available in single-user local mode on macOS and Linux.
 always_on: false
-tools: []
-actions: [run_terminal]
+tools: [wait_tasks, stop_task]
+actions: [run_terminal, start_task]
 ---
 
 # Terminal for data acquisition
@@ -63,6 +63,25 @@ Do not retry a rejected operation through another route or edit permission setti
 Results return automatically; do not repeat a command merely to retrieve them.
 Each command has a fresh process, no interactive stdin, a 60-second limit, and the
 last 32 KiB of combined output. No persistent shell state or background services.
+
+## Long commands: background tasks
+
+A command that may take more than a minute (a crawl, a large download, a long
+script) runs as a background task: call `start_task` with the same arguments and
+approval rules as `run_terminal`. It returns at once with a task id; the task has a
+2-hour budget, logs its full output to `scratch/tasks/<id>.log`, and keeps running
+if this run stops. Do not split a long job into repeated resumable chunks.
+
+Stay in charge while it runs: do other work the plan allows, then call
+`wait_tasks`, which parks until a task ends, the timeout passes, or the user stops
+the run, and returns each task's status and last output lines. After each wait,
+tell the user in one or two sentences how it is going (progress, rate, problems),
+then wait again with a timeout suited to the work: short at first, longer once it is
+steady. Read the log or partial files for detail. When a task ends, use its results;
+if it failed, inspect why before proposing a fix. A task the user stopped was their
+decision: do not restart it unless they ask. Use `stop_task` for a task that went
+wrong or is no longer needed. Write progress (e.g. counts done) to the output so
+waits can report it.
 The environment includes selected CLI profile/config and proxy/CA variables, not
 server API keys. Install needed packages only in an isolated scratch/runtime
 environment, never the application's environment. Leave interactive login,

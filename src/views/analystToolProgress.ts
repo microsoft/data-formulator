@@ -51,6 +51,8 @@ const toolLabelKeys: Record<string, string> = {
     // Older conversations name the earlier grep tool.
     search_files: 'dataThread.searchingFiles',
     move_file: 'dataThread.movingFile',
+    wait_tasks: 'backgroundTasks.waiting',
+    stop_task: 'backgroundTasks.stopping',
 };
 
 export const formatAnalystToolProgress = (
@@ -118,6 +120,19 @@ export const formatAnalystToolProgress = (
             break;
         case 'delete_items':
             detail = Array.isArray(values.items) ? values.items.map(String).join(', ') : '';
+            break;
+        case 'load_skill':
+            detail = values.name || '';
+            break;
+        case 'edit_file':
+            detail = values.path || '';
+            break;
+        case 'create_file':
+            detail = values.filename || '';
+            break;
+        case 'create_data':
+        case 'update_data':
+            detail = values.table_name || '';
             break;
     }
 

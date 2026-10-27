@@ -10,7 +10,7 @@
           "plan_step": {"type": "integer", "minimum": 1, "description": "When working through a checklist plan: the number (1-based) of the plan step this result serves. Several results can serve one step; a step is checked off once you move on to a later step or finish."},
           "replaces": {
             "type": "string",
-            "description": "Id of the table (or its chart) to replace, from [REPLACEABLE ARTIFACTS] or a visualize result earlier in this run. Only to fix an artifact the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the old one is deleted and this takes its place after the latest request. Never when exploring something new; a new artifact keeps the analysis history."
+            "description": "Id of the table (or its chart) to replace: a table name or chart id from the session, or from a visualize result earlier in this run. Only to fix an artifact the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the old one is deleted and this takes its place after the latest request. Never when exploring something new; a new artifact keeps the analysis history."
           },
           "display_name": {
             "type": "string",
@@ -34,18 +34,13 @@
             "items": {
               "type": "object",
               "properties": {
-                "id": {"type": "string", "description": "A table name or its session/tables/<name>.json path (kind data), or a files/... path (kind file)."},
+                "id": {"type": "string", "description": "A table name, loaded or derived, or its session/tables/<name>.json path (kind data), or a files/... path (kind file)."},
                 "kind": {"type": "string", "enum": ["data", "file"]}
               },
               "required": ["id", "kind"],
               "additionalProperties": false
             },
             "description": "Durable data or file inputs materially used to compute the output. Use [] when none were used. Do not include inputs only read for context."
-          },
-          "input_tables": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Deprecated compatibility field for older trajectories. Use input_sources."
           },
           "connector_inputs": {
             "type": "array",
@@ -119,7 +114,7 @@
           },
           "field_metadata": {
             "type": "object",
-            "description": "Semantic annotations for encoded output columns: a SemanticType name, or an object with semantic_type and optional unit, intrinsic_domain, sort_order, and diverging_midpoint.",
+            "description": "Semantic annotations for encoded output columns: a SemanticType name (Year, Amount, Category, …; not quantitative or nominal), or an object with semantic_type and optional unit, intrinsic_domain, sort_order for ordered categories, and diverging_midpoint for a baseline. Never invent a unit.",
             "additionalProperties": {
               "oneOf": [
                 {"type": "string", "enum": ["DateTime", "Date", "Time", "Timestamp", "Year", "Quarter", "Month", "Week", "Day", "Hour", "YearMonth", "YearQuarter", "YearWeek", "Decade", "Duration", "Amount", "Price", "Quantity", "Temperature", "Percentage", "Profit", "PercentageChange", "Sentiment", "Correlation", "Count", "Number", "Rank", "Score", "ID", "Latitude", "Longitude", "Country", "State", "City", "Region", "Address", "ZipCode", "Category", "Name", "Status", "Boolean", "Direction", "Range", "Unknown"]},

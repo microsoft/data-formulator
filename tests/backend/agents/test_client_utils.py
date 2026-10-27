@@ -150,8 +150,10 @@ class TestModelNamePrefixing:
         analyst = AnalystAgent.__new__(AnalystAgent)
         monkeypatch.setattr(analyst, "_open_stream", lambda messages, tools: iter(chunks))
         monkeypatch.setattr(analyst, "_forward_stream_delta", lambda *args: iter(()))
+        stream = analyst._stream_llm(messages, tools)
         with pytest.raises(StopIteration) as finished:
-            next(analyst._stream_llm(messages, tools))
+            while True:
+                next(stream)   # status events for the user come first
         message = finished.value.value.choices[0].message
         assert message.content == "Checking data"
         assert message.tool_calls[0].id == "call_stream"
@@ -856,3 +858,29 @@ class TestMatchToolWireFormats:
         name, args = _match_tool_from_obj(obj, _core_action_tools())
         assert name == "execute_python_script"
         assert args["code"] == "print(1)"
+
+
+def test_responses_stream_keeps_each_messages_phase_on_its_text():
+    """LiteLLM drops a message's phase; text deltas carry it so the agent can stream the final answer."""
+    from litellm.completion_extras.litellm_responses_transformation.transformation import (
+        OpenAiResponsesToChatCompletionStreamIterator,
+    )
+    translate = OpenAiResponsesToChatCompletionStreamIterator.translate_responses_chunk_to_openai_stream
+
+    def text(item_id, delta):
+        chunk = translate({"type": "response.output_text.delta", "item_id": item_id, "output_index": 0,
+                           "content_index": 0, "delta": delta})
+        return chunk.choices[0].delta
+
+    translate({"type": "response.output_item.added", "output_index": 0,
+               "item": {"id": "msg_note", "type": "message", "role": "assistant", "phase": "commentary"}})
+    translate({"type": "response.output_item.added", "output_index": 1,
+               "item": {"id": "msg_answer", "type": "message", "role": "assistant", "phase": "final_answer"}})
+    assert text("msg_note", "Let me check").provider_specific_fields == {"phase": "commentary"}
+    answer = text("msg_answer", "India has the most")
+    assert answer.content == "India has the most" and answer.provider_specific_fields == {"phase": "final_answer"}
+    # Once the message is done its phase is forgotten; unknown messages carry none.
+    translate({"type": "response.output_item.done", "output_index": 1,
+               "item": {"id": "msg_answer", "type": "message", "role": "assistant", "phase": "final_answer"}})
+    assert not (text("msg_answer", "x").provider_specific_fields or {}).get("phase")
+    assert not (text("msg_other", "y").provider_specific_fields or {}).get("phase")

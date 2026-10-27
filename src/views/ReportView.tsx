@@ -147,16 +147,17 @@ export const ReportView: FC = () => {
     // little breathing room so embedded charts never butt against the edge.
     const REPORT_MAX_CHART_WIDTH = 720;
 
-    // Derive the embed dimensions for a chart from the size the rendering engine
-    // actually chose (stored on the cache entry). We preserve that aspect ratio
+    // Derive the embed dimensions for a chart from the size it is shown at: the
+    // engine's size contained in the box Flint laid it out for (stored on the
+    // cache entry). We preserve that aspect ratio
     // and only scale down to fit the report column — never up — so a wide time
     // series stays wide and a tall chart stays tall, instead of being forced
     // into a fixed square. Falls back to the configured default when the engine
     // size isn't available yet (e.g. transient thumbnail-only state on reload).
     const embedDimsFor = (chartId: string): { width: number; height: number } => {
         const cached = getCachedChart(chartId);
-        const natW = cached?.naturalWidth;
-        const natH = cached?.naturalHeight;
+        const natW = cached?.displayWidth;
+        const natH = cached?.displayHeight;
         if (natW && natH) {
             const scale = Math.min(REPORT_MAX_CHART_WIDTH / natW, 1);
             return { width: Math.round(natW * scale), height: Math.round(natH * scale) };

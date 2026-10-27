@@ -129,9 +129,10 @@ def test_workspace_baseline_includes_loading_guidance(tmp_path: Path) -> None:
     # Preloaded guidance arrives as a skill message, so the system prompt stays the same across requests.
     prompt = agent._build_system_prompt() + "\n" + "\n".join(message["content"] for message in agent._preload_messages(preloads))
 
-    # An empty session starts by finding data, so the acquisition guidance is preloaded;
+    # An empty session starts by finding data or setting up a source, so that guidance is preloaded;
     # with data, it loads on demand. The data tools are available either way.
-    assert agent._loaded_skills == {"meta", "connected_data"} and preloads == {"meta", "connected_data"}
+    assert agent._loaded_skills == {"meta", "connected_data", "configure"}
+    assert preloads == {"meta", "connected_data", "configure"}
     assert agent._initial_loaded_skills(data_inputs) == {"meta"}
     assert prompt.count("# Workspace\n") == 1
     assert "load-data" not in prompt
@@ -179,7 +180,7 @@ def test_workflow_guidance_matches_tool_effects(tmp_path: Path) -> None:
         "Plain text with no tool calls ends the run",
         "The namespace persists within an inspection cycle",
         "Visualization code must be standalone",
-        "Never write directly to `data/`, `files/`, `memory/`, or hidden runtime files",
+        "never by writing files from sandboxed Python",
     ):
         assert rule in prompt
     # Discovery rules load with the connected_data skill.
@@ -307,7 +308,7 @@ def test_resume_keeps_workspace_loading_available_without_a_separate_gate(tmp_pa
         {"role": "user", "content": legacy_body},
     ])
 
-    assert agent._loaded_skills == {"meta", "connected_data"}
+    assert agent._loaded_skills == {"meta", "connected_data", "configure"}
     assert "propose_data_operation" in agent._legal_actions()
     assert "probe_data" in agent._loaded_skill_tool_map()
 
@@ -350,17 +351,18 @@ def test_resume_refreshes_instructions_and_preserves_conversation(tmp_path: Path
                                           "focusedId": {"type": "external-table", "referenceId": reference["id"]}}))
     assert events[-1]["type"] == "completion"
     # What changed in the session goes after the agent's last call and its result, before the user's messages.
-    # The empty session's loading guidance comes with it, as a skill message (the system prompt stays as is).
-    preloaded, changes = observed[4], {"role": "user", "content": observed[5]["content"]}
-    assert preloaded["content"].startswith("[SKILL LOADED: connected_data]")
-    assert observed == [{"role": "system", "content": "CURRENT BASELINE INSTRUCTIONS"}, *history[:3], preloaded, changes,
+    # The empty session's setup and loading guidance comes with it, as skill messages (the system prompt stays as is).
+    preloaded, changes = observed[4:6], {"role": "user", "content": observed[6]["content"]}
+    assert [message["content"].split("]")[0] for message in preloaded] == ["[SKILL LOADED: configure",
+                                                                           "[SKILL LOADED: connected_data"]
+    assert observed == [{"role": "system", "content": "CURRENT BASELINE INSTRUCTIONS"}, *history[:3], *preloaded, changes,
                         *history[3:]]
     assert changes["content"].startswith("[SESSION CHANGES]")
     assert f"Focus: `session/references/{reference['id']}.json` is now on the canvas" in changes["content"]
     assert f"- added `session/references/{reference['id']}.json`" in changes["content"]
     assert agent._run_payload["external_references"] == [reference]
     agent._build_system_prompt.assert_called_once()
-    assert agent._loaded_skills == {"meta", "report", "connected_data"}
+    assert agent._loaded_skills == {"meta", "report", "connected_data", "configure"}
     assert "probe_data" in agent._loaded_skill_tool_map()
     assert "write_report" in agent._legal_actions()
 

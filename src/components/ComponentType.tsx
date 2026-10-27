@@ -124,6 +124,7 @@ export interface InteractionEntry {
      *  chips in the message bubble (the file bytes live in workspace scratch/,
      *  not here). */
     attachments?: string[];
+    references?: ThreadReference[];
     inputTableNames?: string[]; // table names actually used for this derivation step
     clarificationQuestions?: ClarificationQuestion[];
     /** Legacy persisted delegate metadata; new AnalystAgent runs do not emit it. */
@@ -266,6 +267,24 @@ export interface TerminalExecution {
     result?: Record<string, unknown>;
 }
 
+/**
+ * One agent tool call as saved on the message that made it: the tool, its arguments and what came
+ * back, with long text capped by the server (`truncated` holds the original sizes). Views show a call
+ * by its tool (design-docs/67). Terminal commands keep their own record (`TerminalExecution`).
+ */
+export interface ToolCall {
+    id: string;
+    tool: string;
+    args: Record<string, unknown>;
+    status: 'running' | 'completed' | 'failed' | 'interrupted' | 'unknown';
+    output?: string;
+    error?: string;
+    createdAt?: number;
+    durationMs?: number;
+    truncated?: Record<string, number>;
+}
+
+/** A code-running tool call in the shape code views use (see `codeCallsOf`). */
 export interface CodeExecution {
     id: string;
     createdAt?: number;
@@ -283,6 +302,13 @@ export interface WorkflowDefinition {
         required?: boolean; default?: string | number | boolean; options?: string[]; allow_custom?: boolean }[];
     steps?: { id: string; instructions: string; description?: string; next?: string;
         checkers?: { id: string; condition: string; when?: 'before' | 'during' | 'after'; on_fail?: string }[] }[];
+}
+
+/** An earlier result a request is about: a chart, table, report or file (by its id). */
+export interface ThreadReference {
+    kind: 'chart' | 'table' | 'report' | 'file';
+    id: string;
+    label: string;
 }
 
 export interface TextTurn {
@@ -307,6 +333,8 @@ export interface TextTurn {
     prompt?: string;
     /** Files and images the user attached to `prompt`. */
     attachments?: string[];
+    /** Earlier results the user's message is about, shown with it like attachments. */
+    references?: ThreadReference[];
     /** A workflow run's outputs, in the order the run produced them. */
     outputIds?: string[];
     workflow?: {
@@ -344,7 +372,8 @@ export interface TextTurn {
         log?: { id: string; tool: string; text: string; call?: number; step_id?: string; plan_revision?: number; details?: Record<string, string>; input?: Record<string, unknown> }[];
     };
     executions?: TerminalExecution[];
-    codeExecutions?: CodeExecution[];
+    /** Every other tool call of the message, in the order they ran. */
+    toolCalls?: ToolCall[];
     /** clarify only (empty/undefined ⇒ a plain explanation). */
     options?: ClarificationQuestion[];
     /** Display-only immutable loading alternatives for a data-operation pause. */

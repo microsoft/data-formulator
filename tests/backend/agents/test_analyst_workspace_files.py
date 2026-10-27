@@ -235,6 +235,21 @@ def test_agent_data_python_provenance_staleness_and_failed_update(tmp_path):
     assert restored.edit_policy == "agent_editable"
 
 
+def test_agent_data_can_be_computed_from_a_derived_table_outside_the_scoped_inputs(tmp_path):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    workspace.write_parquet(pd.DataFrame({"value": [1, 2]}), "d_result_5")
+    skill = WorkspaceSkill()
+    ctx = SkillContext(client=None, workspace=workspace, runtime=_agent(workspace), payload={"input_tables": []})
+    created = json.loads(skill.handle_tool("create_data", {
+        "table_name": "tripled", "input_sources": [{"id": "session/tables/d_result_5.json", "kind": "data"}],
+        "code": "import pandas as pd\nresult = pd.read_parquet('data/d_result_5.parquet')\nresult['value'] *= 3",
+        "output_variable": "result",
+    }, ctx).text)
+    assert workspace.read_data_as_df("tripled")["value"].tolist() == [3, 6]
+    assert created["input_sources"][0]["table_name"] == "d_result_5"
+    assert created["input_sources"][0]["content_hash"] == workspace.get_table_metadata("d_result_5").content_hash
+
+
 def test_agent_data_persists_verified_single_source_identity(tmp_path, monkeypatch):
     from flask import Flask
     from data_formulator.routes.tables import tables_bp

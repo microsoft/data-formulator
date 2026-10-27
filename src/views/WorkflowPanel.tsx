@@ -1,5 +1,5 @@
 import { ShimmerText, WorkflowGears } from '../components/FunComponents';
-import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { CanvasHeader } from './CanvasHeader';
@@ -25,7 +25,6 @@ import TerminalIcon from '@mui/icons-material/Terminal';
 import CodeIcon from '@mui/icons-material/Code';
 import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
-import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
 import { getCachedChart } from '../app/chartCache';
@@ -42,6 +41,7 @@ import { applySessionUpdate } from '../app/sessionFiles';
 import { loadWorkspace, notifyWorkspaceFilesChanged, WorkspaceLoadSupersededError } from '../app/workspaceService';
 import { createConversationRootId, createDictTable, computeInsightKey, DictTable, FieldItem, TextTurn, ClarificationResponse } from '../components/ComponentType';
 import { MarkdownEditor } from '../components/MarkdownEditor';
+import { FileTypeIcon } from '../icons';
 import { textVar, iconVar } from '../app/layout';
 import { ListDetailDialog } from '../components/ListDetailDialog';
 import { ExecutionCodeBlock, formatTerminalCommand, TerminalApprovalDialog, TerminalProposal } from '../components/TerminalApprovalDialog';
@@ -122,6 +122,36 @@ function workflowArtifacts(run: Run): NonNullable<NonNullable<TextTurn['workflow
     }).filter((artifact, index, all) => all.findLastIndex(item => item.nodeId === artifact.nodeId) === index);
 }
 
+const visuallyHidden = { position: 'absolute', width: '1px', height: '1px', p: 0, m: '-1px', overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0 } as const;
+
+/** Caps each `[data-clamp]` descendant at its line count; one toggle, shown only on overflow, expands them together. */
+const ClampedRegion: React.FC<React.ComponentProps<typeof Box>> = ({ children, sx, ...props }) => {
+    const { t } = useTranslation();
+    const ref = useRef<HTMLElement>(null);
+    const [expanded, setExpanded] = useState(false);
+    const [overflowing, setOverflowing] = useState(false);
+    useLayoutEffect(() => {
+        const element = ref.current;
+        if (!element || expanded) return;
+        const measure = () => setOverflowing([...element.querySelectorAll<HTMLElement>('[data-clamp]')]
+            .some(item => item.scrollHeight > item.clientHeight + 1));
+        measure();
+        if (typeof ResizeObserver === 'undefined') return;
+        const observer = new ResizeObserver(measure);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [expanded, children]);
+    const clamp = (lines: number) => ({ display: '-webkit-box', WebkitLineClamp: lines, WebkitBoxOrient: 'vertical', overflow: 'hidden' });
+    return <Box ref={ref} {...props} sx={[!expanded && { '& [data-clamp="2"]': clamp(2), '& [data-clamp="3"]': clamp(3) }, ...(Array.isArray(sx) ? sx : [sx])]}>
+        {children}
+        {(overflowing || expanded) && <Box component="button" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}
+            sx={{ display: 'block', mt: 0.25, p: 0, border: 0, bgcolor: 'transparent', cursor: 'pointer', font: 'inherit', fontSize: textVar.xs,
+                color: 'primary.main', '&:hover': { textDecoration: 'underline' } }}>
+            {expanded ? t('workflow.showLess') : t('workflow.showMore')}
+        </Box>}
+    </Box>;
+};
+
 const WorkflowArtifacts: React.FC<{ artifacts: NonNullable<NonNullable<TextTurn['workflow']>['artifacts']> }> = ({ artifacts }) => {
     const { t } = useTranslation();
     const state = useSyncExternalStore(store.subscribe, store.getState);
@@ -135,7 +165,7 @@ const WorkflowArtifacts: React.FC<{ artifacts: NonNullable<NonNullable<TextTurn[
         const title = chart?.title || table?.displayId || table?.id || file?.displayName || report?.title || artifact.nodeId;
         const cached = chart ? getCachedChart(chart.id) : undefined;
         const image = chart ? cached?.fullPngDataUrl || dfSelectors.getChartThumbnail(chart.id)(state) || cached?.thumbnailDataUrl : undefined;
-        const Icon = chart ? BarChartOutlinedIcon : table ? TableChartOutlinedIcon : file ? InsertDriveFileOutlinedIcon : ArticleOutlinedIcon;
+        const Icon = chart ? BarChartOutlinedIcon : table ? TableChartOutlinedIcon : ArticleOutlinedIcon;
         const open = () => {
             if (chart) store.dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
             else if (loaded || file) store.dispatch(dfActions.setFocused({ type: 'reference', referenceId: artifact.nodeId }));
@@ -144,7 +174,7 @@ const WorkflowArtifacts: React.FC<{ artifacts: NonNullable<NonNullable<TextTurn[
         };
         const detail = table && !chart ? t('workflow.rowsColumns', { rows: (table.virtual?.rowCount ?? table.rows.length).toLocaleString(), columns: table.names.length })
             : report?.status === 'generating' ? t('workflow.composing') : undefined;
-        return [{ artifact, chart, title, image, Icon, open, detail }];
+        return [{ artifact, chart, file, title, image, Icon, open, detail }];
     });
     const cardSx = { textAlign: 'left', minWidth: 0, boxSizing: 'border-box', border: 1, borderColor: 'divider', borderRadius: 1,
         bgcolor: 'background.paper', '&:hover': { bgcolor: 'action.hover' },
@@ -155,10 +185,12 @@ const WorkflowArtifacts: React.FC<{ artifacts: NonNullable<NonNullable<TextTurn[
     // Tables, files and reports read as compact rows; charts share one card size below them, in the same columns.
     return <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, my: 0.25 }}>
         {others.length > 0 && <Box sx={gridSx}>
-            {others.map(({ artifact, title, Icon, open, detail }) => <ButtonBase key={artifact.nodeId} aria-label={t('workflow.openItem', { name: title })}
+            {others.map(({ artifact, file, title, Icon, open, detail }) => <ButtonBase key={artifact.nodeId} aria-label={t('workflow.openItem', { name: title })}
                 data-workflow-artifact={artifact.nodeId} onClick={open}
                 sx={{ ...cardSx, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-start', gap: 0.75, px: 1, py: 0.75 }}>
-                <Icon sx={{ fontSize: 16, flexShrink: 0, mt: '2px', color: 'text.secondary' }} />
+                {file
+                    ? <Box component="span" sx={{ display: 'flex', flexShrink: 0, mt: '2px' }}><FileTypeIcon path={file.path} size={16} sx={{ color: 'text.secondary' }} /></Box>
+                    : <Icon sx={{ fontSize: 16, flexShrink: 0, mt: '2px', color: 'text.secondary' }} />}
                 <Box component="span" sx={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
                     <Box component="span" title={title} sx={{ fontSize: textVar.sm,
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</Box>
@@ -908,25 +940,66 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
             ? [{ ...runningTool, text: '', running: true }, ...entries] : entries;
         const status = displayedStepStatus(step.status, archived);
         const finished = status === 'passed' || status === 'completed';
+        const instructions = step.instructions || definition?.instructions || '';
+        const current = !archived && workflow.status !== 'completed' && !workflow.planReviewPending && workflow.stepId === step.id;
+        // Checks matter while a step runs; afterwards they collapse to one line, and pending steps omit them.
+        const checksMode = !checkers.length || (!current && status === 'pending') ? 'hidden' : current ? 'open' : 'summary';
+        const passedChecks = checkers.filter(check => results.find(item => item.id === check.id)?.status === 'passed').length;
+        const failedChecks = checkers.some(check => results.find(item => item.id === check.id)?.status === 'failed');
+        const checkList = <Box component="ul" sx={{ listStyle: 'none', m: 0, mt: 0.25, p: 0 }}>
+            {checkers.map(check => {
+                const result = results.find(item => item.id === check.id);
+                const checkStatus = result?.status || 'pending';
+                const timing = [check.when === 'before' || check.when === 'during' ? t(`workflow.checkWhenStep.${check.when}`) : '',
+                    check.on_fail && check.on_fail !== step.id ? t('workflow.onFailure', { action: check.on_fail }) : ''].filter(Boolean).join(' · ');
+                return <Box component="li" key={check.id} data-workflow-check={check.id}
+                    sx={{ display: 'grid', gridTemplateColumns: '16px minmax(0, 1fr)', columnGap: 1, py: 0.25, fontSize: textVar.md, lineHeight: 1.6 }}>
+                    <Box component="span" aria-label={`${check.id}: ${statusLabel(checkStatus)}`} sx={{ display: 'inline-flex', pt: 0.4 }}>{stepIcon(checkStatus)}</Box>
+                    <Box sx={{ minWidth: 0 }}>
+                        <Box data-clamp="2" sx={{ overflowWrap: 'anywhere' }}>
+                            {check.condition || check.id}
+                            {result?.explanation && <Box component="span" sx={{ color: 'text.secondary' }}> — {result.explanation}</Box>}
+                        </Box>
+                        {timing && <Box component="span" sx={{ display: 'block', fontSize: textVar.xs, color: 'text.secondary' }}>{timing}</Box>}
+                    </Box>
+                </Box>;
+            })}
+        </Box>;
+        const hasActivity = calls.length > 0 || transitions.length > 0 || !!step.assessment || step.elapsedSeconds !== undefined || active;
         return <Box component="li" key={step.id} data-workflow-step={archived ? undefined : step.id} aria-busy={active}
             sx={{ position: 'relative', display: 'grid', gridTemplateColumns: '24px minmax(0, 1fr)', columnGap: 1.25, pb: 1.5 }}>
-            {index < steps.length - 1 && <Box aria-hidden="true" data-workflow-connector={finished ? 'solid' : 'pending'} sx={{ position: 'absolute', left: 11, top: 26, bottom: 2,
+            {index < steps.length - 1 && <Box aria-hidden="true" data-workflow-connector={finished ? 'solid' : 'pending'} sx={{ position: 'absolute', left: 11, top: 30, bottom: 2,
                 borderLeft: 2, borderColor: finished ? 'success.main' : 'divider' }} />}
-            <Box data-workflow-marker sx={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{stepIcon(status, active)}</Box>
-            <Box sx={{ minWidth: 0 }}>
+            <Box data-workflow-marker sx={{ width: 24, height: 24, mt: 1.25, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{stepIcon(status, active)}</Box>
+            <Box data-workflow-block sx={{ minWidth: 0, px: 2, py: 1.25, border: 1, borderRadius: 2,
+                borderColor: active ? 'primary.main' : status === 'failed' ? 'error.main' : finished ? alpha(theme.palette.success.main, 0.4) : 'divider', bgcolor: active ? alpha(theme.palette.primary.main, 0.03) : 'background.paper',
+                boxShadow: active ? `0 0 0 3px ${alpha(theme.palette.primary.main, 0.08)}` : 'none' }}>
                 <Box sx={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: 1, minHeight: 24 }}>
-                    <Typography component="h3" sx={{ fontSize: textVar.md, fontWeight: active ? 600 : 500, flex: 1, minWidth: 0,
+                    <Typography component="h3" sx={{ fontSize: textVar.md, fontWeight: 600, flex: 1, minWidth: 0,
                         color: status === 'pending' ? 'text.secondary' : 'text.primary', overflowWrap: 'anywhere' }}>{step.description || definition?.description || step.id.replaceAll('_', ' ')}</Typography>
-                    <Typography component="span" sx={{ fontSize: textVar.xs, color: finished ? 'success.main' : 'text.secondary' }}>{statusLabel(status)}</Typography>
+                    {/* The border and marker carry status; only a failure also gets a visible label. */}
+                    <Typography component="span" sx={status === 'failed' ? { fontSize: textVar.xs, color: 'error.main' } : visuallyHidden}>{statusLabel(status)}</Typography>
                 </Box>
+                <ClampedRegion>
+                {instructions && <Box data-clamp="3" data-workflow-action={step.id} sx={{ ...proseSx, mt: 0.5, color: 'text.secondary', overflowWrap: 'anywhere' }}><ReactMarkdown>{instructions}</ReactMarkdown></Box>}
+                {checksMode === 'open' && <Box data-workflow-checks={step.id} sx={{ mt: 1 }}>
+                    <Typography component="h4" sx={{ fontSize: textVar.sm, fontWeight: 600 }}>{t('workflow.checks')}</Typography>
+                    {checkList}
+                </Box>}
+                </ClampedRegion>
                 {stepArtifacts.length > 0 && <Box data-workflow-artifacts={step.id} sx={{ mt: 1, mb: 0.5 }}><WorkflowArtifacts artifacts={stepArtifacts} /></Box>}
-                <Box component="details" data-workflow-execution={step.id}>
-                    <Box component="summary" sx={{ color: 'text.secondary', '&&': { py: 0.5 }, fontSize: textVar.xs }}>{t('workflow.executionDetails')}</Box>
-                    <Box data-workflow-action={step.id} sx={proseSx}><ReactMarkdown>{step.instructions || definition?.instructions || ''}</ReactMarkdown></Box>
-                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', my: 1 }}>{t('workflow.callsAndChecks', { calls: calls.length, passed: results.filter(result => result.status === 'passed').length, total: checkers.length })}{stepDuration(step.elapsedSeconds, active)}</Typography>
-                    {step.next && step.next !== steps[index + 1]?.id && <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{t('workflow.nextStep', { step: step.next })}</Typography>}
+                {checksMode === 'summary' && <Box component="details" data-workflow-checks={step.id} sx={{ mt: 0.75 }}>
+                    <Box component="summary" sx={{ color: failedChecks ? 'error.main' : 'text.secondary', '&&': { py: 0.25 }, fontSize: textVar.xs }}>
+                        {passedChecks === checkers.length ? t('workflow.allChecksPassed') : t('workflow.checksPassedCount', { passed: passedChecks, total: checkers.length })}
+                    </Box>
+                    <ClampedRegion sx={{ pl: { xs: 1, sm: 2 }, py: 0.5 }}>{checkList}</ClampedRegion>
+                </Box>}
+                {hasActivity && <Box component="details" data-workflow-execution={step.id} sx={{ mt: checksMode === 'summary' ? 0 : 0.75 }}>
+                    <Box component="summary" sx={{ color: 'text.secondary', '&&': { py: 0.25 }, fontSize: textVar.xs }}>
+                        {t('workflow.toolCalls', { count: calls.length })}{stepDuration(step.elapsedSeconds, active)}
+                    </Box>
                     <Box data-workflow-activity={step.id} sx={sectionContentSx}>
-                        <Typography component="h3" sx={{ fontWeight: 600, mb: 0.75 }}>{t('workflow.activities')}</Typography>
+                        {step.next && step.next !== steps[index + 1]?.id && <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{t('workflow.nextStep', { step: step.next })}</Typography>}
                         {!calls.length && !transitions.length && !step.assessment && <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary' }}>{t('workflow.noActivity')}</Typography>}
                         {step.assessment && <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', my: 1 }}>
                             {t('workflow.progressAssessment', { status: statusLabel(step.assessment.status), explanation: step.assessment.explanation })}
@@ -935,26 +1008,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                         {calls.map(renderCall)}
                         {transitions.map((transition, transitionIndex) => <Typography key={transitionIndex} sx={{ mt: 1, fontSize: textVar.sm, color: 'text.secondary' }}>{transition.reason}</Typography>)}
                     </Box>
-                    <Box data-workflow-checks={step.id} sx={sectionContentSx}>
-                        <Typography component="h3" sx={{ fontWeight: 600, mb: 0.75 }}>{t('workflow.checks')}</Typography>
-                        {!checkers.length && <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary' }}>{t('workflow.noChecks')}</Typography>}
-                        {checkers.map(check => {
-                            const result = results.find(item => item.id === check.id);
-                            return <Box component="details" key={check.id} data-workflow-check={check.id}>
-                                <Box component="summary" sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75 }}>
-                                    <ChevronRightIcon className="workflow-chevron" sx={{ fontSize: 16, mt: 0.25, flexShrink: 0 }} />
-                                    <Box component="span" aria-label={`${check.id}: ${statusLabel(result?.status || 'pending')}`} sx={{ display: 'inline-flex', pt: 0.25 }}>{stepIcon(result?.status || 'pending')}</Box>
-                                    <Box component="span" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{check.condition || check.id}</Box>
-                                </Box>
-                                <Box sx={{ pl: 5.5, py: 0.5 }}>
-                                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{t('workflow.checkAgentReported', { id: check.id, status: statusLabel(result?.status || 'pending') })}</Typography>
-                                    <Typography sx={{ fontSize: textVar.md, lineHeight: 1.6 }}>{result?.explanation || t('workflow.notCheckedYet')}</Typography>
-                                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{t(`workflow.checkWhenStep.${check.when === 'before' || check.when === 'during' ? check.when : 'after'}`)}{check.on_fail ? ` · ${t('workflow.onFailure', { action: check.on_fail })}` : ''}</Typography>
-                                </Box>
-                            </Box>;
-                        })}
-                    </Box>
-                </Box>
+                </Box>}
             </Box>
         </Box>;
         })}

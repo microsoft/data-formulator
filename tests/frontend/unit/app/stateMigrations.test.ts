@@ -69,8 +69,8 @@ describe('state migrations', () => {
             draftNodes: [{ id: 'draft', anchored: true }],
         });
 
-        expect(DF_STATE_VERSION).toBe(14);
-        expect(migrated.__stateVersion).toBe(14);
+        expect(DF_STATE_VERSION).toBe(15);
+        expect(migrated.__stateVersion).toBe(15);
         expect(migrated).not.toHaveProperty('tables');
         expect(migrated.inputTables).toEqual([
             expect.objectContaining({ id: 'source', source: { kind: 'workspace', tableId: 'source_workspace' } }),
@@ -110,7 +110,7 @@ describe('state migrations', () => {
         expect(migrated.derivedTables).toEqual([{ ...derived, parentNodeId: 'conversation-root:derived' }]);
         expect(migrated.tableSemantics).toEqual([semantics]);
         expect(migrated).not.toHaveProperty('tables');
-        expect(migrated.__stateVersion).toBe(14);
+        expect(migrated.__stateVersion).toBe(15);
     });
 
     it('upgrades an already split pre-release state to the current version', () => {
@@ -121,7 +121,7 @@ describe('state migrations', () => {
             tableSemantics: [],
         });
 
-        expect(migrated.__stateVersion).toBe(14);
+        expect(migrated.__stateVersion).toBe(15);
         expect(migrated.inputTables).toEqual([{ kind: 'input-table', id: 'source' }]);
         expect(migrated.loadedTableNodes).toEqual([]);
     });
@@ -174,7 +174,7 @@ describe('state migrations', () => {
         expect(migrated.derivedTables[0]).not.toHaveProperty('threadParentId');
         expect(migrated.draftNodes[0].parentNodeId).toBe('source');
         expect(migrated.generatedReports[0].parentNodeId).toBe('result');
-        expect(migrated.__stateVersion).toBe(14);
+        expect(migrated.__stateVersion).toBe(15);
     });
 
     it('preserves table labels when upgrading past the removed display-name migration', () => {
@@ -197,7 +197,7 @@ describe('state migrations', () => {
             { tableId: 'movies', displayName: 'Movies', fields: { year: { semanticType: 'Year' } } },
             { tableId: 'renamed', displayName: 'Suggested movies', fields: {} },
         ]);
-        expect(migrated.__stateVersion).toBe(14);
+        expect(migrated.__stateVersion).toBe(15);
     });
 
     it('turns legacy workflow proposals into workflow form artifacts', () => {
@@ -209,7 +209,7 @@ describe('state migrations', () => {
             { id: 'proposal', form: { kind: 'workflow', title: 'Fuel', workflow: workflowDefinition } },
             { id: 'plain' },
         ]);
-        expect(migrated.__stateVersion).toBe(14);
+        expect(migrated.__stateVersion).toBe(15);
     });
 
     describe('v10: thread items and edges (design-docs/58)', () => {
@@ -391,9 +391,28 @@ describe('state migrations', () => {
             { kind: 'text', id: 'named', textKind: 'explain', content: 'Compare severity', parentNodeId: 'd_result', createdAt: 2,
                 codeExecutions: [{ id: 'code-d_two', tool: 'visualize', purpose: 'Compare severity', code: 'df', status: 'completed' }] },
         ] });
-        expect(migrated.textTurns[0]).toMatchObject({ content: 'Exploration step 1: ', codeExecutions: [python] });
+        expect(migrated.textTurns[0]).toMatchObject({ content: 'Exploration step 1: ', toolCalls: [{ id: 'code_run_1',
+            tool: 'execute_python_script', args: { code: 'print(1)', purpose: 'Check coverage' }, status: 'completed' }] });
         expect(migrated.textTurns[1].content).toBe('Compare severity');
         expect(migrated.textTurns[1]).not.toHaveProperty('codeExecutions');
+        expect(migrated.textTurns[1]).not.toHaveProperty('toolCalls');
+    });
+
+    it('v15: keeps code calls as tool-call records with their code, output and error', () => {
+        const migrated = migrateState({ __stateVersion: 14, textTurns: [
+            { kind: 'text', id: 'step', textKind: 'explain', content: '', parentNodeId: 'root', createdAt: 1,
+                codeExecutions: [{ id: 'python', tool: 'execute_python_script', purpose: 'Find the latest year', code: 'print(2025)',
+                    output: '2025', status: 'completed', createdAt: 5 },
+                    { id: 'broken', tool: 'execute_python_script', purpose: '', code: 'x', error: 'NameError', status: 'failed' }] },
+            { kind: 'text', id: 'plain', textKind: 'explain', content: 'Hi', parentNodeId: 'step', createdAt: 2 },
+        ] });
+        expect(migrated.textTurns[0]).not.toHaveProperty('codeExecutions');
+        expect(migrated.textTurns[0].toolCalls).toEqual([
+            { id: 'python', tool: 'execute_python_script', status: 'completed', args: { code: 'print(2025)', purpose: 'Find the latest year' },
+                output: '2025', createdAt: 5 },
+            { id: 'broken', tool: 'execute_python_script', status: 'failed', args: { code: 'x' }, error: 'NameError' },
+        ]);
+        expect(migrated.textTurns[1]).not.toHaveProperty('toolCalls');
     });
 
     it('v14: moves a follow-up on an app after the conversation still open there', () => {
@@ -412,6 +431,6 @@ describe('state migrations', () => {
         const parentOf = (id: string) => migrated.textTurns.find((item: any) => item.id === id)?.parentNodeId;
         expect(parentOf('fix')).toBe('built');
         expect(parentOf('tweak')).toBe('file-app_2');
-        expect(migrated.__stateVersion).toBe(14);
+        expect(migrated.__stateVersion).toBe(15);
     });
 });

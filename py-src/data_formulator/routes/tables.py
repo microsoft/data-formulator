@@ -1266,9 +1266,16 @@ def classify_and_raise_db_error(error: Exception) -> None:
     """
     from data_formulator.errors import AppError, ErrorCode
 
-    logger.error("Database/workspace error", exc_info=error)
-
     error_msg = str(error)
+
+    # The workspace holds no data for the table: expected when the session and the workspace disagree,
+    # so report it as such rather than as an internal error.
+    if isinstance(error, FileNotFoundError):
+        logger.warning("Workspace data not found: %s", error_msg)
+        raise AppError(ErrorCode.TABLE_NOT_FOUND, "The table's data is missing from the workspace",
+                       detail=error_msg) from error
+
+    logger.error("Database/workspace error", exc_info=error)
 
     _SAFE_PATTERNS: list[tuple[str, str, str]] = [
         # (regex, ErrorCode, safe client message)

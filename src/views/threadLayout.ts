@@ -54,27 +54,30 @@ export const threadPaneWidth = (n: number): number => threadPaneWidthFor(n);
 export const fittableThreadColumns = (containerWidth: number): number =>
     fittableThreadColumnsFor(containerWidth);
 
+/** About how many artifacts a sub-thread holds before the next block starts a new one. */
+export const THREAD_SEGMENT_BUDGET = 5;
+
 /**
- * Where a long thread breaks into sub-threads: the run indices each part starts at.
+ * Where a long thread breaks into sub-threads: the block indices each part starts at.
  *
- * A run is one request and everything it produced, through its plan or closing
- * answer, so runs are the thread's natural break points, as words are for text.
- * A thread that fits in about one screen (`limit`) stays whole; a longer one wraps
- * greedily at run boundaries, a run taller than `limit` gets a part to itself, and
- * a short tail stays with the part before it.
+ * A block is one request and everything it produced (answers, plan, workflow output); its weight is
+ * how many artifacts it made (an exchange that made none weighs nothing and joins the part it falls in). Blocks wrap like words on a line: a part takes blocks until
+ * the next would pass `budget`, a block over the budget gets a part to itself, and none is ever cut.
+ * A thread up to a quarter over the budget stays whole. `sealed` are breaks already made: they stay
+ * where they are, and only the blocks after the last of them wrap, so new turns move nothing above.
  */
-export const splitThreadRuns = (runHeights: number[], limit: number): number[] => {
-    const total = runHeights.reduce((sum, height) => sum + height, 0);
-    if (limit <= 0 || runHeights.length < 2 || total <= limit * 1.25) return [0];
-    const starts = [0];
+export const wrapThreadBlocks = (weights: number[], budget: number, sealed: number[] = []): number[] => {
+    const kept = [...new Set(sealed)].filter(index => index > 0 && index < weights.length).sort((a, b) => a - b);
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    if (!kept.length && total <= budget * 1.25) return [0];
+    const starts = [0, ...kept];
     let current = 0;
-    runHeights.forEach((height, index) => {
-        if (current > 0 && current + height > limit) {
+    for (let index = starts[starts.length - 1]; index < weights.length; index++) {
+        if (current > 0 && current + weights[index] > budget) {
             starts.push(index);
             current = 0;
         }
-        current += height;
-    });
-    if (starts.length > 1 && current < limit * 0.25) starts.pop();
+        current += weights[index];
+    }
     return starts;
 };

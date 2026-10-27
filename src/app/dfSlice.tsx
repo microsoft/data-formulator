@@ -3,7 +3,7 @@
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
 import { shallowEqual } from 'react-redux';
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, DraftNode, InteractionEntry, DeriveStatus, TextTurn, TerminalExecution, CodeExecution, InputTable, TableSemanticsInfo, LoadedTableNode, ProgressStep } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, DraftNode, InteractionEntry, DeriveStatus, TextTurn, TerminalExecution, ToolCall, InputTable, TableSemanticsInfo, LoadedTableNode, ProgressStep } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { ArtifactSetNode, DictTable, FileNode, ReplacedArtifact, ExternalTableReference, ComputationInputSource, createConversationRootId, isConversationRootId } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
@@ -258,6 +258,7 @@ const ensureCanvasTab = (state: DataFormulatorState, target: CanvasTab['target']
 export const explanationContent = (content: string) => content;
 
 export const DEFAULT_ROW_LIMIT = 2_000_000;
+export const DEFAULT_CHART_THEME_ID = 'datawrapper';
 
 export interface ClientConfig {
     formulateTimeoutSeconds: number;
@@ -266,7 +267,19 @@ export interface ClientConfig {
     maxStretchFactor: number; // max per-axis stretch multiplier for chart sizing (default 1.5)
     frontendRowLimit: number; // max rows to keep in browser when loading locally (non-virtual)
     paletteKey: string; // active color palette key from tokens.ts
+    // Flint theme applied to newly created charts; '' = Flint default.
+    // Missing (configs saved before this setting existed) means DEFAULT_CHART_THEME_ID.
+    defaultChartThemeId?: string;
 }
+
+/** The theme new charts start with, or undefined for Flint's own defaults. */
+export const resolveDefaultChartTheme = (config: Partial<ClientConfig> | undefined): string | undefined => {
+    const themeId = config?.defaultChartThemeId ?? DEFAULT_CHART_THEME_ID;
+    return themeId || undefined;
+};
+
+const withDefaultChartTheme = (chart: Chart, config: ClientConfig): Chart =>
+    chart.themeId === undefined ? { ...chart, themeId: resolveDefaultChartTheme(config) } : chart;
 
 export interface GeneratedReport {
     id: string;
@@ -351,6 +364,8 @@ export interface DataFormulatorState {
     /** Table loads awaiting their first row; drives "loading" vs "empty" copy. */
     tableLoadsInFlight: number;
     pendingTableLoads: { id: string; names: string[]; progress?: { current: number; total: number; name: string } }[];
+    /** Session tables whose data the workspace does not hold (see workspaceConsistency.ts). Transient. */
+    tablesMissingData: string[];
 
     /**
      * Thumbnail PNG data URLs keyed by chart id. Stored in a separate slice
@@ -489,6 +504,7 @@ const initialState: DataFormulatorState = {
     chartSynthesisInProgress: [],
     tableLoadsInFlight: 0,
     pendingTableLoads: [],
+    tablesMissingData: [],
     chartThumbnails: {},
     displayRowsTick: 0,
 
@@ -510,6 +526,7 @@ const initialState: DataFormulatorState = {
         maxStretchFactor: 1.5,
         frontendRowLimit: DEFAULT_ROW_LIMIT,
         paletteKey: 'fluent',
+        defaultChartThemeId: DEFAULT_CHART_THEME_ID,
     },
 
     dataLoaderConnectParams: {},
@@ -1107,7 +1124,7 @@ const interruptTurnProgress = (turn: TextTurn): TextTurn => ({
     ...turn,
     progressSteps: interruptProgressSteps(turn.progressSteps),
     executions: turn.executions?.map(execution => execution.status === 'running' ? { ...execution, status: 'interrupted' } : execution),
-    codeExecutions: turn.codeExecutions?.map(execution => execution.status === 'running' ? { ...execution, status: 'interrupted' } : execution),
+    toolCalls: turn.toolCalls?.map(call => call.status === 'running' ? { ...call, status: 'interrupted' } : call),
 });
 
 /** A run cut off by the reload takes the focus, so its retry is at hand. */
@@ -1196,6 +1213,9 @@ export const dataFormulatorSlice = createSlice({
         },
         finishTableLoad: (state, action: PayloadAction<string>) => {
             state.pendingTableLoads = state.pendingTableLoads.filter(item => item.id !== action.payload);
+        },
+        setTablesMissingData: (state, action: PayloadAction<string[]>) => {
+            state.tablesMissingData = action.payload;
         },
         removeExternalTableReference: (state, action: PayloadAction<string>) => {
             if (state.activeWorkspace?.readOnly) return;
@@ -1353,6 +1373,7 @@ export const dataFormulatorSlice = createSlice({
                 chartSynthesisInProgress: [],
                 tableLoadsInFlight: 0,
                 pendingTableLoads: [],
+                tablesMissingData: [],
                 cleanInProgress: false,
                 connectorRefreshRequest: 0,
                 agentHandoffRequest: null,
@@ -1696,7 +1717,7 @@ export const dataFormulatorSlice = createSlice({
             let chartType = action.payload.chartType;
             const tables = collectAllTables(state);
             let tableId = action.payload.tableId || tables[0].id;
-            let freshChart = generateFreshChart(tableId, chartType, "user") as Chart;
+            let freshChart = withDefaultChartTheme(generateFreshChart(tableId, chartType, "user"), state.config);
             
             // Auto-populate encodings based on table metadata
             let table = tables.find(t => t.id === tableId);
@@ -1715,11 +1736,11 @@ export const dataFormulatorSlice = createSlice({
             state.focusedId = { type: 'chart', chartId: freshChart.id };
         },
         addChart: (state, action: PayloadAction<Chart>) => {
-            let chart = action.payload;
+            let chart = withDefaultChartTheme(action.payload, state.config);
             state.charts = [chart, ...state.charts];
         },
         addAndFocusChart: (state, action: PayloadAction<Chart>) => {
-            let chart = action.payload;
+            let chart = withDefaultChartTheme(action.payload, state.config);
             state.charts = [chart, ...state.charts];
             state.focusedId = { type: 'chart', chartId: chart.id };
         },
@@ -2088,19 +2109,19 @@ export const dataFormulatorSlice = createSlice({
             draft.derive.progressSteps = [];
         },
         /** Add or update one tool call on an agent message (tool calls are sub-items of the message, design-docs/58 rule 4). */
-        upsertTurnExecution: (state, action: PayloadAction<{ turnId: string; execution?: TerminalExecution; codeExecution?: CodeExecution }>) => {
+        upsertTurnExecution: (state, action: PayloadAction<{ turnId: string; execution?: TerminalExecution; toolCall?: ToolCall }>) => {
             const turn = state.textTurns.find(item => item.id === action.payload.turnId);
             if (!turn) return;
-            const { execution, codeExecution } = action.payload;
+            const { execution, toolCall } = action.payload;
             if (execution) {
                 const list = turn.executions || [];
                 const index = list.findIndex(item => item.id === execution.id);
                 turn.executions = index >= 0 ? list.map((item, i) => i === index ? { ...item, ...execution } : item) : [...list, execution];
             }
-            if (codeExecution) {
-                const list = turn.codeExecutions || [];
-                const index = list.findIndex(item => item.id === codeExecution.id);
-                turn.codeExecutions = index >= 0 ? list.map((item, i) => i === index ? { ...item, ...codeExecution } : item) : [...list, codeExecution];
+            if (toolCall) {
+                const list = turn.toolCalls || [];
+                const index = list.findIndex(item => item.id === toolCall.id);
+                turn.toolCalls = index >= 0 ? list.map((item, i) => i === index ? { ...item, ...toolCall } : item) : [...list, toolCall];
             }
         },
         // A run's open end; anything that followed it (from older sessions) rises to its parent.
@@ -2607,6 +2628,7 @@ export const dataFormulatorSlice = createSlice({
             // in store.ts).
             incoming.cleanInProgress = false;
             incoming.pendingTableLoads = [];
+            incoming.tablesMissingData = [];
             delete incoming.dataLoadingChatMessages;
             delete incoming.dataLoadingChatPending;
             delete incoming.dataLoadingChatInProgress;

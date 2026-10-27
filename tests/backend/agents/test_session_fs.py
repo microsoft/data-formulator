@@ -129,10 +129,31 @@ def test_search_covers_table_names_descriptions_and_code_of_tables_without_rows(
     }]}
     files = _files(workspace, state)
     result = files.search("groupby")
-    assert '## session/tables/d_sales.json "Sales by region" — table, no stored rows' in result
+    assert '## session/tables/d_sales.json "Sales by region" — table, data missing from the workspace' in result
     assert "Matched in: code (1 line)" in result
     assert "- code line 1: df = sales.groupby('region').sum()" in result
     assert '"Sales by region"' in files.search("sales by region")
+
+
+def test_a_session_table_without_workspace_data_reads_as_missing_not_empty(workspace) -> None:
+    state = {"derivedTables": [{
+        "kind": "table", "id": "t-sales", "displayId": "Sales by region", "names": ["region", "sales"],
+        "metadata": {}, "virtual": {"tableId": "d_sales", "rowCount": 3},
+        "derive": {"source": [], "code": "df = sales.groupby('region').sum()", "trigger": {}},
+    }]}
+    files = _files(workspace, state)
+
+    with pytest.raises(ValueError, match="data is missing from the workspace"):
+        files.read_item({"path": "session/tables/d_sales.json", "rows": "1-5"})
+    assert "data is missing from the workspace" in files.read_item({"path": "session/tables/d_sales.json"})["note"]
+    listed = {item["path"]: item for item in files.list("")["files"]}
+    assert listed["session/tables/d_sales.json"]["detail"] == \
+        "data missing from the workspace (listed as 3 rows × 2 columns)"
+
+    workspace.write_parquet(pd.DataFrame({"region": ["East", "West", "North"], "sales": [1, 2, 3]}), "d_sales")
+    files = _files(workspace, state)
+    assert files.read_item({"path": "session/tables/d_sales.json", "rows": "1-5"})["total_rows"] == 3
+    assert "note" not in files.read_item({"path": "session/tables/d_sales.json"})
 
 
 def test_search_shows_a_column_window_for_wide_tables(workspace) -> None:

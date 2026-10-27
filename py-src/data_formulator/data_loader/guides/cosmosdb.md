@@ -1,17 +1,15 @@
 **Example**
 
-Endpoint `https://myaccount.documents.azure.com:443/`, database `mydb`
+endpoint: `https://myaccount.documents.azure.com:443/` · database: `mydb`
 
 **Credentials**
 
-In Azure Portal, open the Cosmos DB account's **Keys** page and copy the endpoint and a read-capable key.
-
-For the local emulator, use `https://localhost:8081` and the emulator key.
+Copy the endpoint and a read-only key from the account's **Keys** page in the Azure portal. For the local emulator, use `https://localhost:8081` and the emulator key.
 
 **Scope**
 
-Leave `container` empty to browse all containers in the database.
+Leave `container` empty to browse every container in the database.
 
 **Check**
 
-If the connection is rejected, confirm that the account firewall allows your IP or connect from an allowed network.
+If the connection is refused, make sure the account firewall allows your IP.

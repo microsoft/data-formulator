@@ -3,8 +3,8 @@
  "derivedTables": [
   {
    "kind": "table",
-   "id": "d_out",
-   "displayId": "Heritage spending before and after the pandemic",
+   "id": "d_out_2",
+   "displayId": "Largest increases in heritage spending per person",
    "names": [
     "indicator_id_before",
     "COUNTRY_ID",
@@ -19,370 +19,26 @@
     "value_after",
     "magnitude_after",
     "qualifier_after",
-    "change_percent",
-    "direction",
-    "countries"
+    "increase",
+    "country"
    ],
    "rows": [
     {
      "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "SVK",
-     "country_before": "Slovakia",
-     "year_before": 2018,
-     "value_before": 44.53782,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Slovakia",
-     "year_after": 2024,
-     "value_after": 72.30204,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": 62.3385248762,
-     "direction": "Higher than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "LUX",
-     "country_before": "Luxembourg",
+     "COUNTRY_ID": "FIN",
+     "country_before": "Finland",
      "year_before": 2019,
-     "value_before": 218.25764,
+     "value_before": 176.73007,
      "magnitude_before": null,
      "qualifier_before": null,
      "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Luxembourg",
-     "year_after": 2024,
-     "value_after": 230.89077,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": 5.7881730967,
-     "direction": "Higher than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "LTU",
-     "country_before": "Lithuania",
-     "year_before": 2019,
-     "value_before": 50.25984,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Lithuania",
-     "year_after": 2024,
-     "value_after": 41.46906,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": -17.4906645147,
-     "direction": "Lower than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "MUS",
-     "country_before": "Mauritius",
-     "year_before": 2019,
-     "value_before": 14.97313,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Mauritius",
-     "year_after": 2024,
-     "value_after": 13.75007,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": -8.1683655989,
-     "direction": "Lower than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "MEX",
-     "country_before": "Mexico",
-     "year_before": 2019,
-     "value_before": 11.03003,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Mexico",
-     "year_after": 2024,
-     "value_after": 10.05728,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": -8.8191056597,
-     "direction": "Lower than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "PER",
-     "country_before": "Peru",
-     "year_before": 2019,
-     "value_before": 13.565,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Peru",
-     "year_after": 2024,
-     "value_after": 12.89864,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": -4.9123479543,
-     "direction": "Lower than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "POL",
-     "country_before": "Poland",
-     "year_before": 2019,
-     "value_before": 78.55327,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Poland",
-     "year_after": 2024,
-     "value_after": 78.90847,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": 0.4521772295,
-     "direction": "Higher than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "PRT",
-     "country_before": "Portugal",
-     "year_before": 2019,
-     "value_before": 34.13195,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Portugal",
+     "country_after": "Finland",
      "year_after": 2023,
-     "value_after": 41.36112,
+     "value_after": 265.14328,
      "magnitude_after": null,
      "qualifier_after": null,
-     "change_percent": 21.1800673562,
-     "direction": "Higher than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "SWE",
-     "country_before": "Sweden",
-     "year_before": 2019,
-     "value_before": 78.36525,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Sweden",
-     "year_after": 2024,
-     "value_after": 89.64795,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": 14.3975805603,
-     "direction": "Higher than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "MDA",
-     "country_before": "Republic of Moldova",
-     "year_before": 2019,
-     "value_before": 6.82905,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Republic of Moldova",
-     "year_after": 2023,
-     "value_after": 2.82197,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": -58.6769755676,
-     "direction": "Lower than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "KAZ",
-     "country_before": "Kazakhstan",
-     "year_before": 2019,
-     "value_before": 0.74806,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Kazakhstan",
-     "year_after": 2023,
-     "value_after": 0.07309,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": -90.2293933642,
-     "direction": "Lower than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "FRA",
-     "country_before": "France",
-     "year_before": 2019,
-     "value_before": 130.13443,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "France",
-     "year_after": 2023,
-     "value_after": 117.3667,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": -9.811185249,
-     "direction": "Lower than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "ISR",
-     "country_before": "Israel",
-     "year_before": 2019,
-     "value_before": 27.28938,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Israel",
-     "year_after": 2024,
-     "value_after": 34.10461,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": 24.9739275865,
-     "direction": "Higher than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "AUT",
-     "country_before": "Austria",
-     "year_before": 2019,
-     "value_before": 120.78781,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Austria",
-     "year_after": 2023,
-     "value_after": 114.94677,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": -4.8357859953,
-     "direction": "Lower than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "AZE",
-     "country_before": "Azerbaijan",
-     "year_before": 2019,
-     "value_before": 0.80209,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Azerbaijan",
-     "year_after": 2024,
-     "value_after": 22.03876,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": 2647.6667206922,
-     "direction": "Higher than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "BFA",
-     "country_before": "Burkina Faso",
-     "year_before": 2019,
-     "value_before": 0.02819,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Burkina Faso",
-     "year_after": 2023,
-     "value_after": 2.20959,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": 7738.2050372473,
-     "direction": "Higher than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "BIH",
-     "country_before": "Bosnia and Herzegovina",
-     "year_before": 2019,
-     "value_before": 54.12086,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Bosnia and Herzegovina",
-     "year_after": 2023,
-     "value_after": 61.37624,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": 13.4058845332,
-     "direction": "Higher than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "BLR",
-     "country_before": "Belarus",
-     "year_before": 2019,
-     "value_before": 88.89788,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Belarus",
-     "year_after": 2023,
-     "value_after": 57.31564,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": -35.526426502,
-     "direction": "Lower than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "BRA",
-     "country_before": "Brazil",
-     "year_before": 2019,
-     "value_before": 7.87467,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Brazil",
-     "year_after": 2024,
-     "value_after": 20.4869,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": 160.1620131383,
-     "direction": "Higher than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "CAN",
-     "country_before": "Canada",
-     "year_before": 2019,
-     "value_before": 187.67353,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Canada",
-     "year_after": 2024,
-     "value_after": 212.26366,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": 13.1026096221,
-     "direction": "Higher than before the pandemic",
-     "countries": 1
+     "increase": 88.41321,
+     "country": "Finland"
     },
     {
      "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
@@ -398,81 +54,25 @@
      "value_after": 240.28057,
      "magnitude_after": null,
      "qualifier_after": null,
-     "change_percent": 30.1562863013,
-     "direction": "Higher than before the pandemic",
-     "countries": 1
+     "increase": 55.6713,
+     "country": "Switzerland"
     },
     {
      "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "JPN",
-     "country_before": "Japan",
-     "year_before": 2019,
-     "value_before": 5.27547,
+     "COUNTRY_ID": "SVK",
+     "country_before": "Slovakia",
+     "year_before": 2018,
+     "value_before": 44.53782,
      "magnitude_before": null,
      "qualifier_before": null,
      "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Japan",
+     "country_after": "Slovakia",
      "year_after": 2024,
-     "value_after": 6.99939,
+     "value_after": 72.30204,
      "magnitude_after": null,
      "qualifier_after": null,
-     "change_percent": 32.6780362698,
-     "direction": "Higher than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "COL",
-     "country_before": "Colombia",
-     "year_before": 2019,
-     "value_before": 22.68485,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Colombia",
-     "year_after": 2024,
-     "value_after": 14.1084,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": -37.8069504537,
-     "direction": "Lower than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "DNK",
-     "country_before": "Denmark",
-     "year_before": 2019,
-     "value_before": 129.05429,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Denmark",
-     "year_after": 2023,
-     "value_after": 134.18625,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": 3.9765900072,
-     "direction": "Higher than before the pandemic",
-     "countries": 1
-    },
-    {
-     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "DOM",
-     "country_before": "Dominican Republic",
-     "year_before": 2019,
-     "value_before": 30.09785,
-     "magnitude_before": null,
-     "qualifier_before": null,
-     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Dominican Republic",
-     "year_after": 2024,
-     "value_after": 14.52464,
-     "magnitude_after": null,
-     "qualifier_after": null,
-     "change_percent": -51.7419350552,
-     "direction": "Lower than before the pandemic",
-     "countries": 1
+     "increase": 27.76422,
+     "country": "Slovakia"
     },
     {
      "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
@@ -488,9 +88,93 @@
      "value_after": 53.26329,
      "magnitude_after": null,
      "qualifier_after": null,
-     "change_percent": 89.0698734382,
-     "direction": "Higher than before the pandemic",
-     "countries": 1
+     "increase": 25.09207,
+     "country": "Ecuador"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "CAN",
+     "country_before": "Canada",
+     "year_before": 2019,
+     "value_before": 187.67353,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Canada",
+     "year_after": 2024,
+     "value_after": 212.26366,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 24.59013,
+     "country": "Canada"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "AZE",
+     "country_before": "Azerbaijan",
+     "year_before": 2019,
+     "value_before": 0.80209,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Azerbaijan",
+     "year_after": 2024,
+     "value_after": 22.03876,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 21.23667,
+     "country": "Azerbaijan"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "LUX",
+     "country_before": "Luxembourg",
+     "year_before": 2019,
+     "value_before": 218.25764,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Luxembourg",
+     "year_after": 2024,
+     "value_after": 230.89077,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 12.63313,
+     "country": "Luxembourg"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "BRA",
+     "country_before": "Brazil",
+     "year_before": 2019,
+     "value_before": 7.87467,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Brazil",
+     "year_after": 2024,
+     "value_after": 20.4869,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 12.61223,
+     "country": "Brazil"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "SWE",
+     "country_before": "Sweden",
+     "year_before": 2019,
+     "value_before": 78.36525,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Sweden",
+     "year_after": 2024,
+     "value_after": 89.64795,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 11.2827,
+     "country": "Sweden"
     },
     {
      "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
@@ -506,81 +190,93 @@
      "value_after": 60.76154,
      "magnitude_after": null,
      "qualifier_after": null,
-     "change_percent": 19.0446886275,
-     "direction": "Higher than before the pandemic",
-     "countries": 1
+     "increase": 9.72059,
+     "country": "Spain"
     },
     {
      "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "FIN",
-     "country_before": "Finland",
+     "COUNTRY_ID": "BIH",
+     "country_before": "Bosnia and Herzegovina",
      "year_before": 2019,
-     "value_before": 176.73007,
+     "value_before": 54.12086,
      "magnitude_before": null,
      "qualifier_before": null,
      "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Finland",
+     "country_after": "Bosnia and Herzegovina",
      "year_after": 2023,
-     "value_after": 265.14328,
+     "value_after": 61.37624,
      "magnitude_after": null,
      "qualifier_after": null,
-     "change_percent": 50.027259085,
-     "direction": "Higher than before the pandemic",
-     "countries": 1
+     "increase": 7.25538,
+     "country": "Bosnia and Herzegovina"
     },
     {
      "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "TUR",
-     "country_before": "Türkiye",
+     "COUNTRY_ID": "PRT",
+     "country_before": "Portugal",
      "year_before": 2019,
-     "value_before": 17.15478,
+     "value_before": 34.13195,
      "magnitude_before": null,
      "qualifier_before": null,
      "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Türkiye",
+     "country_after": "Portugal",
+     "year_after": 2023,
+     "value_after": 41.36112,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 7.22917,
+     "country": "Portugal"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "ISR",
+     "country_before": "Israel",
+     "year_before": 2019,
+     "value_before": 27.28938,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Israel",
      "year_after": 2024,
-     "value_after": 0.78856,
+     "value_after": 34.10461,
      "magnitude_after": null,
      "qualifier_after": null,
-     "change_percent": -95.4032636968,
-     "direction": "Lower than before the pandemic",
-     "countries": 1
+     "increase": 6.81523,
+     "country": "Israel"
     },
     {
      "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "HUN",
-     "country_before": "Hungary",
+     "COUNTRY_ID": "DNK",
+     "country_before": "Denmark",
      "year_before": 2019,
-     "value_before": 159.17235,
+     "value_before": 129.05429,
      "magnitude_before": null,
      "qualifier_before": null,
      "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Hungary",
+     "country_after": "Denmark",
      "year_after": 2023,
-     "value_after": 95.7704,
+     "value_after": 134.18625,
      "magnitude_after": null,
      "qualifier_after": null,
-     "change_percent": -39.832263581,
-     "direction": "Lower than before the pandemic",
-     "countries": 1
+     "increase": 5.13196,
+     "country": "Denmark"
     },
     {
      "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "CZE",
-     "country_before": "Czechia",
+     "COUNTRY_ID": "BFA",
+     "country_before": "Burkina Faso",
      "year_before": 2019,
-     "value_before": 123.96557,
+     "value_before": 0.02819,
      "magnitude_before": null,
      "qualifier_before": null,
      "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
-     "country_after": "Czechia",
+     "country_after": "Burkina Faso",
      "year_after": 2023,
-     "value_after": 93.42295,
+     "value_after": 2.20959,
      "magnitude_after": null,
      "qualifier_after": null,
-     "change_percent": -24.6379861763,
-     "direction": "Lower than before the pandemic",
-     "countries": 1
+     "increase": 2.1814,
+     "country": "Burkina Faso"
     }
    ],
    "metadata": {
@@ -636,22 +332,18 @@
      "type": "boolean",
      "levels": []
     },
-    "change_percent": {
+    "increase": {
      "type": "number",
      "levels": []
     },
-    "direction": {
+    "country": {
      "type": "string",
-     "levels": []
-    },
-    "countries": {
-     "type": "integer",
      "levels": []
     }
    },
    "derive": {
-    "code": "import pandas as pd\nd=pd.read_parquet('data/sdg11_national.parquet')\nx=d[d.indicator_id.eq('HEXPCSTPPPCAP.HER.PU')]\na=x[x.year.between(2017,2019)].sort_values('year').groupby('COUNTRY_ID').tail(1)\nb=x[x.year.between(2022,2024)].sort_values('year').groupby('COUNTRY_ID').tail(1)\nout=a.merge(b,on='COUNTRY_ID',suffixes=('_before','_after'))\nout['change_percent']=100*(out.value_after/out.value_before-1)\nout['direction']=out.change_percent.map(lambda v:'Higher than before the pandemic' if v>0 else 'Lower than before the pandemic' if v<0 else 'Unchanged')\nout['countries']=1",
-    "codeSignature": "dcad93d3f37c863690d9a98dca4a12710981dd778d983101c6e318589f70aa7b",
+    "code": "import pandas as pd\nx=pd.read_parquet('data/sdg11_national.parquet'); x=x[x.indicator_id.eq('HEXPCSTPPPCAP.HER.PU')]\na=x[x.year.between(2017,2019)].sort_values('year').groupby('COUNTRY_ID').tail(1)\nb=x[x.year.between(2022,2024)].sort_values('year').groupby('COUNTRY_ID').tail(1)\nx=a.merge(b,on='COUNTRY_ID',suffixes=('_before','_after'))\nx['increase']=x.value_after-x.value_before\nout=x[x.increase>0].nlargest(15,'increase').copy()\nout['country']=out.country_after\nprint(out[['country','increase','year_before','year_after']].to_string(index=False))",
+    "codeSignature": "0d1b8c84386cb54a85bb13b9e3068fa26911b2cbb313240c110f5e74e4e8ad77",
     "outputVariable": "out",
     "source": [
      "sdg11_national"
@@ -665,9 +357,9 @@
     ],
     "trigger": {
      "tableId": "sdg11_national",
-     "resultTableId": "d_out",
+     "resultTableId": "d_out_2",
      "chart": {
-      "id": "chart-1792311995836",
+      "id": "chart-1792312030944",
       "chartType": "Auto",
       "encodingMap": {},
       "tableRef": "sdg11_national",
@@ -678,77 +370,33 @@
      "status": "ok",
      "concepts": [
       {
-       "field": "change_percent",
-       "explanation": "Uses each country's latest available value in 2017–2019 as the baseline and its latest available value in 2022–2024 as the comparison: `change_percent = 100 * (value_after / value_before - 1)`."
-      },
-      {
-       "field": "direction",
-       "explanation": "`direction = 'Higher than before the pandemic' if change_percent > 0; 'Lower than before the pandemic' if change_percent < 0; otherwise 'Unchanged'`."
+       "field": "increase",
+       "explanation": "For each country, use its latest available public heritage expenditure value from 2022–2024 and subtract its latest available value from 2017–2019: `increase = value_after - value_before`."
       }
      ],
      "agent": "CodeExplanationAgent"
     }
    },
    "virtual": {
-    "tableId": "d_out",
-    "rowCount": 31
+    "tableId": "d_out_2",
+    "rowCount": 15
    },
    "description": "",
-   "parentNodeId": "textTurn_exploreDataFromNL_1792311969366_step_1",
-   "createdAt": 1792312003765
+   "parentNodeId": "textTurn_exploreDataFromNL_1792312015543_step_1",
+   "createdAt": 1792312034076
   }
  ],
  "charts": [
   {
-   "id": "chart-797c47a36918",
+   "id": "chart-537bbed7a638",
    "chartType": "Bar Chart",
    "encodingMap": {
     "x": {
-     "fieldID": "concept-countries-1792312003765-0.2701413078133834",
-     "dtype": "quantitative",
-     "aggregate": "sum"
-    },
-    "y": {
-     "fieldID": "concept-direction-1792312003765-0.43093765579548127",
-     "dtype": "nominal",
-     "sortOrder": "descending",
-     "sortBy": "x"
-    },
-    "color": {
-     "channel": "color",
-     "bin": false
-    },
-    "opacity": {
-     "channel": "opacity",
-     "bin": false
-    },
-    "column": {
-     "channel": "column",
-     "bin": false
-    },
-    "row": {
-     "channel": "row",
-     "bin": false
-    }
-   },
-   "tableRef": "d_out",
-   "source": "user",
-   "title": "Countries with higher or lower public heritage spending",
-   "subtitle": "Latest 2022–2024 figure versus latest 2017–2019 figure; constant 2017 purchasing-power dollars per person",
-   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-countries-1792312003765-0.2701413078133834:sum|y:concept-direction-1792312003765-0.43093765579548127:",
-   "unread": false,
-   "themeId": "datawrapper"
-  },
-  {
-   "id": "chart-8b5baa00e6f2",
-   "chartType": "Bar Chart",
-   "encodingMap": {
-    "x": {
-     "fieldID": "concept-change_percent-1792312003765-0.6322115043363978",
+     "fieldID": "concept-increase-1792312034076-0.5058360888162191",
      "dtype": "quantitative"
     },
     "y": {
-     "fieldID": "concept-country_after-1792312003765-0.9736390204362664",
+     "fieldID": "concept-country-1792312034076-0.9659227996468553",
      "dtype": "nominal",
      "sortOrder": "descending",
      "sortBy": "x"
@@ -770,37 +418,25 @@
      "bin": false
     }
    },
-   "tableRef": "d_out",
+   "tableRef": "d_out_2",
    "source": "user",
-   "title": "Change in public heritage spending per person since before the pandemic",
-   "subtitle": "Latest 2022–2024 figure versus latest 2017–2019 figure; constant 2017 purchasing-power dollars per person",
+   "title": "Largest increases in public heritage spending per person",
+   "subtitle": "Latest 2022–2024 versus pre-pandemic figures; constant 2017 purchasing-power dollars",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-increase-1792312034076-0.5058360888162191:|y:concept-country-1792312034076-0.9659227996468553:",
    "unread": false,
-   "themeId": "datawrapper",
-   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-change_percent-1792312003765-0.6322115043363978:|y:concept-country_after-1792312003765-0.9736390204362664:"
+   "themeId": "datawrapper"
   }
  ],
  "conceptShelfItems": [
   {
-   "id": "concept-country_after-1792312003765-0.9736390204362664",
-   "name": "country_after",
+   "id": "concept-increase-1792312034076-0.5058360888162191",
+   "name": "increase",
    "source": "custom",
    "tableRef": "custom"
   },
   {
-   "id": "concept-change_percent-1792312003765-0.6322115043363978",
-   "name": "change_percent",
-   "source": "custom",
-   "tableRef": "custom"
-  },
-  {
-   "id": "concept-direction-1792312003765-0.43093765579548127",
-   "name": "direction",
-   "source": "custom",
-   "tableRef": "custom"
-  },
-  {
-   "id": "concept-countries-1792312003765-0.2701413078133834",
-   "name": "countries",
+   "id": "concept-country-1792312034076-0.9659227996468553",
+   "name": "country",
    "source": "custom",
    "tableRef": "custom"
   }
@@ -808,149 +444,105 @@
  "textTurns": [
   {
    "kind": "text",
-   "id": "textTurn_exploreDataFromNL_1792311969366_prompt",
-   "displayId": "textTurn_exploreDataFromNL_1792311969366_prompt",
+   "id": "textTurn_exploreDataFromNL_1792312015543_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1792312015543_prompt",
    "textKind": "explain",
    "content": "",
-   "prompt": "Are governments spending more on heritage than before the pandemic?",
+   "prompt": "Which countries added the most to heritage spending per person since before the pandemic?",
    "parentNodeId": "conversation-root:ab0d9e14-9d7d-4523-809b-3ed286cd6729",
-   "actionId": "exploreDataFromNL_1792311969366",
-   "createdAt": 1792311969366
+   "actionId": "exploreDataFromNL_1792312015543",
+   "createdAt": 1792312015544
   },
   {
    "kind": "text",
-   "id": "textTurn_exploreDataFromNL_1792311969366_step_1",
-   "displayId": "textTurn_exploreDataFromNL_1792311969366_step_1",
+   "id": "textTurn_exploreDataFromNL_1792312015543_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1792312015543_step_1",
    "textKind": "explain",
-   "content": "Check matched pre-pandemic and recent public heritage spending and reporting caveats.",
-   "parentNodeId": "textTurn_exploreDataFromNL_1792311969366_prompt",
-   "actionId": "exploreDataFromNL_1792311969366",
-   "createdAt": 1792311988366,
-   "startedAt": 1792311969366,
-   "codeExecutions": [
-    {
-     "id": "code_exploreDataFromNL_1792311969366_1",
-     "tool": "execute_python_script",
-     "purpose": "Check matched pre-pandemic and recent public heritage spending and reporting caveats.",
-     "code": "import pandas as pd\nind=pd.read_parquet('data/sdg11_indicators.parquet'); print(ind.to_string(index=False))\nd=pd.read_parquet('data/sdg11_national.parquet'); s=pd.read_parquet('data/sdg11_sources.parquet')\nk=ind.loc[ind.indicator.str.startswith('Total public expenditure per capita spent'),'indicator_id'].iloc[0]\nx=d[d.indicator_id.eq(k)]; print('YEARS',x.groupby('year').size())\na=x[x.year.between(2017,2019)].sort_values('year').groupby('COUNTRY_ID').tail(1); b=x[x.year.between(2022,2024)].sort_values('year').groupby('COUNTRY_ID').tail(1)\nm=a.merge(b,on='COUNTRY_ID',suffixes=('_before','_after')); m['change']=100*(m.value_after/m.value_before-1)\nprint(m[['COUNTRY_ID','country_after','year_before','value_before','year_after','value_after','change']].to_string(index=False)); print('notes',s[s.indicator_id.eq(k)].to_string(index=False))",
-     "status": "completed",
-     "createdAt": 1792311988366,
-     "output": "               indicator_id                                                                                                                                       indicator  countries  first_year  last_year  value_count\n       HEXPCSTPPPCAP.CULHER                                            Total expenditure  (public and private) per capita spent on cultural heritage (constant PPP$ - 2017)         28        2017       2024          103\n          HEXPCSTPPPCAP.HER Total expenditure per capita spent on the preservation, protection and conservation of all cultural and natural heritage (constant PPP$ - 2017)         30        2017       2024          118\n       HEXPCSTPPPCAP.HER.PR                                              Total private expenditure per capita spent on cultural and natural heritage (constant PPP$ - 2017)         32        2017       2024          125\n       HEXPCSTPPPCAP.HER.PU                                               Total public expenditure per capita spent on cultural and natural heritage (constant PPP$ - 2017)         77        2017       2024          271\n       HEXPCSTPPPCAP.NATHER                                              Total expenditure (public and private) per capita spent on natural heritage (constant PPP$ - 2017)         21        2017       2024           82\nHEXPCSTPPPCAPGOV.LOC.HER.PU                            Total public expenditure per capita at local/municipal level on cultural and natural heritage (constant PPP$ - 2017)         38        2017       2024          154\nHEXPCSTPPPCAPGOV.NTL.HER.PU                           Total public expenditure per capita at national/federal level on cultural and natural heritage (constant PPP$ - 2017)         71        2017       2024          240\nHEXPCSTPPPCAPGOV.REG.HER.PU                                   Total public expenditure per capita at regional level on cultural and natural heritage (constant PPP$ - 2017)         25        2017       2024           90\nYEARS year\n2017     4\n2018    17\n2019    37\n2020    43\n2021    46\n2022    48\n2023    47\n2024    29\ndtype: int64\nCOUNTRY_ID          country_after  year_before  value_before  year_after  value_after      change\n       SVK               Slovakia         2018      44.53782        2024     72.30204   62.338525\n       LUX             Luxembourg         2019     218.25764        2024    230.89077    5.788173\n       LTU              Lithuania         2019      50.25984        2024     41.46906  -17.490665\n       MUS              Mauritius         2019      14.97313        2024     13.75007   -8.168366\n       MEX                 Mexico         2019      11.03003        2024     10.05728   -8.819106\n       PER                   Peru         2019      13.56500        2024     12.89864   -4.912348\n       POL                 Poland         2019      78.55327        2024     78.90847    0.452177\n       PRT               Portugal         2019      34.13195        2023     41.36112   21.180067\n       SWE                 Sweden         2019      78.36525        2024     89.64795   14.397581\n       MDA    Republic of Moldova         2019       6.82905        2023      2.82197  -58.676976\n       KAZ             Kazakhstan         2019       0.74806        2023      0.07309  -90.229393\n       FRA                 France         2019     130.13443        2023    117.36670   -9.811185\n       ISR                 Israel         2019      27.28938        2024     34.10461   24.973928\n       AUT                Austria         2019     120.78781        2023    114.94677   -4.835786\n       AZE             Azerbaijan         2019       0.80209        2024     22.03876 2647.666721\n       BFA           Burkina Faso         2019       0.02819        2023      2.20959 7738.205037\n       BIH Bosnia and Herzegovina         2019      54.12086        2023     61.37624   13.405885\n       BLR                Belarus         2019      88.89788        2023     57.31564  -35.526427\n       BRA                 Brazil         2019       7.87467        2024     20.48690  160.162013\n       CAN                 Canada         2019     187.67353        2024    212.26366   13.102610\n       CHE            Switzerland         2019     184.60927        2022    240.28057   30.156286\n       JPN                  Japan         2019       5.27547        2024      6.99939   32.678036\n       COL               Colombia         2019      22.68485        2024     14.10840  -37.806950\n       DNK                Denmark         2019     129.05429        2023    134.18625    3.976590\n       DOM     Dominican Republic         2019      30.09785        2024     14.52464  -51.741935\n       ECU                Ecuador         2019      28.17122        2024     53.26329   89.069873\n       ESP                  Spain         2019      51.04095        2023     60.76154   19.044689\n       FIN                Finland         2019     176.73007        2023    265.14328   50.027259\n       TUR                Türkiye         2019      17.15478        2024      0.78856  -95.403264\n       HUN                Hungary         2019     159.17235        2023     95.77040  -39.832264\n       CZE                Czechia         2019     123.96557        2023     93.42295  -24.637986\nnotes         indicator_id COUNTRY_ID  year                                   TYPE                                                                                                                                              note\nHEXPCSTPPPCAP.HER.PU        ALB  2021 Different Coverage:Level of government                                                                                                                No regional governmental structure\nHEXPCSTPPPCAP.HER.PU        ALB  2021     Under Coverage:Level of government                                                                                            Does not include local expenditure on natural heritage\nHEXPCSTPPPCAP.HER.PU        AND  2021 Different Coverage:Level of government                                                                                                                No regional governmental structure\nHEXPCSTPPPCAP.HER.PU        AND  2021         Over Coverage:Type of heritage                                                                                                Overestimation: includes other cultural activities\nHEXPCSTPPPCAP.HER.PU        AND  2022 Different Coverage:Level of government                                                                                                                No regional governmental structure\nHEXPCSTPPPCAP.HER.PU        AND  2022         Over Coverage:Type of heritage                                                                                                Overestimation: includes other cultural activities\nHEXPCSTPPPCAP.HER.PU        AND  2023         Over Coverage:Type of heritage                                                                                                Overestimation: includes other cultural activities\nHEXPCSTPPPCAP.HER.PU        ARM  2022         Over Coverage:Type of heritage                                                                                                Overestimation: includes other cultural activities\nHEXPCSTPPPCAP.HER.PU        ARM  2023         Over Coverage:Type of heritage                                                                                                Overestimation: includes other cultural activities\nHEXPCSTPPPCAP.HER.PU        ARM  2023     Under Coverage:Level of government                                                                                            Does not include local expenditure on natural heritage\nHEXPCSTPPPCAP.HER.PU        AUS  2020     Under Coverage:Level of government                                                                                           Does not include local expenditure on cultural heritage\nHEXPCSTPPPCAP.HER.PU        AUS  2021     Under Coverage:Level of government                       \n... (truncated)"
-    },
-    {
-     "id": "code_exploreDataFromNL_1792311969366_2",
-     "tool": "execute_python_script",
-     "purpose": "Verify the overall balance of increases and decreases and identify comparability warnings.",
-     "code": "print('matched',len(m),'higher',(m.change>0).sum(),'lower',(m.change<0).sum(),'median',m.change.median())\nz=s[s.indicator_id.eq(k)&s.COUNTRY_ID.isin(m.COUNTRY_ID)]\nprint(z[z.TYPE.str.contains('Break|Status')].to_string(index=False))\nprint(z.groupby('TYPE').size().to_string());print('flags',m.qualifier_before.value_counts(),m.qualifier_after.value_counts())",
-     "status": "completed",
-     "createdAt": 1792311993899,
-     "output": "matched 31 higher 17 lower 14 median 3.9765900071977445\n        indicator_id COUNTRY_ID  year                               TYPE                                   note\nHEXPCSTPPPCAP.HER.PU        COL  2024         Data Status:All categories           Preliminary/Provisional data\nHEXPCSTPPPCAP.HER.PU        FRA  2018         Data Status:All categories           Preliminary/Provisional data\nHEXPCSTPPPCAP.HER.PU        FRA  2019         Data Status:All categories           Preliminary/Provisional data\nHEXPCSTPPPCAP.HER.PU        FRA  2020         Data Status:All categories           Preliminary/Provisional data\nHEXPCSTPPPCAP.HER.PU        MDA  2023 Different Coverage:Break in series Break in series: change in methodology\nTYPE\nData Status:All categories                 4\nDifferent Coverage:Break in series         1\nDifferent Coverage:Level of government    48\nOver Coverage:Level of government          4\nOver Coverage:Type of heritage             2\nUnder Coverage:Level of government        49\nUnder Coverage:Type of flow               34\nUnder Coverage:Type of heritage           42\nUnder Coverage:Type of sector              6\nflags Series([], Name: count, dtype: int64) Series([], Name: count, dtype: int64)\n"
-    }
-   ],
+   "content": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792312015543_prompt",
+   "actionId": "exploreDataFromNL_1792312015543",
+   "createdAt": 1792312034076,
+   "startedAt": 1792312015544,
    "progressSteps": [
     {
-     "id": "progress-exploreDataFromNL_1792311969366-1",
-     "kind": "tool",
-     "label": "inspecting source data... sdg11_indicators, sdg11_national, sdg11_sources",
-     "status": "completed",
-     "tool": "inspect_source_data",
-     "toolCallId": "call_TeT14Je3rCy7OKeMN3bbP3SO"
-    },
-    {
-     "id": "progress-exploreDataFromNL_1792311969366-2",
-     "kind": "tool",
-     "label": "running code... Check matched pre-pandemic and recent public heritage spending and reporting caveats.",
-     "status": "completed",
-     "tool": "execute_python_script",
-     "toolCallId": "call_1rt1KkZPNQMzlpn2kWTdOMR7",
-     "executionId": "code_exploreDataFromNL_1792311969366_1"
-    },
-    {
-     "id": "progress-exploreDataFromNL_1792311969366-3",
-     "kind": "tool",
-     "label": "running code... Verify the overall balance of increases and decreases and identify comparability warnings.",
-     "status": "completed",
-     "tool": "execute_python_script",
-     "toolCallId": "call_X9tvIjzhdXLTJSDn5NLoeBE7",
-     "executionId": "code_exploreDataFromNL_1792311969366_2"
-    },
-    {
-     "id": "progress-exploreDataFromNL_1792311969366-4",
+     "id": "progress-exploreDataFromNL_1792312015543-1",
      "kind": "chart",
      "label": "creating chart...",
-     "status": "completed"
-    },
-    {
-     "id": "progress-exploreDataFromNL_1792311969366-5",
-     "kind": "thought",
-     "label": "I’ll compare public spending per person, adjusted for inflation, before the pandemic with each country’s latest 2022–2024 figure.",
      "status": "completed"
     }
    ]
   },
   {
    "kind": "text",
-   "id": "textTurn_exploreDataFromNL_1792311969366_1792312009064",
-   "displayId": "textTurn_exploreDataFromNL_1792311969366_closing",
+   "id": "textTurn_exploreDataFromNL_1792312015543_1792312039140",
+   "displayId": "textTurn_exploreDataFromNL_1792312015543_closing",
    "textKind": "explain",
-   "content": "**Slightly more often than not—but there is no clear worldwide rise.** Among 31 countries with figures before the pandemic and in 2022–2024, 17 reported higher public heritage spending per person and 14 reported lower spending. The middle country’s change was about **+4%**, after adjusting for inflation.\n\nThis compares each country’s latest 2022–2024 figure with its latest 2017–2019 figure and includes both cultural and natural heritage, not private spending.\n\nCoverage is limited and reporting differs between countries; Moldova also changed its methodology, so these figures cannot establish a global spending trend.",
-   "parentNodeId": "d_out",
-   "actionId": "exploreDataFromNL_1792311969366",
-   "createdAt": 1792312009064,
-   "startedAt": 1792311969366,
+   "content": "**Finland added the most heritage spending per person since before the pandemic, followed by Switzerland.**\n\n| Country | Added per person | Years compared |\n|---|---:|---|\n| Finland | $88.41 | 2019 → 2023 |\n| Switzerland | $55.67 | 2019 → 2022 |\n| Slovakia | $27.76 | 2018 → 2024 |\n| Ecuador | $25.09 | 2019 → 2024 |\n| Canada | $24.59 | 2019 → 2024 |\n\nPublic spending on cultural and natural heritage, adjusted for inflation, among the 31 countries with figures for both periods. Source: UIS, February 2026 release.",
+   "parentNodeId": "d_out_2",
+   "actionId": "exploreDataFromNL_1792312015543",
+   "createdAt": 1792312039140,
+   "startedAt": 1792312015544,
    "answered": true
   }
  ],
  "tableSemantics": [
   {
-   "tableId": "d_out",
+   "tableId": "d_out_2",
    "fields": {
+    "indicator_id_before": {
+     "semanticType": "ID"
+    },
+    "COUNTRY_ID": {
+     "semanticType": "Country"
+    },
+    "country_before": {
+     "semanticType": "Country"
+    },
     "year_before": {
-     "displayName": "Pre-pandemic year",
-     "authored": {
-      "displayName": "Pre-pandemic year"
-     }
+     "semanticType": "Year"
     },
     "value_before": {
-     "displayName": "Pre-pandemic spending per person",
-     "authored": {
-      "displayName": "Pre-pandemic spending per person"
-     }
+     "semanticType": "Number"
+    },
+    "magnitude_before": {
+     "semanticType": "Unknown"
+    },
+    "qualifier_before": {
+     "semanticType": "Unknown"
+    },
+    "indicator_id_after": {
+     "semanticType": "ID"
     },
     "country_after": {
+     "semanticType": "Country"
+    },
+    "year_after": {
+     "semanticType": "Year"
+    },
+    "value_after": {
+     "semanticType": "Number"
+    },
+    "magnitude_after": {
+     "semanticType": "Unknown"
+    },
+    "qualifier_after": {
+     "semanticType": "Unknown"
+    },
+    "increase": {
+     "semanticType": "Amount",
+     "unit": "constant 2017 PPP$ per person",
+     "displayName": "Added spending per person (constant 2017 PPP$)",
+     "authored": {
+      "semanticType": "Amount",
+      "unit": "constant 2017 PPP$ per person",
+      "displayName": "Added spending per person (constant 2017 PPP$)"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
      "displayName": "Country",
      "authored": {
       "displayName": "Country"
-     }
-    },
-    "year_after": {
-     "displayName": "Recent year",
-     "authored": {
-      "displayName": "Recent year"
-     }
-    },
-    "value_after": {
-     "displayName": "Recent spending per person",
-     "authored": {
-      "displayName": "Recent spending per person"
-     }
-    },
-    "change_percent": {
-     "displayName": "Change (%)",
-     "authored": {
-      "displayName": "Change (%)"
-     }
-    },
-    "direction": {
-     "displayName": "Spending per person",
-     "authored": {
-      "displayName": "Spending per person"
-     }
-    },
-    "countries": {
-     "displayName": "Number of countries",
-     "authored": {
-      "displayName": "Number of countries"
      }
     }
    }
@@ -958,10 +550,10 @@
  ],
  "activeWorkspace": {
   "id": "culture-c23",
-  "displayName": "Heritage budgets since the pandemic: 17 up, 14 down"
+  "displayName": "Finland added the most heritage spending since the pandemic"
  },
  "focusedId": {
   "type": "chart",
-  "chartId": "chart-797c47a36918"
+  "chartId": "chart-537bbed7a638"
  }
 }

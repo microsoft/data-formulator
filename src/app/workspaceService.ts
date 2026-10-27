@@ -8,7 +8,7 @@
  * manager is active. All backends expose the same API contract.
  */
 
-import { CONNECTOR_ACTION_URLS, fetchWithIdentity, getUrls } from './utils';
+import { CONNECTOR_ACTION_URLS, currentStore, fetchWithIdentity, getUrls } from './utils';
 import { apiRequest, ApiRequestError, assertDownloadResponseOk } from './apiClient';
 import { workspaceDB, TableIndexEntry } from './workspaceDB';
 import { INPUT_TABLE_PREVIEW_ROW_LIMIT, replaceInputTablePreviews } from './inputTablePreviewCache';
@@ -88,8 +88,7 @@ export interface WorkspaceFilePreview {
 }
 
 async function isEphemeralBackend(): Promise<boolean> {
-    const { store } = await import('./store');
-    return store.getState().serverConfig?.WORKSPACE_BACKEND === 'ephemeral';
+    return (await currentStore()).getState().serverConfig?.WORKSPACE_BACKEND === 'ephemeral';
 }
 
 function createRecoveryState(state: Record<string, unknown>): Record<string, unknown> {
@@ -298,8 +297,7 @@ export async function updateWorkspaceMeta(id: string, displayName: string): Prom
 
 /** Save current workspace state (called by auto-save). */
 export async function saveWorkspaceState(state: Record<string, unknown>): Promise<void> {
-    const { store } = await import('./store');
-    const fullState = store.getState();
+    const fullState = (await currentStore()).getState();
     const ws = fullState.activeWorkspace;
     if (!ws || isWorkspaceReadOnly(ws)) return;
 

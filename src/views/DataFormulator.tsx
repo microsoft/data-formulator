@@ -70,7 +70,7 @@ import { DEMO_ID } from '../app/demo';
 import type { SiteStarter, SiteStory } from '../sites/types';
 import { listWorkflowLibrary, SchedulesPanel, useScheduleLibrary } from './WorkflowSchedules';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { handleApiError } from '../app/errorHandler';
@@ -1132,13 +1132,14 @@ export const DataFormulatorFC = ({ }) => {
             <Dialog open={confirmDeleteWs !== null} onClose={() => setConfirmDeleteWs(null)}>
                 <DialogTitle>{t('workspace.deleteTitle')}</DialogTitle>
                 <DialogContent>
-                    <Typography dangerouslySetInnerHTML={{
-                        __html: t('workspace.deleteConfirm', {
-                            name: savedWorkspaces.find(w => w.id === confirmDeleteWs)?.display_name || confirmDeleteWs,
-                            id: confirmDeleteWs,
-                            interpolation: { escapeValue: false },
-                        }),
-                    }} />
+                    <Typography>
+                        <Trans i18nKey="workspace.deleteConfirm"
+                            values={{
+                                name: savedWorkspaces.find(w => w.id === confirmDeleteWs)?.display_name || confirmDeleteWs,
+                                id: confirmDeleteWs,
+                            }}
+                            components={{ strong: <strong /> }} />
+                    </Typography>
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setConfirmDeleteWs(null)}>{t('workspace.cancel')}</Button>

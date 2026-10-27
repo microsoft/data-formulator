@@ -132,6 +132,30 @@ SCRATCH_MAX_BYTES = 1 * 1024 * 1024 * 1024  # 1 GiB
 WORKSPACE_TEXT_MEMORY_MAX_CHARS = 100_000
 
 
+def run_sql_over_parquet_file(path: Path | str, sql: str) -> pd.DataFrame:
+    """Run *sql* with ``{parquet}`` bound to one parquet file, in a DuckDB
+    connection that can read only that file.
+
+    The SQL is shaped by request parameters, so the connection denies every
+    other file, extensions, and configuration changes.
+    """
+    import duckdb
+
+    if "{parquet}" not in sql:
+        raise ValueError("SQL must contain {parquet} placeholder")
+    path = str(path)
+    # replace(), not format(): column names and filter literals may contain braces.
+    full_sql = sql.replace("{parquet}", "read_parquet('" + path.replace("'", "''") + "')")
+    conn = duckdb.connect(":memory:")
+    try:
+        conn.execute("SET allowed_paths = ?", [[path]])
+        conn.execute("SET enable_external_access = false")
+        conn.execute("SET lock_configuration = true")
+        return conn.execute(full_sql).fetchdf()
+    finally:
+        conn.close()
+
+
 def _configured_scratch_max_bytes() -> int:
     """Total scratch cap from the server's CLI_ARGS, falling back to the default."""
     try:
@@ -1514,18 +1538,9 @@ class Workspace:
         This gives efficient column-pruned / row-group-skipped reads on
         large parquet files without loading the full table into memory.
         """
-        import duckdb
-
-        path = self.get_parquet_path(table_name)
-        path_escaped = str(path).replace("\\", "\\\\").replace("'", "''")
         if "{parquet}" not in sql:
             raise ValueError("SQL must contain {parquet} placeholder")
-        full_sql = sql.format(parquet=f"read_parquet('{path_escaped}')")
-        conn = duckdb.connect(":memory:")
-        try:
-            return conn.execute(full_sql).fetchdf()
-        finally:
-            conn.close()
+        return run_sql_over_parquet_file(self.get_parquet_path(table_name), sql)
 
     def refresh_parquet_from_arrow(
         self,

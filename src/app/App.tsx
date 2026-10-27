@@ -12,6 +12,7 @@ import {
     dfSelectors,
     fetchGlobalModelList,
     DEFAULT_ROW_LIMIT,
+    DEFAULT_CHART_THEME_ID,
 } from './dfSlice'
 import { getBrowserId, generateUUID } from './identity';
 import type { AuthInfo } from './oidcConfig';
@@ -62,10 +63,12 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
 
 import { DataFormulatorFC } from '../views/DataFormulator';
+import { THEME_CHOICES, themeIconUrl } from '../views/ChartThemePicker';
 import { LayoutProvider, useLayout, type DensityPreference } from './LayoutProvider';
 import { createDfTheme } from './theme';
 import { MIN_SUPPORTED } from './layout';
 import { useAutoSave } from './useAutoSave';
+import { useWorkspaceConsistency } from './workspaceConsistency';
 import { useWorkspaceAutoName } from './useWorkspaceAutoName';
 
 import GridViewIcon from '@mui/icons-material/GridView';
@@ -722,6 +725,8 @@ const ExitSessionButton: React.FC = () => {
  * Settings dialog. Renders its own icon-button trigger by default; the
  * compact toolbar hides the trigger and drives `open` from its overflow menu.
  */
+const FLINT_DEFAULT_THEME_VALUE = '__flint_default__';
+
 const ConfigDialog: React.FC<{
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
@@ -748,6 +753,8 @@ const ConfigDialog: React.FC<{
     const [paletteKey, setPaletteKey] = useState(
         (config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey
     );
+    const configChartThemeId = config.defaultChartThemeId ?? DEFAULT_CHART_THEME_ID;
+    const [defaultChartThemeId, setDefaultChartThemeId] = useState(configChartThemeId);
     // UI size is a per-browser preference: Auto follows the window width, the others pin it.
     const { densityPreference, setDensityPreference } = useLayout();
     const [displaySize, setDisplaySize] = useState<DensityPreference>(densityPreference);
@@ -758,6 +765,7 @@ const ConfigDialog: React.FC<{
                       maxStretchFactor !== config.maxStretchFactor ||
                       frontendRowLimit !== config.frontendRowLimit ||
                       paletteKey !== ((config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey) ||
+                      defaultChartThemeId !== configChartThemeId ||
                       displaySize !== densityPreference;
 
     return (
@@ -824,6 +832,30 @@ const ConfigDialog: React.FC<{
                                     );
                                 })}
                             </Select>
+                        </FormControl>
+                        <FormControl fullWidth size="small">
+                            <InputLabel id="chart-theme-select-label" sx={{ fontSize: textVar.md }}>{t('config.defaultChartTheme')}</InputLabel>
+                            <Select
+                                labelId="chart-theme-select-label"
+                                value={defaultChartThemeId || FLINT_DEFAULT_THEME_VALUE}
+                                label={t('config.defaultChartTheme')}
+                                onChange={(e) => setDefaultChartThemeId(e.target.value === FLINT_DEFAULT_THEME_VALUE ? '' : e.target.value)}
+                                sx={{ fontSize: textVar.md }}
+                                MenuProps={{ slotProps: { paper: { sx: { maxHeight: 320 } } } }}
+                            >
+                                {THEME_CHOICES.map(choice => (
+                                    <MenuItem key={choice.id ?? FLINT_DEFAULT_THEME_VALUE} value={choice.id ?? FLINT_DEFAULT_THEME_VALUE}
+                                        title={choice.description} sx={{ py: 0.5 }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Box component="img" src={themeIconUrl(choice.icon)} alt="" sx={{ width: 14, height: 14, display: 'block' }} />
+                                            <Typography sx={{ fontSize: textVar.md }}>{choice.label}</Typography>
+                                        </Box>
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                                {t('config.defaultChartThemeHint')}
+                            </Typography>
                         </FormControl>
                         <FormControl fullWidth size="small">
                             <InputLabel id="display-size-label" sx={{ fontSize: textVar.md }}>{t('config.displaySize')}</InputLabel>
@@ -996,6 +1028,7 @@ const ConfigDialog: React.FC<{
                         setMaxStretchFactor(2.0);
                         setFrontendRowLimit(rowLimitDefault);
                         setPaletteKey(defaultPaletteKey);
+                        setDefaultChartThemeId(DEFAULT_CHART_THEME_ID);
                         setDisplaySize('auto');
                     }}>{t('session.resetToDefault')}</Button>
                     <Button onClick={() => setOpen(false)}>{t('app.cancel')}</Button>
@@ -1007,7 +1040,7 @@ const ConfigDialog: React.FC<{
                             || isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5
                             || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > rowLimitMax}
                         onClick={() => {
-                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey}));
+                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey, defaultChartThemeId}));
                             setDensityPreference(displaySize);
                             setOpen(false);
                         }}
@@ -1129,6 +1162,8 @@ const AppShell: FC = () => {
     useSessionTabs();
     // Auto-persist session state to the active workspace (debounced)
     useAutoSave();
+    // Flag session tables whose data the workspace does not hold
+    useWorkspaceConsistency();
     // Auto-name workspace after first table + model are available
     useWorkspaceAutoName();
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
@@ -1529,6 +1564,10 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         {
             path: "/auth/callback",
             element: <OidcCallback />,
+        },
+        {
+            path: "/dev",
+            lazy: () => import('../views/DevPage').then(module => ({ Component: module.default })),
         },
         {
             path: "/",

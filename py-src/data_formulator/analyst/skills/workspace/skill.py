@@ -19,7 +19,7 @@ from data_formulator.sandbox.session_imports import helper_warnings, sign_helper
 from data_formulator.analyst.skills.html_app.skill import (
     REACT_APP_SUFFIX, check_app_revision, replace_file_in_place,
 )
-from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine
+from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine, workspace_table_input
 from .data_loading import WorkspaceDataLoading
 
 
@@ -93,9 +93,11 @@ class WorkspaceSkill:
                         source["content_hash"] = hashlib.file_digest(content, "sha256").hexdigest()
                     sources.append(source)
                 else:
-                    sources.extend(normalize_input_sources({"input_sources": [source]}, engine.manifest))
+                    sources.extend(normalize_input_sources({"input_sources": [source]}, engine.manifest, ctx.workspace))
             for source in sources:
                 item = next((item for item in engine.manifest.inputs if item.id == source["id"]), None)
+                if item is None and source["kind"] == "data":
+                    item = workspace_table_input(ctx.workspace, source["id"])
                 if item is None:
                     continue
                 if item.content_hash is not None:

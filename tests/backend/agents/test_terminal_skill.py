@@ -34,14 +34,20 @@ def test_terminal_policy_controls_first_turn_prompt_and_tools(tmp_path, monkeypa
     monkeypatch.setattr("data_formulator.configuration.terminal_mode", lambda: mode)
     workspace = Workspace("terminal-policy", root_dir=tmp_path)
     registry = build_registry()
+    preloaded = ""
     if kind == "analyst":
+        from data_formulator.analyst.workspace_inputs import WorkspaceInputManifest
         agent = AnalystAgent(MagicMock(), workspace, skill_registry=registry)
-        agent._loaded_skills = agent._initial_loaded_skills(None)
+        # A session with no data yet preloads terminal (with connected_data); its guidance arrives as a skill message.
+        preload = agent._initial_loaded_skills(WorkspaceInputManifest(inputs=()))
+        agent._loaded_skills = {"meta"}
+        preloaded = "\n".join(str(message["content"]) for message in agent._preload_messages(preload & {"terminal"}))
+        agent._loaded_skills = preload
     else:
         definition = {"version": 1, "name": "Policy", "overview": "Test", "deliverables": ["Summary"],
                       "steps": [{"id": "work", "instructions": "Find data"}]}
         agent = WorkflowAgent(MagicMock(), workspace, new_run(definition, "policy"), lambda state: None, Event(), "")
-    prompt = agent._build_system_prompt()
+    prompt = agent._build_system_prompt() + ("\n" + preloaded if preloaded else "")
     tools = agent._current_tools()
     names = {spec["function"]["name"] for spec in tools}
     assert registry.has("terminal")
@@ -50,7 +56,11 @@ def test_terminal_policy_controls_first_turn_prompt_and_tools(tmp_path, monkeypa
     assert "{terminal_acquisition_route}" not in prompt
     if mode == "off":
         assert "terminal" not in prompt.lower()
-        assert "terminal" not in json.dumps(tools).lower()
+        # Other than configure's workflow settings (auto-approving terminal commands in workflow runs).
+        configure_tools = {spec["function"]["name"] for spec in agent.registry.tools_for(["configure"])
+                           + agent.registry.action_tools_for(["configure"])} if kind == "analyst" else set()
+        assert "terminal" not in json.dumps([spec for spec in tools
+                                             if spec["function"]["name"] not in configure_tools]).lower()
         assert "Existing CLI access or local files" not in workspace_guidance
         assert not agent.registry.has("terminal")
         assert not agent._build_skill_body_message("terminal")[0]
@@ -87,6 +97,24 @@ def test_terminal_policy_controls_first_turn_prompt_and_tools(tmp_path, monkeypa
     assert "{terminal_acquisition_route}" not in history[1]["content"]
     assert ("Existing CLI access or local files" in history[1]["content"]) == (mode != "off")
     assert ("terminal" in agent._loaded_skills) == (mode != "off")
+
+
+@pytest.mark.parametrize("mode", ["ask", "auto"])
+def test_terminal_loads_on_demand_once_a_session_has_data(tmp_path, monkeypatch, mode):
+    from unittest.mock import MagicMock
+    from data_formulator.analyst.agent import AnalystAgent
+    from data_formulator.analyst.skills import build_registry
+    from data_formulator.datalake.workspace import Workspace
+
+    monkeypatch.setattr("data_formulator.configuration.terminal_mode", lambda: mode)
+    agent = AnalystAgent(MagicMock(), Workspace("terminal-policy", root_dir=tmp_path), skill_registry=build_registry())
+    agent._loaded_skills = agent._initial_loaded_skills(None)
+    prompt = agent._build_system_prompt()
+    assert "terminal" not in agent._loaded_skills
+    assert "**terminal**" in prompt and "Use it proactively" not in prompt
+    assert "run_terminal" not in {spec["function"]["name"] for spec in agent._current_tools()}
+    agent._loaded_skills.add("terminal")
+    assert "run_terminal" in {spec["function"]["name"] for spec in agent._current_tools()}
 
 
 @pytest.mark.slow
@@ -665,8 +693,11 @@ def test_terminal_registered_as_committing_action():
 
     registry = build_registry()
     assert registry.action_owner("run_terminal") == "terminal"
-    assert registry.tools_for(["terminal"]) == []
+    assert registry.action_owner("start_task") == "terminal"
+    # Following and stopping background tasks are inspection tools.
+    assert [tool["function"]["name"] for tool in registry.tools_for(["terminal"])] == ["wait_tasks", "stop_task"]
     assert registry.action_required_fields("run_terminal") == ("argv", "cwd", "purpose")
+    assert registry.action_required_fields("start_task") == ("argv", "cwd", "purpose")
 
 
 def test_closing_terminal_stream_kills_process_group(tmp_path):

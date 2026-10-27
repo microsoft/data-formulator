@@ -115,7 +115,21 @@ export let buildChartCards = (
         </Box>);
 }
 
-export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, artifactType, warning = false, children }: {
+/**
+ * A card title that wraps to two lines. The full title shows above the card only when it is cut
+ * off, so the tooltip never covers the card's actions or repeats a title that is fully visible.
+ */
+const ClampedTitle: React.FC<{ title: string }> = ({ title }) => {
+    const [clamped, setClamped] = React.useState(false);
+    return <Tooltip title={clamped ? title : ''} placement="top-start" enterDelay={500} disableInteractive>
+        <Typography component="span" onMouseEnter={event => setClamped(event.currentTarget.scrollHeight > event.currentTarget.clientHeight + 1)}
+            sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: 500,
+                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                overflowWrap: 'anywhere', lineHeight: 1.35 }}>{title}</Typography>
+    </Tooltip>;
+};
+
+export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, artifactType, warning = false, preview, children }: {
     title: string;
     selected: boolean;
     onClick: () => void;
@@ -123,6 +137,8 @@ export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, a
     actions?: React.ReactNode;
     artifactType: 'table' | 'file' | 'report' | 'app' | 'workflow';
     warning?: boolean;
+    /** A small picture beside the title (a report's page, an app's window). */
+    preview?: React.ReactNode;
     children?: React.ReactNode;
 }) => {
     // Reports and apps are the agent's authored outputs: both purple, told apart by their icons.
@@ -131,6 +147,10 @@ export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, a
     className={`data-thread-card ${selected ? 'selected-artifact-card' : ''}`} elevation={0}
     sx={{ width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', position: 'relative',
         ...ComponentBorderStyle, borderRadius: '6px',
+        // The card's tint and the paper under it, so the actions can fade into the card's exact colour.
+        '--artifact-paper': theme => theme.palette.background.paper,
+        '--artifact-tint': theme => artifactType === 'file' || artifactType === 'workflow' ? 'transparent'
+            : theme.palette[tone].bgcolor || alpha(theme.palette[tone].main, 0.08),
         backgroundColor: theme => artifactType === 'file' || artifactType === 'workflow' ? theme.palette.background.paper
             : theme.palette[tone].bgcolor || alpha(theme.palette[tone].main, 0.08),
         '--artifact-selection-color': theme => warning ? theme.palette.warning.main : theme.palette[tone].light,
@@ -143,15 +163,22 @@ export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, a
         display: 'block', textAlign: 'left', padding: '4px 8px 4px 6px',
         '&.Mui-focusVisible': { outline: '2px solid', outlineColor: `${tone}.main`, outlineOffset: -2 },
     }}>
-        {children || <Typography component="span" sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: 500,
-            // The title wraps (to two lines) rather than cutting a name short.
-            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-            overflowWrap: 'anywhere', lineHeight: 1.35 }} title={title}>{title}</Typography>}
+        <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, ...(preview ? { py: 0.25 } : {}) }}>
+        {preview}
+        <Box component="span" sx={{ display: 'block', flex: 1, minWidth: 0 }}>
+        {children || <ClampedTitle title={title} />}
         {notes && <Typography component="span" sx={{ display: 'block', fontSize: textVar.xs,
             color: 'text.secondary', overflowWrap: 'anywhere' }}>{notes}</Typography>}
+        </Box>
+        </Box>
     </ButtonBase>
-    {actions && <Box className="artifact-actions" sx={{ display: 'flex', flexShrink: 0, pr: 0.25,
-        ...(artifactType === 'workflow' ? { position: 'absolute', top: 2, right: 2 } : {}),
+    {/* Actions float over the card's right edge, so the title keeps the full width; the title fades out under them. */}
+    {actions && <Box className="artifact-actions" sx={{ display: 'flex', alignItems: 'center', position: 'absolute', zIndex: 1,
+        top: 0, bottom: 0, right: 0, pl: 2.5, pr: 0.25, borderRadius: '0 6px 6px 0', pointerEvents: 'none',
+        background: 'linear-gradient(to right, transparent, var(--artifact-tint) 20px), linear-gradient(to right, transparent, var(--artifact-paper) 20px)',
+        '& > *': { pointerEvents: 'auto' },
+        // A workflow card holds a tall summary; its actions stay in the top corner.
+        ...(artifactType === 'workflow' ? { bottom: 'auto', pt: 0.25 } : {}),
     }}>{actions}</Box>}
 </Card>;
 };

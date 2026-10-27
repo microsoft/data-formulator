@@ -27,6 +27,7 @@ import {
     type WorkspaceFilePreview,
 } from '../app/workspaceService';
 import { iconVar, textVar } from '../app/layout';
+import { FileTypeIcon } from '../icons';
 
 const WorkspaceWorkbookPreview = React.lazy(() => import('./WorkspaceWorkbookPreview').then(module => ({
     default: module.WorkspaceWorkbookPreview,
@@ -273,6 +274,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 tools float at the top right, as on charts; rename and download sit behind ⋯. */}
             {!(textFile && isApp && mode === 'preview') && <Box data-file-title title={fileName} sx={{ position: 'absolute', top: 10, left: 20, right: 300,
                 zIndex: 9, height: 30, display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0, pointerEvents: 'none' }}>
+                <FileTypeIcon path={fileName} size={16} active activeColor="text.secondary" />
                 <Typography component="span" sx={{ fontSize: '0.8125rem', fontWeight: 500, color: 'text.primary', flexShrink: 1, minWidth: 0,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{headerTitle}</Typography>
                 {headerMeta && <Typography component="span" sx={{ fontSize: '0.75rem', color: 'text.secondary', flexShrink: 100, minWidth: 0,

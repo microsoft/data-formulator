@@ -1135,7 +1135,7 @@
    "id": "textTurn_exploreDataFromNL_1792307895237_1792307925461",
    "displayId": "textTurn_exploreDataFromNL_1792307895237_closing",
    "textKind": "explain",
-   "content": "**Nigeria has the biggest upper-secondary completion gap among the 87 countries compared:** 90% of children from the richest fifth of families finished, versus 16% from the poorest fifth—a **74-percentage-point gap** in 2021.\n\nThe next largest gaps were **Laos (71 points, 2023), Ghana (68 points, 2022), Lesotho (66 points, 2024), and Zambia (64 points, 2024).**\n\nThe map uses each country’s latest matched data from 2018–2024 and excludes territories with fewer than 100,000 people. Countries without recent wealth-group data cannot be ranked.",
+   "content": "**Nigeria has the biggest gap among the 87 countries compared:** 90% of children from the richest fifth of families finished upper secondary school, versus 16% from the poorest fifth, a **74-point gap** (2021).\n\nLaos (71 points), Ghana (68), Lesotho (66) and Zambia (64) come next.\n\nThe map uses each country's latest data from 2018–2024; blank countries have no recent data. Source: UIS, February 2026 release.",
    "parentNodeId": "d_result_2",
    "actionId": "exploreDataFromNL_1792307895237",
    "createdAt": 1792307925461,
@@ -1207,7 +1207,7 @@
  ],
  "activeWorkspace": {
   "id": "education-sdg4-e21",
-  "displayName": "Poorest children half as likely to finish high school"
+  "displayName": "In Nigeria, the rich–poor gap in finishing school is widest"
  },
  "focusedId": {
   "type": "chart",

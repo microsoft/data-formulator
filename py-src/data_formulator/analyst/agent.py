@@ -69,9 +69,13 @@ from data_formulator.analyst.skills import (
 from data_formulator.analyst.tools import build_tools
 from data_formulator.analyst.history import SessionHistory
 from data_formulator.analyst.plan import RunPlan, read_plan, split_plan
+
+# The agent's request to move a referenced request to a thread of its own (see AnalystAgent._reference_note).
+_NEW_THREAD_LINE = re.compile(r"^[ \t>*_#]*New thread:\**[ \t]*(.*?)[ \t*_]*$\n?", re.MULTILINE | re.IGNORECASE)
 from data_formulator.analyst.session_files import render_session_context, render_turn_context
 from data_formulator.analyst.session_layer import SessionLayer, load_saved_state
 from data_formulator.analyst.session_layer.layer import seen_versions
+from data_formulator.analyst.tool_records import tool_call_record
 from data_formulator.analyst.workspace_inputs import (
     WorkspaceInputManifest,
     build_workspace_input_manifest,
@@ -97,6 +101,38 @@ def _stream_deadline(name: str, default: float) -> float:
         return float(os.environ.get(name, str(default)))
     except ValueError:
         return default
+
+
+_STATUS_INTERVAL = 0.4   # seconds between narration status updates
+_STATUS_CHARS = 160
+_STATUS_MIN_CHARS = 24   # a line still being written shows once it has a few words
+
+
+def _status_line(text: str) -> str:
+    """The latest line of the model's narration, as plain text for a status: not plan checklist rows, tables or
+    code; a line still being written shows once it has a few words; long lines keep their end, cut at a word."""
+    lines = text.splitlines()
+    open_line = bool(lines) and not text.endswith("\n")
+    for index in range(len(lines) - 1, -1, -1):
+        line = lines[index].strip()
+        if line.startswith(("|", "```")):
+            continue
+        line = re.sub(r"(\*\*|__|`)", "", line.lstrip("#>*- ")).strip()
+        if not line or re.match(r"^\[[ xX]\]", line) or re.match(r"^plan\b", line, re.I):
+            continue
+        if index == len(lines) - 1 and open_line and len(line) < _STATUS_MIN_CHARS:
+            continue
+        if len(line) > _STATUS_CHARS:
+            tail = line[-(_STATUS_CHARS - 1):]
+            line = "…" + (tail.split(" ", 1)[1] if " " in tail else tail)
+        return line
+    return ""
+
+
+def _failure_reason(message: str) -> str:
+    """A failed action's reason in one line for the user: its first sentence, without long id lists."""
+    first = re.split(r"(?<=[.!?])\s", message.strip(), maxsplit=1)[0]
+    return first if len(first) <= 200 else first[:199] + "…"
 
 
 def _first_chunk_deadline() -> float:
@@ -238,6 +274,9 @@ _TOOL_PROGRESS_ARG_KEYS: dict[str, tuple[str, ...]] = {
     "read_file": ("files", "path", "paths"),
     "search": ("query", "path"),
     "move_file": ("path", "new_path"),
+    "load_skill": ("name",),
+    "create_data": ("table_name",),
+    "update_data": ("table_name",),
 }
 
 
@@ -383,10 +422,12 @@ not only tables and prose.
 - Plain text with no tool calls ends the run; `long_response` also finishes it.
     Choose the response form using the baseline workflows below.
 
-Call an action alone, with any accompanying prose: only the first action executes,
-and all sibling calls, including non-action tools, are discarded. Observe its
-result before choosing another action. Wait for prerequisites before dependent
-calls; do not claim success from intent or a pending proposal.
+Make independent tool calls together in one response: searches and reads you
+already know you need, or loading a skill alongside them. Call an action alone,
+with any accompanying prose: only the first action executes, and all sibling calls,
+including non-action tools, are discarded. Observe its result before choosing
+another action. Wait for prerequisites before dependent calls; do not claim success
+from intent or a pending proposal.
 
 ## Understanding your context
 
@@ -419,6 +460,11 @@ class AnalystAgent:
     max_iterations and max_repair_attempts are accepted for compatibility
     but do not impose execution limits.
     """
+
+    # Several independent tool calls per model response (see _open_stream).
+    PARALLEL_TOOL_CALLS = True
+    # Set by _stream_llm when it streamed answer text (see there).
+    _answer_streamed = False
 
     def __init__(
         self,
@@ -495,6 +541,8 @@ class AnalystAgent:
         self._progress_reminder_start = 0
         # The run's checklist plan, read from the agent's narration (design-docs/64).
         self._plan = RunPlan()
+        self._references: list[dict[str, Any]] = []
+        self._placement_open = False
         self._last_run_chart_id: str | None = None
 
     # ------------------------------------------------------------------
@@ -521,7 +569,7 @@ class AnalystAgent:
 
     def _system_skills(self) -> set[str]:
         """Skills whose guidance is part of the system prompt: fixed for the deployment, not the request."""
-        return {name for name in ("terminal",) if self.registry.has(name)}
+        return set()
 
     def _preload_messages(self, skills: set[str]) -> list[dict]:
         """Skill messages for skills a request needs before its first call and does not have yet."""
@@ -539,15 +587,22 @@ class AnalystAgent:
     ) -> set[str]:
         """Return the skill gates that must be open before the first LLM call.
 
-        A request made while a connector form owns the canvas preloads
-        ``configure`` so the agent can read and revise that form in place. A
-        session with no data or files preloads ``connected_data``: any analysis
-        starts by finding data.
+        Each rule reads the session, not the wording of the request: loading a skill on demand costs a model
+        turn, while a preloaded one only costs its tokens.
+
+        - A session with no data or files preloads ``connected_data``, ``configure`` and, where it exists,
+          ``terminal``: such a request starts by acquiring data or setting up a source.
+        - A connector form on the canvas preloads ``configure``, to read and revise that form in place.
+
+        What else is on the canvas is not used: preloading app guidance while an app was open pulled some chart
+        requests into editing the app (design-docs/68).
         """
-        empty = workspace_inputs is not None and not workspace_inputs.data and not workspace_inputs.files
-        return ({_META_SKILL} | ({"terminal"} if self.registry.has("terminal") else set())
-                | ({"configure"} if connector_form and self.registry.has("configure") else set())
-                | ({"connected_data"} if empty and self.registry.has("connected_data") else set()))
+        wanted: set[str] = set()
+        if workspace_inputs is not None and not workspace_inputs.data and not workspace_inputs.files:
+            wanted |= {"connected_data", "configure", "terminal"}
+        if connector_form:
+            wanted.add("configure")
+        return {_META_SKILL} | {name for name in wanted if self.registry.has(name)}
 
     # ------------------------------------------------------------------
     # Public API
@@ -566,6 +621,7 @@ class AnalystAgent:
         connector_form: dict[str, Any] | None = None,
         external_references: list[dict[str, Any]] | None = None,
         session_state: dict[str, Any] | None = None,
+        references: list[dict[str, Any]] | None = None,
     ) -> Generator[dict[str, Any], None, None]:
         """Run the unified analyst loop.
 
@@ -652,6 +708,9 @@ class AnalystAgent:
                 self.workspace, "confined_scratch") else None
             continued, turn_start, self._run_end, self._delivered = False, None, None, False
             self._plan = RunPlan()
+            # Earlier results the request is about; with one, the run may move it to a new thread (_read_placement).
+            self._references = [item for item in references or [] if isinstance(item, dict) and item.get("id")]
+            self._placement_open = bool(self._references)
             if trajectory is None:
                 stored, why = history.continuable(self.client.model) if history else (None, "no workspace")
                 if stored is None:
@@ -1024,7 +1083,7 @@ class AnalystAgent:
                  iteration=iteration, skill=skill_name)
         gen = skill.handle_action(action_type, action, ctx)
         observation = yield from self._route_skill_events(
-            gen, iteration, trajectory, completed_steps,
+            gen, iteration, trajectory, completed_steps, action_type,
         )
         if "workspace_inputs" in ctx.payload:
             self._run_payload["workspace_inputs"] = ctx.payload["workspace_inputs"]
@@ -1036,6 +1095,7 @@ class AnalystAgent:
         iteration: int,
         trajectory: list[dict],
         completed_steps: list[dict[str, Any]],
+        action: str = "",
     ) -> Generator[Event, None, str | None]:
         """The shell's router: a skill yields events to *here* (never straight
         to the frontend), and this is the single place that decides what to
@@ -1061,10 +1121,11 @@ class AnalystAgent:
         returned observation string (e.g. visualize's "chart fields not found",
         a malformed ``ask_user`` payload). That observation is fed back to the
         agent as the action's tool-call result, so the agent sees the failure and
-        self-corrects on the next iteration. These are *internal* retry signals,
-        not user-facing failures, so they are dropped here and never streamed to
-        the frontend. Only fatal, run-ending errors (LLM API failures) are
-        emitted directly by ``run`` outside this router and do reach the client.
+        self-corrects on the next iteration. They do not end the run, so they are
+        forwarded as ``action_failed`` (the action and a one-line reason), which the
+        application shows as a failed step instead of a silent retry. Only fatal,
+        run-ending errors (LLM API failures) are emitted as ``error``, directly by
+        ``run`` outside this router.
         """
         suppress_channel = self._suppress_stream_channel
         try:
@@ -1081,6 +1142,10 @@ class AnalystAgent:
                 )
                 if etype in ("completion", "interact"):
                     self._run_end = etype
+                if etype == "error":
+                    yield {"type": "action_failed", "action": action, "iteration": iteration,
+                           "message": _failure_reason(str(ev.get("message") or "")),
+                           **({"message_code": ev["message_code"]} if ev.get("message_code") else {})}
                 if not drop:
                     if etype == "result":
                         content = ev.get("content", {}) or {}
@@ -1507,8 +1572,7 @@ class AnalystAgent:
             "and embed those charts by id rather than producing equivalent visualizations. An ordinary "
             "summary can be answered directly without report delivery.",
             "- Cite inputs by the name or path you see (a table name or `session/tables/<name>.json`, a "
-            "`files/...` path). `replaces` takes the id in a session path (table name, chart id, report id) or "
-            "a `files/...` path, only to fix what the user says is wrong — never to explore.",
+            "`files/...` path).",
         ]
         context_lines.append(
             "- **[USER ATTACHMENT(S)]**, when present, are images the user attached to the request. "
@@ -1605,6 +1669,10 @@ class AnalystAgent:
                 "Prioritize relevant user-managed sources.\n\n"
             )
 
+        if self._references:
+            user_content += self._reference_note()
+        user_content += self._background_task_note()
+
         # The request comes last.
         user_content += f"[USER QUESTION]\n\n{user_question}"
 
@@ -1675,6 +1743,52 @@ class AnalystAgent:
             scope=scope, turns=rounds(self._progress_scope_start), escalation=escalation)})
         self._progress_reminder_start = len(messages)
         return True
+
+    def _background_task_note(self) -> str:
+        """The session's background tasks: those still running, and those that ended recently (maybe while no run was there)."""
+        try:
+            from data_formulator.analyst.background_tasks import describe_tasks, task_manager
+            from data_formulator.workspace_factory import get_active_workspace_id
+            owner, workspace_id = self.identity_id, get_active_workspace_id()
+            if not owner or not workspace_id:
+                return ""
+            recent = time.time() - 6 * 3600
+            tasks = [task for task in task_manager().list(owner, workspace_id) if task.running or (task.ended or 0) > recent][-8:]
+        except Exception:  # task bookkeeping must never block a request
+            return ""
+        if not tasks:
+            return ""
+        return ("[BACKGROUND TASKS]\n\nLong commands started in this session (they run apart from any agent run; the user "
+                "can stop them). Use wait_tasks (terminal skill) or their logs to follow up when relevant; do not restart one the user stopped "
+                "unless they ask.\n" + describe_tasks(tasks, lines=3) + "\n\n")
+
+    def _reference_note(self) -> str:
+        """What the request is about: an earlier result in its thread, and the run's one chance to start a new thread."""
+        layer = (getattr(self, "_run_payload", None) or {}).get("session_layer")
+        items = []
+        for item in self._references:
+            path = layer.output_path(str(item["id"])) if layer is not None else str(item["id"])
+            label = str(item.get("label") or "").strip()
+            items.append(f"- `{path}`" + (f' "{label}"' if label else ""))
+        return (
+            "[REFERENCE]\n\n"
+            "The user asked this about an earlier result in their thread:\n"
+            + "\n".join(items) + "\n\n"
+            "The request is added at the end of that thread. If it starts a separate line of analysis rather "
+            "than continuing the thread, write the line `New thread: <a few words>` at the start of your first "
+            "message; it then opens a thread of its own from that result.\n\n"
+        )
+
+    def _read_placement(self, content: str) -> Generator[Event, None, str]:
+        """The first message may ask for a new thread (see _reference_note); later ones cannot."""
+        if not self._placement_open:
+            return content
+        self._placement_open = False
+        match = _NEW_THREAD_LINE.search(content or "")
+        if not match:
+            return content
+        yield {"type": "placement", "new_thread": True, "title": match.group(1).strip()}
+        return (content[:match.start()] + content[match.end():]).strip()
 
     def _read_plan(self, content: str) -> Generator[Event, None, str]:
         """Take a checklist the agent wrote as its plan (design-docs/64); return the remaining narration."""
@@ -1802,6 +1916,10 @@ class AnalystAgent:
 
             # --- tool calls: partition into committing actions vs inspection ---
             if tool_calls:
+                if self._answer_streamed:
+                    # Text streamed as the answer was followed by a tool call: it was a note after all.
+                    yield {"type": "answer_retracted"}
+                content = yield from self._read_placement(content)
                 narration = yield from self._read_plan(content)
                 if narration:
                     yield {"type": "thinking_text", "content": narration}
@@ -1898,6 +2016,9 @@ class AnalystAgent:
                             "status": tool_status,
                             "stdout": result.get("stdout", ""),
                             "error": result.get("error"),
+                            "record": tool_call_record(
+                                call_id=tc.id, tool=tool_name, args=tool_args, output=result.get("stdout", ""),
+                                error=result.get("error"), status=tool_status, started=tool_t0, ended=time.time()),
                         }
                     elif tool_name == "load_skill":
                         skill_name = self.registry.canonical_name(tool_args.get("name", ""))
@@ -1924,6 +2045,9 @@ class AnalystAgent:
                             "status": tool_status,
                             "stdout": message,
                             "error": None if ok else message,
+                            "record": tool_call_record(
+                                call_id=tc.id, tool=tool_name, args=tool_args, output=message if ok else None,
+                                error=None if ok else message, status=tool_status, started=tool_t0, ended=time.time()),
                         }
                     elif tool_name in skill_tool_owners:
                         skill = skill_tool_owners[tool_name]
@@ -1952,9 +2076,23 @@ class AnalystAgent:
                             "tool_call_id": tc.id,
                             "status": tool_status,
                             "stdout": tool_content,
+                            "record": tool_call_record(
+                                call_id=tc.id, tool=tool_name, args=tool_args, output=tool_content,
+                                error=None, status=tool_status, started=tool_t0, ended=time.time()),
                         }
                     else:
                         tool_content = f"Unknown tool: {tool_name}"
+                        tool_status = "error"
+                        yield {
+                            "type": "tool_result",
+                            "tool": tool_name,
+                            "tool_call_id": tc.id,
+                            "status": tool_status,
+                            "error": tool_content,
+                            "record": tool_call_record(
+                                call_id=tc.id, tool=tool_name, args=tool_args, output=None,
+                                error=tool_content, status=tool_status, started=tool_t0, ended=time.time()),
+                        }
 
                     tool_latency = int((time.time() - tool_t0) * 1000)
                     output_summary = (tool_content[:200] + "...") if len(tool_content) > 200 else tool_content
@@ -2026,10 +2164,16 @@ class AnalystAgent:
             # as the summary). Record it as a plain assistant turn and signal
             # "done" to the outer loop.
             logger.info("[AnalystAgent] No action committed; final text ends the run")
+            content = yield from self._read_placement(content)
             final_text = yield from self._read_plan(content)
             if self._plan.finish():
                 yield self._plan.event(revised=False)
             if self._remind_open_plan(messages, content, choice):
+                if self._answer_streamed:
+                    # The run goes on to finish its plan, so the streamed text was not the end.
+                    yield {"type": "answer_retracted"}
+                    if final_text.strip():
+                        yield {"type": "thinking_text", "content": final_text}
                 continue
             final_msg: dict[str, Any] = {"role": "assistant", "content": content or None}
             attach_reasoning_content(final_msg, choice.message)
@@ -2188,14 +2332,11 @@ class AnalystAgent:
 
         ``stream=True`` is what makes live report streaming possible: the loop's
         LLM call always streams, and the agent forwards a streaming action's
-        argument as it arrives (design-docs/36 §5). ``parallel_tool_calls=False``
-        forces one tool call per response — the structural backstop for the
-        one-action-per-turn rule: actions are sequential (each result shapes the
-        next), so the model must never batch them. It also serializes inspection
-        tools — a minor extra round-trip — an acceptable trade for never silently
-        dropping batched actions. Providers that don't support the flag drop it
-        (``drop_params=True``); the first-wins cardinality guard remains as a
-        belt-and-suspenders net.
+        argument as it arrives (design-docs/36 §5). ``PARALLEL_TOOL_CALLS`` lets
+        one response carry several independent calls (reads, searches, a skill
+        load), saving a model turn each. Actions stay one per turn: the first-wins
+        cardinality guard commits the first action and tells the model what it
+        dropped. Providers that don't support the flag drop it (``drop_params=True``).
         """
         max_attempts = self.execution_config.stream_open_retries + 1
         cancel = getattr(self, "cancel", None)
@@ -2207,7 +2348,10 @@ class AnalystAgent:
                 source = self.client.get_completion_with_tools(
                     messages, tools=tools, stream=True,
                     reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model, getattr(self.client, "reasoning_effort", None)),
-                    parallel_tool_calls=False,
+                    parallel_tool_calls=self.PARALLEL_TOOL_CALLS,
+                    # Opening the stream can block too (the provider holds the request); without this the
+                    # HTTP default of 600 s applies before the stream deadlines below start.
+                    timeout=_first_chunk_deadline(),
                 )
                 # Responses streams send the request lazily, so request errors surface on the first chunk.
                 return _PrimedStream(source, deadline=_first_chunk_deadline())
@@ -2288,8 +2432,15 @@ class AnalystAgent:
         # Each LLM call starts a fresh streamed-channel map; only the round that
         # actually commits a streaming action leaves an entry for the run loop.
         self._streamed_channels = {}
+        # Whether this call streamed text the provider marked as the final answer (``answer`` channel).
+        self._answer_streamed = False
 
+        # Status for the user while the model works (it is ~95% of a request): thinking until it writes,
+        # then what it is writing (the tool's name arrives first), and its narration as it streams.
+        yield {"type": "status", "phase": "thinking"}
         stream = self._open_stream(messages, tools)
+        announced: set[int] = set()
+        narrated, narrated_at = "", 0.0
 
         content_parts: list[str] = []
         reasoning_acc: str | None = None
@@ -2317,6 +2468,17 @@ class AnalystAgent:
             content = getattr(delta, "content", None)
             if content:
                 content_parts.append(content)
+                # The answer streams to the user as it is written; notes before a tool call stay a status line.
+                # Only providers that mark a message's phase (OpenAI Responses) tell the two apart this early.
+                if (getattr(delta, "provider_specific_fields", None) or {}).get("phase") == "final_answer":
+                    self._answer_streamed = True
+                    yield {"type": "text_delta", "channel": "answer", "content": content}
+                    continue
+                line = _status_line("".join(content_parts))
+                now = time.monotonic()
+                if line and line != narrated and now - narrated_at >= _STATUS_INTERVAL:
+                    narrated, narrated_at = line, now
+                    yield {"type": "status", "phase": "narrating", "text": line}
 
             for tcd in getattr(delta, "tool_calls", None) or []:
                 idx = getattr(tcd, "index", 0) or 0
@@ -2329,6 +2491,9 @@ class AnalystAgent:
                 if fn is not None:
                     if getattr(fn, "name", None):
                         slot["name"] = fn.name
+                        if idx not in announced and fn.name in available_tool_names:
+                            announced.add(idx)
+                            yield {"type": "status", "phase": "writing", "tool": fn.name}
                     arg_delta = getattr(fn, "arguments", None)
                     if arg_delta:
                         slot["arguments"] += arg_delta

@@ -31,7 +31,7 @@ describe('rehydrating a payload that predates a collection', () => {
         const restored = mode === 'rehydrate' ? rehydrate(saved) : dataFormulatorReducer(undefined, dfActions.loadState(saved));
         expect(restored.textTurns[0].progressSteps.map((step: any) => step.status)).toEqual(['completed', 'interrupted']);
         expect(restored.textTurns[0].content).toBe('Keep this context');
-        expect(restored.textTurns[0].codeExecutions[0]).toMatchObject({ code: 'print(1)', status: 'interrupted' });
+        expect(restored.textTurns[0].toolCalls[0]).toMatchObject({ args: { code: 'print(1)' }, status: 'interrupted' });
         expect(restored.textTurns[0].executions[0].status).toBe('completed');
         expect(restored.draftNodes[0].derive.progressSteps[1].status).toBe('interrupted');
         // The draft's history is the message before it; its legacy plan text survives as steps.

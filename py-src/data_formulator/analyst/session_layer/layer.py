@@ -26,6 +26,10 @@ SAMPLE_ROWS = 5
 ALL_ROWS = 25  # tables this small show every row, so a read can answer without a script
 MAX_MESSAGE_CHARS = 2000
 MAX_INDEX_LINES = 60
+# A session table whose data the workspace does not hold (a failed or misrouted load, a deletion elsewhere).
+MISSING_TABLE_DATA = ("The session lists this table, but its data is missing from the workspace: it has no rows "
+                      "to read or compute on. It is not empty data. Reload it from its source with load_data, "
+                      "or recreate it, before using it.")
 _IMPORT = re.compile(r"^\s*(?:from\s+([A-Za-z_][\w.]*)\s+import|import\s+([A-Za-z_][\w.]*(?:\s*,\s*[A-Za-z_][\w.]*)*))", re.M)
 
 
@@ -212,6 +216,15 @@ class SessionLayer:
         """The code that derived a session table, or "" for a loaded one."""
         table = next((table for table in self.tables if self.table_name(table) == name), None)
         return str(((table or {}).get("derive") or {}).get("code") or "")
+
+    def table_data_missing(self, name: str) -> bool:
+        """A table the session lists whose data the workspace does not hold: the two records disagree."""
+        if self.workspace is None or not any(self.table_name(table) == name for table in self.tables):
+            return False
+        try:
+            return self.workspace.get_table_metadata(name) is None
+        except Exception:
+            return False
 
     def table_shape(self, name: str) -> tuple[int | None, int | None]:
         """(rows, columns) of a session table, from the session state or the workspace."""
@@ -458,7 +471,10 @@ class SessionLayer:
             table = next((table for table in self.tables if self.table_name(table) == stem), None)
             if table is None:
                 return self._unlisted_table_view(stem)
-            return {"content": _json(self._table_view(table)), "name": table.get("displayId") or stem}
+            view = {"content": _json(self._table_view(table)), "name": table.get("displayId") or stem}
+            if self.table_data_missing(stem):
+                view["note"] = MISSING_TABLE_DATA
+            return view
         if folder == "references" and leaf.endswith(".json"):
             reference = next((reference for reference in self.references if reference["id"] == stem), None)
             return None if reference is None else {"content": _json(self._reference_view(reference)),
@@ -643,7 +659,9 @@ class SessionLayer:
     def _describe_turn(self, turn: dict[str, Any], kind: str) -> list[str]:
         lines = []
         if turn.get("prompt"):
-            lines.append(f"- **User:** {_clip(str(turn['prompt']))}")
+            about = [f"`{self.output_path(str(item['id']))}`" for item in turn.get("references") or []
+                     if isinstance(item, dict) and item.get("id")]
+            lines.append(f"- **User:** {_clip(str(turn['prompt']))}" + (f" (about {', '.join(about)})" if about else ""))
         thoughts = [str(step.get("label") or "") for step in turn.get("progressSteps") or []
                     if isinstance(step, dict) and step.get("kind") == "thought" and step.get("label")]
         if thoughts:
@@ -690,6 +708,11 @@ class SessionLayer:
             if isinstance(execution, dict) and execution.get("argv"):
                 lines.append(f"- **Command** `{' '.join(map(str, execution['argv']))[:200]}` ({execution.get('status', '')})")
         return lines
+
+    def output_path(self, id: str) -> str:
+        """The session path of a table, chart, report or file node."""
+        file = next((node for node in self.state["fileNodes"] if node.get("id") == id), None)
+        return f"files/{file.get('path')}" if file else self._output_link(id)
 
     def _output_link(self, id: str) -> str:
         if id in self.table_by_id:

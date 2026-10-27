@@ -85,7 +85,8 @@ class TerminalRequests:
         self._pending: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
 
-    def propose(self, owner: str, conversation: str, spec: dict[str, Any], *, workspace_id: str = "", mode: str = "ask") -> dict[str, Any]:
+    def propose(self, owner: str, conversation: str, spec: dict[str, Any], *, workspace_id: str = "", mode: str = "ask",
+                background: bool = False) -> dict[str, Any]:
         from data_formulator.configuration import read_configuration
 
         argv = spec.get("argv")
@@ -115,7 +116,7 @@ class TerminalRequests:
                     "purpose": purpose.strip(), "decision": "ask", "timeout_seconds": 60,
                     "dangerouslyDisableSandbox": disable_sandbox, "sandboxDisablingReason": reason.strip(),
                     "policy_revision": read_configuration()["revision"], "policy_mode": mode,
-                    "sandboxFilesystem": sandbox_filesystem_policy()}
+                    "sandboxFilesystem": sandbox_filesystem_policy(), **({"background": True} if background else {})}
         with self._lock:
             now = time.monotonic()
             self._pending = {key: value for key, value in self._pending.items() if value["expires"] > now}
@@ -219,31 +220,8 @@ def confined_command(argv: list[str], scratch_dir: Path, *, write_paths: list[st
     raise OSError("Terminal write confinement is unavailable on this platform; command was not run.")
 
 
-def run_command(proposal: dict[str, Any], *, scratch_dir: Path, cancel=None) -> Generator[Event, None, None]:
-    with tempfile.TemporaryDirectory(prefix="df-terminal-") as directory:
-        yield from _run_command(
-            proposal, scratch_dir=scratch_dir, runtime_dir=Path(directory), cancel=cancel,
-        )
-
-
-def _run_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir: Path, cancel=None) -> Generator[Event, None, None]:
-    from flask import has_request_context
-    from data_formulator.configuration import read_configuration, terminal_mode
-
-    def check_policy():
-        if has_request_context():
-            require_local_terminal_request()
-            if (proposal.get("policy_revision", read_configuration()["revision"]) != read_configuration()["revision"]
-                    or proposal.get("policy_mode", terminal_mode()) != terminal_mode()):
-                raise ValueError("Application policy changed; command execution stopped.")
-
-    check_policy()
-    if cancel is not None and cancel.is_set():
-        yield {"type": "terminal_result", "result": {"interrupted": True, "exit_code": None,
-            "output": "Interrupted before command execution."}}
-        return
-    output = bytearray()
-    total = 0
+def prepare_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir: Path) -> tuple[list[str], dict[str, str], dict[str, Any] | None]:
+    """The confined argv, environment and sandbox policy a terminal proposal runs with (also for background tasks)."""
     scratch_dir = scratch_dir.resolve(strict=True)
     if not scratch_dir.is_dir():
         raise OSError("Workspace scratch directory is unavailable; command was not run.")
@@ -284,6 +262,36 @@ def _run_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir: Pa
                         "YARN_CACHE_FOLDER": str(cache_dir / "yarn"), "MPLCONFIGDIR": str(cache_dir / "matplotlib"),
                         "HF_HOME": str(cache_dir / "huggingface"), "NUMBA_CACHE_DIR": str(cache_dir / "numba"),
                         "PYTHONDONTWRITEBYTECODE": "1"})
+    return argv, environment, policy
+
+
+def run_command(proposal: dict[str, Any], *, scratch_dir: Path, cancel=None) -> Generator[Event, None, None]:
+    with tempfile.TemporaryDirectory(prefix="df-terminal-") as directory:
+        yield from _run_command(
+            proposal, scratch_dir=scratch_dir, runtime_dir=Path(directory), cancel=cancel,
+        )
+
+
+def _run_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir: Path, cancel=None) -> Generator[Event, None, None]:
+    from flask import has_request_context
+    from data_formulator.configuration import read_configuration, terminal_mode
+
+    def check_policy():
+        if has_request_context():
+            require_local_terminal_request()
+            if (proposal.get("policy_revision", read_configuration()["revision"]) != read_configuration()["revision"]
+                    or proposal.get("policy_mode", terminal_mode()) != terminal_mode()):
+                raise ValueError("Application policy changed; command execution stopped.")
+
+    check_policy()
+    if cancel is not None and cancel.is_set():
+        yield {"type": "terminal_result", "result": {"interrupted": True, "exit_code": None,
+            "output": "Interrupted before command execution."}}
+        return
+    output = bytearray()
+    total = 0
+    argv, environment, policy = prepare_command(proposal, scratch_dir=scratch_dir, runtime_dir=runtime_dir)
+    scratch_dir = scratch_dir.resolve(strict=True)
     process = subprocess.Popen(
         argv, cwd=proposal["cwd"], env=environment, stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True,
@@ -352,9 +360,80 @@ def _run_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir: Pa
     yield {"type": "terminal_result", "result": result}
 
 
+def start_background(proposal: dict[str, Any], *, scratch_dir: Path, owner: str, workspace_id: str, conversation: str) -> dict[str, Any]:
+    """Start an approved proposal as a background task; returns the result a terminal call reports."""
+    from data_formulator.analyst.background_tasks import task_manager
+
+    task = task_manager().start(proposal, scratch_dir=scratch_dir, owner=owner, workspace_id=workspace_id,
+                                conversation=conversation)
+    return {"background_task": task.id, "exit_code": None, "log": f"scratch/{task.log_name}",
+            "output": f"Running in the background as {task.id}; its output is logged to scratch/{task.log_name}.",
+            "sandboxed": task.sandboxed}
+
+
+def _task_scope(ctx: SkillContext) -> tuple[str, str, str] | str:
+    """The owner, workspace and run a task call acts for, or why it cannot."""
+    from data_formulator.auth.identity import get_identity_id
+    from data_formulator.workspace_factory import get_active_workspace_id
+
+    owner, workspace_id = get_identity_id(), get_active_workspace_id()
+    conversation = ctx.payload.get("conversation_id")
+    if not owner or not workspace_id or not isinstance(conversation, str) or not conversation:
+        return "A local identity, workspace, and conversation are required for background tasks."
+    return owner, workspace_id, conversation
+
+
+from data_formulator.analyst.background_tasks import STOP_GRACE_SECONDS as STOP_GRACE
+
+WAIT_FLOOR_SECONDS = 30
+WAIT_CEILING_SECONDS = 30 * 60
+
+
 class TerminalSkill:
     def handle_tool(self, name: str, args: dict[str, Any], ctx: SkillContext) -> ToolResult:
-        return ToolResult(text="Terminal execution is a committing action, not an inspection tool.")
+        from data_formulator.analyst.background_tasks import describe_tasks, task_manager
+
+        if name not in ("wait_tasks", "stop_task"):
+            return ToolResult(text="Terminal execution is a committing action, not an inspection tool.")
+        scope = _task_scope(ctx)
+        if isinstance(scope, str):
+            return ToolResult(text=scope)
+        owner, workspace_id, conversation = scope
+        manager = task_manager()
+        if name == "stop_task":
+            task = manager.stop(str(args.get("task_id") or ""), owner, workspace_id, by="agent")
+            if task is None:
+                return ToolResult(text="No such background task.")
+            manager.wait([task], STOP_GRACE + 1)
+            return ToolResult(text=describe_tasks([task]))
+        ids = [str(item) for item in args.get("task_ids") or [] if item]
+        known = manager.list(owner, workspace_id)
+        own = [task for task in known if task.conversation == conversation]
+        tasks = [task for task in known if task.id in ids] if ids else [task for task in own if task.running] or own
+        if ids and not tasks:
+            return ToolResult(text="None of those background tasks exist.")
+        try:
+            timeout = float(args.get("timeout_seconds", 300))
+        except (TypeError, ValueError):
+            timeout = 300.0
+        timeout = 0.0 if timeout <= 0 else min(WAIT_CEILING_SECONDS, max(WAIT_FLOOR_SECONDS, timeout))
+        cancel = getattr(ctx.runtime, "cancel", None)
+        if cancel is None:
+            from data_formulator.data_loader.query_runtime import cancellation
+            cancel = cancellation.get()
+        before = {task.id: task.status for task in tasks}
+        why = manager.wait(tasks, timeout, cancel=cancel)
+        ended = [task for task in tasks if before[task.id] == "running" and not task.running]
+        head = {"ended": "A task ended: " + ", ".join(f"{task.id} ({task.status}"
+                    + (f" by the {task.stopped_by}" if task.stopped_by else "") + ")" for task in ended) + ".",
+                "timeout": f"No task ended in {round(timeout)}s.",
+                "cancelled": "The run was stopped; background tasks keep running."}[why]
+        if why == "ended" and not ended:
+            head = "No background task is running."
+        guidance = ("Tell the user briefly how the tasks are going (progress, rate, anything wrong), then wait again "
+                    "with a timeout suited to the work, or act on what ended. A task the user stopped was their decision: "
+                    "do not restart it unless they ask.")
+        return ToolResult(text=f"{head}\n\n{describe_tasks(tasks)}\n\n{guidance}")
 
     def handle_action(self, action: str, spec: dict[str, Any], ctx: SkillContext) -> Generator[Event, None, str | None]:
         from flask import current_app
@@ -362,7 +441,7 @@ class TerminalSkill:
         from data_formulator.workspace_factory import get_active_workspace_id
         from data_formulator.configuration import terminal_mode
 
-        if action != "run_terminal":
+        if action not in ("run_terminal", "start_task"):
             return "Unknown terminal action."
         try:
             require_local_terminal_request()
@@ -375,7 +454,8 @@ class TerminalSkill:
             return "A local identity, workspace, and conversation are required for terminal access."
         broker = current_app.extensions.setdefault("terminal_requests", TerminalRequests())
         try:
-            proposal = broker.propose(owner, conversation, spec, workspace_id=workspace_id, mode=terminal_mode())
+            proposal = broker.propose(owner, conversation, spec, workspace_id=workspace_id, mode=terminal_mode(),
+                                      background=action == "start_task")
         except (ValueError, OSError) as exc:
             return str(exc)
         mode = terminal_mode()
@@ -390,6 +470,12 @@ class TerminalSkill:
             proposal = broker.consume(proposal["id"], owner, conversation, workspace_id=workspace_id)
             proposal.update(decision="auto", policy_mode="auto")
             yield {"type": "terminal_started", "request": proposal}
+            if proposal.get("background"):
+                result = start_background(proposal, scratch_dir=ctx.workspace.confined_scratch.root, owner=owner,
+                                          workspace_id=workspace_id, conversation=conversation)
+                yield {"type": "terminal_result", "request": proposal, "result": result}
+                return ("Background task started; it runs on its own and keeps running if this run stops. Use wait_tasks to "
+                        "follow it and report progress to the user.\n" + json.dumps({"request": proposal, "result": result}))
             cancel = getattr(ctx.runtime, "cancel", None)
             execution = run_command(proposal, scratch_dir=ctx.workspace.confined_scratch.root,
                                     **({"cancel": cancel} if cancel is not None else {}))

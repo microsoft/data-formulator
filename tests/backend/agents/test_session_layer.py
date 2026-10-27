@@ -157,6 +157,10 @@ def test_views_link_to_each_other_and_read_table_rows_from_the_workspace(tmp_pat
     assert source["computed_into"] == ["d_by_region"] and source["columns"][0]["description"] == "Sales region"
     thread = layer.view("session/threads/1.md")["content"]
     assert "- **User:** Totals by region" in thread and "- **Report** session/reports/r1.md \"Findings\"" in thread
+    state = _layer_state()
+    state["textTurns"][0]["references"] = [{"kind": "chart", "id": "chart-1", "label": "Totals"}]
+    assert "- **User:** Totals by region (about `session/charts/chart-1.json`)" in SessionLayer(state, workspace).view(
+        "session/threads/1.md")["content"]
     assert layer.view("session/threads/2.md")["content"].startswith("# Thread 2 (from sales) — branches from table d_by_region")
     assert json.loads(layer.view("session/references/ref-orders.json")["content"])["tableKey"] == "public.orders"
     assert layer.view("session/charts/chart-auto.json") is None and layer.view("session/reports/r-draft.md") is None

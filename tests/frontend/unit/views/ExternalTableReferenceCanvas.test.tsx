@@ -170,11 +170,11 @@ it('uses the standard table card for references and keeps their information in t
     const referenceCard = screen.getByRole('button', { name: 'Events' });
     expect(tableCard.closest('[data-table-id]')).toHaveAttribute('data-table-id', table.id);
     expect(referenceCard.closest('[data-workspace-item]')).toHaveAttribute('data-workspace-item', reference.id);
-    expect(screen.getAllByTestId('InsertDriveFileOutlinedIcon')).toHaveLength(1);
+    expect(screen.getAllByTestId('FileTypeIcon')).toHaveLength(1);
     expect(screen.getByText('(virtual)')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Remove reference' })).not.toBeInTheDocument();
     const referenceIcon = container.querySelector(`[data-workspace-item="${reference.id}"] svg`)!;
-    const fileIcon = screen.getByTestId('InsertDriveFileOutlinedIcon');
+    const fileIcon = screen.getByTestId('FileTypeIcon');
     expect(referenceIcon).toHaveStyle({ color: 'rgba(0, 0, 0, 0.4)' });
     fireEvent.click(referenceCard);
     expect(store.getState().focusedId).toEqual({ type: 'external-table', referenceId: reference.id });

@@ -7,7 +7,8 @@ Each story on the UIS page opens on a seed: one question an AI analyst answered,
 made, and two charts of that table (a map and a ranking where the story has a map), so it
 opens instantly and the visitor asks the next question. A seed is the trimmed session state
 plus the table's parquet file, committed under stories/<story id>/; build.py combines it with
-the dataset session at install time. Agent transcripts are not kept.
+the dataset session at install time. Agent transcripts are not kept, and the analyst's answer
+is replaced by its shortened version in story_answers.yaml.
 
     uv run python py-src/data_formulator/demos/unesco/make_seeds.py ~/data-formulator-demo-backups/unesco-2026-02
 
@@ -31,22 +32,32 @@ import yaml
 HERE = Path(__file__).resolve().parent
 PROFILE = HERE / "profile.yaml"
 STORIES = HERE / "stories"
+# Shortened answers: story id -> the answer text a seed shows instead of the AI's own.
+ANSWERS = HERE / "story_answers.yaml"
+
+# Stories that open on a simpler question asked later in their session: story id -> that
+# question as asked. Other stories keep the question that made their map, else their first.
+QUESTIONS = {
+    "culture-c23": "Which countries added the most per person?",
+    "science-s22": "Where does it rank today?",
+    "science-s23": "How does China compare with the US?",
+}
 
 # Questions asked mid-conversation ("Where do they go?") rewritten to stand on their own.
 STANDALONE = {
     "culture-c22": "Where does nature get the bigger share of heritage spending?",
+    "culture-c23": "Which countries added the most to heritage spending per person since before the pandemic?",
     "education-opri-o20": "Where do out-of-school children and young people live? Show me on a map.",
     "education-opri-o21": "Where do students who study abroad go?",
     "education-sdg4-e21": "Where is the gap between rich and poor children in finishing school biggest?",
     "education-sdg4-e22": "Where do most children reach a minimum reading level by the end of primary school?",
     "science-s20": "Which countries spend the most on research?",
+    "science-s22": "Where does South Korea rank in research today?",
+    "science-s23": "How does China compare with the US in research?",
 }
 
-# A second chart for stories without a map, where the table has a natural ranking:
-# story id -> (value column, label column, title).
-RANKINGS = {
-    "culture-c23": ("change_percent", "country_after", "Change in public heritage spending per person since before the pandemic"),
-}
+# Stories about where a value is lowest: their ranking chart lists the lowest first.
+LOWEST_FIRST = {"education-sdg4-e20"}
 
 # Session state a seed keeps; everything else (model and connection settings, UI layout,
 # messages, other answers) is dropped.
@@ -82,7 +93,8 @@ def _ranking(state: dict, story_id: str, table: dict, value_field: str, label: s
         "chartType": "Bar Chart",
         "encodingMap": {
             "x": {"fieldID": value_field, "dtype": "quantitative"},
-            "y": {"fieldID": _concept(state, label, story_id), "dtype": "nominal", "sortOrder": "descending", "sortBy": "x"},
+            "y": {"fieldID": _concept(state, label, story_id), "dtype": "nominal",
+                  "sortOrder": "ascending" if story_id in LOWEST_FIRST else "descending", "sortBy": "x"},
             **{channel: {"channel": channel, "bin": False} for channel in EMPTY_CHANNELS},
         },
         "tableRef": table["id"],
@@ -96,9 +108,15 @@ def _ranking(state: dict, story_id: str, table: dict, value_field: str, label: s
     return chart
 
 
-def _chosen_table(state: dict) -> dict:
-    """The story's map table when it has one, else its first answer's table."""
+def _chosen_table(state: dict, story_id: str) -> dict:
+    """The table answering the story's question (QUESTIONS), else its map table, else its first answer's table."""
     tables = sorted(state["derivedTables"], key=lambda table: table.get("createdAt") or 0)
+    if story_id in QUESTIONS:
+        turns = {turn["id"]: turn for turn in state["textTurns"]}
+        action = next((turn["actionId"] for turn in state["textTurns"] if turn.get("prompt") == QUESTIONS[story_id]), None)
+        tables = [table for table in tables if action and turns.get(table.get("parentNodeId"), {}).get("actionId") == action]
+        if not tables:
+            sys.exit(f"{story_id}: no table answers {QUESTIONS[story_id]!r}")
     kinds = {chart["tableRef"]: chart["chartType"] for chart in state["charts"]}
     return next((table for table in tables if kinds.get(table["id"]) == "Choropleth"), tables[0])
 
@@ -111,11 +129,11 @@ def _without_transcripts(table: dict) -> dict:
     return {**table, "derive": derive}
 
 
-def make_seed(story_id: str, session: Path, headline: str) -> tuple[dict, dict[str, bytes], str]:
+def make_seed(story_id: str, session: Path, headline: str, answer: str | None = None) -> tuple[dict, dict[str, bytes], str]:
     """The seed state, its tables' parquet files, and the question it answers."""
     with zipfile.ZipFile(session) as archive:
         state = json.loads(archive.read("state.json"))
-        table = _chosen_table(state)
+        table = _chosen_table(state, story_id)
         turns = {turn["id"]: turn for turn in state["textTurns"]}
         action = turns[table["parentNodeId"]]["actionId"]
         # Every table the question made (usually one): its answer.
@@ -128,6 +146,9 @@ def make_seed(story_id: str, session: Path, headline: str) -> tuple[dict, dict[s
     root = next(turn["parentNodeId"] for turn in state["textTurns"] if str(turn.get("parentNodeId", "")).startswith("conversation-root:"))
     prompt["parentNodeId"] = root
     prompt["prompt"] = STANDALONE.get(story_id, prompt["prompt"])
+    if answer:
+        closing = next(turn for turn in kept_turns if str(turn.get("displayId", "")).endswith("_closing"))
+        closing["content"] = answer.strip()
 
     table_ids = {t["id"] for t in tables}
     charts = sorted((dict(chart, unread=False) for chart in state["charts"] if chart["tableRef"] in table_ids),
@@ -136,11 +157,9 @@ def make_seed(story_id: str, session: Path, headline: str) -> tuple[dict, dict[s
     seed["conceptShelfItems"] = [dict(item) for item in state.get("conceptShelfItems") or []]
     first = charts[0]
     if first["chartType"] == "Choropleth":
+        order = "lowest first" if story_id in LOWEST_FIRST else "highest first"
         charts.append(_ranking(seed, story_id, table, first["encodingMap"]["color"]["fieldID"], "country",
-                               f"{first.get('title') or headline}: highest first", first.get("subtitle", "")))
-    elif story_id in RANKINGS:
-        value, label, title = RANKINGS[story_id]
-        charts.append(_ranking(seed, story_id, table, _concept(seed, value, story_id), label, title, first.get("subtitle", "")))
+                               f"{first.get('title') or headline}: {order}", first.get("subtitle", "")))
     chart_ids = {chart["id"] for chart in charts}
     for turn in kept_turns:
         if turn.get("sourceChartId") and turn["sourceChartId"] not in chart_ids:
@@ -186,6 +205,7 @@ def main() -> None:
     args = parser.parse_args()
 
     profile = yaml.safe_load(PROFILE.read_text(encoding="utf-8"))
+    answers = yaml.safe_load(ANSWERS.read_text(encoding="utf-8")) if ANSWERS.is_file() else {}
     prompts = {}
     for starter in profile["starters"]:
         for story in starter.get("stories") or []:
@@ -195,7 +215,7 @@ def main() -> None:
             if not session.is_file():
                 print(f"{story['id']}: no session at {session}, skipped", file=sys.stderr)
                 continue
-            seed, parquets, question = make_seed(story["id"], session, story["headline"])
+            seed, parquets, question = make_seed(story["id"], session, story["headline"], answers.get(story["id"]))
             folder = STORIES / story["id"]
             shutil.rmtree(folder, ignore_errors=True)
             folder.mkdir(parents=True)

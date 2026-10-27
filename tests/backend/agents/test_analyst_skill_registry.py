@@ -80,7 +80,8 @@ def test_baseline_guides_progressive_visual_analysis() -> None:
     assert "Concrete queries never silently fall back to references" in workspace
     assert "Do not make a separate preparation call" in workspace
     assert "Use that dataset directly" in workspace
-    assert "Virtual load outcomes are not local chart inputs" in visualization
+    # Which load outcomes are computation inputs is said once, for all Python (charts included).
+    assert "Only `compute_ready: true` load outcomes are local computation inputs" in registry.load_body("analysis")
 
 
 def test_long_response_emits_terminal_completion_and_rejects_empty_content() -> None:

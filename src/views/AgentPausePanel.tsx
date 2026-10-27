@@ -892,8 +892,8 @@ interface ExplanationPanelProps {
     content: string;
     /** Close: de-highlight the panel and switch focus to the previous chart. */
     onClose: () => void;
-    /** Delete: remove this explanation block from the thread. */
-    onDelete: () => void;
+    /** Delete: remove this explanation block from the thread (absent while the answer is still being written). */
+    onDelete?: () => void;
 }
 
 /**

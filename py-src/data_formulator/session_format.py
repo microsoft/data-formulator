@@ -7,4 +7,4 @@ Mirrors ``DF_STATE_VERSION`` in ``src/app/stateMigrations.ts`` (a test keeps the
 Python that writes sessions, such as a demo's build script, can stamp them with it.
 """
 
-SESSION_STATE_VERSION = 14
+SESSION_STATE_VERSION = 15

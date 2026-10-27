@@ -1863,7 +1863,7 @@
    "id": "textTurn_exploreDataFromNL_1792309747085_1792309779654",
    "displayId": "textTurn_exploreDataFromNL_1792309747085_closing",
    "textKind": "explain",
-   "content": "**India, Pakistan and Ethiopia have the largest counts among countries with recent data**: about **50 million**, **23 million** and **15 million**, respectively.\n\nThe map shows numbers of out-of-school children and young people—not their share of the school-age population. It uses each country’s latest available figure from **2020–2025**, covering primary through upper secondary ages.\n\nCoverage is incomplete and some figures are estimates; unshaded countries mean missing data, not zero children out of school. Nigeria, for example, is unshaded because it reports only primary-age children: about 9 million out of school in 2023.\n\n*Source: UNESCO Institute for Statistics, February 2026 release.*",
+   "content": "**India, Pakistan and Ethiopia have the most out-of-school children and young people:** about **50 million**, **23 million** and **15 million**.\n\nThe map shows numbers, not shares, for primary to upper secondary ages, using each country's latest figure from 2020–2025. Blank countries, such as Nigeria, have no complete recent figure. Source: UIS, February 2026 release.",
    "parentNodeId": "textTurn_exploreDataFromNL_1792309747085_step_2",
    "actionId": "exploreDataFromNL_1792309747085",
    "createdAt": 1792309779654,
@@ -1920,7 +1920,7 @@
  ],
  "activeWorkspace": {
   "id": "education-opri-o20",
-  "displayName": "Progress stalls: 273 million children out of school"
+  "displayName": "India has the most children out of school, about 50 million"
  },
  "focusedId": {
   "type": "chart",

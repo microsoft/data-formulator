@@ -190,3 +190,29 @@ def test_a_plan_title_line_names_the_plan_and_leaves_the_narration():
 
 def test_a_plan_line_without_a_checklist_is_prose():
     assert read_plan("Plan: look at gaps first.") == (None, None, "Plan: look at gaps first.")
+
+
+def test_a_referenced_request_may_open_a_new_thread_with_its_first_message_only():
+    agent, _ = _agent([
+        [_chunk("New thread: Diesel prices\nLooking at diesel instead."), _chunk(finish_reason="stop")],
+    ])
+    agent._references = [{"id": "chart-1", "label": "Weekly prices"}]
+    agent._placement_open = True
+    agent._plan.reminded = True
+    events = _loop(agent, [])
+    assert [event for event in events if event["type"] == "placement"] == [
+        {"type": "placement", "new_thread": True, "title": "Diesel prices"}]
+    final = [event for event in events if event["type"] == "agent_action"][-1]
+    assert final["final_text"] == "Looking at diesel instead."
+    # Only the first message decides; without a reference there is no choice to make.
+    assert list(agent._read_placement("New thread: later")) == []
+    plain, _ = _agent([[_chunk("New thread: x"), _chunk(finish_reason="stop")]])
+    assert not [event for event in _loop(plain, []) if event["type"] == "placement"]
+
+
+def test_the_reference_note_names_the_result_by_its_session_path():
+    agent, _ = _agent([])
+    agent._references = [{"id": "chart-1", "label": "Weekly prices"}]
+    agent._run_payload = {"session_layer": SimpleNamespace(output_path=lambda id: f"session/charts/{id}.json")}
+    note = agent._reference_note()
+    assert '- `session/charts/chart-1.json` "Weekly prices"' in note and "New thread:" in note

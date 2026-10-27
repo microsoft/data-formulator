@@ -1,12 +1,14 @@
 **Folder**
 
-Choose a local directory containing the data files you want to browse. Use **Browse** to open the folder picker, or paste an absolute directory path.
-
-Enable recursive scanning to include files in subfolders. Use the optional file pattern in Advanced settings to limit the files, for example `*.csv`.
+Choose a folder with **Browse**, or paste its full path. Turn on recursive scanning to include subfolders, and use the file pattern in Advanced settings to narrow the files, for example `*.csv`.
 
 **Files**
 
-CSV, TSV, Parquet, JSON, and JSONL can be imported as tables. Excel workbooks (`.xlsx` or `.xls`), Markdown, PDFs, and other files are listed as file artifacts.
+CSV, TSV, Parquet, JSON, and JSONL load as tables. Excel, Markdown, PDF, and other files can be previewed and copied into the workspace as files.
+
+<!-- agent-notes -->
+
+**Query behavior**
 
 CSV, TSV, Parquet, JSON, and JSONL table queries use DuckDB's native readers
 within the connected directory and return Arrow tables.

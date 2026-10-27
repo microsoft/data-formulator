@@ -1429,6 +1429,7 @@ When migrating Data Formulator to a new server (or rebuilding a Docker container
 | `.vault_key` | `DATA_FORMULATOR_HOME/.vault_key` | `credentials.db` becomes undecryptable — all stored database passwords / service credentials are lost. |
 | `credentials.db` | `DATA_FORMULATOR_HOME/credentials.db` | Same as above — the encrypted credential store itself. |
 | `DF_CODE_SIGNING_SECRET` | `.env` (env var, optional) | If set, overrides Flask-derived signing key. Must match the old value or all code signatures break. |
+| `.code-signing-key` | `DATA_FORMULATOR_HOME/.code-signing-key` | Code-signing key used when neither `DF_CODE_SIGNING_SECRET` nor `FLASK_SECRET_KEY` is set. Saved charts cannot refresh until re-executed. |
 | `CREDENTIAL_VAULT_KEY` | `.env` (env var, optional) | If set, overrides `.vault_key` file. Must match or vault data is unreadable. |
 | `users/` & `workspaces/` | `DATA_FORMULATOR_HOME/` | User workspace data (parquet files, session metadata). |
 | `configuration.json` | `DATA_FORMULATOR_HOME/configuration.json` | Installation policies, enabled resources, defaults, and shared-connection vault references. |

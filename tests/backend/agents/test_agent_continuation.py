@@ -283,3 +283,119 @@ def test_a_continued_turn_shows_what_is_new_to_the_conversation(workspace) -> No
     # The user moved to another thread since: its latest steps come along.
     elsewhere = [{**seen[0], "content": seen[0]["content"].replace("session/threads/1.md", "session/threads/2.md")}, seen[1]]
     assert "[THE THREAD YOU ARE CONTINUING] `session/threads/1.md`" in context(STATE, elsewhere)
+
+
+def test_the_model_stream_reports_what_the_agent_is_doing(workspace, monkeypatch) -> None:
+    from types import SimpleNamespace
+    from data_formulator.analyst import agent as agent_module
+
+    def chunk(content=None, name=None, arguments=None):
+        calls = None
+        if name or arguments:
+            calls = [SimpleNamespace(index=0, id="call_1" if name else None,
+                                     function=SimpleNamespace(name=name, arguments=arguments))]
+        return SimpleNamespace(choices=[SimpleNamespace(finish_reason=None,
+                                                        delta=SimpleNamespace(content=content, tool_calls=calls))])
+
+    chunks = [chunk("Plan: compare\n- [ ] load\n- [ ] chart\n"), chunk("Let me chart "), chunk("the **monthly** rates "),
+              chunk("for `Construction`."), chunk(name="visualize"), chunk(arguments='{"code": "x = 1"}')]
+    monkeypatch.setattr(agent_module, "_STATUS_INTERVAL", 0.0)
+    agent = AnalystAgent(client=MagicMock(), workspace=workspace)
+    monkeypatch.setattr(agent, "_open_stream", lambda messages, tools: iter(chunks))
+    tools = [{"type": "function", "function": {"name": "visualize", "parameters": {"type": "object"}}}]
+    stream, events = agent._stream_llm([], tools), []
+    with pytest.raises(StopIteration) as finished:
+        while True:
+            events.append(next(stream))
+    statuses = [event for event in events if event["type"] == "status"]
+    assert statuses[0] == {"type": "status", "phase": "thinking"}
+    # The plan's checklist is not narration; the sentence after it is, as it grows.
+    # Short fragments wait for a few words; markdown is dropped.
+    assert [event["text"] for event in statuses if event["phase"] == "narrating"] == [
+        "Let me chart the monthly rates", "Let me chart the monthly rates for Construction."]
+    assert statuses[-1] == {"type": "status", "phase": "writing", "tool": "visualize"}
+    assert finished.value.value.choices[0].message.tool_calls[0].function.name == "visualize"
+
+
+def test_the_answer_streams_as_it_is_written_and_a_note_does_not(workspace, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    def chunk(content, phase=None):
+        delta = SimpleNamespace(content=content, tool_calls=None,
+                                provider_specific_fields={"phase": phase} if phase else None)
+        return SimpleNamespace(choices=[SimpleNamespace(finish_reason=None, delta=delta)])
+
+    agent = AnalystAgent(client=MagicMock(), workspace=workspace)
+
+    def run(chunks):
+        monkeypatch.setattr(agent, "_open_stream", lambda messages, tools: iter(chunks))
+        stream, events = agent._stream_llm([], []), []
+        with pytest.raises(StopIteration):
+            while True:
+                events.append(next(stream))
+        return events
+
+    answer = run([chunk("**India** has ", "final_answer"), chunk("the most.", "final_answer")])
+    assert [event for event in answer if event["type"] == "text_delta"] == [
+        {"type": "text_delta", "channel": "answer", "content": "**India** has "},
+        {"type": "text_delta", "channel": "answer", "content": "the most."}]
+    assert agent._answer_streamed and not any(event.get("phase") == "narrating" for event in answer)
+    # A note before a tool call, or a provider that does not mark phases, stays a status line.
+    for phase in ("commentary", None):
+        events = run([chunk("Let me check the coverage first.", phase)])
+        assert not any(event["type"] == "text_delta" for event in events) and not agent._answer_streamed
+
+
+def test_a_streamed_answer_is_retracted_when_a_tool_call_follows(workspace, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    agent = AnalystAgent(client=MagicMock(), workspace=workspace)
+    agent._loaded_skills = {"meta"}
+    agent._run_payload = {}
+    call = SimpleNamespace(id="call_1", function=SimpleNamespace(name="read_file", arguments='{"files": []}'))
+    replies = [SimpleNamespace(choices=[SimpleNamespace(finish_reason="tool_calls", message=SimpleNamespace(
+                   content="Here is what I found.", tool_calls=[call], reasoning_content=None, reasoning_items=[]))]),
+               SimpleNamespace(choices=[SimpleNamespace(finish_reason="stop", message=SimpleNamespace(
+                   content="Done.", tool_calls=None, reasoning_content=None, reasoning_items=[]))])]
+
+    def stream_llm(messages, tools):
+        agent._answer_streamed = True
+        yield {"type": "text_delta", "channel": "answer", "content": "Here is"}
+        return replies.pop(0)
+
+    monkeypatch.setattr(agent, "_stream_llm", stream_llm)
+    monkeypatch.setattr(agent, "_loaded_skill_tool_map", lambda: {})
+    events = list(agent._tool_loop([], llm_calls_in_cycle=0, rlog=MagicMock(), input_tables=[], outer_iteration=0))
+    kinds = [event["type"] for event in events]
+    # The first answer was followed by a tool call: retracted, then shown as a note; the last one ends the run.
+    assert kinds.index("answer_retracted") < kinds.index("thinking_text") < kinds.index("tool_start")
+    assert kinds.count("answer_retracted") == 1 and events[-1]["final_text"] == "Done."
+
+
+def test_opening_the_model_stream_has_a_request_timeout(workspace) -> None:
+    client = MagicMock()
+    client.model = "m"
+    client.get_completion_with_tools.return_value = iter(["chunk"])
+    agent = AnalystAgent(client=client, workspace=workspace)
+    list(agent._open_stream([{"role": "user", "content": "hi"}], []))
+    assert client.get_completion_with_tools.call_args.kwargs["timeout"] == 90.0
+
+
+def test_a_failed_action_is_shown_to_the_user_and_its_reason_returned_to_the_agent(workspace) -> None:
+    agent = AnalystAgent(client=MagicMock(), workspace=workspace)
+
+    def failing_visualize():
+        yield {"type": "error", "message": "Unknown or mismatched input source: d_result_5. Use an exact data input "
+                                           "id: data:62e2:sdg4_indicators", "message_code": "agent.parseActionFailed"}
+        return "[OBSERVATION – Step 1 FAILED]\n\nError: Unknown or mismatched input source: d_result_5."
+
+    router = agent._route_skill_events(failing_visualize(), 1, [], [], "visualize")
+    events = []
+    with pytest.raises(StopIteration) as finished:
+        while True:
+            events.append(next(router))
+    # Not an `error` (that ends the run in the application); a failed step with its first sentence.
+    assert events == [{"type": "action_failed", "action": "visualize", "iteration": 1,
+                       "message": "Unknown or mismatched input source: d_result_5.",
+                       "message_code": "agent.parseActionFailed"}]
+    assert "FAILED" in finished.value.value

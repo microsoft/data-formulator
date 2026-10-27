@@ -37,6 +37,16 @@ export const sidebarEdge = {
     overlayShadow: '5px 0 16px -8px rgba(0, 0, 0, 0.32)',
 } as const;
 
+// ── Icon tones ─────────────────────────────────────────────────────────
+
+/** Icon colours at rest. Selected and focused icons take the theme's (or their file type's) colour. */
+export const iconTone = {
+    /** 0.15 — thread rail icons off the focused chain, as quiet as the rail itself. */
+    muted: 'rgba(0, 0, 0, 0.15)',
+    /** 0.40 — row icons in lists (workspace items, tables). */
+    rest: 'rgba(0, 0, 0, 0.4)',
+} as const;
+
 /** The app's typeface, as on the Flint site: Inter (bundled, variable weight), then system fonts. */
 export const fontSans = '"Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif';
 

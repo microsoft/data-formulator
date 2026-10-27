@@ -1304,7 +1304,7 @@
    "id": "textTurn_exploreDataFromNL_1792309020966_1792309122016",
    "displayId": "textTurn_exploreDataFromNL_1792309020966_closing",
    "textKind": "explain",
-   "content": "**Adults’ average schooling varies widely—from about 2 years in some countries to 14 years in others.** This measures completed schooling among people aged **25 and over**, both sexes.\n\nFor example, the latest figures show **14.0 years in the US (2024)**, **8.0 in China (2020)**, **7.3 in India (2023)** and **1.6 in Mali (2020)**.\n\nThe map covers 130 countries and territories with data from 2020–2024. This UIS release does not provide a world average for this measure, so these figures should not be read as a global average.",
+   "content": "**Adults' schooling ranges from about 2 years in some countries to 14 in others.** The latest figures show **14.0 years in the US (2024)**, **8.0 in China (2020)**, **7.3 in India (2023)** and **1.6 in Mali (2020)**.\n\nThis counts completed schooling for people aged 25 and over, using each country's latest figure from 2020–2024. Source: UIS, February 2026 release.",
    "parentNodeId": "d_output",
    "actionId": "exploreDataFromNL_1792309020966",
    "createdAt": 1792309122016,

@@ -7,13 +7,125 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "argv": {"type": "array", "items": {"type": "string"}, "minItems": 1, "description": "Executable followed by exact arguments, without implicit shell interpretation."},
-          "cwd": {"type": "string", "description": "Absolute working directory, or ~ for the user's home directory."},
-          "purpose": {"type": "string", "description": "Data acquisition, discovery, or connection goal, requested scope, and expected writes or network transfers."},
-          "dangerouslyDisableSandbox": {"type": "boolean", "description": "Default false. Request this exact command outside the filesystem sandbox only when the configured policy cannot support it. Always pauses for user approval, including in Auto. Does not grant root privileges or carry over to another command. Submit this tool call directly; conversational consent does not approve execution."},
-          "sandboxDisablingReason": {"type": "string", "maxLength": 2000, "description": "Required when dangerouslyDisableSandbox is true. Explain the blocked access, why sandboxed execution is insufficient, expected host changes, and any partial effects of the prior attempt. Shown to the user with the exact command."}
+          "argv": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Executable followed by exact arguments, without implicit shell interpretation."
+          },
+          "cwd": {
+            "type": "string",
+            "description": "Absolute working directory, or ~ for the user's home directory."
+          },
+          "purpose": {
+            "type": "string",
+            "description": "Data acquisition, discovery, or connection goal, requested scope, and expected writes or network transfers."
+          },
+          "dangerouslyDisableSandbox": {
+            "type": "boolean",
+            "description": "Default false. Request this exact command outside the filesystem sandbox only when the configured policy cannot support it. Always pauses for user approval, including in Auto. Does not grant root privileges or carry over to another command. Submit this tool call directly; conversational consent does not approve execution."
+          },
+          "sandboxDisablingReason": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Required when dangerouslyDisableSandbox is true. Explain the blocked access, why sandboxed execution is insufficient, expected host changes, and any partial effects of the prior attempt. Shown to the user with the exact command."
+          }
         },
-        "required": ["argv", "cwd", "purpose"],
+        "required": [
+          "argv",
+          "cwd",
+          "purpose"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "start_task",
+      "description": "Start a long command (a crawl, a large download, a long script) as a background task: the same sandbox, approval and argument rules as run_terminal, but no 60-second limit (a 2-hour budget) and it returns at once with a task id. The task keeps running if this run stops; its output is logged to scratch/tasks/<id>.log. Follow it with wait_tasks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "argv": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Executable followed by exact arguments, without implicit shell interpretation."
+          },
+          "cwd": {
+            "type": "string",
+            "description": "Absolute working directory, or ~ for the user's home directory."
+          },
+          "purpose": {
+            "type": "string",
+            "description": "What the task does, its scope, and expected writes or network transfers. Shown to the user in their list of background tasks."
+          },
+          "dangerouslyDisableSandbox": {
+            "type": "boolean",
+            "description": "Default false. Request this exact command outside the filesystem sandbox only when the configured policy cannot support it. Always pauses for user approval, including in Auto. Does not grant root privileges or carry over to another command. Submit this tool call directly; conversational consent does not approve execution."
+          },
+          "sandboxDisablingReason": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Required when dangerouslyDisableSandbox is true. Explain the blocked access, why sandboxed execution is insufficient, expected host changes, and any partial effects of the prior attempt. Shown to the user with the exact command."
+          }
+        },
+        "required": [
+          "argv",
+          "cwd",
+          "purpose"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "wait_tasks",
+      "description": "Wait on background tasks: park until one of them ends (finishes, fails, or is stopped by the user), the timeout passes, or the user stops this run, then get a digest of each task's status, elapsed time, output size and last output lines. Waiting costs nothing; use it instead of re-running commands to check progress. timeout_seconds 0 checks without waiting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tasks to wait on; default, the running tasks this request started."
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1800,
+            "description": "How long to wait at most (30 to 1800; 0 only checks). Shorter early on, longer once a task is steady."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "stop_task",
+      "description": "Stop a background task (an interrupt, then a forced kill after a few seconds). Its log and partial files remain.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
         "additionalProperties": false
       }
     }

@@ -21,6 +21,7 @@ const EXCLUDED_FIELDS = new Set([
     'chartSynthesisInProgress',
     'tableLoadsInFlight',
     'pendingTableLoads',
+    'tablesMissingData',
     'cleanInProgress', 'sessionLoading', 'sessionLoadingLabel', 'exampleFollowUps',
     // Starter-questions status is transient (loading/error); the questions
     // themselves are persisted, but the fetch status should reset on reload.

@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Button, ButtonBase, Tooltip, Typography, useTheme } from '@mui/material';
+import { Box, Button, ButtonBase, Typography, useTheme } from '@mui/material';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import InsertChartOutlinedIcon from '@mui/icons-material/InsertChartOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import AttachFileIcon from '@mui/icons-material/AttachFile';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { DataFormulatorState, dfActions, dfSelectors, explanationContent } from '../app/dfSlice';
@@ -13,11 +12,17 @@ import { getCachedChart } from '../app/chartCache';
 import { TerminalMessageContent } from '../components/TerminalApprovalDialog';
 import { CompactMarkdown, RunPlanChecklist } from './InteractionEntryCard';
 import { ConversationWorkLog, workEntriesOf } from './ConversationWorkLog';
+import { codeCallsOf } from '../app/toolCalls';
 import { DataFrameTable } from './DataFrameTable';
 import { HorizontalScrollFade } from '../components/ScrollFade';
 import { apiRequest } from '../app/apiClient';
 import { getUrls } from '../app/utils';
 import { DictTable } from '../components/ComponentType';
+import { isAppFile } from '../icons';
+import { ThreadArtifactCard } from './DataThreadCards';
+import { AppMiniature, ReportMiniature } from '../components/ArtifactMiniatures';
+import { ThreadReferenceChips } from '../components/ThreadReferenceIcon';
+import type { ThreadReference } from '../components/ComponentType';
 
 /**
  * A result's first rows, shown when opened. A workspace table may keep none of its rows in the
@@ -63,6 +68,22 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label }: { textTurnId:
     const fileNodes = useSelector((state: DataFormulatorState) => state.fileNodes);
     const reports = useSelector((state: DataFormulatorState) => state.generatedReports);
     const drafts = useSelector((state: DataFormulatorState) => state.draftNodes);
+    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    // A path a tool call named opens what it names on the canvas, while that still exists.
+    const openSessionPath = (path: string): (() => void) | undefined => {
+        const match = (prefix: string, suffix: string) => path.startsWith(prefix) && path.endsWith(suffix)
+            ? path.slice(prefix.length, path.length - suffix.length) : undefined;
+        const tableName = match('session/tables/', '.json');
+        const table = tableName ? tables.find(item => (item.virtual?.tableId || item.id) === tableName || item.id === tableName) : undefined;
+        if (table) return () => dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }));
+        const chartId = match('session/charts/', '.json');
+        if (chartId && charts.some(chart => chart.id === chartId)) return () => dispatch(dfActions.setFocused({ type: 'chart', chartId }));
+        const reportId = match('session/reports/', '.md');
+        if (reportId && reports.some(report => report.id === reportId)) return () => dispatch(dfActions.setFocused({ type: 'report', reportId }));
+        const fileName = path.startsWith('files/') ? path.slice('files/'.length) : undefined;
+        if (fileName && fileNodes.some(file => file.path === fileName)) return () => dispatch(dfActions.setFocused({ type: 'file', fileName }));
+        return undefined;
+    };
     const selectedRef = useRef<HTMLDivElement>(null);
     // Rows load only once a result's rows are opened.
     const [rowsOpened, setRowsOpened] = useState<Set<string>>(new Set());
@@ -82,24 +103,30 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label }: { textTurnId:
     // Working numbers read at four significant figures, as people quote them.
     const roundRow = (row: Record<string, unknown>) => Object.fromEntries(Object.entries(row).map(([key, value]) =>
         [key, typeof value === 'number' && !Number.isInteger(value) ? Number(value.toPrecision(4)) : value]));
-    const reportArtifact = (report: typeof reports[number]) => <Button key={report.id} startIcon={<OpenInNewIcon />} sx={artifactButtonSx}
-        onClick={() => { dispatch(dfActions.setFocused({ type: 'report', reportId: report.id })); dispatch(dfActions.setViewMode('report')); }}>{report.title || t('conversation.report', { defaultValue: 'Report' })}</Button>;
-    const fileArtifact = (file: typeof fileNodes[number]) => <Box key={file.id} sx={{ mb: 1 }}>
-        <Tooltip describeChild title={file.path}>
-            <Button startIcon={<AttachFileIcon />} sx={{ ...artifactButtonSx, maxWidth: '100%', overflowWrap: 'anywhere' }}
-                onClick={() => dispatch(dfActions.setFocused({ type: 'file', fileName: file.path }))}>
-                {file.displayName}
-            </Button>
-        </Tooltip>
-        {file.notes && <Typography sx={{ fontSize: textVar.sm, overflowWrap: 'anywhere' }}>{file.notes}</Typography>}
+    // Reports, apps and files show as the same cards as in the thread, at a card's width.
+    const reportArtifact = (report: typeof reports[number]) => <Box key={report.id} data-conversation-artifact sx={{ maxWidth: 320, my: 1.5 }}>
+        <ThreadArtifactCard artifactType="report" title={report.title || t('conversation.report', { defaultValue: 'Report' })}
+            selected={focusedId?.type === 'report' && focusedId.reportId === report.id}
+            preview={<ReportMiniature chartIds={report.selectedChartIds || []} />}
+            onClick={() => { dispatch(dfActions.setFocused({ type: 'report', reportId: report.id })); dispatch(dfActions.setViewMode('report')); }} />
     </Box>;
+    const fileArtifact = (file: typeof fileNodes[number]) => {
+        const isApp = isAppFile(file.path);
+        return <Box key={file.id} data-conversation-artifact sx={{ maxWidth: 320, my: 1.5 }}>
+            <ThreadArtifactCard artifactType={isApp ? 'app' : 'file'} title={file.displayName} notes={file.notes}
+                selected={focusedId?.type === 'file' && focusedId.fileName === file.path}
+                preview={isApp ? <AppMiniature path={file.path} version={file.contentHash} /> : undefined}
+                onClick={() => dispatch(dfActions.setFocused({ type: 'file', fileName: file.path }))} />
+        </Box>;
+    };
     // Each exchange opens with the user's message, set apart from the one before it.
-    const userMessage = (content: string, key: string, first: boolean) => <Box key={key} data-conversation-role="user"
-        sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-start', gap: 1, mt: first ? 0 : 4, mb: 2 }}>
+    const userMessage = (content: string, key: string, first: boolean, references?: ThreadReference[]) => <Box key={key} data-conversation-role="user"
+        sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5, mt: first ? 0 : 4, mb: 2 }}>
         <Typography sx={{ maxWidth: '80%', minWidth: 0, px: 2, py: 1.25, borderRadius: '18px 18px 4px 18px',
             // The same tint as the user's cards in the thread.
             bgcolor: theme.palette.custom?.bgcolor ?? 'action.hover',
             color: 'inherit', fontSize: 'inherit', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.6 }}>{content}</Typography>
+        {references?.length ? <ThreadReferenceChips references={references} sx={{ maxWidth: '80%', justifyContent: 'flex-end' }} /> : null}
     </Box>;
     const agentMessage = (children: React.ReactNode) => <Box data-conversation-role="agent"
         sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 2 }}>
@@ -149,8 +176,8 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label }: { textTurnId:
                             bgcolor: 'transparent', cursor: 'pointer',
                             '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
                         <Box component="img" src={image} alt={label} sx={{ display: 'block', width: '100%', height: 'auto',
-                            maxWidth: Math.min(cached?.naturalWidth || 480, 560), mx: 'auto', objectFit: 'contain',
-                            ...(cached?.naturalWidth && cached?.naturalHeight ? { aspectRatio: `${cached.naturalWidth} / ${cached.naturalHeight}` } : {}) }} />
+                            maxWidth: Math.min(cached?.displayWidth || 480, 560), mx: 'auto', objectFit: 'contain',
+                            ...(cached?.displayWidth && cached?.displayHeight ? { aspectRatio: `${cached.displayWidth} / ${cached.displayHeight}` } : {}) }} />
                     </Box>;
                 })}
                 <Box component="details" sx={{
@@ -216,20 +243,20 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label }: { textTurnId:
                     const turn = turns.find(item => item.id === nodeId);
                     if (!turn) return null;
                     // A step's text that only repeats what its tool call did is already on the call.
-                    const callPurposes = new Set([...(turn.executions || []), ...(turn.codeExecutions || [])]
+                    const callPurposes = new Set([...(turn.executions || []), ...codeCallsOf(turn)]
                         .map(call => (call.purpose || '').trim()).filter(Boolean));
                     const content = callPurposes.has(explanationContent(turn.content).trim()) ? '' : explanationContent(turn.content);
                     const hasWork = workEntriesOf(turn).length > 0;
                     const hasAgentPart = !!content || hasWork || !!turn.plan?.length || !!turn.form || !!turn.dataOperation
                         || (turn.textKind === 'clarify' && !turn.answered);
                     return <React.Fragment key={turn.id}>
-                        {turn.prompt && userMessage(turn.prompt, `${turn.id}-prompt`, turn.id === firstPromptId)}
+                        {turn.prompt && userMessage(turn.prompt, `${turn.id}-prompt`, turn.id === firstPromptId, turn.references)}
                         <Box ref={turn.id === textTurnId ? selectedRef : undefined} data-conversation-entry={turn.id} sx={{
                             scrollMarginTop: 12,
                         }}>
                             {hasAgentPart && agentMessage(<>
                             {/* The work behind the message first, as in a chat transcript; each line opens its details. */}
-                            <ConversationWorkLog turn={turn} />
+                            <ConversationWorkLog turn={turn} onOpenPath={openSessionPath} />
                             <TerminalMessageContent content={content} variant="document" />
                             {!!turn.plan?.length && <Box sx={{ my: 1, maxWidth: 480 }}>
                                 <RunPlanChecklist items={turn.plan} title={turn.planTitle} defaultExpanded />
