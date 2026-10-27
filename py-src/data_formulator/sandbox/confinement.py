@@ -54,9 +54,10 @@ BUNDLED_BWRAP = Path(__file__).resolve().parent / "bin" / "bwrap"
 
 
 def bwrap_executable() -> str | None:
-    """``DF_SANDBOX_BWRAP``, else ``bwrap`` on ``PATH``, else the bundled binary."""
-    configured = os.environ.get("DF_SANDBOX_BWRAP", "").strip()
-    candidates = [configured] if configured else [shutil.which("bwrap"), str(BUNDLED_BWRAP)]
+    """``DF_SANDBOX_BWRAP`` (``$VARS`` expanded, e.g. ``$APP_PATH/...``), else ``bwrap`` on
+    ``PATH``, else the bundled binary. A configured path that does not exist falls through."""
+    configured = os.path.expandvars(os.environ.get("DF_SANDBOX_BWRAP", "").strip())
+    candidates = [configured, shutil.which("bwrap"), str(BUNDLED_BWRAP)]
     for candidate in candidates:
         if candidate and os.path.isfile(candidate):
             if not os.access(candidate, os.X_OK):
@@ -226,9 +227,11 @@ def confined_worker_command(kind: str | None, key: str, write_dir: str,
     read_roots += shared_read_roots() if key == SHARED else [key] if key else []
     write_dir = os.path.realpath(write_dir)
     allow_network = network_allowed(kind)
-    # -I: ignore the environment and user site, and never put the working
-    # directory on sys.path, so workspace files cannot shadow real modules.
-    worker = [sys.executable, "-I", "-m", "data_formulator.sandbox.confined_worker",
+    # -s -P: no user site-packages, and never put the working directory on
+    # sys.path, so workspace files cannot shadow real modules. Not -I: that also
+    # drops PYTHONPATH, which App Service's build (Oryx) uses for its virtualenv;
+    # worker_environment passes the server's import path explicitly instead.
+    worker = [sys.executable, "-s", "-P", "-m", "data_formulator.sandbox.confined_worker",
               str(read_fd), str(write_fd), "1" if allow_network else "0"]
     if kind is None:
         return worker
@@ -241,6 +244,18 @@ def confined_worker_command(kind: str | None, key: str, write_dir: str,
     raise ValueError(f"Unknown confinement: {kind}")
 
 
+def worker_import_path() -> list[str]:
+    """The server's import directories (absolute, existing, not its working directory), so a
+    worker imports the same packages however the server found them (venv, PYTHONPATH, source)."""
+    cwd = os.path.realpath(os.getcwd())
+    entries: list[str] = []
+    for entry in sys.path:
+        if (entry and os.path.isabs(entry) and os.path.isdir(entry)
+                and os.path.realpath(entry) != cwd and entry not in entries):
+            entries.append(entry)
+    return entries
+
+
 def worker_environment(write_dir: str) -> dict[str, str]:
     """A minimal environment: no secrets from the server process, caches in the private directory."""
     environment = {key: value for key, value in os.environ.items()
@@ -250,5 +265,6 @@ def worker_environment(write_dir: str) -> dict[str, str]:
     environment.update({"HOME": write_dir, "TMPDIR": write_dir, "TMP": write_dir, "TEMP": write_dir,
                         "MPLCONFIGDIR": os.path.join(write_dir, "matplotlib"),
                         "XDG_CACHE_HOME": os.path.join(write_dir, "cache"),
-                        "PYTHONDONTWRITEBYTECODE": "1"})
+                        "PYTHONDONTWRITEBYTECODE": "1",
+                        "PYTHONPATH": os.pathsep.join(worker_import_path())})
     return environment

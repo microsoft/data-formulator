@@ -50,7 +50,7 @@ def test_worker_command_isolates_the_interpreter(monkeypatch):
     monkeypatch.setattr(confinement, "shared_read_roots", lambda: ["/df/users"])
     command = confinement.confined_worker_command("seatbelt", confinement.SHARED, "/tmp", 5, 6)
     assert command[0] == confinement.SEATBELT and '(subpath "/df/users")' in command[2]
-    assert command[3:6] == [os.sys.executable, "-I", "-m"] and command[-3:] == ["5", "6", "1"]
+    assert command[3:7] == [os.sys.executable, "-s", "-P", "-m"] and command[-3:] == ["5", "6", "1"]
     linked = confinement.confined_worker_command("seatbelt", "/data/linked", "/tmp", 5, 6)
     assert '(subpath "/data/linked")' in linked[2] and "/df/users" not in linked[2]
 
@@ -106,8 +106,43 @@ def test_bwrap_is_found_from_setting_then_path_then_bundle(tmp_path, monkeypatch
     configured = _fake_binary(tmp_path / "opt" / "bwrap")
     monkeypatch.setenv("DF_SANDBOX_BWRAP", str(configured))
     assert confinement.bwrap_executable() == str(configured)
+    monkeypatch.setenv("APP_ROOT_FOR_TEST", str(tmp_path / "opt"))
+    monkeypatch.setenv("DF_SANDBOX_BWRAP", "$APP_ROOT_FOR_TEST/bwrap")
+    assert confinement.bwrap_executable() == str(configured)
+    # A stale configured path (e.g. App Service moved the app) falls through to the others.
     monkeypatch.setenv("DF_SANDBOX_BWRAP", str(tmp_path / "missing"))
-    assert confinement.bwrap_executable() is None
+    assert confinement.bwrap_executable() == str(on_path)
+
+
+def test_worker_environment_carries_the_servers_import_path(tmp_path, monkeypatch):
+    extra = tmp_path / "venv-site-packages"
+    extra.mkdir()
+    monkeypatch.syspath_prepend(str(extra))
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-secret")
+    environment = confinement.worker_environment(str(tmp_path / "w"))
+    assert str(extra) in environment["PYTHONPATH"].split(os.pathsep)
+    assert os.path.realpath(os.getcwd()) not in [os.path.realpath(p) for p in environment["PYTHONPATH"].split(os.pathsep)]
+    assert "OPENAI_API_KEY" not in environment
+
+
+@pytest.mark.skipif(os.name != "posix", reason="clean workers inherit POSIX pipe descriptors")
+def test_unconfined_worker_imports_from_the_servers_extra_path(tmp_path, monkeypatch):
+    # App Service's Oryx build installs packages into a virtualenv reached only via PYTHONPATH.
+    extra = tmp_path / "oryx-site-packages"
+    extra.mkdir()
+    (extra / "df_probe_module.py").write_text("VALUE = 42\n")
+    monkeypatch.syspath_prepend(str(extra))
+    pool = local_sandbox._WarmWorkerPool()
+    monkeypatch.setattr(pool, "_confinement", lambda: None)
+    proc, conn = pool.acquire(str(tmp_path))
+    try:
+        assert isinstance(proc, local_sandbox._ConfinedProcess)
+        conn.send(("import df_probe_module\nout = df_probe_module.VALUE", {"out": None}, str(tmp_path)))
+        assert conn.poll(60)
+        result = conn.recv()
+        assert result.get("allowed_objects", {}).get("out") == 42, result
+    finally:
+        pool.shutdown()
 
 
 def test_unusable_bwrap_means_no_confinement(tmp_path, monkeypatch):
@@ -129,7 +164,7 @@ def test_required_os_sandbox_refuses_to_fall_back(tmp_path, monkeypatch):
 
 def test_plain_worker_command_has_no_os_sandbox():
     command = confinement.confined_worker_command(None, "", "/tmp", 5, 6)
-    assert command == [os.sys.executable, "-I", "-m", "data_formulator.sandbox.confined_worker", "5", "6", "0"]
+    assert command == [os.sys.executable, "-s", "-P", "-m", "data_formulator.sandbox.confined_worker", "5", "6", "0"]
 
 
 def test_demo_site_workspaces_share_the_worker(tmp_path, monkeypatch):

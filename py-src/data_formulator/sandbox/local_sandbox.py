@@ -79,6 +79,8 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
         _sysconfig.get_path("purelib"),
         _sysconfig.get_path("platlib"),
         getattr(_sys, "_MEIPASS", None),
+        # Import directories handed over by the server (e.g. App Service's Oryx virtualenv).
+        *os.environ.get("PYTHONPATH", "").split(os.pathsep),
     ):
         if _p:
             _rp = os.path.realpath(_p)
