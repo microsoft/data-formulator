@@ -1020,7 +1020,9 @@ enabled or disabled; turning it off hides administration, not policy enforcement
 Legacy configurations trigger a startup notice explaining how to enable access.
 
 `--disable-database` / `DISABLE_DATABASE=true` is deprecated. It still selects
-managed mode plus its legacy demo restrictions and ephemeral workspace behavior.
+managed mode plus its legacy demo restrictions and ephemeral workspace behavior,
+and turns the credential vault off unless `CREDENTIAL_VAULT` is set (shared
+connections that store secrets need `CREDENTIAL_VAULT=local`).
 For new deployments, use `--managed` with explicit authentication, storage, and
 policy settings.
 
@@ -1166,7 +1168,7 @@ FLASK_SECRET_KEY=<generate-with-secrets-token-hex-32>
 | — | `DF_ADMIN_EMAILS` | *(unset)* | Comma-separated full EasyAuth sign-in addresses allowed to administer a managed installation; case-insensitive exact matches |
 | `--workspace-backend` | `WORKSPACE_BACKEND` | `local` | `local`, `azure_blob`, or `ephemeral` |
 | `--sandbox` | `SANDBOX` | `local` | Code execution backend: `local` or `docker` |
-| `--disable-database` | `DISABLE_DATABASE` | `false` | **Deprecated demo preset**: managed mode + ephemeral + configured connectors only + no custom models + hide keys |
+| `--disable-database` | `DISABLE_DATABASE` | `false` | **Deprecated demo preset**: managed mode + ephemeral + configured connectors only + no custom models + hide keys + credential vault off (unless `CREDENTIAL_VAULT` is set) |
 | `--disable-display-keys` | `DISABLE_DISPLAY_KEYS` | `false` | Hide API keys in frontend UI |
 | `--disable-data-connectors` | `DISABLE_DATA_CONNECTORS` | `false` | Allow configured sources only; block personal connector creation and use |
 | `--disable-custom-models` | `DISABLE_CUSTOM_MODELS` | `false` | Prevent users from adding custom LLM endpoints |
@@ -1431,7 +1433,7 @@ When migrating Data Formulator to a new server (or rebuilding a Docker container
 | `DF_CODE_SIGNING_SECRET` | `.env` (env var, optional) | If set, overrides Flask-derived signing key. Must match the old value or all code signatures break. |
 | `.code-signing-key` | `DATA_FORMULATOR_HOME/.code-signing-key` | Code-signing key used when neither `DF_CODE_SIGNING_SECRET` nor `FLASK_SECRET_KEY` is set. Saved charts cannot refresh until re-executed. |
 | `CREDENTIAL_VAULT_KEY` | `.env` (env var, optional) | If set, overrides `.vault_key` file. Must match or vault data is unreadable. |
-| `CREDENTIAL_VAULT=off` | env var (optional) | Disables the vault: no `.vault_key` or `credentials.db` is created, credentials last only for the session, and shared connections or account model sign-ins that need stored secrets are unavailable. Used by the public demo. |
+| `CREDENTIAL_VAULT=off` | env var (optional) | Disables the vault: no `.vault_key` or `credentials.db` is created, credentials last only for the session, and shared connections or account model sign-ins that need stored secrets are unavailable. The default under `DISABLE_DATABASE`; set `CREDENTIAL_VAULT=local` to keep the vault there. |
 | `DF_SANDBOX_BWRAP` | env var (optional) | Path to a bubblewrap binary for the Python sandbox's OS isolation on Linux, when it is neither on `PATH` nor bundled at `py-src/data_formulator/sandbox/bin/bwrap` (a git-ignored location that deployment packages fill). The startup log reports the isolation in use: `Python sandbox isolation: ...`. |
 | `DF_REQUIRE_OS_SANDBOX=1` | env var (optional) | Refuse to run generated code when OS isolation is unavailable, instead of falling back to audit hooks only. Recommended for hosted deployments once the startup log confirms isolation. |
 | `DF_SANDBOX_IDLE_SECONDS` | env var (optional) | How long an idle Python sandbox worker (a separate ~200 MB interpreter) is kept for reuse. Default 600 in local mode, 120 otherwise; multi-user servers also keep at most two used workers idle per server process. |

@@ -10,7 +10,8 @@ Key resolution (first match wins):
 3. Neither → vault disabled, plugins fall back to session-only storage
 
 ``CREDENTIAL_VAULT=off`` disables the vault outright: no key file or
-database is created, and credentials last only for the session.
+database is created, and credentials last only for the session. It is the
+default under ``DISABLE_DATABASE``; set ``CREDENTIAL_VAULT=local`` to keep it.
 
 For local single-user mode the vault is **zero-config**: a Fernet key is
 auto-generated on first access and persisted to the data directory.  Server
@@ -84,6 +85,18 @@ def _restrict_to_owner(path: Path) -> None:
         logger.warning("Could not restrict permissions of %s: %s", path, exc)
 
 
+def _demo_preset() -> bool:
+    """``DISABLE_DATABASE`` / ``--disable-database``: a public demo keeps no credentials,
+    so the vault is off unless ``CREDENTIAL_VAULT`` is set explicitly."""
+    if os.environ.get("DISABLE_DATABASE", "false").strip().lower() == "true":
+        return True
+    try:
+        from flask import current_app, has_app_context
+        return has_app_context() and bool(current_app.config.get("CLI_ARGS", {}).get("disable_database"))
+    except ImportError:
+        return False
+
+
 def get_credential_vault() -> Optional[CredentialVault]:
     """Return the global :class:`CredentialVault` singleton.
 
@@ -96,7 +109,7 @@ def get_credential_vault() -> Optional[CredentialVault]:
 
     _initialized = True
 
-    vault_type = os.environ.get("CREDENTIAL_VAULT", "local").strip().lower()
+    vault_type = os.environ.get("CREDENTIAL_VAULT", "off" if _demo_preset() else "local").strip().lower()
     if vault_type in ("off", "none", "disabled", "false", "0"):
         # Deployments that keep no credentials (e.g. a public demo) need no key or database on disk.
         logger.info("Credential vault disabled (CREDENTIAL_VAULT=%s)", vault_type)
