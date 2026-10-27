@@ -1,4 +1,5 @@
 import json
+import logging
 
 import pytest
 
@@ -523,14 +524,16 @@ def test_managed_startup_admin_warnings(monkeypatch, caplog, local, provider_nam
     monkeypatch.delenv('WEBSITE_INSTANCE_ID', raising=False)
     caplog.clear()
     application._safety_checks()
+    # The sandbox-isolation line is informational; this test is about warnings.
+    warnings = lambda: [record for record in caplog.records if record.levelno >= logging.WARNING]
     if expected:
         assert expected in caplog.text
     else:
-        assert not caplog.records
+        assert not warnings()
     caplog.clear()
     application.app.config['CLI_ARGS']['managed'] = False
     application._safety_checks()
-    assert not caplog.records
+    assert not warnings()
 
 
 def test_managed_app_config_reports_mode_separately_from_admin_permission(monkeypatch):

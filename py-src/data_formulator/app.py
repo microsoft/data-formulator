@@ -373,6 +373,17 @@ def _safety_checks():
     sandbox = cli.get('sandbox', 'not_a_sandbox')
     multi_user = backend != 'local'
 
+    if sandbox == 'local':
+        from data_formulator.sandbox.confinement import confinement_kind, describe
+        from data_formulator.sandbox.local_sandbox import _os_sandbox_required
+        isolation = describe()
+        if confinement_kind() is None and _os_sandbox_required():
+            logger.critical('Python sandbox isolation: %s. DF_REQUIRE_OS_SANDBOX is set, so generated code will not run.', isolation)
+        elif confinement_kind() is None and multi_user:
+            logger.warning('Python sandbox isolation: %s. Native libraries (DuckDB, pyarrow) can read files beyond the workspace.', isolation)
+        else:
+            logger.info('Python sandbox isolation: %s', isolation)
+
     if multi_user and sandbox == 'not_a_sandbox':
         logger.critical(
             "SECURITY WARNING: Multi-user mode with no sandbox is dangerous. "

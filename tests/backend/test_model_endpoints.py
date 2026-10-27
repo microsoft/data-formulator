@@ -60,7 +60,7 @@ def test_copilot_managed_endpoint_works_with_custom_url_allowlist(connection_api
     client_constructor.reset_mock()
     with pytest.raises(model_endpoints.AppError, match="Invalid model connection configuration"):
         get_client({**config, "api_base": "https://api.openai.com/v1"})
-    with pytest.raises(model_endpoints.AppError, match="allowlist"):
+    with pytest.raises(model_endpoints.AppError, match="metadata"):
         get_client({**config, "api_base": "http://169.254.169.254/latest/meta-data/"})
     stored[(identity[0], model_endpoints._COPILOT_CONNECTION_KEY)]["api_base"] = "https://api.githubcopilot.com.attacker.invalid"
     with pytest.raises(model_endpoints.AppError, match="Invalid GitHub Copilot API host"):

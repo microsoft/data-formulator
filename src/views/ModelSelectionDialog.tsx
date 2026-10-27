@@ -240,8 +240,13 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     const [newApiVersion, setNewApiVersion] = useState<string>(initialDefinition?.api_version || "");
     const [managedIdentityClientId, setManagedIdentityClientId] = useState(initialDefinition?.managed_identity_client_id || '');
     const [advancedOpen, setAdvancedOpen] = useState(false);
-    const [azureAuthMethod, setAzureAuthMethod] = useState<'azure_cli' | 'managed_identity' | 'api_key'>(
+    const [selectedAzureAuthMethod, setAzureAuthMethod] = useState<'azure_cli' | 'managed_identity' | 'api_key'>(
         initialDefinition?.auth_mode === 'managed_identity' ? 'managed_identity' : initialDefinition?.auth_mode === 'key' ? 'api_key' : 'azure_cli');
+    // A model added in the browser on a hosted server would sign in as the server, not the user,
+    // so Azure identity sign-in is offered only locally and in administrator connections.
+    const azureIdentityAvailable = Boolean(onStageConnection) || Boolean(serverConfig.IS_LOCAL_MODE);
+    const azureAuthMethod = azureIdentityAvailable || selectedAzureAuthMethod !== 'azure_cli'
+        ? selectedAzureAuthMethod : 'api_key';
     const [isAddingModel, setIsAddingModel] = useState(false);
     const [newModelError, setNewModelError] = useState("");
     const [newModelDiagnostic, setNewModelDiagnostic] = useState<ApiError | null>(null);
@@ -1041,7 +1046,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                 <Typography variant="caption" color="text.secondary">{t(isChatGPT ? 'model.chatgptBilling' : isCopilot ? 'model.copilotBilling' : 'model.openRouterBilling')}</Typography>
             </>}
 
-            {newEndpoint === 'azure' && (
+            {newEndpoint === 'azure' && azureIdentityAvailable && (
                 <ToggleButtonGroup
                     exclusive
                     size="small"

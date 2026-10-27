@@ -197,6 +197,32 @@ def _set_cors(response):
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     return response
 
+def _reject_ambient_server_credentials(model_config):
+    """Keep a request-supplied model from authenticating as the server.
+
+    An Azure model without an API key signs in with the server's Azure
+    identity (managed identity or ``DefaultAzureCredential``) and sends the
+    bearer token to the model's ``api_base``. That is the user's own sign-in
+    only in single-user local mode; elsewhere it would hand the server's token
+    to a caller-chosen URL. Administrator-configured models are trusted and
+    never reach this check.
+    """
+    from data_formulator.auth.identity import is_local_mode
+
+    if is_local_mode():
+        return
+    uses_server_identity = (
+        model_config.get("auth_mode") == "managed_identity"
+        or (model_config.get("endpoint") == "azure" and not model_config.get("api_key"))
+    )
+    if uses_server_identity:
+        raise AppError(
+            ErrorCode.ACCESS_DENIED,
+            "Azure models added in the browser need an API key on this server. "
+            "Ask an administrator to configure Azure identity sign-in.",
+        )
+
+
 def _resolve_global_model(model_config, trusted=False):
     """Resolve a global model claim and return its configuration and trust status.
 
@@ -274,6 +300,7 @@ def get_client(model_config, trusted=False, *, use_small_model=False):
     if not trusted:
         from data_formulator.routes.model_endpoints import resolve_model_connection
         model_config = resolve_model_connection(model_config)
+        _reject_ambient_server_credentials(model_config)
 
     client = Client(
         model_config["endpoint"],

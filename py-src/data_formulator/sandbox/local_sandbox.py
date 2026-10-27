@@ -12,6 +12,7 @@ from contextvars import ContextVar
 import logging
 import os
 import signal
+import sys
 import threading
 import time
 import warnings
@@ -51,9 +52,13 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
 
     # Scrub sensitive environment variables before accepting any code.
     # Legitimate sandbox code (pandas/numpy transforms) never needs these.
+    # The prefixes cover ambient cloud identities: App Service / Container Apps
+    # managed identity (IDENTITY_*, MSI_*) and Azure/AWS/GCP SDK settings.
     _SENSITIVE_PATTERNS = ("KEY", "SECRET", "TOKEN", "PASSWORD", "CREDENTIAL", "CONNECTION_STRING")
+    _SENSITIVE_PREFIXES = ("IDENTITY_", "MSI_", "AZURE_", "AWS_", "GOOGLE_", "GCP_", "ARM_")
     for _key in list(os.environ):
-        if any(p in _key.upper() for p in _SENSITIVE_PATTERNS):
+        _upper = _key.upper()
+        if any(p in _upper for p in _SENSITIVE_PATTERNS) or _upper.startswith(_SENSITIVE_PREFIXES):
             del os.environ[_key]
 
     # Mutable container: the audit hook reads this to know which
@@ -166,10 +171,16 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
             "os.system", "os.exec", "os.spawn", "os.fork",
             "os.kill", "os.killpg", "os.startfile",
             "os.putenv", "os.unsetenv",
+            # Destructive filesystem changes (writes are already denied at open).
+            "os.remove", "os.rmdir", "os.rename", "os.symlink", "os.link",
+            "os.truncate", "os.chmod", "os.chown", "os.chflags",
+            "os.setxattr", "os.removexattr",
         })
         if (event in _blocked_os_events
                 or event.startswith(("os.exec", "os.spawn", "os.posix_spawn", "os.fork"))):
             raise IOError("dangerous os operation forbidden in sandbox")
+        if event == "_winapi.CreateProcess":
+            raise IOError("process creation forbidden in sandbox")
         # Block network access — code should only transform data, not
         # make outbound connections (prevents data exfiltration). An OS-confined
         # worker may reach the internet; its sandbox denies loopback and sockets.
@@ -353,8 +364,19 @@ class _ConfinedProcess:
         shutil.rmtree(self._write_dir, ignore_errors=True)
 
 
-def _spawn_confined(kind: str, key: str) -> tuple[_ConfinedProcess, DuplexConnection]:
-    """Start a warm worker under the OS sandbox and wait for its ready handshake."""
+def _os_sandbox_required() -> bool:
+    """``DF_REQUIRE_OS_SANDBOX``: refuse to run code rather than fall back to audit hooks only."""
+    return os.environ.get("DF_REQUIRE_OS_SANDBOX", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _can_start_clean_worker() -> bool:
+    """A fresh ``python -I`` worker needs an interpreter executable (not a frozen
+    app) and inherited pipe descriptors (POSIX)."""
+    return os.name == "posix" and not getattr(sys, "frozen", False)
+
+
+def _spawn_confined(kind: str | None, key: str) -> tuple[_ConfinedProcess, DuplexConnection]:
+    """Start a warm worker (under the OS sandbox unless *kind* is ``None``) and wait for its ready handshake."""
     import subprocess
     import tempfile
     from multiprocessing.connection import Connection
@@ -438,11 +460,25 @@ class _WarmWorkerPool:
             try:
                 return _spawn_confined(kind, self._key(workspace_path))
             except Exception as exc:
+                if _os_sandbox_required():
+                    raise RuntimeError(f"The Python sandbox requires OS isolation, which failed to start: {exc}") from exc
                 self._confinement_failed = True
                 logger.warning(
                     "OS confinement for the Python sandbox is unavailable (%s); "
                     "falling back to the audit-hook sandbox without OS isolation.", exc,
                 )
+        if _os_sandbox_required():
+            raise RuntimeError("The Python sandbox requires OS isolation (DF_REQUIRE_OS_SANDBOX), "
+                               "which is unavailable on this server.")
+        if _can_start_clean_worker():
+            # A fresh interpreter with a minimal environment: unlike a forked
+            # child it holds none of the server's memory (secret keys, model
+            # credentials, other users' data) or environment.
+            try:
+                return _spawn_confined(None, "")
+            except Exception as exc:
+                logger.warning("Could not start a clean Python sandbox worker (%s); "
+                               "using a worker started from the server process.", exc)
         parent_conn, child_conn = Pipe()
         p = Process(target=_warm_worker_loop, args=(child_conn,), daemon=True)
         p.start()

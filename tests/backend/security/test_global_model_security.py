@@ -290,3 +290,51 @@ class TestClassifyLlmError:
         secret = "my-super-secret-api-key-12345"
         msg = classify_llm_error(RuntimeError(f"Failed with api_key={secret}"))
         assert secret not in msg
+
+
+# ---------------------------------------------------------------------------
+# get_client: request-supplied models cannot borrow the server's Azure identity
+# ---------------------------------------------------------------------------
+
+class TestAmbientServerCredentials:
+    """An Azure model without an API key signs in as the server and sends that
+    bearer token to its api_base; a request must not be able to choose that URL."""
+
+    AZURE = {"endpoint": "azure", "model": "gpt-4o", "api_base": "https://attacker.example/"}
+
+    @pytest.fixture(autouse=True)
+    def _hosted(self, monkeypatch):
+        monkeypatch.setattr("data_formulator.auth.identity.is_local_mode", lambda: False)
+
+    @pytest.mark.parametrize("config", [
+        {**AZURE},
+        {**AZURE, "api_key": ""},
+        {**AZURE, "auth_mode": "azure_identity"},
+        {**AZURE, "auth_mode": "managed_identity", "managed_identity_client_id": "x"},
+    ])
+    @patch.dict(os.environ, {}, clear=True)
+    def test_request_supplied_server_identity_rejected(self, config):
+        from data_formulator.routes.agents import get_client
+        with pytest.raises(AppError) as exc:
+            get_client(dict(config))
+        assert exc.value.code == ErrorCode.ACCESS_DENIED
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_request_supplied_key_still_works(self):
+        from data_formulator.routes.agents import get_client
+        client = get_client({**self.AZURE, "api_key": "user-key"})
+        assert client.params["api_key"] == "user-key"
+        assert "azure_ad_token_provider" not in client.params
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_local_mode_keeps_the_users_own_azure_sign_in(self, monkeypatch):
+        monkeypatch.setattr("data_formulator.auth.identity.is_local_mode", lambda: True)
+        from data_formulator.routes.agents import get_client
+        client = get_client({**self.AZURE, "api_base": "https://myorg.openai.azure.com/"})
+        assert "azure_ad_token_provider" in client.params
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_administrator_configured_identity_models_still_work(self):
+        from data_formulator.routes.agents import get_client
+        client = get_client({**self.AZURE, "api_base": "https://myorg.openai.azure.com/"}, trusted=True)
+        assert "azure_ad_token_provider" in client.params

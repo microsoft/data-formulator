@@ -44,13 +44,13 @@ describe('Model connection form', () => {
         }) as any);
     });
 
-    const openForm = (model?: ModelConfig, managed = false) => {
+    const openForm = (model?: ModelConfig, managed = false, local = true) => {
         const initial = dataFormulatorReducer(undefined, { type: 'test/init' });
         const store = configureStore({
             reducer: dataFormulatorReducer,
             preloadedState: { ...initial, models: model && !model.is_global ? [model] : [],
                 globalModels: model?.is_global ? [model] : [], selectedModelId: model?.id,
-                serverConfig: { ...initial.serverConfig, IS_LOCAL_MODE: true, DISABLE_CUSTOM_MODELS: managed } },
+                serverConfig: { ...initial.serverConfig, IS_LOCAL_MODE: local, DISABLE_CUSTOM_MODELS: managed } },
         });
         render(<Provider store={store}><ModelSelectionButton /></Provider>);
         fireEvent.click(screen.getByRole('button', { name: 'Select a model' }));
@@ -756,6 +756,17 @@ describe('Model connection form', () => {
         expect(screen.getByRole('button', { name: 'Test and save' })).toBeEnabled();
         fireEvent.change(screen.getByLabelText('API Key', { selector: 'input' }), { target: { value: '' } });
         expect(screen.getByRole('button', { name: 'Test and save' })).toBeDisabled();
+    });
+
+    it('offers only API-key sign-in for Azure models added on a hosted server', async () => {
+        openForm(undefined, false, false);
+        await chooseProvider('Azure');
+        expect(screen.queryByRole('button', { name: 'Azure CLI' })).not.toBeInTheDocument();
+        fireEvent.change(screen.getByRole('textbox', { name: /Model deployment/ }), { target: { value: 'deployment' } });
+        fireEvent.change(screen.getByRole('textbox', { name: /Endpoint URL/ }), { target: { value: 'https://resource.example' } });
+        expect(screen.getByRole('button', { name: 'Test and save' })).toBeDisabled();
+        fireEvent.change(screen.getByLabelText('API Key', { selector: 'input' }), { target: { value: 'test-secret' } });
+        expect(screen.getByRole('button', { name: 'Test and save' })).toBeEnabled();
     });
 
     it('allows Ollama with only a model and keeps its optional key under Advanced', async () => {

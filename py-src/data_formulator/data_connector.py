@@ -369,6 +369,23 @@ def _resolve_connector_with_key(data: dict[str, Any]) -> tuple[str, "DataConnect
     raise AppError(ErrorCode.CONNECTOR_ERROR, "Connector not found")
 
 
+# Connector parameters that name a network host or URL.
+_HOST_PARAMS = ("host", "server", "endpoint", "url", "api_url")
+
+
+def _reject_metadata_hosts(user_params: dict[str, Any]) -> None:
+    """Refuse user-supplied hosts that reach cloud instance metadata (SSRF)."""
+    from data_formulator.security.url_allowlist import reject_cloud_metadata_host
+
+    for key in _HOST_PARAMS:
+        value = user_params.get(key)
+        if isinstance(value, str) and value.strip():
+            try:
+                reject_cloud_metadata_host(value)
+            except ValueError as e:
+                raise AppError(ErrorCode.ACCESS_DENIED, str(e)) from e
+
+
 # ---------------------------------------------------------------------------
 # DataConnector
 # ---------------------------------------------------------------------------
@@ -612,7 +629,10 @@ class DataConnector:
         """
         identity = self._get_identity()
         self._get_loader(identity)
-        merged = dict(self._default_params) if self._uses_configured_params() else {**self._default_params, **user_params}
+        configured_only = self._uses_configured_params()
+        if not configured_only:
+            _reject_metadata_hosts(user_params)
+        merged = dict(self._default_params) if configured_only else {**self._default_params, **user_params}
         self._inject_credentials(merged)
 
         # Pre-validate: skip auth-tier params when tokens are present (SSO flow)
@@ -1145,6 +1165,7 @@ def discover_data_loader_options():
 
     params = dict(data.get("params") or {})
     connector_id = data.get("connector_id")
+    configured_only = False
     if connector_id:
         source = _resolve_connector({"connector_id": connector_id})
         if source._loader_class is not loader_class:
@@ -1152,7 +1173,10 @@ def discover_data_loader_options():
         identity = source._get_identity()
         stored = source._vault_retrieve(identity) or {}
         supplied = {k: v for k, v in params.items() if v not in (None, "")}
-        params = dict(source._default_params) if source._uses_configured_params() else {**source._default_params, **stored, **supplied}
+        configured_only = source._uses_configured_params()
+        params = dict(source._default_params) if configured_only else {**source._default_params, **stored, **supplied}
+    if not configured_only:
+        _reject_metadata_hosts(dict(data.get("params") or {}))
 
     try:
         options = loader_class.discover_param_options(param_name, params)

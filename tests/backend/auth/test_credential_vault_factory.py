@@ -167,3 +167,18 @@ class TestSingleton:
         v1 = get_credential_vault()
         v2 = get_credential_vault()
         assert v1 is v2
+
+
+class TestVaultDisabled:
+
+    @pytest.mark.parametrize("value", ["off", "none", "disabled", "OFF"])
+    def test_off_creates_no_key_or_database(self, tmp_path, monkeypatch, value):
+        monkeypatch.delenv("CREDENTIAL_VAULT_KEY", raising=False)
+        monkeypatch.setenv("CREDENTIAL_VAULT", value)
+        monkeypatch.setattr("data_formulator.auth.vault.get_data_formulator_home", lambda: tmp_path)
+
+        from data_formulator.auth.vault import get_credential_vault
+
+        assert get_credential_vault() is None
+        assert not (tmp_path / ".vault_key").exists()
+        assert not (tmp_path / "credentials.db").exists()

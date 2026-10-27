@@ -6,27 +6,36 @@
 Audit hooks inside the worker are a guard rail, not a boundary (PEP 578), so on
 macOS and Linux each worker also runs under the operating system's sandbox:
 
-* Reads: the Python installation, system libraries, and workspaces: Data
-  Formulator's workspace folders (``users/``, ``workspaces/``, and demo sites'
-  ``sites/``), or one outside
-  workspace such as a linked folder. Not the home directory (SSH keys, cloud
-  credentials) or Data Formulator's credential store, configuration, logs, and
-  schedules. The audit hook still limits each run to its own workspace.
+* Reads: the Python installation, system libraries, and workspaces. In
+  single-user local mode one worker reads all of Data Formulator's workspace
+  folders (``users/``, ``workspaces/``, and demo sites' ``sites/``); on a
+  multi-user server each worker reads only its own workspace, because native
+  libraries (DuckDB, pyarrow) open files without passing the audit hook. Never
+  the home directory (SSH keys, cloud credentials) or Data Formulator's
+  credential store, sessions, configuration, logs, and schedules.
 * Writes: a private temporary directory only. Results return over a pipe.
 * Network (macOS): internet allowed; loopback and Unix sockets denied, so code
   cannot call Data Formulator's local API or other local services. Only the
   system DNS socket is reachable.
 * Network (Linux): none. Bubblewrap cannot separate loopback from the internet
   without a proxy; agents fetch remote data with ``run_terminal`` instead.
+  Containers that forbid mounting ``/proc`` (App Service, Docker) get no
+  ``/proc`` at all rather than the host's.
 
-Windows, or Linux without Bubblewrap, keeps the audit-hook-only worker.
+Windows, or Linux without a usable Bubblewrap, keeps the audit-hook-only worker,
+started as a fresh interpreter with a minimal environment so it inherits none of
+the server's memory or secrets. Bubblewrap is found through ``DF_SANDBOX_BWRAP``,
+then ``PATH``, then a binary a deployment package bundles at ``sandbox/bin/bwrap``.
+``DF_REQUIRE_OS_SANDBOX=1`` refuses to run code instead of falling back.
 """
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -38,6 +47,39 @@ _MACOS_SYSTEM_READS = ("/System", "/usr", "/Library", "/private/etc", "/private/
 _LINUX_SYSTEM_READS = ("/usr", "/lib", "/lib32", "/lib64", "/bin", "/sbin", "/etc", "/opt")
 # macOS resolves host names through this socket.
 _MACOS_DNS_SOCKET = "/private/var/run/mDNSResponder"
+# A bubblewrap binary that a deployment package may carry (App Service images
+# have no bwrap and some hosts cannot install one at runtime). Build pipelines
+# copy it here; it is git-ignored and never part of the source tree.
+BUNDLED_BWRAP = Path(__file__).resolve().parent / "bin" / "bwrap"
+
+
+def bwrap_executable() -> str | None:
+    """``DF_SANDBOX_BWRAP``, else ``bwrap`` on ``PATH``, else the bundled binary."""
+    configured = os.environ.get("DF_SANDBOX_BWRAP", "").strip()
+    candidates = [configured] if configured else [shutil.which("bwrap"), str(BUNDLED_BWRAP)]
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate):
+            if not os.access(candidate, os.X_OK):
+                try:
+                    # Zips built on Windows drop the executable bit.
+                    os.chmod(candidate, 0o755)
+                except OSError:
+                    continue
+            if os.access(candidate, os.X_OK):
+                return candidate
+    return None
+
+
+@functools.lru_cache(maxsize=None)
+def bwrap_usable(bwrap: str) -> bool:
+    """Whether *bwrap* can create a sandbox here (some hosts forbid user namespaces)."""
+    try:
+        return subprocess.run(
+            [bwrap, "--unshare-all", "--ro-bind", "/", "/", "true"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15,
+        ).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def confinement_kind() -> str | None:
@@ -50,9 +92,24 @@ def confinement_kind() -> str | None:
         return None
     if sys.platform == "darwin" and Path(SEATBELT).is_file():
         return "seatbelt"
-    if sys.platform.startswith("linux") and shutil.which("bwrap"):
-        return "bwrap"
+    if sys.platform.startswith("linux"):
+        bwrap = bwrap_executable()
+        if bwrap and bwrap_usable(bwrap):
+            return "bwrap"
     return None
+
+
+def describe() -> str:
+    """One line for the startup log: which isolation the Python sandbox will use."""
+    kind = confinement_kind()
+    if kind == "seatbelt":
+        return "macOS sandbox-exec"
+    if kind == "bwrap":
+        bwrap = bwrap_executable()
+        return f"bubblewrap ({bwrap}{'' if bwrap_can_mount_proc(bwrap) else ', without /proc'})"
+    bwrap = bwrap_executable() if sys.platform.startswith("linux") else None
+    reason = f"bubblewrap at {bwrap} cannot create a sandbox here" if bwrap else "no OS sandbox available"
+    return f"none, audit hooks only ({reason})"
 
 
 def network_allowed(kind: str | None) -> bool:
@@ -95,11 +152,14 @@ def shared_read_roots() -> list[str]:
 
 
 def worker_key(workspace: str | None) -> str:
-    """Workers are shared across Data Formulator's workspaces and dedicated to any other folder."""
+    """Single-user local mode shares workers across Data Formulator's workspaces; otherwise
+    (multi-user servers, or any other folder) a worker is dedicated to one workspace."""
     if not workspace:
         return ""
     resolved = os.path.realpath(workspace)
-    if any(resolved == root or resolved.startswith(root + os.sep) for root in shared_read_roots()):
+    from data_formulator.auth.identity import is_local_mode
+    if is_local_mode() and any(resolved == root or resolved.startswith(root + os.sep)
+                               for root in shared_read_roots()):
         return SHARED
     return resolved
 
@@ -129,19 +189,39 @@ def seatbelt_profile(read_roots: list[str], write_dir: str, *, allow_network: bo
     return profile
 
 
-def bwrap_prefix(read_roots: list[str], write_dir: str) -> list[str]:
+@functools.lru_cache(maxsize=None)
+def bwrap_can_mount_proc(bwrap: str = "bwrap") -> bool:
+    """Whether a fresh ``/proc`` can be mounted; containers with masked ``/proc`` paths refuse it."""
+    try:
+        return subprocess.run(
+            [bwrap, "--die-with-parent", "--unshare-all", "--ro-bind", "/", "/", "--proc", "/proc", "true"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15,
+        ).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def bwrap_prefix(read_roots: list[str], write_dir: str, *, mount_proc: bool = True) -> list[str]:
     """``bwrap`` arguments: a read-only view of system and Python paths, no network, one writable directory."""
-    command = ["bwrap", "--die-with-parent", "--unshare-all", "--cap-drop", "ALL",
-               "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"]
+    # No --die-with-parent: Linux delivers that signal when the spawning *thread*
+    # exits, which kills workers prewarmed from short-lived threads. Workers exit
+    # on their own when the server's end of the pipe closes.
+    command = ["bwrap", "--unshare-all", "--cap-drop", "ALL", "--dev", "/dev"]
+    if mount_proc:
+        command += ["--proc", "/proc"]
+    command += ["--tmpfs", "/tmp"]
     for path in [*_LINUX_SYSTEM_READS, *read_roots]:
         command += ["--ro-bind-try", path, path]
     command += ["--bind", write_dir, write_dir, "--chdir", write_dir]
     return command
 
 
-def confined_worker_command(kind: str, key: str, write_dir: str,
+def confined_worker_command(kind: str | None, key: str, write_dir: str,
                             read_fd: int, write_fd: int) -> list[str]:
-    """The command that starts one confined warm worker for ``key`` (see :func:`worker_key`)."""
+    """The command that starts one warm worker for ``key`` (see :func:`worker_key`).
+
+    ``kind`` ``None`` starts the same isolated interpreter without an OS sandbox.
+    """
     read_roots = python_read_roots()
     read_roots += shared_read_roots() if key == SHARED else [key] if key else []
     write_dir = os.path.realpath(write_dir)
@@ -150,11 +230,14 @@ def confined_worker_command(kind: str, key: str, write_dir: str,
     # directory on sys.path, so workspace files cannot shadow real modules.
     worker = [sys.executable, "-I", "-m", "data_formulator.sandbox.confined_worker",
               str(read_fd), str(write_fd), "1" if allow_network else "0"]
+    if kind is None:
+        return worker
     if kind == "seatbelt":
         return [SEATBELT, "-p", seatbelt_profile(read_roots, write_dir, allow_network=allow_network), *worker]
     if kind == "bwrap":
-        bwrap = shutil.which("bwrap") or "bwrap"
-        return [bwrap, *bwrap_prefix(read_roots, write_dir)[1:], "--", *worker]
+        bwrap = bwrap_executable() or "bwrap"
+        prefix = bwrap_prefix(read_roots, write_dir, mount_proc=bwrap_can_mount_proc(bwrap))
+        return [bwrap, *prefix[1:], "--", *worker]
     raise ValueError(f"Unknown confinement: {kind}")
 
 

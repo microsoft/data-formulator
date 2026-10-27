@@ -1431,6 +1431,9 @@ When migrating Data Formulator to a new server (or rebuilding a Docker container
 | `DF_CODE_SIGNING_SECRET` | `.env` (env var, optional) | If set, overrides Flask-derived signing key. Must match the old value or all code signatures break. |
 | `.code-signing-key` | `DATA_FORMULATOR_HOME/.code-signing-key` | Code-signing key used when neither `DF_CODE_SIGNING_SECRET` nor `FLASK_SECRET_KEY` is set. Saved charts cannot refresh until re-executed. |
 | `CREDENTIAL_VAULT_KEY` | `.env` (env var, optional) | If set, overrides `.vault_key` file. Must match or vault data is unreadable. |
+| `CREDENTIAL_VAULT=off` | env var (optional) | Disables the vault: no `.vault_key` or `credentials.db` is created, credentials last only for the session, and shared connections or account model sign-ins that need stored secrets are unavailable. Used by the public demo. |
+| `DF_SANDBOX_BWRAP` | env var (optional) | Path to a bubblewrap binary for the Python sandbox's OS isolation on Linux, when it is neither on `PATH` nor bundled at `py-src/data_formulator/sandbox/bin/bwrap` (a git-ignored location that deployment packages fill). The startup log reports the isolation in use: `Python sandbox isolation: ...`. |
+| `DF_REQUIRE_OS_SANDBOX=1` | env var (optional) | Refuse to run generated code when OS isolation is unavailable, instead of falling back to audit hooks only. Recommended for hosted deployments once the startup log confirms isolation. |
 | `users/` & `workspaces/` | `DATA_FORMULATOR_HOME/` | User workspace data (parquet files, session metadata). |
 | `configuration.json` | `DATA_FORMULATOR_HOME/configuration.json` | Installation policies, enabled resources, defaults, and shared-connection vault references. |
 | `workflows/` | `DATA_FORMULATOR_HOME/workflows/` | Administrator-published workflow YAML referenced by installation configuration. |

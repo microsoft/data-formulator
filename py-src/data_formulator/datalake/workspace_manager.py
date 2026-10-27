@@ -303,6 +303,9 @@ class WorkspaceManager:
         """Get the filesystem path for a workspace."""
         return self._root / self._safe_id(workspace_id)
 
+    def mark_accessed(self, workspace_id: str) -> None:
+        """Record that *workspace_id* was just used (retention-managed backends only)."""
+
     def move_workspaces_from(self, source_root: Path) -> list[str]:
         """Copy all workspaces from *source_root* into this manager's root.
 

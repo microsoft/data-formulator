@@ -9,6 +9,9 @@ Key resolution (first match wins):
 2. ``DATA_FORMULATOR_HOME/.vault_key`` file — auto-generated on first run
 3. Neither → vault disabled, plugins fall back to session-only storage
 
+``CREDENTIAL_VAULT=off`` disables the vault outright: no key file or
+database is created, and credentials last only for the session.
+
 For local single-user mode the vault is **zero-config**: a Fernet key is
 auto-generated on first access and persisted to the data directory.  Server
 admins who want deterministic keys (e.g. for Docker volume mounts) can set
@@ -93,13 +96,17 @@ def get_credential_vault() -> Optional[CredentialVault]:
 
     _initialized = True
 
+    vault_type = os.environ.get("CREDENTIAL_VAULT", "local").strip().lower()
+    if vault_type in ("off", "none", "disabled", "false", "0"):
+        # Deployments that keep no credentials (e.g. a public demo) need no key or database on disk.
+        logger.info("Credential vault disabled (CREDENTIAL_VAULT=%s)", vault_type)
+        return None
+
     home = get_data_formulator_home()
     key = _resolve_key(home)
     if not key:
         logger.info("Credential vault disabled (no key available)")
         return None
-
-    vault_type = os.environ.get("CREDENTIAL_VAULT", "local").strip().lower()
 
     if vault_type == "local":
         from .local_vault import LocalCredentialVault
