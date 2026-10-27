@@ -95,7 +95,8 @@ app.json_encoder = CustomJSONEncoder
 
 # Default config from env (can be overridden by CLI args)
 # DISABLE_DATABASE=true is a convenience preset for multi-user anonymous deployments.
-# It bundles: ephemeral workspace + no data connectors + no custom models + hide keys.
+# It bundles: ephemeral workspace + no data connectors + no custom models + hide keys
+# + public web discovery off by default.
 _disable_database = os.environ.get('DISABLE_DATABASE', 'false').lower() == 'true'
 _default_ws_backend = os.environ.get('WORKSPACE_BACKEND', 'local')
 if _disable_database and _default_ws_backend == 'local':
@@ -108,6 +109,8 @@ app.config['CLI_ARGS'] = {
     'disable_display_keys': _disable_database or os.environ.get('DISABLE_DISPLAY_KEYS', 'false').lower() == 'true',
     'disable_data_connectors': _disable_database or os.environ.get('DISABLE_DATA_CONNECTORS', 'false').lower() == 'true',
     'disable_custom_models': _disable_database or os.environ.get('DISABLE_CUSTOM_MODELS', 'false').lower() == 'true',
+    # Anonymous deployments do not send search terms to the provider unless DF_WEB_SEARCH_ENABLED says so.
+    'web_search_default_off': _disable_database,
     'max_display_rows': int(os.environ.get('MAX_DISPLAY_ROWS', '10000')),
     'scratch_max_bytes': int(os.environ.get('SCRATCH_MAX_SIZE_MB', '1024')) * 1024 * 1024,
     'scratch_max_file_bytes': int(os.environ.get('SCRATCH_MAX_FILE_SIZE_MB', '20')) * 1024 * 1024,
@@ -550,8 +553,9 @@ def parse_args() -> argparse.Namespace:
         help="Whether disable displaying keys in the frontend UI, recommended to turn on if you host the app not just for yourself.")
     parser.add_argument("--disable-database", action='store_true', default=os.environ.get('DISABLE_DATABASE', 'false').lower() == 'true',
         help="Deprecated demo preset: enables managed mode and ephemeral workspace, disables user-created data connectors, "
-             "disables custom LLM endpoints, and hides API keys. Equivalent to setting "
-             "--workspace-backend=ephemeral --disable-data-connectors --disable-custom-models --disable-display-keys.")
+             "disables custom LLM endpoints, hides API keys, and defaults public web discovery to off. Equivalent to setting "
+             "--workspace-backend=ephemeral --disable-data-connectors --disable-custom-models --disable-display-keys "
+             "DF_WEB_SEARCH_ENABLED=false.")
     parser.add_argument("--disable-data-connectors", action='store_true', default=os.environ.get('DISABLE_DATA_CONNECTORS', 'false').lower() == 'true',
            help="Allow only administrator-configured data connectors; block creation and use of personal connectors. "
                "Configured sources remain available with server-controlled connection parameters.")
@@ -597,7 +601,8 @@ def run_app():
     args = parse_args()
     
     # --disable-database is a convenience preset for multi-user anonymous deployments.
-    # It bundles: ephemeral workspace + no data connectors + no custom models + hide keys.
+    # It bundles: ephemeral workspace + no data connectors + no custom models + hide keys
+    # + public web discovery off by default.
     workspace_backend = args.workspace_backend
     if args.disable_database:
         args.managed = True
@@ -616,6 +621,7 @@ def run_app():
         'disable_display_keys': args.disable_display_keys,
         'disable_data_connectors': args.disable_data_connectors,
         'disable_custom_models': args.disable_custom_models,
+        'web_search_default_off': args.disable_database,
         'max_display_rows': args.max_display_rows,
         'scratch_max_bytes': args.scratch_max_size_mb * 1024 * 1024,
         'scratch_max_file_bytes': args.scratch_max_file_size_mb * 1024 * 1024,

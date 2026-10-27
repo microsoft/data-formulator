@@ -484,11 +484,10 @@ class AnalystAgent:
         self.workspace = workspace
         self.identity_id = identity_id
         self.workspace_id = workspace_id
-        from data_formulator.analyst.skills.connected_data import parallel_search
-        from data_formulator.configuration import terminal_mode
+        from data_formulator.configuration import terminal_mode, web_search_enabled
         self.registry = ((skill_registry or build_registry())
                          .with_terminal_policy(terminal_mode())
-                         .with_web_search_policy(parallel_search.enabled()))
+                         .with_web_search_policy(web_search_enabled()))
         self.agent_exploration_rules = agent_exploration_rules
         self.agent_coding_rules = agent_coding_rules
         self.language_instruction = language_instruction

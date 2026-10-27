@@ -201,3 +201,27 @@ class TestConnectedDataSkill:
         monkeypatch.setenv("DF_WEB_SEARCH_ENABLED", "false")
         assert "error" in parallel_search.call_tool("web_search", SEARCH)
         assert not server.requests
+
+
+class TestOperatorGate:
+    @pytest.mark.parametrize("value,expected", [
+        ("true", True), ("1", True), ("YES", True), ("on", True),
+        ("false", False), ("0", False), ("anything-else", False),
+    ])
+    def test_env_var_decides_in_either_deployment(self, monkeypatch, value, expected):
+        from data_formulator.configuration import web_search_enabled
+
+        monkeypatch.setenv("DF_WEB_SEARCH_ENABLED", value)
+        assert web_search_enabled() is expected
+
+    @pytest.mark.parametrize("preset,expected", [(False, True), (True, False)])
+    def test_anonymous_preset_defaults_to_off(self, monkeypatch, preset, expected):
+        import flask
+
+        from data_formulator.configuration import web_search_enabled
+
+        monkeypatch.delenv("DF_WEB_SEARCH_ENABLED", raising=False)
+        app = flask.Flask(__name__)
+        app.config["CLI_ARGS"] = {"web_search_default_off": preset}
+        with app.app_context():
+            assert web_search_enabled() is expected

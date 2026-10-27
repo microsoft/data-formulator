@@ -16,8 +16,11 @@ or preview before data is added to the workspace.
 
 ## Configuration and privacy
 
-- `DF_WEB_SEARCH_ENABLED` defaults to `true`. `true`, `1`, `yes`, and `on`
-  enable both tools (case insensitive); other values disable them.
+- `DF_WEB_SEARCH_ENABLED` is read by `configuration.web_search_enabled()`.
+  `true`, `1`, `yes`, and `on` enable both tools (case insensitive); other values
+  disable them. It defaults to on, except under the `DISABLE_DATABASE` /
+  `--disable-database` preset for hosted anonymous deployments, where it defaults
+  to off. It belongs to the "Feature gates" block of `.env.template`.
 - When disabled, `SkillRegistry.with_web_search_policy(False)` drops both tool
   specs and the guidance naming them, so the model never sees the surface, and
   `parallel_search.call_tool` also denies calls that arrive from old history.

@@ -32,7 +32,9 @@ TOOL_NAMES = frozenset({"web_search", "web_fetch"})
 
 def enabled() -> bool:
     """Operators can disable both discovery tools without disabling other routes."""
-    return os.getenv("DF_WEB_SEARCH_ENABLED", "true").strip().lower() in {"true", "1", "yes", "on"}
+    from data_formulator.configuration import web_search_enabled
+
+    return web_search_enabled()
 
 
 def _valid_text(value, limit):

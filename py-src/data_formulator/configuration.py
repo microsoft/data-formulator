@@ -77,6 +77,18 @@ def terminal_mode() -> str:
     return mode if mode in ('off', 'ask', 'auto') else 'off'
 
 
+def web_search_enabled() -> bool:
+    """Public web discovery (``web_search`` / ``web_fetch``) through the search MCP endpoint.
+
+    Hosted anonymous deployments default to off so search terms and page URLs are
+    not sent to the provider without an operator opting in; the default otherwise
+    is on. ``DF_WEB_SEARCH_ENABLED`` overrides either way.
+    """
+    args = current_app.config.get('CLI_ARGS', {}) if has_app_context() else {}
+    default = 'false' if args.get('web_search_default_off') else 'true'
+    return os.environ.get('DF_WEB_SEARCH_ENABLED', default).strip().lower() in ('true', '1', 'yes', 'on')
+
+
 def user_models_locked() -> bool:
     args = current_app.config.get('CLI_ARGS', {}) if has_app_context() else {}
     return bool(args.get('disable_custom_models') or args.get('disable_database') or any(
