@@ -433,6 +433,7 @@ class _WarmWorkerPool:
 
     READY_TIMEOUT = 60
     MAX_WORKSPACES = 3
+    REAP_INTERVAL = 30
 
     def __init__(self, size: int = 2):
         self._size = size
@@ -444,7 +445,70 @@ class _WarmWorkerPool:
         self._confinement_failed = False
         self._keys: dict[int, object] = {}
         self._pending: dict[object, list[_PendingWorker]] = {}
+        # id(proc) -> (idle since, returned after use); see _reap_locked.
+        self._idle: dict[int, tuple[float, bool]] = {}
+        self._reaper: threading.Thread | None = None
         atexit.register(self.shutdown)
+
+    @staticmethod
+    def _idle_limits() -> tuple[float, int | None]:
+        """(seconds an idle worker is kept, most used workers kept idle per process).
+
+        An isolated worker is a separate interpreter (~200 MB with pandas, NumPy,
+        DuckDB, scikit-learn). On a multi-user server each gunicorn process has its
+        own pool and a visitor's next request rarely returns to the same process, so
+        idle workers are kept briefly; sessions prewarm theirs during the model call.
+        """
+        from data_formulator.auth.identity import is_local_mode
+        local = is_local_mode()
+        configured = os.environ.get("DF_SANDBOX_IDLE_SECONDS", "").strip()
+        try:
+            ttl = float(configured) if configured else (600.0 if local else 120.0)
+        except ValueError:
+            ttl = 600.0 if local else 120.0
+        return ttl, None if local else 2
+
+    def _mark_idle_locked(self, pair, used: bool) -> None:
+        self._idle[id(pair[0])] = (time.monotonic(), used)
+
+    def _reap_locked(self) -> list[tuple[object, object]]:
+        """Remove idle workers past the idle limit, then used ones beyond the per-process cap."""
+        ttl, cap = self._idle_limits()
+        now = time.monotonic()
+        stale: list[tuple[object, object]] = []
+        used: list[tuple[float, object, tuple[object, object]]] = []
+        for key, pairs in list(self._available.items()):
+            for pair in list(pairs):
+                since, was_used = self._idle.get(id(pair[0]), (now, True))
+                if now - since >= ttl:
+                    pairs.remove(pair)
+                    stale.append(pair)
+                elif was_used:
+                    used.append((since, key, pair))
+        if cap is not None and len(used) > cap:
+            for _, key, pair in sorted(used, key=lambda entry: entry[0])[:len(used) - cap]:
+                self._available[key].remove(pair)
+                stale.append(pair)
+        for pair in stale:
+            self._idle.pop(id(pair[0]), None)
+        return stale
+
+    def _ensure_reaper(self) -> None:
+        with self._lock:
+            if self._reaper is not None or self._closed:
+                return
+            self._reaper = threading.Thread(target=self._reap_loop, daemon=True, name="sandbox-reaper")
+        self._reaper.start()
+
+    def _reap_loop(self) -> None:
+        while True:
+            time.sleep(self.REAP_INTERVAL)
+            with self._lock:
+                if self._closed:
+                    return
+                stale = self._reap_locked()
+            for proc, conn in stale:
+                self.discard(proc, conn)
 
     def _confinement(self) -> str | None:
         from .confinement import confinement_kind
@@ -499,6 +563,7 @@ class _WarmWorkerPool:
         with self._lock:
             self._all.append(pair)
             self._keys[id(pair[0])] = self._key(workspace_path)
+        self._ensure_reaper()
 
     def prewarm(self, workspace_path: str | None = None, count: int | None = None) -> None:
         """Start workers for *workspace_path* in the background until *count* (default: the pool size)
@@ -540,6 +605,7 @@ class _WarmWorkerPool:
                         stale = pair
                     else:
                         self._available.setdefault(key, []).append(pair)
+                        self._mark_idle_locked(pair, used=False)
             pending.pair = pair
             pending.done.set()
         if stale is not None:
@@ -550,11 +616,12 @@ class _WarmWorkerPool:
         starting (see :meth:`prewarm`), else a new one."""
         key = self._key(workspace_path)
         with self._lock:
-            stale = self._touch(key)
+            stale = self._touch(key) + self._reap_locked()
             available = self._available.setdefault(key, [])
             pair = pending = None
             while available:
                 proc, conn = available.pop()
+                self._idle.pop(id(proc), None)
                 if proc.is_alive():
                     pair = (proc, conn)
                     break
@@ -576,17 +643,25 @@ class _WarmWorkerPool:
 
     def release(self, proc, conn) -> None:
         """Return a worker to the pool for reuse."""
+        stale: list[tuple[object, object]] = []
+        kept = False
         with self._lock:
             key = self._keys.get(id(proc))
             if not self._closed and proc.is_alive() and key in self._recent:
                 self._available.setdefault(key, []).append((proc, conn))
-                return
-        self.discard(proc, conn)
+                self._mark_idle_locked((proc, conn), used=True)
+                kept = True
+                stale = self._reap_locked()  # may include this worker if over the cap
+        for pair in stale:
+            self.discard(*pair)
+        if not kept:
+            self.discard(proc, conn)
 
     def discard(self, proc, conn) -> None:
         """Discard a broken worker (don't put it back)."""
         with self._lock:
             self._keys.pop(id(proc), None)
+            self._idle.pop(id(proc), None)
             self._all = [pair for pair in self._all if pair[0] is not proc]
         try:
             conn.send(None)

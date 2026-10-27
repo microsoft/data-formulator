@@ -376,13 +376,16 @@ def _safety_checks():
     if sandbox == 'local':
         from data_formulator.sandbox.confinement import confinement_kind, describe
         from data_formulator.sandbox.local_sandbox import _os_sandbox_required
+        # A data_formulator logger: under `gunicorn --chdir .../data_formulator app:app` this
+        # module is the top-level `app`, whose INFO records would not reach the configured handler.
+        sandbox_log = logging.getLogger('data_formulator.sandbox')
         isolation = describe()
         if confinement_kind() is None and _os_sandbox_required():
-            logger.critical('Python sandbox isolation: %s. DF_REQUIRE_OS_SANDBOX is set, so generated code will not run.', isolation)
+            sandbox_log.critical('Python sandbox isolation: %s. DF_REQUIRE_OS_SANDBOX is set, so generated code will not run.', isolation)
         elif confinement_kind() is None and multi_user:
-            logger.warning('Python sandbox isolation: %s. Native libraries (DuckDB, pyarrow) can read files beyond the workspace.', isolation)
+            sandbox_log.warning('Python sandbox isolation: %s. Native libraries (DuckDB, pyarrow) can read files beyond the workspace.', isolation)
         else:
-            logger.info('Python sandbox isolation: %s', isolation)
+            sandbox_log.info('Python sandbox isolation: %s', isolation)
 
     if multi_user and sandbox == 'not_a_sandbox':
         logger.critical(

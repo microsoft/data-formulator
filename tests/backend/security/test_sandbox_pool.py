@@ -123,3 +123,40 @@ def test_session_with_a_workspace_does_not_block_on_a_cold_start(pool, monkeypat
     session.close()
     assert len(pool.spawned) == 1
     assert len(pool._available["/ws/a"]) == 1
+
+
+def test_used_idle_workers_beyond_the_cap_are_discarded_oldest_first(pool, monkeypatch):
+    # Each isolated worker is a separate ~200 MB interpreter; multi-user servers keep few idle.
+    monkeypatch.setattr(pool, "_idle_limits", lambda: (600.0, 2))
+    pool.gate.set()
+    pairs = [pool.acquire(name) for name in ("/ws/a", "/ws/b", "/ws/c")]
+    for pair in pairs:
+        pool.release(*pair)
+        time.sleep(0.01)
+    assert [pair[0].alive for pair in pairs] == [False, True, True]
+    assert sum(len(v) for v in pool._available.values()) == 2
+
+
+def test_prewarmed_workers_are_not_counted_against_the_cap(pool, monkeypatch):
+    monkeypatch.setattr(pool, "_idle_limits", lambda: (600.0, 0))
+    pool.prewarm("/ws/a", count=2)
+    pool.gate.set()
+    _wait_until(lambda: len(pool._available.get("/ws/a", [])) == 2)
+    used = pool.acquire("/ws/a")
+    pool.release(*used)
+    assert not used[0].alive  # a used worker over the cap goes
+    assert len(pool._available["/ws/a"]) == 1 and pool._available["/ws/a"][0][0].alive
+
+
+def test_idle_workers_expire(pool, monkeypatch):
+    monkeypatch.setattr(pool, "_idle_limits", lambda: (0.05, None))
+    pool.gate.set()
+    pair = pool.acquire("/ws/a")
+    pool.release(*pair)
+    assert pair[0].alive
+    time.sleep(0.1)
+    with pool._lock:
+        stale = pool._reap_locked()
+    for proc, conn in stale:
+        pool.discard(proc, conn)
+    assert not pair[0].alive and pool._available["/ws/a"] == []
