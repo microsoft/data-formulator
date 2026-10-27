@@ -88,6 +88,8 @@
       "partialFailure_plural": "一部のデータを読み込みましたが、{{count}} 個のテーブルで失敗しました。"
     },
     "toolLabels": {
+      "searchingWeb": "公開ウェブを検索しています",
+      "readingWebPage": "公開ウェブページを読み取っています",
       "readingFile": "ファイルを読み取っています",
       "writingFile": "ファイルを書き込んでいます",
       "listingFiles": "ファイルを一覧表示しています",

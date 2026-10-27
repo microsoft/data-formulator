@@ -88,6 +88,8 @@
       "partialFailure_plural": "कुछ डेटा लोड हुआ, लेकिन {{count}} तालिकाएं विफल रहीं।"
     },
     "toolLabels": {
+      "searchingWeb": "सार्वजनिक वेब खोजा जा रहा है",
+      "readingWebPage": "सार्वजनिक वेब पेज पढ़ा जा रहा है",
       "readingFile": "फ़ाइल पढ़ी जा रही है",
       "writingFile": "फ़ाइल लिखी जा रही है",
       "listingFiles": "फ़ाइलें सूचीबद्ध की जा रही हैं",

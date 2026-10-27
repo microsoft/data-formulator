@@ -88,6 +88,8 @@
       "partialFailure_plural": "Some data was loaded, but {{count}} tables failed."
     },
     "toolLabels": {
+      "searchingWeb": "Searching the public web",
+      "readingWebPage": "Reading a public web page",
       "readingFile": "Reading file",
       "writingFile": "Writing file",
       "listingFiles": "Listing files",

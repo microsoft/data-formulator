@@ -88,6 +88,8 @@
       "partialFailure_plural": "Certaines données ont été chargées, mais le chargement de {{count}} tables a échoué."
     },
     "toolLabels": {
+      "searchingWeb": "Recherche sur le web public",
+      "readingWebPage": "Lecture d'une page web publique",
       "readingFile": "Lecture du fichier",
       "writingFile": "Écriture du fichier",
       "listingFiles": "Liste des fichiers",

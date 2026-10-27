@@ -88,6 +88,8 @@
       "partialFailure_plural": "일부 데이터는 불러왔지만 {{count}}개 테이블을 불러오지 못했습니다."
     },
     "toolLabels": {
+      "searchingWeb": "공개 웹 검색 중",
+      "readingWebPage": "공개 웹 페이지 읽는 중",
       "readingFile": "파일 읽는 중",
       "writingFile": "파일 쓰는 중",
       "listingFiles": "파일 목록 조회 중",
