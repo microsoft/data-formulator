@@ -749,12 +749,16 @@ To stop the container: `docker compose down`
 
 Workspace data (uploaded files, sessions) is persisted in a Docker volume (`data_formulator_home`) so it survives container restarts.
 
+Compose publishes the port on `127.0.0.1` only and sets `DF_SINGLE_USER=1`, so you get single-user local mode (no login, all local features). To share the container with other machines, remove both: other clients then get separate anonymous workspaces instead of acting as you.
+
 ### Build the image manually
 
 ```bash
 docker build -t data-formulator .
-docker run --rm -p 5567:5567 --env-file .env data-formulator
+docker run --rm -p 127.0.0.1:5567:5567 -e DF_SINGLE_USER=1 --env-file .env data-formulator
 ```
+
+Without `DF_SINGLE_USER=1` the container (which listens on `0.0.0.0`) runs in anonymous multi-user mode. Set it only when the published port is reachable from your machine alone.
 
 ### Docker sandbox (`SANDBOX=docker`) is not supported inside a container
 
@@ -1052,6 +1056,8 @@ data_formulator \
 
 **Security notes:** In single-user localhost mode, the server ignores the `X-Identity-Id` header entirely and uses a fixed identity derived from the OS username (e.g., `local:alice`). This means vault credentials and workspaces are tied to your OS account, not a random browser UUID — clearing localStorage won't orphan your data.
 
+Single-user mode applies only when the server listens on a loopback address (`--host 127.0.0.1`, the CLI default). A server on `--host 0.0.0.0`, or under a WSGI server such as gunicorn without `HOST=127.0.0.1`, uses anonymous multi-user mode, because anyone who can reach it would otherwise act as you. `DF_SINGLE_USER=1` keeps single-user mode where access is restricted another way; `docker-compose.yml` sets it and publishes the port on `127.0.0.1` only. Data-loader plugins (`*_data_loader.py` in `~/.data_formulator/plugins`) load only in single-user mode, unless `DF_ALLOW_PLUGINS=1`.
+
 ### Profile 2: Multi-User Anonymous (demo / public hosting)
 
 A shared server (e.g., for demos, workshops, public access). No login, short-lived server-side workspaces, and no sensitive features.
@@ -1174,7 +1180,9 @@ FLASK_SECRET_KEY=<generate-with-secrets-token-hex-32>
 | `--disable-custom-models` | `DISABLE_CUSTOM_MODELS` | `false` | Prevent users from adding custom LLM endpoints |
 | `--max-display-rows` | `MAX_DISPLAY_ROWS` | `10000` | Max rows sent to frontend |
 | `--data-dir` | `DATA_FORMULATOR_HOME` | `~/.data_formulator` | Data directory |
-| `--host` | `HOST` | `127.0.0.1` | Network interface to bind |
+| `--host` | `HOST` | `127.0.0.1` | Network interface to bind. Only a loopback address selects single-user local mode; under gunicorn, set `HOST=127.0.0.1` for that |
+| | `DF_SINGLE_USER` | unset | `1` keeps single-user local mode on a non-loopback address. Only for servers no one else can reach (e.g. a container port published on `127.0.0.1`) |
+| | `DF_ALLOW_PLUGINS` | unset | `1` loads data-loader plugins outside single-user local mode. The plugin directory must be trusted |
 | `-p`, `--port` | — | `5567` | Port number |
 | `--dev` | `DEV_MODE` | `false` | Development mode (no auto-open browser) |
 | — | `AUTH_PROVIDER` | *(unset)* | `oidc`, `github`, `azure_easyauth`, or unset for anonymous |

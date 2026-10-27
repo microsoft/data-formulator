@@ -21,9 +21,9 @@ Two loader sources:
    auto-registered.  If a plugin key collides with a built-in key the
    plugin wins (override).
 
-   For safety, plugin scanning is enabled only when running in local
-   single-user mode (``WORKSPACE_BACKEND=local``, the default).  In
-   multi-user / hosted deployments, set ``DF_ALLOW_PLUGINS=1`` to opt in
+   For safety, plugins load only in single-user local mode (see
+   ``auth.identity.is_local_mode``), once the app calls :func:`load_plugins`.
+   In multi-user / hosted deployments, set ``DF_ALLOW_PLUGINS=1`` to opt in
    explicitly — the plugin directory must be trusted, since loading a
    plugin executes arbitrary Python code in the server process.
 
@@ -192,10 +192,10 @@ def _plugin_scanning_enabled() -> tuple[bool, str]:
     """
     if os.environ.get("DF_ALLOW_PLUGINS", "").lower() in ("1", "true", "yes"):
         return True, "DF_ALLOW_PLUGINS opt-in"
-    backend = os.environ.get("WORKSPACE_BACKEND", "local")
-    if backend == "local":
-        return True, "WORKSPACE_BACKEND=local"
-    return False, f"WORKSPACE_BACKEND={backend} (set DF_ALLOW_PLUGINS=1 to enable)"
+    from data_formulator.auth.identity import is_local_mode
+    if is_local_mode():
+        return True, "single-user local mode"
+    return False, "not in single-user local mode (set DF_ALLOW_PLUGINS=1 to enable)"
 
 
 def _register_plugin_class(key: str, cls: type[ExternalDataLoader], py_file: Path) -> None:
@@ -294,18 +294,13 @@ def _load_plugin_file(py_file: Path) -> None:
         _log.warning("Failed to load plugin %s", py_file.name, exc_info=True)
 
 
-def _scan_plugin_dir() -> None:
+def _scan_plugin_dir(reason: str) -> None:
     """Scan ``PLUGIN_DIR`` for ``*_data_loader.py`` files.
 
     The registry key is derived from the filename:
     ``my_custom_data_loader.py`` → ``my_custom``.  Plugins override
     built-ins with the same key.
     """
-    enabled, reason = _plugin_scanning_enabled()
-    if not enabled:
-        _log.info("Plugin scanning disabled: %s", reason)
-        return
-
     plugin_path = Path(PLUGIN_DIR)
     if not plugin_path.is_dir():
         _log.debug("Plugin dir %s does not exist; skipping plugin scan", plugin_path)
@@ -328,7 +323,31 @@ def _scan_plugin_dir() -> None:
         reason,
     )
 
-_scan_plugin_dir()
+
+_plugins_loaded = False
+
+
+def load_plugins() -> None:
+    """Register the plugins in ``PLUGIN_DIR`` if this deployment allows them.
+
+    Called by the app once the auth mode is final (the CLI learns ``--host``
+    after import), since loading a plugin runs its code in the server.
+    """
+    global _plugins_loaded
+    enabled, reason = _plugin_scanning_enabled()
+    if not enabled:
+        if PLUGIN_LOADERS:
+            _log.warning("Unregistering plugins %s: %s", sorted(PLUGIN_LOADERS), reason)
+            for key in PLUGIN_LOADERS:
+                DATA_LOADERS.pop(key, None)
+            PLUGIN_LOADERS.clear()
+            _plugins_loaded = False
+        _log.info("Plugin scanning disabled: %s", reason)
+        return
+    if _plugins_loaded:
+        return
+    _plugins_loaded = True
+    _scan_plugin_dir(reason)
 
 # ---------------------------------------------------------------------------
 # Deployment restrictions
@@ -363,4 +382,5 @@ __all__ = [
     "PLUGIN_LOADERS",
     "PLUGIN_DIR",
     "get_available_loaders",
+    "load_plugins",
 ]

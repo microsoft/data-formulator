@@ -101,7 +101,7 @@ _default_ws_backend = os.environ.get('WORKSPACE_BACKEND', 'local')
 if _disable_database and _default_ws_backend == 'local':
     _default_ws_backend = 'ephemeral'
 app.config['CLI_ARGS'] = {
-    'host': os.environ.get('HOST', '127.0.0.1'),
+    'host': os.environ.get('HOST'),
     'managed': _disable_database or os.environ.get('DF_MANAGED', 'false').lower() == 'true',
     'disable_database': _disable_database,
     'sandbox': os.environ.get('SANDBOX', 'local'),
@@ -293,6 +293,8 @@ def _register_blueprints():
     # Initialise pluggable authentication (reads AUTH_PROVIDER env var)
     from data_formulator.auth.identity import init_auth, get_active_provider
     init_auth(app)
+    from data_formulator.data_loader import load_plugins
+    load_plugins()
 
     # Register auth gateway blueprints for stateful providers (e.g. GitHub OAuth)
     provider = get_active_provider()
@@ -365,7 +367,7 @@ def _safety_checks():
                 logger.warning('DF_ADMIN_EMAILS contains invalid sign-in addresses. Use full addresses, not short aliases.')
             if not local_mode and (provider is None or not (identities or (email_supported and valid_emails))):
                 logger.warning('Managed mode has no usable administrator access configuration. Configure authentication and DF_ADMIN_EMAILS or DF_ADMIN_IDENTITIES.')
-            host = cli.get('host') or os.environ.get('HOST', '127.0.0.1')
+            host = cli.get('host') or os.environ.get('HOST', '')
             if local_mode and (host not in ('127.0.0.1', 'localhost', '::1')
                                or os.environ.get('WEBSITE_INSTANCE_ID') or os.environ.get('WEBSITE_HOSTNAME')):
                 logger.critical('SECURITY WARNING: Managed mode uses local-owner administrator identity on a hosted or non-loopback server. Configure verified authentication before exposing this server.')
@@ -630,6 +632,13 @@ def run_app():
     # Now that --data-dir is applied, ensure the persistent log file lives
     # under the resolved DF home (re-points if it differs from the default).
     configure_file_logging()
+
+    # Single-user mode and plugins were first decided at import, before --host was known.
+    if os.environ.get('AUTH_PROVIDER', '').strip().lower() in ('', 'anonymous'):
+        from data_formulator.auth.identity import configure_local_mode
+        configure_local_mode(app)
+    from data_formulator.data_loader import load_plugins
+    load_plugins()
 
     # Register blueprints (this is where heavy imports happen)
     _register_blueprints()

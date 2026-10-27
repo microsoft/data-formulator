@@ -257,3 +257,63 @@ class TestIdentityRegexExpansion:
     def test_space_still_rejected(self):
         with pytest.raises(ValueError, match="disallowed"):
             _validate_identity_value("user name", "test")
+
+
+# ------------------------------------------------------------------
+# Single-user localhost mode follows the listening address
+# ------------------------------------------------------------------
+
+class TestSingleUserMode:
+    """Single-user mode treats every request as the machine's owner, so it
+    must not apply to a server other machines can reach (MSRC 168681)."""
+
+    @pytest.fixture(autouse=True)
+    def _env(self, monkeypatch):
+        for name in ("AUTH_PROVIDER", "HOST", "DF_SINGLE_USER"):
+            monkeypatch.delenv(name, raising=False)
+
+    @pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1"])
+    def test_loopback_host_is_single_user(self, app, host):
+        app.config["CLI_ARGS"] = {"host": host}
+        init_auth(app)
+        assert auth_module.is_local_mode()
+
+    def test_network_host_is_anonymous(self, app):
+        app.config["CLI_ARGS"] = {"host": "0.0.0.0"}
+        init_auth(app)
+        assert not auth_module.is_local_mode()
+        with app.test_request_context(headers={"X-Identity-Id": "550e8400-e29b-41d4-a716-446655440000"}):
+            assert get_identity_id() == "browser:550e8400-e29b-41d4-a716-446655440000"
+
+    def test_unknown_listening_address_is_anonymous(self, app):
+        """A WSGI server's bind address is unknown; HOST must name loopback explicitly."""
+        app.config["CLI_ARGS"] = {"host": None}
+        init_auth(app)
+        assert not auth_module.is_local_mode()
+
+    def test_loopback_host_env_is_single_user(self, app, monkeypatch):
+        monkeypatch.setenv("HOST", "127.0.0.1")
+        init_auth(app)
+        assert auth_module.is_local_mode()
+
+    def test_cli_host_decides_after_import(self, app):
+        """The CLI parses --host after import; re-deciding drops single-user mode."""
+        app.config["CLI_ARGS"] = {"host": "127.0.0.1"}
+        init_auth(app)
+        assert auth_module.is_local_mode()
+        app.config["CLI_ARGS"] = {"host": "0.0.0.0"}
+        auth_module.configure_local_mode(app)
+        assert not auth_module.is_local_mode()
+
+    def test_explicit_opt_in_keeps_single_user_on_a_network_host(self, app, monkeypatch):
+        monkeypatch.setenv("DF_SINGLE_USER", "1")
+        app.config["CLI_ARGS"] = {"host": "0.0.0.0"}
+        init_auth(app)
+        assert auth_module.is_local_mode()
+
+    def test_opt_in_does_not_override_a_provider(self, app, monkeypatch):
+        monkeypatch.setenv("DF_SINGLE_USER", "1")
+        monkeypatch.setenv("AUTH_PROVIDER", "azure_easyauth")
+        app.config["CLI_ARGS"] = {"host": "127.0.0.1"}
+        init_auth(app)
+        assert not auth_module.is_local_mode()
