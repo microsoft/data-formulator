@@ -1,4 +1,4 @@
-# 16 — Public web discovery in the connected-data skill
+# 16. Public web discovery in the connected-data skill
 
 The analyst's gated `connected_data` skill can discover public datasets with
 [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp).
