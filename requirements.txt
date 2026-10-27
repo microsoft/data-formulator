@@ -36,6 +36,7 @@ google-cloud-bigquery
 google-auth
 db-dtypes
 databricks-sql-connector
+snowflake-connector-python
 
 # SSO / Auth deps
 PyJWT[crypto]>=2.15.0

@@ -60,6 +60,7 @@ dependencies = [
     "google-auth", # bigquery
     "db-dtypes", # bigquery
     "databricks-sql-connector", # databricks
+    "snowflake-connector-python", # snowflake
     # SSO / Auth deps
     "PyJWT[crypto]>=2.15.0", # OIDC JWT verification (includes cryptography)
     "cryptography>=50.0.0", # Security floor for auth and local vault encryption
