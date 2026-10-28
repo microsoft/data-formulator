@@ -227,6 +227,112 @@ export let buildTableRefChip = (props: {
     </Box>
 }
 
+export interface ThreadChip {
+    /** The thread item this chip stands for (a loaded-table or file node id), so focus can find and reveal it. */
+    key: string;
+    kind: 'table' | 'file';
+    title: string;
+    note?: string;
+    /** Shown before the title; files carry their type's icon, tables none (the row's gutter says "tables"). */
+    icon?: React.ReactNode;
+    tableId?: string;
+    selected: boolean;
+    onClick: () => void;
+    onDelete?: () => void;
+    deleteLabel?: string;
+    deleteDisabled?: boolean;
+}
+
+/** Rows of chips shown before a group folds; the rest open with "Show all". */
+const CHIP_ROWS = 3;
+const CHIP_GAP = 4;
+
+/** Tables and documents brought in together, shown as one wrapping row of small chips instead of a card each;
+ *  past three rows they fold, and open on click (or when one of the hidden chips is selected). */
+export const ThreadChipGroup = ({ label, chips }: {
+    label?: string;
+    chips: ThreadChip[];
+}) => {
+    const rows = React.useRef<HTMLDivElement | null>(null);
+    const [expanded, setExpanded] = React.useState(false);
+    // The height of three rows, from a chip's own height; undefined until measured or when it all fits.
+    const [foldHeight, setFoldHeight] = React.useState<number>();
+    const [hiddenCount, setHiddenCount] = React.useState(0);
+    React.useLayoutEffect(() => {
+        const element = rows.current;
+        if (!element) return;
+        const measure = () => {
+            const items = Array.from(element.children) as HTMLElement[];
+            const rowHeight = items[0]?.offsetHeight ?? 0;
+            const limit = rowHeight * CHIP_ROWS + CHIP_GAP * (CHIP_ROWS - 1);
+            const hidden = items.filter(item => item.offsetTop - element.offsetTop >= limit).length;
+            setFoldHeight(hidden ? limit : undefined);
+            setHiddenCount(hidden);
+        };
+        measure();
+        if (typeof ResizeObserver === 'undefined') return;
+        const observer = new ResizeObserver(measure);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [chips.length]);
+    const selectedHidden = !!foldHeight && chips.some((chip, index) => chip.selected
+        && ((rows.current?.children[index] as HTMLElement | undefined)?.offsetTop ?? 0) - (rows.current?.offsetTop ?? 0) >= foldHeight);
+    React.useEffect(() => { if (selectedHidden) setExpanded(true); }, [selectedHidden]);
+    const folded = !!foldHeight && !expanded;
+    return <Box data-thread-chips sx={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
+    {label && <Typography sx={{ px: 0.5, fontSize: textVar.xs, color: 'text.secondary', lineHeight: 1.4 }}>{label}</Typography>}
+    <Box ref={rows} sx={{ display: 'flex', flexWrap: 'wrap', gap: `${CHIP_GAP}px`, minWidth: 0,
+        ...(folded && { maxHeight: foldHeight, overflow: 'hidden' }) }}>
+        {chips.map(chip => <Box key={chip.key} data-thread-item={chip.key} data-table-id={chip.tableId} data-chip-kind={chip.kind}
+            className={`data-thread-card ${chip.selected ? 'selected-artifact-card' : ''}`}
+            sx={{
+                position: 'relative', display: 'inline-flex', alignItems: 'center', minWidth: 0, maxWidth: '100%',
+                ...ComponentBorderStyle, borderRadius: '4px',
+                '--artifact-paper': theme => theme.palette.background.paper,
+                // Tables are tinted, documents plain, as their full cards are.
+                '--artifact-tint': theme => chip.kind === 'file' ? 'transparent'
+                    : theme.palette.primary.bgcolor || alpha(theme.palette.primary.main, 0.08),
+                '--artifact-selection-color': theme => theme.palette.primary.light,
+                background: 'linear-gradient(var(--artifact-tint), var(--artifact-tint)), var(--artifact-paper)',
+                '& .chip-delete': { opacity: 0, transition: 'opacity 0.15s' },
+                '&:hover .chip-delete, &:focus-within .chip-delete': { opacity: 1 },
+                '@media (hover: none)': { '& .chip-delete': { opacity: 1 } },
+            }}>
+            <ButtonBase disableRipple onClick={chip.onClick} title={chip.note ? `${chip.title} ${chip.note}` : chip.title}
+                sx={{ minWidth: 0, maxWidth: '100%', px: '6px', py: '1px', gap: '3px', borderRadius: 'inherit', justifyContent: 'flex-start',
+                    '& > svg': { flexShrink: 0 },
+                    '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
+                {chip.icon}
+                <Typography component="span" sx={{ minWidth: 0, fontSize: textVar.xs, fontWeight: 500, color: 'text.primary',
+                    lineHeight: 1.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{chip.title}</Typography>
+                {chip.note && <Typography component="span" sx={{ ml: '2px', flexShrink: 0, fontSize: textVar.xxs,
+                    color: 'text.secondary', lineHeight: 1.5 }}>{chip.note}</Typography>}
+            </ButtonBase>
+            {/* Floats over the chip's right edge on hover, so chips keep their size. */}
+            {chip.onDelete && <Tooltip title={chip.deleteLabel || ''}>
+                <span style={{ position: 'absolute', right: 1, top: '50%', transform: 'translateY(-50%)', display: 'flex' }}>
+                    <IconButton className="chip-delete" size="small" color="error" aria-label={chip.deleteLabel}
+                        disabled={chip.deleteDisabled}
+                        onClick={event => { event.stopPropagation(); chip.onDelete?.(); }}
+                        sx={{ p: '1px',
+                            background: 'linear-gradient(var(--artifact-tint), var(--artifact-tint)), var(--artifact-paper)', '&:hover': { background: theme => {
+                                const hover = alpha(theme.palette.error.main, 0.14);
+                                return `linear-gradient(${hover}, ${hover}), var(--artifact-paper)`;
+                            } } }}>
+                        <DeleteIcon sx={{ fontSize: iconVar.sm }} />
+                    </IconButton>
+                </span>
+            </Tooltip>}
+        </Box>)}
+    </Box>
+    {foldHeight !== undefined && <ButtonBase disableRipple onClick={() => setExpanded(open => !open)} aria-expanded={expanded}
+        sx={{ alignSelf: 'flex-start', px: 0.5, fontSize: textVar.xs, color: 'primary.main', borderRadius: '4px',
+            '&:hover': { textDecoration: 'underline' } }}>
+        {expanded ? 'Show less' : `Show all (${hiddenCount} more)`}
+    </ButtonBase>}
+</Box>;
+};
+
 // ─── Table Card ──────────────────────────────────────────────────────────────
 
 export interface BuildTableCardProps {

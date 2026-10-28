@@ -32,6 +32,7 @@ def test_profile_is_served_with_its_datasets_and_live_stories(tmp_path, monkeypa
     config = sites.site_frontend_config("unesco")
     assert config["name"] == "UIS Data Explorer" and config["badge"] == "Beta" and config["disclaimer"]
     assert any("{release}" in item for item in config["about"])
+    assert config["suggestions"] == [] and config["chat_placeholder"]
     assert config["starters"] and not any(starter["available"] for starter in config["starters"])
 
     stories = [story for starter in config["starters"] for story in starter["stories"]]
@@ -57,6 +58,7 @@ def test_install_copies_the_profile_and_images(tmp_path):
     build.install_static(profile, site)
     content = site / profile["release"]
     assert (site / "profile.yaml").read_bytes() == build.PROFILE.read_bytes()
+    assert (site / "skill" / "SKILL.md").read_bytes() == (DEMO / "skill" / "SKILL.md").read_bytes()
     sessions = [name for name in build.referenced_files(profile) if name.endswith(".zip")]
     assert build.missing_files(profile, content) == sessions
 

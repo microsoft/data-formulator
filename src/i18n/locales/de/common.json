@@ -423,6 +423,10 @@
     "stopAgentAndTasks_other": "Agenten und {{count}} Aufgaben stoppen"
   },
   "dataThread": {
+    "tableSet_one": "{{count}} Tabelle",
+    "tableSet_other": "{{count}} Tabellen",
+    "fileSet_one": "{{count}} Datei",
+    "fileSet_other": "{{count}} Dateien",
     "tableDataMissing": "Die Daten zu {{names}} fehlen im Arbeitsbereich dieser Sitzung. Laden Sie sie erneut aus der Quelle oder bitten Sie den Agenten darum.",
     "tableDataMissingTooltip": "Die Daten dieser Tabelle fehlen im Arbeitsbereich. Laden Sie sie erneut aus der Quelle.",
     "title": "Data Threads",
@@ -622,6 +626,7 @@
     "explorePlaceholderSingleTable": "Stellen Sie Fragen oder beschreiben Sie, was erkundet werden soll",
     "followUpsTitle": "Vorschläge für Folgefragen",
     "followUpsBody": "Stellen Sie im Chat Folgefragen, um die Analyse fortzusetzen: Fordern Sie neue Diagramme, Erklärungen oder einen neuen Bericht an. Probieren Sie diese Beispiele:",
+    "datasetLoadedIntro": "{{name}} ist geladen. Fragen Sie den Analysten im Chat alles dazu, oder beginnen Sie mit einer dieser Fragen:",
     "followUpsDismiss": "Vorschläge schließen",
     "followUpsFolded": "Ideen für Folgefragen",
     "addMoreData": "Weitere Daten zum Arbeitsbereich hinzufügen",

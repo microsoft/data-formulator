@@ -38,13 +38,14 @@ import { buildDictTableFromWorkspace } from '../app/tableThunks';
 import { codeCallsOf, isCodeCall } from '../app/toolCalls';
 import { toAnalystTableRef } from '../app/tableResolution';
 
-import { alpha } from '@mui/material/styles';
+import { alpha, lighten } from '@mui/material/styles';
 import { WritingPencil } from '../components/FunComponents';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
-import { notifyWorkspaceFilesChanged } from '../app/workspaceService';
+import { notifyWorkspaceFilesChanged, type WorkspaceFile } from '../app/workspaceService';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
+import TipsAndUpdatesOutlinedIcon from '@mui/icons-material/TipsAndUpdatesOutlined';
 import BoltIcon from '@mui/icons-material/Bolt';
 import CloseIcon from '@mui/icons-material/Close';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
@@ -129,7 +130,7 @@ const CLEARS_LIVE_STATUS = new Set(['tool_start', 'action', 'result', 'text_delt
 const WRITING_STATUS: Record<string, string> = {
     visualize: 'designingChart', execute_python_script: 'writingCode', edit_file: 'writingEdit', create_file: 'writingFile',
     create_data: 'preparingData', update_data: 'preparingData', write_app: 'writingApp', write_html_app: 'writingApp',
-    write_report: 'writingReport', propose_workflow: 'draftingWorkflow', propose_data_operation: 'preparingLoad',
+    write_report: 'writingReport', propose_workflow: 'draftingWorkflow', propose_data_operation: 'preparingLoad', load_datasets: 'preparingLoad',
     long_response: 'writingAnswer', run_terminal: 'writingCommand',
 };
 
@@ -257,6 +258,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
     const [chatPrompt, setChatPrompt] = useState("");
     const [quickActionAnchor, setQuickActionAnchor] = useState<HTMLElement | null>(null);
+    const isDemo = useSelector((state: DataFormulatorState) => !!state.serverConfig.SITE);
     const [chatInputFocused, setChatInputFocused] = useState(false);
     // ── Clarification accumulated answers ────────────────────────────
     // When the agent asks one or more clarification questions, clicking an
@@ -626,7 +628,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
     const handleAttachFiles = React.useCallback((fileList: FileList | File[] | null) => {
         if (!fileList) return;
-        const files = Array.from(fileList);
+        // A demo's analyst works only on the demo's datasets: images (e.g. of a chart) only (design-docs/69).
+        const files = Array.from(fileList).filter(file => !isDemo || file.type.startsWith('image/'));
+        if (!files.length) return;
         setAttachmentUploads(count => count + files.length);
         files.forEach(async file => {
             try {
@@ -659,7 +663,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 setAttachmentUploads(count => count - 1);
             }
         });
-    }, [dispatch, t]);
+    }, [dispatch, t, isDemo]);
 
     // Paste handler: capture pasted files — images AND other files (CSV, Excel,
     // etc.) — so the chat box accepts the same attachments as the "+" button,
@@ -1326,8 +1330,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             if (!together) itemProduced(id);
             return id;
         };
-        /** A file or app the run wrote. A file it updated in place keeps its existing place in the thread. */
-        const addFileItem = (fileName: string, displayName: string, contentHash: string, replaces?: { name?: string }) => {
+        /**
+         * A file or app the run wrote or loaded. A file it updated in place keeps its existing place in the thread.
+         * With `together`, the caller chains it with the others from the same result; returns the new item's id.
+         */
+        const addFileItem = (fileName: string, displayName: string, contentHash: string, replaces?: { name?: string },
+            together = false): string | undefined => {
             const existing = (currentStore.getState() as DataFormulatorState).fileNodes.find(node => node.path === fileName);
             if (existing && replaces) {
                 // Fixed in place (`replaces`): it keeps its name and moves to after the request that fixed it.
@@ -1336,13 +1344,15 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     parentNodeId: chainHead(), createdAt: Date.now(),
                     replaced: { id: existing.id, name: replaces.name || existing.displayName || fileName } }));
                 itemProduced(existing.id);
-                return;
+                return undefined;
             }
             const exists = !!existing;
             if (!exists) settleStep();
             dispatch(dfActions.upsertFileNode({ kind: 'file', id: `file-${fileName}`, path: fileName, displayName, contentHash,
                 parentNodeId: chainHead(), createdAt: Date.now() }));
-            if (!exists) itemProduced(`file-${fileName}`);
+            if (exists) return undefined;
+            if (!together) itemProduced(`file-${fileName}`);
+            return `file-${fileName}`;
         };
         /** Put a tool call on the step's agent message; a call awaiting approval pauses the run. */
         const addToolCall = (purpose: string, call: { execution?: TerminalExecution; toolCall?: ToolCall }, running: boolean) => {
@@ -1630,6 +1640,18 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         const added = addLoadedItem(`loaded-table-${runKey}-${table.id}`, table.id, false, true);
                         if (added) loadedIds.push(added);
                     }
+                    // Documents that came with the tables (a dataset's data guide) join them in the thread.
+                    const loadedFiles = Array.isArray(result.files) ? result.files : [];
+                    const addedFiles: WorkspaceFile[] = [];
+                    for (const file of loadedFiles) {
+                        if (typeof file?.path !== 'string' || !file.path.startsWith('files/') || typeof file.content_hash !== 'string') continue;
+                        const fileName = file.path.slice('files/'.length);
+                        const added = addFileItem(fileName, file.display_name || fileName, file.content_hash, undefined, true);
+                        if (added) loadedIds.push(added);
+                        addedFiles.push({ name: fileName, filename: fileName, display_name: file.display_name, content_hash: file.content_hash,
+                            created_at: new Date().toISOString(), file_size: 0, media_type: null });
+                    }
+                    if (loadedFiles.length) notifyWorkspaceFilesChanged(addedFiles);
                     itemsProducedTogether(loadedIds);
                     const firstLoadedTable = loadedIds.find(id => id.startsWith(`loaded-table-${runKey}-`));
                     if (firstLoadedTable) followFocus({ type: 'reference', referenceId: firstLoadedTable });
@@ -3032,6 +3054,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         ref={fileInputRef}
                         type="file"
                         multiple
+                        accept={isDemo ? 'image/*' : undefined}
                         style={{ display: 'none' }}
                         onChange={(e) => { handleAttachFiles(e.target.files); if (e.target) e.target.value = ''; }}
                     />
@@ -3076,18 +3099,19 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             }}>
                                 <EditOutlinedIcon fontSize="small" sx={{ mr: 1 }} />{t('chartRec.writeReport')}
                             </MenuItem>
-                            <MenuItem onClick={() => {
+                            {/* A demo's analyst builds no apps or workflows (design-docs/69). */}
+                            {!isDemo && <MenuItem onClick={() => {
                                 setQuickActionAnchor(null);
                                 submitChat(t('chartRec.appConversationPrompt'));
                             }}>
                                 <DashboardOutlinedIcon fontSize="small" sx={{ mr: 1 }} />{t('chartRec.createApp')}
-                            </MenuItem>
-                            <MenuItem onClick={() => {
+                            </MenuItem>}
+                            {!isDemo && <MenuItem onClick={() => {
                                 setQuickActionAnchor(null);
                                 exploreFromChat(WORKFLOW_AUTHORING_PROMPT, { authorWorkflow: true });
                             }}>
                                 <AccountTreeOutlinedIcon fontSize="small" sx={{ mr: 1 }} />{t('chartRec.createWorkflow')}
-                            </MenuItem>
+                            </MenuItem>}
                         </Menu>
                         <Tooltip title={t('chartRec.getIdeaSuggestions')}>
                             <span>
@@ -3260,29 +3284,35 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // analysis with their own question or click one of these. It floats above
     // the panes, starting over the input and reaching across into the canvas,
     // with its pointer on the input.
-    // Styled as a plain tooltip (MUI's default dark fill, no border).
-    const calloutFill = alpha(theme.palette.grey[700], 0.92);
-    const calloutText = theme.palette.common.white;
+    // Styled as a plain tooltip (MUI's default dark fill, no border); on a demo,
+    // a faint blue tint instead (design-docs/69).
+    const softCallout = isDemo;
+    const calloutFill = softCallout ? lighten(theme.palette.primary.main, 0.94) : alpha(theme.palette.grey[700], 0.92);
+    const calloutText = softCallout ? theme.palette.text.primary : theme.palette.common.white;
+    const CalloutIcon = softCallout ? TipsAndUpdatesOutlinedIcon : TipsAndUpdatesIcon;
     const showFollowUps = !!exampleFollowUps && !workspaceReadOnly && !chatWorkflow && !isChatFormulating;
     const followUpsBlock = showFollowUps && exampleFollowUps ? (
         <Popper open={!!followUpsAnchor} anchorEl={followUpsAnchor} placement="top-start" style={{ zIndex: 1250 }}
             modifiers={[{ name: 'offset', options: {
-                // Open, the hint sits mostly over the canvas (about 30% over the chat pane, 70% beyond),
-                // so it leaves the latest thread items in view; its pointer stays on the input.
-                offset: ({ reference, popper }: { reference: { width: number }; popper: { width: number } }) => followUpsFolded
-                    ? [20, 6] : [Math.max(20, reference.width - 0.3 * popper.width), 12] } }, { name: 'preventOverflow', options: { padding: 12 } }, { name: 'flip', enabled: false }]}>
+                // Open beside a narrow chat pane, the hint sits mostly over the canvas (about 30% over the pane,
+                // 70% beyond), so it leaves the latest thread items in view; over a wide, centred input (an empty
+                // session) it sits on the input's left edge. Its pointer stays on the input either way.
+                offset: ({ reference, popper }: { reference: { width: number }; popper: { width: number } }) =>
+                    followUpsFolded || reference.width >= popper.width
+                    ? [20, followUpsFolded ? 6 : 12] : [Math.max(20, reference.width - 0.3 * popper.width), 12] } }, { name: 'preventOverflow', options: { padding: 12 } }, { name: 'flip', enabled: false }]}>
         <Box ref={followUpsRef}>
         {followUpsFolded ? <ButtonBase onClick={() => setFollowUpsFolded(false)} sx={{
             display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.375, borderRadius: '4px',
             bgcolor: calloutFill, color: calloutText,
             fontFamily: 'inherit', fontSize: textVar.xs, fontWeight: 500,
-            '&:hover, &.Mui-focusVisible': { bgcolor: theme.palette.grey[800] },
+            '&:hover, &.Mui-focusVisible': { bgcolor: softCallout ? lighten(theme.palette.primary.main, 0.88) : theme.palette.grey[800] },
         }}>
-            <TipsAndUpdatesIcon sx={{ fontSize: iconVar.sm }} />
+            <CalloutIcon sx={{ fontSize: iconVar.sm, ...(softCallout && { color: 'primary.main' }) }} />
             {t('chartRec.followUpsFolded', { defaultValue: 'Follow-up ideas' })}
         </ButtonBase> :
         <Box role="note" aria-label={t('chartRec.followUpsTitle', { defaultValue: 'Follow-up suggestions' })} sx={{
-            position: 'relative', width: 'min(440px, calc(100vw - 32px))', boxSizing: 'border-box', px: 1.25, pt: 0.875, pb: 1, borderRadius: '4px',
+            position: 'relative', width: 'min(440px, calc(100vw - 32px))', boxSizing: 'border-box',
+            ...(softCallout ? { px: 1.5, pt: 1, pb: 1.125, borderRadius: '8px' } : { px: 1.25, pt: 0.875, pb: 1, borderRadius: '4px' }),
             bgcolor: calloutFill, color: calloutText,
             animation: 'followUpsIn 0.22s ease-out',
             '@keyframes followUpsIn': { from: { opacity: 0, transform: 'translateY(4px)' }, to: { opacity: 1, transform: 'none' } },
@@ -3293,14 +3323,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             },
         }}>
             <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75 }}>
-                <TipsAndUpdatesIcon sx={{ fontSize: iconVar.sm, mt: '2px', flexShrink: 0, opacity: 0.85 }} />
+                <CalloutIcon sx={{ fontSize: iconVar.sm, mt: '2px', flexShrink: 0, ...(softCallout ? { color: 'primary.main' } : { opacity: 0.85 }) }} />
                 <Typography sx={{ flex: 1, minWidth: 0, fontSize: textVar.xs, lineHeight: 1.5, color: 'inherit' }}>
-                    {t('chartRec.followUpsBody', { defaultValue: 'You can ask follow-up questions in the chat to continue the analysis: ask for new charts, explanations or a new report. Try these examples:' })}
+                    {exampleFollowUps.intro || t('chartRec.followUpsBody', { defaultValue: 'You can ask follow-up questions in the chat to continue the analysis: ask for new charts, explanations or a new report. Try these examples:' })}
                 </Typography>
                 <Tooltip title={t('chartRec.followUpsDismiss', { defaultValue: 'Dismiss suggestions' })}>
                     <IconButton size="small" aria-label={t('chartRec.followUpsDismiss', { defaultValue: 'Dismiss suggestions' })}
                         onClick={() => dispatch(dfActions.setExampleFollowUps(undefined))}
-                        sx={{ p: 0.25, mt: '-2px', mr: '-4px', color: alpha(calloutText, 0.75), flexShrink: 0,
+                        sx={{ p: 0.25, mt: '-2px', mr: '-4px', color: alpha(calloutText, softCallout ? 0.4 : 0.75), flexShrink: 0,
                             '&:hover': { color: calloutText, bgcolor: alpha(calloutText, 0.12) } }}>
                         <CloseIcon sx={{ fontSize: iconVar.sm }} />
                     </IconButton>
@@ -3309,7 +3339,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             <Box sx={{ mt: 0.5, pl: 2.5, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
                 {exampleFollowUps.questions.map(question => <ButtonBase key={question} onClick={() => submitChat(question)} sx={{
                     display: 'inline-flex', alignItems: 'baseline', gap: 0.5, py: 0.25, borderRadius: '4px',
-                    fontFamily: 'inherit', fontSize: textVar.xs, lineHeight: 1.45, textAlign: 'left', color: 'inherit', fontWeight: 600,
+                    fontFamily: 'inherit', fontSize: textVar.xs, lineHeight: 1.45, textAlign: 'left',
+                    color: softCallout ? 'primary.dark' : 'inherit', fontWeight: softCallout ? 500 : 600,
                     '& .follow-up-arrow': { transition: 'transform 0.12s' },
                     '&:hover, &.Mui-focusVisible': { textDecoration: 'underline', textUnderlineOffset: '2px' },
                     '&:hover .follow-up-arrow, &.Mui-focusVisible .follow-up-arrow': { transform: 'translateX(2px)' },

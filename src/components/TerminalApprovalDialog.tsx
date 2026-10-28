@@ -66,7 +66,8 @@ export const TerminalAccessButton = () => {
         } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
         finally { setBusy(false); }
     };
-    if (!config.TERMINAL_MODE) return null;
+    // A demo's analyst has no terminal (design-docs/69).
+    if (!config.TERMINAL_MODE || config.SITE) return null;
     const mode = config.TERMINAL_MODE;
     const label = t(`terminal.access.${mode}`, { defaultValue: { off: 'Off', ask: 'Ask', auto: 'Auto' }[mode] });
     const connectorsBlocked = config.IS_LOCAL_MODE && config.DISABLE_DATA_CONNECTORS;

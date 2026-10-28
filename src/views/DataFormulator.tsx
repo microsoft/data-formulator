@@ -66,6 +66,8 @@ import GitHubIcon from '@mui/icons-material/GitHub';
 import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions, publishExampleSession, usePublishedExamples } from './ExampleSessions';
 import { WorkflowPanel, WorkflowRunObserver } from './WorkflowPanel';
 import { SiteLanding } from '../sites/SiteLanding';
+import { DemoDatasetTabs, inSentence } from '../sites/DemoDatasetTabs';
+import { DEMO_COLUMN, DEMO_PAGE, DEMO_CHAT_CENTRE } from '../sites/layout';
 import { DEMO_ID } from '../app/demo';
 import type { SiteStarter, SiteStory } from '../sites/types';
 import { listWorkflowLibrary, SchedulesPanel, useScheduleLibrary } from './WorkflowSchedules';
@@ -144,7 +146,11 @@ export const DataFormulatorFC = ({ }) => {
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const canSchedule = !!serverConfig?.IS_LOCAL_MODE;
     const appName = getToolName(serverConfig.APP_NAME);
-    const headingSize = Math.max(32, Math.min(76, 76 * Math.sqrt(15 / appName.length)));
+    // On a demo (/demo/<id>), the landing page is the standard one filled in from its profile (design-docs/69).
+    const site = serverConfig.SITE;
+    // The dataset shown in a demo's tabs, which its "Show me your analysis of …" chip names.
+    const [demoDataset, setDemoDataset] = useState<SiteStarter>();
+    const headingSize = Math.max(32, Math.min(site ? 60 : 76, 76 * Math.sqrt(15 / (site ? site.headline || site.name : appName).length)));
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
     const theme = useTheme();
 
@@ -496,6 +502,13 @@ export const DataFormulatorFC = ({ }) => {
         if (opened && question) {
             dispatch(ensureActiveWorkspace());
             dispatch(dfActions.queueAnalystTask({ text: question, images: [], attachments: [] }));
+        } else if (opened && !followUps?.length) {
+            // A dataset on its own: say it is ready and offer questions to start from (design-docs/69).
+            const prompts = (starter.stories || []).map(story => story.prompt).filter(Boolean);
+            dispatch(dfActions.setExampleFollowUps({ title: starter.title,
+                questions: (prompts.length ? prompts : starter.questions).slice(0, 3),
+                intro: t('chartRec.datasetLoadedIntro', { name: starter.title, defaultValue:
+                    '{{name}} is loaded. Ask the analyst anything about it in the chat, or start with one of these:' }) }));
         }
     };
     /** A story opens on its saved session, its question already answered; without one the analyst runs it live. */
@@ -864,6 +877,12 @@ export const DataFormulatorFC = ({ }) => {
         <Typography sx={{ display: 'inline', fontSize: textVar.sm, ml: 1 }}> @ {new Date().getFullYear()}</Typography>
     </Box>
 
+    const siteSessions = sortedSavedWorkspaces.filter(w => !w.scheduled_run);
+    const siteLibrary = site && <SiteLanding site={site}
+        sessions={siteSessions.length > 0 && <Box sx={itemCardGridSx}>
+            {siteSessions.slice(0, INITIAL_SESSION_COUNT).map(w => workspaceCard(w))}
+        </Box>} />;
+
     let dataUploadRequestBox = <Box sx={{
             margin: '4px 4px 4px 8px', 
             background: `
@@ -873,10 +892,14 @@ export const DataFormulatorFC = ({ }) => {
             backgroundSize: '24px 24px',
             flex: 1, minWidth: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
         }}>
-        <Box sx={{mx:'auto', pb: 8, display: "flex", flexDirection: "column", textAlign: "center", maxWidth: 1024, width: '100%', px: 2, boxSizing: 'border-box' }}>
+        <Box sx={{mx:'auto', pb: 8, display: "flex", flexDirection: "column", textAlign: "center", maxWidth: site ? DEMO_PAGE : 1024, width: '100%', px: 2, boxSizing: 'border-box' }}>
             {/* Hero — fills the viewport so title + input own the first screen;
                 Demos/Sessions live below the fold and just peek up. */}
-            <Box sx={{ minHeight: 'calc(100vh - 140px)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <Box sx={site
+                // A demo's chat is at the middle of the screen whatever follows it: this block (title to chat) ends
+                // half a chat below the middle, and the dataset tabs follow it (design-docs/69).
+                ? { minHeight: DEMO_CHAT_CENTRE, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', boxSizing: 'border-box', pt: 3 }
+                : { minHeight: 'calc(100vh - 140px)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <Box sx={{ mx: 'auto', width: '100%', minWidth: 0 }}>
                 <Typography component="h1" sx={{
                     fontSize: { xs: 28, sm: headingSize },
@@ -885,7 +908,14 @@ export const DataFormulatorFC = ({ }) => {
                     overflowWrap: 'anywhere',
                     textWrap: 'balance',
                 }}>
-                    {appName}
+                    {site ? <>
+                        {site.headline || site.name}
+                        {site.badge && <Box component="span" sx={{ display: 'inline-block', ml: 1.5, px: 1, py: '2px', verticalAlign: 'middle',
+                            position: 'relative', top: '-0.15em', fontSize: { xs: 12, sm: 14 }, fontWeight: 600, lineHeight: 1.3,
+                            color: 'primary.main', borderRadius: 1, bgcolor: alpha(theme.palette.primary.main, 0.1) }}>
+                            {site.badge}
+                        </Box>}
+                    </> : appName}
                 </Typography>
             </Box>
             <Box sx={{
@@ -910,14 +940,14 @@ export const DataFormulatorFC = ({ }) => {
                     overflowWrap: 'anywhere',
                     whiteSpace: 'pre-line',
                 }}>
-                    {serverConfig.APP_TAGLINE || t('landing.tagline')}
+                    {site?.tagline || serverConfig.APP_TAGLINE || t('landing.tagline')}
                 </Typography>
             </Box>
 
             {/* Hosted-demo notice — borderless strip (it's prose, not a
                 button) placed before the Import Data section. The rocket
-                gets a quiet lift to add a touch of life. */}
-            {serverConfig.WORKSPACE_BACKEND === 'ephemeral' && (
+                gets a quiet lift to add a touch of life. A demo site has its own note at the foot. */}
+            {serverConfig.WORKSPACE_BACKEND === 'ephemeral' && !site && (
                 <Box
                     sx={{
                         mt: 2,
@@ -1007,7 +1037,7 @@ export const DataFormulatorFC = ({ }) => {
                     onUpload={() => openUploadDialog('upload')}
                     onConnect={serverConfig.DISABLE_DATA_CONNECTORS ? undefined : () => openUploadDialog('add-connection')}
                     onLinkFolder={serverConfig?.IS_LOCAL_MODE && !serverConfig.DISABLE_DATA_CONNECTORS ? () => openUploadDialog('local-folder') : undefined}
-                    readOnly={activeWorkspace?.readOnly}
+                    readOnly={activeWorkspace?.readOnly || site?.status === 'not_installed'}
                     onSelectConnector={(conn) => {
                         // Already-authed connector → open the data-source
                         // sidebar focused on it. Otherwise open the upload
@@ -1019,6 +1049,16 @@ export const DataFormulatorFC = ({ }) => {
                         }
                     }}
                     connectors={pageConnectors}
+                    demo={site ? {
+                        // What the demo has, and its analyses of the dataset in the tab below (design-docs/69).
+                        suggestions: [
+                            t('landing.demoAskDatasets', { defaultValue: 'What datasets do we have here?' }),
+                            ...(demoDataset ? [t('landing.demoAskAnalysis', { defaultValue: 'Show me your analysis of {{name}}',
+                                name: inSentence(demoDataset.kicker || demoDataset.title) })] : []),
+                            ...(site.suggestions || []),
+                        ],
+                        placeholder: site.chat_placeholder,
+                    } : undefined}
                     quickActionContext={{
                         hasUserSources: pageConnectors.some(conn => (conn.connected || conn.sso_auto_connect) && conn.id !== 'sample_datasets'),
                         hasSessions: savedWorkspaces.some(w => !w.scheduled_run),
@@ -1030,7 +1070,14 @@ export const DataFormulatorFC = ({ }) => {
             </Box>
             </Box>
 
-            <WorkflowPanel presentation="landing" onCreateSession={displayName => {
+            {site ? <>
+                {site.status !== 'not_installed' && <Box sx={{ mx: 'auto', width: '100%', maxWidth: DEMO_COLUMN }}>
+                    <DemoDatasetTabs starters={site.starters} disabled={sessionLoading || activeWorkspace?.readOnly}
+                        onLoad={(starter, question) => void handleOpenStarter(starter, question)}
+                        onOpenStory={(starter, story) => void handleOpenStory(starter, story)} onSelect={setDemoDataset} />
+                </Box>}
+                {siteLibrary}
+            </> : <WorkflowPanel presentation="landing" onCreateSession={displayName => {
                 dispatch(dfActions.resetForNewWorkspace({ id: generateWorkspaceId(), displayName }));
             }} renderLanding={({ examples, saved, toolbar }) => <Box data-home-library sx={{ mt: 3 }}>
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'repeat(2, minmax(0, 1fr))' }, gap: 4, alignItems: 'start' }}>
@@ -1117,7 +1164,7 @@ export const DataFormulatorFC = ({ }) => {
                     </Button>
                 )}
                 </>} />
-            </Box>} />
+            </Box>} />}
             {/* ── All sessions ────────────────────── */}
             <SessionsDialog open={allSessionsOpen} onClose={() => { cancelRenameWorkspace(); setAllSessionsOpen(false); }}
                 title={t('workspace.yourSessions')} sessions={sortedSavedWorkspaces}
@@ -1149,19 +1196,11 @@ export const DataFormulatorFC = ({ }) => {
                 </DialogActions>
             </Dialog>);
 
-    const site = serverConfig.SITE;
-    const siteSessions = sortedSavedWorkspaces.filter(w => !w.scheduled_run);
-    const siteLanding = site ? <SiteLanding site={site} disabled={sessionLoading || activeWorkspace?.readOnly}
-        onOpenStarter={(starter, question) => void handleOpenStarter(starter, question)}
-        onOpenStory={(starter, story) => void handleOpenStory(starter, story)} footer={footer}
-        sessions={siteSessions.length > 0 && <Box sx={itemCardGridSx}>
-            {siteSessions.slice(0, INITIAL_SESSION_COUNT).map(w => workspaceCard(w))}
-        </Box>} />
-        // A /demo/<id> page for a demo this server does not have.
-        : DEMO_ID && <Box sx={{ m: 'auto', p: 3, textAlign: 'center' }}>
-            <Typography variant="h6">{t('demo.notFound', { defaultValue: 'There is no demo called “{{id}}” here.', id: DEMO_ID })}</Typography>
-            <Link href="/" sx={{ mt: 1, display: 'inline-block' }}>{t('demo.openApp', { defaultValue: 'Open Data Formulator' })}</Link>
-        </Box>;
+    // A /demo/<id> page for a demo this server does not have.
+    const missingDemo = !site && DEMO_ID && <Box sx={{ m: 'auto', p: 3, textAlign: 'center' }}>
+        <Typography variant="h6">{t('demo.notFound', { defaultValue: 'There is no demo called “{{id}}” here.', id: DEMO_ID })}</Typography>
+        <Link href="/" sx={{ mt: 1, display: 'inline-block' }}>{t('demo.openApp', { defaultValue: 'Open Data Formulator' })}</Link>
+    </Box>;
     
     return (
         <Box sx={{ display: 'block', width: "100%", height: '100%', position: 'relative' }}>
@@ -1178,7 +1217,7 @@ export const DataFormulatorFC = ({ }) => {
                 </Alert>
             )}
             <DndProvider backend={HTML5Backend}>
-                {inSession ? (isPhone ? phoneWorkspace : fixedSplitPane) : siteLanding || (
+                {inSession ? (isPhone ? phoneWorkspace : fixedSplitPane) : missingDemo || (site ? dataUploadRequestBox : (
                     <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
                         <DataSourceSidebar
                             onOpenUploadDialog={(tab, tablePath) => openUploadDialog((tab ?? 'menu') as UploadTabType, tablePath)}
@@ -1188,7 +1227,7 @@ export const DataFormulatorFC = ({ }) => {
                         />
                         {dataUploadRequestBox}
                     </Box>
-                )}
+                ))}
                 {deleteWorkspaceDialog}
                 <UnifiedDataUploadDialog 
                     open={uploadDialogOpen}

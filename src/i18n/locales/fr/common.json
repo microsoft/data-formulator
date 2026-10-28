@@ -423,6 +423,10 @@
     "stopAgentAndTasks_other": "Arrêter l'agent et {{count}} tâches"
   },
   "dataThread": {
+    "tableSet_one": "{{count}} table",
+    "tableSet_other": "{{count}} tables",
+    "fileSet_one": "{{count}} fichier",
+    "fileSet_other": "{{count}} fichiers",
     "tableDataMissing": "Les données de {{names}} sont absentes de l’espace de travail de cette session. Rechargez-les depuis leur source ou demandez-le à l’agent.",
     "tableDataMissingTooltip": "Les données de cette table sont absentes de l’espace de travail. Rechargez-les depuis leur source.",
     "title": "Data Threads",
@@ -622,6 +626,7 @@
     "explorePlaceholderSingleTable": "Posez des questions ou décrivez ce qu'il faut explorer",
     "followUpsTitle": "Suggestions de questions de suivi",
     "followUpsBody": "Vous pouvez poser des questions de suivi dans le chat pour poursuivre l'analyse : demandez de nouveaux graphiques, des explications ou un nouveau rapport. Essayez ces exemples :",
+    "datasetLoadedIntro": "{{name}} est chargé. Posez n'importe quelle question à l'analyste dans le chat, ou commencez par l'une de celles-ci :",
     "followUpsDismiss": "Masquer les suggestions",
     "followUpsFolded": "Idées de questions de suivi",
     "addMoreData": "Ajouter plus de données à l'espace de travail",

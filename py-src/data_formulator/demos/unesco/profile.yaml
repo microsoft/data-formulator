@@ -4,10 +4,13 @@
 
 name: UIS Data Explorer
 # The front page's title; the app bar keeps the short name.
-headline: UNESCO Data Explorer
+headline: UNESCO Data Formulator
 # A small label beside the title, e.g. while the site is still being tried out.
 badge: Beta
 tagline: Explore UNESCO data on education, science and culture with AI.
+# The chat box's placeholder. (Above it, the page asks "What datasets do we have here?" and
+# "Show me your analysis of <the dataset in the tab>"; `suggestions` would add more.)
+chat_placeholder: Ask about education, science or culture around the world…
 # Under the subtitle: what Data Formulator and the UIS data are (bullets), then what a visitor can do.
 # "{release}" reads as the release's month and year; [text](url) is a link.
 about:
@@ -19,8 +22,8 @@ about:
     source of statistics on education, science and culture. This site loads the full {release} bulk
     release of four of its datasets.
 intro: >-
-  For each dataset below, you can (1) open an example analysis to see a question an AI analyst
-  answered and keep asking your own questions, or (2) start a fresh exploration from the dataset.
+  Ask a question above and the AI analyst loads the datasets it needs, or open an example session
+  to see a question it already answered and keep asking your own.
 release: "2026-02"
 # Shown before the demo is installed, beside the Install button (local installs).
 install_note: >-

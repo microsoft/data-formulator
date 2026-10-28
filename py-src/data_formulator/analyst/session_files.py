@@ -96,7 +96,7 @@ class SessionFiles:
     def sources(self):
         if self._sources is None:
             from data_formulator.analyst.session_sources import Sources
-            self._sources = Sources(self.workspace, self.layer)
+            self._sources = Sources(self.workspace, self.layer, enabled=not self.payload.get("demo"))
         return self._sources
 
     # -- workflows/ ----------------------------------------------------------

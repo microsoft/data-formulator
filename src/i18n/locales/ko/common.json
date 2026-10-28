@@ -423,6 +423,10 @@
     "stopAgentAndTasks_other": "에이전트와 작업 {{count}}개 중지"
   },
   "dataThread": {
+    "tableSet_one": "테이블 {{count}}개",
+    "tableSet_other": "테이블 {{count}}개",
+    "fileSet_one": "파일 {{count}}개",
+    "fileSet_other": "파일 {{count}}개",
     "tableDataMissing": "{{names}}의 데이터가 이 세션의 작업 공간에 없습니다. 원본에서 다시 불러오거나 에이전트에게 요청하세요.",
     "tableDataMissingTooltip": "이 테이블의 데이터가 작업 공간에 없습니다. 원본에서 다시 불러오세요.",
     "title": "데이터 스레드",
@@ -622,6 +626,7 @@
     "explorePlaceholderSingleTable": "질문하거나 탐색할 내용 설명",
     "followUpsTitle": "후속 질문 제안",
     "followUpsBody": "채팅에서 후속 질문을 하여 분석을 이어갈 수 있습니다. 새 차트, 설명 또는 새 보고서를 요청해 보세요. 다음 예시를 사용해 보세요:",
+    "datasetLoadedIntro": "{{name}}을(를) 불러왔습니다. 채팅에서 분석가에게 무엇이든 질문하거나 다음 예시로 시작해 보세요:",
     "followUpsDismiss": "제안 닫기",
     "followUpsFolded": "후속 질문 아이디어",
     "addMoreData": "워크스페이스에 더 많은 데이터 추가",

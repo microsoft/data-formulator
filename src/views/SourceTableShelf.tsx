@@ -480,6 +480,7 @@ export const SourceTableShelf: FC<{
     const canvasTarget = useSelector(dfSelectors.selectCanvasTarget);
     const externalReferences = useSelector((state: DataFormulatorState) => state.externalTableReferences);
     const pendingTableLoads = useSelector((state: DataFormulatorState) => state.pendingTableLoads);
+    const isDemo = useSelector((state: DataFormulatorState) => !!state.serverConfig.SITE);
     const workspaceItemOrder = useSelector((state: DataFormulatorState) => state.workspaceItemOrder);
 
     const [sectionExpanded, setSectionExpanded] = useState(true);
@@ -1083,8 +1084,9 @@ export const SourceTableShelf: FC<{
             )}
 
             {/* Grow the workspace right where its tables are read, instead of hunting for the sidebar.
-                The rail turns right to meet the button's left edge at its mid-height. */}
-            <Box sx={{ display: 'flex', flexDirection: 'row' }}>
+                The rail turns right to meet the button's left edge at its mid-height. A demo's only data is
+                its own datasets, which its analyst loads when asked (design-docs/69). */}
+            {!isDemo && <Box sx={{ display: 'flex', flexDirection: 'row' }}>
                 <Box sx={{ width: `calc(${GUTTER_WIDTH}px + ${GUTTER_GAP})`, flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
                     <Box aria-hidden sx={{ ml: RAIL_OFFSET, height: ROW_GAP, borderLeft: RAIL_LINE }} />
                     <Box aria-hidden sx={{
@@ -1120,7 +1122,7 @@ export const SourceTableShelf: FC<{
                         {t('dataThread.addMoreData', { defaultValue: 'Add more data' })}
                     </Button>
                 </Box>
-            </Box>
+            </Box>}
         </Box>
 
         {addDataDialogOpen && (

@@ -999,7 +999,73 @@ it('highlights every member of a set on the focused chain', () => {
   store.dispatch(dfActions.setFocused({ type: 'table', tableId: 'result' }));
   const { container } = renderDataThread(store);
   const onChain = (key: string) => container.querySelector(`[data-thread-item="${key}"]`)!.getAttribute('data-thread-on-chain');
-  expect(['artifact-set-set', 'loaded-beats', 'loaded-titan', 'regular-table-box-result'].map(onChain)).toEqual(['true', 'true', 'true', 'true']);
+  expect(['chip-set-set-loaded-beats', 'regular-table-box-result'].map(onChain)).toEqual(['true', 'true']);
+});
+
+it('shows tables loaded together as one compact row of chips', () => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  store.dispatch(userMessage('ask', 'Load the R&D tables', CONVERSATION_ROOT_ID, 1));
+  const ids = ['national', 'regional', 'sources'];
+  for (const id of ids) {
+    store.dispatch(dfActions.addTableToStore({ kind: 'table', id, displayId: `rd_${id}`, names: [], metadata: {}, rows: [] } as any));
+    store.dispatch(dfActions.addLoadedTableNode({ kind: 'loaded-table', id: `loaded-${id}`, tableId: id, parentNodeId: 'ask', createdAt: 2 }));
+  }
+  store.dispatch(dfActions.addArtifactSet({ kind: 'artifact-set', id: 'set', parentNodeId: 'ask', memberIds: ids.map(id => `loaded-${id}`), createdAt: 2 }));
+  const { container } = renderDataThread(store);
+  const row = container.querySelector('[data-thread-item="chip-set-set-loaded-national"]')!;
+  expect(container.querySelector('[data-thread-item="artifact-set-set"]')).toBeNull();
+  expect(row.textContent).toContain('3 tables');
+  expect([...row.querySelectorAll('[data-thread-chips] [data-thread-item]')].map(chip => chip.textContent))
+    .toEqual(['rd_national', 'rd_regional', 'rd_sources']);
+
+  fireEvent.click(within(row.querySelector<HTMLElement>('[data-thread-item="loaded-regional"]')!).getByText('rd_regional'));
+  expect(store.getState().focusedId).toEqual({ type: 'reference', referenceId: 'loaded-regional' });
+  expect(row.querySelector('[data-thread-item="loaded-regional"]')!.className).toContain('selected-artifact-card');
+  expect(container.querySelector('[data-thread-item="chip-set-set-loaded-national"]')!.getAttribute('data-thread-on-chain')).toBe('true');
+
+  fireEvent.click(within(row.querySelector<HTMLElement>('[data-thread-item="loaded-sources"]')!).getByRole('button', { name: 'delete table' }));
+  expect(dfSelectors.getAllTables(store.getState()).some((table: any) => table.id === 'sources')).toBe(false);
+});
+
+it('folds documents loaded with tables into the same chip row, and keeps apps as cards', async () => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  store.dispatch(userMessage('ask', 'Load the R&D dataset', CONVERSATION_ROOT_ID, 1));
+  for (const id of ['national', 'regional']) {
+    store.dispatch(dfActions.addTableToStore({ kind: 'table', id, displayId: `rd_${id}`, names: [], metadata: {}, rows: [] } as any));
+    store.dispatch(dfActions.addLoadedTableNode({ kind: 'loaded-table', id: `loaded-${id}`, tableId: id, parentNodeId: 'ask', createdAt: 2 }));
+  }
+  store.dispatch(dfActions.upsertFileNode({ kind: 'file', id: 'file-guide.md', path: 'guide.md', displayName: 'guide.md',
+    contentHash: 'h1', parentNodeId: 'ask', createdAt: 2 }));
+  store.dispatch(dfActions.addArtifactSet({ kind: 'artifact-set', id: 'set', parentNodeId: 'ask',
+    memberIds: ['loaded-national', 'loaded-regional', 'file-guide.md'], createdAt: 2 }));
+  const { container, unmount } = renderDataThread(store);
+  const row = container.querySelector('[data-thread-item="chip-set-set-loaded-national"]')!;
+  expect(row.textContent).toContain('2 tables · 1 file');
+  expect([...row.querySelectorAll('[data-thread-chips] [data-thread-item]')].map(chip => chip.getAttribute('data-chip-kind')))
+    .toEqual(['table', 'table', 'file']);
+  fireEvent.click(within(row.querySelector<HTMLElement>('[data-thread-item="file-guide.md"]')!).getByText('guide.md'));
+  expect(store.getState().focusedId).toEqual({ type: 'file', fileName: 'guide.md' });
+  expect(row.querySelector('[data-thread-item="file-guide.md"]')!.className).toContain('selected-artifact-card');
+  const deleteFile = vi.spyOn(workspaceService, 'deleteWorkspaceFile').mockResolvedValueOnce(undefined);
+  try {
+    fireEvent.click(within(row.querySelector<HTMLElement>('[data-thread-item="file-guide.md"]')!).getByRole('button', { name: 'Delete file' }));
+    await waitFor(() => expect(store.getState().fileNodes).toEqual([]));
+    expect(deleteFile).toHaveBeenLastCalledWith('guide.md');
+  } finally {
+    deleteFile.mockRestore();
+  }
+  unmount();
+
+  // An app in the set keeps its card under the set's count; the tables around it still fold.
+  store.dispatch(dfActions.upsertFileNode({ kind: 'file', id: 'file-explorer.html', path: 'explorer.html', displayName: 'Explorer',
+    contentHash: 'h2', parentNodeId: 'ask', createdAt: 2 }));
+  store.dispatch(dfActions.addArtifactSet({ kind: 'artifact-set', id: 'set', parentNodeId: 'ask',
+    memberIds: ['loaded-national', 'loaded-regional', 'file-explorer.html'], createdAt: 2 }));
+  const mixed = renderDataThread(store).container;
+  const items = [...mixed.querySelectorAll('[data-thread-item]')].map(item => item.getAttribute('data-thread-item'));
+  expect(items.filter(item => ['artifact-set-set', 'chip-set-set-loaded-national', 'file-explorer.html'].includes(item!)))
+    .toEqual(['artifact-set-set', 'chip-set-set-loaded-national', 'file-explorer.html']);
+  expect(mixed.querySelector('[data-thread-item="chip-set-set-loaded-national"]')!.textContent).not.toContain('tables');
 });
 
 

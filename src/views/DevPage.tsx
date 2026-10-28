@@ -19,6 +19,7 @@ import { ConnectorFormCard } from '../components/ConnectorFormCard';
 import { ArtifactDeleteButton, ThreadArtifactCard } from './DataThreadCards';
 import { MiniPage, MiniWindow } from '../components/ArtifactMiniatures';
 import { ThreadDeck, ThreadOutput } from '../components/ThreadDeck';
+import { STARTER_HINTS, StarterHintMock } from './DevStarterHints';
 
 const FILES = [
     'a.py', 'a.ipynb', 'a.sql', 'a.md', 'a.r', 'a.ts', 'a.tsx', 'a.js', 'a.css', 'a.php', 'a.html', 'a.app.jsx',
@@ -158,6 +159,12 @@ const deckOutputs = (count: number): ThreadOutput[] => [
 
 export default function DevPage() {
     return <Box sx={{ p: 2, height: '100vh', overflow: 'auto', boxSizing: 'border-box', bgcolor: 'background.default' }}>
+        <Section title="demo · dataset-loaded hint">
+            {STARTER_HINTS.map(([label, Hint, attached]) => <Box key={label} sx={{ border: 1, borderColor: 'divider' }}>
+                <Box sx={{ fontSize: 11, px: 1, pt: 0.75, fontFamily: 'var(--df-font-mono, monospace)', color: 'text.secondary' }}>{label}</Box>
+                <StarterHintMock Hint={Hint} attached={attached} />
+            </Box>)}
+        </Section>
         <Section title="files">
             {FILES.map(path => <Cell key={path} label={path}>{size => <FileTypeIcon path={path} size={size} sx={{ color: iconTone.rest }} />}</Cell>)}
         </Section>

@@ -424,7 +424,8 @@ export interface DataFormulatorState {
     sessionLoadingLabel: string;
 
     /** Questions to continue an example session with, offered once when it opens; not saved. */
-    exampleFollowUps?: { title: string; questions: string[] };
+    /** Questions offered above the chat when a session opens; `intro` replaces the default "follow-up" lead-in. */
+    exampleFollowUps?: { title: string; questions: string[]; intro?: string };
 
     // Active workspace (null = show workspace picker)
     // id: stable identifier (folder name), displayName: user-facing name (can be renamed)

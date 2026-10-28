@@ -1,13 +1,14 @@
 # Demos
 
 A demo is a front page of your own at `/demo/<id>`: your title and text, your datasets,
-example analyses to open, and questions to start from. Visitors go from the page into the
-normal Data Formulator workspace, which stays under `/demo/<id>`; the standard app is still at
-`/app`.
+example analyses to open, and questions to start from, around the analyst chat. Visitors go from
+the page into the normal Data Formulator workspace, which stays under `/demo/<id>`; the standard
+app is still at `/app`. In the workspace, the analyst knows the demo: it loads the demo's datasets
+for a question and points visitors to its example analyses (see [The analyst on a demo](#the-analyst-on-a-demo)).
 
-A demo is configuration, not code. Data Formulator's built-in page
-(`src/sites/SitePage.tsx`) lays it out from a `profile.yaml`, so customizing it needs no
-frontend build and works with a pip-installed Data Formulator. [`unesco/`](unesco/) (the
+A demo is configuration, not code. Data Formulator's landing page lays it out from a
+`profile.yaml` (the demo parts are in `src/sites/`), so customizing it needs no frontend build and
+works with a pip-installed Data Formulator. [`unesco/`](unesco/) (the
 UIS Data Explorer, at `/demo/unesco`) ships with Data Formulator and is a complete example to
 start from.
 
@@ -31,6 +32,7 @@ A demo's content is installed in its own folder under `DF_SITES_DIR` (default
 ```text
 <DF_SITES_DIR>/<id>/
   profile.yaml            # the page and its datasets (below)
+  skill/SKILL.md          # optional: the demo's guidance for the analyst (below)
   <release>/              # content: sessions and front-page images
     <starter>.zip         # one per dataset: its tables and notes
     stories/<story>.zip   # one per example analysis: the dataset with the story's question answered
@@ -50,6 +52,7 @@ everything needed to install it, apart from data it downloads:
 ```text
 demos/<id>/
   profile.yaml            # the page (below)
+  skill/SKILL.md          # the demo's guidance for the analyst (below)
   assets/                 # front-page images, laid out as the profile names them
   build.py                # downloads the data, builds the sessions, installs the demo
   README.md               # plus anything build.py needs, e.g. story seeds
@@ -62,7 +65,7 @@ available yet. A profile installed in `DF_SITES_DIR` takes precedence over the s
 
 `build.py` defines `install(sites_dir, *, log)`, which the button calls, and runs it from the
 command line with `--sites-dir` and other options. It builds the sessions, copies
-`profile.yaml` and `assets/` beside them, and fails if any file the profile names is missing.
+`profile.yaml`, `skill/` and `assets/` beside them, and fails if any file the profile names is missing.
 It must not call AI models: data goes in as downloaded and processed, and an analysis made with
 the AI analyst goes in as curated content, as the UIS demo does with its small story seeds (see
 [unesco/README.md](unesco/README.md)). Tests are in `tests/backend/demos/`.
@@ -91,11 +94,13 @@ and `intro` reads as the release's month and year (e.g. `2026-02` → February 2
 | `headline` | The page title |
 | `badge` | A small label beside the title, e.g. `Beta` |
 | `headline_note` | A line under the title with the Data Formulator logo (*links*) |
-| `tagline` | The opening line; also replaces the app's tagline |
-| `about` | A list of short points (*links*) |
+| `tagline` | The line under the title; also replaces the app's tagline |
+| `suggestions` | More questions as chips above the chat, after "What datasets do we have here?" and "Show me your analysis of <the dataset in the tab>" |
+| `chat_placeholder` | The chat box's placeholder (default "Ask a question about the data…") |
+| `about` | A list of short points at the foot of the page (*links*) |
 | `intro` | A paragraph after them (*links*) |
 | `release` | The content folder to use (`<release>/`), e.g. `2026-02` |
-| `hero_image` | A picture in the release folder, framed as a browser window |
+| `hero_image` | A picture in the release folder; installed, but no longer shown on the page |
 | `attribution` | A line at the foot of the page, e.g. the data's source and license |
 | `links` | Links at the foot: a list of `{label, url}` |
 | `disclaimer` | A note after "Powered by Data Formulator" (*links*); a generic note on AI-written analyses by default |
@@ -107,14 +112,14 @@ and `intro` reads as the release's month and year (e.g. `2026-02` → February 2
 
 | Field | Shows |
 |---|---|
-| `id` | Section anchor (`#<id>`) and download name |
-| `title` | Section heading |
-| `kicker` | A short name, used in the quick links and "Create your own analysis of …" |
-| `description` | A paragraph under the heading |
-| `source_url` | A "View the source" button |
-| `icon` | Quick-link icon: `school`, `science`, `landmark`, `chart` or `table` (default) |
-| `file` | The dataset session ZIP in the release folder; until it exists, the dataset shows "Not available yet" |
-| `start_note` | A line on the new-session card (default "Start from the full dataset") |
+| `id` | The dataset's id for the analyst, its example-sessions anchor (`#<id>`) and download name |
+| `title` | The heading in its tab under the chat and of its example sessions |
+| `kicker` | A short name: its tab's label |
+| `description` | A paragraph in its tab; also tells the analyst what the dataset holds |
+| `source_url` | A "View the source" link in its tab |
+| `icon` | Its tab's icon: `school`, `science`, `landmark`, `chart` or `table` (default) |
+| `file` | The dataset session ZIP in the release folder: what **Load dataset** opens and the analyst loads; until it exists, the dataset shows "Not available yet" |
+| `start_note` | A line on the new-session card (default "With <kicker> loaded") |
 | `questions` | Questions to start from, shown while the dataset has no stories |
 | `stories` | Example analyses, below |
 
@@ -130,11 +135,31 @@ deployment's model, and can differ from run to run.
 | `id` | Required; unique across the demo |
 | `prompt` | Required: the question the story starts from, shown on the lead card ("Question: …") and on hover for the others; asked live when there is no session |
 | `file` | The story's session ZIP, under the release folder |
-| `headline`, `dek` | Title and summary |
-| `featured` | `true` for the dataset's lead analysis, shown large (else the first) |
-| `image` | Its cover image |
-| `stack` | For the lead analysis: up to three images shown as stacked chart cards, `{label, image}` |
+| `headline` | Its card's title; the analyst sees it too |
+| `dek` | A summary (not shown on the page) |
+| `featured` | `true` for the dataset's lead analysis: its chart is in front of the stack in the dataset's tab |
+| `image` | Its cover chart: on its card and in the dataset's tab |
+| `stack` | Images of the lead analysis's findings, `{label, image}` (not shown on the page) |
 | `follow_ups` | Questions offered to continue the analysis |
+
+## The analyst on a demo
+
+On a demo, the analyst has a `demo` skill (design-docs/69) instead of the standard data paths: it
+has no connected sources, uploads, local folders or terminal. The skill lists the demo's datasets
+(from their installed session ZIPs) and example questions (the stories' `prompt`s), and has one action,
+`load_datasets`, which copies whole datasets (tables, data guide, docs) into the session. Typing a
+question on the front page opens an empty session; the analyst picks the datasets and loads them. Asked
+for an example ("Show me your analysis of …"), it runs one of the example questions itself: it loads the
+dataset and answers simply with a chart. Its scope is focused questions about the demo's data; for
+more (modelling, forecasts, long studies, dashboards, other data) it does the basic part and points
+the visitor to the full Data Formulator. On a demo it has no connected-source tools or app building.
+
+`skill/SKILL.md` adds the demo's own guidance: what the demo shows, which dataset answers what, and
+how to work with its data. Without one, the analyst gets the `tagline`. `analyst_rules` (audience and
+tone) still apply to every request.
+
+The skill is never available in the standard app: it is added only for a request carrying a demo's
+`X-DF-Demo` header.
 
 ## Deploying
 

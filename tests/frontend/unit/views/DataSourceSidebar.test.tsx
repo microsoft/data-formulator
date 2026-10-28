@@ -576,8 +576,8 @@ describe('DataSourceSidebar', () => {
 
     it.each([
         { demo: false, rail: ['Upload data', 'Saved workspaces', 'Data connectors', 'knowledge.workflows', 'Schedules'] },
-        { demo: true, rail: ['Upload data', 'Saved workspaces'] },
-    ])('offers data connectors, workflows and schedules only outside demos (demo: $demo)', async ({ demo, rail }) => {
+        { demo: true, rail: ['Saved workspaces'] },
+    ])('offers uploads, data connectors, workflows and schedules only outside demos (demo: $demo)', async ({ demo, rail }) => {
         // A tab remembered from before must not reopen a hidden panel on a demo.
         mockState.dataSourceSidebarTab = 'schedules';
         if (demo) Object.assign(mockState.serverConfig, { SITE: { id: 'unesco', name: 'UIS', starters: [] } });

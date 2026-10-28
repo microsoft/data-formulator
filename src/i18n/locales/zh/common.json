@@ -423,6 +423,10 @@
     "stopAgentAndTasks_other": "停止智能体和 {{count}} 个任务"
   },
   "dataThread": {
+    "tableSet_one": "{{count}} 个表",
+    "tableSet_other": "{{count}} 个表",
+    "fileSet_one": "{{count}} 个文件",
+    "fileSet_other": "{{count}} 个文件",
     "tableDataMissing": "{{names}} 的数据不在本会话的工作区中。请从数据源重新加载，或让智能体重新加载。",
     "tableDataMissingTooltip": "此表的数据不在工作区中。请从数据源重新加载。",
     "title": "数据线程",
@@ -677,6 +681,7 @@
     "explorePlaceholderSingleTable": "有什么问题，有什么想要探索的？",
     "followUpsTitle": "后续问题建议",
     "followUpsBody": "你可以在对话框中提出后续问题以继续分析：请求新的图表、解释或新的报告。试试这些示例：",
+    "datasetLoadedIntro": "{{name}} 已加载。可以在对话框中向分析助手提出任何相关问题，或从以下示例开始：",
     "followUpsDismiss": "关闭建议",
     "followUpsFolded": "后续问题建议",
     "addMoreData": "向工作区添加更多数据",

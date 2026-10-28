@@ -90,7 +90,7 @@ def _profile_problem(profile: Any) -> str | None:
             # The story's question: answered in its saved session, or asked live when there is none.
             if not str(story.get("id") or "").strip() or not str(story.get("prompt") or "").strip():
                 return f"starter {starter['id']!r}: every story needs an 'id' and a 'prompt'"
-    for field in ("about", "links"):
+    for field in ("about", "links", "suggestions"):
         if not isinstance(profile.get(field) or [], list):
             return f"'{field}' is not a list"
     return None
@@ -248,6 +248,8 @@ def site_frontend_config(site_id: str) -> dict[str, Any]:
         "headline": profile.get("headline", ""),
         "badge": profile.get("badge", ""),
         "tagline": profile.get("tagline", ""),
+        "suggestions": [str(item) for item in profile.get("suggestions") or []],
+        "chat_placeholder": profile.get("chat_placeholder", ""),
         "intro": profile.get("intro", ""),
         "about": [str(item) for item in profile.get("about") or []],
         "release": profile.get("release", ""),

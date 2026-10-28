@@ -110,6 +110,7 @@ include = ["data_formulator*"]
     "demos/README.md",
     "demos/*/README.md",
     "demos/*/profile.yaml",
+    "demos/*/skill/SKILL.md",
     "demos/*/*.py",
     "demos/*/*.csv",
     "demos/*/assets/**/*.png",

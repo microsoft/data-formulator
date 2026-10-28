@@ -109,11 +109,16 @@ class SkillRegistry:
     # ``actions`` is a committing action, in ``tools`` an inspection tool).
     tool_specs: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     _doc_paths: dict[str, Path] = field(default_factory=dict)
+    # Bodies made for this registry rather than read from a SKILL.md (the demo skill's).
+    _bodies: dict[str, str] = field(default_factory=dict)
+    # Passages of a skill's body this registry replaces, as (old, new) pairs (a demo's, see with_demo).
+    _body_edits: dict[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)
     terminal_mode: str = "ask"
 
     def with_terminal_policy(self, mode: str) -> SkillRegistry:
         registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
-                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths), terminal_mode=mode)
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
+                           _bodies=dict(self._bodies), _body_edits=dict(self._body_edits), terminal_mode=mode)
         if mode == "off":
             for collection in (registry.metas, registry.skills, registry.tool_specs, registry._doc_paths):
                 collection.pop("terminal", None)
@@ -124,6 +129,44 @@ class SkillRegistry:
                     " Each invocation requires exact-command approval." if mode == "ask" else
                     " The application automatically executes permitted invocations; do not ask for routine approval."
                 )
+        return registry
+
+    def with_demo(self, site_id: str | None) -> SkillRegistry:
+        """This registry for a request on the demo ``site_id`` (design-docs/69); unchanged without one.
+
+        The copy gains the ``demo`` skill, made for that demo, and loses what a demo does not offer: data
+        beyond it (``connected_data``, ``terminal``, connected-source tools), setting up the app
+        (``configure``) and apps (``html_app``); the baseline guidance about them is rewritten for the demo.
+        """
+        from data_formulator.sites.skill import (
+            DEMO_SKILL, DEMO_WITHOUT_TOOLS, SKILL_DIR, demo_body_edits, demo_skill_available, demo_skill_body,
+            demo_tool_specs,
+        )
+
+        if not demo_skill_available(site_id):
+            return self
+        from data_formulator.sites.skill.skill import get_skill
+
+        registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
+                           _bodies=dict(self._bodies), _body_edits=dict(self._body_edits))
+        for name in ("connected_data", "terminal", "configure", "html_app"):
+            for collection in (registry.metas, registry.skills, registry.tool_specs, registry._doc_paths):
+                collection.pop(name, None)
+        for name, meta in list(registry.metas.items()):
+            if set(meta.tool_names + meta.action_names) & DEMO_WITHOUT_TOOLS:
+                registry.metas[name] = replace(
+                    meta, tool_names=tuple(item for item in meta.tool_names if item not in DEMO_WITHOUT_TOOLS),
+                    action_names=tuple(item for item in meta.action_names if item not in DEMO_WITHOUT_TOOLS))
+                registry.tool_specs[name] = [spec for spec in registry.tool_specs.get(name, [])
+                                             if spec.get("function", {}).get("name") not in DEMO_WITHOUT_TOOLS]
+        registry._body_edits.update(demo_body_edits())
+        registry.tool_specs = {name: demo_tool_specs(specs) for name, specs in registry.tool_specs.items()}
+        raw, _ = _parse_front_matter((SKILL_DIR / SKILL_DOC_NAME).read_text(encoding="utf-8"))
+        registry.metas[DEMO_SKILL] = _meta_from_frontmatter(raw, DEMO_SKILL)
+        registry.skills[DEMO_SKILL] = get_skill()
+        registry.tool_specs[DEMO_SKILL] = _load_tool_specs(SKILL_DIR)
+        registry._bodies[DEMO_SKILL] = demo_skill_body(site_id)
         return registry
 
     def canonical_name(self, name: str) -> str:
@@ -241,10 +284,15 @@ class SkillRegistry:
             raise KeyError(f"Unknown skill: {name!r}")
         bodies: list[str] = []
         for expanded_name in self.expanded_names([name]):
+            if expanded_name in self._bodies:
+                bodies.append(self._bodies[expanded_name])
+                continue
             path = self._doc_paths.get(expanded_name)
             if not path or not path.exists():
                 continue
             _, body = _parse_front_matter(path.read_text(encoding="utf-8"))
+            for old, new in self._body_edits.get(expanded_name, ()):
+                body = body.replace(old, new)
             if expanded_name == "connected_data":
                 terminal_route = (
                     "| Existing CLI access or local files | Use `run_terminal` to acquire a bounded dataset "

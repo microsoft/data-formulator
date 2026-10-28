@@ -279,6 +279,37 @@ const useIsNarrow = (ref: React.RefObject<HTMLElement | null>, threshold: number
     return narrow;
 };
 
+/**
+ * Whether the session name fits centred in the toolbar: clear of the brand and page links on its left
+ * and the actions on its right (a long app name, as a demo's, can reach the middle). Uses the name's
+ * content width, so laying it out between them instead does not change the answer.
+ */
+const useCentreFits = (toolbar: React.RefObject<HTMLElement | null>, left: React.RefObject<HTMLElement | null>,
+    centre: React.RefObject<HTMLElement | null>, right: React.RefObject<HTMLElement | null>, active: boolean) => {
+    const [fits, setFits] = useState(true);
+    useEffect(() => {
+        if (!active || typeof ResizeObserver === 'undefined') return;
+        const GAP = 16;
+        const update = () => {
+            const bar = toolbar.current?.getBoundingClientRect();
+            const name = centre.current;
+            if (!bar || !name) return;
+            const half = name.scrollWidth / 2;
+            const middle = bar.left + bar.width / 2;
+            const leftEdge = left.current?.getBoundingClientRect().right ?? bar.left;
+            const rightEdge = right.current?.getBoundingClientRect().left ?? bar.right;
+            setFits(leftEdge + GAP <= middle - half && middle + half + GAP <= rightEdge);
+        };
+        update();
+        const ro = new ResizeObserver(update);
+        for (const element of [toolbar.current, left.current, centre.current, right.current]) {
+            if (element) ro.observe(element);
+        }
+        return () => ro.disconnect();
+    }, [toolbar, left, centre, right, active]);
+    return fits;
+};
+
 const menuItemSx = { fontSize: textVar.md, minHeight: 34, py: 0.5 };
 
 /** Language options rendered as menu rows for the compact overflow menu. */
@@ -1184,12 +1215,16 @@ const AppShell: FC = () => {
     // nav buttons, session name and trailing actions overlap.
     const toolbarRef = useRef<HTMLDivElement | null>(null);
     const isCompactToolbar = useIsNarrow(toolbarRef, COMPACT_TOOLBAR_WIDTH);
+    const brandRef = useRef<HTMLDivElement | null>(null);
+    const sessionNameRef = useRef<HTMLDivElement | null>(null);
+    const actionsRef = useRef<HTMLDivElement | null>(null);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [logsOpen, setLogsOpen] = useState(false);
     const exitSession = useExitSession();
     const goHome = useGoHome(isAppPage);
     const destinations = useAppDestinations();
     const inSession = isAppPage && inWorkspaceSession;
+    const sessionNameCentred = useCentreFits(toolbarRef, brandRef, sessionNameRef, actionsRef, inSession && !isCompactToolbar);
     const shellScrollRef = useRef<HTMLDivElement | null>(null);
     const { moreAbove, moreBelow, moreLeft, moreRight, update: updateShellFade } = useScrollFade(shellScrollRef, location.pathname);
     const shellFade = { top: moreAbove, bottom: moreBelow, left: moreLeft, right: moreRight };
@@ -1257,7 +1292,7 @@ const AppShell: FC = () => {
                             )
                         ) : (
                         // Brand and page links share a text baseline, whatever the font's metrics.
-                        <Box sx={{ display: 'flex', alignItems: 'baseline', minWidth: 0 }}>
+                        <Box ref={brandRef} sx={{ display: 'flex', alignItems: 'baseline', minWidth: 0 }}>
                         {destinations.length > 0 ? (
                             <Box sx={{ display: { xs: 'none', sm: 'block' }, minWidth: 0 }}>
                                 <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} />
@@ -1300,12 +1335,12 @@ const AppShell: FC = () => {
                             absolutely when there is room, otherwise it flows
                             between the nav menu and the trailing actions. */}
                         {inSession && (
-                            isCompactToolbar ? (
+                            isCompactToolbar || !sessionNameCentred ? (
                                 <Box sx={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', mx: 1 }}>
-                                    <WorkspaceMenu />
+                                    <Box ref={sessionNameRef} sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}><WorkspaceMenu /></Box>
                                 </Box>
                             ) : (
-                                <Box sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center' }}>
+                                <Box ref={sessionNameRef} sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center' }}>
                                     <WorkspaceMenu />
                                 </Box>
                             )
@@ -1348,7 +1383,7 @@ const AppShell: FC = () => {
                             </Box>
                         )}
                         {isAppPage && !isCompactToolbar && (
-                            <Box sx={{ display: 'flex', ml: 'auto', alignItems: 'center', gap: 0.75 }}>
+                            <Box ref={actionsRef} sx={{ display: 'flex', ml: 'auto', alignItems: 'center', gap: 0.75 }}>
                                 <ModelSelectionButton />
                                 <Divider orientation="vertical" variant="middle" flexItem sx={{ my: 1 }} />
                                 <LanguageSwitcher />

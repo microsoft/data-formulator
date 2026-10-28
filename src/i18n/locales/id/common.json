@@ -423,6 +423,10 @@
     "stopAgentAndTasks_other": "Hentikan agen dan {{count}} tugas"
   },
   "dataThread": {
+    "tableSet_one": "{{count}} tabel",
+    "tableSet_other": "{{count}} tabel",
+    "fileSet_one": "{{count}} file",
+    "fileSet_other": "{{count}} file",
     "tableDataMissing": "Data untuk {{names}} tidak ada di ruang kerja sesi ini. Muat ulang dari sumbernya, atau minta agen melakukannya.",
     "tableDataMissingTooltip": "Data tabel ini tidak ada di ruang kerja. Muat ulang dari sumbernya.",
     "title": "Utas Data",
@@ -622,6 +626,7 @@
     "explorePlaceholderSingleTable": "Ajukan pertanyaan atau jelaskan yang ingin dijelajahi",
     "followUpsTitle": "Saran pertanyaan lanjutan",
     "followUpsBody": "Anda dapat mengajukan pertanyaan lanjutan di obrolan untuk melanjutkan analisis: minta grafik baru, penjelasan, atau laporan baru. Coba contoh berikut:",
+    "datasetLoadedIntro": "{{name}} sudah dimuat. Tanyakan apa saja tentangnya kepada analis di obrolan, atau mulai dengan salah satu berikut:",
     "followUpsDismiss": "Tutup saran",
     "followUpsFolded": "Ide pertanyaan lanjutan",
     "addMoreData": "Tambah data lagi ke ruang kerja",

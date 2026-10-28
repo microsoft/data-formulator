@@ -141,13 +141,19 @@ function _notifyListChanged(): void {
     window.dispatchEvent(new Event(WORKSPACE_LIST_CHANGED));
 }
 
-export function onWorkspaceFilesChanged(cb: () => void): () => void {
-    window.addEventListener(WORKSPACE_FILES_CHANGED, cb);
-    return () => window.removeEventListener(WORKSPACE_FILES_CHANGED, cb);
+/** Listen for changes to the session's files; `added` are files known to exist already, before a re-list. */
+export function onWorkspaceFilesChanged(cb: (added: WorkspaceFile[]) => void): () => void {
+    const listener = (event: Event) => cb((event as CustomEvent<WorkspaceFile[] | undefined>).detail ?? []);
+    window.addEventListener(WORKSPACE_FILES_CHANGED, listener);
+    return () => window.removeEventListener(WORKSPACE_FILES_CHANGED, listener);
 }
 
-export function notifyWorkspaceFilesChanged(): void {
-    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
+/**
+ * Tell file lists the session's files changed. Pass the files a result just added, so lists show them at once:
+ * right after a load the browser's few connections are busy with per-table requests, and a re-list can wait seconds.
+ */
+export function notifyWorkspaceFilesChanged(added: WorkspaceFile[] = []): void {
+    window.dispatchEvent(new CustomEvent<WorkspaceFile[]>(WORKSPACE_FILES_CHANGED, { detail: added }));
 }
 
 type PreparedInputTablePreview = {

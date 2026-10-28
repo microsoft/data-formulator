@@ -423,6 +423,10 @@
     "stopAgentAndTasks_other": "Stop agent and {{count}} tasks"
   },
   "dataThread": {
+    "tableSet_one": "{{count}} table",
+    "tableSet_other": "{{count}} tables",
+    "fileSet_one": "{{count}} file",
+    "fileSet_other": "{{count}} files",
     "tableDataMissing": "The data behind {{names}} is missing from this session's workspace. Reload it from its source, or ask the agent to.",
     "tableDataMissingTooltip": "This table's data is missing from the workspace. Reload it from its source.",
     "title": "Data Threads",
@@ -622,6 +626,7 @@
     "explorePlaceholderSingleTable": "Ask questions or describe what to explore",
     "followUpsTitle": "Follow-up suggestions",
     "followUpsBody": "You can ask follow-up questions in the chat to continue the analysis: ask for new charts, explanations or a new report. Try these examples:",
+    "datasetLoadedIntro": "{{name}} is loaded. Ask the analyst anything about it in the chat, or start with one of these:",
     "followUpsDismiss": "Dismiss suggestions",
     "followUpsFolded": "Follow-up ideas",
     "addMoreData": "Add more data to the workspace",

@@ -479,13 +479,17 @@ class AnalystAgent:
         identity_id: str | None = None,
         execution_config: AnalystExecutionConfig | None = None,
         workspace_id: str | None = None,
+        demo: str | None = None,
     ):
         self.client = client
         self.workspace = workspace
         self.identity_id = identity_id
         self.workspace_id = workspace_id
         from data_formulator.configuration import terminal_mode
-        self.registry = (skill_registry or build_registry()).with_terminal_policy(terminal_mode())
+        # The demo the request came from (its X-DF-Demo header), or None for the standard app; only then is
+        # the demo skill in the registry (design-docs/69).
+        self.demo = demo
+        self.registry = (skill_registry or build_registry()).with_terminal_policy(terminal_mode()).with_demo(demo)
         self.agent_exploration_rules = agent_exploration_rules
         self.agent_coding_rules = agent_coding_rules
         self.language_instruction = language_instruction
@@ -593,6 +597,7 @@ class AnalystAgent:
         - A session with no data or files preloads ``connected_data``, ``configure`` and, where it exists,
           ``terminal``: such a request starts by acquiring data or setting up a source.
         - A connector form on the canvas preloads ``configure``, to read and revise that form in place.
+        - A demo request preloads ``demo``, which nearly every question there starts from (design-docs/69).
 
         What else is on the canvas is not used: preloading app guidance while an app was open pulled some chart
         requests into editing the app (design-docs/68).
@@ -602,6 +607,8 @@ class AnalystAgent:
             wanted |= {"connected_data", "configure", "terminal"}
         if connector_form:
             wanted.add("configure")
+        if self.demo:
+            wanted.add("demo")
         return {_META_SKILL} | {name for name in wanted if self.registry.has(name)}
 
     # ------------------------------------------------------------------
@@ -680,6 +687,8 @@ class AnalystAgent:
             "identity_id": self.identity_id,
             "workspace_id": self.workspace_id,
             "conversation_id": conversation_id,
+            # The demo this run belongs to; the demo skill's handlers act only for it.
+            "demo": self.demo if self.registry.has("demo") else None,
             # Skill instances are registry singletons, so mutable per-run state
             # belongs here. SkillContext receives shallow payload copies; this
             # nested mapping intentionally remains shared across tool calls in
@@ -1620,6 +1629,9 @@ class AnalystAgent:
                 f"actions are active now.\n\n{body}"
             )
 
+        if self.registry.has("demo"):
+            # A demo has no connector forms (design-docs/69).
+            prompt = prompt.replace(" and connector forms pause", " pause")
         if self.agent_coding_rules and self.agent_coding_rules.strip():
             prompt += (
                 "\n\n## Agent Coding Rules\n\n"

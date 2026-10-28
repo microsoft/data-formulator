@@ -68,9 +68,11 @@ def _column_line(column: dict[str, Any]) -> str:
 class Sources:
     """The ``sources/`` folder of one run (``workspace.user_home`` holds the catalog cache)."""
 
-    def __init__(self, workspace: Any, layer: Any = None):
+    def __init__(self, workspace: Any, layer: Any = None, *, enabled: bool = True):
         self.user_home = getattr(workspace, "user_home", None)
         self.layer = layer
+        # Off on a demo, whose only data is its own datasets (design-docs/69).
+        self.enabled = enabled
         self._catalogs: dict[str, list[CatalogTable]] = {}
         self._refreshed: set[str] = set()
         self._ids: list[str] | None = None
@@ -78,7 +80,7 @@ class Sources:
 
     @property
     def available(self) -> bool:
-        return bool(self.user_home)
+        return self.enabled and bool(self.user_home)
 
     # -- sources ---------------------------------------------------------------
 

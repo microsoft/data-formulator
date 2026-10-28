@@ -78,7 +78,7 @@ import CodeIcon from '@mui/icons-material/Code';
 
 import { alpha } from '@mui/material/styles';
 
-import { buildTableCard, buildTableRefChip, buildChartCards, BuildTableCardProps, ThreadArtifactCard, ArtifactDeleteButton } from './DataThreadCards';
+import { buildTableCard, buildTableRefChip, buildChartCards, BuildTableCardProps, ThreadArtifactCard, ArtifactDeleteButton, ThreadChipGroup, ThreadChip } from './DataThreadCards';
 import { SourceTableShelf } from './SourceTableShelf';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { AgentRulesDialog } from './AgentRulesDialog';
@@ -230,6 +230,7 @@ const WorkspacePanel: FC<{
     const focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+    const isDemo = useSelector((state: DataFormulatorState) => !!state.serverConfig.SITE);
     const [agentRulesOpen, setAgentRulesOpen] = useState(false);
     const [workspaceExpanded, setWorkspaceExpanded] = useState(false);
 
@@ -342,7 +343,8 @@ const WorkspacePanel: FC<{
                         {t('dataThread.workspace')}
                     </Typography>
                 </Box>
-                <Box
+                {/* A demo's only data is its own datasets, which its analyst loads (design-docs/69). */}
+                {!isDemo && <Box
                     onClick={(e) => { e.stopPropagation(); setUploadDialogOpen(true); }}
                     sx={{
                         display: 'flex', alignItems: 'center', gap: '2px',
@@ -354,7 +356,7 @@ const WorkspacePanel: FC<{
                 >
                     <AddIcon sx={{ fontSize: iconVar.sm }} />
                     <Typography sx={{ fontSize: textVar.xs, fontWeight: 600 }}>{t('dataThread.addData')}</Typography>
-                </Box>
+                </Box>}
             </Box>
 
             <Collapse in={workspaceExpanded} timeout={150}>
@@ -743,7 +745,7 @@ let SingleThreadGroupView: FC<{
         deleteLabel: t('dataThread.deleteTable'),
     });
 
-    type TimelineItem = { outputNodeId?: string; turnId?: string; live?: LiveStatus; key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'artifact' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; gutterIcon?: React.ReactNode; artifactTone?: 'agent' | 'error'; secondaryActivity?: boolean };
+    type TimelineItem = { outputNodeId?: string; turnId?: string; live?: LiveStatus; key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'artifact' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; gutterIcon?: React.ReactNode; artifactTone?: 'agent' | 'error'; secondaryActivity?: boolean; memberKeys?: string[] };
     let timelineItems: (TimelineItem & { exchangeId?: string })[] = [];
     // The open row of consecutive tool-only steps (see activityRow).
     let toolGroup: { item: TimelineItem; steps: ToolStep[]; labels: TextTurn[] } | null = null;
@@ -893,6 +895,33 @@ let SingleThreadGroupView: FC<{
             element: _buildRefChip(node.tableId, node.id) });
         pushChartsOf(node.tableId, node.id, 'loaded-chart', highlighted);
     };
+    /** A loaded table as a small chip, for a set of tables brought in together; undefined once it is gone. */
+    const loadedTableChip = (node: LoadedTableNode): ThreadChip | undefined => {
+        const onClick = () => dispatch(dfActions.setFocused({ type: 'reference', referenceId: node.id }));
+        if (node.external) {
+            const reference = externalReferences.find(item => item.id === node.tableId);
+            if (!reference) return undefined;
+            return { key: node.id, kind: 'table', title: externalReferenceTitle(reference), onClick,
+                note: t('externalReference.virtualNote', { defaultValue: '(virtual)' }),
+                selected: (focusedId?.type === 'reference' && focusedId.referenceId === node.id)
+                    || (focusedId?.type === 'external-table' && focusedId.referenceId === reference.id) };
+        }
+        const table = tableById.get(node.tableId);
+        if (!table) return undefined;
+        return { key: node.id, kind: 'table', tableId: node.tableId, title: table.displayId || node.tableId, onClick,
+            selected: focusedId?.type === 'reference' && focusedId.referenceId === node.id,
+            onDelete: () => dispatch(dfActions.deleteTable(node.tableId)), deleteLabel: t('dataThread.deleteTable') };
+    };
+    /** A document as a small chip, beside the tables it came in with. */
+    const fileChip = (file: FileNode): ThreadChip => ({
+        key: file.id, kind: 'file', title: file.displayName || file.path,
+        icon: <FileTypeIcon path={file.path} size={12} sx={{ color: 'text.secondary' }} />,
+        selected: focusedId?.type === 'reference' ? focusedId.referenceId === file.id
+            : canvasTarget?.type === 'file' && canvasTarget.fileName === file.path,
+        onClick: () => dispatch(dfActions.setFocused({ type: 'file', fileName: file.path })),
+        onDelete: () => void deleteFile(file.path), deleteDisabled: deletingFiles.has(file.path),
+        deleteLabel: t('dataThread.deleteFile', { defaultValue: 'Delete file' }),
+    });
     const buildReportTimelineItem = (report: GeneratedReport, highlighted: boolean) => {
         const isFocused = focusedId?.type === 'report' && focusedId.reportId === report.id;
         const rowHL = highlighted || isFocused;
@@ -1294,17 +1323,69 @@ let SingleThreadGroupView: FC<{
             }
             case 'artifact-set': {
                 const members = threadGraph.membersOf(id);
-                timelineItems.push({
+                const fileOf = (member: string) => threadGraph.nodes.get(member)?.kind === 'file'
+                    ? fileNodes.find(file => file.id === member) : undefined;
+                // Loaded tables and plain documents fold into chips; apps keep their preview card, and a
+                // fixed file its "replaced" note.
+                const isChip = (member: string) => {
+                    if (threadGraph.nodes.get(member)?.kind === 'loaded-table') return true;
+                    const file = fileOf(member);
+                    return !!file && !isAppFile(file.path) && !file.replaced;
+                };
+                // A set of only tables and documents is one compact row of chips under its counts; a mixed set
+                // keeps its count as a header, and each run of chips in it becomes one such row.
+                const allChips = members.length > 1 && members.every(isChip);
+                if (!allChips) timelineItems.push({
                     key: `artifact-set-${id}`, outputNodeId: id, type: 'artifact', highlighted,
                     element: <Typography sx={{ px: 0.5, fontSize: textVar.xs, color: 'text.secondary' }}>
                         {t('dataThread.artifactSet', { defaultValue: '{{count}} items', count: members.length })}
                     </Typography>,
                 });
+                const pushMembers = (memberIds: string[]) => {
+                    for (const member of memberIds) {
+                        const start = timelineItems.length;
+                        pushItem(member, -1);
+                        for (const item of timelineItems.slice(start)) item.outputNodeId = id;
+                    }
+                };
+                let run: string[] = [];
+                const flushRun = () => {
+                    const loaded = run.map(member => loadedTableNodes.find(node => node.id === member))
+                        .filter((node): node is LoadedTableNode => !!node);
+                    const chips = run.map(member => {
+                        const node = loaded.find(item => item.id === member);
+                        if (node) return loadedTableChip(node);
+                        const file = fileOf(member);
+                        return file ? fileChip(file) : undefined;
+                    }).filter((chip): chip is ThreadChip => !!chip);
+                    if (chips.length < 2) pushMembers(run);
+                    else {
+                        const runHighlighted = highlighted || run.some(isHL) || chips.some(chip => chip.selected);
+                        const tableCount = chips.filter(chip => chip.kind === 'table').length;
+                        const fileCount = chips.length - tableCount;
+                        const firstFile = run.map(fileOf).find(Boolean);
+                        const label = allChips ? [
+                            tableCount && t('dataThread.tableSet', { defaultValue: '{{count}} tables', count: tableCount }),
+                            fileCount && t('dataThread.fileSet', { defaultValue: '{{count}} files', count: fileCount }),
+                        ].filter(Boolean).join(' · ') : undefined;
+                        timelineItems.push({
+                            key: `chip-set-${id}-${run[0]}`, outputNodeId: id, type: 'artifact', highlighted: runHighlighted,
+                            artifactTone: 'agent', memberKeys: chips.map(chip => chip.key),
+                            gutterIcon: tableCount || !firstFile
+                                ? <TableIcon sx={{ width: 14, height: 14, color: iconTone.muted }} />
+                                : <FileTypeIcon path={firstFile.path} size={14} sx={{ color: iconTone.muted }} />,
+                            element: <ThreadChipGroup chips={chips} label={label} />,
+                        });
+                        for (const node of loaded) if (!node.external) pushChartsOf(node.tableId, id, 'loaded-chart', runHighlighted);
+                    }
+                    run = [];
+                };
                 for (const member of members) {
-                    const start = timelineItems.length;
-                    pushItem(member, -1);
-                    for (const item of timelineItems.slice(start)) item.outputNodeId = id;
+                    if (isChip(member)) { run.push(member); continue; }
+                    flushRun();
+                    pushMembers([member]);
                 }
+                flushRun();
                 return;
             }
         }
@@ -1461,7 +1542,7 @@ let SingleThreadGroupView: FC<{
                 ? focusedId.referenceId
                 : undefined;
     const focusedTimelineIndex = focusedTimelineKey
-        ? timelineItems.findIndex(item => item.key === focusedTimelineKey)
+        ? timelineItems.findIndex(item => item.key === focusedTimelineKey || item.memberKeys?.includes(focusedTimelineKey))
         : -1;
     if (focusedTimelineIndex >= 0) {
         timelineItems = timelineItems.map((item, index) => index <= focusedTimelineIndex
@@ -2061,7 +2142,13 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
                 });
         };
         refresh();
-        const unsubscribe = onWorkspaceFilesChanged(refresh);
+        const unsubscribe = onWorkspaceFilesChanged(added => {
+            // Show files a result just added now; the re-list below confirms them.
+            if (added.length) {
+                setWorkspaceFiles(current => [...current.filter(file => !added.some(item => item.name === file.name)), ...added]);
+            }
+            refresh();
+        });
         return () => {
             cancelled = true;
             unsubscribe();

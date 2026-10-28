@@ -606,7 +606,8 @@ def analyst_streaming():
         return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, str(exc)))
     agent_exploration_rules = content.get("agent_exploration_rules", "")
     from data_formulator.sites import current_site, site_analyst_rules
-    site_rules = site_analyst_rules(current_site())
+    demo_site = current_site()
+    site_rules = site_analyst_rules(demo_site)
     if site_rules:
         agent_exploration_rules = "\n\n".join(rules for rules in (site_rules, agent_exploration_rules) if rules)
     agent_coding_rules = content.get("agent_coding_rules", "")
@@ -821,6 +822,7 @@ def analyst_streaming():
                 execution_config=execution_config,
                 identity_id=identity_id,
                 workspace_id=active_workspace_id,
+                demo=demo_site,
             )
 
             trajectory = None

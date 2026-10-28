@@ -370,7 +370,8 @@ export const DataSourceSidebar: React.FC<{
                 pt: 1,
                 gap: 0.5,
             }}>
-                <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Upload data' })} placement="right">
+                {/* A demo's only data is its own datasets (design-docs/69). */}
+                {!isDemo && <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Upload data' })} placement="right">
                     <IconButton
                         size="small"
                         onClick={() => onOpenUploadDialog?.('menu')}
@@ -382,7 +383,7 @@ export const DataSourceSidebar: React.FC<{
                     }}>
                         <AddCircleIcon fontSize="small" />
                     </IconButton>
-                </Tooltip>
+                </Tooltip>}
                 <Tooltip title={t('sidebar.sessions', { defaultValue: 'Saved workspaces' })} placement="right">
                     <IconButton size="small" onClick={() => { setInitialTab('sessions'); if (!isOpen) toggle(); else if (initialTab !== 'sessions') setInitialTab('sessions'); else toggle(); }} sx={{
                         color: isOpen && initialTab === 'sessions' ? 'primary.main' : 'text.secondary',

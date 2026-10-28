@@ -423,6 +423,10 @@
     "stopAgentAndTasks_other": "エージェントと {{count}} 件のタスクを停止"
   },
   "dataThread": {
+    "tableSet_one": "{{count}} 個のテーブル",
+    "tableSet_other": "{{count}} 個のテーブル",
+    "fileSet_one": "{{count}} 個のファイル",
+    "fileSet_other": "{{count}} 個のファイル",
     "tableDataMissing": "{{names}} のデータがこのセッションのワークスペースにありません。ソースから再読み込みするか、エージェントに依頼してください。",
     "tableDataMissingTooltip": "このテーブルのデータがワークスペースにありません。ソースから再読み込みしてください。",
     "title": "データスレッド",
@@ -622,6 +626,7 @@
     "explorePlaceholderSingleTable": "質問するか、探索したい内容を説明します",
     "followUpsTitle": "追加の質問の提案",
     "followUpsBody": "チャットで追加の質問をして分析を続けられます。新しいグラフ、説明、新しいレポートを依頼できます。次の例を試してください：",
+    "datasetLoadedIntro": "{{name}} を読み込みました。チャットでアナリストに何でも質問するか、次の例から始めてください：",
     "followUpsDismiss": "提案を閉じる",
     "followUpsFolded": "追加の質問のアイデア",
     "addMoreData": "ワークスペースにデータをさらに追加",

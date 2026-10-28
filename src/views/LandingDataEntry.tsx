@@ -13,6 +13,16 @@ import { ConnectorInstance } from '../components/ComponentType';
 import { apiRequest } from '../app/apiClient';
 import { getUrls } from '../app/utils';
 import { iconVar, textVar } from '../app/layout';
+import { DEMO_COLUMN, demoText } from '../sites/layout';
+
+/** A demo's landing (design-docs/69): its own suggested questions and datasets, no other data paths. */
+export interface LandingDemo {
+    /** Short questions offered as chips; sending one starts the chat with it. */
+    suggestions: string[];
+    placeholder?: string;
+    /** The demo's datasets, shown under the chat in place of connected sources and uploads. */
+    datasets?: React.ReactNode;
+}
 
 interface LandingDataEntryProps {
     onStartChat: (prompt: string, images: string[], attachments: string[]) => void;
@@ -24,10 +34,11 @@ interface LandingDataEntryProps {
     connectors: ConnectorInstance[];
     readOnly?: boolean;
     quickActionContext?: QuickActionContext;
+    demo?: LandingDemo;
 }
 
 export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
-    onStartChat, ensureActiveWorkspace, onUpload, onConnect, onLinkFolder, onSelectConnector, connectors, readOnly = false, quickActionContext,
+    onStartChat, ensureActiveWorkspace, onUpload, onConnect, onLinkFolder, onSelectConnector, connectors, readOnly = false, quickActionContext, demo,
 }) => {
     const { t } = useTranslation();
     const [input, setInput] = useState('');
@@ -60,11 +71,13 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
     } as const;
     const labelStyle = { fontSize: '0.8rem', fontWeight: 600,
         color: (theme: Theme) => alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 } as const;
-    return <Box sx={{ width: '100%', maxWidth: 800, mx: 'auto', textAlign: 'left' }}>
+    return <Box sx={{ width: '100%', maxWidth: demo ? DEMO_COLUMN : 800, mx: 'auto', textAlign: 'left' }}>
         <Box sx={{ mb: 1.75, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75 }}>
-            {buildDataLoadingQuickActions(suggestionArgs, quickActionContext, quickActionSeed).map(action => <Chip key={action.kind}
+            {(demo
+                ? demo.suggestions.map(text => ({ kind: text, label: text, onClick: () => submit(text, [], []) }))
+                : buildDataLoadingQuickActions(suggestionArgs, quickActionContext, quickActionSeed)).map(action => <Chip key={action.kind}
                 icon={<BoltOutlinedIcon />} label={action.label} onClick={action.onClick} disabled={disabled}
-                variant="outlined" size="small" sx={{ fontSize: textVar.md, minHeight: 30, height: { xs: 'auto', sm: 30 }, maxWidth: '100%', borderRadius: 2,
+                variant="outlined" size="small" sx={{ fontSize: demo ? demoText.body : textVar.md, minHeight: demo ? 34 : 30, height: { xs: 'auto', sm: demo ? 34 : 30 }, maxWidth: '100%', borderRadius: 2,
                     color: 'text.secondary', borderColor: theme => alpha(theme.palette.text.primary, 0.12),
                     '& .MuiChip-label': { whiteSpace: 'normal' },
                     '& .MuiChip-icon': { fontSize: textVar.lg, ml: 0.5, color: 'text.disabled' },
@@ -72,10 +85,11 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
         </Box>
         {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 1 }}>{error}</Alert>}
         <AgentChatInput value={input} onChange={setInput} images={images} onImagesChange={setImages}
-            leadingSlot={<TerminalAccessButton />}
-            onSend={() => submit(input, images, attachments)} disabled={disabled} layout="stacked" minRows={4}
+            leadingSlot={demo ? undefined : <TerminalAccessButton />}
+            onSend={() => submit(input, images, attachments)} disabled={disabled} layout="stacked" minRows={demo ? 3 : 4}
             attachments={attachments} onAttachmentsChange={setAttachments}
-            onNonImageFile={async file => {
+            fileAccept={demo ? 'image/*' : undefined}
+            onNonImageFile={demo ? undefined : async file => {
                 if (readOnly) return;
                 ensureActiveWorkspace();
                 setUploadCount(count => count + 1);
@@ -89,15 +103,17 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
                 } catch (reason) { setError(String(reason)); }
                 finally { setUploadCount(count => count - 1); }
             }}
-            tabSuggestion={t('upload.agentChatTabSuggestion', { defaultValue: 'What dataset do we have here?' })}
+            tabSuggestion={demo ? demo.suggestions[0] : t('upload.agentChatTabSuggestion', { defaultValue: 'What dataset do we have here?' })}
             focusSuggestionsLabel={t('upload.agentChatSuggestionsLabel', { defaultValue: 'Try asking' })}
-            focusSuggestions={buildDataLoadingSuggestions(suggestionArgs)}
-            placeholder={t('upload.agentChatPlaceholder', { defaultValue: 'Ask the agent to find datasets, or extract data from an image or text...' })}
+            focusSuggestions={demo ? undefined : buildDataLoadingSuggestions(suggestionArgs)}
+            placeholder={demo ? demo.placeholder || t('upload.demoChatPlaceholder', { defaultValue: 'Ask a question about the data…' })
+                : t('upload.agentChatPlaceholder', { defaultValue: 'Ask the agent to find datasets, or extract data from an image or text...' })}
             sendTooltip={t('upload.agentChatSendTooltip', { defaultValue: 'Start chatting with the agent' })}
             sx={{ borderColor: (theme: Theme) => alpha(theme.palette.primary.main, 0.38),
+                ...(demo && { '& textarea': { fontSize: demoText.input } }),
                 boxShadow: '0 5px 18px rgba(32, 33, 36, 0.11), 0 1px 4px rgba(32, 33, 36, 0.07)',
                 '&:hover': { boxShadow: '0 6px 20px rgba(32, 33, 36, 0.11), 0 2px 6px rgba(32, 33, 36, 0.06)' } }} />
-        <Box sx={{ mt: 4, display: 'flex', flexDirection: 'column', gap: 1 }}>
+        {demo ? demo.datasets : <Box sx={{ mt: 4, display: 'flex', flexDirection: 'column', gap: 1 }}>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 1.5, rowGap: 0.75 }}>
                 <Typography variant="body2" sx={labelStyle}>
                     {t('upload.dataSourcesLabel', { defaultValue: 'Connected to:' })}
@@ -123,6 +139,6 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
                     {t('upload.addConnection', { defaultValue: 'Connect databases' })}
                 </Button>}
             </Box>
-        </Box>
+        </Box>}
     </Box>;
 };
