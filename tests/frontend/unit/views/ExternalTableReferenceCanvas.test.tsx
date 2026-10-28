@@ -109,6 +109,53 @@ it('lists every item in a capped scrolling box, with no fold or Show all', () =>
     expect(container.querySelector('[data-shelf-list]')).toHaveStyle({ overflowY: 'auto' });
 });
 
+it('starts a workspace as a summary box when the site asks, and expands it to the list', () => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.setServerConfig({ ...store.getState().serverConfig,
+        SITE: { id: 'unesco', name: 'UIS', starters: [], workspace_collapsed: true } } as any));
+    const tables = [1_200_000, 1_056].map((rowCount, index) => ({ kind: 'table' as const,
+        id: `table-${index}`, displayId: `Table ${index}`, names: [], rows: [], metadata: {}, description: '',
+        virtual: { tableId: `table-${index}`, rowCount } }));
+    const files = ['guide.md', 'docs/README.md'].map(name => ({ name, filename: name, created_at: '2026-10-28T00:00:00Z',
+        content_hash: name, file_size: 10, media_type: 'text/markdown' }));
+    render(<Provider store={store}><SourceTableShelf inputTables={tables} highlightedTableIds={[]} workspaceFiles={files} /></Provider>);
+    const summary = screen.getByRole('button', { name: /2 tables · 2 documents/ });
+    expect(summary).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getAllByText(/^workspace$/i)).toHaveLength(1);
+    // Which names fit on the line depends on layout (none in jsdom); tables come first.
+    expect(summary).toHaveTextContent(/Table 0.*Table 1/);
+    expect(screen.queryByRole('button', { name: 'Table 0' })).not.toBeInTheDocument();
+    fireEvent.click(summary);
+    expect(screen.getByRole('button', { name: 'Table 0' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: /2 tables · 2 documents/ })).not.toBeInTheDocument();
+});
+
+it('names the folded card after the dataset title, and keeps the title with the session', () => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    store.dispatch(dfActions.setServerConfig({ ...store.getState().serverConfig,
+        SITE: { id: 'unesco', name: 'UIS', starters: [], workspace_collapsed: true } } as any));
+    store.dispatch(dfActions.setWorkspaceTitle('Culture: SDG 11.4'));
+    const table = { kind: 'table' as const, id: 'sdg11', displayId: 'sdg11_national', names: [], rows: [], metadata: {}, description: '',
+        virtual: { tableId: 'sdg11', rowCount: 1183 } };
+    render(<Provider store={store}><SourceTableShelf inputTables={[table]} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
+    const summary = screen.getByRole('button', { name: 'Culture: SDG 11.4: 1 table' });
+    expect(summary).toHaveTextContent('Culture: SDG 11.4');
+    expect(screen.queryByText(/^workspace$/i)).not.toBeInTheDocument();
+    store.dispatch(dfActions.loadState({ ...store.getState(), activeWorkspace: { id: 'reloaded', displayName: 'Culture' } }));
+    expect(store.getState().workspaceTitle).toBe('Culture: SDG 11.4');
+    store.dispatch(dfActions.loadState({ activeWorkspace: { id: 'plain', displayName: 'Plain' } }));
+    expect(store.getState().workspaceTitle).toBeNull();
+});
+
+it('keeps a regular workspace expanded', () => {
+    const store = configureStore({ reducer: dataFormulatorReducer });
+    const table = { kind: 'table' as const, id: 'orders', displayId: 'Orders', names: [], rows: [], metadata: {}, description: '',
+        virtual: { tableId: 'orders', rowCount: 3 } };
+    render(<Provider store={store}><SourceTableShelf inputTables={[table]} highlightedTableIds={[]} workspaceFiles={[]} /></Provider>);
+    expect(screen.getByRole('button', { name: 'Orders' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: /1 table/ })).not.toBeInTheDocument();
+});
+
 
 it('shows pending loads in an empty workspace without creating selectable tables', () => {
     const store = configureStore({ reducer: dataFormulatorReducer });

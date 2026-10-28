@@ -20,6 +20,7 @@ const EXCLUDED_FIELDS = new Set([
     // Transient fields that shouldn't trigger or be included in saves
     'chartSynthesisInProgress',
     'tableLoadsInFlight',
+    'workflowStarting',
     'pendingTableLoads',
     'tablesMissingData',
     'cleanInProgress', 'sessionLoading', 'sessionLoadingLabel', 'exampleFollowUps',

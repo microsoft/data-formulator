@@ -578,8 +578,9 @@ ${styles}
         }
     }, [isGenerating]);
 
-    // Derive focused report ID from Redux state
-    const focusedReportId = focusedId?.type === 'report' ? focusedId.reportId : undefined;
+    // The report the canvas shows: one focused directly, or the one a focused message follows.
+    const canvasTarget = useSelector(dfSelectors.selectCanvasTarget);
+    const focusedReportId = canvasTarget?.type === 'report' ? canvasTarget.reportId : undefined;
 
     // When focused report is cleared, go back to editor view
     useEffect(() => {

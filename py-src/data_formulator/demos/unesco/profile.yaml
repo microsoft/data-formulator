@@ -25,6 +25,8 @@ intro: >-
   Ask a question above and the AI analyst loads the datasets it needs, or open an example session
   to see a question it already answered and keep asking your own.
 release: "2026-02"
+# Sessions start with the workspace folded into one card (its name, a few tables); visitors open it when needed.
+workspace_collapsed: true
 # Shown before the demo is installed, beside the Install button (local installs).
 install_note: >-
   Installing downloads about 120 MB of public data from the UNESCO Institute for Statistics and
@@ -69,8 +71,8 @@ links:
 
 starters:
   - id: education-sdg4
-    # The dataset's page on the UNESCO DataHub, linked from its section.
-    source_url: https://data.unesco.org/explore/assets/uis001/
+    # The dataset's page in the UIS Data Browser, linked from its section.
+    source_url: https://databrowser.uis.unesco.org/browser/EDUCATION/UIS-SDG4Monitoring
     kicker: SDG 4 education
     icon: school
     start_note: The full dataset, with its README and UIS notes
@@ -154,8 +156,8 @@ starters:
         - How has school electricity changed since 2015?
         image: stories/education-sdg4-e23.png
   - id: education-opri
-    # The dataset's page on the UNESCO DataHub, linked from its section.
-    source_url: https://data.unesco.org/explore/assets/uis006/
+    # The dataset's page in the UIS Data Browser, linked from its section.
+    source_url: https://databrowser.uis.unesco.org/browser/EDUCATION/UIS-EducationOPRI
     kicker: Education indicators
     icon: school
     start_note: The full dataset, with its README and UIS notes
@@ -237,8 +239,8 @@ starters:
         - Which region has the fewest years of schooling?
         image: stories/education-opri-o23.png
   - id: science
-    # The dataset's page on the UNESCO DataHub, linked from its section.
-    source_url: https://data.unesco.org/explore/assets/uis004/
+    # The dataset's page in the UIS Data Browser, linked from its section.
+    source_url: https://databrowser.uis.unesco.org/browser/SCIENCE_TECHNOLOGY_INNOVATION/UIS-SDG9Monitoring
     kicker: Research and development
     icon: science
     start_note: The full dataset, with its README and UIS notes
@@ -320,8 +322,8 @@ starters:
         - Which countries have the most researchers per million people?
         image: stories/science-s23.png
   - id: culture
-    # The dataset's page on the UNESCO DataHub, linked from its section.
-    source_url: https://data.unesco.org/explore/assets/uis002/
+    # The dataset's page in the UIS Data Browser, linked from its section.
+    source_url: https://databrowser.uis.unesco.org/browser/CULTURE/UIS-SDG11Monitoring
     kicker: Heritage spending
     icon: landmark
     start_note: The full dataset, with its README and UIS notes

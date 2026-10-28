@@ -24,7 +24,7 @@ import ReactMarkdown from 'react-markdown';
 import { dump as dumpYaml, load as loadYaml } from 'js-yaml';
 import { ItemCard, ItemCardAction, itemCardGridSx, MetaChip } from '../components/ItemCard';
 import { MarkdownEditor } from '../components/MarkdownEditor';
-import { ArtifactDeleteButton } from './DataThreadCards';
+import DeleteIcon from '@mui/icons-material/Delete';
 import CheckIcon from '@mui/icons-material/Check';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
@@ -251,8 +251,8 @@ export const SessionsFormArtifactView: React.FC<{ turn: TextTurn; form: Sessions
                                 disabled={disabled} onClick={() => setEditing({ sessionId: item.sessionId, value: item.suggestedName || name })} />
                             {!current && <ItemCardAction label={t('setupForm.openNamedNewTab', { defaultValue: 'Open {{name}} in new tab', name })}
                                 icon={<OpenInNewIcon />} onClick={() => openSessionInNewTab(item.sessionId)} />}
-                            {!current && <ArtifactDeleteButton label={t('setupForm.deleteNamed', { defaultValue: 'Delete {{name}}', name })}
-                                disabled={disabled} onClick={() => setPendingDelete(item)} />}
+                            {!current && <ItemCardAction danger label={t('setupForm.deleteNamed', { defaultValue: 'Delete {{name}}', name })}
+                                icon={<DeleteIcon />} disabled={disabled} onClick={() => setPendingDelete(item)} />}
                         </>}
                     />
                 </Box>;

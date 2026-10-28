@@ -557,6 +557,7 @@ def test_managed_app_config_reports_mode_separately_from_admin_permission(monkey
         assert config['APP_TAGLINE'] == ''
         assert config['MANAGED_MODE'] is True
         assert config['CAN_CONFIGURE'] is False
+        assert config['WORKFLOWS_AVAILABLE'] is True
         assert config['EXTERNAL_TABLE_MAX_ROWS'] == 1000000
         assert config['EXTERNAL_TABLE_MAX_BYTES'] == 512 * 1048576
         save_configuration({'app_name': '  Team Analytics  ', 'app_tagline': '  Explore our data.  ',
@@ -569,9 +570,12 @@ def test_managed_app_config_reports_mode_separately_from_admin_permission(monkey
         monkeypatch.setattr(configurations, 'get_identity_id', lambda: 'user:admin')
         assert application.app.make_response(application.get_app_config()).get_json()['data']['CAN_CONFIGURE'] is True
         application.app.config['CLI_ARGS']['managed'] = False
+        # A hosted (not local) deployment that is not managed offers no workflows; the frontend hides them.
+        monkeypatch.setattr(identity, 'is_local_mode', lambda: False)
         config = application.app.make_response(application.get_app_config()).get_json()['data']
         assert config['MANAGED_MODE'] is False
         assert config['CAN_CONFIGURE'] is False
+        assert config['WORKFLOWS_AVAILABLE'] is False
 
 
 def test_admin_branding_save_and_reset(config_client):

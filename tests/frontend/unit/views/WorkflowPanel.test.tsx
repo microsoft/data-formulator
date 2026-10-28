@@ -1364,7 +1364,7 @@ describe('Workflow session publication', () => {
         expect(screen.queryByRole('button', { name: 'Edit My review' })).toBeNull();
         expect(within(examples).getByRole('article')).toContainElement(demo);
         expect(demo).toHaveTextContent('Compare prices');
-        expect(within(demo).getByTestId('PlayArrowIcon')).toBeInTheDocument();
+        expect(within(demo).queryByTestId('PlayArrowIcon')).toBeNull();
         expect(within(examples).getAllByRole('button')).toHaveLength(1);
         expect(within(user).getByRole('button', { name: 'Delete mine.yaml' })).toBeInTheDocument();
         expect(screen.getAllByRole('button', { name: 'New workflow' })).toHaveLength(1);

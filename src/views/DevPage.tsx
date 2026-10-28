@@ -20,6 +20,7 @@ import { ArtifactDeleteButton, ThreadArtifactCard } from './DataThreadCards';
 import { MiniPage, MiniWindow } from '../components/ArtifactMiniatures';
 import { ThreadDeck, ThreadOutput } from '../components/ThreadDeck';
 import { STARTER_HINTS, StarterHintMock } from './DevStarterHints';
+import { WorkspaceSummary } from './SourceTableShelf';
 
 const FILES = [
     'a.py', 'a.ipynb', 'a.sql', 'a.md', 'a.r', 'a.ts', 'a.tsx', 'a.js', 'a.css', 'a.php', 'a.html', 'a.app.jsx',
@@ -157,8 +158,22 @@ const deckOutputs = (count: number): ThreadOutput[] => [
         { kind: 'app' as const, id: 'app', title: 'Gas price and premium surcharge explorer', path: 'apps/gas.app.jsx' }]),
 ];
 
+const WORKSPACE_CASES: [string, string | null, string[], string[]][] = [
+    ['culture', 'Culture: SDG 11.4', ['sdg11_indicators', 'sdg11_national', 'sdg11_sources', 'dem_indicators', 'dem_national', 'countries'],
+        ['UIS data guide.md', 'culture-background.md', 'SDG11 README.md']],
+    ['education · long title', 'Education: Other policy-relevant indicators', ['opri_indicators', 'opri_national'], []],
+    ['two tables, no title', null, ['weekly_us_fuel_prices', 'grades'], []],
+    ['one table, no title', null, ['weekly_us_fuel_prices'], []],
+];
+
 export default function DevPage() {
     return <Box sx={{ p: 2, height: '100vh', overflow: 'auto', boxSizing: 'border-box', bgcolor: 'background.default' }}>
+        <Section title="workspace · collapsed">
+            {WORKSPACE_CASES.map(([label, title, tables, documents]) => <Box key={label} sx={{ width: 240 }}>
+                <Box sx={{ fontSize: 10, mb: 0.5, fontFamily: 'var(--df-font-mono, monospace)', color: 'text.disabled' }}>{label}</Box>
+                <WorkspaceSummary title={title} tables={tables} documents={documents} onExpand={() => {}} />
+            </Box>)}
+        </Section>
         <Section title="demo · dataset-loaded hint">
             {STARTER_HINTS.map(([label, Hint, attached]) => <Box key={label} sx={{ border: 1, borderColor: 'divider' }}>
                 <Box sx={{ fontSize: 11, px: 1, pt: 0.75, fontFamily: 'var(--df-font-mono, monospace)', color: 'text.secondary' }}>{label}</Box>

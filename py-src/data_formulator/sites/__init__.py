@@ -258,5 +258,6 @@ def site_frontend_config(site_id: str) -> dict[str, Any]:
         "disclaimer": profile.get("disclaimer", ""),
         "install_note": profile.get("install_note", ""),
         "links": list(profile.get("links") or []),
+        "workspace_collapsed": bool(profile.get("workspace_collapsed")),
         "starters": starters,
     }

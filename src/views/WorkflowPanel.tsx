@@ -18,7 +18,7 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
 import { ArtifactDeleteButton, ThreadArtifactCard } from './DataThreadCards';
-import { cardHoverSx, ItemCard, MetadataCard, MetadataChips, ViewAllButton } from '../components/ItemCard';
+import { exampleCardButtonSx, exampleCardDescriptionSx, exampleCardSx, exampleCardTitleSx, ItemCard, itemCardGridSx, MetadataCard, MetadataChips, ViewAllButton } from '../components/ItemCard';
 import { readingTypography, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarToolbarSx } from '../app/tokens';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import TerminalIcon from '@mui/icons-material/Terminal';
@@ -564,6 +564,14 @@ export async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => 
     if (executions.has(workspaceId)) throw new Error(i18n.t('workflow.alreadyRunning'));
     const controller = new AbortController();
     executions.set(workspaceId, controller);
+    // Until the server reports the new run, an empty session would otherwise look idle.
+    let starting = !body.run_id;
+    const endStarting = () => {
+        if (!starting) return;
+        starting = false;
+        if (store.getState().activeWorkspace?.id === workspaceId) store.dispatch(dfActions.setWorkflowStarting(false));
+    };
+    if (starting) store.dispatch(dfActions.setWorkflowStarting(true));
     const unsubscribe = store.subscribe(() => {
         if (store.getState().activeWorkspace?.id !== workspaceId) controller.abort();
     });
@@ -633,6 +641,7 @@ export async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => 
                 flushReport();
                 latest = result.run;
                 await publishWorkflowRun(latest, workspaceId, true, startNodeId);
+                endStarting();
                 onAccepted?.();
                 onAccepted = undefined;
             } else if (result.type === 'activity' && latest) {
@@ -647,6 +656,7 @@ export async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => 
     } catch (reason) {
         if (latest?.status !== 'running') throw reason;
     } finally {
+        endStarting();
         flushReport();
         if (streamingReportId && store.getState().activeWorkspace?.id === workspaceId
             && latest?.status !== 'running'
@@ -1456,8 +1466,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
             </Box>
             )}
             {landing && groupId === 'demo' && !model && <Alert severity="info" sx={{ ...listNoticeSx, mb: 1 }}>{t('workflow.selectModelToRun')}</Alert>}
-            <Box id={`workflow-${presentation}-group-${groupId}`} sx={{ mx: landing ? 0 : 0.75, mt: landing ? 0 : 1, display: 'grid', gap: landing ? 1 : 0.75,
-                ...(landing ? { gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))' } : {}) }}>
+            <Box id={`workflow-${presentation}-group-${groupId}`} sx={landing ? itemCardGridSx : { mx: 0.75, mt: 1, display: 'grid', gap: 0.75 }}>
         {!group.length && <Typography sx={{ px: 1, py: 0.75, fontSize: textVar.xs, color: 'text.secondary' }}>
             {loading ? t('workflow.loading') : t('workflow.empty')}
         </Typography>}
@@ -1483,22 +1492,21 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                         sx={sidebarRowActionSx} onClick={openSetup}><PlayArrowIcon /></IconButton></span></Tooltip>}
                     meta={cardRuns.length > 0 && <CardRuns label={t('workflow.previousRunsOf', { name: item.name })} runs={cardRuns} />} />;
             }
-            return <Box component="article" key={item.path} sx={{ minWidth: 0, ...cardHoverSx, display: 'flex', position: 'relative',
-                border: '1px solid rgba(0, 0, 0, 0.18)', borderRadius: 1, bgcolor: 'background.paper', boxShadow: '0 1px 3px rgba(32, 33, 36, 0.06)',
+            return <Box component="article" key={item.path} sx={{ ...exampleCardSx(runDisabled),
+                ...(!runDisabled ? { '&:hover .workflow-card-gears, &:has(:focus-visible) .workflow-card-gears': { color: 'primary.main' } } : {}),
                 '& .workflow-secondary-action': { opacity: 0 },
                 '&:hover .workflow-secondary-action, &:focus-within .workflow-secondary-action': { opacity: 1 },
                 '@media (hover: none)': { '& .workflow-secondary-action': { opacity: 1 } } }}>
             <ButtonBase aria-label={t('workflow.runItem', { name: item.name })} disabled={runDisabled} onClick={openSetup}
-                sx={{ display: 'block', width: '100%', minWidth: 0, textAlign: 'left', p: 1.25, flex: 1, borderRadius: 'inherit',
-                    '&.Mui-disabled': { opacity: 0.6 }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
+                sx={{ ...exampleCardButtonSx, display: 'block', p: 1.5 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pr: origin === 'user' ? 2.5 : 0 }}>
-                    <WorkflowGears running={false} size={16} color="text.secondary" showTooltip={false} />
-                    <Typography sx={{ fontSize: textVar.md, fontWeight: 400, lineHeight: 1.4, minWidth: 0, overflowWrap: 'anywhere' }}>{item.name}</Typography>
-                    <PlayArrowIcon sx={{ ml: 'auto', flexShrink: 0, fontSize: iconVar.md, color: runDisabled ? 'action.disabled' : 'primary.main' }} />
+                    <Box component="span" className="workflow-card-gears" sx={{ display: 'flex', flexShrink: 0, color: 'text.secondary', transition: 'color 120ms ease' }}>
+                        <WorkflowGears running={false} size={16} color="inherit" showTooltip={false} />
+                    </Box>
+                    <Typography sx={exampleCardTitleSx}>{item.name}</Typography>
                 </Box>
-                {(item.error || item.overview) && <Typography sx={{ mt: 0.25, fontSize: textVar.xs, lineHeight: 1.5,
-                    color: item.error ? 'error.main' : 'text.secondary', overflowWrap: 'anywhere',
-                    ...(!item.error ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : {}) }}>
+                {(item.error || item.overview) && <Typography sx={item.error
+                    ? { ...exampleCardDescriptionSx, display: 'block', overflow: 'visible', color: 'error.main' } : exampleCardDescriptionSx}>
                     {item.error || item.overview}</Typography>}
             </ButtonBase>
             {origin === 'user' && <Box className="workflow-secondary-action" sx={{ position: 'absolute', top: 4, right: 4 }}>

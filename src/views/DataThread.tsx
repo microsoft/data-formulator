@@ -2214,7 +2214,8 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     // "working" instead of telling the user there is nothing here.
     const analystChatPending = useSelector((state: DataFormulatorState) => state.analystChatPending);
     const tableLoadsInFlight = useSelector((state: DataFormulatorState) => state.tableLoadsInFlight);
-    const workPending = tableLoadsInFlight > 0 || analystChatPending != null;
+    const workflowStarting = useSelector((state: DataFormulatorState) => state.workflowStarting);
+    const workPending = tableLoadsInFlight > 0 || analystChatPending != null || workflowStarting;
     // A run is streaming into the thread while its live draft is open.
     const runActive = useSelector((state: DataFormulatorState) =>
         state.draftNodes.some(draft => draft.derive?.status === 'running' || draft.derive?.status === 'clarifying'));
@@ -2224,8 +2225,9 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     // Outer wrapper containing both the thread area and the chatbox.
     const outerRef = useRef<null | HTMLDivElement>(null)
     // Bring the focused item into view when focus arrives from outside the
-    // thread (agent output, canvas, sidebar). Clicks inside the thread never
-    // move it, and a user who is scrolling is not fought.
+    // thread (agent output, canvas, sidebar), or when a clicked message opens
+    // its panel. Other clicks inside the thread never move it, and a user who
+    // is scrolling is not fought.
     const threadPointerAtRef = useRef(0);
     const userScrollAtRef = useRef(0);
     const fileNodesRef = useRef(fileNodes);
@@ -2283,7 +2285,9 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         return () => { cancelAnimationFrame(frame); window.clearTimeout(timer); };
     }, []);
     useEffect(() => {
-        if (!focusedId || performance.now() - threadPointerAtRef.current < 400) return;
+        // A click on a message opens its panel under the thread, which shrinks the thread and can hide the
+        // message; it is revealed then too. Other clicks inside the thread leave it where it is.
+        if (!focusedId || (focusedId.type !== 'text' && performance.now() - threadPointerAtRef.current < 400)) return;
         return revealInThread(viewport => findRevealTarget(viewport, focusedId, fileNodesRef.current));
     }, [focusedId, revealInThread]);
     // A message the user just sent shows in the thread, with the agent's reply starting under it,
@@ -2893,7 +2897,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />
                     <Typography variant="body2" sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
-                        {t('dataThread.startingRun')}
+                        {t(workflowStarting ? 'dataThread.startingWorkflow' : 'dataThread.startingRun')}
                     </Typography>
                 </Box>
             ) : (

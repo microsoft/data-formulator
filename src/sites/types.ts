@@ -70,6 +70,8 @@ export interface SiteConfig {
     /** A note after "Powered by Data Formulator" at the foot of the page; [text](url) is a link. */
     disclaimer?: string;
     links?: { label: string; url: string }[];
+    /** Sessions start with the workspace folded into its summary card. */
+    workspace_collapsed?: boolean;
     starters: SiteStarter[];
     /** "ready" once the demo's content is installed on this server. */
     status?: 'ready' | 'not_installed';

@@ -357,7 +357,10 @@ export async function importWorkspace(
         method: 'POST',
         body: formData,
     });
-    return migrateState(data.state);
+    const state = migrateState(data.state);
+    // Input tables keep their preview rows outside the state, so load them as opening a session does.
+    replaceInputTablePreviews(await prepareInputTablePreviews(state, workspaceId));
+    return state;
 }
 
 // ── Table operations ────────────────────────────────────────────────────

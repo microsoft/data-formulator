@@ -474,6 +474,8 @@ def get_app_config():
 
     from data_formulator.auth.identity import is_local_mode
     config["IS_LOCAL_MODE"] = is_local_mode()
+    from data_formulator.analyst.skills.configure.automation import workflows_unavailable
+    config["WORKFLOWS_AVAILABLE"] = workflows_unavailable() is None
     from data_formulator.routes.configurations import can_configure
     config["CAN_CONFIGURE"] = can_configure()
 

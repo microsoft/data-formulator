@@ -11,7 +11,7 @@ const { dispatch, mockState } = vi.hoisted(() => ({
     mockState: {
         dataSourceSidebarOpen: true,
         dataSourceSidebarTab: 'sources',
-        serverConfig: { DISABLE_DATA_CONNECTORS: false },
+        serverConfig: { DISABLE_DATA_CONNECTORS: false, WORKFLOWS_AVAILABLE: true },
         activeWorkspace: null,
         identity: { type: 'browser', id: 'test-browser' },
         inputTables: [],
@@ -124,6 +124,7 @@ describe('DataSourceSidebar', () => {
         dispatch.mockReset();
         mockState.dataSourceSidebarTab = 'sources';
         mockState.serverConfig.DISABLE_DATA_CONNECTORS = false;
+        mockState.serverConfig.WORKFLOWS_AVAILABLE = true;
         delete (mockState.serverConfig as { SITE?: unknown }).SITE;
         vi.stubGlobal('ResizeObserver', class {
             observe() {}
@@ -575,18 +576,20 @@ describe('DataSourceSidebar', () => {
     });
 
     it.each([
-        { demo: false, rail: ['Upload data', 'Saved workspaces', 'Data connectors', 'knowledge.workflows', 'Schedules'] },
-        { demo: true, rail: ['Saved workspaces'] },
-    ])('offers uploads, data connectors, workflows and schedules only outside demos (demo: $demo)', async ({ demo, rail }) => {
-        // A tab remembered from before must not reopen a hidden panel on a demo.
+        { demo: false, workflows: true, rail: ['Upload data', 'Saved workspaces', 'Data connectors', 'knowledge.workflows', 'Schedules'] },
+        { demo: true, workflows: true, rail: ['Saved workspaces'] },
+        { demo: false, workflows: false, rail: ['Upload data', 'Saved workspaces', 'Data connectors'] },
+    ])('offers uploads, data connectors, workflows and schedules only outside demos, and workflows only where available (demo: $demo, workflows: $workflows)', async ({ demo, workflows, rail }) => {
+        // A tab remembered from before must not reopen a hidden panel.
         mockState.dataSourceSidebarTab = 'schedules';
+        mockState.serverConfig.WORKFLOWS_AVAILABLE = workflows;
         if (demo) Object.assign(mockState.serverConfig, { SITE: { id: 'unesco', name: 'UIS', starters: [] } });
         render(<DataSourceSidebar />);
 
         const railButtons = ['Upload data', 'Saved workspaces', 'Data connectors', 'knowledge.workflows', 'Schedules']
             .filter(name => screen.queryByRole('button', { name }));
         expect(railButtons).toEqual(rail);
-        if (demo) {
+        if (demo || !workflows) {
             expect(await screen.findByRole('button', { name: 'Sort sessions' })).toBeInTheDocument();
         } else {
             expect(screen.queryByRole('button', { name: 'Sort sessions' })).not.toBeInTheDocument();

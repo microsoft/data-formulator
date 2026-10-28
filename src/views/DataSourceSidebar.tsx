@@ -101,8 +101,12 @@ type SidebarTab = DataFormulatorState['dataSourceSidebarTab'];
 /** A demo front page (`serverConfig.SITE`) offers only Sessions: no data connectors, workflows or schedules. */
 const selectIsDemo = (state: DataFormulatorState) => !!state.serverConfig.SITE;
 // Older persisted state predates the tab field; 'sources' was the default.
-const selectSidebarTab = (state: DataFormulatorState): SidebarTab =>
-    selectIsDemo(state) ? 'sessions' : (state.dataSourceSidebarTab ?? 'sources');
+const selectSidebarTab = (state: DataFormulatorState): SidebarTab => {
+    if (selectIsDemo(state)) return 'sessions';
+    const tab = state.dataSourceSidebarTab ?? 'sources';
+    // A workflow or schedule tab remembered from elsewhere opens sessions where workflows are unavailable.
+    return (tab === 'knowledge' || tab === 'schedules') && state.serverConfig?.WORKFLOWS_AVAILABLE !== true ? 'sessions' : tab;
+};
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -251,6 +255,7 @@ export const DataSourceSidebar: React.FC<{
     // Stored in Redux so the active tab survives a session refresh.
     // Fall back to 'sources' for older persisted state that predates this field.
     const isDemo = useSelector(selectIsDemo);
+    const workflowsAvailable = useSelector((state: DataFormulatorState) => state.serverConfig?.WORKFLOWS_AVAILABLE === true);
     const initialTab = useSelector(selectSidebarTab);
     const setInitialTab = useCallback(
         (tab: SidebarTab) => dispatch(dfActions.setDataSourceSidebarTab(tab)),
@@ -403,7 +408,7 @@ export const DataSourceSidebar: React.FC<{
                             <RelationalDBIcon fontSize="small" />
                         </IconButton>
                     </Tooltip>
-                    <Tooltip title={t('knowledge.workflows')} placement="right">
+                    {workflowsAvailable && <><Tooltip title={t('knowledge.workflows')} placement="right">
                         <IconButton size="small" onClick={() => { setInitialTab('knowledge'); if (!isOpen) toggle(); else if (initialTab !== 'knowledge') setInitialTab('knowledge'); else toggle(); }} sx={{
                             color: isOpen && initialTab === 'knowledge' ? 'primary.main' : 'text.secondary',
                             bgcolor: isOpen && initialTab === 'knowledge' ? 'action.selected' : 'transparent',
@@ -421,7 +426,7 @@ export const DataSourceSidebar: React.FC<{
                         }}>
                             <ScheduleOutlinedIcon fontSize="small" />
                         </IconButton>
-                    </Tooltip>
+                    </Tooltip></>}
                 </>}
             </Box>
 

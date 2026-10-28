@@ -598,6 +598,20 @@ describe("split table collections", () => {
     expect(dfSelectors.selectCanvasTarget(state)).toEqual({ type: "table", tableId: "orders" });
   });
 
+  it("shows the report a focused message follows, not the item before the report", () => {
+    let state = dataFormulatorReducer(undefined, dfActions.addTableToStore(sourceTable as any));
+    state = dataFormulatorReducer(state, dfActions.saveGeneratedReport({
+      id: "report-1", content: "# Report", selectedChartIds: [], createdAt: 2, status: "completed", parentNodeId: "orders",
+    } as any));
+    state = dataFormulatorReducer(state, dfActions.addTextTurn({
+      kind: "text", id: "textTurn-summary", displayId: "Summary", textKind: "explain",
+      content: "Created a report summarizing the data.", parentNodeId: "report-1", createdAt: 3,
+    }));
+    state = dataFormulatorReducer(state, dfActions.setFocused({ type: "text", textId: "textTurn-summary" }));
+
+    expect(dfSelectors.selectCanvasTarget(state)).toEqual({ type: "report", reportId: "report-1" });
+  });
+
   it("passes workspace file focus through to the canvas without a table context", () => {
     const state = dataFormulatorReducer(
       undefined,

@@ -103,6 +103,7 @@ and `intro` reads as the release's month and year (e.g. `2026-02` → February 2
 | `hero_image` | A picture in the release folder; installed, but no longer shown on the page |
 | `attribution` | A line at the foot of the page, e.g. the data's source and license |
 | `links` | Links at the foot: a list of `{label, url}` |
+| `workspace_collapsed` | `true` to start sessions with the workspace folded into one card (its name and a few tables) |
 | `disclaimer` | A note after "Powered by Data Formulator" (*links*); a generic note on AI-written analyses by default |
 | `install_note` | Before the demo is installed: what installing it downloads and builds |
 | `analyst_rules` | Guidance added to every analyst request on the demo, e.g. audience and tone (not shown) |

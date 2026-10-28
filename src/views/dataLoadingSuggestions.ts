@@ -171,6 +171,8 @@ export interface QuickActionContext {
     hasUserSources: boolean;
     hasSessions: boolean;
     hasWorkflows: boolean;
+    /** Whether the deployment offers workflows at all. */
+    canWorkflow?: boolean;
     canSchedule: boolean;
     hasSchedules: boolean;
 }
@@ -196,7 +198,7 @@ export function buildDataLoadingQuickActions(
     const action = (kind: string, text: string) => ({ kind, label: text, onClick: () => fillAndSend(text) });
     const nextSteps = [
         action('connect', label('connect', 'Guide me to connect a data source')),
-        context?.hasSessions && !context.hasWorkflows
+        context?.hasSessions && !context.hasWorkflows && context.canWorkflow !== false
             && action('workflow', label('workflowFromSession', 'Turn my last analysis into a workflow')),
         context?.canSchedule && context.hasWorkflows && !context.hasSchedules
             && action('schedule', label('scheduleWorkflow', 'Schedule a workflow to run daily')),

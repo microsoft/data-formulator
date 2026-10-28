@@ -121,6 +121,8 @@ export interface ServerConfig {
     IDENTITY?: { type: string; id: string };
     CREDENTIAL_VAULT_ENABLED?: boolean;
     IS_LOCAL_MODE?: boolean;
+    /** Whether this deployment offers workflows and schedules (local or managed mode). */
+    WORKFLOWS_AVAILABLE?: boolean;
 }
 
 export interface ModelConfig {
@@ -337,6 +339,8 @@ export interface DataFormulatorState {
     artifactSets: ArtifactSetNode[];
     externalTableReferences: ExternalTableReference[];
     workspaceItemOrder: string[];
+    /** The title of the dataset the session was opened from (a demo starter), shown in the folded workspace card. */
+    workspaceTitle: string | null;
     tableSemantics: TableSemanticsInfo[];
     draftNodes: DraftNode[];
     charts: Chart[];
@@ -400,6 +404,8 @@ export interface DataFormulatorState {
     /** Seeded prompt for the analyst (data-thread) chat, e.g. from the landing box. */
     /** A request to send to the agent; `displayText` is a short label shown in the thread instead of `text`. */
     analystChatPending: { text: string; displayText?: string; images: string[]; attachments: string[]; intent?: 'workflow-authoring' } | null;
+    /** A new workflow run was requested but the server has not reported its state yet. Transient. */
+    workflowStarting: boolean;
     /**
      * Monotonic counter bumped whenever a connector is created/changed from a
      * surface that is not the sidebar itself (e.g. the inline connection form
@@ -484,6 +490,7 @@ const initialState: DataFormulatorState = {
     artifactSets: [],
     externalTableReferences: [],
     workspaceItemOrder: [],
+    workspaceTitle: null,
     tableSemantics: [],
     draftNodes: [],
     charts: [],
@@ -536,6 +543,7 @@ const initialState: DataFormulatorState = {
     cleanInProgress: false,
 
     analystChatPending: null,
+    workflowStarting: false,
     connectorRefreshRequest: 0,
     agentHandoffRequest: null,
 
@@ -1317,6 +1325,7 @@ export const dataFormulatorSlice = createSlice({
                 externalTableReferences: saved.externalTableReferences || [],
                 workspaceItemOrder: Array.isArray(saved.workspaceItemOrder)
                     ? saved.workspaceItemOrder.filter((key: unknown) => typeof key === 'string') : [],
+                workspaceTitle: typeof saved.workspaceTitle === 'string' && saved.workspaceTitle.trim() ? saved.workspaceTitle : null,
                 tableSemantics: saved.tableSemantics || [],
                 draftNodes: (saved.draftNodes || []).map((node: DraftNode) => {
                     // Mark any running/clarifying drafts as interrupted (SSE connection lost)
@@ -1373,6 +1382,7 @@ export const dataFormulatorSlice = createSlice({
                 viewMode: saved.viewMode || 'editor',
                 chartSynthesisInProgress: [],
                 tableLoadsInFlight: 0,
+                workflowStarting: false,
                 pendingTableLoads: [],
                 tablesMissingData: [],
                 cleanInProgress: false,
@@ -2363,6 +2373,12 @@ export const dataFormulatorSlice = createSlice({
         clearAnalystChatPending: (state) => {
             state.analystChatPending = null;
         },
+        setWorkflowStarting: (state, action: PayloadAction<boolean>) => {
+            state.workflowStarting = action.payload;
+        },
+        setWorkspaceTitle: (state, action: PayloadAction<string | null>) => {
+            state.workspaceTitle = action.payload?.trim() || null;
+        },
         requestConnectorRefresh: (state) => {
             state.connectorRefreshRequest = (state.connectorRefreshRequest ?? 0) + 1;
         },
@@ -2630,6 +2646,7 @@ export const dataFormulatorSlice = createSlice({
             incoming.cleanInProgress = false;
             incoming.pendingTableLoads = [];
             incoming.tablesMissingData = [];
+            incoming.workflowStarting = false;
             delete incoming.dataLoadingChatMessages;
             delete incoming.dataLoadingChatPending;
             delete incoming.dataLoadingChatInProgress;
@@ -3090,8 +3107,7 @@ export const dfSelectors = {
                     case 'artifact-set':
                         return itemCanvas(graph.membersOf(itemId)[0], seen);
                     case 'report':
-                        // Reports open in the report view; the editor canvas keeps the item before it.
-                        return itemCanvas(graph.nearestItem(itemId, { includeSelf: false }), seen);
+                        return { type: 'report', reportId: itemId };
                     default:
                         return undefined;
                 }
