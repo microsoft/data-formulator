@@ -1208,9 +1208,10 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
 
             {newEndpoint && !onStageConnection && <TextField
                 select fullWidth size="small" disabled={!isEditingDetails}
-                label={t('model.thinking')} value={newReasoningEffort || 'low'}
-                onChange={event => setNewReasoningEffort(event.target.value === 'low' ? '' : event.target.value as typeof newReasoningEffort)}
+                label={t('model.thinking')} value={newReasoningEffort || 'default'}
+                onChange={event => setNewReasoningEffort(event.target.value === 'default' ? '' : event.target.value as typeof newReasoningEffort)}
                 helperText={t('model.thinkingHint')}>
+                <MenuItem value="default">{t('model.thinkingDefault')}</MenuItem>
                 <MenuItem value="low">{t('model.thinkingLow')}</MenuItem>
                 <MenuItem value="medium">{t('model.thinkingMedium')}</MenuItem>
                 <MenuItem value="high">{t('model.thinkingHigh')}</MenuItem>
@@ -1333,7 +1334,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                 <Typography component="dd" variant="body2">{newSmallModel || t('model.sameAsModel')}</Typography>
                 <Typography component="dt" variant="body2">{t('model.thinking')}</Typography>
                 <Typography component="dd" variant="body2">{t(newReasoningEffort === 'high' ? 'model.thinkingHigh'
-                    : newReasoningEffort === 'medium' ? 'model.thinkingMedium' : 'model.thinkingLow')}</Typography>
+                    : newReasoningEffort === 'medium' ? 'model.thinkingMedium' : newReasoningEffort === 'low' ? 'model.thinkingLow'
+                    : 'model.thinkingDefault')}</Typography>
                 <Typography component="dt" variant="body2">{t(detailUsesAccount ? 'model.account' : 'model.authentication')}</Typography>
                 <Box component="dd">
                     {!detailUsesAccount && <Typography variant="body2">

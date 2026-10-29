@@ -57,6 +57,7 @@ import embed from 'vega-embed';
 import { Chart, DictTable, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, FormArtifact, TextTurn, chartTitleFits } from '../components/ComponentType';
 import { WorkflowProgress } from './WorkflowPanel';
 import { ScheduleFormArtifactView, SessionsFormArtifactView, WorkflowFormArtifactView } from './SetupFormArtifacts';
+import { McpFormSummary } from '../components/McpProposal';
 import { ConnectorFormCard } from '../components/ConnectorFormCard';
 import { ConversationCanvas } from './ConversationCanvas';
 
@@ -331,6 +332,8 @@ const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, 
             return setupCanvas(<ScheduleFormArtifactView key={turn.id} turn={turn} form={form} />);
         case 'sessions':
             return setupCanvas(<SessionsFormArtifactView key={turn.id} turn={turn} form={form} />);
+        case 'mcp':
+            return setupCanvas(<McpFormSummary key={turn.id} turn={turn} form={form} />);
         case 'connector': {
             const connected = form.connector.status === 'connected';
             return (
@@ -1903,7 +1906,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
         return <WorkspaceFileCanvas fileName={focusedId.fileName} floatingAppControls />;
     }
     if (focusedId?.type === 'conversation') {
-        return <ConversationCanvas textTurnId={focusedId.tableId} nodeIds={focusedId.nodeIds} label={focusedId.label} />;
+        return <ConversationCanvas textTurnId={focusedId.tableId} nodeIds={focusedId.nodeIds} label={focusedId.label} anchorId={focusedId.anchorId} />;
     }
     if (focusedWorkflowTurn) {
         if (focusedWorkflowTurn.workflow?.status === 'paused' && focusedWorkflowTurn.workflow.dataOperation) {

@@ -16,7 +16,7 @@ vi.mock('react-i18next', () => ({
     t: (key: string, params?: Record<string, any>) => {
       const labels: Record<string, string> = {
         'chartRec.skipAnswer': 'Skip',
-        'chartRec.clarificationTitle': 'Agent needs clarification',
+        'chartRec.agentTitle': 'Agent',
         'chartRec.clarificationQuestionLabel': `${params?.index}.`,
         'chartRec.optionalClarification': '(optional)',
         'chartRec.freeTextClarificationPlaceholder': 'Type your answer...',

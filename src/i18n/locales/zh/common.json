@@ -541,8 +541,8 @@
     "waitingForClarification": "等待澄清...",
     "emptySessionTitle": "这里还没有数据",
     "emptySession": "请在下方让智能体加载数据。准备好后，数据会显示在这里。",
-    "startingRun": "正在处理您的请求\u2026",
-    "startingWorkflow": "正在启动工作流\u2026",
+    "startingRun": "正在处理您的请求…",
+    "startingWorkflow": "正在启动工作流…",
     "rename": "重命名",
     "refreshSettings": "刷新设置",
     "replaceData": "替换数据",
@@ -550,7 +550,7 @@
     "metadataFor": "{{table}} 的元数据",
     "derivationSummary": "派生摘要",
     "noMetadata": "该表暂无描述信息。",
-    "rowsByColumns": "{{rows}}行 \u00d7 {{cols}}列",
+    "rowsByColumns": "{{rows}}行 × {{cols}}列",
     "chartAlt": "{{type}}图表",
     "streamSourceLabel": "流式源",
     "sourceFile": "文件",
@@ -562,7 +562,10 @@
     "sourceExtract": "提取数据",
     "failedRefreshDerivedTable": "刷新派生表「{{table}}」失败：{{message}}",
     "errorRefreshingDerivedTable": "刷新派生表「{{table}}」时出错",
-    "alsoUses": "还使用了"
+    "alsoUses": "还使用了",
+    "callingMcp": "正在调用 {{server}} · {{tool}}",
+    "stackedMessages": "{{count}} 条较早的消息",
+    "foldMessages": "折叠 {{count}} 条消息"
   },
   "dataGrid": {
     "loading": "加载中...",
@@ -720,7 +723,6 @@
     "explorationFailed": "探索失败：{{message}}",
     "agentLost": "Agent 在数据中迷失了。",
     "couldYouClarify": "能否进一步说明？",
-    "clarificationTitle": "有问题",
     "minimizeClarification": "收起",
     "expandClarification": "展开",
     "pauseClose": "关闭（切换焦点）",
@@ -738,7 +740,6 @@
     "cancelClarification": "取消",
     "invalidClarification": "Agent 返回了无效的澄清请求。",
     "invalidExplanation": "Agent 返回了无效的解释。",
-    "explanationTitle": "说明",
     "explanationFollowupsLabel": "可能的下一步：",
     "delegateTitle": "建议下一步交给其他 Agent",
     "delegateMinimize": "收起",
@@ -752,7 +753,9 @@
     "threadExplorePrompt": "探索这份数据中有趣的模式和趋势",
     "explorationThreadDeriveDescription": "从 {{source}} 派生，指令：{{instruction}}",
     "explorationStepCodeComment": "# 探索步骤 {{step}}",
-    "maxIterationsReached": "已达到最大探索步数。"
+    "maxIterationsReached": "已达到最大探索步数。",
+    "agentTitle": "智能体",
+    "openInChat": "在聊天中打开"
   },
   "auth": {
     "loginTitle": "登录 Data Formulator",
@@ -1497,5 +1500,133 @@
     "previewApp": "预览应用",
     "created": "已创建应用：{{title}}",
     "updated": "已更新应用：{{title}}"
+  },
+  "mcp": {
+    "connect": "连接",
+    "refresh": "刷新",
+    "signIn": "登录",
+    "signOut": "退出登录",
+    "remove": "移除",
+    "save": "保存",
+    "turnOn": "开启",
+    "turnOff": "关闭",
+    "serverEnabled": "使用 {{name}}",
+    "toolEnabled": "使用 {{name}}",
+    "showTools": "显示工具",
+    "noTools": "连接后即可列出服务器的工具。",
+    "alwaysAllow": "始终允许",
+    "toolsChanged": "新增或变更的工具在你允许之前不会使用：{{names}}",
+    "approveChanges": "允许",
+    "headerValue": "{{header}} 的值",
+    "replaceKey": "更换密钥",
+    "status": {
+      "connected": "已连接 · {{count}} 个工具",
+      "error": "无法连接",
+      "notConnected": "尚未连接",
+      "saved": "{{count}} 个工具",
+      "signingIn": "等待登录…"
+    },
+    "flag": {
+      "readOnly": "只读",
+      "destructive": "可能修改或删除数据",
+      "openWorld": "会访问互联网"
+    },
+    "approvalTitle": "允许使用 {{server}} 的 {{tool}} 吗？",
+    "toolLabel": "工具",
+    "argumentsLabel": "发送给服务器的参数",
+    "copyArguments": "复制参数",
+    "approvalNote": "服务器会收到这些参数；其返回结果会发送给你的模型提供商。",
+    "reject": "拒绝",
+    "allowAlways": "始终允许此工具",
+    "runOnce": "仅运行一次",
+    "add": {
+      "configLabel": "MCP 服务器配置（JSON）",
+      "fillIn": "请填写 {{names}}。",
+      "nothingAdded": "未添加任何服务器。",
+      "localWarning": "本地服务器以你的身份在沙箱外运行，可访问你的文件和网络。只添加你信任的服务器。",
+      "addButton": "添加并连接",
+      "oneServer": "一次添加一个服务器。",
+      "cancel": "取消"
+    },
+    "form": {
+      "missing": "{{name}} 已不在你的 MCP 服务器中。",
+      "turnOnServer": "开启 {{name}}",
+      "turnOffServer": "关闭 {{name}}",
+      "turnOnTools": "{{name}}：开启 {{tools}}",
+      "turnOffTools": "{{name}}：关闭 {{tools}}",
+      "modeChange": "工具审批：{{from}} → {{to}}",
+      "apply": "应用更改",
+      "suggested": "智能体建议",
+      "done": "已完成。可在“工具”中管理。",
+      "waiting": "等待你在“工具”中审阅。",
+      "openTools": "打开工具"
+    },
+    "help": {
+      "toggle": "如何添加服务器",
+      "intro": "从服务器文档中粘贴一个服务器的 MCP 配置，格式参考下面的示例。",
+      "remote": {
+        "title": "远程服务器",
+        "note": "需要登录的服务器会在连接时打开提供方的页面。"
+      },
+      "key": {
+        "title": "使用 API 密钥",
+        "note": "将 YOUR_KEY 替换为你的密钥。它保存在凭据存储中，而不是文件里。"
+      },
+      "local": {
+        "title": "本地命令",
+        "note": "在这台计算机上、沙箱之外运行。只添加你信任的服务器。"
+      }
+    },
+    "removeNamed": "移除 {{name}}",
+    "pack": {
+      "builtIn": "Data Formulator 工具包",
+      "add": "添加",
+      "added": "已添加",
+      "research": {
+        "name": "研究",
+        "description": "搜索 arXiv、关注某领域的新论文、绘制发表趋势图并阅读全文。",
+        "email": "联系邮箱（可选）",
+        "emailHint": "按 arXiv 对自动化客户端的要求，随每次请求发送给 arXiv。"
+      }
+    }
+  },
+  "tools": {
+    "chipDetails": "智能体可使用的工具：终端和 MCP 服务器",
+    "title": "工具",
+    "intro": "工具让智能体超越工作区：在这台计算机上运行命令，或调用 MCP 服务器获取数据和文档。",
+    "blocked": "部署策略已关闭用户连接和工具。",
+    "localOnly": "工具仅在单用户本地应用中可用。",
+    "modeLabel": "审批",
+    "mode": {
+      "off": "关闭",
+      "ask": "每次询问",
+      "auto": "安全时自动"
+    },
+    "modeHint": {
+      "off": "智能体不使用任何工具。",
+      "ask": "每个命令和工具调用都会先询问，始终允许的工具除外。",
+      "auto": "沙箱内的命令和只读 MCP 工具直接运行，其他操作会先询问。"
+    },
+    "locked": "由服务器环境变量 DF_TERMINAL_MODE 设置。",
+    "close": "关闭",
+    "terminal": {
+      "name": "终端",
+      "caption": "使用你的 CLI 登录在这台计算机上运行命令",
+      "off": "关闭",
+      "sandboxed": "沙箱中运行",
+      "unsandboxed": "未安装沙箱",
+      "details": "终端详情",
+      "use": "使用终端"
+    },
+    "count_one": "{{count}} 个工具",
+    "count_other": "{{count}} 个工具",
+    "chipLabel": "工具：已开启 {{count}} 个，{{mode}}",
+    "add": {
+      "packs": "Data Formulator 工具包",
+      "custom": "自定义 MCP 服务器",
+      "label": "添加",
+      "collapse": "收起"
+    },
+    "addTool": "+ 添加工具"
   }
 }

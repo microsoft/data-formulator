@@ -111,6 +111,18 @@ export class ThreadGraph {
         return id ? this.nodes.get(id)?.parentId : undefined;
     }
 
+    /** The nearest report or file above `id`, through messages only: the result a message after it follows. */
+    resultAbove(id: string | undefined): { kind: 'report' | 'file'; id: string } | undefined {
+        for (let current = id, steps = 0; current && steps < 1000; steps++) {
+            const node = this.nodes.get(current);
+            if (!node) return undefined;
+            if (node.kind === 'report' || node.kind === 'file') return { kind: node.kind, id: current };
+            if (node.kind !== 'turn') return undefined;
+            current = node.parentId;
+        }
+        return undefined;
+    }
+
     isItem(id: string | undefined): boolean {
         const kind = this.kindOf(id);
         return !!kind && ITEM_KINDS.has(kind);

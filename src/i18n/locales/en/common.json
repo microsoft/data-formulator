@@ -541,8 +541,8 @@
     "waitingForClarification": "waiting for clarification...",
     "emptySessionTitle": "No data here yet",
     "emptySession": "Ask the agent below to load some. It will appear here when it is ready.",
-    "startingRun": "Working on your request\u2026",
-    "startingWorkflow": "Starting the workflow\u2026",
+    "startingRun": "Working on your request…",
+    "startingWorkflow": "Starting the workflow…",
     "rename": "Rename",
     "refreshSettings": "Refresh settings",
     "replaceData": "Replace data",
@@ -550,7 +550,7 @@
     "metadataFor": "Metadata for {{table}}",
     "derivationSummary": "Derivation summary",
     "noMetadata": "No description available for this table.",
-    "rowsByColumns": "{{rows}}r \u00d7 {{cols}}c",
+    "rowsByColumns": "{{rows}}r × {{cols}}c",
     "chartAlt": "{{type}} chart",
     "streamSourceLabel": "stream",
     "sourceFile": "File",
@@ -562,7 +562,10 @@
     "sourceExtract": "Extracted",
     "failedRefreshDerivedTable": "Failed to refresh derived table \"{{table}}\": {{message}}",
     "errorRefreshingDerivedTable": "Error refreshing derived table \"{{table}}\"",
-    "alsoUses": "also uses"
+    "alsoUses": "also uses",
+    "callingMcp": "Calling {{server}} · {{tool}}",
+    "stackedMessages": "{{count}} earlier messages",
+    "foldMessages": "Fold {{count}} messages"
   },
   "dataLoading": {
     "extractingData": "extracting data...",
@@ -665,7 +668,6 @@
     "explorationFailed": "Exploration failed: {{message}}",
     "agentLost": "The agent got lost in the data.",
     "couldYouClarify": "Could you clarify?",
-    "clarificationTitle": "Question",
     "minimizeClarification": "Minimize",
     "expandClarification": "Expand",
     "pauseClose": "Close (switch focus)",
@@ -683,7 +685,6 @@
     "cancelClarification": "Cancel",
     "invalidClarification": "The agent returned an invalid clarification request.",
     "invalidExplanation": "The agent returned an invalid explanation.",
-    "explanationTitle": "Explanation",
     "explanationFollowupsLabel": "Possible next steps:",
     "delegateTitle": "Suggested next agent",
     "delegateMinimize": "Minimize",
@@ -697,7 +698,9 @@
     "threadExplorePrompt": "Explore interesting patterns and trends in this data",
     "explorationThreadDeriveDescription": "Derive from {{source}} with instruction: {{instruction}}",
     "explorationStepCodeComment": "# Exploration step {{step}}",
-    "maxIterationsReached": "Reached the maximum number of exploration steps."
+    "maxIterationsReached": "Reached the maximum number of exploration steps.",
+    "agentTitle": "Agent",
+    "openInChat": "Open in chat"
   },
   "dataGrid": {
     "loading": "Loading ...",
@@ -1497,5 +1500,133 @@
     "previewApp": "Preview app",
     "created": "Created app: {{title}}",
     "updated": "Updated app: {{title}}"
+  },
+  "mcp": {
+    "connect": "Connect",
+    "refresh": "Refresh",
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "remove": "Remove",
+    "save": "Save",
+    "turnOn": "Turn on",
+    "turnOff": "Turn off",
+    "serverEnabled": "Use {{name}}",
+    "toolEnabled": "Use {{name}}",
+    "showTools": "Show tools",
+    "noTools": "Connect to list the server’s tools.",
+    "alwaysAllow": "Always allow",
+    "toolsChanged": "New or changed tools are held until you allow them: {{names}}",
+    "approveChanges": "Allow",
+    "headerValue": "{{header}} value",
+    "replaceKey": "Replace key",
+    "status": {
+      "connected": "Connected · {{count}} tools",
+      "error": "Could not connect",
+      "notConnected": "Not connected yet",
+      "saved": "{{count}} tools",
+      "signingIn": "Waiting for sign-in…"
+    },
+    "flag": {
+      "readOnly": "Read-only",
+      "destructive": "May change or delete data",
+      "openWorld": "Reaches the internet"
+    },
+    "approvalTitle": "Allow {{tool}} from {{server}}?",
+    "toolLabel": "Tool",
+    "argumentsLabel": "Arguments sent to the server",
+    "copyArguments": "Copy arguments",
+    "approvalNote": "The server receives these arguments; what it returns goes to your model provider.",
+    "reject": "Reject",
+    "allowAlways": "Always allow this tool",
+    "runOnce": "Run once",
+    "add": {
+      "configLabel": "MCP server configuration (JSON)",
+      "fillIn": "Fill in {{names}}.",
+      "nothingAdded": "No servers were added.",
+      "localWarning": "A local server runs as you, outside any sandbox, with access to your files and network. Add only servers you trust.",
+      "addButton": "Add and connect",
+      "oneServer": "Add one server at a time.",
+      "cancel": "Cancel"
+    },
+    "form": {
+      "missing": "{{name}} is no longer in your MCP servers.",
+      "turnOnServer": "Turn on {{name}}",
+      "turnOffServer": "Turn off {{name}}",
+      "turnOnTools": "{{name}}: turn on {{tools}}",
+      "turnOffTools": "{{name}}: turn off {{tools}}",
+      "modeChange": "Tools approval: {{from}} → {{to}}",
+      "apply": "Apply changes",
+      "suggested": "Suggested by the agent",
+      "done": "Done. Manage it in Tools.",
+      "waiting": "Waiting for your review in Tools.",
+      "openTools": "Open Tools"
+    },
+    "help": {
+      "toggle": "How to add a server",
+      "intro": "Paste one server’s MCP configuration from its docs, like the examples below.",
+      "remote": {
+        "title": "Remote server",
+        "note": "Servers that need sign-in open the provider’s page when you connect."
+      },
+      "key": {
+        "title": "With an API key",
+        "note": "Replace YOUR_KEY with your key. It is kept in your credential store, not in a file."
+      },
+      "local": {
+        "title": "Local command",
+        "note": "Runs on this computer, outside the sandbox. Add only servers you trust."
+      }
+    },
+    "removeNamed": "Remove {{name}}",
+    "pack": {
+      "builtIn": "Data Formulator toolkit",
+      "add": "Add",
+      "added": "Added",
+      "research": {
+        "name": "Research",
+        "description": "Search arXiv, follow new papers in a field, chart publication trends and read full texts.",
+        "email": "Contact email (optional)",
+        "emailHint": "Sent to arXiv with each request, as arXiv asks of automated clients."
+      }
+    }
+  },
+  "tools": {
+    "chipDetails": "Tools the agent can use: the terminal and MCP servers",
+    "title": "Tools",
+    "intro": "Tools let the agent reach beyond your workspace: run commands on this computer, or call MCP servers for data and documents.",
+    "blocked": "The deployment policy turns off user connections and tools.",
+    "localOnly": "Tools are available in the single-user local app.",
+    "modeLabel": "Approval",
+    "mode": {
+      "off": "Off",
+      "ask": "Ask every time",
+      "auto": "Auto when safe"
+    },
+    "modeHint": {
+      "off": "The agent uses no tools.",
+      "ask": "Every command and tool call asks first, except tools you always allow.",
+      "auto": "Sandboxed commands and read-only MCP tools run without asking; everything else asks first."
+    },
+    "locked": "Set by the server environment variable DF_TERMINAL_MODE.",
+    "close": "Close",
+    "terminal": {
+      "name": "Terminal",
+      "caption": "Run commands on this computer with your CLI logins",
+      "off": "Off",
+      "sandboxed": "Sandboxed",
+      "unsandboxed": "No sandbox installed",
+      "details": "Terminal details",
+      "use": "Use the terminal"
+    },
+    "count_one": "{{count}} tool",
+    "count_other": "{{count}} tools",
+    "chipLabel": "Tools: {{count}} on, {{mode}}",
+    "add": {
+      "packs": "Data Formulator toolkits",
+      "custom": "Custom MCP server",
+      "label": "Add",
+      "collapse": "Collapse"
+    },
+    "addTool": "+ Add tool"
   }
 }

@@ -4,7 +4,7 @@ import 'prismjs/components/prism-python';
 import 'prismjs/components/prism-bash';
 import 'prismjs/components/prism-json';
 import 'prismjs/themes/prism.css';
-import { Alert, Box, Button, Checkbox, CircularProgress, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, LinearProgress, Radio, RadioGroup, TextField, Tooltip, Typography, useTheme, alpha } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Tooltip, Typography, useTheme, alpha } from '@mui/material';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import BlockIcon from '@mui/icons-material/Block';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -13,158 +13,9 @@ import CheckIcon from '@mui/icons-material/Check';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import { useTranslation } from 'react-i18next';
-import { useDispatch, useSelector, useStore } from 'react-redux';
-import { dfActions, type DataFormulatorState } from '../app/dfSlice';
-import { apiRequest } from '../app/apiClient';
 import type { TerminalExecution, TerminalFilesystemPolicy } from './ComponentType';
 import { iconVar, textVar } from '../app/layout';
 import { CompactMarkdown } from '../views/InteractionEntryCard';
-
-export const TerminalAccessButton = () => {
-    const { t } = useTranslation();
-    const dispatch = useDispatch();
-    const reduxStore = useStore<DataFormulatorState>();
-    const config = useSelector((state: DataFormulatorState) => state.serverConfig);
-    const [open, setOpen] = useState(false);
-    type TerminalPolicy = { mode: 'off' | 'ask' | 'auto'; available: boolean; locked: boolean; revision: number;
-        sandboxFilesystem?: TerminalFilesystemPolicy };
-    const [policy, setPolicy] = useState<TerminalPolicy>();
-    const [draft, setDraft] = useState<TerminalPolicy['mode']>('off');
-    const [useDefaultPaths, setUseDefaultPaths] = useState(true);
-    const [writePaths, setWritePaths] = useState('');
-    const [policyExpanded, setPolicyExpanded] = useState(false);
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState('');
-    const paths = writePaths.split('\n').map(path => path.trim()).filter(Boolean);
-    const sandboxChanged = !!policy?.sandboxFilesystem && (useDefaultPaths !== !policy.sandboxFilesystem.configured
-        || (!useDefaultPaths && JSON.stringify(paths) !== JSON.stringify(policy.sandboxFilesystem.requested)));
-    const applyPolicy = (next: TerminalPolicy) => {
-        setPolicy(next);
-        setDraft(next.mode);
-        setUseDefaultPaths(!next.sandboxFilesystem?.configured);
-        setWritePaths(next.sandboxFilesystem?.requested.join('\n') ?? '');
-        dispatch(dfActions.setServerConfig({ ...reduxStore.getState().serverConfig, TERMINAL_MODE: next.mode,
-            TERMINAL_AVAILABLE: next.available, TERMINAL_CONFIG_LOCKED: next.locked }));
-    };
-    const load = async () => {
-        setBusy(true); setError(''); setPolicy(undefined); setDraft(config.TERMINAL_MODE ?? 'off');
-        setPolicyExpanded(false);
-        try { applyPolicy((await apiRequest<TerminalPolicy>('/api/configurations/terminal')).data); }
-        catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
-        finally { setBusy(false); }
-    };
-    const save = async () => {
-        if (!policy) return;
-        setBusy(true); setError('');
-        try {
-            const { data } = await apiRequest<TerminalPolicy>('/api/configurations/terminal', { method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'X-DF-Configuration': '1' },
-                body: JSON.stringify({ revision: policy.revision, mode: draft,
-                    ...(sandboxChanged ? { sandbox: useDefaultPaths ? null : { filesystem: { allowWrite: paths } } } : {}) }) });
-            applyPolicy(data);
-            setOpen(false);
-        } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
-        finally { setBusy(false); }
-    };
-    // A demo's analyst has no terminal (design-docs/69).
-    if (!config.TERMINAL_MODE || config.SITE) return null;
-    const mode = config.TERMINAL_MODE;
-    const label = t(`terminal.access.${mode}`, { defaultValue: { off: 'Off', ask: 'Ask', auto: 'Auto' }[mode] });
-    const connectorsBlocked = config.IS_LOCAL_MODE && config.DISABLE_DATA_CONNECTORS;
-    return <>
-        <Tooltip describeChild title={t('terminal.accessDetails', { defaultValue: 'Terminal access and existing CLI logins' })}>
-            <Button size="small" startIcon={<TerminalIcon />} aria-haspopup="dialog" onClick={() => { setOpen(true); void load(); }}
-                sx={{ minWidth: 0, px: 0.75, py: 0.25, flexShrink: 0, textTransform: 'none', whiteSpace: 'nowrap',
-                    fontWeight: 400, fontSize: textVar.xs, color: mode === 'off' ? 'text.secondary' : 'primary.main',
-                    '& .MuiButton-startIcon': { mr: 0.5, '& .MuiSvgIcon-root': { fontSize: iconVar.md } } }}>
-                {t('terminal.accessLabel', { defaultValue: 'Terminal: {{mode}}', mode: label })}
-            </Button>
-        </Tooltip>
-        <Dialog open={open} onClose={() => { if (!busy) setOpen(false); }} maxWidth={policyExpanded ? 'md' : 'xs'} fullWidth aria-labelledby="terminal-access-title">
-            <DialogTitle component="div" id="terminal-access-header" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                flexWrap: 'wrap', gap: 1, fontSize: textVar.lg }}>
-                <Typography component="h2" variant="inherit" id="terminal-access-title">
-                    {t('terminal.accessTitle', { defaultValue: 'Terminal access' })}
-                </Typography>
-                <Button size="small" disabled={busy || draft === 'off' || !policy?.sandboxFilesystem}
-                    aria-expanded={policyExpanded} aria-controls={policyExpanded ? 'terminal-sandbox-policy' : undefined}
-                    onClick={() => setPolicyExpanded(!policyExpanded)}
-                    startIcon={<ChevronRightIcon sx={{ transform: policyExpanded ? 'rotate(90deg)' : undefined }} />}
-                    sx={{ ml: 'auto', textTransform: 'none', fontWeight: 400, fontSize: textVar.xs }}>
-                    {t('terminal.sandboxPolicy', { defaultValue: 'Sandbox policy' })}
-                </Button>
-            </DialogTitle>
-            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                <Box sx={{ height: 2 }}>{busy && <LinearProgress sx={{ height: 2 }} />}</Box>
-                {error && <Alert severity="error" action={<Button color="inherit" size="small" disabled={busy} onClick={() => void load()}>
-                    {t('terminal.reloadAccess', { defaultValue: 'Reload' })}</Button>}>{error}</Alert>}
-                <Box sx={{ display: 'grid', gap: 2.5, alignItems: 'start',
-                    gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: policyExpanded ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)' },
-                    '& > [role="region"]': { minWidth: 0, ...(policyExpanded ? {
-                        borderLeft: { xs: 0, md: '1px solid' }, borderColor: 'divider', pl: { xs: 0, md: 3 },
-                    } : {}) } }}>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, minWidth: 0 }}>
-                <RadioGroup aria-labelledby="terminal-access-title" value={draft}
-                    onChange={(_, value) => {
-                        setDraft(value as TerminalPolicy['mode']);
-                        if (value === 'off') setPolicyExpanded(false);
-                    }}>
-                    {([['off', 'Off'], ['ask', 'Ask every time'], ['auto', 'Auto approve']] as const).map(([value, defaultValue]) =>
-                        <FormControlLabel key={value} value={value} control={<Radio size="small" />}
-                            label={t(`terminal.accessChoice.${value}`, { defaultValue })}
-                            disabled={busy || !policy?.available || policy.locked} />)}
-                </RadioGroup>
-                <Box component="ol" sx={{ m: 0, pl: 2.5, '& > li + li': { mt: 1 } }}>
-                    <Typography component="li" variant="body2" color="text.secondary">
-                        {t('terminal.accessBenefit', { defaultValue: 'Terminal access lets the agent read local files, use installed tools and existing CLI logins, and access online sources, expanding its ability to find, acquire, and analyze data.' })}
-                    </Typography>
-                    <Typography component="li" variant="body2" color="text.secondary">
-                        {t('terminal.sandboxOverview', { defaultValue: 'By default, commands run in a sandbox that limits local writes but does not restrict file reads, network access, or remote changes.' })}
-                    </Typography>
-                </Box>
-                {policy && !policy.available && <Alert severity="info">{connectorsBlocked
-                    ? t('terminal.connectionsBlockedHere', { defaultValue: 'The deployment policy disables user-created connections and terminal access.' })
-                    : t('terminal.localOnly', { defaultValue: 'Terminal requires single-user local mode on macOS or Linux.' })}</Alert>}
-                {policy?.locked && <Typography variant="body2">
-                    {t('terminal.environmentLocked', { defaultValue: 'Terminal mode is controlled by the server environment variable DF_TERMINAL_MODE.' })}
-                </Typography>}
-                {draft === 'ask' && <Alert severity="info">
-                    {t('terminal.askApprovalSandbox', { defaultValue: 'With Ask every time, the agent must get your approval before running any terminal command, including commands inside the sandbox.' })}
-                </Alert>}
-                {draft === 'auto' && <Alert severity="error">
-                    {t('terminal.autoWarningSandbox', { defaultValue: 'With Auto approve, the agent can run sandboxed commands without asking: read local files, send data over the network, modify allowed files, and use existing CLI credentials to change remote resources. Running commands outside the sandbox still requires your approval and a reason.' })}
-                </Alert>}
-                </Box>
-                {policyExpanded && policy?.sandboxFilesystem && <Box id="terminal-sandbox-policy" role="region"
-                    aria-label={t('terminal.sandboxPolicy', { defaultValue: 'Sandbox policy' })}>
-                <TerminalFilesystemSummary policy={policy.sandboxFilesystem} inline>
-                    <FormControlLabel sx={{ my: 0.5, '& .MuiFormControlLabel-label': { fontSize: textVar.sm } }}
-                        control={<Checkbox size="small" checked={useDefaultPaths} disabled={busy || !policy.available || policy.locked}
-                            onChange={(_, checked) => setUseDefaultPaths(checked)} />}
-                        label={t('terminal.useDefaultWritePaths', { defaultValue: 'Use default CLI state paths' })} />
-                    {useDefaultPaths ? policy.sandboxFilesystem.configured
-                        ? <Typography variant="inherit" color="text.secondary">
-                            {t('terminal.restoreDefaultWritePaths', { defaultValue: 'Default CLI state paths will be restored on save.' })}
-                        </Typography>
-                        : <Box component="pre" sx={{ my: 0.5, fontFamily: 'var(--df-font-mono)', fontSize: 'inherit',
-                            whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{policy.sandboxFilesystem.requested.join('\n')}</Box>
-                        : <TextField fullWidth multiline minRows={3} maxRows={8} size="small" value={writePaths}
-                            disabled={busy || !policy.available || policy.locked} onChange={event => setWritePaths(event.target.value)}
-                            label={t('terminal.writablePaths', { defaultValue: 'Writable paths (one per line)' })}
-                            helperText={t('terminal.writablePathsHint', { defaultValue: 'Absolute or ~/ paths. Empty keeps only scratch and runtime writes. Missing or unsafe paths are not enabled.' })}
-                            sx={{ mt: 1, '& textarea': { fontFamily: 'var(--df-font-mono)', fontSize: textVar.sm } }} />}
-                </TerminalFilesystemSummary>
-                </Box>}
-                </Box>
-            </DialogContent>
-            <DialogActions sx={{ px: 3, pb: 2, flexWrap: 'wrap', gap: 0.5 }}>
-                <Button disabled={busy} onClick={() => setOpen(false)}>{t('terminal.closeAccess', { defaultValue: 'Close' })}</Button>
-                <Button variant="contained" disabled={busy || !policy?.available || policy.locked || (draft === policy.mode && !sandboxChanged)}
-                    onClick={() => void save()}>{t('terminal.saveAccess', { defaultValue: 'Save' })}</Button>
-            </DialogActions>
-        </Dialog>
-    </>;
-};
 
 export const TerminalMessageContent = ({ content, executions, variant }: {
     content: string; executions?: TerminalExecution[]; variant?: 'document';
@@ -182,9 +33,13 @@ export interface TerminalProposal {
     dangerouslyDisableSandbox?: boolean;
     sandboxDisablingReason?: string;
     sandboxFilesystem?: TerminalFilesystemPolicy;
+    /** No sandbox is installed here, so the command runs unconfined. */
+    sandboxUnavailable?: boolean;
+    /** How to install one (e.g. Bubblewrap on Linux). */
+    sandboxInstallHint?: string | null;
 }
 
-const TerminalFilesystemSummary = ({ policy, compact = false, children, inline = false }: {
+export const TerminalFilesystemSummary = ({ policy, compact = false, children, inline = false }: {
     policy: TerminalFilesystemPolicy; compact?: boolean; children?: React.ReactNode; inline?: boolean;
 }) => {
     const { t } = useTranslation();
@@ -450,8 +305,13 @@ export const TerminalApprovalDialog = ({ proposal, onDecision }: {
                 </Typography>
                 <Typography variant="body2" sx={{ my: 1, overflowWrap: 'anywhere' }}>{proposal.sandboxDisablingReason}</Typography>
                 <Typography variant="body2" color="text.secondary">
-                    {t('terminal.unsandboxedScope', { defaultValue: 'Approval applies only to this command. Later commands return to the sandbox; changes remain. Auto mode never approves this request.' })}
+                    {proposal.sandboxUnavailable
+                        ? t('terminal.noSandboxScope', { defaultValue: 'Approval applies only to this command. Until a sandbox is installed, every command asks first, even with Auto approve.' })
+                        : t('terminal.unsandboxedScope', { defaultValue: 'Approval applies only to this command. Later commands return to the sandbox; changes remain. Auto mode never approves this request.' })}
                 </Typography>
+                {proposal.sandboxUnavailable && proposal.sandboxInstallHint && <Alert severity="info" sx={{ mt: 1, overflowWrap: 'anywhere' }}>
+                    {proposal.sandboxInstallHint}
+                </Alert>}
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                     {t('terminal.retryRisk', { defaultValue: 'A previous attempt may have partially completed. Check its output before approving a retry.' })}
                 </Typography>

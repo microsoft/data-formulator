@@ -74,3 +74,18 @@ describe('setup form artifacts', () => {
         expect(takeAutoSubmit('turn-x')).toBe(false);
     });
 });
+
+it('converts an MCP setup proposal and summarizes its progress', () => {
+    const form = formArtifactFromEvent({ kind: 'mcp', title: 'Add GitHub', mcp: {
+        add: [{ name: 'GitHub', transport: 'http', url: 'https://api.githubcopilot.com/mcp/', auth: { type: 'oauth' } },
+            { name: 'Files', transport: 'stdio', command: 'npx', args: ['-y', 'files'], env_names: ['ROOT'] }],
+        changes: [{ server_id: 'docs', server_name: 'Docs', enabled: false }], mode: 'auto', current_mode: 'ask' } });
+    expect(form).toEqual({ kind: 'mcp', title: 'Add GitHub', mcp: {
+        add: [{ name: 'GitHub', transport: 'http', url: 'https://api.githubcopilot.com/mcp/', auth: { type: 'oauth' } },
+            { name: 'Files', transport: 'stdio', command: 'npx', args: ['-y', 'files'], envNames: ['ROOT'] }],
+        changes: [{ serverId: 'docs', serverName: 'Docs', enabled: false }], mode: 'auto', currentMode: 'ask' } });
+    expect(formArtifactStatus(form)).toBe('Add GitHub');
+    if (form.kind !== 'mcp') throw new Error('expected an MCP form');
+    expect(formArtifactStatus({ ...form, mcp: { ...form.mcp, add: [{ ...form.mcp.add[0], addedId: 'github' }, form.mcp.add[1]], applied: true } }))
+        .toBe('Add GitHub: added 1 server, applied changes');
+});

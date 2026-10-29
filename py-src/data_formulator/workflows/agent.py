@@ -74,6 +74,7 @@ PUBLISHED_TOOLS = {"create_data", "update_data", "create_file", "edit_file", "mo
 # Runs may open a connection form for missing access, but never author workflows or manage app setup.
 RUN_EXCLUDED_TOOLS = {"long_response", "propose_workflow", "read_connector_form", "update_connector_form",
                       "list_sessions", "propose_schedule", "propose_session_changes",
+                      "list_mcp_servers", "propose_mcp_changes",
                       # Background tasks belong to chat runs for now; a workflow run is already a server job.
                       "start_task", "wait_tasks", "stop_task"}
 for skill_name, names in (("workspace", WORKSPACE_TOOLS), ("visualization", {"visualize"})):

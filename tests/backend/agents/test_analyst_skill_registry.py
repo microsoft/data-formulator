@@ -107,17 +107,18 @@ def test_setup_actions_are_owned_by_the_gated_configure_skill() -> None:
 
     assert action_names == {
         "propose_connection", "update_connector_form", "propose_workflow", "propose_schedule", "propose_session_changes",
+        "propose_mcp_changes",
     }
     for action_name in action_names:
         assert registry.action_owner(action_name) == "configure"
         assert action_name not in tool_names
         assert not registry.is_active(["meta"], "configure")
     assert tool_names == {
-        "list_connectors", "read_connector_form", "list_sessions",
+        "list_connectors", "read_connector_form", "list_sessions", "list_mcp_servers",
     }
     assert {spec["function"]["name"] for spec in registry.action_tools_for(["workspace"])} == {"propose_data_operation"}
     configure = registry.load_body("configure")
-    for section in ("## Connections", "## Workflows", "## Schedules", "## Sessions"):
+    for section in ("## Connections", "## Workflows", "## Schedules", "## Sessions", "## MCP servers"):
         assert configure.count(section) == 1
     assert "user_review_needed: false" in configure
 

@@ -38,6 +38,7 @@ import CodeIcon from '@mui/icons-material/Code';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import OpenInFullIcon from '@mui/icons-material/OpenInFull';
 import { useTranslation } from 'react-i18next';
 import { AgentToyIcon } from './AgentToyIcon';
 import {
@@ -397,16 +398,9 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
         setFreeTexts(prev => ({ ...prev, [key]: value }));
 
     const isExplain = variant === 'explain';
-    // Two-context color scheme, kept gentle. Each pause carries its own
-    // semantic hue (clarify=warning, explain=info) so the two read as distinct
-    // moments — but the hue only tints the quiet chrome (panel wash, border,
-    // chips, focus underline, field highlights, badge). The strong CTA (submit
-    // button) stays in the neutral brand primary so a clarify panel never
-    // shouts in aggressive amber. `chromeAccent` = the variant hue, used
-    // everywhere except the submit button (`submitAccent`).
-    const chromeAccent = isExplain
-        ? theme.palette.info.main
-        : theme.palette.warning.main;
+    // One quiet agent style for every message: questions and explanations share
+    // the brand hue (panel wash, border, chips, focus underline, highlights).
+    const chromeAccent = theme.palette.primary.main;
     const badgeAccent = chromeAccent;
     const submitAccent = theme.palette.primary.main;
     // Field highlights (`**name**` tokens) follow the variant hue too.
@@ -678,7 +672,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
         onSelectAnswer?.(idx, response, false);
     };
 
-    const title = t(isExplain ? 'chartRec.explanationTitle' : 'chartRec.clarificationTitle');
+    const title = t('chartRec.agentTitle', { defaultValue: 'Agent' });
     const selectedOperationResponse = dataOperation ? selectedAnswers?.[0] : undefined;
     const selectedPlanId = dataOperation?.plans.some(
         plan => plan.id === selectedOperationResponse?.value,
@@ -697,10 +691,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     };
     return (
         <AgentPauseShell
-            icon={<AgentToyIcon
-                variant={isExplain ? 'explain' : 'clarify'}
-                sx={{ fontSize: textVar.xl, color: badgeAccent }}
-            />}
+            icon={<AgentToyIcon sx={{ fontSize: textVar.xl, color: badgeAccent }} />}
             accentColor={chromeAccent}
             title={title}
             closeTooltip={t('chartRec.pauseClose')}
@@ -894,6 +885,8 @@ interface ExplanationPanelProps {
     onClose: () => void;
     /** Delete: remove this explanation block from the thread (absent while the answer is still being written). */
     onDelete?: () => void;
+    /** Open the message in the chat view, where a long answer reads in full. */
+    onOpen?: () => void;
 }
 
 /**
@@ -965,22 +958,25 @@ export const ToolActivityPanel: FC<{
     </AgentPauseShell>;
 };
 
-export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, onDelete }) => {
+export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, onDelete, onOpen }) => {
     const theme = useTheme();
     const { t } = useTranslation();
 
     return (
         <AgentPauseShell
-            icon={<AgentToyIcon
-                variant="explain"
-                sx={{ fontSize: textVar.xl, color: theme.palette.primary.main }}
-            />}
+            icon={<AgentToyIcon sx={{ fontSize: textVar.xl, color: theme.palette.primary.main }} />}
             accentColor={theme.palette.primary.main}
-            title={t('chartRec.explanationTitle')}
+            title={t('chartRec.agentTitle', { defaultValue: 'Agent' })}
             closeTooltip={t('chartRec.pauseClose')}
             deleteTooltip={t('chartRec.pauseDelete')}
             onClose={onClose}
             onDelete={onDelete}
+            headerActions={onOpen && <Tooltip title={t('chartRec.openInChat', { defaultValue: 'Open in chat' })}>
+                <IconButton size="small" onClick={onOpen} aria-label={t('chartRec.openInChat', { defaultValue: 'Open in chat' })}
+                    sx={{ p: '3px', color: 'text.secondary', '&:hover': { color: 'primary.main' } }}>
+                    <OpenInFullIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+            </Tooltip>}
         >
             <PauseScrollRegion defaultMaxHeight="clamp(120px, 32vh, 360px)" sx={{ pb: '8px', pl: '20px', pr: '8px', fontSize: textVar.sm }}>
                 <TerminalMessageContent content={content} />

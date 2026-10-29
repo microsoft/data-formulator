@@ -884,3 +884,13 @@ def test_responses_stream_keeps_each_messages_phase_on_its_text():
                "item": {"id": "msg_answer", "type": "message", "role": "assistant", "phase": "final_answer"}})
     assert not (text("msg_answer", "x").provider_specific_fields or {}).get("phase")
     assert not (text("msg_other", "y").provider_specific_fields or {}).get("phase")
+
+
+def test_no_reasoning_effort_leaves_the_model_default():
+    from data_formulator.agents.client_utils import _set_reasoning
+
+    params = {"model": "gpt-5", "reasoning_effort": "low"}
+    _set_reasoning(params, None)
+    assert "reasoning_effort" not in params
+    _set_reasoning(params, "high")
+    assert params["reasoning_effort"] == "high"

@@ -8,7 +8,7 @@ import { ThemeProvider, createTheme } from '@mui/material';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
 import { DataThread } from '../../../../src/views/DataThread';
-import { wrapThreadBlocks } from '../../../../src/views/threadLayout';
+import { THREAD_SEGMENT_BUDGET, weighThreadBlocks, wrapThreadBlocks } from '../../../../src/views/threadLayout';
 import { FreeDataViewFC } from '../../../../src/views/DataView';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -37,6 +37,8 @@ const threadElement = (store: any, props: { denseColumns?: boolean } = {}) => Re
   }),
 });
 const renderDataThread = (store: any, props: { denseColumns?: boolean } = {}) => render(threadElement(store, props));
+/** Open every folded stretch of chat (long chats fold into stacks; see DataThread). */
+const unfoldChat = () => screen.queryAllByRole('button', { name: /earlier messages$/ }).forEach(stack => fireEvent.click(stack));
 /** A user message node (design-docs/58): the prompt alone; the agent's reply is its own node. */
 const userMessage = (id: string, prompt: string, parentNodeId: string, createdAt: number, extra: Partial<TextTurn> = {}) =>
   dfActions.addTextTurn({ kind: 'text', id, displayId: id, textKind: 'explain', content: '', prompt, parentNodeId, createdAt, ...extra });
@@ -258,7 +260,8 @@ it.each([
     expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'latest' });
     return;
   }
-  // Every round shows; nothing folds.
+  // Every round is there: the earlier ones folded into a stack that opens in place.
+  unfoldChat();
   for (const id of ['first', 'second', 'third', 'fourth', 'fifth', 'latest']) expect(screen.getByText(`${id} response`)).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Show earlier turns' })).toBeNull();
   if (producesTable) {
@@ -303,9 +306,10 @@ it.each(['pending', 'loaded', 'live-draft', 'interrupted-draft'] as const)(
       store.dispatch(dfActions.addTableToStore(derivedTable('result', 'Result', 'creating')));
     }
     renderDataThread(store);
-    // Every round shows alongside the results and active work; nothing folds.
+    // Every round is there alongside the results and active work, the earlier ones folded until opened.
     expect(screen.queryByRole('button', { name: 'Terminal execution details' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Show earlier turns' })).toBeNull();
+    unfoldChat();
     for (const id of ids) expect(screen.getAllByText(`${id} response`).length).toBeGreaterThan(0);
     if (hasDraft) expect(screen.getByText('Creating result')).toBeTruthy();
     if (scenario === 'live-draft') expect(screen.getByText(/Checking the result/)).toBeTruthy();
@@ -426,6 +430,7 @@ it.each(['derived', 'loaded', 'ongoing'].flatMap(scenario => [5, 6].map(count =>
         parentNodeId: lastResponse, createdAt: count * 2 }));
     }
     renderDataThread(store);
+    unfoldChat();
     for (const index of [0, count - 1]) {
       expect(screen.getByText(`Request ${index}`)).toBeTruthy();
       expect(screen.getByText(`Response ${index}`)).toBeTruthy();
@@ -750,7 +755,8 @@ it.each([
   for (let index = 0; index < counts.length - 1; index++) {
     fireEvent.click(screen.getAllByRole('button', { name: 'Expand thread' })[0]);
   }
-  expect(counts.map((_, thread) => screen.getByText(`Thread ${thread} response 0`)
+  // Each thread by its latest response, which a long thread's folded chat keeps in view.
+  expect(counts.map((count, thread) => screen.getByText(`Thread ${thread} response ${count - 1}`)
     .closest('[data-thread-column]')?.getAttribute('data-thread-column'))).toEqual(columns);
   expect(container.querySelectorAll('[data-thread-column]')).toHaveLength(2);
 });
@@ -1117,19 +1123,21 @@ it('shows a running step by its shimmer, without a ticking client timer', () => 
 it('re-packs columns when threads grow while no run is active, and holds them still during a run', () => {
   // Each thread is 40px per row; the layout measures entries and packs them into two 140px columns.
   const offsetHeight = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
-    return this.hasAttribute('data-thread-entry') ? 40 * this.querySelectorAll('[data-thread-item]').length : 0;
+    return this.hasAttribute('data-thread-entry') ? 40 * this.querySelectorAll('[data-thread-item], [data-thread-chat-stack]').length : 0;
   });
   const clientHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(140);
   try {
     const store = configureStore({ reducer: dataFormulatorReducer });
+    const latest: Record<string, number> = {};
     const grow = (thread: string, from: number, to: number) => {
+      latest[thread] = to - 1;
       for (let turn = from; turn < to; turn++) store.dispatch(agentMessage(`${thread}-${turn}`, `${thread} response ${turn}`,
         turn ? `${thread}-${turn - 1}` : `conversation-root:${thread}`, turn + (thread === 'a' ? 0 : thread === 'b' ? 100 : 200)));
     };
     grow('a', 0, 3); grow('b', 0, 1); grow('c', 0, 1);
     const { container } = renderDataThread(store, { denseColumns: true });
     for (let index = 0; index < 2; index++) fireEvent.click(screen.getAllByRole('button', { name: 'Expand thread' })[0]);
-    const columns = () => ['a', 'b', 'c'].map(thread => screen.getByText(`${thread} response 0`)
+    const columns = () => ['a', 'b', 'c'].map(thread => screen.getByText(`${thread} response ${latest[thread]}`)
       .closest('[data-thread-column]')?.getAttribute('data-thread-column'));
     // a=3 rows | b=1, c=1
     expect(columns()).toEqual(['0', '1', '1']);
@@ -1146,8 +1154,12 @@ it('re-packs columns when threads grow while no run is active, and holds them st
     // The run ends: c is re-measured and the columns re-pack as a+b | c.
     act(() => { store.dispatch(dfActions.removeDraftNode('live')); });
     expect(columns()).toEqual(['0', '0', '1']);
-    // Outside a run, a thread that grows is re-measured too: a=20 rows | b, c.
+    // Outside a run, a thread that grows is re-measured too. Its long chat folds into a stack; opened,
+    // a grows to 21 rows | b, c.
     act(() => grow('a', 3, 20));
+    const threadA = screen.getByText('a response 19').closest('[data-thread-entry]') as HTMLElement;
+    fireEvent.click(within(threadA).getByRole('button', { name: /earlier messages$/ }));
+    act(() => grow('a', 20, 21));
     expect(columns()).toEqual(['0', '1', '1']);
     expect(container.querySelectorAll('[data-thread-column]')).toHaveLength(2);
   } finally {
@@ -1362,4 +1374,20 @@ it('selects only what the canvas shows on the shelf, not the table an open app c
   // The app is open: the table it came from is no longer selected.
   act(() => { store.dispatch(dfActions.setFocused({ type: 'file', fileName: 'explorer.app.jsx' })); });
   expect(container.querySelector('[data-table-id="quakes"] [aria-current="true"]')).toBeNull();
+});
+
+it('counts a long stretch of conversation between results as one artifact when a thread wraps', () => {
+  const chat = (count: number) => new Array<'chat'>(count).fill('chat');
+  // Six or more chat entries between results weigh one.
+  expect(weighThreadBlocks([[...chat(5)], [...chat(4), 1, 'chat'], [...chat(2)]])).toEqual([1, 1, 0]);
+  expect(weighThreadBlocks([[...chat(3), 2], [...chat(5)]])).toEqual([2, 0]);
+  // A thread like the weather session: four results, three long stretches before them → it splits.
+  const weather = weighThreadBlocks([[...chat(5)], [...chat(6), 1, 'chat'], [...chat(2)], [...chat(4), 1, ...chat(2)],
+    [...chat(2)], [...chat(3), 'skip', 2, 'chat'], [...chat(2)]]);
+  // Each stretch's unit lands on the first request inside it: the blocks after each result.
+  expect(weather).toEqual([1, 1, 1, 1, 1, 2, 0]);
+  expect(wrapThreadBlocks(weather, THREAD_SEGMENT_BUDGET)).toEqual([0, 5]);
+  expect(wrapThreadBlocks([0, 1, 0, 1, 0, 2, 0], THREAD_SEGMENT_BUDGET)).toEqual([0]);
+  // A thread of nothing but conversation is one stretch and never splits.
+  expect(wrapThreadBlocks(weighThreadBlocks(new Array(30).fill(chat(2))), THREAD_SEGMENT_BUDGET)).toEqual([0]);
 });

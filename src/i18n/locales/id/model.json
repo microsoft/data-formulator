@@ -32,8 +32,8 @@
     "smallModelOptional": "Model Kecil (opsional)",
     "sameAsModel": "Sama dengan Model",
     "thinking": "Tingkat berpikir",
-    "thinkingHint": "Digunakan oleh agen analisis dan alur kerja. Rendah paling cepat; Sedang membantu alur kerja dan laporan panjang; Tinggi paling lambat dan paling mahal. Tugas bantuan singkat selalu memakai pemikiran ringan.",
-    "thinkingLow": "Rendah (default)",
+    "thinkingHint": "Dipakai oleh agen analisis dan alur kerja. Bawaan model memakai setelan yang disetel untuk model itu; Rendah lebih cepat dan murah; Sedang dan Tinggi berpikir lebih lama dan lebih mahal. Tugas bantu singkat selalu memakai pemikiran ringan.",
+    "thinkingLow": "Rendah",
     "thinkingMedium": "Sedang",
     "thinkingHigh": "Tinggi",
     "apiBase": "URL Dasar",
@@ -145,6 +145,7 @@
     "disconnectOpenRouterTitle": "Putuskan OpenRouter?",
     "disconnectOpenRouterMessage": "Ini melupakan kunci yang tersimpan di Data Formulator. Semua model yang menggunakan koneksi ini perlu dihubungkan ulang. Untuk mencabut kunci di OpenRouter juga, hapus dari kunci OpenRouter Anda.",
     "manageOpenRouterKeys": "Kelola kunci OpenRouter",
-    "configuredMessage": "Dikonfigurasi di server, klik untuk memverifikasi konektivitas"
+    "configuredMessage": "Dikonfigurasi di server, klik untuk memverifikasi konektivitas",
+    "thinkingDefault": "Bawaan model"
   }
 }

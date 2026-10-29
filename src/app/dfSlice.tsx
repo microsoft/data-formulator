@@ -84,9 +84,16 @@ export interface ServerConfig {
     DEFAULT_DEMO?: string | null;
     MANAGED_MODE?: boolean;
     CAN_CONFIGURE?: boolean;
+    /** The terminal's effective mode: off when unavailable or switched off, else TOOLS_MODE. */
     TERMINAL_MODE?: 'off' | 'ask' | 'auto';
     TERMINAL_AVAILABLE?: boolean;
     TERMINAL_CONFIG_LOCKED?: boolean;
+    TERMINAL_ENABLED?: boolean;
+    /** The approval mode the agent's tools (terminal, MCP servers) share. */
+    TOOLS_MODE?: 'off' | 'ask' | 'auto';
+    MCP_AVAILABLE?: boolean;
+    /** How many of the user's MCP servers are switched on. */
+    MCP_SERVERS_ON?: number;
     DISABLE_DISPLAY_KEYS: boolean;
     DISABLE_DATA_CONNECTORS: boolean;
     DISABLE_CUSTOM_MODELS: boolean;
@@ -145,7 +152,8 @@ export interface ModelConfig {
 
 
 export type FocusedId = 
-    | { type: 'conversation'; tableId: string; nodeIds?: string[]; /** The thread's label, when opened from its header. */ label?: string }
+    | { type: 'conversation'; tableId: string; nodeIds?: string[]; /** The thread's label, when opened from its header. */ label?: string;
+        /** The message to bring into view (opened from that message). */ anchorId?: string }
     | { type: 'table'; tableId: string }
     | { type: 'reference'; referenceId: string }
     | { type: 'chart'; chartId: string }
@@ -2479,11 +2487,18 @@ export const dataFormulatorSlice = createSlice({
                 parentTurn.answered = false;
             }
             if (turn) repairThreadEdges(state, [turn]);
-            // Fallback focus (design-docs/42): the source chart it came from,
-            // else its thread-parent table (walk parentNodeId), else nothing.
+            // Fallback focus (design-docs/42): the nearest report or file above it in its
+            // thread (a summary after a report goes back to the report), else the source
+            // chart it came from, else its thread-parent table, else nothing.
             if (wasFocused && turn) {
                 const allCharts = collectAllCharts(state);
-                if (turn.sourceChartId && allCharts.some(c => c.id === turn.sourceChartId)) {
+                const result = threadGraphOf(state).resultAbove(turn.parentNodeId);
+                const resultFile = result?.kind === 'file' ? state.fileNodes.find(item => item.id === result.id) : undefined;
+                const above: DataFormulatorState['focusedId'] = result?.kind === 'report' ? { type: 'report', reportId: result.id }
+                    : resultFile ? { type: 'file', fileName: resultFile.path } : undefined;
+                if (above) {
+                    state.focusedId = above;
+                } else if (turn.sourceChartId && allCharts.some(c => c.id === turn.sourceChartId)) {
                     state.focusedId = { type: 'chart', chartId: turn.sourceChartId };
                 } else {
                     const parentTableId = threadGraphOf(state).tableOf(turn.parentNodeId);

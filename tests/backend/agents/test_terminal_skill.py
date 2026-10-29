@@ -571,7 +571,7 @@ def test_terminal_rejects_home_and_ancestor_grants():
 
 def test_terminal_refuses_unconfined_fallback(tmp_path, monkeypatch):
     monkeypatch.setattr(terminal.sys, "platform", "linux")
-    monkeypatch.setattr(terminal.shutil, "which", lambda name: None)
+    monkeypatch.setattr(terminal, "terminal_sandbox", lambda: None)
     with patch.object(terminal.subprocess, "Popen") as spawn:
         with pytest.raises(OSError, match="requires Bubblewrap"):
             list(terminal.run_command({"argv": ["touch", "/outside"], "cwd": str(tmp_path),
@@ -579,9 +579,44 @@ def test_terminal_refuses_unconfined_fallback(tmp_path, monkeypatch):
         spawn.assert_not_called()
 
 
+def test_without_a_sandbox_every_command_is_unsandboxed_and_needs_approval(tmp_path, monkeypatch):
+    monkeypatch.setattr(terminal.sys, "platform", "linux")
+    monkeypatch.setattr(terminal, "terminal_sandbox", lambda: None)
+    broker = terminal.TerminalRequests()
+    proposal = broker.propose("local:user", "conversation", {"argv": ["ls"], "cwd": str(tmp_path), "purpose": "List files"},
+                              mode="auto")
+    assert proposal["dangerouslyDisableSandbox"] is True
+    assert proposal["sandboxDisablingReason"] == terminal.NO_SANDBOX_REASON
+    assert proposal["sandboxUnavailable"] is True
+    assert "apt install bubblewrap" in proposal["sandboxInstallHint"]
+    # The agent's own reason for leaving the sandbox is kept.
+    proposal = broker.propose("local:user", "conversation", {"argv": ["ls"], "cwd": str(tmp_path), "purpose": "List files",
+                              "dangerouslyDisableSandbox": True, "sandboxDisablingReason": "Write a client config"})
+    assert proposal["sandboxDisablingReason"] == "Write a client config"
+    assert proposal["sandboxUnavailable"] is True
+    # Approved, it runs as any unsandboxed command does; unapproved, the runner refuses it.
+    with pytest.raises(ValueError, match="explicit approval"):
+        terminal.prepare_command(proposal, scratch_dir=tmp_path, runtime_dir=tmp_path)
+    argv, _, policy = terminal.prepare_command({**proposal, "decision": "approve"}, scratch_dir=tmp_path, runtime_dir=tmp_path)
+    assert argv == ["ls"] and policy is None
+
+
+def test_with_a_sandbox_commands_stay_confined_and_no_hint_shows(tmp_path, monkeypatch):
+    monkeypatch.setattr(terminal.sys, "platform", "linux")
+    monkeypatch.setattr(terminal, "terminal_sandbox", lambda: "/usr/bin/bwrap")
+    proposal = terminal.TerminalRequests().propose("local:user", "conversation",
+                                                   {"argv": ["ls"], "cwd": str(tmp_path), "purpose": "List files"})
+    assert proposal["dangerouslyDisableSandbox"] is False
+    assert "sandboxUnavailable" not in proposal
+    assert terminal.sandbox_install_hint() is None
+    monkeypatch.setattr(terminal.sys, "platform", "darwin")
+    monkeypatch.setattr(terminal, "terminal_sandbox", lambda: None)
+    assert terminal.sandbox_install_hint() is None
+
+
 def test_linux_terminal_mounts_host_read_only_and_scratch_writable(tmp_path, monkeypatch):
     monkeypatch.setattr(terminal.sys, "platform", "linux")
-    monkeypatch.setattr(terminal.shutil, "which", lambda name: "/usr/bin/bwrap")
+    monkeypatch.setattr(terminal, "terminal_sandbox", lambda: "/usr/bin/bwrap")
     command = terminal.confined_command(["printf", "hello"], tmp_path)
     assert command[command.index("--ro-bind") + 1:command.index("--ro-bind") + 3] == ["/", "/"]
     assert command[command.index("--bind") + 1:command.index("--bind") + 3] == [str(tmp_path.resolve())] * 2
@@ -600,6 +635,7 @@ def test_terminal_hides_df_secrets_and_api_port(tmp_path, monkeypatch):
     secret.write_text("key")
     monkeypatch.setattr(terminal.sys, "platform", "darwin")
     monkeypatch.setattr(terminal.Path, "is_file", lambda self: True)
+    monkeypatch.setattr(terminal, "terminal_sandbox", lambda: terminal.SEATBELT_EXEC)
     command = terminal.confined_command(["ls"], tmp_path, protected_files=[str(secret)], protected_ports=[5567])
     profile = command[2]
     assert f'(deny file-read* file-write* (literal "{secret}"))' in profile
@@ -607,7 +643,7 @@ def test_terminal_hides_df_secrets_and_api_port(tmp_path, monkeypatch):
     # Everything else stays open: reads, other local ports, and the network.
     assert "(allow file-read* sysctl-read mach-lookup network*)" in profile
     monkeypatch.setattr(terminal.sys, "platform", "linux")
-    monkeypatch.setattr(terminal.shutil, "which", lambda name: "/usr/bin/bwrap")
+    monkeypatch.setattr(terminal, "terminal_sandbox", lambda: "/usr/bin/bwrap")
     command = terminal.confined_command(["ls"], tmp_path, protected_files=[str(secret)], protected_ports=[5567])
     assert command[command.index(str(secret)) - 2:command.index(str(secret)) + 1] == ["--ro-bind", "/dev/null", str(secret)]
     assert "--share-net" in command

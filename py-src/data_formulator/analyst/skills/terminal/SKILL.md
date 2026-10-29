@@ -7,7 +7,7 @@ description: >-
 when_to_use: >-
    Use when local files, command-line clients, or existing authenticated access
    can retrieve data needed for the user's task, without requiring a connector.
-   Only available in single-user local mode on macOS and Linux.
+   Only available in single-user local mode on macOS, Linux and Windows.
 always_on: false
 tools: [wait_tasks, stop_task]
 actions: [run_terminal, start_task]

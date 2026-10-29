@@ -562,7 +562,10 @@
     "sourceExtract": "निकाला गया",
     "failedRefreshDerivedTable": "व्युत्पन्न तालिका \"{{table}}\" रिफ्रेश करने में विफल: {{message}}",
     "errorRefreshingDerivedTable": "व्युत्पन्न तालिका \"{{table}}\" रिफ्रेश करने में त्रुटि",
-    "alsoUses": "यह भी उपयोग करता है"
+    "alsoUses": "यह भी उपयोग करता है",
+    "callingMcp": "{{server}} · {{tool}} को कॉल किया जा रहा है",
+    "stackedMessages": "{{count}} पुराने संदेश",
+    "foldMessages": "{{count}} संदेश समेटें"
   },
   "dataLoading": {
     "extractingData": "डेटा निकाला जा रहा है...",
@@ -665,7 +668,6 @@
     "explorationFailed": "अन्वेषण विफल: {{message}}",
     "agentLost": "एजेंट डेटा में उलझ गया।",
     "couldYouClarify": "क्या आप स्पष्ट कर सकते हैं?",
-    "clarificationTitle": "प्रश्न",
     "minimizeClarification": "छोटा करें",
     "expandClarification": "विस्तृत करें",
     "pauseClose": "बंद करें (फ़ोकस बदलें)",
@@ -683,7 +685,6 @@
     "cancelClarification": "रद्द करें",
     "invalidClarification": "एजेंट ने एक अमान्य स्पष्टीकरण अनुरोध लौटाया।",
     "invalidExplanation": "एजेंट ने एक अमान्य स्पष्टीकरण लौटाया।",
-    "explanationTitle": "स्पष्टीकरण",
     "explanationFollowupsLabel": "संभावित अगले कदम:",
     "delegateTitle": "सुझाया गया अगला एजेंट",
     "delegateMinimize": "छोटा करें",
@@ -697,7 +698,9 @@
     "threadExplorePrompt": "इस डेटा में दिलचस्प पैटर्न और रुझानों का अन्वेषण करें",
     "explorationThreadDeriveDescription": "{{source}} से इस निर्देश के साथ व्युत्पन्न करें: {{instruction}}",
     "explorationStepCodeComment": "# अन्वेषण चरण {{step}}",
-    "maxIterationsReached": "अधिकतम अन्वेषण चरणों तक पहुंच गया।"
+    "maxIterationsReached": "अधिकतम अन्वेषण चरणों तक पहुंच गया।",
+    "agentTitle": "एजेंट",
+    "openInChat": "चैट में खोलें"
   },
   "dataGrid": {
     "loading": "लोड हो रहा है ...",
@@ -1497,5 +1500,133 @@
     "previewApp": "ऐप का पूर्वावलोकन करें",
     "created": "ऐप बनाया गया: {{title}}",
     "updated": "ऐप अपडेट किया गया: {{title}}"
+  },
+  "mcp": {
+    "connect": "कनेक्ट करें",
+    "refresh": "रीफ़्रेश करें",
+    "signIn": "साइन इन करें",
+    "signOut": "साइन आउट करें",
+    "remove": "हटाएँ",
+    "save": "सहेजें",
+    "turnOn": "चालू करें",
+    "turnOff": "बंद करें",
+    "serverEnabled": "{{name}} का उपयोग करें",
+    "toolEnabled": "{{name}} का उपयोग करें",
+    "showTools": "टूल दिखाएँ",
+    "noTools": "सर्वर के टूल देखने के लिए कनेक्ट करें।",
+    "alwaysAllow": "हमेशा अनुमति दें",
+    "toolsChanged": "नए या बदले हुए टूल आपकी अनुमति तक रोके गए हैं: {{names}}",
+    "approveChanges": "अनुमति दें",
+    "headerValue": "{{header}} मान",
+    "replaceKey": "कुंजी बदलें",
+    "status": {
+      "connected": "कनेक्टेड · {{count}} टूल",
+      "error": "कनेक्ट नहीं हो सका",
+      "notConnected": "अभी कनेक्ट नहीं हुआ",
+      "saved": "{{count}} टूल",
+      "signingIn": "साइन-इन की प्रतीक्षा…"
+    },
+    "flag": {
+      "readOnly": "केवल पढ़ने के लिए",
+      "destructive": "डेटा बदल या हटा सकता है",
+      "openWorld": "इंटरनेट तक पहुँचता है"
+    },
+    "approvalTitle": "{{server}} से {{tool}} की अनुमति दें?",
+    "toolLabel": "टूल",
+    "argumentsLabel": "सर्वर को भेजे गए आर्ग्युमेंट",
+    "copyArguments": "आर्ग्युमेंट कॉपी करें",
+    "approvalNote": "सर्वर को ये आर्ग्युमेंट मिलते हैं; उसका परिणाम आपके मॉडल प्रदाता को जाता है।",
+    "reject": "अस्वीकार करें",
+    "allowAlways": "इस टूल को हमेशा अनुमति दें",
+    "runOnce": "एक बार चलाएँ",
+    "add": {
+      "configLabel": "MCP सर्वर कॉन्फ़िगरेशन (JSON)",
+      "fillIn": "{{names}} भरें।",
+      "nothingAdded": "कोई सर्वर नहीं जोड़ा गया।",
+      "localWarning": "लोकल सर्वर आपकी पहचान से, किसी सैंडबॉक्स के बाहर, आपकी फ़ाइलों और नेटवर्क तक पहुँच के साथ चलता है। केवल भरोसेमंद सर्वर जोड़ें।",
+      "addButton": "जोड़ें और कनेक्ट करें",
+      "oneServer": "एक बार में एक सर्वर जोड़ें।",
+      "cancel": "रद्द करें"
+    },
+    "form": {
+      "missing": "{{name}} अब आपके MCP सर्वरों में नहीं है।",
+      "turnOnServer": "{{name}} चालू करें",
+      "turnOffServer": "{{name}} बंद करें",
+      "turnOnTools": "{{name}}: {{tools}} चालू करें",
+      "turnOffTools": "{{name}}: {{tools}} बंद करें",
+      "modeChange": "टूल अनुमोदन: {{from}} → {{to}}",
+      "apply": "बदलाव लागू करें",
+      "suggested": "एजेंट का सुझाव",
+      "done": "हो गया। इसे टूल में प्रबंधित करें।",
+      "waiting": "टूल में आपकी समीक्षा की प्रतीक्षा है।",
+      "openTools": "टूल खोलें"
+    },
+    "help": {
+      "toggle": "सर्वर कैसे जोड़ें",
+      "intro": "सर्वर के दस्तावेज़ों से एक सर्वर का MCP कॉन्फ़िगरेशन पेस्ट करें, नीचे दिए उदाहरणों की तरह।",
+      "remote": {
+        "title": "रिमोट सर्वर",
+        "note": "साइन-इन वाले सर्वर कनेक्ट करते समय प्रदाता का पेज खोलते हैं।"
+      },
+      "key": {
+        "title": "API कुंजी के साथ",
+        "note": "YOUR_KEY को अपनी कुंजी से बदलें। यह फ़ाइल में नहीं, आपके क्रेडेंशियल स्टोर में रखी जाती है।"
+      },
+      "local": {
+        "title": "लोकल कमांड",
+        "note": "इस कंप्यूटर पर, सैंडबॉक्स के बाहर चलता है। केवल भरोसेमंद सर्वर जोड़ें।"
+      }
+    },
+    "removeNamed": "{{name}} हटाएँ",
+    "pack": {
+      "builtIn": "Data Formulator टूलकिट",
+      "add": "जोड़ें",
+      "added": "जोड़ा गया",
+      "research": {
+        "name": "शोध",
+        "description": "arXiv खोजें, किसी क्षेत्र के नए शोधपत्र देखें, प्रकाशन रुझानों के चार्ट बनाएँ और पूरा पाठ पढ़ें।",
+        "email": "संपर्क ईमेल (वैकल्पिक)",
+        "emailHint": "arXiv के अनुरोध के अनुसार हर अनुरोध के साथ arXiv को भेजा जाता है।"
+      }
+    }
+  },
+  "tools": {
+    "chipDetails": "एजेंट द्वारा उपयोग किए जा सकने वाले टूल: टर्मिनल और MCP सर्वर",
+    "title": "टूल",
+    "intro": "टूल एजेंट को आपके वर्कस्पेस से आगे ले जाते हैं: इस कंप्यूटर पर कमांड चलाना, या डेटा और दस्तावेज़ों के लिए MCP सर्वर कॉल करना।",
+    "blocked": "डिप्लॉयमेंट नीति ने उपयोगकर्ता कनेक्शन और टूल बंद कर दिए हैं।",
+    "localOnly": "टूल केवल सिंगल-यूज़र लोकल ऐप में उपलब्ध हैं।",
+    "modeLabel": "अनुमोदन",
+    "mode": {
+      "off": "बंद",
+      "ask": "हर बार पूछें",
+      "auto": "सुरक्षित होने पर स्वतः"
+    },
+    "modeHint": {
+      "off": "एजेंट कोई टूल उपयोग नहीं करता।",
+      "ask": "हमेशा अनुमति वाले टूल को छोड़कर, हर कमांड और टूल कॉल पहले पूछती है।",
+      "auto": "सैंडबॉक्स वाली कमांड और केवल-पढ़ने वाले MCP टूल बिना पूछे चलते हैं; बाकी सब पहले पूछते हैं।"
+    },
+    "locked": "सर्वर एनवायरनमेंट वेरिएबल DF_TERMINAL_MODE द्वारा सेट।",
+    "close": "बंद करें",
+    "terminal": {
+      "name": "टर्मिनल",
+      "caption": "अपने CLI लॉगिन से इस कंप्यूटर पर कमांड चलाएँ",
+      "off": "बंद",
+      "sandboxed": "सैंडबॉक्स में",
+      "unsandboxed": "कोई सैंडबॉक्स इंस्टॉल नहीं",
+      "details": "टर्मिनल विवरण",
+      "use": "टर्मिनल का उपयोग करें"
+    },
+    "count_one": "{{count}} टूल",
+    "count_other": "{{count}} टूल",
+    "chipLabel": "टूल: {{count}} चालू, {{mode}}",
+    "add": {
+      "packs": "Data Formulator टूलकिट",
+      "custom": "कस्टम MCP सर्वर",
+      "label": "जोड़ें",
+      "collapse": "समेटें"
+    },
+    "addTool": "+ टूल जोड़ें"
   }
 }

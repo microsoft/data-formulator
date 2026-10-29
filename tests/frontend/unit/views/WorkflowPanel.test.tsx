@@ -1405,7 +1405,8 @@ describe('Workflow session publication', () => {
         expect(streamRequest).not.toHaveBeenCalled();
     });
 
-    it('collects setup without an agent turn and submits typed values only after confirmation', async () => {
+    // A full setup walkthrough: a few seconds alone, longer under the parallel suite.
+    it('collects setup without an agent turn and submits typed values only after confirmation', { timeout: 20000 }, async () => {
         store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
         store.dispatch(dfActions.selectModel('test-model'));
         vi.mocked(apiRequest).mockResolvedValue({ data: { items: [{ path: 'setup.yaml', name: 'Setup review', parameters: [

@@ -286,7 +286,9 @@ use `create_file`. Requests for uploads, authentication,
 or clarification should address concrete blockers, not replace an available
 authorized acquisition step.
 
-Terminal access supports single-user local mode on macOS and Linux. Both the
+Terminal access supports single-user local mode on macOS, Linux and Windows. The
+terminal is one of the agent's **tools**, alongside the user's MCP servers: all
+tools share one approval mode, and each has its own on/off switch. Both the
 analyst and workflow agents use the same server-owned policy:
 
 - **Off** (`off`): no terminal tool, skill catalog entry, or application-supplied
@@ -297,18 +299,21 @@ analyst and workflow agents use the same server-owned policy:
   Reject** dialog showing arguments, working directory, purpose, and host-access
   warning. Approval covers the entire invocation, including a shell script, not
   each individual line.
-- **Auto approve** (`auto`): the same preloaded tools and guidance, with immediate
+- **Auto when safe** (`auto`): the same preloaded tools and guidance, with immediate
   sandboxed execution, including writes allowed by the filesystem policy.
   `dangerouslyDisableSandbox` always requires user approval and a reason.
 
-Click **Terminal: Off / Ask / Auto** beside the chat input, choose a mode in the
-**Terminal access** dialog, and click **Save**. This local-user setting is available
-without managed mode or Administration access. Its dedicated endpoint accepts only
-the mode and configuration revision, requires a same-origin local request, and
-preserves all other settings. Closing the dialog discards an unsaved choice.
+Click **Tools** beside the chat input. The **Tools** dialog applies each change
+immediately: the shared mode (Off / Ask every time / Auto when safe), the
+**Terminal** switch (stored as `overrides.terminal_enabled`; off turns the terminal
+off without changing the shared mode), and, in the Terminal row's details, the
+sandbox write paths. This local-user setting is available without managed mode or
+Administration access. Its dedicated endpoint (`/api/configurations/terminal`)
+accepts only `mode`, `enabled`, `sandbox` and the configuration revision, requires
+a same-origin local request, and preserves all other settings.
 
-Alternatively, launch with `DF_TERMINAL_MODE=off|ask|auto`. The environment takes
-precedence and locks the selector; invalid environment values fail closed to Off.
+Alternatively, launch with `DF_TERMINAL_MODE=off|ask|auto`, which sets the shared
+tools mode. The environment takes precedence and locks the selector; invalid environment values fail closed to Off.
 Persisted configuration uses `overrides.terminal_mode`. Deployment restrictions
 still apply. Chat text, workflow definitions, and tool arguments cannot set it.
 
@@ -324,6 +329,26 @@ Commands normally run with OS-enforced filesystem write confinement: macOS uses
 namespaces. Writable areas include workspace scratch, private per-invocation
 runtime storage (mode 0700), and the filesystem policy below. Children inherit
 the restriction.
+
+Without a sandbox (Linux without a working Bubblewrap, or Windows without WSL or
+without Bubblewrap inside WSL), the terminal still works, but every command runs
+unsandboxed with the user's normal access: proposals are marked
+`dangerouslyDisableSandbox` with `sandboxUnavailable`, so each one asks for
+approval even in Auto. The approval and Tools dialogs show a warning and
+an install hint, and the agent is told. Installing a sandbox takes effect after a
+backend restart.
+
+On Windows, commands run in WSL (`data_formulator/sandbox/wsl.py`) when it has a
+working default distribution: `wsl.exe -e bwrap … -- <argv>`, as on Linux, with
+Windows paths bound as `/mnt/<drive>/…`, the `DEFAULT_ALLOW_WRITE` CLI-state paths
+also bound in the WSL home when present, and WSL interop (`/run/WSL`,
+`WSL_INTEROP`) hidden so a sandboxed command cannot start Windows programs. Command
+variables reach WSL through `WSLENV` (paths translated). Unsandboxed commands run
+as `wsl.exe -e <argv>`; without WSL they run natively and the agent is told to use
+PowerShell. Process start, output streaming, interrupt and tree kill go through
+`data_formulator/analyst/process_io.py` (process groups and a selector on POSIX; a
+reader thread, CTRL_BREAK and `taskkill /T` on Windows). The Windows paths are
+covered by simulated unit tests only.
 Commands receive `DF_SCRATCH_DIR` for outputs and `DF_RUNTIME_DIR` for disposable
 state. TMPDIR/TMP/TEMP, XDG_CACHE_HOME, UV_CACHE_DIR, PIP_CACHE_DIR,
 npm_config_cache, YARN_CACHE_FOLDER, MPLCONFIGDIR, HF_HOME, and NUMBA_CACHE_DIR
@@ -411,7 +436,7 @@ Scratch files are absent from the ordinary workspace listing. In Backend Log,
 the **Scratch files** tab lists visible scratch entries for the active workspace,
 with read-only previews and downloads. Hidden execution state remains internal.
 
-Terminal access is rejected in hosted mode, on Windows, when data connectors are
+Terminal access is rejected in hosted mode, when data connectors are
 disabled, or without a matching local Host and Origin. The Vite analyst proxy
 preserves Host for this check. Restart the backend after adding the skill; Vite
 reloads its proxy configuration automatically. Pending approvals are transient
@@ -420,8 +445,85 @@ and cannot be restored after reloading the page; ask for a fresh proposal.
 Focused checks (no browser automation required):
 
 ```bash
-uv run pytest tests/backend/agents/test_terminal_skill.py tests/backend/agents/test_analyst_skill_registry.py tests/backend/routes/test_analyst_data_operation_flow.py
-npx vitest run tests/frontend/unit/views/TerminalApprovalDialog.test.tsx
+uv run pytest tests/backend/agents/test_terminal_skill.py tests/backend/agents/test_terminal_windows.py tests/backend/agents/test_background_tasks.py tests/backend/agents/test_analyst_skill_registry.py tests/backend/routes/test_analyst_data_operation_flow.py
+npx vitest run tests/frontend/unit/views/TerminalApprovalDialog.test.tsx tests/frontend/unit/views/ToolsAccess.test.tsx
+```
+
+### MCP Servers (Local Mode)
+
+In single-user local mode the analyst agent can call tools from MCP servers the
+user adds, as tools next to the terminal: **Tools** beside the chat input lists
+them, and **+ Add MCP server** takes one server's MCP configuration JSON
+(**How to add a server** in the form shows examples), the format VS Code
+(`servers`), Claude Desktop and Cursor (`mcpServers`) use; Codex TOML
+(`[mcp_servers.*]`) is also accepted. A remote server is a `url` (`"type": "sse"`
+for older servers) with optional `headers`; a local one is a `command` with
+`args`, `env` and `cwd`. MCP is off
+in hosted and managed deployments and when data connectors are disabled.
+
+- **Storage.** Server definitions and the reviewed tool snapshots
+  live in `~/.data_formulator/mcp.json` (under `DATA_FORMULATOR_HOME`). API keys,
+  header values, environment variables, OAuth tokens and client secrets go to the
+  credential vault under `mcp:<server-id>`, never into the file.
+- **Sign-in.** Public servers need nothing. A `headers` entry sends an API key
+  or token. A server that answers 401 without either is retried with the MCP SDK's
+  OAuth flow (PKCE, dynamic client registration), as other MCP clients do; when it
+  offers no OAuth, the error suggests adding a header. For providers that require a
+  pre-registered app, add `"oauth": {"client_id": …, "client_secret": …, "scope": …}`.
+  The redirect URI is `http://localhost:<port>/api/mcp/oauth/callback`. Agent runs
+  never start a sign-in; an expired sign-in asks the user to sign in again in settings.
+- **Remote URLs** must be HTTPS except `localhost`/`127.0.0.1`. **Local commands**
+  run as the user, outside the terminal sandbox, so add only trusted servers.
+- **Calls.** Each enabled server becomes a gated skill (`mcp-<id>`) whose actions
+  are `mcp_<id>__<tool>` with the tool's own input schema. They follow the
+  shared tools mode: *Off*; *Ask every time* (default); *Auto when safe* (tools
+  annotated `readOnlyHint` run without asking). Tools the user marked **Always
+  allow** never ask. Approval pauses the
+  run like a terminal command (**Reject / Always allow this tool / Run once**);
+  the server-side request is single-use and bound to the conversation, and the
+  stored arguments, not the client's, are what run.
+- **Tool changes.** The first connection's tools count as reviewed. New or changed
+  tools (name, description, schema or annotations) are held until the user allows
+  them in settings; a call to a tool that changed since approval is refused.
+- **Results.** Short text returns inline (marked untrusted). Large text, images,
+  audio and binary content are saved under `scratch/mcp/<server>/`; the agent
+  promotes anything worth keeping with its normal workspace actions.
+
+- **Agent-assisted setup.** The configure skill's `list_mcp_servers` shows the
+  agent each server's status, last error, missing key or sign-in, and tools (never
+  secret values). `propose_mcp_changes` publishes an `mcp` setup form that opens in the
+  **Tools** dialog (not the canvas; the thread entry reopens it): each proposed
+  server appears as prefilled configuration JSON with empty `""` slots for keys and
+  environment values, which the user fills in before **Add and connect**. The dialog
+  closes once the new server connects (it stays open while signing in or on errors); server/tool switches and the
+  shared tools mode apply on **Apply changes**. The form never submits itself, proposals
+  containing secret values are rejected, and approving changed tools or
+  **Always allow** stay manual. Both tools exist only when MCP is available and
+  are excluded from workflow runs.
+
+- **Toolkits (tool packs).** **+ Add tool → Toolkits** adds a ready-made server that
+  ships with Data Formulator (`py-src/data_formulator/tool_packs/`) in one step; it
+  runs with Data Formulator's own Python (no Node or `uv` download) and is then an
+  ordinary MCP server row (`pack` records its origin). `GET /api/mcp/packs` lists
+  packs; `POST /api/mcp/packs/<id>` adds one (once) with its optional settings.
+  - **Research (arXiv)** (`tool_packs/research`): `search_papers`, `recent_papers`,
+    `paper_details` (up to 20 ids), `count_papers` (per year/month, for trends) and
+    `get_full_text` (arXiv's HTML as Markdown, else the PDF; saved to scratch). All
+    are read-only. It uses only arXiv's own API and pages (no citation counts) and is
+    polite by construction: one connection, requests at least 3 seconds apart, a
+    descriptive User-Agent with the optional contact email, retries with backoff on
+    429/5xx (honouring `Retry-After`) and on the API's "results but no entries"
+    glitch, and a disk cache under `~/.data_formulator/cache/research` (searches a
+    day, papers a week, versioned papers for good). Large JSON results save to
+    scratch as `.json` so the agent can load them with `create_data`.
+
+Routes live under `/api/mcp` (`py-src/data_formulator/mcp_servers/routes.py`);
+changes require a same-origin local request with `X-DF-Configuration: 1`. The
+Vite dev proxy preserves Host for `/api/mcp`, so the check and OAuth redirects use
+the app's own origin.
+
+```bash
+uv run pytest tests/backend/mcp
 ```
 
 ### Azure CLI Deployment Discovery
@@ -1333,10 +1435,10 @@ skill; the execution agent cannot call `propose_workflow`.
 ### Configuring Data Formulator in Chat
 
 The analyst's gated `configure` skill (`analyst/skills/configure/`) sets up the
-application for the user: connections, workflows, workflow schedules, and
-sessions. Read-only tools inspect the current setup (`list_connectors`,
+application for the user: connections, workflows, workflow schedules,
+sessions, and (local app only) MCP servers. Read-only tools inspect the current setup (`list_connectors`,
 `describe_connector`, `read_connector_form`, `list_workflows`, `list_schedules`,
-`list_sessions`). Each committing action publishes one prefilled setup form artifact:
+`list_sessions`, `list_mcp_servers`). Each committing action publishes one prefilled setup form artifact:
 `propose_connection` / `update_connector_form` (connector form),
 `propose_schedule` (schedule form), and `propose_session_changes` (a session panel
 whose cards each offer rename, open in a new tab, and delete; the agent only lists

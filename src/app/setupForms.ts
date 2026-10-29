@@ -86,6 +86,35 @@ export function formArtifactFromEvent(form: FormEvent): FormArtifact {
                         issues: Array.isArray(workflow.schedule.issues) ? workflow.schedule.issues.map(String) : [] } } : {}) },
             };
         }
+        case 'mcp': {
+            const mcp = form.mcp || {};
+            const modes = ['off', 'ask', 'auto'];
+            const modeOf = (value: unknown) => modes.includes(String(value)) ? value as 'off' | 'ask' | 'auto' : undefined;
+            return {
+                kind: 'mcp', title: title || 'MCP servers',
+                mcp: {
+                    add: (mcp.add || []).map((item: FormEvent) => ({
+                        name: String(item.name ?? ''), transport: item.transport === 'stdio' || item.transport === 'sse' ? item.transport : 'http',
+                        ...(item.url ? { url: String(item.url) } : {}),
+                        ...(item.auth?.type ? { auth: { type: item.auth.type,
+                            ...(item.auth.header ? { header: String(item.auth.header) } : {}),
+                            ...(item.auth.client_id ? { client_id: String(item.auth.client_id) } : {}),
+                            ...(item.auth.scope ? { scope: String(item.auth.scope) } : {}) } } : {}),
+                        ...(item.command ? { command: String(item.command), args: (item.args || []).map(String) } : {}),
+                        ...(item.cwd ? { cwd: String(item.cwd) } : {}),
+                        ...(item.env_names?.length ? { envNames: item.env_names.map(String) } : {}),
+                        ...(item.reason ? { reason: String(item.reason) } : {}),
+                    })),
+                    changes: (mcp.changes || []).map((item: FormEvent) => ({
+                        serverId: String(item.server_id), serverName: String(item.server_name ?? item.server_id),
+                        ...(typeof item.enabled === 'boolean' ? { enabled: item.enabled } : {}),
+                        ...(item.tools?.length ? { tools: item.tools.map((tool: FormEvent) => ({ name: String(tool.name), enabled: tool.enabled === true })) } : {}),
+                        ...(item.reason ? { reason: String(item.reason) } : {}),
+                    })),
+                    ...(modeOf(mcp.mode) ? { mode: modeOf(mcp.mode), currentMode: modeOf(mcp.current_mode) } : {}),
+                },
+            };
+        }
         default:
             throw new Error(`Unsupported form artifact kind: ${String(form.kind)}`);
     }
@@ -112,6 +141,12 @@ export function formArtifactStatus(form: FormArtifact): string {
             const renamed = items.filter(item => item.renamed && !item.deleted).length;
             const changes = [renamed && `renamed ${renamed}`, deleted && `deleted ${deleted}`].filter(Boolean);
             return changes.length ? `${form.title}: ${changes.join(', ')} of ${plural(items.length, 'session')}` : form.title;
+        }
+        case 'mcp': {
+            const { mcp } = form;
+            const added = mcp.add.filter(item => item.addedId).length;
+            const parts = [added && `added ${plural(added, 'server')}`, mcp.applied && 'applied changes'].filter(Boolean);
+            return parts.length ? `${form.title}: ${parts.join(', ')}` : form.title;
         }
         case 'workflow': {
             const { workflow } = form;

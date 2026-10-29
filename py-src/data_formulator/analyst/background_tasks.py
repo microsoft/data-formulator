@@ -15,10 +15,7 @@ Tasks live in this server process: a server restart loses track of them.
 
 from __future__ import annotations
 
-import os
 import secrets
-import selectors
-import signal
 import subprocess
 import tempfile
 import threading
@@ -26,6 +23,8 @@ import time
 from collections import deque
 from pathlib import Path
 from typing import Any
+
+from data_formulator.analyst import process_io
 
 TASK_BUDGET_SECONDS = 2 * 60 * 60
 STOP_GRACE_SECONDS = 5.0
@@ -109,8 +108,7 @@ class TaskManager:
                                   scratch_dir=scratch_dir)
             log = open(task.log_path, "wb")
             try:
-                task._process = subprocess.Popen(argv, cwd=task.cwd, env=environment, stdin=subprocess.DEVNULL,
-                                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+                task._process = process_io.spawn(argv, cwd=task.cwd, env=environment)
             except BaseException:
                 log.close()
                 raise
@@ -125,9 +123,7 @@ class TaskManager:
     def _watch(self, task: BackgroundTask, log, runtime: tempfile.TemporaryDirectory) -> None:
         process = task._process
         assert process is not None and process.stdout is not None
-        selector = selectors.DefaultSelector()
-        selector.register(process.stdout, selectors.EVENT_READ)
-        os.set_blocking(process.stdout.fileno(), False)
+        pipe = process_io.OutputPipe(process.stdout)
         deadline = task.started + TASK_BUDGET_SECONDS
         interrupted_at: float | None = None
         timed_out = False
@@ -137,18 +133,14 @@ class TaskManager:
                 now = time.monotonic()
                 if task._stop.is_set() and interrupted_at is None:
                     interrupted_at = now
-                    _signal_group(process, signal.SIGINT)
+                    process_io.interrupt(process)
                 if interrupted_at is not None and now - interrupted_at > STOP_GRACE_SECONDS:
                     break
                 if time.time() > deadline:
                     timed_out = True
                     break
-                if selector.get_map():
-                    for key, _ in selector.select(timeout=0.25):
-                        chunk = os.read(key.fd, 65536)
-                        if not chunk:
-                            selector.unregister(key.fd)
-                            continue
+                if pipe.open:
+                    for chunk in pipe.read(0.25):
                         last_output = time.monotonic()
                         log.write(chunk)
                         log.flush()
@@ -157,15 +149,14 @@ class TaskManager:
                     time.sleep(0.25)
                 exited = process.poll() is not None
                 # Done once the command exits and its output is drained (or a child it left keeps the pipe silent).
-                if exited and (not selector.get_map() or time.monotonic() - last_output > 2):
+                if exited and (not pipe.open or time.monotonic() - last_output > 2):
                     break
         except Exception as exc:  # the task's watcher must always settle the task
             task.error = str(exc)
         finally:
-            _signal_group(process, signal.SIGKILL)
+            process_io.kill_tree(process)
             process.wait()
-            selector.close()
-            process.stdout.close()
+            pipe.close()
             log.close()
             runtime.cleanup()
             task.exit_code = process.returncode
@@ -212,13 +203,6 @@ class TaskManager:
                 if remaining <= 0:
                     return "timeout"
                 self._changed.wait(timeout=min(0.5, remaining))
-
-
-def _signal_group(process: subprocess.Popen, sig: int) -> None:
-    try:
-        os.killpg(process.pid, sig)
-    except (ProcessLookupError, PermissionError):
-        pass
 
 
 def task_manager(app=None) -> TaskManager:

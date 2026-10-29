@@ -35,7 +35,8 @@ afterEach(() => {
     window.history.pushState({}, '', '/');
 });
 
-describe('demo paths', () => {
+// Each test re-imports utils (TypeScript, d3, flint) from scratch, which is slow under a full parallel run.
+describe('demo paths', { timeout: 20000 }, () => {
     it('reads the demo id from /demo/<id> and nothing else', async () => {
         const { demoIdFromPath } = (await loadAt('/')).demo;
         expect(demoIdFromPath('/demo/unesco')).toBe('unesco');

@@ -490,7 +490,7 @@ def supplement_missing_block(client, messages, assistant_content,
             *messages,
             {"role": "assistant", "content": assistant_content},
             {"role": "user", "content": prompt},
-        ])
+        ], reasoning_effort="low")
         elapsed = time.time() - t0
         supp_text = supp_resp.choices[0].message.content
 

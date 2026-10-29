@@ -14,12 +14,13 @@ from typing import Any, Callable, Generator
 
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
 
-from . import automation, connections, sessions
+from . import automation, connections, mcp, sessions
 
 _TOOLS: dict[str, Callable[[dict[str, Any], SkillContext], dict[str, Any]]] = {
     "list_connectors": lambda args, ctx: connections.list_connectors(args),
     "read_connector_form": lambda args, ctx: connections.read_connector_form(ctx),
     "list_sessions": sessions.list_sessions,
+    "list_mcp_servers": mcp.list_mcp_servers,
 }
 
 _ACTIONS: dict[str, Callable[[dict[str, Any], SkillContext], Generator[Event, None, str | None]]] = {
@@ -28,6 +29,7 @@ _ACTIONS: dict[str, Callable[[dict[str, Any], SkillContext], Generator[Event, No
     "propose_workflow": automation.propose_workflow,
     "propose_schedule": automation.propose_schedule,
     "propose_session_changes": sessions.propose_session_changes,
+    "propose_mcp_changes": mcp.propose_mcp_changes,
 }
 
 

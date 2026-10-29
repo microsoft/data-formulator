@@ -12,6 +12,7 @@ import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 import SearchIcon from '@mui/icons-material/Search';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import EditNoteIcon from '@mui/icons-material/EditNote';
+import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
 import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { useTranslation } from 'react-i18next';
@@ -89,6 +90,7 @@ const preSx = { m: 0, px: 1, py: 0.75, fontFamily: 'monospace', fontSize: '0.687
 const sectionLabelSx = { px: 1, pt: 0.75, fontSize: '0.6875rem', fontWeight: 600, color: 'text.secondary' } as const;
 
 const iconOf = (call: Call) => isTerminal(call) ? TerminalIcon : isCodeCall(call) ? CodeIcon
+    : call.tool === 'mcp_call' ? ExtensionOutlinedIcon
     : call.tool.startsWith('search') ? SearchIcon
     : ['read_file', 'list_files'].includes(call.tool) ? DescriptionOutlinedIcon
     : ['edit_file', 'create_file', 'move_file', 'delete_items'].includes(call.tool) ? EditNoteIcon : BuildOutlinedIcon;

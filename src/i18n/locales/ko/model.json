@@ -32,8 +32,8 @@
     "smallModelOptional": "소형 모델 (선택 사항)",
     "sameAsModel": "모델과 동일",
     "thinking": "추론",
-    "thinkingHint": "분석 및 워크플로 에이전트에서 사용합니다. 낮음이 가장 빠르고, 중간은 긴 워크플로와 보고서에 적합하며, 높음은 가장 느리고 비용이 가장 많이 듭니다. 간단한 보조 작업에는 항상 가벼운 추론이 사용됩니다.",
-    "thinkingLow": "낮음 (기본값)",
+    "thinkingHint": "분석 및 워크플로 에이전트에 사용됩니다. 모델 기본값은 모델에 맞춰진 설정을 쓰고, 낮음은 더 빠르고 저렴하며, 중간과 높음은 더 오래 생각하고 비용이 더 듭니다. 간단한 보조 작업은 항상 가벼운 사고를 사용합니다.",
+    "thinkingLow": "낮음",
     "thinkingMedium": "중간",
     "thinkingHigh": "높음",
     "apiBase": "기본 URL",
@@ -145,6 +145,7 @@
     "disconnectOpenRouterTitle": "OpenRouter 연결을 해제하시겠습니까?",
     "disconnectOpenRouterMessage": "Data Formulator에 저장된 키를 잊어버립니다. 이 연결을 사용하는 모든 모델은 다시 연결해야 합니다. OpenRouter에서도 키를 회수하려면 OpenRouter 키 목록에서 해당 키를 삭제하세요.",
     "manageOpenRouterKeys": "OpenRouter 키 관리",
-    "configuredMessage": "서버에 구성됨. 연결을 확인하려면 클릭하세요"
+    "configuredMessage": "서버에 구성됨. 연결을 확인하려면 클릭하세요",
+    "thinkingDefault": "모델 기본값"
   }
 }

@@ -21,6 +21,7 @@ import { MiniPage, MiniWindow } from '../components/ArtifactMiniatures';
 import { ThreadDeck, ThreadOutput } from '../components/ThreadDeck';
 import { STARTER_HINTS, StarterHintMock } from './DevStarterHints';
 import { WorkspaceSummary } from './SourceTableShelf';
+import { ToolsChipFace } from '../components/ToolsAccess';
 
 const FILES = [
     'a.py', 'a.ipynb', 'a.sql', 'a.md', 'a.r', 'a.ts', 'a.tsx', 'a.js', 'a.css', 'a.php', 'a.html', 'a.app.jsx',
@@ -168,6 +169,13 @@ const WORKSPACE_CASES: [string, string | null, string[], string[]][] = [
 
 export default function DevPage() {
     return <Box sx={{ p: 2, height: '100vh', overflow: 'auto', boxSizing: 'border-box', bgcolor: 'background.default' }}>
+        <Section title="tools chip · count and mode">
+            <Box sx={{ p: 1, border: 1, borderColor: 'divider', display: 'grid', gridTemplateColumns: 'auto auto auto', columnGap: 3, rowGap: 1.25, alignItems: 'center' }}>
+                {(['off', 'ask', 'auto'] as const).map(mode => <Box key={mode} sx={{ fontSize: 10, color: 'text.disabled', fontFamily: 'var(--df-font-mono, monospace)' }}>{mode}</Box>)}
+                {[0, 1, 2].flatMap(count => (['off', 'ask', 'auto'] as const).map(mode =>
+                    <ToolsChipFace key={`${count}-${mode}`} count={count} mode={mode} />))}
+            </Box>
+        </Section>
         <Section title="workspace · collapsed">
             {WORKSPACE_CASES.map(([label, title, tables, documents]) => <Box key={label} sx={{ width: 240 }}>
                 <Box sx={{ fontSize: 10, mb: 0.5, fontFamily: 'var(--df-font-mono, monospace)', color: 'text.disabled' }}>{label}</Box>

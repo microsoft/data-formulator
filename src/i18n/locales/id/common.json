@@ -562,7 +562,10 @@
     "sourceExtract": "Diekstrak",
     "failedRefreshDerivedTable": "Gagal menyegarkan tabel turunan \"{{table}}\": {{message}}",
     "errorRefreshingDerivedTable": "Kesalahan menyegarkan tabel turunan \"{{table}}\"",
-    "alsoUses": "juga memakai"
+    "alsoUses": "juga memakai",
+    "callingMcp": "Memanggil {{server}} · {{tool}}",
+    "stackedMessages": "{{count}} pesan sebelumnya",
+    "foldMessages": "Lipat {{count}} pesan"
   },
   "dataLoading": {
     "extractingData": "mengekstrak data...",
@@ -665,7 +668,6 @@
     "explorationFailed": "Penjelajahan gagal: {{message}}",
     "agentLost": "Agen tersesat di data.",
     "couldYouClarify": "Dapatkah Anda menjelaskan?",
-    "clarificationTitle": "Pertanyaan",
     "minimizeClarification": "Minimalkan",
     "expandClarification": "Bentangkan",
     "pauseClose": "Tutup (alih fokus)",
@@ -683,7 +685,6 @@
     "cancelClarification": "Batal",
     "invalidClarification": "Agen mengembalikan permintaan klarifikasi yang tidak valid.",
     "invalidExplanation": "Agen mengembalikan penjelasan yang tidak valid.",
-    "explanationTitle": "Penjelasan",
     "explanationFollowupsLabel": "Kemungkinan langkah berikutnya:",
     "delegateTitle": "Agen berikutnya yang disarankan",
     "delegateMinimize": "Minimalkan",
@@ -697,7 +698,9 @@
     "threadExplorePrompt": "Jelajahi pola dan tren menarik dalam data ini",
     "explorationThreadDeriveDescription": "Turunkan dari {{source}} dengan instruksi: {{instruction}}",
     "explorationStepCodeComment": "# Langkah penjelajahan {{step}}",
-    "maxIterationsReached": "Mencapai jumlah maksimum langkah penjelajahan."
+    "maxIterationsReached": "Mencapai jumlah maksimum langkah penjelajahan.",
+    "agentTitle": "Agen",
+    "openInChat": "Buka di obrolan"
   },
   "dataGrid": {
     "loading": "Memuat ...",
@@ -1497,5 +1500,133 @@
     "previewApp": "Pratinjau aplikasi",
     "created": "Aplikasi dibuat: {{title}}",
     "updated": "Aplikasi diperbarui: {{title}}"
+  },
+  "mcp": {
+    "connect": "Hubungkan",
+    "refresh": "Segarkan",
+    "signIn": "Masuk",
+    "signOut": "Keluar",
+    "remove": "Hapus",
+    "save": "Simpan",
+    "turnOn": "Aktifkan",
+    "turnOff": "Nonaktifkan",
+    "serverEnabled": "Gunakan {{name}}",
+    "toolEnabled": "Gunakan {{name}}",
+    "showTools": "Tampilkan alat",
+    "noTools": "Hubungkan untuk menampilkan alat server.",
+    "alwaysAllow": "Selalu izinkan",
+    "toolsChanged": "Alat baru atau yang berubah ditahan sampai Anda mengizinkannya: {{names}}",
+    "approveChanges": "Izinkan",
+    "headerValue": "Nilai {{header}}",
+    "replaceKey": "Ganti kunci",
+    "status": {
+      "connected": "Terhubung · {{count}} alat",
+      "error": "Tidak dapat terhubung",
+      "notConnected": "Belum terhubung",
+      "saved": "{{count}} alat",
+      "signingIn": "Menunggu proses masuk…"
+    },
+    "flag": {
+      "readOnly": "Baca-saja",
+      "destructive": "Dapat mengubah atau menghapus data",
+      "openWorld": "Mengakses internet"
+    },
+    "approvalTitle": "Izinkan {{tool}} dari {{server}}?",
+    "toolLabel": "Alat",
+    "argumentsLabel": "Argumen yang dikirim ke server",
+    "copyArguments": "Salin argumen",
+    "approvalNote": "Server menerima argumen ini; hasilnya dikirim ke penyedia model Anda.",
+    "reject": "Tolak",
+    "allowAlways": "Selalu izinkan alat ini",
+    "runOnce": "Jalankan sekali",
+    "add": {
+      "configLabel": "Konfigurasi server MCP (JSON)",
+      "fillIn": "Isi {{names}}.",
+      "nothingAdded": "Tidak ada server yang ditambahkan.",
+      "localWarning": "Server lokal berjalan sebagai Anda, di luar sandbox apa pun, dengan akses ke file dan jaringan Anda. Tambahkan hanya server yang Anda percayai.",
+      "addButton": "Tambah dan hubungkan",
+      "oneServer": "Tambahkan satu server setiap kali.",
+      "cancel": "Batal"
+    },
+    "form": {
+      "missing": "{{name}} tidak lagi ada di server MCP Anda.",
+      "turnOnServer": "Aktifkan {{name}}",
+      "turnOffServer": "Nonaktifkan {{name}}",
+      "turnOnTools": "{{name}}: aktifkan {{tools}}",
+      "turnOffTools": "{{name}}: nonaktifkan {{tools}}",
+      "modeChange": "Persetujuan alat: {{from}} → {{to}}",
+      "apply": "Terapkan perubahan",
+      "suggested": "Disarankan oleh agen",
+      "done": "Selesai. Kelola di Alat.",
+      "waiting": "Menunggu tinjauan Anda di Alat.",
+      "openTools": "Buka Alat"
+    },
+    "help": {
+      "toggle": "Cara menambahkan server",
+      "intro": "Tempel konfigurasi MCP satu server dari dokumentasinya, seperti contoh di bawah.",
+      "remote": {
+        "title": "Server jarak jauh",
+        "note": "Server yang memerlukan proses masuk membuka halaman penyedia saat Anda menghubungkan."
+      },
+      "key": {
+        "title": "Dengan kunci API",
+        "note": "Ganti YOUR_KEY dengan kunci Anda. Kunci disimpan di penyimpanan kredensial, bukan di file."
+      },
+      "local": {
+        "title": "Perintah lokal",
+        "note": "Berjalan di komputer ini, di luar sandbox. Tambahkan hanya server yang Anda percayai."
+      }
+    },
+    "removeNamed": "Hapus {{name}}",
+    "pack": {
+      "builtIn": "Toolkit Data Formulator",
+      "add": "Tambah",
+      "added": "Ditambahkan",
+      "research": {
+        "name": "Riset",
+        "description": "Cari di arXiv, ikuti makalah baru di suatu bidang, buat grafik tren publikasi, dan baca teks lengkap.",
+        "email": "Email kontak (opsional)",
+        "emailHint": "Dikirim ke arXiv bersama setiap permintaan, seperti yang diminta arXiv dari klien otomatis."
+      }
+    }
+  },
+  "tools": {
+    "chipDetails": "Alat yang dapat digunakan agen: terminal dan server MCP",
+    "title": "Alat",
+    "intro": "Alat memungkinkan agen menjangkau di luar ruang kerja Anda: menjalankan perintah di komputer ini, atau memanggil server MCP untuk data dan dokumen.",
+    "blocked": "Kebijakan penerapan menonaktifkan koneksi pengguna dan alat.",
+    "localOnly": "Alat tersedia di aplikasi lokal pengguna tunggal.",
+    "modeLabel": "Persetujuan",
+    "mode": {
+      "off": "Mati",
+      "ask": "Tanya setiap kali",
+      "auto": "Otomatis jika aman"
+    },
+    "modeHint": {
+      "off": "Agen tidak menggunakan alat apa pun.",
+      "ask": "Setiap perintah dan panggilan alat bertanya dulu, kecuali alat yang selalu Anda izinkan.",
+      "auto": "Perintah dalam sandbox dan alat MCP baca-saja berjalan tanpa bertanya; lainnya bertanya dulu."
+    },
+    "locked": "Diatur oleh variabel lingkungan server DF_TERMINAL_MODE.",
+    "close": "Tutup",
+    "terminal": {
+      "name": "Terminal",
+      "caption": "Jalankan perintah di komputer ini dengan login CLI Anda",
+      "off": "Mati",
+      "sandboxed": "Dalam sandbox",
+      "unsandboxed": "Tidak ada sandbox terpasang",
+      "details": "Detail terminal",
+      "use": "Gunakan terminal"
+    },
+    "count_one": "{{count}} alat",
+    "count_other": "{{count}} alat",
+    "chipLabel": "Alat: {{count}} aktif, {{mode}}",
+    "add": {
+      "packs": "Toolkit Data Formulator",
+      "custom": "Server MCP kustom",
+      "label": "Tambah",
+      "collapse": "Ciutkan"
+    },
+    "addTool": "+ Tambah alat"
   }
 }

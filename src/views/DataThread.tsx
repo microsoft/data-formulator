@@ -35,11 +35,13 @@ import { classifyInputSourceTransition, shouldShowInputSourceTransition } from '
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
 import { ScrollFadeEdge, useScrollFade } from '../components/ScrollFade';
-import { THREAD_SEGMENT_BUDGET, wrapThreadBlocks } from './threadLayout';
+import { CHAT_RUN_MIN_ENTRIES, THREAD_SEGMENT_BUDGET, weighThreadBlocks, wrapThreadBlocks } from './threadLayout';
 import { loadTable } from '../app/tableThunks';
 import { AppDispatch } from '../app/store';
 import { WorkflowProgress } from './WorkflowPanel';
 import { formArtifactStatus } from '../app/setupForms';
+import { requestToolsDialog } from '../app/toolsSettings';
+import { mcpFormDone } from '../components/McpProposal';
 import { WorkflowGears } from '../components/FunComponents';
 import { createExternalTableReference, externalReferenceTitle, loadsAsConnectorReference, isSemanticConnectorTable, deleteWorkspaceFile, importConnectorFile, listWorkspaceFiles, onWorkspaceFilesChanged, type WorkspaceFile } from '../app/workspaceService';
 import dfLogo from '../assets/df-logo.svg';
@@ -70,6 +72,8 @@ import AddIcon from '@mui/icons-material/Add';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardDoubleArrowDownIcon from '@mui/icons-material/KeyboardDoubleArrowDown';
+import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
+import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
 import CheckIcon from '@mui/icons-material/Check';
 import KeyboardDoubleArrowUpIcon from '@mui/icons-material/KeyboardDoubleArrowUp';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -189,8 +193,6 @@ const ToolActivityRow: React.FC<{ steps: ToolStep[]; label: string; active?: boo
     </Box>;
 };
 
-/** A completed plan's gutter mark; keeps its color when the timeline recolors gutter icons. */
-const PlanCompletedIcon: FC<{ sx?: unknown }> = () => <CheckCircleOutlineIcon sx={{ width: 14, height: 14, color: 'success.main' }} />;
 
 /** The active step of a run's progress; shimmers while the run works on it. */
 export const ThinkingStepsBanner = (steps: (ProgressStep | string)[], sx?: SxProps, active: boolean = true) => {
@@ -624,6 +626,13 @@ const ThreadResponseCard: FC<ThreadResponseCardProps> = ({
     );
 };
 
+/** How many of a long stretch of chat's latest entries stay out of its folded stack. */
+const CHAT_STACK_TAIL = 3;
+
+const settleStack = keyframes`
+    from { transform: translateY(-6px) scaleY(1.15); opacity: 0; }
+    to { transform: none; opacity: 1; }`;
+
 const unfoldRun = keyframes`
     from { transform: translateY(-10px); opacity: 0; }
     to { transform: none; opacity: 1; }`;
@@ -699,6 +708,18 @@ let SingleThreadGroupView: FC<{
     const dispatch = useDispatch();
     // Conversation chains keyed by their first message; folded until opened.
     const [deletingFiles, setDeletingFiles] = useState<Set<string>>(new Set());
+    // Entries of folded stretches of chat the user opened; a stack holding any of them stays open (even when
+    // focusing one of its entries splits it). Folded again on reload.
+    const [openedChat, setOpenedChat] = useState<Set<string>>(new Set());
+    // The stack the user just opened or folded, so only that change animates.
+    const [stackMotion, setStackMotion] = useState<{ keys: Set<string>; opening: boolean }>();
+    // The opened stack whose fold link is hovered: its entries tint to show what folding hides.
+    const [foldPreview, setFoldPreview] = useState<string>();
+    useEffect(() => {
+        if (!stackMotion) return;
+        const timer = setTimeout(() => setStackMotion(undefined), 700);
+        return () => clearTimeout(timer);
+    }, [stackMotion]);
     const deleteFile = async (path: string) => {
         if (deletingFiles.has(path)) return;
         setDeletingFiles(current => new Set(current).add(path));
@@ -1001,9 +1022,10 @@ let SingleThreadGroupView: FC<{
         const workflow = turn.workflow;
         // An open tool call is the selection; the focused message gives way to it.
         const isFocused = open ? open.selected : !toolSelection && focusedId?.type === 'text' && focusedId.textId === turn.id;
-        const openTurn = open?.onSelect ?? (() => {
-            dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }));
-        });
+        const openTurn = open?.onSelect ?? (turn.form?.kind === 'mcp'
+            // MCP setup lives in the Tools dialog: reopen the proposal there (or just the dialog once it is done).
+            ? () => requestToolsDialog(turn.form?.kind === 'mcp' && !mcpFormDone(turn.form.mcp) ? turn.id : undefined)
+            : () => { dispatch(dfActions.setFocused({ type: 'text', textId: turn.id })); });
         const rowHL = highlighted || isFocused;
         const formStatus = turn.form ? formArtifactStatus(turn.form) : undefined;
         const preview = (formStatus || turn.content || '')
@@ -1060,13 +1082,14 @@ let SingleThreadGroupView: FC<{
     /** An agent message: the step before a table, a run of tool calls, settled thinking, or a response. */
     const pushAgentMessage = (turn: TextTurn, highlighted: boolean, nextNodeId: string | undefined) => {
         pushAgentMessageContent(turn, highlighted, nextNodeId);
-        // A settled plan follows its message — after the final answer, it is the run's completion
-        // record. While the run is live it is drawn at the run's open end instead (see pushDraft).
-        if (turn.plan?.length && !supersededPlanTurnIds.has(turn.id) && turn.id !== livePlanTurnId) {
-            const completed = turn.plan.every(item => item.status !== 'open');
+        // A settled plan with steps left open follows its message: it records what the run didn't get to.
+        // A completed one leaves the thread (the conversation view keeps it); its message and results say
+        // what was done. While the run is live the plan is drawn at the run's open end (see pushDraft).
+        if (turn.plan?.length && !supersededPlanTurnIds.has(turn.id) && turn.id !== livePlanTurnId
+            && turn.plan.some(item => item.status === 'open')) {
             timelineItems.push({
                 key: `textturn-${turn.id}-plan`, type: 'trigger', highlighted: false,
-                gutterIcon: completed ? <PlanCompletedIcon /> : <ChecklistIcon sx={{ width: 14, height: 14 }} />,
+                gutterIcon: <ChecklistIcon sx={{ width: 14, height: 14 }} />,
                 element: <RunPlanChecklist items={turn.plan} title={turn.planTitle} defaultExpanded={turn.id === currentPlanTurnId} />,
             });
         }
@@ -1700,6 +1723,48 @@ let SingleThreadGroupView: FC<{
     };
 
 
+    // A folded stretch of chat: a small stack of cards on the line; opening it lays the entries back out.
+    const renderChatStack = (stack: { key: string; indices: number[] }, onChain: boolean) => {
+        const paper = theme.palette.background.paper;
+        const edge = theme.palette.divider;
+        const label = t('dataThread.stackedMessages', { defaultValue: '{{count}} earlier messages', count: stack.indices.length });
+        return <Box key={`stack-${stack.key}`} data-thread-chat-stack={stack.key} sx={{ display: 'flex', minWidth: 0,
+            ...(moving(stack, false) ? { '& [data-stack-card]': { animation: `${settleStack} 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both`,
+                transformOrigin: 'top' }, ...noMotion } : {}) }}>
+            <Box sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+                <Box sx={{ borderLeft: rail(onChain) }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0, pt: '4px', pb: '10px', pl: TIMELINE_GAP, pr: CARD_CONTENT_PR }}>
+                <ButtonBase data-stack-card onClick={() => toggleStack(stack)} aria-expanded={false} aria-label={label}
+                    sx={{ width: '100%', justifyContent: 'flex-start', gap: 0.5, px: 1, py: 0.5, borderRadius: '6px',
+                        border: `1px solid ${edge}`, bgcolor: paper, color: 'text.secondary', fontSize: textVar.xs,
+                        // Two sheets peeking out underneath.
+                        boxShadow: `0 3px 0 -1px ${paper}, 0 3px 0 0 ${edge}, 0 6px 0 -2px ${paper}, 0 6px 0 -1px ${edge}`,
+                        transition: transition.fast,
+                        '&:hover': { color: 'primary.main', borderColor: alpha(theme.palette.primary.main, 0.5) },
+                        '&.Mui-focusVisible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1 } }}>
+                    <UnfoldMoreIcon sx={{ fontSize: 14 }} />
+                    <Box component="span">{label}</Box>
+                </ButtonBase>
+            </Box>
+        </Box>;
+    };
+    const renderStackFold = (stack: { key: string; indices: number[] }, onChain: boolean) =>
+        <Box key={`stack-fold-${stack.key}`} sx={{ display: 'flex', minWidth: 0 }}>
+            <Box sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+                <Box sx={{ borderLeft: rail(onChain) }} />
+            </Box>
+            <ButtonBase onClick={() => { setFoldPreview(undefined); toggleStack(stack); }} aria-expanded
+                onMouseEnter={() => setFoldPreview(stack.key)} onMouseLeave={() => setFoldPreview(undefined)}
+                onFocus={() => setFoldPreview(stack.key)} onBlur={() => setFoldPreview(undefined)}
+                sx={{ ml: TIMELINE_GAP, my: '2px', gap: 0.5, px: 0.5, borderRadius: '4px', color: 'text.secondary', fontSize: textVar.xxs,
+                    '&:hover': { color: 'primary.main' },
+                    '&.Mui-focusVisible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1 } }}>
+                <UnfoldLessIcon sx={{ fontSize: 14 }} />
+                {t('dataThread.foldMessages', { defaultValue: 'Fold {{count}} messages', count: stack.indices.length })}
+            </ButtonBase>
+        </Box>;
+
     const threadActive = focusedId?.type === 'conversation' && focusedId.tableId === conversationTargetId;
     const showItemFocus = focusedId?.type !== 'conversation';
     const flowBlocks: { key: string; indices: number[]; exchangeId?: string; outputNodeId?: string }[] = [];
@@ -1734,6 +1799,65 @@ let SingleThreadGroupView: FC<{
     const runRange: [number, number] = [runAt(segment?.start, 0), runAt(segment?.end, flowRuns.length)];
     const partial = runRange[0] > 0 || runRange[1] < flowRuns.length;
     const rangeBlocks = flowRuns.slice(runRange[0], runRange[1]).flatMap(run => run.blocks);
+    // A long stretch of chat (CHAT_RUN_MIN_ENTRIES or more) between results folds into a stack: only its latest exchange (at most
+    // CHAT_STACK_TAIL entries, from the user message that led to what follows) stays, and so do focused,
+    // running and waiting entries, which split the stack.
+    const stackOf = new Map<number, { key: string; indices: number[] }>();
+    if (!historyCollapsed) {
+        const isChat = (index: number) => timelineItems[index].key.startsWith('textturn-');
+        const pinned = (index: number) => {
+            const item = timelineItems[index];
+            return !!item.live || !!item.isRunning || (!!focusedTimelineKey
+                && (item.key === focusedTimelineKey || !!item.memberKeys?.includes(focusedTimelineKey)));
+        };
+        let stretch: number[] = [];
+        const fold = (openEnd = false) => {
+            // Only a long stretch folds (as long as one that counts toward breaking a thread).
+            if (stretch.length < CHAT_RUN_MIN_ENTRIES) { stretch = []; return; }
+            let group: number[] = [];
+            const close = () => {
+                if (group.length >= 2) {
+                    const stack = { key: timelineItems[group[0]].key, indices: group };
+                    group.forEach(index => stackOf.set(index, stack));
+                }
+                group = [];
+            };
+            // What stays after the stack starts with a user message: an agent reply left over from an earlier
+            // exchange folds into the stack too.
+            let tailStart = Math.max(0, stretch.length - CHAT_STACK_TAIL);
+            const nextPrompt = stretch.findIndex((index, position) => position >= tailStart
+                && timelineItems[index].key.startsWith('textturn-prompt-'));
+            if (nextPrompt >= 0) tailStart = nextPrompt;
+            // Where the conversation is still going (the thread's open end), its last two requests stay.
+            if (openEnd) {
+                const prompts = stretch.flatMap((index, position) => timelineItems[index].key.startsWith('textturn-prompt-') ? [position] : []);
+                if (prompts.length >= 2) tailStart = Math.min(tailStart, prompts[prompts.length - 2]);
+            }
+            for (const index of stretch.slice(0, tailStart)) {
+                if (pinned(index)) close(); else group.push(index);
+            }
+            close();
+            stretch = [];
+        };
+        for (const index of rangeBlocks.flatMap(block => block.indices)) {
+            if (isChat(index)) stretch.push(index); else fold();
+        }
+        fold(runRange[1] >= flowRuns.length);
+    }
+    const stackKeys = (stack: { indices: number[] }) => stack.indices.map(index => timelineItems[index].key);
+    const stackOpen = (stack: { indices: number[] }) => stackKeys(stack).some(key => openedChat.has(key));
+    const toggleStack = (stack: { indices: number[] }) => {
+        const opening = !stackOpen(stack);
+        setStackMotion({ keys: new Set(stackKeys(stack)), opening });
+        setOpenedChat(current => {
+            const next = new Set(current);
+            for (const key of stackKeys(stack)) { if (opening) next.add(key); else next.delete(key); }
+            return next;
+        });
+    };
+    const moving = (stack: { indices: number[] }, opening: boolean) =>
+        stackMotion?.opening === opening && stackKeys(stack).some(key => stackMotion.keys.has(key));
+    const noMotion = { '@media (prefers-reduced-motion: reduce)': { animation: 'none' } };
     // A collapsed part still at work shows that run: the request being worked on and what it is doing, or
     // what it waits for. Only the thread's open end can wait on the user.
     const liveTail = (() => {
@@ -1907,10 +2031,28 @@ let SingleThreadGroupView: FC<{
                     sx={{ breakInside: 'avoid', minWidth: 0 }}>
                     {block.indices.map(index => {
                         const item = timelineItems[index];
+                        const stack = stackOf.get(index);
+                        const onChain = threadActive || (showItemFocus && item.highlighted);
+                        if (stack && !stackOpen(stack)) {
+                            return index === stack.indices[0] ? renderChatStack(stack, onChain) : null;
+                        }
                         // With its conversation open, the whole thread's line is highlighted.
-                        return renderTimelineItem(threadActive ? { ...item, highlighted: true } : showItemFocus ? item : { ...item, highlighted: false },
+                        const row = renderTimelineItem(threadActive ? { ...item, highlighted: true } : showItemFocus ? item : { ...item, highlighted: false },
                             index, index === timelineItems.length - 1,
                             threadActive || (showItemFocus && (timelineItems[index + 1]?.highlighted ?? false)));
+                        if (!stack) return row;
+                        // An opened stack's entries: they drop into place one after another when just opened,
+                        // and tint while its fold link is hovered.
+                        const shown = <Box key={`stack-entry-${item.key}`} data-stack-entry={stack.key} sx={{ minWidth: 0, borderRadius: '6px',
+                            transition: transition.fast,
+                            bgcolor: foldPreview === stack.key ? alpha(theme.palette.primary.main, 0.07) : 'transparent',
+                            ...(moving(stack, true) ? { ...noMotion,
+                                animation: `${unfoldRun} 240ms cubic-bezier(0.2, 0.8, 0.2, 1) ${Math.min(stack.indices.indexOf(index), 8) * 30}ms both` } : {}) }}>
+                            {row}</Box>;
+                        // The link that folds them again leads them.
+                        return index === stack.indices[0]
+                            ? <React.Fragment key={`stack-open-${stack.key}`}>{renderStackFold(stack, onChain)}{shown}</React.Fragment>
+                            : shown;
                     })}
                 </Box>)}
             </Box>)}
@@ -2697,7 +2839,11 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         // columns like threads do. Breaks once made are kept (sealed), so later turns or edits move none.
         const blocks = threadBlocksOf(thread);
         const sealed = (threadBreaks[expansionKey] || []).map(id => blocks.findIndex(block => block.start === id));
-        const starts = wrapThreadBlocks(blocks.map(block => threadOutputsOf(block.nodeIds).length), THREAD_SEGMENT_BUDGET, sealed);
+        // A long stretch of conversation between results counts as one artifact (weighThreadBlocks).
+        const starts = wrapThreadBlocks(weighThreadBlocks(blocks.map(block => block.nodeIds.map(id => {
+            const made = threadOutputsOf([id]).length;
+            return made || (threadGraph.kindOf(id) === 'turn' ? 'chat' as const : 'skip' as const);
+        }))), THREAD_SEGMENT_BUDGET, sealed);
         const breaks = starts.slice(1).map(start => blocks[start].start!);
         if (breaks.join() !== (threadBreaks[expansionKey] || []).join()) pendingBreaksRef.current[expansionKey] = breaks;
         if (starts.length === 1) { allThreadEntries.push(entry); return; }

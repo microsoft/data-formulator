@@ -67,14 +67,31 @@ def user_connectors_disabled() -> bool:
 def terminal_available() -> bool:
     from data_formulator.auth.identity import is_local_mode
 
-    return is_local_mode() and sys.platform in {'darwin', 'linux'} and not user_connectors_disabled()
+    return is_local_mode() and sys.platform in {'darwin', 'linux', 'win32'} and not user_connectors_disabled()
 
 
-def terminal_mode() -> str:
-    if not terminal_available():
+def tools_mode() -> str:
+    """The approval mode the agent's local tools share (the terminal and the user's MCP servers): off, ask or auto.
+
+    Stored as ``terminal_mode`` (and locked by ``DF_TERMINAL_MODE``), where it lived before tools were unified.
+    """
+    from data_formulator.auth.identity import is_local_mode
+
+    if not is_local_mode() or user_connectors_disabled():
         return 'off'
     mode = os.environ.get('DF_TERMINAL_MODE', read_configuration()['overrides'].get('terminal_mode', 'ask'))
     return mode if mode in ('off', 'ask', 'auto') else 'off'
+
+
+def terminal_enabled() -> bool:
+    """The terminal's own switch in the tools settings; the shared mode still applies when it is on."""
+    return read_configuration()['overrides'].get('terminal_enabled', True) is not False
+
+
+def terminal_mode() -> str:
+    if not terminal_available() or not terminal_enabled():
+        return 'off'
+    return tools_mode()
 
 
 def user_models_locked() -> bool:
@@ -92,7 +109,7 @@ def resource_enabled(section: str, identifier: str) -> bool:
 
 
 def validate_overrides(overrides: dict) -> None:
-    if not isinstance(overrides, dict) or set(overrides) - {'models', 'connectors', 'workflows', 'default_model', 'limits', 'allowed_api_bases', 'connections', 'disable_user_connectors', 'disable_user_models', 'app_name', 'app_tagline', 'terminal_mode', 'sandbox'}:
+    if not isinstance(overrides, dict) or set(overrides) - {'models', 'connectors', 'workflows', 'default_model', 'limits', 'allowed_api_bases', 'connections', 'disable_user_connectors', 'disable_user_models', 'app_name', 'app_tagline', 'terminal_mode', 'terminal_enabled', 'sandbox'}:
         raise ValueError('Unknown configuration fields.')
     if 'sandbox' in overrides:
         sandbox = overrides['sandbox']
@@ -114,6 +131,8 @@ def validate_overrides(overrides: dict) -> None:
                 raise ValueError('Sandbox write paths cannot cover the home, filesystem root, or application configuration.')
     if 'terminal_mode' in overrides and overrides['terminal_mode'] not in ('off', 'ask', 'auto'):
         raise ValueError('Terminal mode must be off, ask, or auto.')
+    if 'terminal_enabled' in overrides and not isinstance(overrides['terminal_enabled'], bool):
+        raise ValueError('terminal_enabled must be true or false.')
     for name, maximum in (('app_name', 80), ('app_tagline', 300)):
         if name in overrides and (not isinstance(overrides[name], str) or len(overrides[name]) > maximum):
             raise ValueError(f'{name} must be text of at most {maximum} characters.')

@@ -276,7 +276,8 @@ export interface ToolCall {
     id: string;
     tool: string;
     args: Record<string, unknown>;
-    status: 'running' | 'completed' | 'failed' | 'interrupted' | 'unknown';
+    // MCP calls can wait for the user's approval and be rejected (see McpServers.tsx).
+    status: 'awaiting_approval' | 'running' | 'completed' | 'failed' | 'rejected' | 'interrupted' | 'unknown';
     output?: string;
     error?: string;
     createdAt?: number;
@@ -528,8 +529,36 @@ export interface WorkflowFormArtifact extends SetupFormBase {
     };
 }
 
+/** A server the agent proposed to add; the user reviews it, types any secrets, and adds it. */
+export interface McpServerProposal {
+    name: string;
+    transport: 'http' | 'sse' | 'stdio';
+    url?: string;
+    auth?: { type: 'none' | 'header' | 'oauth'; header?: string; client_id?: string; scope?: string };
+    command?: string;
+    args?: string[];
+    cwd?: string;
+    /** Environment variables the local server needs; the user types their values. */
+    envNames?: string[];
+    reason?: string;
+    /** The server's ID once the user added it. */
+    addedId?: string;
+}
+
+export interface McpFormArtifact extends SetupFormBase {
+    kind: 'mcp';
+    mcp: {
+        add: McpServerProposal[];
+        /** Switches for existing servers and tools; applied together with the mode. */
+        changes: { serverId: string; serverName: string; enabled?: boolean; tools?: { name: string; enabled: boolean }[]; reason?: string }[];
+        mode?: 'off' | 'ask' | 'auto';
+        currentMode?: 'off' | 'ask' | 'auto';
+        applied?: boolean;
+    };
+}
+
 /** Canvas-owning form artifacts. Add future setup form kinds to this union. */
-export type FormArtifact = ConnectorFormArtifact | ScheduleFormArtifact | SessionsFormArtifact | WorkflowFormArtifact;
+export type FormArtifact = ConnectorFormArtifact | ScheduleFormArtifact | SessionsFormArtifact | WorkflowFormArtifact | McpFormArtifact;
 
 // Data source types for tracking where data originated
 export type DataSourceType = 'paste' | 'file' | 'url' | 'stream' | 'database' | 'example' | 'extract';

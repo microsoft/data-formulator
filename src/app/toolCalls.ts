@@ -7,7 +7,9 @@ export const isCodeCall = (call: ToolCall): boolean => CODE_TOOLS.has(call.tool)
 
 /** A code call as code views show it. */
 export const asCodeExecution = (call: ToolCall): CodeExecution => ({
-    id: call.id, tool: call.tool, createdAt: call.createdAt, status: call.status, output: call.output, error: call.error,
+    id: call.id, tool: call.tool, createdAt: call.createdAt, output: call.output, error: call.error,
+    // Only MCP calls wait for approval or are rejected; code calls never do.
+    status: call.status === 'awaiting_approval' ? 'running' : call.status === 'rejected' ? 'failed' : call.status,
     code: typeof call.args?.code === 'string' ? call.args.code : '',
     purpose: typeof call.args?.purpose === 'string' ? call.args.purpose : '',
 });

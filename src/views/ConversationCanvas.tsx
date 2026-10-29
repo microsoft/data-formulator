@@ -55,7 +55,11 @@ import { chartTitleFits } from '../components/ComponentType';
  * the items they produced inline. Without `nodeIds`, shows the one message and
  * the replies that branch from it.
  */
-export const ConversationCanvas = ({ textTurnId, nodeIds, label }: { textTurnId: string; nodeIds?: string[]; label?: string }) => {
+export const ConversationCanvas = ({ textTurnId, nodeIds, label, anchorId }: {
+    textTurnId: string; nodeIds?: string[]; label?: string;
+    /** A message to bring into view when the conversation opens. */
+    anchorId?: string;
+}) => {
     const dispatch = useDispatch();
     const theme = useTheme();
     const { t } = useTranslation();
@@ -94,7 +98,7 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label }: { textTurnId:
 
     useEffect(() => {
         selectedRef.current?.scrollIntoView?.({ block: 'start' });
-    }, [textTurnId]);
+    }, [textTurnId, anchorId]);
 
     const artifactButtonSx = { textTransform: 'none', fontSize: '0.8125rem', justifyContent: 'flex-start' } as const;
     // A soft raised surface rather than an outlined box.
@@ -251,7 +255,7 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label }: { textTurnId:
                         || (turn.textKind === 'clarify' && !turn.answered);
                     return <React.Fragment key={turn.id}>
                         {turn.prompt && userMessage(turn.prompt, `${turn.id}-prompt`, turn.id === firstPromptId, turn.references)}
-                        <Box ref={turn.id === textTurnId ? selectedRef : undefined} data-conversation-entry={turn.id} sx={{
+                        <Box ref={turn.id === (anchorId ?? textTurnId) ? selectedRef : undefined} data-conversation-entry={turn.id} sx={{
                             scrollMarginTop: 12,
                         }}>
                             {hasAgentPart && agentMessage(<>

@@ -1274,6 +1274,24 @@ describe('Analyst landing attachment handoff', () => {
         },
     );
 
+    it('keeps the report in view when a summary after it is closed', () => {
+        const { store } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.addChart({ id: 'orders-chart', chartType: 'Bar Chart', tableRef: 'orders', source: 'user', encodingMap: {} } as any));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'ask', displayId: 'ask', textKind: 'explain', content: '',
+                prompt: 'Write a brief', parentNodeId: 'orders', createdAt: 2 }));
+            store.dispatch(dfActions.saveGeneratedReport({ id: 'brief', title: 'Brief', content: '# Brief', parentNodeId: 'ask',
+                selectedChartIds: [], createdAt: 3, status: 'completed' } as any));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'summary', displayId: 'summary', textKind: 'explain',
+                content: 'The brief is ready.', parentNodeId: 'brief', createdAt: 4 }));
+            store.dispatch(dfActions.setFocused({ type: 'text', textId: 'summary' }));
+        });
+        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'report', reportId: 'brief' });
+        expect(screen.getByTestId('explanation-panel')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Close explanation' }));
+        expect(store.getState().focusedId).toEqual({ type: 'report', reportId: 'brief' });
+    });
+
     it.each([undefined, 'long_response'])('reserves the document canvas for explicit long responses: %s', async (presentation) => {
         const content = presentation ? 'An explicitly expanded answer.' : 'A normal answer. '.repeat(200);
         vi.mocked(streamRequest).mockImplementationOnce(async function* () {

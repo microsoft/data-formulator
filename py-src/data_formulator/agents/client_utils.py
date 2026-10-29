@@ -293,6 +293,13 @@ def _salvage_tool_calls_from_content(response, tools):
     return response
 
 
+def _set_reasoning(params: dict, effort: str | None) -> None:
+    """Send ``effort``; ``None`` sends none, so the model reasons at its own default."""
+    if effort is None:
+        params.pop("reasoning_effort", None)
+    else:
+        params["reasoning_effort"] = effort
+
 class Client(object):
     """
     Returns a LiteLLM client configured for the specified endpoint and model.
@@ -658,7 +665,7 @@ class Client(object):
             return _synthesize_stream(resp)
         return resp
 
-    def get_completion(self, messages, stream=False, reasoning_effort="low",
+    def get_completion(self, messages, stream=False, reasoning_effort=None,
                        **kwargs):
         """Send a chat completion request via LiteLLM.
 
@@ -668,7 +675,7 @@ class Client(object):
         ignored rather than causing errors.
         """
         params = self.params.copy()
-        params["reasoning_effort"] = reasoning_effort
+        _set_reasoning(params, reasoning_effort)
         params.update(kwargs)
         if self.endpoint not in _STRUCTURED_OUTPUT_ENDPOINTS:
             params.pop("response_format", None)
@@ -688,14 +695,14 @@ class Client(object):
             raise
 
     def get_completion_with_tools(self, messages, tools, stream=False,
-                                  reasoning_effort="low", **kwargs):
+                                  reasoning_effort=None, **kwargs):
         """Send a chat completion request with tool definitions via LiteLLM.
 
         Same as ``get_completion`` but accepts ``tools`` (and optional
         ``tool_choice``, ``parallel_tool_calls``, etc. via ``**kwargs``).
         """
         params = self.params.copy()
-        params["reasoning_effort"] = reasoning_effort
+        _set_reasoning(params, reasoning_effort)
         try:
             return self._dispatch(messages=messages, stream=stream,
                                   params=params, tools=tools, extra=kwargs)

@@ -562,7 +562,10 @@
     "sourceExtract": "Extrahiert",
     "failedRefreshDerivedTable": "Abgeleitete Tabelle \"{{table}}\" konnte nicht aktualisiert werden: {{message}}",
     "errorRefreshingDerivedTable": "Fehler beim Aktualisieren der abgeleiteten Tabelle \"{{table}}\"",
-    "alsoUses": "verwendet auch"
+    "alsoUses": "verwendet auch",
+    "callingMcp": "{{server}} · {{tool}} wird aufgerufen",
+    "stackedMessages": "{{count}} frühere Nachrichten",
+    "foldMessages": "{{count}} Nachrichten einklappen"
   },
   "dataLoading": {
     "extractingData": "Daten werden extrahiert...",
@@ -665,7 +668,6 @@
     "explorationFailed": "Erkundung fehlgeschlagen: {{message}}",
     "agentLost": "Der Agent hat sich in den Daten verlaufen.",
     "couldYouClarify": "Könnten Sie das klären?",
-    "clarificationTitle": "Frage",
     "minimizeClarification": "Minimieren",
     "expandClarification": "Erweitern",
     "pauseClose": "Schließen (Fokus wechseln)",
@@ -683,7 +685,6 @@
     "cancelClarification": "Abbrechen",
     "invalidClarification": "Der Agent hat eine ungültige Klärungsanfrage zurückgegeben.",
     "invalidExplanation": "Der Agent hat eine ungültige Erklärung zurückgegeben.",
-    "explanationTitle": "Erklärung",
     "explanationFollowupsLabel": "Mögliche nächste Schritte:",
     "delegateTitle": "Vorgeschlagener nächster Agent",
     "delegateMinimize": "Minimieren",
@@ -697,7 +698,9 @@
     "threadExplorePrompt": "Interessante Muster und Trends in diesen Daten erkunden",
     "explorationThreadDeriveDescription": "Ableiten von {{source}} mit Anweisung: {{instruction}}",
     "explorationStepCodeComment": "# Erkundungsschritt {{step}}",
-    "maxIterationsReached": "Maximale Anzahl an Erkundungsschritten erreicht."
+    "maxIterationsReached": "Maximale Anzahl an Erkundungsschritten erreicht.",
+    "agentTitle": "Agent",
+    "openInChat": "Im Chat öffnen"
   },
   "dataGrid": {
     "loading": "Wird geladen ...",
@@ -1497,5 +1500,133 @@
     "previewApp": "App-Vorschau",
     "created": "App erstellt: {{title}}",
     "updated": "App aktualisiert: {{title}}"
+  },
+  "mcp": {
+    "connect": "Verbinden",
+    "refresh": "Aktualisieren",
+    "signIn": "Anmelden",
+    "signOut": "Abmelden",
+    "remove": "Entfernen",
+    "save": "Speichern",
+    "turnOn": "Einschalten",
+    "turnOff": "Ausschalten",
+    "serverEnabled": "{{name}} verwenden",
+    "toolEnabled": "{{name}} verwenden",
+    "showTools": "Tools anzeigen",
+    "noTools": "Verbinden Sie sich, um die Tools des Servers aufzulisten.",
+    "alwaysAllow": "Immer erlauben",
+    "toolsChanged": "Neue oder geänderte Tools bleiben gesperrt, bis Sie sie erlauben: {{names}}",
+    "approveChanges": "Erlauben",
+    "headerValue": "Wert für {{header}}",
+    "replaceKey": "Schlüssel ersetzen",
+    "status": {
+      "connected": "Verbunden · {{count}} Tools",
+      "error": "Verbindung fehlgeschlagen",
+      "notConnected": "Noch nicht verbunden",
+      "saved": "{{count}} Tools",
+      "signingIn": "Warte auf Anmeldung…"
+    },
+    "flag": {
+      "readOnly": "Schreibgeschützt",
+      "destructive": "Kann Daten ändern oder löschen",
+      "openWorld": "Greift auf das Internet zu"
+    },
+    "approvalTitle": "{{tool}} von {{server}} erlauben?",
+    "toolLabel": "Tool",
+    "argumentsLabel": "An den Server gesendete Argumente",
+    "copyArguments": "Argumente kopieren",
+    "approvalNote": "Der Server erhält diese Argumente; seine Antwort geht an Ihren Modellanbieter.",
+    "reject": "Ablehnen",
+    "allowAlways": "Dieses Tool immer erlauben",
+    "runOnce": "Einmal ausführen",
+    "add": {
+      "configLabel": "MCP-Serverkonfiguration (JSON)",
+      "fillIn": "Bitte {{names}} ausfüllen.",
+      "nothingAdded": "Es wurden keine Server hinzugefügt.",
+      "localWarning": "Ein lokaler Server läuft als Sie, außerhalb jeder Sandbox, mit Zugriff auf Ihre Dateien und Ihr Netzwerk. Fügen Sie nur vertrauenswürdige Server hinzu.",
+      "addButton": "Hinzufügen und verbinden",
+      "oneServer": "Fügen Sie jeweils einen Server hinzu.",
+      "cancel": "Abbrechen"
+    },
+    "form": {
+      "missing": "{{name}} ist nicht mehr unter Ihren MCP-Servern.",
+      "turnOnServer": "{{name}} einschalten",
+      "turnOffServer": "{{name}} ausschalten",
+      "turnOnTools": "{{name}}: {{tools}} einschalten",
+      "turnOffTools": "{{name}}: {{tools}} ausschalten",
+      "modeChange": "Tool-Freigabe: {{from}} → {{to}}",
+      "apply": "Änderungen anwenden",
+      "suggested": "Vom Agenten vorgeschlagen",
+      "done": "Erledigt. Verwalten Sie es unter Tools.",
+      "waiting": "Wartet auf Ihre Prüfung unter Tools.",
+      "openTools": "Tools öffnen"
+    },
+    "help": {
+      "toggle": "So fügen Sie einen Server hinzu",
+      "intro": "Fügen Sie die MCP-Konfiguration eines Servers aus seiner Dokumentation ein, wie in den Beispielen unten.",
+      "remote": {
+        "title": "Remote-Server",
+        "note": "Server mit Anmeldung öffnen beim Verbinden die Seite des Anbieters."
+      },
+      "key": {
+        "title": "Mit API-Schlüssel",
+        "note": "Ersetzen Sie YOUR_KEY durch Ihren Schlüssel. Er wird im Anmeldeinformationsspeicher abgelegt, nicht in einer Datei."
+      },
+      "local": {
+        "title": "Lokaler Befehl",
+        "note": "Läuft auf diesem Computer außerhalb der Sandbox. Fügen Sie nur vertrauenswürdige Server hinzu."
+      }
+    },
+    "removeNamed": "{{name}} entfernen",
+    "pack": {
+      "builtIn": "Data Formulator-Toolkit",
+      "add": "Hinzufügen",
+      "added": "Hinzugefügt",
+      "research": {
+        "name": "Forschung",
+        "description": "arXiv durchsuchen, neue Arbeiten eines Fachgebiets verfolgen, Publikationstrends darstellen und Volltexte lesen.",
+        "email": "Kontakt-E-Mail (optional)",
+        "emailHint": "Wird mit jeder Anfrage an arXiv gesendet, wie arXiv es von automatisierten Clients verlangt."
+      }
+    }
+  },
+  "tools": {
+    "chipDetails": "Tools, die der Agent nutzen kann: Terminal und MCP-Server",
+    "title": "Tools",
+    "intro": "Mit Tools reicht der Agent über Ihren Arbeitsbereich hinaus: Befehle auf diesem Computer ausführen oder MCP-Server für Daten und Dokumente aufrufen.",
+    "blocked": "Die Bereitstellungsrichtlinie schaltet Benutzerverbindungen und Tools aus.",
+    "localOnly": "Tools sind in der lokalen Einzelbenutzer-App verfügbar.",
+    "modeLabel": "Freigabe",
+    "mode": {
+      "off": "Aus",
+      "ask": "Jedes Mal fragen",
+      "auto": "Automatisch, wenn sicher"
+    },
+    "modeHint": {
+      "off": "Der Agent nutzt keine Tools.",
+      "ask": "Jeder Befehl und Tool-Aufruf fragt zuerst, außer bei Tools, die Sie immer erlauben.",
+      "auto": "Befehle in der Sandbox und schreibgeschützte MCP-Tools laufen ohne Nachfrage; alles andere fragt zuerst."
+    },
+    "locked": "Durch die Server-Umgebungsvariable DF_TERMINAL_MODE festgelegt.",
+    "close": "Schließen",
+    "terminal": {
+      "name": "Terminal",
+      "caption": "Befehle auf diesem Computer mit Ihren CLI-Anmeldungen ausführen",
+      "off": "Aus",
+      "sandboxed": "In der Sandbox",
+      "unsandboxed": "Keine Sandbox installiert",
+      "details": "Terminal-Details",
+      "use": "Terminal verwenden"
+    },
+    "count_one": "{{count}} Tool",
+    "count_other": "{{count}} Tools",
+    "chipLabel": "Tools: {{count}} an, {{mode}}",
+    "add": {
+      "packs": "Data Formulator-Toolkits",
+      "custom": "Eigener MCP-Server",
+      "label": "Hinzufügen",
+      "collapse": "Einklappen"
+    },
+    "addTool": "+ Tool hinzufügen"
   }
 }

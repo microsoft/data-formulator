@@ -114,6 +114,44 @@ class SkillRegistry:
     # Passages of a skill's body this registry replaces, as (old, new) pairs (a demo's, see with_demo).
     _body_edits: dict[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)
     terminal_mode: str = "ask"
+    # Actions whose arguments are a third party's schema (MCP tools): passed through untouched.
+    external_actions: frozenset[str] = frozenset()
+
+    def with_mcp_servers(self, servers: list[dict[str, Any]], mode: str) -> SkillRegistry:
+        """This registry plus one gated skill per usable MCP server (see ``mcp_servers.skill``)."""
+        from data_formulator.mcp_servers.skill import registry_entries
+
+        entries = registry_entries(servers, mode) if mode != "off" else []
+        if not entries:
+            return self
+        registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
+                           _bodies=dict(self._bodies), _body_edits=dict(self._body_edits))
+        external = set(self.external_actions)
+        for entry in entries:
+            registry.metas[entry["name"]] = entry["meta"]
+            registry.skills[entry["name"]] = entry["skill"]
+            registry.tool_specs[entry["name"]] = entry["specs"]
+            registry._bodies[entry["name"]] = entry["body"]
+            external.update(entry["meta"].action_names)
+        registry.external_actions = frozenset(external)
+        return registry
+
+    def without_tools(self, names: set[str] | frozenset[str]) -> SkillRegistry:
+        """This registry minus the named tools and actions (skills keep their other tools)."""
+        if not any(set(meta.tool_names + meta.action_names) & names for meta in self.metas.values()):
+            return self
+        registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
+                           _bodies=dict(self._bodies), _body_edits=dict(self._body_edits))
+        for name, meta in list(registry.metas.items()):
+            if set(meta.tool_names + meta.action_names) & names:
+                registry.metas[name] = replace(
+                    meta, tool_names=tuple(item for item in meta.tool_names if item not in names),
+                    action_names=tuple(item for item in meta.action_names if item not in names))
+                registry.tool_specs[name] = [spec for spec in registry.tool_specs.get(name, [])
+                                             if spec.get("function", {}).get("name") not in names]
+        return registry
 
     def with_terminal_policy(self, mode: str) -> SkillRegistry:
         registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
@@ -153,13 +191,7 @@ class SkillRegistry:
         for name in ("connected_data", "terminal", "configure", "html_app"):
             for collection in (registry.metas, registry.skills, registry.tool_specs, registry._doc_paths):
                 collection.pop(name, None)
-        for name, meta in list(registry.metas.items()):
-            if set(meta.tool_names + meta.action_names) & DEMO_WITHOUT_TOOLS:
-                registry.metas[name] = replace(
-                    meta, tool_names=tuple(item for item in meta.tool_names if item not in DEMO_WITHOUT_TOOLS),
-                    action_names=tuple(item for item in meta.action_names if item not in DEMO_WITHOUT_TOOLS))
-                registry.tool_specs[name] = [spec for spec in registry.tool_specs.get(name, [])
-                                             if spec.get("function", {}).get("name") not in DEMO_WITHOUT_TOOLS]
+        registry = registry.without_tools(DEMO_WITHOUT_TOOLS)
         registry._body_edits.update(demo_body_edits())
         registry.tool_specs = {name: demo_tool_specs(specs) for name, specs in registry.tool_specs.items()}
         raw, _ = _parse_front_matter((SKILL_DIR / SKILL_DOC_NAME).read_text(encoding="utf-8"))
@@ -293,6 +325,9 @@ class SkillRegistry:
             _, body = _parse_front_matter(path.read_text(encoding="utf-8"))
             for old, new in self._body_edits.get(expanded_name, ()):
                 body = body.replace(old, new)
+            if expanded_name == "configure" and "propose_mcp_changes" not in self.metas[expanded_name].action_names:
+                body = re.sub(r"\n## MCP servers\n.*?(?=\n## |\Z)", "\n", body, flags=re.S)
+                body = re.sub(r"^\|[^\n]*`propose_mcp_changes`[^\n]*\n", "", body, flags=re.M)
             if expanded_name == "connected_data":
                 terminal_route = (
                     "| Existing CLI access or local files | Use `run_terminal` to acquire a bounded dataset "
@@ -312,7 +347,25 @@ class SkillRegistry:
                     "execute immediately. Only dangerouslyDisableSandbox requests require user approval."
                 )
                 body = body.replace("{terminal_policy}", policy)
-                from data_formulator.analyst.skills.terminal.skill import sandbox_filesystem_policy
+                from data_formulator.analyst.skills.terminal.skill import (
+                    sandbox_filesystem_policy, terminal_host, terminal_sandbox)
+                host = terminal_host()
+                host_note = {
+                    "wsl": ("This is Windows: commands run in WSL (Linux), so use Linux tools and paths. Windows drives "
+                            "are at /mnt/<drive letter>, e.g. C:\\Users\\me is /mnt/c/Users/me. Give `cwd` as a Windows "
+                            "path; the command starts in its WSL equivalent. CLI logins made in Windows are not visible "
+                            "in WSL; ones made inside WSL are."),
+                    "windows": ("This is Windows without WSL: commands run natively. There is no Unix shell; call "
+                                "`powershell -NoProfile -Command ...` or Windows executables explicitly, with Windows paths."),
+                }.get(host)
+                if host_note:
+                    body = body.replace(policy, f"{policy} {host_note}", 1)
+                    policy = f"{policy} {host_note}"
+                if terminal_sandbox() is None:
+                    policy_note = ("No sandbox is installed on this machine: every command runs with the user's normal "
+                                   "access and needs their approval, even in Auto. Do not set dangerouslyDisableSandbox "
+                                   "for that reason alone. Keep commands minimal and their side effects clear.")
+                    body = body.replace(policy, f"{policy} {policy_note}", 1)
                 body = body.replace("{terminal_filesystem_policy}", json.dumps(sandbox_filesystem_policy()))
             if body.strip():
                 bodies.append(body.strip())
@@ -369,6 +422,8 @@ class SkillRegistry:
         """Return the required argument names for the action ``name`` (empty if
         unknown), read from the action schema's ``parameters.required``. Used for
         a cheap pre-dispatch completeness check."""
+        if name in self.external_actions:
+            return ()
         for skill_name in self.names():
             for spec in self._specs_split(skill_name)[1]:
                 if spec.get("function", {}).get("name") == name:

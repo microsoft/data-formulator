@@ -562,7 +562,10 @@
     "sourceExtract": "抽出済み",
     "failedRefreshDerivedTable": "派生テーブル「{{table}}」の更新に失敗しました: {{message}}",
     "errorRefreshingDerivedTable": "派生テーブル「{{table}}」の更新エラーです",
-    "alsoUses": "こちらも使います"
+    "alsoUses": "こちらも使います",
+    "callingMcp": "{{server}} · {{tool}} を呼び出し中",
+    "stackedMessages": "以前のメッセージ {{count}} 件",
+    "foldMessages": "{{count}} 件のメッセージを折りたたむ"
   },
   "dataLoading": {
     "extractingData": "データを抽出しています...",
@@ -665,7 +668,6 @@
     "explorationFailed": "探索に失敗しました: {{message}}",
     "agentLost": "エージェントがデータ内で迷子になりました。",
     "couldYouClarify": "詳しく教えていただけますか？",
-    "clarificationTitle": "質問",
     "minimizeClarification": "最小化",
     "expandClarification": "展開します",
     "pauseClose": "閉じます（フォーカス切替）",
@@ -683,7 +685,6 @@
     "cancelClarification": "キャンセル",
     "invalidClarification": "エージェントから無効な確認リクエストが返されました。",
     "invalidExplanation": "エージェントから無効な説明が返されました。",
-    "explanationTitle": "説明",
     "explanationFollowupsLabel": "次の手順の候補:",
     "delegateTitle": "提案する次のエージェント",
     "delegateMinimize": "最小化",
@@ -697,7 +698,9 @@
     "threadExplorePrompt": "このデータの興味深いパターンや傾向を探索します",
     "explorationThreadDeriveDescription": "{{source}} から指示で派生します: {{instruction}}",
     "explorationStepCodeComment": "# 探索手順 {{step}}",
-    "maxIterationsReached": "探索手順の最大数に達しました。"
+    "maxIterationsReached": "探索手順の最大数に達しました。",
+    "agentTitle": "エージェント",
+    "openInChat": "チャットで開く"
   },
   "dataGrid": {
     "loading": "読み込んでいます ...",
@@ -1497,5 +1500,133 @@
     "previewApp": "アプリをプレビュー",
     "created": "アプリを作成しました: {{title}}",
     "updated": "アプリを更新しました: {{title}}"
+  },
+  "mcp": {
+    "connect": "接続",
+    "refresh": "更新",
+    "signIn": "サインイン",
+    "signOut": "サインアウト",
+    "remove": "削除",
+    "save": "保存",
+    "turnOn": "オンにする",
+    "turnOff": "オフにする",
+    "serverEnabled": "{{name}} を使用",
+    "toolEnabled": "{{name}} を使用",
+    "showTools": "ツールを表示",
+    "noTools": "接続するとサーバーのツールが表示されます。",
+    "alwaysAllow": "常に許可",
+    "toolsChanged": "新規または変更されたツールは許可するまで保留されます：{{names}}",
+    "approveChanges": "許可",
+    "headerValue": "{{header}} の値",
+    "replaceKey": "キーを置き換え",
+    "status": {
+      "connected": "接続済み · {{count}} 個のツール",
+      "error": "接続できませんでした",
+      "notConnected": "未接続",
+      "saved": "{{count}} 個のツール",
+      "signingIn": "サインインを待っています…"
+    },
+    "flag": {
+      "readOnly": "読み取り専用",
+      "destructive": "データを変更・削除する可能性があります",
+      "openWorld": "インターネットにアクセスします"
+    },
+    "approvalTitle": "{{server}} の {{tool}} を許可しますか？",
+    "toolLabel": "ツール",
+    "argumentsLabel": "サーバーに送る引数",
+    "copyArguments": "引数をコピー",
+    "approvalNote": "サーバーはこれらの引数を受け取り、その結果はモデルプロバイダーに送られます。",
+    "reject": "拒否",
+    "allowAlways": "このツールを常に許可",
+    "runOnce": "今回のみ実行",
+    "add": {
+      "configLabel": "MCP サーバー設定（JSON）",
+      "fillIn": "{{names}} を入力してください。",
+      "nothingAdded": "サーバーは追加されませんでした。",
+      "localWarning": "ローカルサーバーはサンドボックス外であなたとして実行され、ファイルやネットワークにアクセスできます。信頼できるサーバーのみ追加してください。",
+      "addButton": "追加して接続",
+      "oneServer": "サーバーは 1 つずつ追加してください。",
+      "cancel": "キャンセル"
+    },
+    "form": {
+      "missing": "{{name}} は MCP サーバーにもうありません。",
+      "turnOnServer": "{{name}} をオンにする",
+      "turnOffServer": "{{name}} をオフにする",
+      "turnOnTools": "{{name}}：{{tools}} をオンにする",
+      "turnOffTools": "{{name}}：{{tools}} をオフにする",
+      "modeChange": "ツールの承認：{{from}} → {{to}}",
+      "apply": "変更を適用",
+      "suggested": "エージェントの提案",
+      "done": "完了しました。「ツール」で管理できます。",
+      "waiting": "「ツール」での確認を待っています。",
+      "openTools": "ツールを開く"
+    },
+    "help": {
+      "toggle": "サーバーの追加方法",
+      "intro": "サーバーのドキュメントから、1 つのサーバーの MCP 設定を下の例のように貼り付けます。",
+      "remote": {
+        "title": "リモートサーバー",
+        "note": "サインインが必要なサーバーは、接続時にプロバイダーのページを開きます。"
+      },
+      "key": {
+        "title": "API キーを使う",
+        "note": "YOUR_KEY を自分のキーに置き換えてください。キーはファイルではなく資格情報ストアに保存されます。"
+      },
+      "local": {
+        "title": "ローカルコマンド",
+        "note": "このコンピューター上、サンドボックスの外で実行されます。信頼できるサーバーのみ追加してください。"
+      }
+    },
+    "removeNamed": "{{name}} を削除",
+    "pack": {
+      "builtIn": "Data Formulator ツールキット",
+      "add": "追加",
+      "added": "追加済み",
+      "research": {
+        "name": "リサーチ",
+        "description": "arXiv を検索し、分野の新着論文を追い、出版動向をグラフにし、全文を読みます。",
+        "email": "連絡先メール（任意）",
+        "emailHint": "arXiv が自動クライアントに求めるとおり、各リクエストとともに arXiv に送信されます。"
+      }
+    }
+  },
+  "tools": {
+    "chipDetails": "エージェントが使えるツール：ターミナルと MCP サーバー",
+    "title": "ツール",
+    "intro": "ツールでエージェントはワークスペースの外に手が届きます。このコンピューターでコマンドを実行したり、MCP サーバーからデータやドキュメントを取得したりできます。",
+    "blocked": "デプロイポリシーにより、ユーザー接続とツールはオフになっています。",
+    "localOnly": "ツールはシングルユーザーのローカルアプリでのみ使えます。",
+    "modeLabel": "承認",
+    "mode": {
+      "off": "オフ",
+      "ask": "毎回確認",
+      "auto": "安全なら自動"
+    },
+    "modeHint": {
+      "off": "エージェントはツールを使いません。",
+      "ask": "常に許可したツールを除き、コマンドとツール呼び出しは毎回確認します。",
+      "auto": "サンドボックス内のコマンドと読み取り専用の MCP ツールは確認なしで実行し、それ以外は確認します。"
+    },
+    "locked": "サーバーの環境変数 DF_TERMINAL_MODE で設定されています。",
+    "close": "閉じる",
+    "terminal": {
+      "name": "ターミナル",
+      "caption": "CLI のログインを使ってこのコンピューターでコマンドを実行",
+      "off": "オフ",
+      "sandboxed": "サンドボックス内",
+      "unsandboxed": "サンドボックス未インストール",
+      "details": "ターミナルの詳細",
+      "use": "ターミナルを使用"
+    },
+    "count_one": "ツール {{count}} 個",
+    "count_other": "ツール {{count}} 個",
+    "chipLabel": "ツール：{{count}} 個オン、{{mode}}",
+    "add": {
+      "packs": "Data Formulator ツールキット",
+      "custom": "カスタム MCP サーバー",
+      "label": "追加",
+      "collapse": "折りたたむ"
+    },
+    "addTool": "+ ツールを追加"
   }
 }

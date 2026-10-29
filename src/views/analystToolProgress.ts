@@ -61,6 +61,11 @@ export const formatAnalystToolProgress = (
     t: Translate,
 ): string => {
     const values = args && typeof args === 'object' ? args : {};
+    // A tool from one of the user's MCP servers (see McpServers.tsx).
+    if (tool === 'mcp_call') {
+        return t('dataThread.callingMcp', { defaultValue: 'Calling {{server}} · {{tool}}',
+            server: String(values.server || 'MCP'), tool: String(values.tool || '') });
+    }
     let detail = '';
     switch (tool) {
         case 'list_data': {

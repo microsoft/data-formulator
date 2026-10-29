@@ -4,10 +4,7 @@ import os
 import json
 from pathlib import Path
 import secrets
-import selectors
-import signal
 import subprocess
-import shutil
 import sys
 import tempfile
 import threading
@@ -15,6 +12,7 @@ import time
 from typing import Any, Generator
 from urllib.parse import urlsplit
 
+from data_formulator.analyst import process_io
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
 
 
@@ -60,12 +58,61 @@ def sandbox_filesystem_policy(*, prepare: bool = False) -> dict[str, Any]:
             "requested": requested, "skipped": skipped}
 
 
+SEATBELT_EXEC = "/usr/bin/sandbox-exec"
+NO_SANDBOX_REASON = ("No sandbox is installed on this computer, so this command runs with your normal access. "
+                     "Install one to run commands in a sandbox.")
+
+
+def terminal_host() -> str:
+    """Where terminal commands run: ``"posix"`` (macOS, Linux), ``"wsl"`` (Windows, in WSL) or ``"windows"`` (natively)."""
+    if sys.platform != "win32":
+        return "posix"
+    from data_formulator.sandbox.wsl import wsl_host
+
+    return "wsl" if wsl_host() else "windows"
+
+
+def terminal_sandbox() -> str | None:
+    """The tool that confines terminal commands here: sandbox-exec (macOS), a working bwrap (Linux), or
+    a working bwrap inside WSL (Windows); else None."""
+    from data_formulator.sandbox.confinement import bwrap_executable, bwrap_usable
+
+    if sys.platform == "darwin":
+        return SEATBELT_EXEC if Path(SEATBELT_EXEC).is_file() else None
+    if sys.platform == "linux":
+        bwrap = bwrap_executable()
+        return bwrap if bwrap and bwrap_usable(bwrap) else None
+    if sys.platform == "win32":
+        from data_formulator.sandbox.wsl import wsl_host, wsl_sandbox
+
+        wsl = wsl_host()
+        sandbox = wsl_sandbox(wsl) if wsl else None
+        return sandbox.bwrap if sandbox else None
+    return None
+
+
+def sandbox_install_hint() -> str | None:
+    """How to get a sandbox where none is available, or None when one is (or none can be installed)."""
+    if terminal_sandbox():
+        return None
+    if sys.platform == "linux":
+        return ("Install Bubblewrap to run commands in a sandbox: sudo apt install bubblewrap (Debian, Ubuntu, WSL), "
+                "sudo dnf install bubblewrap (Fedora), or your distribution's bubblewrap package. Then restart Data Formulator.")
+    if sys.platform == "win32":
+        if terminal_host() == "wsl":
+            return ("Install Bubblewrap inside WSL to run commands in a sandbox: open WSL and run "
+                    "sudo apt install bubblewrap, then restart Data Formulator.")
+        return ("Install WSL to run commands in a sandbox: run wsl --install in PowerShell as administrator and restart "
+                "Windows, then open WSL, run sudo apt install bubblewrap, and restart Data Formulator.")
+    return None
+
+
 def require_local_terminal_request(*, check_policy: bool = True) -> None:
     from flask import current_app, has_request_context, request
     from data_formulator.auth.identity import is_local_mode
 
-    if not has_request_context() or not is_local_mode() or os.name != "posix":
-        raise ValueError("Terminal is available only in single-user local mode on macOS or Linux.")
+    if not has_request_context() or not is_local_mode() or sys.platform not in ("darwin", "linux", "win32"):
+        raise ValueError("Terminal is available only in single-user local mode on macOS, Linux or Windows.")
     from data_formulator.configuration import user_connectors_disabled, terminal_mode
     if check_policy and user_connectors_disabled():
         raise ValueError("Terminal data access is disabled in this deployment.")
@@ -112,11 +159,16 @@ class TerminalRequests:
             raise ValueError("Provide sandboxDisablingReason only when requesting unsandboxed execution; a reason is required.")
         if "write_paths" in spec:
             raise ValueError("write_paths is no longer supported. Use the configured sandbox policy or request dangerouslyDisableSandbox with a reason.")
+        # Without a sandbox every command runs unconfined, so each needs the user's approval (Auto never gives it).
+        sandbox_missing = terminal_sandbox() is None
+        if sandbox_missing and not disable_sandbox:
+            disable_sandbox, reason = True, NO_SANDBOX_REASON
         proposal = {"id": secrets.token_urlsafe(32), "argv": list(argv), "cwd": str(directory),
                     "purpose": purpose.strip(), "decision": "ask", "timeout_seconds": 60,
                     "dangerouslyDisableSandbox": disable_sandbox, "sandboxDisablingReason": reason.strip(),
                     "policy_revision": read_configuration()["revision"], "policy_mode": mode,
-                    "sandboxFilesystem": sandbox_filesystem_policy(), **({"background": True} if background else {})}
+                    "sandboxFilesystem": sandbox_filesystem_policy(), **({"background": True} if background else {}),
+                    **({"sandboxUnavailable": True, "sandboxInstallHint": sandbox_install_hint()} if sandbox_missing else {})}
         with self._lock:
             now = time.monotonic()
             self._pending = {key: value for key, value in self._pending.items() if value["expires"] > now}
@@ -177,7 +229,7 @@ def protected_ports() -> list[int]:
 
 def confined_command(argv: list[str], scratch_dir: Path, *, write_paths: list[str] | None = None,
                      runtime_dir: Path | None = None, protected_files: list[str] | None = None,
-                     protected_ports: list[int] | None = None) -> list[str]:
+                     protected_ports: list[int] | None = None, default_policy: bool = False) -> list[str]:
     """Confine writes to scratch and the allowed paths; hide DF's secrets and (macOS) its API ports.
 
     Reads elsewhere and the network stay open, so commands can still use the user's
@@ -188,9 +240,9 @@ def confined_command(argv: list[str], scratch_dir: Path, *, write_paths: list[st
     if runtime_dir is not None:
         writable.append(str(runtime_dir.resolve(strict=True)))
     writable.extend(write_paths or [])
+    executable = terminal_sandbox()
     if sys.platform == "darwin":
-        executable = "/usr/bin/sandbox-exec"
-        if not Path(executable).is_file():
+        if not executable:
             raise OSError("Terminal write confinement is unavailable; command was not run.")
         profile = (
             '(version 1)(deny default)'
@@ -206,7 +258,6 @@ def confined_command(argv: list[str], scratch_dir: Path, *, write_paths: list[st
             profile += f'(deny network-outbound (remote ip "localhost:{int(port)}"))'
         return [executable, "-p", profile, *argv]
     if sys.platform == "linux":
-        executable = shutil.which("bwrap")
         if not executable:
             raise OSError("Terminal write confinement requires Bubblewrap (bwrap); command was not run.")
         command = [executable, "--die-with-parent", "--new-session", "--unshare-all", "--share-net",
@@ -217,7 +268,36 @@ def confined_command(argv: list[str], scratch_dir: Path, *, write_paths: list[st
         for path in protected_files or []:
             command.extend(["--ro-bind", "/dev/null", path])
         return [*command, "--cap-drop", "ALL", "--", *argv]
+    if sys.platform == "win32":
+        return _wsl_confined_command(argv, writable, protected_files or [], default_policy=default_policy)
     raise OSError("Terminal write confinement is unavailable on this platform; command was not run.")
+
+
+def _wsl_confined_command(argv: list[str], writable: list[str], protected_files: list[str], *,
+                          default_policy: bool) -> list[str]:
+    """Bubblewrap inside WSL, as on Linux, with Windows paths as WSL mounts them and WSL's own concerns covered."""
+    from data_formulator.sandbox.wsl import to_wsl_path, wsl_host, wsl_sandbox
+
+    wsl = wsl_host()
+    sandbox = wsl_sandbox(wsl) if wsl else None
+    if not wsl or not sandbox:
+        raise OSError("Terminal write confinement requires Bubblewrap inside WSL; command was not run.")
+    command = [wsl, "-e", sandbox.bwrap, "--die-with-parent", "--new-session", "--unshare-all", "--share-net",
+               "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--remount-ro", "/proc"]
+    for path in writable:
+        command.extend(["--bind", to_wsl_path(path), to_wsl_path(path)])
+    # CLI logins made inside WSL keep their state in the Linux home; the defaults cover it there too, if present.
+    if default_policy:
+        for entry in DEFAULT_ALLOW_WRITE:
+            path = sandbox.home + entry[1:]
+            command.extend(["--bind-try", path, path])
+    for path in protected_files:
+        command.extend(["--ro-bind-try", "/dev/null", to_wsl_path(path)])
+    # Without these, a sandboxed command could start Windows programs, which run outside the sandbox.
+    if sandbox.interop:
+        command.extend(["--tmpfs", "/run/WSL"])
+    command.extend(["--unsetenv", "WSL_INTEROP"])
+    return [*command, "--cap-drop", "ALL", "--", *argv]
 
 
 def prepare_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir: Path) -> tuple[list[str], dict[str, str], dict[str, Any] | None]:
@@ -232,10 +312,15 @@ def prepare_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir:
         if proposal.get("decision") != "approve" or not proposal.get("sandboxDisablingReason", "").strip():
             raise ValueError("Unsandboxed execution requires explicit approval and a reason.")
         argv = proposal["argv"]
+        host = terminal_host()
+        if host == "wsl":
+            from data_formulator.sandbox.wsl import wsl_host
+            argv = [wsl_host(), "-e", *argv]
     else:
         policy = sandbox_filesystem_policy(prepare=True)
         argv = confined_command(proposal["argv"], scratch_dir, write_paths=policy["allowWrite"], runtime_dir=runtime_dir,
-                                protected_files=protected_files(), protected_ports=protected_ports())
+                                protected_files=protected_files(), protected_ports=protected_ports(),
+                                default_policy=not policy["configured"])
     temporary_dir = runtime_dir / "tmp"
     cache_dir = runtime_dir / "cache"
     temporary_dir.mkdir(exist_ok=True)
@@ -248,7 +333,10 @@ def prepare_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir:
                             "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
                             "http_proxy", "https_proxy", "all_proxy", "no_proxy",
                             "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
-                            "NODE_EXTRA_CA_CERTS"}}
+                            "NODE_EXTRA_CA_CERTS",
+                            # Windows: what wsl.exe and native Windows tools need to start.
+                            "SYSTEMDRIVE", "USERPROFILE", "USERNAME", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA",
+                            "PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)", "COMSPEC", "PATHEXT", "WSLENV"}}
     # Packages installed into DF_SITE_PACKAGES with Data Formulator's Python are importable in its sandbox.
     from data_formulator.sandbox.session_imports import PACKAGES_DIR
     environment["DF_SITE_PACKAGES"] = str(scratch_dir / PACKAGES_DIR)
@@ -262,6 +350,9 @@ def prepare_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir:
                         "YARN_CACHE_FOLDER": str(cache_dir / "yarn"), "MPLCONFIGDIR": str(cache_dir / "matplotlib"),
                         "HF_HOME": str(cache_dir / "huggingface"), "NUMBA_CACHE_DIR": str(cache_dir / "numba"),
                         "PYTHONDONTWRITEBYTECODE": "1"})
+    if sys.platform == "win32" and terminal_host() == "wsl":
+        from data_formulator.sandbox.wsl import share_environment
+        environment = share_environment(environment)
     return argv, environment, policy
 
 
@@ -292,14 +383,8 @@ def _run_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir: Pa
     total = 0
     argv, environment, policy = prepare_command(proposal, scratch_dir=scratch_dir, runtime_dir=runtime_dir)
     scratch_dir = scratch_dir.resolve(strict=True)
-    process = subprocess.Popen(
-        argv, cwd=proposal["cwd"], env=environment, stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True,
-    )
-
-    selector = selectors.DefaultSelector()
-    selector.register(process.stdout, selectors.EVENT_READ)
-    os.set_blocking(process.stdout.fileno(), False)
+    process = process_io.spawn(argv, cwd=proposal["cwd"], env=environment)
+    pipe = process_io.OutputPipe(process.stdout)
     deadline = time.monotonic() + proposal["timeout_seconds"]
     last_heartbeat = time.monotonic()
     timed_out = False
@@ -309,38 +394,27 @@ def _run_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir: Pa
             check_policy()
             if not interrupted and cancel is not None and cancel.is_set():
                 interrupted = True
-                try:
-                    os.killpg(process.pid, signal.SIGINT)
-                except ProcessLookupError:
-                    pass
+                process_io.interrupt(process)
                 deadline = min(deadline, time.monotonic() + 0.75)
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 timed_out = not interrupted
                 break
-            ready = selector.select(timeout=min(0.25, remaining))
-            for key, _ in ready:
-                chunk = os.read(key.fd, 65536)
-                if not chunk:
-                    selector.unregister(key.fd)
-                else:
-                    total += len(chunk)
-                    output.extend(chunk)
-                    if len(output) > 32768:
-                        del output[:-32768]
-            if process.poll() is not None and (not selector.get_map() or not ready):
+            chunks = pipe.read(min(0.25, remaining))
+            for chunk in chunks:
+                total += len(chunk)
+                output.extend(chunk)
+                if len(output) > 32768:
+                    del output[:-32768]
+            if process.poll() is not None and (not pipe.open or not chunks):
                 break
             if time.monotonic() - last_heartbeat >= 0.25:
                 yield {"type": "terminal_running"}
                 last_heartbeat = time.monotonic()
     finally:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        process_io.kill_tree(process)
         process.wait()
-        selector.close()
-        process.stdout.close()
+        pipe.close()
     decoded_output = bytes(output).decode("utf-8", errors="replace")
     result = {
         "exit_code": process.returncode, "timed_out": timed_out,

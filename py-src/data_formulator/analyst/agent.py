@@ -257,9 +257,23 @@ _META_SKILL = "meta"
 # drift, and the regex is anchored to the message start so only banners *we*
 # emitted match — never the same text pasted by a user or echoed by the model.
 _SKILL_LOADED_BANNER = "[SKILL LOADED: {name}]"
+# Configure-skill tools for managing MCP servers; offered only where MCP is available.
+MCP_SETUP_TOOLS = frozenset({"list_mcp_servers", "propose_mcp_changes"})
 _SKILL_LOADED_RE = re.compile(r"^\[SKILL LOADED: ([^\]]+)\]")
 _SKILL_PRELOADED_PREFIX = "[SKILL: "
 _SKILL_PRELOADED_SUFFIX = " Preloaded for this run"
+
+
+def _unavailable_skill_note(name: str, content: str) -> str:
+    """What replaces an earlier skill body whose skill this run no longer offers."""
+    if name.startswith("mcp-"):
+        title = re.search(r"^# MCP server: (.+)$", content, re.M)
+        server = title.group(1).strip() if title else name.removeprefix("mcp-")
+        return (f"The user removed or turned off the MCP server {server}; its tools are no longer available. "
+                "Do not call or suggest them; if the request needs them, say the user can add or turn the server "
+                "back on in Tools.")
+    return "Application capability guidance is no longer available under the current policy."
+
 
 _TOOL_PROGRESS_ARG_KEYS: dict[str, tuple[str, ...]] = {
     "probe_data": ("source_id", "table_key", "query"),
@@ -480,6 +494,7 @@ class AnalystAgent:
         execution_config: AnalystExecutionConfig | None = None,
         workspace_id: str | None = None,
         demo: str | None = None,
+        mcp: bool = False,
     ):
         self.client = client
         self.workspace = workspace
@@ -490,6 +505,13 @@ class AnalystAgent:
         # the demo skill in the registry (design-docs/69).
         self.demo = demo
         self.registry = (skill_registry or build_registry()).with_terminal_policy(terminal_mode()).with_demo(demo)
+        if mcp and not demo:
+            # The user's MCP servers, each a skill the agent loads when it needs it (local mode only).
+            from data_formulator.mcp_servers.skill import usable_servers
+            self.registry = self.registry.with_mcp_servers(*usable_servers())
+        from data_formulator.mcp_servers.config import mcp_available
+        if not (mcp and not demo and mcp_available()):
+            self.registry = self.registry.without_tools(MCP_SETUP_TOOLS)
         self.agent_exploration_rules = agent_exploration_rules
         self.agent_coding_rules = agent_coding_rules
         self.language_instruction = language_instruction
@@ -952,7 +974,7 @@ class AnalystAgent:
                     if name in {"terminal", "workspace", "connected_data"} and body not in content:
                         message["content"] = _SKILL_LOADED_BANNER.format(name=name) + "\n" + body
                 else:
-                    message["content"] = "Application capability guidance is no longer available under the current policy."
+                    message["content"] = _unavailable_skill_note(name, content)
             for candidate in content.split(_SKILL_PRELOADED_PREFIX)[1:]:
                 name, separator, remainder = candidate.partition("]")
                 if not separator or not remainder.startswith(_SKILL_PRELOADED_SUFFIX):
@@ -2235,8 +2257,12 @@ class AnalystAgent:
             action_data = {}
         if not isinstance(action_data, dict):
             action_data = {}
-        _rescue_unpack_json_strings(action_data)
-        action_data["action"] = chosen_name
+        if chosen_name in self.registry.external_actions:
+            # A third party's schema: keep the arguments exactly as written, apart from our own fields.
+            action_data = {"action": chosen_name, "arguments": action_data}
+        else:
+            _rescue_unpack_json_strings(action_data)
+            action_data["action"] = chosen_name
 
         # Record the commitment as an assistant turn carrying ONLY the chosen
         # action's tool call — dropping siblings keeps the trajectory valid for
