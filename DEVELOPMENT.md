@@ -1179,6 +1179,8 @@ FLASK_SECRET_KEY=<generate-with-secrets-token-hex-32>
 | `--disable-data-connectors` | `DISABLE_DATA_CONNECTORS` | `false` | Allow configured sources only; block personal connector creation and use |
 | `--disable-custom-models` | `DISABLE_CUSTOM_MODELS` | `false` | Prevent users from adding custom LLM endpoints |
 | `--max-display-rows` | `MAX_DISPLAY_ROWS` | `10000` | Max rows sent to frontend |
+| `--scratch-max-size-mb` | `SCRATCH_MAX_SIZE_MB` | `1024` | Max total size (MB) of a workspace's agent scratch dir before LRU eviction |
+| `--scratch-max-file-size-mb` | `SCRATCH_MAX_FILE_SIZE_MB` | `20` | Max size (MB) of a single agent-written scratch file, e.g. a `fetch_url` download |
 | `--data-dir` | `DATA_FORMULATOR_HOME` | `~/.data_formulator` | Data directory |
 | `--host` | `HOST` | `127.0.0.1` | Network interface to bind. Only a loopback address selects single-user local mode; under gunicorn, set `HOST=127.0.0.1` for that |
 | | `DF_SINGLE_USER` | unset | `1` keeps single-user local mode on a non-loopback address. Only for servers no one else can reach (e.g. a container port published on `127.0.0.1`) |
