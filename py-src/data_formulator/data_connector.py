@@ -1819,6 +1819,11 @@ def connector_connect():
             }
         else:
             user_params = data.get("params", {})
+            # An explicit connect is a fresh intent: lift any block left by a
+            # previous disconnect so SSO exchange can run again.
+            if not user_params.get("access_token") and not user_params.get("sso_access_token"):
+                from data_formulator.auth.token_store import TokenStore
+                TokenStore().allow_sso_reconnect(source._source_id)
 
         loader = source._connect(user_params)
 
