@@ -10,6 +10,9 @@ import ja from "../../../../src/i18n/locales/ja";
 import de from "../../../../src/i18n/locales/de";
 import fr from "../../../../src/i18n/locales/fr";
 import ko from "../../../../src/i18n/locales/ko";
+import es from "../../../../src/i18n/locales/es";
+import pt from "../../../../src/i18n/locales/pt";
+import ru from "../../../../src/i18n/locales/ru";
 
 type TranslationValue = string | string[] | { [key: string]: TranslationValue };
 type TranslationMap = Record<string, TranslationValue>;
@@ -73,5 +76,17 @@ describe("i18n locale bundles", () => {
     for (const locale of [zh, hi, id, ja, de, fr, ko]) {
       expect(guideKeys(collectKeys(locale))).toEqual(MARKDOWN_GUIDES);
     }
+  });
+
+  it("keeps Spanish translation keys aligned with English", () => {
+    expect(collectKeys(es)).toEqual(collectKeys(en));
+  });
+
+  it("keeps Portuguese translation keys aligned with English", () => {
+    expect(collectKeys(pt)).toEqual(collectKeys(en));
+  });
+
+  it("keeps Russian translation keys aligned with English", () => {
+    expect(collectKeys(ru)).toEqual(collectKeys(en));
   });
 });
