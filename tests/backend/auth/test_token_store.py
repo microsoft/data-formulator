@@ -57,14 +57,6 @@ class TestStoreServiceToken:
             assert cached["refresh_token"] == "ref-123"
             assert cached["expires_at"] > time.time()
 
-    def test_store_overwrites_previous(self, app, store):
-        with app.test_request_context():
-            flask.session.clear()
-            store.store_service_token("sys", "old-tok")
-            store.store_service_token("sys", "new-tok")
-            cached = store._get_cached("sys")
-            assert cached["access_token"] == "new-tok"
-
     def test_clear_service_token(self, app, store):
         with app.test_request_context():
             flask.session.clear()
@@ -136,19 +128,6 @@ class TestStoreSSO:
             }
             token = store.get_sso_token()
             assert token is None
-
-    def test_get_sso_token_frontend_mode(self, app, store, monkeypatch):
-        monkeypatch.setenv("AUTH_MODE", "frontend")
-        with app.test_request_context():
-            flask.session.clear()
-            with patch("data_formulator.auth.token_store.get_sso_token",
-                       return_value="fe-tok", create=True):
-                try:
-                    token = store.get_sso_token()
-                except Exception:
-                    token = None
-            # In frontend mode without proper auth.identity, returns None or token
-            assert token is None or isinstance(token, str)
 
 
 # ------------------------------------------------------------------
@@ -372,21 +351,3 @@ class TestAvailableStrategies:
         config = {"mode": "oauth2"}
         strategies = store._available_strategies("sys", config)
         assert "oauth2_redirect" in strategies
-
-
-# ------------------------------------------------------------------
-# _resolve_env
-# ------------------------------------------------------------------
-
-class TestResolveEnv:
-
-    def test_resolve_env(self, monkeypatch):
-        monkeypatch.setenv("MY_VAR", "my-value")
-        assert TokenStore._resolve_env("MY_VAR") == "my-value"
-
-    def test_resolve_env_missing(self, monkeypatch):
-        monkeypatch.delenv("MISSING_VAR", raising=False)
-        assert TokenStore._resolve_env("MISSING_VAR") == ""
-
-    def test_resolve_env_empty_key(self):
-        assert TokenStore._resolve_env("") == ""

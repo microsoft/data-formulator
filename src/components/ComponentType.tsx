@@ -5,6 +5,7 @@ import { Type } from '../data/types';
 import { channels, type ChartTemplateDef } from 'flint-chart';
 import { inferTypeFromValueArray, refineTemporalType } from '../data/utils';
 import type { DataOperation, LoadQuery } from '../dataOperations/models';
+import { generateUUID } from '../app/identity';
 
 export type FieldSource = "custom" | "original";
 
@@ -25,11 +26,29 @@ export const duplicateField = (field: FieldItem) => {
     } as FieldItem;
 }
 
-export const ROOTLESS_THREAD_ID = '__rootless_thread__';
+export const createConversationRootId = (id: string = generateUUID()) => `conversation-root:${id}`;
+export const isConversationRootId = (id: string | undefined): boolean =>
+    !!id?.startsWith('conversation-root:');
+
+export type ComputationInputSource = {
+    id: string;
+    kind: 'data' | 'file';
+    displayName: string;
+    contentHash?: string;
+};
+
+export interface DataProvenance {
+    origin: string;
+    role: string;
+    editPolicy: string;
+    inputSources: ComputationInputSource[];
+    stale: boolean;
+}
 
 export interface Trigger {
+    externalReferenceId?: string;
     // On which table this action is triggered. A run started before any data
-    // exists has none, so it carries `ROOTLESS_THREAD_ID` instead.
+    // exists carries its conversation root ID instead.
     tableId: string,
 
     chart?: Chart, // what's the intented chart from the user when running formulation
@@ -52,7 +71,7 @@ export interface ClarificationOption {
 
 export interface ClarificationQuestion {
     text: string;
-    responseType?: 'single_choice' | 'free_text';
+    responseType?: 'single_choice' | 'multi_choice' | 'free_text';
     options?: ClarificationOption[];
 }
 
@@ -64,23 +83,49 @@ export interface ClarificationResponse {
     answer: string;
     /** Opaque selected option value; never rendered as the user's answer. */
     value?: string;
-    source: 'option' | 'free_text' | 'freeform';
+    /** multi_choice: the selected option labels, in option order. */
+    selections?: string[];
+    source: 'option' | 'free_text' | 'freeform' | 'skip';
 }
 
 /** Legacy persisted value retained only for rendering historical sessions. */
 export type DelegateTarget = 'data_loading' | 'report_gen';
+
+export interface ProgressStep {
+    id: string;
+    kind: 'thought' | 'tool' | 'chart' | 'warning' | 'info';
+    label: string;
+    status: 'running' | 'completed' | 'failed' | 'interrupted' | 'unknown';
+    tool?: string;
+    toolCallId?: string;
+    executionId?: string;
+}
+
+/** One step of the checklist plan the analyst writes in its narration. */
+export interface PlanItem {
+    text: string;
+    /** `skipped`: still open when the run finished (after one reminder). */
+    status: 'open' | 'done' | 'dropped' | 'skipped';
+    note?: string;
+    /** Ids of the charts delivered for this step (or 'write_report' / 'write_app' for other results). */
+    results?: string[];
+}
 
 export interface InteractionEntry {
     from: Actor;
     to: Actor;
     role: 'prompt' | 'clarify' | 'instruction' | 'error' | 'explain' | 'delegate';
     plan?: string; // agent's reasoning / thought for this action
+    progressSteps?: ProgressStep[];
     content: string;
     displayContent?: string;
+    executions?: TerminalExecution[];
+    codeExecutions?: CodeExecution[];
     /** Names of files / images the user attached with this prompt, surfaced as
      *  chips in the message bubble (the file bytes live in workspace scratch/,
      *  not here). */
     attachments?: string[];
+    references?: ThreadReference[];
     inputTableNames?: string[]; // table names actually used for this derivation step
     clarificationQuestions?: ClarificationQuestion[];
     /** Legacy persisted delegate metadata; new AnalystAgent runs do not emit it. */
@@ -95,15 +140,68 @@ export type DeriveStatus = 'running' | 'clarifying' | 'completed' | 'error' | 'i
 export interface LoadedTableNode {
     kind: 'loaded-table';
     id: string;
+    /** With `external`, the id of an ExternalTableReference instead of a workspace table. */
     tableId: string;
+    external?: boolean;
     parentNodeId: string;
     createdAt: number;
 }
 
-export interface PendingClarification {
-    trajectory: any[];
-    completedStepCount: number;
-    lastCreatedTableId: string | null;
+export interface FileNode {
+    kind: 'file';
+    id: string;
+    path: string;
+    displayName: string;
+    contentHash: string;
+    parentNodeId: string;
+    createdAt: number;
+    notes?: string;
+    /** Set when the agent fixed this file in place: it moved to after the fixing request. */
+    replaced?: ReplacedArtifact;
+}
+
+/** What a fixed artifact replaced, for the thread's note (the old one is gone). */
+export interface ReplacedArtifact {
+    id: string;
+    name: string;
+}
+
+export interface ExternalTableReference {
+    kind: 'external-table-reference';
+    id: string;
+    connectorId: string;
+    connectorName?: string;
+    sourceLocation?: { address: string; database?: string };
+    tableKey: string;
+    sourceTable: { id: string; name: string };
+    displayName: string;
+    capturedAt: string;
+    // Semantic models have no raw rows to copy; they are only queried.
+    queryModel?: 'semantic';
+    summary: {
+        description?: string;
+        columns: { name: string; type: string; source_type?: string; description?: string;
+            // Semantic models only: field role, declared aggregation, and owning model table.
+            role?: string; aggregation?: string; entity?: string }[];
+        relationships?: unknown[];
+        rowCount?: number;
+        sizeBytes?: number;
+        sampleRows?: Record<string, unknown>[];
+        sampleTruncated?: boolean;
+        sampleColumns?: string[];
+        inspection?: {
+            schema_source?: string;
+            schema_complete?: boolean;
+            row_count_status?: string;
+            sample_status?: string;
+            sample_method?: string;
+            filtered?: boolean;
+            row_limit?: number;
+            columns_omitted?: number;
+            values_truncated?: boolean;
+        };
+    };
+    queryIntent?: Record<string, unknown>;
 }
 
 export interface DraftNode {
@@ -111,21 +209,33 @@ export interface DraftNode {
     id: string;
     displayId: string;
     parentNodeId: string;
+    createdAt?: number;
     derive: {
         source: string[];
+        inputSources?: ComputationInputSource[];
         trigger: Trigger;
         status: DeriveStatus;
         runningPlan?: string; // live agent thought text while running
+        progressSteps?: ProgressStep[];
         code?: string;
         codeSignature?: string;
         outputVariable?: string;
         dialog?: any[];
-        pendingClarification?: PendingClarification | null;
     };
     actionId?: string;
 }
 
-export type ThreadNode = DraftNode | DictTable | LoadedTableNode;
+/** Several items produced together in one step: one node in the thread whose members are those items (design-docs/58, rule 9). */
+export interface ArtifactSetNode {
+    kind: 'artifact-set';
+    id: string;
+    parentNodeId: string;
+    /** Member item ids in the order they were produced; each member's `parentNodeId` is this set. */
+    memberIds: string[];
+    createdAt: number;
+}
+
+export type ThreadNode = DraftNode | DictTable | LoadedTableNode | FileNode | ArtifactSetNode;
 
 /**
  * A first-class interaction in the thread: either a clarify/explain turn or a
@@ -136,29 +246,147 @@ export type ThreadNode = DraftNode | DictTable | LoadedTableNode;
  * Deleting either uses the same generic artifact path. Delegate is not a turn;
  * a hand-off is an agent action handled directly.
  */
+export interface TerminalFilesystemPolicy {
+    allowWrite: string[];
+    configured: boolean;
+    requested: string[];
+    skipped: string[];
+}
+
+export interface TerminalExecution {
+    id: string;
+    createdAt?: number;
+    argv: string[];
+    cwd: string;
+    purpose: string;
+    writePaths?: string[];
+    dangerouslyDisableSandbox?: boolean;
+    sandboxDisablingReason?: string;
+    sandboxFilesystem?: TerminalFilesystemPolicy;
+    status: 'awaiting_approval' | 'running' | 'completed' | 'failed' | 'rejected' | 'interrupted' | 'unknown';
+    commandText?: string;
+    result?: Record<string, unknown>;
+}
+
+/**
+ * One agent tool call as saved on the message that made it: the tool, its arguments and what came
+ * back, with long text capped by the server (`truncated` holds the original sizes). Views show a call
+ * by its tool (design-docs/67). Terminal commands keep their own record (`TerminalExecution`).
+ */
+export interface ToolCall {
+    id: string;
+    tool: string;
+    args: Record<string, unknown>;
+    // MCP calls can wait for the user's approval and be rejected (see McpServers.tsx).
+    status: 'awaiting_approval' | 'running' | 'completed' | 'failed' | 'rejected' | 'interrupted' | 'unknown';
+    output?: string;
+    error?: string;
+    createdAt?: number;
+    durationMs?: number;
+    truncated?: Record<string, number>;
+}
+
+/** A code-running tool call in the shape code views use (see `codeCallsOf`). */
+export interface CodeExecution {
+    id: string;
+    createdAt?: number;
+    tool: string;
+    purpose: string;
+    code: string;
+    status: 'running' | 'completed' | 'failed' | 'interrupted' | 'unknown';
+    output?: string;
+    error?: string;
+}
+
+export interface WorkflowDefinition {
+    name: string; overview: string; prompt?: string; source?: unknown; deliverables: string[];
+    parameters?: { name: string; label: string; type?: 'text' | 'number' | 'boolean' | 'select'; description?: string;
+        required?: boolean; default?: string | number | boolean; options?: string[]; allow_custom?: boolean }[];
+    steps?: { id: string; instructions: string; description?: string; next?: string;
+        checkers?: { id: string; condition: string; when?: 'before' | 'during' | 'after'; on_fail?: string }[] }[];
+}
+
+/** An earlier result a request is about: a chart, table, report or file (by its id). */
+export interface ThreadReference {
+    kind: 'chart' | 'table' | 'report' | 'file';
+    id: string;
+    label: string;
+}
+
 export interface TextTurn {
+    progressSteps?: ProgressStep[];
+    /** The run's checklist plan as last written on this agent message (design-docs/64). */
+    plan?: PlanItem[];
+    /** The plan's short title (the agent's `Plan:` line). */
+    planTitle?: string;
+    externalReferenceId?: string;
+    /** A user message sent to a workflow run (steering while running, or a reply that resumes it). */
+    workflowMessage?: { runId: string; messageId: string; status: 'queued' | 'received'; kind?: 'steering' | 'reply' };
     kind: 'text';
     id: string;
     displayId: string;
     /** clarify carries `options`; explain has none. */
     textKind: 'clarify' | 'explain';
+    presentation?: 'long_response';
     /** Markdown: the question preamble, or the answer. */
     content: string;
-    /** The user message that triggered this turn (shown with the card so the
-     *  exchange stays self-contained — the run produced no table to anchor it). */
+    /** The user's message (design-docs/58): a turn with a prompt and no
+     *  content is a user message node; the agent's reply follows as its own node. */
     prompt?: string;
+    /** The message was sent by the app, not typed: a repair of an app that failed when it opened. */
+    auto?: 'app-repair';
+    /** Files and images the user attached to `prompt`. */
+    attachments?: string[];
+    /** Earlier results the user's message is about, shown with it like attachments. */
+    references?: ThreadReference[];
+    /** A workflow run's outputs, in the order the run produced them. */
+    outputIds?: string[];
+    workflow?: {
+        runId: string;
+        status: string;
+        stepId: string;
+        calls: number;
+        toolCalls?: number;
+        activity?: string;
+        pauseRequested?: boolean;
+        interruptedResponse?: string;
+        overview?: string;
+        prompt?: string;
+        deliverables?: string[];
+        setup?: { parameters: Record<string, string | number | boolean>; instructions: string };
+        activeTool?: { id: string; tool: string; step_id: string; details: Record<string, string>; input?: Record<string, unknown> };
+        appliedMessageIds?: string[];
+        planRevision?: number;
+        planReviewPending?: boolean;
+        planHistory?: { revision: number; reason: string; steps: NonNullable<TextTurn['workflow']>['steps'];
+            checks: NonNullable<NonNullable<TextTurn['workflow']>['checks']> }[];
+        terminalRequest?: { id: string; argv: string[]; cwd: string; purpose: string; timeout_seconds: number;
+            dangerouslyDisableSandbox?: boolean; sandboxDisablingReason?: string; sandboxFilesystem?: TerminalFilesystemPolicy };
+        dataOperation?: DataOperation;
+        interactionId?: string;
+        questions?: ClarificationQuestion[];
+        steps: { id: string; description?: string; instructions: string; status: 'pending' | 'current' | 'reviewing' | 'passed' | 'failed' | 'visited' | 'completed'; checkIds?: string[];
+            elapsedSeconds?: number;
+            next?: string; checkers?: { id: string; condition?: string; when?: 'before' | 'during' | 'after'; on_fail?: string }[];
+            assessment?: { status: string; explanation: string; evidence_ids: string[] } }[];
+        outputVersions: Record<string, string>;
+        artifacts?: { nodeId: string; chartId?: string; stepId?: string; planRevision: number }[];
+        checks?: { id: string; status: string; explanation: string }[];
+        transitions?: { from: string; to: string; reason: string; plan_revision?: number }[];
+        log?: { id: string; tool: string; text: string; call?: number; step_id?: string; plan_revision?: number; details?: Record<string, string>; input?: Record<string, unknown> }[];
+    };
+    executions?: TerminalExecution[];
+    /** Every other tool call of the message, in the order they ran. */
+    toolCalls?: ToolCall[];
     /** clarify only (empty/undefined ⇒ a plain explanation). */
     options?: ClarificationQuestion[];
     /** Display-only immutable loading alternatives for a data-operation pause. */
     dataOperation?: DataOperation;
     /** A user-confirmed form artifact that owns the canvas while focused. */
     form?: FormArtifact;
-    /** True once the user has responded to THIS clarify — it then locks
-     *  (read-only). A later response is a *new* conversation, not a re-answer. */
+    /** True once the user has responded to THIS question or form — it then locks
+     *  (read-only). The response itself is the user message that follows it. */
     answered?: boolean;
-    /** The user's response to this clarify, shown in the resolved read-only view
-     *  (question → answer). */
-    answer?: string;
     /**
      * The thread node this turn FOLLOWS (design-docs/42) — the SINGLE authored
      * edge that places the turn in the thread. Captured once at ask time: the
@@ -181,6 +409,7 @@ export interface TextTurn {
         completedStepCount: number;
         operationId?: string;
     };
+    startedAt?: number;
     createdAt: number;
 }
 
@@ -210,58 +439,8 @@ export interface DataCleanBlock {
     dialogItem?: any; // Store the dialog item from the model response
 }
 
-// ── Conversational data loading chat types ────────────────────────────────
-
-export interface ChatAttachment {
-    type: 'image' | 'file' | 'text_file';
-    name: string;
-    url?: string;           // data URL or object URL for images
-    scratchPath?: string;   // path in workspace scratch folder (for large files)
-    preview?: string;       // first N lines for text files
-}
-
-export interface InlineTablePreview {
-    name: string;
-    columns: string[];
-    sampleRows: Record<string, any>[];  // first 5-10 rows
-    totalRows: number;
-    csvScratchPath?: string;
-}
-
-export interface CodeExecution {
-    code: string;
-    stdout?: string;
-    error?: string;
-    resultTable?: InlineTablePreview;
-}
-
-export interface PendingTableLoad {
-    name: string;
-    csvScratchPath: string;
-    preview: InlineTablePreview;
-    confirmed: boolean;
-}
-
-export interface LoadPlanCandidate {
-    sourceId: string;
-    tableKey: string;
-    displayName: string;
-    sourceTable: string;
-    sourceTableName?: string;
-    query?: LoadQuery;
-    /** Backend-detected reason this candidate cannot be loaded (unknown source_id, missing table_key, etc.). */
-    resolutionError?: string;
-}
-
-export interface LoadPlan {
-    response: string;
-    options: Array<{ label: string; tables: LoadPlanCandidate[] }>;
-    confirmed?: boolean;
-}
-
 /**
- * Agent-proposed inline connection form (design 38). Rendered as a card in the
- * data-loading chat so the user can enter credentials and connect without
+ * Agent-proposed connection form. The user can enter credentials and connect without
  * leaving the conversation. One prompt === one form card === one new connection.
  */
 export interface ConnectorFormPrompt {
@@ -273,31 +452,116 @@ export interface ConnectorFormPrompt {
     tableCount?: number;                // optional: tables discovered on connect
 }
 
-export interface ConnectorFormArtifact {
-    kind: 'connector';
+/**
+ * Shared shape of agent-proposed setup forms (configure skill). Each form is a
+ * prefilled artifact the user reviews and submits through the same API as the
+ * matching manual dialog.
+ */
+interface SetupFormBase {
     title: string;
-    connector: ConnectorFormPrompt;
 }
 
-/** Canvas-owning form artifacts. Add future form kinds to this union. */
-export type FormArtifact = ConnectorFormArtifact;
-
-export interface ChatMessage {
+/** An existing item the agent proposed to revise; the user may update it or save a new one. */
+export interface SetupFormTarget {
     id: string;
-    role: 'user' | 'assistant';
-    content: string;                    // markdown text
-    attachments?: ChatAttachment[];     // images, files attached by user
-    tables?: InlineTablePreview[];      // tables to show inline (assistant only)
-    codeBlocks?: CodeExecution[];       // executed code + results (assistant only)
-    pendingLoads?: PendingTableLoad[];  // tables awaiting user confirmation
-    loadPlan?: LoadPlan;                // Agent-proposed data loading plan
-    dataOperation?: DataOperation;      // Immutable option-based loading proposal
-    connectorForm?: ConnectorFormPrompt; // Agent-proposed inline connection form
-    divider?: boolean;                  // renders a "new request" separator instead of a bubble; excluded from agent history
-    hidden?: boolean;                   // included in agent history but NOT rendered (e.g. a post-connect trigger that continues the conversation)
-    canContinue?: boolean;              // agent paused at the tool-call limit — show a "Continue" button to resume the task
-    timestamp: number;
+    name: string;
 }
+
+export interface ConnectorFormArtifact extends SetupFormBase {
+    kind: 'connector';
+    connector: ConnectorFormPrompt;
+    draft?: {
+        revision: number;
+        fields: string[];
+        changedByAgent: string[];
+        conflict: boolean;
+    };
+}
+
+export interface ScheduleConfig {
+    name: string; workflow: string; model_id: string; time: string; timezone: string; weekdays: number[];
+    enabled: boolean; auto_approve: boolean; max_retries: number; catch_up: boolean;
+    /** Language for the run's reports and messages; unattended runs cannot read the app language. */
+    language?: string;
+    setup?: { parameters: Record<string, string | number | boolean>; instructions: string };
+}
+
+export interface ScheduleFormArtifact extends SetupFormBase {
+    kind: 'schedule';
+    schedule: {
+        /** Existing schedule being edited; absent when creating one. */
+        target?: SetupFormTarget;
+        config: Partial<ScheduleConfig>;
+        workflowName?: string;
+        /** Values the agent could not verify; the user resolves them before saving. */
+        issues?: string[];
+        status?: 'pending' | 'saved';
+        savedId?: string;
+        nextAt?: string;
+    };
+}
+
+export interface SessionsFormArtifact extends SetupFormBase {
+    kind: 'sessions';
+    sessions: {
+        /** Sessions listed in the panel; each is renamed, opened, or deleted on its own. */
+        items: {
+            sessionId: string; currentName: string; suggestedName?: string; reason?: string;
+            current?: boolean; updatedAt?: string; tableCount?: number; chartCount?: number; deleted?: boolean; renamed?: boolean;
+        }[];
+        open?: { sessionId: string; displayName: string };
+    };
+}
+
+export interface WorkflowFormArtifact extends SetupFormBase {
+    kind: 'workflow';
+    workflow: {
+        content: string;
+        definition: WorkflowDefinition;
+        /** Saved user workflow (by path) this proposal revises. */
+        target?: SetupFormTarget;
+        saved?: { path: string; content_hash: string };
+        /** A schedule proposed with the workflow; saving the workflow also saves it. */
+        schedule?: {
+            config: Partial<ScheduleConfig>;
+            /** Values the agent could not verify; the user resolves them before saving. */
+            issues?: string[];
+            savedId?: string;
+            nextAt?: string;
+        };
+    };
+}
+
+/** A server the agent proposed to add; the user reviews it, types any secrets, and adds it. */
+export interface McpServerProposal {
+    name: string;
+    transport: 'http' | 'sse' | 'stdio';
+    url?: string;
+    auth?: { type: 'none' | 'header' | 'oauth'; header?: string; client_id?: string; scope?: string };
+    command?: string;
+    args?: string[];
+    cwd?: string;
+    /** Environment variables the local server needs; the user types their values. */
+    envNames?: string[];
+    reason?: string;
+    /** The server's ID once the user added it. */
+    addedId?: string;
+}
+
+export interface McpFormArtifact extends SetupFormBase {
+    kind: 'mcp';
+    mcp: {
+        add: McpServerProposal[];
+        /** Switches for existing servers and tools; applied together with the mode. */
+        changes: { serverId: string; serverName: string; enabled?: boolean; tools?: { name: string; enabled: boolean }[]; reason?: string }[];
+        mode?: 'off' | 'ask' | 'auto';
+        currentMode?: 'off' | 'ask' | 'auto';
+        applied?: boolean;
+    };
+}
+
+/** Canvas-owning form artifacts. Add future setup form kinds to this union. */
+export type FormArtifact = ConnectorFormArtifact | ScheduleFormArtifact | SessionsFormArtifact | WorkflowFormArtifact | McpFormArtifact;
 
 // Data source types for tracking where data originated
 export type DataSourceType = 'paste' | 'file' | 'url' | 'stream' | 'database' | 'example' | 'extract';
@@ -334,6 +598,8 @@ export interface DataSourceConfig {
 
     // The original table name before backend sanitization (e.g. "Sales Report 2024")
     originalTableName?: string;
+    importedFrom?: { connectorId: string; tableKey: string };
+    loadQuery?: { sourceTable?: string; query: Record<string, unknown> };
 }
 
 export type InputTableSource =
@@ -365,12 +631,15 @@ export interface FieldSemanticsInfo {
     intrinsicDomain?: [number, number];
     unit?: string;
     sortOrder?: any[];
+    /** Value a diverging color scale pivots on (Flint `divergingMidpoint`). */
+    divergingMidpoint?: number;
     displayName?: string;
+    /** What the agent authored; layered over every inference result. Not sent to Flint. */
+    authored?: Omit<FieldSemanticsInfo, 'authored'>;
 }
 
 export interface TableSemanticsInfo {
     tableId: string;
-    displayName?: string;
     fields: Record<string, FieldSemanticsInfo>;
 }
 
@@ -397,12 +666,14 @@ export interface InputTable {
     description: string;
     sourceConfig?: DataSourceConfig;
     addedAt: number;
+    dataProvenance?: DataProvenance;
 }
 
 export interface DictTable {
     kind: 'table'; // discriminant for ThreadNode union
     id: string; // name/id of the table
     displayId: string; // display id of the table 
+    dataProvenance?: DataProvenance;
     
     names: string[]; // column names
     metadata: {[key: string]: {
@@ -423,6 +694,7 @@ export interface DictTable {
     rows: any[]; // table content, each entry is a row
     derive?: { // how is this table derived
         source: string[], // which tables are this table computed from
+        inputSources?: ComputationInputSource[], // durable data/file inputs used by the computation
         code: string,
         codeSignature?: string, // HMAC-SHA256 signature proving code was generated by the server
         outputVariable: string, // the Python variable name containing the result DataFrame (required)
@@ -445,6 +717,10 @@ export interface DictTable {
 
     /** Authored thread edge. Data provenance remains in `derive`. */
     parentNodeId?: string;
+    /** When the table was produced; orders it among the other followers of its parent. */
+    createdAt?: number;
+    /** The artifact this one replaced when the agent fixed it (it was deleted). */
+    replaced?: ReplacedArtifact;
 
     source?: DataSourceConfig;
     
@@ -497,63 +773,6 @@ export function createDictTable(
     }
 }
 
-/**
- * A user-authored "skin" of a chart: a Vega-Lite spec edited via the
- * style/restyle agent. Variants share the chart's encoding and data — they
- * only change visual presentation. See design-docs/28-chart-style-refinement-agent.md.
- *
- * Stored on `Chart` so they persist with the chart and don't pollute the data thread.
- * Currently rendered ONLY in the focused chart canvas (VisualizationView);
- * thumbnails and exports continue to use the assembled default spec.
- */
-export interface ChartStyleVariant {
-    id: string,                   // stable id, e.g. "v-<timestamp>"
-    label?: string,               // user-editable; defaults to "v1", "v2"…
-    prompt: string,               // the natural-language instruction that produced this spec
-    vlSpec: any,                  // full Vega-Lite spec (data block stripped — re-attached at render)
-    basedOnVariantId?: string,    // lineage for "edit v2 → v3"; undefined = derived from default
-    encodingFingerprint: string,  // see computeEncodingFingerprint(); used to detect staleness
-    createdAt: number,
-    rationale?: string,           // optional one-line explanation from the agent
-    // Generative UI: a few simple knobs the restyle agent attaches to the
-    // variant so the user can keep tweaking the agent-authored spec without
-    // re-prompting. While a variant is active these replace the chart-template
-    // config. See VariantConfigControl and applyVariantConfigUI in app/restyle.ts.
-    configUI?: VariantConfigControl[],
-    // Current value for each control, keyed by control.key. Missing key → use
-    // the control's defaultValue.
-    configValues?: Record<string, any>,
-}
-
-/**
- * A single generative-UI control authored by the restyle agent for a style
- * variant. Mirrors the shape of ChartPropertyDef (so it can reuse the same
- * renderers) but instead of arbitrary code it carries a `path`: the location
- * inside the Vega-Lite spec to write the chosen value to.
- *
- * Applying a control is a pure, declarative "set value at path" operation
- * (see applyVariantConfigUI / setAtPath). There is NO code execution — the
- * agent only chooses which knob, where it writes, and the allowed values.
- * The written value may be a scalar OR a whole object (e.g. a full mark/axis
- * sub-spec), which keeps the door open for richer restyle edits while staying
- * safe.
- */
-export type VariantConfigControl = {
-    key: string;
-    label: string;
-    /**
-     * Path into the vlSpec where the chosen value is written, as an array of
-     * object keys / array indices, e.g. ["mark","opacity"] or
-     * ["encoding","x","axis","labelAngle"]. Intermediate objects are created
-     * as needed. Prototype-polluting segments are rejected at apply time.
-     */
-    path: (string | number)[];
-} & (
-    | { type: 'continuous'; min: number; max: number; step?: number; defaultValue: number }
-    | { type: 'discrete';  options: { value: any; label: string }[]; defaultValue: any }
-    | { type: 'binary';    defaultValue: boolean }
-);
-
 export type Chart = { 
     id: string, 
     chartType: string, 
@@ -565,8 +784,6 @@ export type Chart = {
     subtitle?: string,  // factual scope, period, aggregation, and units for the title
     titleKey?: string,  // analytical encoding fingerprint captured when title/subtitle were set
     themeId?: string,  // Flint theme preset id; undefined = Flint default
-    styleVariants?: ChartStyleVariant[],  // user-authored style refinements (see ChartStyleVariant)
-    activeVariantId?: string,  // id of the variant currently rendered in the focused canvas; undefined = default
     scaleFactor?: number,  // zoom level applied by the resizer; undefined = 1 (no zoom)
     unread?: boolean,  // true for agent-generated charts the user hasn't focused yet; cleared on focus
 }
@@ -577,8 +794,19 @@ export function computeInsightKey(chart: Chart): string {
 }
 
 /**
- * Fingerprint of the chart's structural identity for variant staleness detection.
- * A variant is "stale" iff its stored encodingFingerprint != fingerprintOf(currentChart).
+ * Whether the chart's title and subtitle still describe it: written for this encoding, or for the same
+ * chart turned on its side (x and y swapped, e.g. vertical bars made horizontal), which shows the same thing.
+ */
+export function chartTitleFits(chart: Pick<Chart, 'chartType' | 'encodingMap' | 'title' | 'titleKey'>): boolean {
+    if (!chart.title || !chart.titleKey) return false;
+    if (chart.titleKey === computeEncodingFingerprint(chart)) return true;
+    const { x, y, ...rest } = chart.encodingMap;
+    const turned = { ...rest, ...(y ? { x: y } : {}), ...(x ? { y: x } : {}) } as EncodingMap;
+    return chart.titleKey === computeEncodingFingerprint({ chartType: chart.chartType, encodingMap: turned });
+}
+
+/**
+ * Fingerprint of the chart's structural identity (what the chart depicts).
  * Includes chartType + sorted (channel, fieldID, aggregate) tuples — anything that
  * meaningfully changes what the chart depicts. Excludes config (purely cosmetic).
  */
@@ -587,11 +815,6 @@ export function computeEncodingFingerprint(chart: Pick<Chart, 'chartType' | 'enc
         .map(([ch, enc]) => `${ch}:${enc?.fieldID ?? ''}:${enc?.aggregate ?? ''}`)
         .sort();
     return `${chart.chartType}|${tuples.join('|')}`;
-}
-
-/** True iff the variant was authored against an encoding that no longer matches the chart. */
-export function isVariantStale(chart: Chart, variant: ChartStyleVariant): boolean {
-    return variant.encodingFingerprint !== computeEncodingFingerprint(chart);
 }
 
 export let duplicateChart = (chart: Chart) : Chart => {
@@ -603,9 +826,6 @@ export let duplicateChart = (chart: Chart) : Chart => {
         source: chart.source,
         config: chart.config ? JSON.parse(JSON.stringify(chart.config)) : undefined,
         scaleFactor: chart.scaleFactor,
-        // styleVariants are intentionally NOT copied: they are user-authored
-        // refinements tied to the chart they were created on. A duplicate is a
-        // fresh canvas. (See design-docs/28-chart-style-refinement-agent.md.)
     }
 }
 
@@ -677,6 +897,9 @@ export interface ConnectorInstance {
     deletable?: boolean;
     params_form: Array<{name: string; type: string; required: boolean; default?: string | number | boolean; options?: string[]; advanced?: boolean; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
     pinned_params: Record<string, string>;
+    configured_params?: Record<string, string | number | boolean> | null;
+    /** Which instance this connector points at (cluster, host, bucket…), resolved by the loader. */
+    connection_identity?: string;
     hierarchy: Array<{key: string; label: string}>;
     effective_hierarchy: Array<{key: string; label: string}>;
     auth_mode?: string;

@@ -1,0 +1,559 @@
+{
+ "__stateVersion": 14,
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "d_out_2",
+   "displayId": "Largest increases in heritage spending per person",
+   "names": [
+    "indicator_id_before",
+    "COUNTRY_ID",
+    "country_before",
+    "year_before",
+    "value_before",
+    "magnitude_before",
+    "qualifier_before",
+    "indicator_id_after",
+    "country_after",
+    "year_after",
+    "value_after",
+    "magnitude_after",
+    "qualifier_after",
+    "increase",
+    "country"
+   ],
+   "rows": [
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "FIN",
+     "country_before": "Finland",
+     "year_before": 2019,
+     "value_before": 176.73007,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Finland",
+     "year_after": 2023,
+     "value_after": 265.14328,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 88.41321,
+     "country": "Finland"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "CHE",
+     "country_before": "Switzerland",
+     "year_before": 2019,
+     "value_before": 184.60927,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Switzerland",
+     "year_after": 2022,
+     "value_after": 240.28057,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 55.6713,
+     "country": "Switzerland"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "SVK",
+     "country_before": "Slovakia",
+     "year_before": 2018,
+     "value_before": 44.53782,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Slovakia",
+     "year_after": 2024,
+     "value_after": 72.30204,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 27.76422,
+     "country": "Slovakia"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "ECU",
+     "country_before": "Ecuador",
+     "year_before": 2019,
+     "value_before": 28.17122,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Ecuador",
+     "year_after": 2024,
+     "value_after": 53.26329,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 25.09207,
+     "country": "Ecuador"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "CAN",
+     "country_before": "Canada",
+     "year_before": 2019,
+     "value_before": 187.67353,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Canada",
+     "year_after": 2024,
+     "value_after": 212.26366,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 24.59013,
+     "country": "Canada"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "AZE",
+     "country_before": "Azerbaijan",
+     "year_before": 2019,
+     "value_before": 0.80209,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Azerbaijan",
+     "year_after": 2024,
+     "value_after": 22.03876,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 21.23667,
+     "country": "Azerbaijan"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "LUX",
+     "country_before": "Luxembourg",
+     "year_before": 2019,
+     "value_before": 218.25764,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Luxembourg",
+     "year_after": 2024,
+     "value_after": 230.89077,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 12.63313,
+     "country": "Luxembourg"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "BRA",
+     "country_before": "Brazil",
+     "year_before": 2019,
+     "value_before": 7.87467,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Brazil",
+     "year_after": 2024,
+     "value_after": 20.4869,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 12.61223,
+     "country": "Brazil"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "SWE",
+     "country_before": "Sweden",
+     "year_before": 2019,
+     "value_before": 78.36525,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Sweden",
+     "year_after": 2024,
+     "value_after": 89.64795,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 11.2827,
+     "country": "Sweden"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "ESP",
+     "country_before": "Spain",
+     "year_before": 2019,
+     "value_before": 51.04095,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Spain",
+     "year_after": 2023,
+     "value_after": 60.76154,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 9.72059,
+     "country": "Spain"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "BIH",
+     "country_before": "Bosnia and Herzegovina",
+     "year_before": 2019,
+     "value_before": 54.12086,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Bosnia and Herzegovina",
+     "year_after": 2023,
+     "value_after": 61.37624,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 7.25538,
+     "country": "Bosnia and Herzegovina"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "PRT",
+     "country_before": "Portugal",
+     "year_before": 2019,
+     "value_before": 34.13195,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Portugal",
+     "year_after": 2023,
+     "value_after": 41.36112,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 7.22917,
+     "country": "Portugal"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "ISR",
+     "country_before": "Israel",
+     "year_before": 2019,
+     "value_before": 27.28938,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Israel",
+     "year_after": 2024,
+     "value_after": 34.10461,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 6.81523,
+     "country": "Israel"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "DNK",
+     "country_before": "Denmark",
+     "year_before": 2019,
+     "value_before": 129.05429,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Denmark",
+     "year_after": 2023,
+     "value_after": 134.18625,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 5.13196,
+     "country": "Denmark"
+    },
+    {
+     "indicator_id_before": "HEXPCSTPPPCAP.HER.PU",
+     "COUNTRY_ID": "BFA",
+     "country_before": "Burkina Faso",
+     "year_before": 2019,
+     "value_before": 0.02819,
+     "magnitude_before": null,
+     "qualifier_before": null,
+     "indicator_id_after": "HEXPCSTPPPCAP.HER.PU",
+     "country_after": "Burkina Faso",
+     "year_after": 2023,
+     "value_after": 2.20959,
+     "magnitude_after": null,
+     "qualifier_after": null,
+     "increase": 2.1814,
+     "country": "Burkina Faso"
+    }
+   ],
+   "metadata": {
+    "indicator_id_before": {
+     "type": "string",
+     "levels": []
+    },
+    "COUNTRY_ID": {
+     "type": "string",
+     "levels": []
+    },
+    "country_before": {
+     "type": "string",
+     "levels": []
+    },
+    "year_before": {
+     "type": "integer",
+     "levels": []
+    },
+    "value_before": {
+     "type": "number",
+     "levels": []
+    },
+    "magnitude_before": {
+     "type": "boolean",
+     "levels": []
+    },
+    "qualifier_before": {
+     "type": "boolean",
+     "levels": []
+    },
+    "indicator_id_after": {
+     "type": "string",
+     "levels": []
+    },
+    "country_after": {
+     "type": "string",
+     "levels": []
+    },
+    "year_after": {
+     "type": "integer",
+     "levels": []
+    },
+    "value_after": {
+     "type": "number",
+     "levels": []
+    },
+    "magnitude_after": {
+     "type": "boolean",
+     "levels": []
+    },
+    "qualifier_after": {
+     "type": "boolean",
+     "levels": []
+    },
+    "increase": {
+     "type": "number",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import pandas as pd\nx=pd.read_parquet('data/sdg11_national.parquet'); x=x[x.indicator_id.eq('HEXPCSTPPPCAP.HER.PU')]\na=x[x.year.between(2017,2019)].sort_values('year').groupby('COUNTRY_ID').tail(1)\nb=x[x.year.between(2022,2024)].sort_values('year').groupby('COUNTRY_ID').tail(1)\nx=a.merge(b,on='COUNTRY_ID',suffixes=('_before','_after'))\nx['increase']=x.value_after-x.value_before\nout=x[x.increase>0].nlargest(15,'increase').copy()\nout['country']=out.country_after\nprint(out[['country','increase','year_before','year_after']].to_string(index=False))",
+    "codeSignature": "0d1b8c84386cb54a85bb13b9e3068fa26911b2cbb313240c110f5e74e4e8ad77",
+    "outputVariable": "out",
+    "source": [
+     "sdg11_national"
+    ],
+    "inputSources": [
+     {
+      "id": "data:dde8cde108f63babea4b427160284e38:sdg11_national",
+      "kind": "data",
+      "displayName": "sdg11_national"
+     }
+    ],
+    "trigger": {
+     "tableId": "sdg11_national",
+     "resultTableId": "d_out_2",
+     "chart": {
+      "id": "chart-1792312030944",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "sdg11_national",
+      "source": "trigger"
+     }
+    },
+    "explanation": {
+     "status": "ok",
+     "concepts": [
+      {
+       "field": "increase",
+       "explanation": "For each country, use its latest available public heritage expenditure value from 2022–2024 and subtract its latest available value from 2017–2019: `increase = value_after - value_before`."
+      }
+     ],
+     "agent": "CodeExplanationAgent"
+    }
+   },
+   "virtual": {
+    "tableId": "d_out_2",
+    "rowCount": 15
+   },
+   "description": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792312015543_step_1",
+   "createdAt": 1792312034076
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-537bbed7a638",
+   "chartType": "Bar Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-increase-1792312034076-0.5058360888162191",
+     "dtype": "quantitative"
+    },
+    "y": {
+     "fieldID": "concept-country-1792312034076-0.9659227996468553",
+     "dtype": "nominal",
+     "sortOrder": "descending",
+     "sortBy": "x"
+    },
+    "color": {
+     "channel": "color",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "d_out_2",
+   "source": "user",
+   "title": "Largest increases in public heritage spending per person",
+   "subtitle": "Latest 2022–2024 versus pre-pandemic figures; constant 2017 purchasing-power dollars",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-increase-1792312034076-0.5058360888162191:|y:concept-country-1792312034076-0.9659227996468553:",
+   "unread": false,
+   "themeId": "datawrapper"
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-increase-1792312034076-0.5058360888162191",
+   "name": "increase",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-country-1792312034076-0.9659227996468553",
+   "name": "country",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792312015543_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1792312015543_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Which countries added the most to heritage spending per person since before the pandemic?",
+   "parentNodeId": "conversation-root:ab0d9e14-9d7d-4523-809b-3ed286cd6729",
+   "actionId": "exploreDataFromNL_1792312015543",
+   "createdAt": 1792312015544
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792312015543_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1792312015543_step_1",
+   "textKind": "explain",
+   "content": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792312015543_prompt",
+   "actionId": "exploreDataFromNL_1792312015543",
+   "createdAt": 1792312034076,
+   "startedAt": 1792312015544,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1792312015543-1",
+     "kind": "chart",
+     "label": "creating chart...",
+     "status": "completed"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792312015543_1792312039140",
+   "displayId": "textTurn_exploreDataFromNL_1792312015543_closing",
+   "textKind": "explain",
+   "content": "**Finland added the most heritage spending per person since before the pandemic, followed by Switzerland.**\n\n| Country | Added per person | Years compared |\n|---|---:|---|\n| Finland | $88.41 | 2019 → 2023 |\n| Switzerland | $55.67 | 2019 → 2022 |\n| Slovakia | $27.76 | 2018 → 2024 |\n| Ecuador | $25.09 | 2019 → 2024 |\n| Canada | $24.59 | 2019 → 2024 |\n\nPublic spending on cultural and natural heritage, adjusted for inflation, among the 31 countries with figures for both periods. Source: UIS, February 2026 release.",
+   "parentNodeId": "d_out_2",
+   "actionId": "exploreDataFromNL_1792312015543",
+   "createdAt": 1792312039140,
+   "startedAt": 1792312015544,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "d_out_2",
+   "fields": {
+    "indicator_id_before": {
+     "semanticType": "ID"
+    },
+    "COUNTRY_ID": {
+     "semanticType": "Country"
+    },
+    "country_before": {
+     "semanticType": "Country"
+    },
+    "year_before": {
+     "semanticType": "Year"
+    },
+    "value_before": {
+     "semanticType": "Number"
+    },
+    "magnitude_before": {
+     "semanticType": "Unknown"
+    },
+    "qualifier_before": {
+     "semanticType": "Unknown"
+    },
+    "indicator_id_after": {
+     "semanticType": "ID"
+    },
+    "country_after": {
+     "semanticType": "Country"
+    },
+    "year_after": {
+     "semanticType": "Year"
+    },
+    "value_after": {
+     "semanticType": "Number"
+    },
+    "magnitude_after": {
+     "semanticType": "Unknown"
+    },
+    "qualifier_after": {
+     "semanticType": "Unknown"
+    },
+    "increase": {
+     "semanticType": "Amount",
+     "unit": "constant 2017 PPP$ per person",
+     "displayName": "Added spending per person (constant 2017 PPP$)",
+     "authored": {
+      "semanticType": "Amount",
+      "unit": "constant 2017 PPP$ per person",
+      "displayName": "Added spending per person (constant 2017 PPP$)"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "displayName": "Country"
+     }
+    }
+   }
+  }
+ ],
+ "activeWorkspace": {
+  "id": "culture-c23",
+  "displayName": "Finland added the most heritage spending since the pandemic"
+ },
+ "focusedId": {
+  "type": "chart",
+  "chartId": "chart-537bbed7a638"
+ }
+}

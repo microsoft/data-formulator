@@ -133,3 +133,36 @@ def test_cleanup_lru_evicts_oldest_workspace(tmp_path, monkeypatch):
     assert cleanup_ephemeral_workspaces(force=True) == 1
     assert not oldest_dir.exists()
     assert newest_dir.exists()
+
+
+def test_imported_session_is_not_expired_by_its_archived_timestamps(tmp_path, monkeypatch):
+    # Demo seed archives carry the workspace_meta.json of the machine that built
+    # them; restoring it must not make a brand-new session look idle for days.
+    import io
+    import zipfile
+    from unittest.mock import patch
+    from data_formulator.error_handler import register_error_handlers
+    from data_formulator.routes.sessions import session_bp
+
+    monkeypatch.setenv("EPHEMERAL_WORKSPACE_ROOT", str(tmp_path / "ephemeral"))
+    monkeypatch.setenv("EPHEMERAL_WORKSPACE_TTL_HOURS", "24")
+    monkeypatch.setenv("EPHEMERAL_WORKSPACE_MAX_BYTES", "0")
+    built = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("state.json", json.dumps({"tables": []}))
+        zf.writestr(f"workspace/{WORKSPACE_META_FILENAME}",
+                    json.dumps({"displayName": "Seed", "createdAt": built, "updatedAt": built}))
+
+    app = flask.Flask(__name__)
+    app.config["CLI_ARGS"] = {"workspace_backend": "ephemeral"}
+    app.register_blueprint(session_bp)
+    register_error_handlers(app)
+    with patch("data_formulator.routes.sessions.get_identity_id", return_value="browser:visitor"):
+        response = app.test_client().post("/api/sessions/import", data={
+            "file": (io.BytesIO(archive.getvalue()), "seed.zip"), "workspace_id": "fresh",
+        }, content_type="multipart/form-data")
+    assert response.get_json()["status"] == "success"
+
+    assert cleanup_ephemeral_workspaces(force=True) == 0
+    assert EphemeralWorkspaceManager("browser:visitor").workspace_exists("fresh")

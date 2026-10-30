@@ -181,6 +181,37 @@ class TestLoadConnectorsYaml:
         entries = _load_connectors_yaml(yaml_file)
         assert entries == []
 
+    def test_reads_non_ascii_names_as_utf8(self, tmp_path):
+        # Written as UTF-8 bytes so the test does not depend on the locale
+        # of the machine that runs it.
+        yaml_file = tmp_path / "connectors.yaml"
+        yaml_file.write_bytes(
+            "connectors:\n"
+            "  - type: postgresql\n"
+            "    name: '销售数据库 café'\n".encode("utf-8")
+        )
+        entries = _load_connectors_yaml(yaml_file)
+        assert entries == [{"type": "postgresql", "name": "销售数据库 café"}]
+
+    def test_opens_file_with_explicit_utf8_encoding(self, tmp_path):
+        # On a UTF-8 locale the decode above passes either way, so also pin
+        # the encoding argument that makes it locale-independent.
+        import builtins
+
+        yaml_file = tmp_path / "connectors.yaml"
+        yaml_file.write_text("connectors: []\n", encoding="utf-8")
+        real_open = builtins.open
+        seen: list[Any] = []
+
+        def spy(file, *args, **kwargs):
+            if str(file) == str(yaml_file):
+                seen.append(kwargs.get("encoding"))
+            return real_open(file, *args, **kwargs)
+
+        with patch.object(builtins, "open", spy):
+            _load_connectors_yaml(yaml_file)
+        assert seen == ["utf-8"]
+
 
 # ==================================================================
 # Tests: Environment Variable Parsing (via _load_admin_specs)

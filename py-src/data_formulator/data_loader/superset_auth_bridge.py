@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 
 import requests
@@ -76,9 +77,12 @@ class SupersetAuthBridge:
 
         Raises on network errors or when the endpoint is unavailable.
         """
+        secret = os.environ.get("PLG_SUPERSET_EXCHANGE_SECRET", "").strip()
+        headers = {"X-DF-Exchange-Secret": secret} if secret else {}
         resp = requests.post(
             f"{self.superset_url}/api/v1/df-token-exchange/",
             json={"sso_access_token": sso_access_token},
+            headers=headers,
             timeout=self.timeout,
         )
         resp.raise_for_status()

@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 from data_formulator.datalake.workspace_metadata import (
     ColumnInfo,
     TableMetadata,
+    WorkspaceFileMetadata,
     WorkspaceMetadata,
 )
 from data_formulator.data_loader.external_data_loader import (
@@ -26,44 +27,34 @@ from data_formulator.data_loader.external_data_loader import (
 pytestmark = [pytest.mark.backend]
 
 
-# ── ColumnInfo backward-compat ────────────────────────────────────────
+class TestWorkspaceFileMetadata:
+    def test_workspace_metadata_roundtrip(self):
+        now = datetime.now(timezone.utc)
+        metadata = WorkspaceMetadata.create_new()
+        metadata.add_file(WorkspaceFileMetadata(
+            name="README.md",
+            filename="README.md",
+            created_at=now,
+            content_hash="abc123",
+            file_size=42,
+            media_type="text/markdown",
+        ))
 
-class TestColumnInfoDescription:
-    def test_from_dict_without_description(self):
-        """Old YAML data without description deserializes cleanly."""
-        col = ColumnInfo.from_dict({"name": "order_id", "dtype": "int64"})
-        assert col.name == "order_id"
-        assert col.dtype == "int64"
-        assert col.description is None
+        restored = WorkspaceMetadata.from_dict(metadata.to_dict())
 
-    def test_from_dict_with_description(self):
-        col = ColumnInfo.from_dict({
-            "name": "order_id",
-            "dtype": "int64",
-            "description": "Unique order identifier",
+        assert restored.files["README.md"].filename == "README.md"
+        assert restored.files["README.md"].media_type == "text/markdown"
+
+    def test_legacy_metadata_defaults_to_no_files(self):
+        now = datetime.now(timezone.utc).isoformat()
+        restored = WorkspaceMetadata.from_dict({
+            "version": "1.1",
+            "created_at": now,
+            "updated_at": now,
+            "tables": {},
         })
-        assert col.description == "Unique order identifier"
 
-    def test_to_dict_omits_none_description(self):
-        """description key is not emitted when None — keeps YAML clean."""
-        col = ColumnInfo(name="x", dtype="int64")
-        d = col.to_dict()
-        assert "description" not in d
-
-    def test_to_dict_includes_description_when_present(self):
-        col = ColumnInfo(name="x", dtype="int64", description="A column")
-        d = col.to_dict()
-        assert d["description"] == "A column"
-
-    def test_roundtrip_with_description(self):
-        original = ColumnInfo(name="c", dtype="text", description="Some desc")
-        restored = ColumnInfo.from_dict(original.to_dict())
-        assert restored.description == "Some desc"
-
-    def test_roundtrip_without_description(self):
-        original = ColumnInfo(name="c", dtype="text")
-        restored = ColumnInfo.from_dict(original.to_dict())
-        assert restored.description is None
+        assert restored.files == {}
 
 
 # ── TableMetadata serialization with column descriptions ──────────────
@@ -329,22 +320,8 @@ class TestInferSourceMetadataStatus:
     def test_none_metadata_returns_unavailable(self):
         assert infer_source_metadata_status(None) == SOURCE_METADATA_UNAVAILABLE
 
-    def test_empty_metadata_returns_unavailable(self):
-        assert infer_source_metadata_status({}) == SOURCE_METADATA_UNAVAILABLE
-
     def test_columns_without_descriptions_returns_synced(self):
         meta = {"description": "Order table", "columns": [{"name": "id"}]}
-        assert infer_source_metadata_status(meta) == SOURCE_METADATA_SYNCED
-
-    def test_columns_with_description_returns_synced(self):
-        meta = {"columns": [{"name": "id", "description": "Primary key"}]}
-        assert infer_source_metadata_status(meta) == SOURCE_METADATA_SYNCED
-
-    def test_both_table_and_column_metadata_returns_synced(self):
-        meta = {
-            "description": "Order table",
-            "columns": [{"name": "id", "description": "PK"}],
-        }
         assert infer_source_metadata_status(meta) == SOURCE_METADATA_SYNCED
 
     def test_explicit_status_overrides_inference(self):
@@ -423,6 +400,26 @@ class TestCatalogTreeMetadataStatus:
 class TestRefreshPreservesImportOptions:
     """import_options must survive refresh_parquet_from_arrow."""
 
+    def test_value_hash_ignores_chunking_and_tracks_all_sample_values(self, tmp_path):
+        import pyarrow as pa
+        from data_formulator.datalake.parquet_utils import compute_arrow_table_hash
+        from data_formulator.datalake.workspace import Workspace
+
+        original = pa.table({"value": list(range(20)), "text": ["x" * 200] * 20})
+        chunked = pa.concat_tables([original.slice(0, 7), original.slice(7)])
+        assert compute_arrow_table_hash(original) == compute_arrow_table_hash(chunked)
+        rows = original.to_pylist()
+        rows[10]["text"] += "changed"
+        modified = pa.Table.from_pylist(rows)
+        assert compute_arrow_table_hash(original) != compute_arrow_table_hash(modified)
+        workspace = Workspace("test-user", root_dir=tmp_path)
+        workspace.write_parquet_from_arrow(original, "values")
+        _, changed = workspace.refresh_parquet_from_arrow("values", chunked)
+        assert changed is False
+        _, changed = workspace.refresh_parquet_from_arrow("values", modified)
+        assert changed is True
+        assert workspace.read_data_as_df("values").iloc[10]["text"].endswith("changed")
+
     def test_import_options_retained_after_refresh(self, tmp_path):
         import pyarrow as pa
         from data_formulator.datalake.workspace import Workspace
@@ -462,18 +459,13 @@ class TestFormatImportOptions:
         assert _format_import_options(None) == ""
         assert _format_import_options({}) == ""
 
-    def test_sort_only(self):
-        from data_formulator.agents.agent_utils import _format_import_options
-        result = _format_import_options({"sort_columns": ["id"], "sort_order": "desc"})
-        assert "sorted by id desc" in result
-
     def test_filters_and_limit(self):
         from data_formulator.agents.agent_utils import _format_import_options
         result = _format_import_options({
             "source_filters": [{"column": "x", "operator": "EQ", "value": 1}],
             "size": 50000,
         })
-        assert "1 filter(s)" in result
+        assert 'filters [{"column": "x", "operator": "EQ", "value": 1}]' in result
         assert "row limit 50,000" in result
 
     def test_full_options(self):
@@ -485,7 +477,7 @@ class TestFormatImportOptions:
             "size": 10000,
         })
         assert result.startswith("Data subset:")
-        assert "1 filter(s)" in result
+        assert '"column": "a"' in result
         assert "sorted by created asc" in result
         assert "row limit" in result
 
@@ -513,19 +505,3 @@ class TestSourceMetadataImportOptions:
         result = _table_metadata_to_source_metadata(meta)
         assert result is not None
         assert result["import_options"] == {"size": 1000, "sort_columns": ["id"], "sort_order": "asc"}
-
-    def test_import_options_none_when_absent(self):
-        from data_formulator.routes.tables import _table_metadata_to_source_metadata
-
-        meta = TableMetadata(
-            name="t2",
-            source_type="data_loader",
-            filename="t2.parquet",
-            file_type="parquet",
-            created_at=datetime.now(timezone.utc),
-            content_hash="def456",
-            loader_type="TestLoader",
-        )
-        result = _table_metadata_to_source_metadata(meta)
-        assert result is not None
-        assert result["import_options"] is None

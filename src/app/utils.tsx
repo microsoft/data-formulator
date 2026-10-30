@@ -10,7 +10,10 @@ import { Type } from "../data/types";
 import * as d3 from 'd3';
 
 import { assembleVegaLite, type ChartEncoding, type AssembleOptions } from "flint-chart";
+import { mergeableLayerSorts, resolveColumnSorts } from "./chartSort";
+import { choroplethRegion, keepUnmatchedRegions } from "./chartMaps";
 import { getBrowserId } from './identity';
+import { DEMO_HEADER, DEMO_ID } from './demo';
 
 export function getUrls() {
     return {
@@ -23,7 +26,6 @@ export function getUrls() {
         TEST_MODEL: `/api/agent/test-model`,
 
         SORT_DATA_URL: `/api/agent/sort-data`,
-        DATA_LOADING_CHAT_URL: `/api/agent/data-loading-chat`,
         SCRATCH_UPLOAD_URL: `/api/agent/workspace/scratch/upload`,
         SCRATCH_BASE_URL: `/api/agent/workspace/scratch`,
         
@@ -44,10 +46,10 @@ export function getUrls() {
         DELETE_TABLE: `/api/tables/delete-table`,
         GET_COLUMN_STATS: `/api/tables/analyze`,
         SAMPLE_TABLE: `/api/tables/sample-table`,
+        APP_SQL: `/api/apps/sql`,
+        APP_SOURCE_QUERY: `/api/apps/source-query`,
         SYNC_TABLE_DATA: `/api/tables/sync-table-data`,
         EXPORT_TABLE_CSV: `/api/tables/export-table-csv`,
-
-        GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
 
         // Starter exploration questions (generated on data load)
         DERIVE_STARTER_QUESTIONS: `/api/agent/derive-starter-questions`,
@@ -55,14 +57,6 @@ export function getUrls() {
         // Workspace display name (auto-naming)
         WORKSPACE_NAME: `/api/agent/workspace-name`,
 
-        // NL-to-filter
-        NL_TO_FILTER: `/api/agent/nl-to-filter`,
-
-        // Chart style refinement (restyle agent)
-        CHART_RESTYLE: `/api/agent/chart-restyle`,
-
-        // Intent classifier — routes a chart prompt to restyle vs. data agent
-        CLASSIFY_CHART_INTENT: `/api/agent/classify-chart-intent`,
 
         // Refresh data endpoint
         REFRESH_DERIVED_DATA: `/api/agent/refresh-derived-data`,
@@ -114,11 +108,64 @@ export const CONNECTOR_ACTION_URLS = {
     SYNC_CATALOG_METADATA: '/api/connectors/sync-catalog-metadata',
     GET_CACHED_CATALOG_TREE: '/api/connectors/get-cached-catalog-tree',
     IMPORT_DATA: '/api/connectors/import-data',
+    IMPORT_FILE: '/api/connectors/import-file',
     REFRESH_DATA: '/api/connectors/refresh-data',
     PREVIEW_DATA: '/api/connectors/preview-data',
     IMPORT_GROUP: '/api/connectors/import-group',
     COLUMN_VALUES: '/api/connectors/column-values',
 } as const;
+
+export async function fetchConnectorCatalog<T = any>(
+    connectorId: string,
+    options: { signal?: AbortSignal; onProgress?: (message: string) => void; refresh?: boolean } = {},
+): Promise<{ data: T }> {
+    const { apiRequest } = await import('./apiClient');
+    const deadline = Date.now() + 5 * 60_000;
+    let poll = false;
+    let failures = 0;
+    while (!options.signal?.aborted && Date.now() < deadline) {
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        options.signal?.addEventListener('abort', abort, { once: true });
+        const timeout = setTimeout(abort, 10_000);
+        try {
+            const result = await apiRequest<any>(CONNECTOR_ACTION_URLS.GET_CATALOG_TREE, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connectorId, background: true, poll, retry: !poll, refresh: !poll && options.refresh }),
+                signal: controller.signal,
+            });
+            failures = 0;
+            const discovery = result.data.discovery;
+            if (!discovery || discovery.status === 'complete') return result;
+            if (discovery.status !== 'running') {
+                throw new Error(discovery.message || 'Discovery incomplete. The connection is preserved; retry discovery.');
+            }
+            options.onProgress?.(discovery.message || 'Discovering tables and files...');
+        } catch (error: any) {
+            if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+            const transient = error?.name === 'AbortError' || error instanceof TypeError
+                || [408, 429, 502, 503, 504].includes(error?.httpStatus);
+            if (!transient || ++failures > 3) throw error;
+            options.onProgress?.('Discovery is continuing. Reconnecting to check progress...');
+        } finally {
+            clearTimeout(timeout);
+            options.signal?.removeEventListener('abort', abort);
+        }
+        poll = true;
+        await new Promise<void>((resolve) => {
+            const finish = () => {
+                clearTimeout(timer);
+                options.signal?.removeEventListener('abort', finish);
+                resolve();
+            };
+            const timer = setTimeout(finish, 1000 * 2 ** failures);
+            options.signal?.addEventListener('abort', finish, { once: true });
+            if (options.signal?.aborted) finish();
+        });
+    }
+    if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+    throw new Error('Discovery is taking longer than expected. The connection is preserved; retry to check progress.');
+}
 
 /** Global connector management URLs. */
 export const CONNECTOR_URLS = {
@@ -129,6 +176,20 @@ export const CONNECTOR_URLS = {
     DELETE: (id: string) => `/api/connectors/${id}`,
 } as const;
 
+// The store the page renders with, registered by index.tsx. Request code reads the session and identity from it
+// rather than importing the store module, which in a dev tab can resolve to a second copy after hot reloads
+// (with its own, stale state) and so send requests to another session.
+let pageStore: { getState: () => any } | null = null;
+
+export function setPageStore(store: { getState: () => any }): void {
+    pageStore = store;
+}
+
+/** The page's store (see `setPageStore`), or the store module's when none is registered (tests, scripts). */
+export async function currentStore(): Promise<{ getState: () => any }> {
+    return pageStore ?? (await import('./store')).store;
+}
+
 /**
  * Get the current namespaced identity from the Redux store, or fall back to browser ID.
  * Returns identity in "type:id" format (e.g., "user:alice@example.com" or "browser:550e8400-...")
@@ -138,8 +199,7 @@ export const CONNECTOR_URLS = {
  */
 async function getCurrentNamespacedIdentity(): Promise<string> {
     try {
-        const { store } = await import('./store');
-        const state = store.getState();
+        const state = (await currentStore()).getState();
         if (state.identity?.id && state.identity?.type) {
             return `${state.identity.type}:${state.identity.id}`;
         }
@@ -159,8 +219,7 @@ async function getCurrentNamespacedIdentity(): Promise<string> {
  */
 async function getActiveWorkspaceId(): Promise<string | null> {
     try {
-        const { store } = await import('./store');
-        const state = store.getState();
+        const state = (await currentStore()).getState();
         return state?.activeWorkspace?.id ?? null;
     } catch {
         return null;
@@ -190,6 +249,8 @@ async function _doFetch(
         }
 
         headers.set('Accept-Language', getAgentLanguage());
+
+        if (DEMO_ID) headers.set(DEMO_HEADER, DEMO_ID);
 
         // Attach OIDC Bearer token when available (frontend mode only).
         // In backend mode the session cookie handles auth — no Bearer needed.
@@ -470,6 +531,14 @@ export function extractFieldsFromEncodingMap(encodingMap: EncodingMap, allFields
         }
     }
 
+    // Flint orders categories by an unmapped sortBy field; aggregation would drop that column.
+    if (aggregateFields.length === 0) {
+        for (const { sortBy } of Object.values(encodingMap)) {
+            if (sortBy && !['x', 'y', 'color'].includes(sortBy) && !groupByFields.includes(sortBy)
+                && allFields.some(field => field.name === sortBy)) groupByFields.push(sortBy);
+        }
+    }
+
     return { aggregateFields, groupByFields };
 }
 
@@ -529,6 +598,29 @@ export function prepVisTable(table: any[], allFields: FieldItem[], encodingMap: 
     return result;
 }
 
+/** Key of the non-enumerable Flint input attached to an assembled spec (see assembleVegaChart). */
+export const FLINT_INPUT = '__flintInput';
+
+export interface Size { width: number; height: number }
+
+/**
+ * The box (`canvasSize`) an assembled spec was laid out for, exactly as passed
+ * to Flint. Undefined for specs Flint did not assemble.
+ */
+export const chartCanvasBox = (spec: any): Size | undefined => {
+    const box = spec?.[FLINT_INPUT]?.chart_spec?.canvasSize;
+    return box && box.width > 0 && box.height > 0 ? { width: box.width, height: box.height } : undefined;
+};
+
+/**
+ * Flint's host contract: a drawing is scaled into its box (contain), never up.
+ * Flint keeps the result legible (≥ 70%), so a host never needs to clip.
+ */
+export const containScale = (drawn: Size, box: Size | undefined): number => {
+    if (!box || drawn.width <= 0 || drawn.height <= 0) return 1;
+    return Math.min(1, box.width / drawn.width, box.height / drawn.height);
+};
+
 export const assembleVegaChart = (
     chartType: string, 
     encodingMap: { [key in Channel]: EncodingItem; }, 
@@ -562,10 +654,26 @@ export const assembleVegaChart = (
         };
     }
 
+    // Flint rejects sort references it cannot resolve; an unusable sort hint must not block the chart.
+    Object.assign(encodings, resolveColumnSorts(encodings, workingTable));
+    for (const encoding of Object.values(encodings)) {
+        const sortBy = encoding.sortBy;
+        if (sortBy === undefined) continue;
+        if (sortBy === 'x' || sortBy === 'y' || sortBy === 'color') {
+            if (!encodings[sortBy]?.field && encodings[sortBy]?.aggregate !== 'count') encoding.sortBy = undefined;
+        } else {
+            let values: unknown;
+            try { values = JSON.parse(sortBy); } catch { values = undefined; }
+            const valid = Array.isArray(values) ? values.filter(value => typeof value === 'string'
+                || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))) : [];
+            encoding.sortBy = valid.length > 0 ? JSON.stringify(valid) : undefined;
+        }
+    }
+
     const semanticTypes: Record<string, string | any> = {};
     for (const [fieldName, info] of Object.entries(fieldSemantics ?? {})) {
         if (info.semanticType) {
-            const { displayName: _displayName, ...annotation } = info;
+            const { displayName: _displayName, authored: _authored, ...annotation } = info;
             semanticTypes[fieldName] = Object.keys(annotation).length === 1
                 ? info.semanticType
                 : annotation;
@@ -575,11 +683,13 @@ export const assembleVegaChart = (
     const effectiveW = Math.round(baseChartWidth * scaleFactor);
     const effectiveH = Math.round(baseChartHeight * scaleFactor);
 
-    // Flint 0.2.x sizing: `baseSize` is the target the chart aims for; `canvasSize`
-    // is the hard ceiling (= base × stretch). DF's `maxStretchFactor` is that
-    // multiplier; fall back to 1.5 so the ceiling is always set explicitly rather
-    // than relying on flint's default. (Radial charts — pie/rose/etc. — render at the
-    // target like any other type under flint 0.2.1, so no pie-specific damping.)
+    // Flint sizing: `baseSize` is the target the chart aims for; `canvasSize`
+    // (= base × stretch) is the box the chart is laid out for and scaled into.
+    // The plot never stretches past it, but the title, keys and axes share the
+    // box, so the drawing may come out a little larger: every host must
+    // contain-scale it into this box (see `chartCanvasBox` / `containScale`).
+    // DF's `maxStretchFactor` is the multiplier; fall back to 1.5 so the box is
+    // always set explicitly rather than relying on flint's default.
     const stretch = maxStretchFactor ?? 1.5;
 
     const fieldDisplayNames: Record<string, string> = {};
@@ -587,7 +697,7 @@ export const assembleVegaChart = (
         if (info.displayName) fieldDisplayNames[name] = info.displayName;
     }
 
-    const spec = assembleVegaLite({
+    const flintInput = {
         data: { values: workingTable },
         semantic_types: semanticTypes,
         chart_spec: {
@@ -596,14 +706,17 @@ export const assembleVegaChart = (
             ...(title ? { title } : {}),
             ...(subtitle ? { subtitle } : {}),
             // DF's default chart width/height is the *target* size → flint `baseSize`.
-            // The hard ceiling is base × stretch (see `stretch` above), so charts render
-            // at the configured size and only grow under pressure up to that ceiling.
+            // The box is base × stretch (see `stretch` above), so charts render at
+            // the configured size and only grow under pressure up to that box.
             baseSize: { width: effectiveW, height: effectiveH },
             canvasSize: {
                 width: Math.round(effectiveW * stretch),
                 height: Math.round(effectiveH * stretch),
             },
-            chartProperties: chartProperties ? structuredClone(chartProperties) : undefined,
+            chartProperties: (() => {
+                const properties = choroplethRegion(chartType, encodings, workingTable, chartProperties);
+                return properties ? structuredClone(properties) : undefined;
+            })(),
         },
         options: {
             addTooltips,
@@ -612,7 +725,10 @@ export const assembleVegaChart = (
         },
         ...(themeId ? { theme_spec: themeId } : {}),
         ...(Object.keys(fieldDisplayNames).length > 0 ? { field_display_names: fieldDisplayNames } : {}),
-    });
+    };
+    const spec = mergeableLayerSorts(keepUnmatchedRegions(assembleVegaLite(flintInput)));
+    // The complete Flint input behind the chart, for copying; not part of the Vega-Lite spec.
+    Object.defineProperty(spec, FLINT_INPUT, { value: flintInput, enumerable: false });
 
     // Published flint-chart 0.4.1 ignores chart-level title/subtitle fields;
     // live Flint consumes them above and owns fitting. Keep this fallback until

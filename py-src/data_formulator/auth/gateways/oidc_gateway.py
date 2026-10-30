@@ -23,6 +23,7 @@ import logging
 import secrets
 import urllib.parse
 
+import jwt
 import requests as http
 from flask import Blueprint, Response, redirect, request, session
 
@@ -68,6 +69,38 @@ def _fetch_userinfo(access_token: str, userinfo_url: str) -> dict | None:
         return resp.json() if resp.ok else None
     except Exception:
         return None
+
+
+def _id_token_claims(id_token: str | None) -> dict:
+    """Claims of the ID token returned directly by the token endpoint.
+
+    The token came from the IdP over TLS in exchange for the client secret,
+    so its signature need not be re-checked here (OIDC Core 3.1.3.7).
+    """
+    if not id_token:
+        return {}
+    try:
+        claims = jwt.decode(id_token, options={"verify_signature": False})
+    except jwt.PyJWTError:
+        return {}
+    return claims if isinstance(claims, dict) else {}
+
+
+def _signed_in_user(tokens: dict, userinfo: dict | None) -> dict | None:
+    """The user record for the session, or ``None`` without a stable subject."""
+    claims = _id_token_claims(tokens.get("id_token"))
+    userinfo = userinfo if isinstance(userinfo, dict) else {}
+    token_subject = claims.get("sub")
+    if token_subject and userinfo.get("sub") and userinfo["sub"] != token_subject:
+        # UserInfo for another subject must not be used (OIDC Core 5.3.2).
+        userinfo = {}
+    subject = token_subject or userinfo.get("sub") or userinfo.get("id")
+    if not subject:
+        return None
+    user = {key: claims[key] for key in ("name", "email", "preferred_username") if claims.get(key)}
+    user.update(userinfo)
+    user["sub"] = str(subject)
+    return user
 
 
 @oidc_bp.route("/login")
@@ -158,7 +191,10 @@ def oidc_callback():
 
     tokens = resp.json()
     token_store = TokenStore()
-    user_info = _fetch_userinfo(tokens["access_token"], cfg.get("userinfo_url", ""))
+    user_info = _signed_in_user(tokens, _fetch_userinfo(tokens["access_token"], cfg.get("userinfo_url", "")))
+    if user_info is None:
+        logger.error("OIDC callback: neither the ID token nor UserInfo identified the user (no 'sub')")
+        return _error_redirect("token_exchange_failed")
 
     token_store.store_sso_tokens(
         access_token=tokens["access_token"],
@@ -183,10 +219,11 @@ def oidc_status():
     token_store = TokenStore()
     sso_token = token_store.get_sso_token()
     sso_data = session.get("sso", {})
-    if sso_token:
+    user = sso_data.get("user") or {}
+    if sso_token and (user.get("sub") or user.get("id")):
         return json_ok({
             "authenticated": True,
-            "user": sso_data.get("user"),
+            "user": user,
         })
     return json_ok({"authenticated": False})
 

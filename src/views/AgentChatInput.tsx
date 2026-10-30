@@ -4,8 +4,7 @@
 // Shared chat-style input box for agent surfaces. Renders a rounded
 // border with focus glow, an inline image-preview row, a file-attach
 // affordance, a multiline `InputBase`, and a send/stop button. Used by
-// both the in-chat `DataLoadingChat` and the landing-page Data Loading
-// Agent quick-start box so they look and behave identically (paste
+// the landing-page and upload-menu quick-start boxes (paste
 // image, drag attach, Shift+Enter, etc.).
 
 import * as React from 'react';
@@ -19,7 +18,7 @@ import {
     alpha,
     useTheme,
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
 import CloseIcon from '@mui/icons-material/Close';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
@@ -50,6 +49,7 @@ export interface AgentChatInputProps {
      * non-image files are silently ignored (image-only mode).
      */
     onNonImageFile?: (file: File) => void;
+    onFileCreated?: () => void;
     /**
      * Optional list of attached non-image files (e.g. uploaded Excel/CSV).
      * Rendered as removable chips above the input — mirrors the
@@ -73,6 +73,8 @@ export interface AgentChatInputProps {
      * instead of, or in addition to, the attach affordance.
      */
     leadingSlot?: React.ReactNode;
+    /** Rendered right after the attach button, as in the chat box (e.g. the Tools chip). */
+    trailingSlot?: React.ReactNode;
     /**
      * If false, the attach button is hidden (paste of images still works).
      */
@@ -141,6 +143,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
     minRows,
     maxRows = 8,
     leadingSlot,
+    trailingSlot,
     showAttachButton = true,
     layout = 'inline',
     topSlot,
@@ -166,7 +169,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
          
     }, []);
 
-    const canSend = (value.trim().length > 0 || images.length > 0) && !inProgress && !disabled;
+    const canSend = (value.trim().length > 0 || images.length > 0 || !!attachments?.length) && !inProgress && !disabled;
 
     // Shared file intake: images become inline previews, everything else is
     // handed to `onNonImageFile` (scratch upload → attachment chip). Used by
@@ -253,12 +256,13 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
     };
 
     const attachButton = showAttachButton ? (
-        <Tooltip title={attachTooltip ?? t('dataLoading.attachTooltip')} placement="top">
-            <IconButton size="small" onClick={() => fileInputRef.current?.click()}
-                disabled={inProgress || disabled}
-                sx={{ color: 'text.secondary' }}>
-                <AddIcon sx={{ fontSize: 20 }} />
-            </IconButton>
+        <Tooltip title={attachTooltip ?? 'Attach file'}>
+            <span>
+                <IconButton size="small" aria-label={attachTooltip ?? 'Attach file'}
+                    disabled={inProgress || disabled} onClick={() => fileInputRef.current?.click()}>
+                    <AttachFileIcon sx={{ fontSize: iconVar.lg }} />
+                </IconButton>
+            </span>
         </Tooltip>
     ) : null;
 
@@ -469,7 +473,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                         <Box sx={{ px: 1, pt: 0.5, width: '100%', boxSizing: 'border-box', display: 'flex' }}>
                             {inputField}
                         </Box>
-                        {/* Bottom toolbar: leading slot + attach on the left, send on the right. */}
+                        {/* Bottom toolbar: leading slot, attach, trailing slot on the left; send on the right. */}
                         <Box sx={{
                             display: 'flex',
                             alignItems: 'center',
@@ -479,9 +483,10 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                             pt: 0.25,
                             gap: 0.5,
                         }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                 {leadingSlot}
                                 {attachButton}
+                                {trailingSlot}
                             </Box>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                 {sendButton}
@@ -495,6 +500,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                         {showAttachButton && (
                             <Box sx={{ mb: 0.25 }}>{attachButton}</Box>
                         )}
+                        {trailingSlot}
                         {inputField}
                         <Box sx={{ mb: 0.25 }}>{sendButton}</Box>
                     </Box>

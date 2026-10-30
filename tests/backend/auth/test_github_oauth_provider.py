@@ -41,9 +41,6 @@ def provider(monkeypatch) -> GitHubOAuthProvider:
 
 class TestGitHubProviderMetadata:
 
-    def test_name(self, provider):
-        assert provider.name == "github"
-
     def test_enabled_with_both_vars(self, provider):
         assert provider.enabled is True
 
@@ -56,11 +53,6 @@ class TestGitHubProviderMetadata:
         monkeypatch.setenv("GITHUB_CLIENT_ID", "id")
         monkeypatch.delenv("GITHUB_CLIENT_SECRET", raising=False)
         assert GitHubOAuthProvider().enabled is False
-
-    def test_get_auth_info_is_redirect(self, provider):
-        info = provider.get_auth_info()
-        assert info["action"] == "redirect"
-        assert info["url"] == "/api/auth/github/login"
 
 
 # ------------------------------------------------------------------

@@ -1,9 +1,10 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react-swc';
 import path from 'path';
+import { dfReactRuntime } from './vite-plugins/dfReactRuntime';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), dfReactRuntime({ root: __dirname, flintChartLocal: process.env.FLINT_CHART_LOCAL })],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -21,5 +22,8 @@ export default defineConfig({
     setupFiles: ['./tests/frontend/setup.ts'],
     include: ['tests/frontend/**/*.test.{ts,tsx}'],
     css: false,
+    // Flint's interactive entries load their backends through extensionless dynamic imports
+    // meant for a bundler; let Vite resolve them instead of Node.
+    server: { deps: { inline: ['flint-chart'] } },
   },
 });

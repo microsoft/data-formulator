@@ -1,0 +1,143 @@
+{
+  "loader": {
+    "mysql": {
+      "user": "MySQL 사용자 이름",
+      "password": "비밀번호가 없으면 비워 두세요",
+      "host": "서버 주소",
+      "port": "서버 포트",
+      "database": "데이터베이스 이름",
+      "database_hint": "비워 두면 모든 데이터베이스를 탐색합니다.",
+      "authInstructions": "**예시**\n\nhost: `localhost` · port: `3306` · user: `root` · database: `mydb`\n\n**자격 증명**\n\n필요한 테이블을 읽을 수 있는 계정을 사용하세요. 로컬 서버에는 비밀번호가 없을 수 있습니다. 원격 서버의 경우 데이터베이스 관리자에게 접속 정보를 받고, 내 IP에서 연결이 허용되는지 확인하세요.\n\n**범위**\n\n`database`를 비워 두면 모든 데이터베이스를 탐색하고, 하나를 입력하면 해당 테이블을 바로 엽니다.\n\n**확인**\n\n같은 정보로 `mysql -u <user> -p -h <host> -P <port>`를 실행해 테스트하세요."
+    },
+    "mssql": {
+      "server": "호스트 이름 또는 인스턴스",
+      "database": "데이터베이스 이름",
+      "database_hint": "비워 두면 모든 데이터베이스를 탐색합니다.",
+      "user": "사용자 이름",
+      "password": "비밀번호",
+      "port": "1433",
+      "encrypt": "예 또는 아니요",
+      "trust_server_certificate": "예 또는 아니요",
+      "connection_timeout": "연결 제한 시간(초)",
+      "authInstructions": "**예시**\n\nserver: `myserver.database.windows.net` · database: `mydb`\n\n**로그인**\n\n- **Microsoft Entra ID:** Azure SQL에 권장. [`az login`](https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively)을 실행하고 사용자와 비밀번호는 비워 두세요.\n- **SQL Server authentication:** SQL 로그인과 비밀번호를 입력하세요.\n- **Windows authentication:** Windows 전용이며 Windows 계정을 사용합니다.\n\n**액세스 권한**\n\n관리자가 내 ID에 데이터베이스 액세스 권한을 부여해야 합니다. Entra ID의 경우 예시: `CREATE USER [you@contoso.com] FROM EXTERNAL PROVIDER;`\n\n**확인**\n\n`az account show`로 Entra ID가 사용할 계정을 확인할 수 있습니다. 로컬 서버의 경우 SQL Server가 TCP/IP를 활성화한 상태로 실행 중인지 확인하세요."
+    },
+    "postgresql": {
+      "user": "PostgreSQL 사용자 이름",
+      "password": "비밀번호가 없으면 비워 두세요",
+      "host": "PostgreSQL 호스트",
+      "port": "PostgreSQL 포트",
+      "database": "데이터베이스 이름",
+      "database_hint": "비워 두면 모든 데이터베이스를 탐색합니다.",
+      "authInstructions": "**예시**\n\nhost: `localhost` · port: `5432` · user: `postgres` · database: `mydb`\n\n**자격 증명**\n\n필요한 테이블에 대한 `SELECT` 권한이 있는 계정을 사용하세요. 로컬 서버에는 비밀번호가 없을 수 있습니다. 원격 서버의 경우 데이터베이스 관리자에게 접속 정보를 받으세요.\n\n**범위**\n\n`database`를 비워 두면 모든 데이터베이스를 탐색하고, 하나를 입력하면 해당 스키마를 바로 엽니다.\n\n**확인**\n\n같은 정보로 `psql -U <user> -h <host> -p <port> -d <database>`를 실행해 테스트하세요."
+    },
+    "mongodb": {
+      "host": "서버 주소",
+      "port": "서버 포트",
+      "username": "인증이 없으면 비워 두세요",
+      "password": "인증이 없으면 비워 두세요",
+      "database": "데이터베이스 이름",
+      "collection": "컬렉션 이름",
+      "collection_hint": "비워 두면 모든 컬렉션을 나열합니다.",
+      "authSource": "admin",
+      "authSource_hint": "사용자가 다른 데이터베이스에 정의된 경우에만 입력하세요.",
+      "authInstructions": "**예시**\n\nhost: `localhost` · port: `27017` · database: `mydb`\n\n**로그인**\n\n액세스 제어가 없는 로컬 서버라면 **No authentication**을 선택하세요. 그렇지 않으면 데이터베이스를 읽을 수 있는 사용자를 입력하고, 해당 사용자가 다른 데이터베이스(보통 `admin`)에 정의된 경우에만 `authSource`를 설정하세요.\n\n**범위**\n\n`collection`을 비워 두면 데이터베이스의 모든 컬렉션을 탐색할 수 있습니다.\n\n**확인**\n\n`mongosh --host <host> --port <port>`로 서버를 테스트하세요."
+    },
+    "cosmosdb": {
+      "endpoint": "Cosmos DB 계정 엔드포인트 URL",
+      "key": "계정 키 또는 에뮬레이터 키",
+      "database": "데이터베이스 이름",
+      "container": "비워 두면 모든 컨테이너 나열",
+      "authInstructions": "**예시**\n\nendpoint: `https://myaccount.documents.azure.com:443/` · database: `mydb`\n\n**자격 증명**\n\nAzure Portal에서 계정의 **Keys** 페이지에 있는 엔드포인트와 읽기 전용 키를 복사하세요. 로컬 에뮬레이터의 경우 `https://localhost:8081`과 에뮬레이터 키를 사용하세요.\n\n**범위**\n\n`container`를 비워 두면 데이터베이스의 모든 컨테이너를 탐색할 수 있습니다.\n\n**확인**\n\n연결이 거부되면 계정 방화벽에서 내 IP가 허용되어 있는지 확인하세요."
+    },
+    "bigquery": {
+      "project_id": "Google Cloud 프로젝트 ID",
+      "dataset_id": "analytics",
+      "dataset_id_hint": "비워 두면 모든 데이터 세트를 사용합니다. 여러 개는 쉼표로 구분하세요.",
+      "credentials_path": "/path/to/key.json",
+      "location": "US",
+      "authInstructions": "**예시**\n\nproject_id: `my-gcp-project` · dataset_id: `analytics` · location: `US`\n\n**로그인**\n\n- **Application default credentials:** 권장. [Google Cloud CLI](https://cloud.google.com/sdk/docs/install)를 설치하고 `gcloud auth application-default login`을 실행하거나 `GOOGLE_APPLICATION_CREDENTIALS`를 설정하세요.\n- **Service account file:** 계정의 JSON 키 파일 경로를 입력하세요.\n\n**액세스 권한**\n\nID에는 데이터 세트에 대한 **BigQuery Data Viewer**와 프로젝트에 대한 **BigQuery Job User**가 필요합니다.\n\n**범위**\n\n`dataset_id`를 비워 두면 모든 데이터 세트를 탐색할 수 있으며, 쉼표로 구분된 ID를 입력할 수도 있습니다. `location`은 데이터 세트가 있는 위치로 설정하세요."
+    },
+    "athena": {
+      "aws_profile": "default",
+      "aws_access_key_id": "액세스 키 ID",
+      "aws_secret_access_key": "시크릿 액세스 키",
+      "aws_session_token": "세션 토큰",
+      "aws_session_token_hint": "임시 자격 증명에만 필요합니다.",
+      "region_name": "AWS 리전 이름",
+      "workgroup": "primary",
+      "output_location": "s3://bucket/path/",
+      "output_location_hint": "비워 두면 작업 그룹의 결과 위치를 사용합니다.",
+      "database": "데이터베이스 이름",
+      "database_hint": "비워 두면 모든 데이터베이스를 탐색합니다.",
+      "query_timeout": "300",
+      "query_timeout_hint": "초 단위입니다.",
+      "authInstructions": "**예시**\n\nregion_name: `us-east-1` · workgroup: `primary` · aws_profile: `default`\n\n**로그인**\n\n- **AWS profile:** 권장. `~/.aws/credentials`의 프로필 이름을 입력하세요. `aws configure --profile <name>`으로 만들 수 있습니다.\n- **Access keys:** 액세스 키 ID와 시크릿을 입력하세요. 임시 자격 증명에는 세션 토큰도 필요합니다.\n\n**액세스 권한**\n\nID에는 Athena 쿼리 실행, Glue 카탈로그 읽기, 데이터 및 쿼리 결과용 S3 위치에 대한 읽기/쓰기 권한이 필요합니다.\n\n**범위**\n\n`database`를 비워 두면 모든 데이터베이스를 탐색할 수 있습니다. 고급 설정에서 `output_location`을 지정하지 않으면 결과는 작업 그룹의 위치에 저장됩니다."
+    },
+    "kusto": {
+      "kusto_cluster": "https://mycluster.region.kusto.windows.net",
+      "kusto_database": "데이터베이스 이름",
+      "client_id": "서비스 주체 전용",
+      "client_secret": "서비스 주체 전용",
+      "tenant_id": "서비스 주체 전용",
+      "authInstructions": "**예시**\n\nkusto_cluster: `https://help.kusto.windows.net` · kusto_database: `Samples`\n\n**로그인**\n\n- **Microsoft sign-in:** 본인 계정으로 로그인합니다. 서버에 설정된 경우에 표시됩니다.\n- **Azure default identity:** 로컬에서는 [`az login`](https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively) 세션을, Azure에서는 [관리 ID](https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/overview)를 사용합니다. 로그인하면 구독, 클러스터, 데이터베이스를 목록에서 선택할 수 있습니다.\n- **Service principal:** 앱의 `client_id`, `client_secret`, `tenant_id`를 입력하세요.\n\n**액세스 권한**\n\nID에는 데이터베이스에 대한 최소 뷰어(viewer) 권한이 필요하며, 로그인만으로는 부여되지 않습니다.\n\n**확인**\n\n`az account show`로 현재 활성 계정과 테넌트를 확인할 수 있습니다."
+    },
+    "databricks": {
+      "server_hostname": "adb-1234567890.11.azuredatabricks.net",
+      "http_path": "/sql/1.0/warehouses/abc123",
+      "catalog": "카탈로그 이름",
+      "catalog_hint": "비워 두면 모든 카탈로그를 탐색합니다.",
+      "schema": "스키마 이름",
+      "schema_hint": "비워 두면 카탈로그의 모든 스키마를 탐색합니다.",
+      "access_token": "dapi…",
+      "authInstructions": "**예시**\n\nserver_hostname: `dbc-a1b2c3d4-e5f6.cloud.databricks.com` · http_path: `/sql/1.0/warehouses/abc123`\n\n**연결**\n\nDatabricks에서 **SQL Warehouses**를 열고 웨어하우스를 선택한 다음 **Connection details**에서 `server_hostname`과 `http_path`를 복사하세요.\n\n**자격 증명**\n\n**Settings → Developer → Access tokens**에서 개인용 액세스 토큰을 만드세요. 토큰은 `dapi`로 시작합니다.\n\n**액세스 권한**\n\n토큰 사용자에게는 읽으려는 테이블에 대한 `USE CATALOG`, `USE SCHEMA`, `SELECT` 권한이 필요합니다.\n\n**범위**\n\n`catalog`와 `schema`를 비워 두면 전체를 탐색하고, 설정하면 특정 스키마를 바로 엽니다."
+    },
+    "superset": {
+      "url": "https://bi.company.com",
+      "username": "사용자 이름",
+      "password": "비밀번호",
+      "authInstructions": "**예시**\n\nurl: `https://bi.company.com`\n\n**자격 증명**\n\n최소 **Gamma** 역할과 필요한 데이터 세트에 대한 읽기 권한이 있는 계정을 사용하세요. Superset에서 SSO를 사용하는 경우 대신 SSO로 로그인하세요. 이 옵션은 서버에 `PLG_SUPERSET_SSO_LOGIN_URL`이 설정된 경우에 표시됩니다.\n\n**확인**\n\n대시보드나 차트 링크가 아닌 기본 URL을 사용하세요."
+    },
+    "azure_blob": {
+      "account_name": "Azure 스토리지 계정 이름",
+      "container_name": "Azure Blob 컨테이너 이름",
+      "connection_string": "DefaultEndpointsProtocol=https;AccountName=…",
+      "credential_chain": "cli;managed_identity;env",
+      "credential_chain_hint": "순서대로 시도할 Azure 자격 증명 공급자입니다.",
+      "account_key": "Azure 스토리지 계정 키",
+      "sas_token": "Azure SAS 토큰",
+      "endpoint": "Azure 엔드포인트 재정의",
+      "authInstructions": "**예시**\n\naccount_name: `mystorageacct` · container_name: `mydata`\n\n**로그인**\n\n- **Azure identity:** 권장. 로컬에서는 [`az login`](https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively) 세션을, Azure에서는 [관리 ID](https://learn.microsoft.com/azure/storage/blobs/authorize-managed-identity)를 사용합니다.\n- **SAS token:** 컨테이너 목록 조회와 읽기를 허용하는 기간 제한 토큰입니다.\n- **Connection string** 또는 **Account key:** Azure Portal의 **Storage account → Access keys**에서 확인하세요.\n\n**액세스 권한**\n\nAzure ID에는 컨테이너에 대한 [Storage Blob Data Reader](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/storage#storage-blob-data-reader) 역할이 필요합니다.\n\n**파일**\n\nCSV, TSV, Parquet, JSON, JSONL."
+    },
+    "s3": {
+      "aws_access_key_id": "AWS 액세스 키 ID",
+      "aws_secret_access_key": "AWS 비밀 액세스 키",
+      "aws_session_token": "세션 토큰",
+      "aws_session_token_hint": "임시 자격 증명에만 필요합니다.",
+      "region_name": "AWS 리전 이름",
+      "bucket": "S3 버킷 이름",
+      "authInstructions": "**예시**\n\nregion_name: `us-east-1` · bucket: `my-data-bucket`\n\n**로그인**\n\n- **Access keys:** **IAM → Users → Security credentials → Create access key**에서 만드세요. 임시 자격 증명에는 세션 토큰도 필요합니다.\n- **AWS default credentials:** `aws configure`, 환경 변수, 인스턴스 역할 등 로컬 AWS 설정을 사용합니다.\n\n**액세스 권한**\n\nID에는 버킷에 대한 `s3:ListBucket`과 파일에 대한 `s3:GetObject` 권한이 필요합니다.\n\n**파일**\n\nCSV, TSV, Parquet, JSON, JSONL."
+    },
+    "local_folder": {
+      "root_dir": "/path/to/folder",
+      "recursive": "하위 디렉터리의 파일 포함",
+      "file_pattern": "*.csv",
+      "authInstructions": "**폴더**\n\n**Browse**로 폴더를 선택하거나 전체 경로를 붙여넣으세요. 하위 폴더를 포함하려면 재귀 검색을 켜고, 고급 설정의 파일 패턴으로 파일 범위를 좁히세요(예: `*.csv`).\n\n**파일**\n\nCSV, TSV, Parquet, JSON, JSONL은 테이블로 로드됩니다. Excel, Markdown, PDF 및 기타 파일은 미리 보고 작업 영역에 파일로 복사할 수 있습니다."
+    },
+    "_common": {
+      "table_filter": "예: sales",
+      "table_filter_hint": "이름에 이 키워드가 포함된 테이블만 나열합니다."
+    },
+    "clickhouse": {
+      "authInstructions": "**예시**\n\nhost: `localhost` · port: `8123` · username: `default`\n\n**연결**\n\nClickHouse Cloud는 `secure`를 켠 상태로 포트 `8443`을 사용합니다. 자체 호스팅 서버는 보통 HTTP 포트 `8123`을 사용합니다.\n\n**자격 증명**\n\n필요한 데이터베이스를 읽을 수 있는 계정을 사용하세요. 로컬 설치에서는 `default`에 비밀번호가 없는 경우가 많습니다.\n\n**범위**\n\n`database`를 비워 두면 모든 데이터베이스를 탐색하고, 하나를 입력하면 해당 테이블을 바로 엽니다."
+    },
+    "cube": {
+      "authInstructions": "**예시**\n\napi_url: `http://localhost:4000`\n\n**자격 증명**\n\nAPI 토큰을 입력하세요. 배포의 `CUBEJS_API_SECRET`으로 서명된 JWT입니다. 토큰의 보안 컨텍스트에 따라 쿼리할 수 있는 데이터가 결정됩니다. 개발 모드(`CUBEJS_DEV_MODE=true`)의 로컬 서버에는 토큰이 필요하지 않습니다.\n\n**확인**\n\nPlayground 페이지가 아닌 REST API URL을 사용하세요. URL에 경로가 없으면 `/cubejs-api`가 추가됩니다. 공개된 cube와 view만 표시됩니다."
+    },
+    "powerbi": {
+      "authInstructions": "**예시**\n\nworkspace: `Sales Analytics`\n\n**작업 영역**\n\n작업 영역 이름 또는 URL에 있는 ID(`.../groups/<id>/...`)를 입력하세요.\n\n**로그인**\n\n- **Azure default identity:** 권장. 모델을 열 수 있는 계정으로 `az login`을 실행하세요. 내 권한과 행 수준 보안이 적용됩니다.\n- **Service principal:** 작업 영역에 추가된 Entra 앱의 클라이언트 ID, 시크릿, 테넌트 ID입니다. 행 수준 보안이나 SSO를 사용하는 모델은 쿼리할 수 없습니다.\n\n**액세스 권한**\n\n각 시맨틱 모델에 대한 **Read** 및 **Build** 권한이 필요합니다. Power BI 관리자가 *Dataset Execute Queries REST API*를 활성화해야 하며, 서비스 주체의 경우 *Allow service principals to use Power BI APIs*도 활성화해야 합니다.\n\n**제한**\n\n사용자당 분당 120개 쿼리, 결과당 최대 10,000행입니다. Azure Analysis Services의 모델은 지원되지 않습니다."
+    },
+    "sample_datasets": {
+      "authInstructions": "기본 제공 샘플 데이터 세트는 설정이나 자격 증명이 필요 없습니다. 커넥터를 열어 예제를 탐색하고 테이블을 가져오세요."
+    }
+  }
+}

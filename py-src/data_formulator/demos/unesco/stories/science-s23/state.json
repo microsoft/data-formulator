@@ -1,0 +1,1484 @@
+{
+ "__stateVersion": 14,
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "d_out_5",
+   "displayId": "China and US research spending",
+   "names": [
+    "indicator_id",
+    "COUNTRY_ID",
+    "country",
+    "year",
+    "value",
+    "magnitude",
+    "qualifier",
+    "Country",
+    "Year"
+   ],
+   "rows": [
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2000,
+     "value": 0.88409,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2001,
+     "value": 0.92948,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2002,
+     "value": 1.04418,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2003,
+     "value": 1.10465,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2004,
+     "value": 1.19732,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2005,
+     "value": 1.29008,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2006,
+     "value": 1.34923,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2007,
+     "value": 1.35321,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2008,
+     "value": 1.4233,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2009,
+     "value": 1.6366,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2010,
+     "value": 1.68456,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2011,
+     "value": 1.75244,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2012,
+     "value": 1.88095,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2013,
+     "value": 1.96246,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2014,
+     "value": 1.98475,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2015,
+     "value": 2.01703,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2016,
+     "value": 2.0595,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2017,
+     "value": 2.07771,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2018,
+     "value": 2.10232,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2019,
+     "value": 2.20144,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2020,
+     "value": 2.35712,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2021,
+     "value": 2.38165,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2022,
+     "value": 2.4945,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2023,
+     "value": 2.57729,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2023-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2000,
+     "value": 2.61982,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2001,
+     "value": 2.63715,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2002,
+     "value": 2.54746,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2003,
+     "value": 2.55014,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2004,
+     "value": 2.48685,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2005,
+     "value": 2.50192,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2006,
+     "value": 2.54545,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2007,
+     "value": 2.61516,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2008,
+     "value": 2.74481,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2009,
+     "value": 2.7918,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2010,
+     "value": 2.71443,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2011,
+     "value": 2.73803,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2012,
+     "value": 2.67272,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2013,
+     "value": 2.69591,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2014,
+     "value": 2.70882,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2015,
+     "value": 2.77328,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2016,
+     "value": 2.83677,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2017,
+     "value": 2.88315,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2018,
+     "value": 2.98956,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2019,
+     "value": 3.14297,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2020,
+     "value": 3.41788,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2021,
+     "value": 3.4689,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2022,
+     "value": 3.48736,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2023,
+     "value": 3.44716,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2023-01-01T00:00:00.000"
+    }
+   ],
+   "metadata": {
+    "indicator_id": {
+     "type": "string",
+     "levels": []
+    },
+    "COUNTRY_ID": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "value": {
+     "type": "number",
+     "levels": []
+    },
+    "magnitude": {
+     "type": "boolean",
+     "levels": []
+    },
+    "qualifier": {
+     "type": "boolean",
+     "levels": []
+    },
+    "Country": {
+     "type": "string",
+     "levels": []
+    },
+    "Year": {
+     "type": "date",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import pandas as pd\nr=pd.read_parquet('data/rd_sdg_national.parquet')\nout=r[r.COUNTRY_ID.isin(['CHN','USA']) & r.indicator_id.eq('EXPGDP.TOT') & r.year.between(2000,2023)].copy()\nout['Country']=out.COUNTRY_ID.map({'CHN':'China','USA':'US'})\nout['Year']=pd.to_datetime(out.year.astype(str),format='%Y')",
+    "codeSignature": "ed50c220930c065df1939bd91484f8235ee1d1b15354b559e54aefdce93bc152",
+    "outputVariable": "out",
+    "source": [
+     "rd_sdg_national"
+    ],
+    "inputSources": [
+     {
+      "id": "data:e2d392aa9fac7f3712262b0e9ae08869:rd_sdg_national",
+      "kind": "data",
+      "displayName": "rd_sdg_national"
+     }
+    ],
+    "trigger": {
+     "tableId": "rd_sdg_national",
+     "resultTableId": "d_out_5",
+     "chart": {
+      "id": "chart-1792309132687",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "rd_sdg_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "d_out_5",
+    "rowCount": 48
+   },
+   "description": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792309054970_step_1",
+   "createdAt": 1792309141042
+  },
+  {
+   "kind": "table",
+   "id": "d_out_6",
+   "displayId": "China and US researcher density",
+   "names": [
+    "indicator_id",
+    "COUNTRY_ID",
+    "country",
+    "year",
+    "value",
+    "magnitude",
+    "qualifier",
+    "Country",
+    "Year"
+   ],
+   "rows": [
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2000,
+     "value": 549.57477,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2001,
+     "value": 582.78825,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2002,
+     "value": 631.73478,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2003,
+     "value": 667.9285,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2004,
+     "value": 713.42588,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2005,
+     "value": 856.65892,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2006,
+     "value": 931.20148,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2007,
+     "value": 1076.73747,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2008,
+     "value": 1197.58885,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2009,
+     "value": 861.24883,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2010,
+     "value": 898.85545,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2011,
+     "value": 972.01743,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2012,
+     "value": 1028.98334,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2013,
+     "value": 1079.63795,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2014,
+     "value": 1101.80087,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2015,
+     "value": 1162.7108,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2016,
+     "value": 1208.86205,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2017,
+     "value": 1235.84935,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2018,
+     "value": 1317.48914,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2019,
+     "value": 1483.85803,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2020,
+     "value": 1600.30633,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2021,
+     "value": 1685.97511,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "CHN",
+     "country": "China",
+     "year": 2022,
+     "value": 1849.23669,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "China",
+     "Year": "2022-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2000,
+     "value": 3556.3917,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2000-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2001,
+     "value": 3598.59475,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2001-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2002,
+     "value": 3645.74808,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2002-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2003,
+     "value": 3851.4654,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2003-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2004,
+     "value": 3710.14634,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2004-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2005,
+     "value": 3635.29099,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2005-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2006,
+     "value": 3674.19384,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2006-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2007,
+     "value": 3624.05411,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2007-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2008,
+     "value": 3751.46069,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2008-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2009,
+     "value": 3877.89208,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2009-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2010,
+     "value": 3643.92768,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2010-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2011,
+     "value": 3754.88228,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2011-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2012,
+     "value": 3734.6577,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2012-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2013,
+     "value": 3815.20951,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2013-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2014,
+     "value": 3915.0339,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2014-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2015,
+     "value": 3949.66371,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2015-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2016,
+     "value": 3897.11007,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2016-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2017,
+     "value": 4020.59227,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2017-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2018,
+     "value": 4322.78826,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2018-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2019,
+     "value": 4367.20971,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2019-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2020,
+     "value": 4567.79267,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2020-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2021,
+     "value": 4900.77179,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2021-01-01T00:00:00.000"
+    },
+    {
+     "indicator_id": "RESDEN.INHAB.TFTE",
+     "COUNTRY_ID": "USA",
+     "country": "United States of America",
+     "year": 2022,
+     "value": 4937.49441,
+     "magnitude": null,
+     "qualifier": null,
+     "Country": "US",
+     "Year": "2022-01-01T00:00:00.000"
+    }
+   ],
+   "metadata": {
+    "indicator_id": {
+     "type": "string",
+     "levels": []
+    },
+    "COUNTRY_ID": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "value": {
+     "type": "number",
+     "levels": []
+    },
+    "magnitude": {
+     "type": "boolean",
+     "levels": []
+    },
+    "qualifier": {
+     "type": "boolean",
+     "levels": []
+    },
+    "Country": {
+     "type": "string",
+     "levels": []
+    },
+    "Year": {
+     "type": "date",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import pandas as pd\nr=pd.read_parquet('data/rd_sdg_national.parquet')\nout=r[r.COUNTRY_ID.isin(['CHN','USA']) & r.indicator_id.eq('RESDEN.INHAB.TFTE') & r.year.between(2000,2022)].copy()\nout['Country']=out.COUNTRY_ID.map({'CHN':'China','USA':'US'})\nout['Year']=pd.to_datetime(out.year.astype(str),format='%Y')",
+    "codeSignature": "13494d3493818e142aef6c1bbb413cf3f5f1ee2108bbccfc02e6145f8f58b761",
+    "outputVariable": "out",
+    "source": [
+     "rd_sdg_national"
+    ],
+    "inputSources": [
+     {
+      "id": "data:e2d392aa9fac7f3712262b0e9ae08869:rd_sdg_national",
+      "kind": "data",
+      "displayName": "rd_sdg_national"
+     }
+    ],
+    "trigger": {
+     "tableId": "d_out_5",
+     "resultTableId": "d_out_6",
+     "chart": {
+      "id": "chart-1792309161120",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "d_out_5",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "d_out_6",
+    "rowCount": 46
+   },
+   "description": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792309054970_step_2",
+   "createdAt": 1792309161170
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-0f48786f82e4",
+   "chartType": "Line Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-Year-1792308922270-0.8469887899114346",
+     "dtype": "temporal"
+    },
+    "y": {
+     "fieldID": "concept-value-1792308922270-0.9461410494751481",
+     "dtype": "quantitative"
+    },
+    "color": {
+     "fieldID": "concept-Country-1792309035404-0.6381363645036049",
+     "dtype": "nominal"
+    },
+    "strokeDash": {
+     "channel": "strokeDash",
+     "bin": false
+    },
+    "detail": {
+     "channel": "detail",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "d_out_5",
+   "source": "user",
+   "title": "China and US research spending as a share of GDP",
+   "subtitle": "2000–2023 • UIS, February 2026 release",
+   "titleKey": "Line Chart|color:concept-Country-1792309035404-0.6381363645036049:|column::|detail::|opacity::|row::|strokeDash::|x:concept-Year-1792308922270-0.8469887899114346:|y:concept-value-1792308922270-0.9461410494751481:",
+   "unread": false,
+   "themeId": "datawrapper",
+   "config": {
+    "includeZero_y": true
+   }
+  },
+  {
+   "id": "chart-d77e3d460ffd",
+   "chartType": "Line Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-Year-1792308922270-0.8469887899114346",
+     "dtype": "temporal"
+    },
+    "y": {
+     "fieldID": "concept-value-1792308922270-0.9461410494751481",
+     "dtype": "quantitative"
+    },
+    "color": {
+     "fieldID": "concept-Country-1792309035404-0.6381363645036049",
+     "dtype": "nominal"
+    },
+    "strokeDash": {
+     "channel": "strokeDash",
+     "bin": false
+    },
+    "detail": {
+     "channel": "detail",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "d_out_6",
+   "source": "user",
+   "title": "China and US researchers per million people",
+   "subtitle": "2000–2022 • Full-time equivalents • UIS, February 2026 release",
+   "titleKey": "Line Chart|color:concept-Country-1792309035404-0.6381363645036049:|column::|detail::|opacity::|row::|strokeDash::|x:concept-Year-1792308922270-0.8469887899114346:|y:concept-value-1792308922270-0.9461410494751481:",
+   "unread": false,
+   "themeId": "datawrapper",
+   "config": {
+    "includeZero_y": true
+   }
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-Country-1792309035404-0.6381363645036049",
+   "name": "Country",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-value-1792308922270-0.9461410494751481",
+   "name": "value",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-Year-1792308922270-0.8469887899114346",
+   "name": "Year",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792309054970_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1792309054970_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "How does China compare with the US in research?",
+   "parentNodeId": "conversation-root:72a8146d-48b9-437c-badb-09aa5ce3b201",
+   "actionId": "exploreDataFromNL_1792309054970",
+   "createdAt": 1792309054972
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792309054970_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1792309054970_step_1",
+   "textKind": "explain",
+   "content": "Check China and US coverage and compare matched years for both research measures.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792309054970_prompt",
+   "actionId": "exploreDataFromNL_1792309054970",
+   "createdAt": 1792309061096,
+   "startedAt": 1792309054972,
+   "codeExecutions": [
+    {
+     "id": "code_exploreDataFromNL_1792309054970_1",
+     "tool": "execute_python_script",
+     "purpose": "Check China and US coverage and compare matched years for both research measures.",
+     "code": "import pandas as pd\nr=pd.read_parquet('data/rd_sdg_national.parquet'); s=r[r.COUNTRY_ID.isin(['CHN','USA'])]\nprint(s.groupby(['country','indicator_id']).agg(first=('year','min'),last=('year','max'),n=('value','count')).to_string())\nprint(s[s.year.isin([2000,2023,2024])][['country','indicator_id','year','value','qualifier']].to_string(index=False))",
+     "status": "completed",
+     "createdAt": 1792309061096,
+     "output": "                                            first  last   n\ncountry                  indicator_id                      \nChina                    EXPGDP.TOT          1996  2023  28\n                         RESDEN.INHAB.TFTE   1996  2023  28\nUnited States of America EXPGDP.TOT          1996  2023  28\n                         RESDEN.INHAB.TFTE   1996  2022  27\n                 country      indicator_id  year      value qualifier\n                   China        EXPGDP.TOT  2000    0.88409      None\n                   China        EXPGDP.TOT  2023    2.57729      None\nUnited States of America        EXPGDP.TOT  2000    2.61982      None\nUnited States of America        EXPGDP.TOT  2023    3.44716      None\n                   China RESDEN.INHAB.TFTE  2000  549.57477      None\n                   China RESDEN.INHAB.TFTE  2023 2107.27003      None\nUnited States of America RESDEN.INHAB.TFTE  2000 3556.39170      None\n"
+    }
+   ],
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1792309054970-1",
+     "kind": "tool",
+     "label": "running code... Check China and US coverage and compare matched years for both research measures.",
+     "status": "completed",
+     "tool": "execute_python_script",
+     "toolCallId": "call_141d1EfomMnnuBzGl0WyHfXE",
+     "executionId": "code_exploreDataFromNL_1792309054970_1"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792309054970-2",
+     "kind": "chart",
+     "label": "creating chart...",
+     "status": "completed"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792309054970-3",
+     "kind": "thought",
+     "label": "I’ll compare research spending relative to GDP and researchers per person, using matched years for China and the US.",
+     "status": "completed"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792309054970_step_2",
+   "displayId": "textTurn_exploreDataFromNL_1792309054970_step_2",
+   "textKind": "explain",
+   "content": "Verify the latest matched researcher-density comparison and relative catch-up.",
+   "parentNodeId": "d_out_5",
+   "actionId": "exploreDataFromNL_1792309054970",
+   "createdAt": 1792309145305,
+   "startedAt": 1792309054972,
+   "codeExecutions": [
+    {
+     "id": "code_exploreDataFromNL_1792309054970_2",
+     "tool": "execute_python_script",
+     "purpose": "Verify the latest matched researcher-density comparison and relative catch-up.",
+     "code": "import pandas as pd\nr=pd.read_parquet('data/rd_sdg_national.parquet')\ns=r[r.COUNTRY_ID.isin(['CHN','USA']) & r.indicator_id.eq('RESDEN.INHAB.TFTE') & r.year.isin([2000,2022])]\nprint(s[['country','year','value']].to_string(index=False))",
+     "status": "completed",
+     "createdAt": 1792309145305,
+     "output": "                 country  year      value\n                   China  2000  549.57477\n                   China  2022 1849.23669\nUnited States of America  2000 3556.39170\nUnited States of America  2022 4937.49441\n"
+    }
+   ],
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1792309054970-4",
+     "kind": "tool",
+     "label": "running code... Verify the latest matched researcher-density comparison and relative catch-up.",
+     "status": "completed",
+     "tool": "execute_python_script",
+     "toolCallId": "call_8fY6jnyRwaI0uveIbskIyl0R",
+     "executionId": "code_exploreDataFromNL_1792309054970_2"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792309054970-5",
+     "kind": "chart",
+     "label": "creating chart...",
+     "status": "completed"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792309054970_1792309177736",
+   "displayId": "textTurn_exploreDataFromNL_1792309054970_closing",
+   "textKind": "explain",
+   "content": "**China is catching up, but the US still leads in research.**\n\n| Measure | China | US |\n|---|---:|---:|\n| Research spending, 2023 | **2.58% of GDP** | **3.45% of GDP** |\n| Researchers per million people, 2022 | **1,849** | **4,937** |\n\nChina's research spending, as a share of GDP, rose from **34% of the US level in 2000 to 75% in 2023**. Its researchers per million people rose from 15% to 37% of the US level. Source: UIS, February 2026 release.",
+   "parentNodeId": "d_out_6",
+   "actionId": "exploreDataFromNL_1792309054970",
+   "createdAt": 1792309177736,
+   "startedAt": 1792309054972,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "d_out_5",
+   "fields": {
+    "value": {
+     "semanticType": "Percentage",
+     "unit": "% of GDP",
+     "displayName": "R&D spending (% of GDP)",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "% of GDP",
+      "displayName": "R&D spending (% of GDP)"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "d_out_6",
+   "fields": {
+    "value": {
+     "semanticType": "Number",
+     "unit": "per million people",
+     "displayName": "Researchers per million people",
+     "authored": {
+      "semanticType": "Number",
+      "unit": "per million people",
+      "displayName": "Researchers per million people"
+     }
+    }
+   }
+  }
+ ],
+ "activeWorkspace": {
+  "id": "science-s23",
+  "displayName": "China is catching up with the US in research"
+ },
+ "focusedId": {
+  "type": "chart",
+  "chartId": "chart-0f48786f82e4"
+ }
+}

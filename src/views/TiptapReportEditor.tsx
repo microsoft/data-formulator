@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useEffect, useCallback, useRef, useState as useStateReact } from 'react';
+import React, { FC, useEffect, useCallback, useMemo, useRef, useState as useStateReact } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useEditor, EditorContent, NodeViewWrapper, NodeViewProps, ReactNodeViewRenderer } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -11,8 +11,8 @@ import { TableRow } from '@tiptap/extension-table-row';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { Markdown } from 'tiptap-markdown';
-import { Box, IconButton, Tooltip, Divider, Typography, CircularProgress, useTheme } from '@mui/material';
-import { alpha } from '@mui/material/styles';
+import { Box, IconButton, Tooltip, Divider, Typography, CircularProgress, Paper, Popper, useTheme } from '@mui/material';
+import { alpha, Theme } from '@mui/material/styles';
 import { WritingIndicator } from '../components/FunComponents';
 import { getChartTemplate } from '../components/ChartTemplates';
 import FormatBoldIcon from '@mui/icons-material/FormatBold';
@@ -23,6 +23,10 @@ import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
 import TitleIcon from '@mui/icons-material/Title';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { iconVar, textVar } from '../app/layout';
+import { CalloutKind, StreamSegment, excerptCitation, quotedPassage, safeHttpUrl, segmentStreamingLines, sessionFileName } from './reportBlocks';
+import { ReportBlockLabels, reportBlockExtensions } from './reportBlockNodes';
+import type { SourceLocation } from '../app/sourceLocation';
+import { ReportLook, reportContentSx } from './reportThemes';
 
 /** Compact "1.2s" / "850ms" style duration for inspection steps. */
 function formatStepDuration(ms: number): string {
@@ -41,7 +45,28 @@ export interface TiptapReportEditorProps {
     // carries chart-type + display name so we can show a type icon next to it
     inspectionSteps?: InspectStep[];
     reportId?: string;         // triggers re-focus when switching reports
+    reportLook?: ReportLook;       // the reader's typeface and density
+    // a link to a session file was clicked (an excerpt's source: near its page / quoted words)
+    onOpenSource?: (fileName: string, location: SourceLocation) => void;
     onUpdate?: (html: string) => void;
+}
+
+/** Report block labels in the user's language. */
+function useReportBlockLabels(): ReportBlockLabels {
+    const { t } = useTranslation();
+    return useMemo(() => ({
+        page: (page: string) => t('report.blocks.page', { page }),
+        callout: {
+            summary: t('report.blocks.summary'),
+            note: t('report.blocks.note'),
+            finding: t('report.blocks.finding'),
+            caveat: t('report.blocks.caveat'),
+            definition: t('report.blocks.definition'),
+        },
+        references: t('report.blocks.references'),
+        details: t('report.blocks.details'),
+        openWebSource: t('report.blocks.openWebSource'),
+    }), [t]);
 }
 
 // ── Generating-status UI ───────────────────────────────────────────────────
@@ -175,18 +200,147 @@ function matchChartImageLine(line: string): { chartId: string; caption?: string 
     return null;
 }
 
+const DEFAULT_LOOK: ReportLook = { typeface: 'sans', density: 'compact' };
+
+/** Space above a report's first line, in the editor and the streaming view alike. */
+const REPORT_TOP_SPACE = '48px';
+
 type ResolveChartImage = (chartId: string) => { url: string; width: number; height: number } | undefined;
 
 /**
  * Lightweight, line-based render of the streamed markdown. Good enough to read
  * smoothly while text arrives; the real TipTap parse happens once on completion.
+ * Report blocks are drawn as their boxes (open ones grow as they stream), with the
+ * same class names as the editor's nodes so the report theme styles both alike.
  */
 const StreamingMarkdownLite: FC<{ text: string; caret?: React.ReactNode; resolveChartImage?: ResolveChartImage }> = ({ text, caret, resolveChartImage }) => {
-    const lines = text.split('\n');
-    const lastIdx = lines.length - 1;
+    const segments = useMemo(() => segmentStreamingLines(
+        text.split('\n').filter(line => !/^\[\^[^\]\s]+\]:/.test(line)).map(line => line.replace(/\[\^[^\]\s]+\]/g, '')),
+    ), [text]);
+    return <StreamingSegments segments={segments} caret={caret} resolveChartImage={resolveChartImage} />;
+};
+
+const StreamingSegments: FC<{ segments: StreamSegment[]; caret?: React.ReactNode; resolveChartImage?: ResolveChartImage }> = ({ segments, caret, resolveChartImage }) => {
+    const labels = useReportBlockLabels();
     return (
         <>
-            {lines.map((line, i) => {
+            {segments.map((segment, i) => {
+                const tail = i === segments.length - 1 ? caret : null;
+                if (segment.type === 'lines') {
+                    return <StreamingLines key={i} lines={segment.lines} caret={tail} resolveChartImage={resolveChartImage} />;
+                }
+                const children = (
+                    <StreamingSegments segments={segment.children} caret={segment.closed ? null : tail} resolveChartImage={resolveChartImage} />
+                );
+                const body = <div className="report-block-body">{children}</div>;
+                let block: React.ReactNode;
+                switch (segment.block) {
+                    case 'excerpt': {
+                        const { label, locator } = excerptCitation(segment.attrs, labels.page);
+                        block = (
+                            <figure className="report-excerpt">
+                                {body}
+                                {(label || locator) && (
+                                    <figcaption>
+                                        {label && <span className="report-excerpt-source">{label}</span>}
+                                        {locator && <span className="report-excerpt-locator">{locator}</span>}
+                                    </figcaption>
+                                )}
+                            </figure>
+                        );
+                        break;
+                    }
+                    case 'callout': {
+                        const kind = segment.attrs.kind as CalloutKind;
+                        block = (
+                            <aside className="report-callout" data-kind={kind}>
+                                <div className="report-callout-title">{segment.attrs.title || labels.callout[kind]}</div>
+                                {body}
+                            </aside>
+                        );
+                        break;
+                    }
+                    case 'metrics':
+                        block = <div className="report-metrics">{children}</div>;
+                        break;
+                    case 'compare':
+                        block = <div className="report-compare">{children}</div>;
+                        break;
+                    case 'column':
+                        block = (
+                            <div className="report-column">
+                                {segment.attrs.title && <div className="report-column-title">{segment.attrs.title}</div>}
+                                {body}
+                            </div>
+                        );
+                        break;
+                    case 'details':
+                        block = (
+                            <div className="report-details is-open">
+                                <div className="report-details-title">{segment.attrs.title || labels.details}</div>
+                                {body}
+                            </div>
+                        );
+                        break;
+                    case 'references':
+                        block = (
+                            <section className="report-references">
+                                <div className="report-references-title">{labels.references}</div>
+                                {body}
+                            </section>
+                        );
+                        break;
+                }
+                return (
+                    <React.Fragment key={i}>
+                        {block}
+                        {segment.closed ? tail : null}
+                    </React.Fragment>
+                );
+            })}
+        </>
+    );
+};
+
+/** `**bold**` and `*italic*` as elements; other inline Markdown markers dropped. */
+function renderInline(text: string): React.ReactNode[] {
+    return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) => {
+        const bold = part.match(/^\*\*([^*]+)\*\*$/);
+        return bold ? <strong key={i}>{bold[1]}</strong> : <React.Fragment key={i}>{stripInlineMarkers(part)}</React.Fragment>;
+    });
+}
+
+const StreamingLines: FC<{ lines: string[]; caret?: React.ReactNode; resolveChartImage?: ResolveChartImage }> = ({ lines, caret, resolveChartImage }) => {
+    const lastIdx = lines.length - 1;
+    // Consecutive list items render as one list (so blocks like metrics can lay them out).
+    const groups: { start: number; items: string[]; ordered?: boolean }[] = [];
+    lines.forEach((line, i) => {
+        const item = line.match(/^\s*(?:([-*])|(\d+)[.)])\s+(.*)$/);
+        const last = groups[groups.length - 1];
+        if (item && last?.items.length && last.start + last.items.length === i && last.ordered === !item[1]) {
+            last.items.push(item[3]);
+        } else if (item) {
+            groups.push({ start: i, items: [item[3]], ordered: !item[1] });
+        } else {
+            groups.push({ start: i, items: [] });
+        }
+    });
+    return (
+        <>
+            {groups.map(group => {
+                const i = group.start;
+                if (group.items.length) {
+                    const end = group.start + group.items.length - 1;
+                    const List = group.ordered ? 'ol' : 'ul';
+                    return (
+                        <List key={i}>
+                            {group.items.map((item, j) => (
+                                <li key={j}><p>{renderInline(item)}{group.start + j === lastIdx && end === lastIdx ? caret : null}</p></li>
+                            ))}
+                        </List>
+                    );
+                }
+                const line = lines[i];
                 const tail = i === lastIdx ? caret : null;
                 const img = matchChartImageLine(line);
                 if (img) {
@@ -209,122 +363,29 @@ const StreamingMarkdownLite: FC<{ text: string; caret?: React.ReactNode; resolve
                 }
                 const h = line.match(/^(#{1,3})\s+(.*)$/);
                 if (h) {
-                    const level = h[1].length;
-                    return (
-                        <Box key={i} component="div" sx={{
-                            fontWeight: level === 1 ? 700 : 600,
-                            fontSize: level === 1 ? '1.75rem' : level === 2 ? '1.4rem' : '1.15rem',
-                            lineHeight: 1.3,
-                            mt: i === 0 ? 0 : '1em', mb: '0.4em',
-                        }}>
-                            {stripInlineMarkers(h[2])}{tail}
-                        </Box>
-                    );
+                    const Heading = `h${h[1].length}` as 'h1' | 'h2' | 'h3';
+                    return <Heading key={i} style={i === 0 ? { marginTop: 0 } : undefined}>{renderInline(h[2])}{tail}</Heading>;
                 }
-                const li = line.match(/^[-*]\s+(.*)$/);
-                if (li) {
-                    return (
-                        <Box key={i} component="div" sx={{ display: 'flex', gap: 1, mb: '0.25em' }}>
-                            <Box component="span" sx={{ color: 'text.disabled' }}>•</Box>
-                            <Box component="span">{stripInlineMarkers(li[1])}{tail}</Box>
-                        </Box>
-                    );
+                if (line.trim() === '') {
+                    return tail ? <React.Fragment key={i}>{tail}</React.Fragment> : null;
                 }
-                return (
-                    <Box key={i} component="div" sx={{ minHeight: line === '' ? '0.5em' : undefined, mb: line === '' ? 0 : '0.2em' }}>
-                        {stripInlineMarkers(line)}{tail}
-                    </Box>
-                );
+                return <p key={i}>{renderInline(line)}{tail}</p>;
             })}
         </>
     );
 };
 
-/**
- * Typewriter buffer: smoothly reveals `text` regardless of how bursty the
- * network deltas are. A rAF loop catches the displayed length up to the target,
- * revealing more per frame when the backlog is large so it never falls behind.
- */
-const StreamingText: FC<{ text: string; resolveChartImage?: ResolveChartImage }> = ({ text, resolveChartImage }) => {
+const StreamingText: FC<{ text: string; reportLook: ReportLook; resolveChartImage?: ResolveChartImage }> = ({ text, reportLook, resolveChartImage }) => {
     const { t } = useTranslation();
-    const textRef = useRef(text);
-    textRef.current = text;
-    const shownLenRef = useRef(0);
-    const [shown, setShown] = useStateReact('');
-
-    useEffect(() => {
-        let raf = 0;
-        let lastTime = performance.now();
-        let lastTargetLen = 0;
-        let lastChunkTime = lastTime;
-        let fraction = 0;            // sub-character reveal accumulator
-
-        // Reveal rate in chars/ms, smoothed across chunks. Each time a chunk
-        // arrives we estimate the natural rate as (chunk size / time since the
-        // previous chunk), so the chunk is spread out over roughly the gap until
-        // the next one is expected — that feels like natural typing rather than
-        // dumping. Clamped to a sane min/max and floored so it never stalls.
-        const MIN_RATE = 0.012;     // ~12 chars/sec — slowest "typing" we allow
-        const MAX_RATE = 0.20;      // ~200 chars/sec — cap so big bursts don't blur
-        let rate = 0.03;            // initial guess until the first interval is known
-
-        const tick = () => {
-            const now = performance.now();
-            const dt = Math.min(now - lastTime, 100); // clamp tab-switch gaps
-            lastTime = now;
-
-            const target = textRef.current;
-            let len = shownLenRef.current;
-            if (len > target.length) { len = 0; fraction = 0; } // report cleared/restarted
-
-            // On each new chunk, re-estimate the natural typing rate from this
-            // chunk's size and the interval since the previous chunk arrived.
-            const arrived = target.length - lastTargetLen;
-            if (arrived > 0) {
-                const interval = Math.max(now - lastChunkTime, 1);
-                lastChunkTime = now;
-                lastTargetLen = target.length;
-                const chunkRate = arrived / interval;
-                rate = rate * 0.7 + chunkRate * 0.3; // EMA smoothing across chunks
-            }
-
-            const backlog = target.length - len;
-            if (backlog > 0) {
-                // Pace at the smoothed rate, but never below the min typing speed,
-                // and lift slightly when the backlog is large so we don't drift
-                // permanently behind a fast stream.
-                const catchUp = backlog > 240 ? 1.6 : backlog > 80 ? 1.25 : 1;
-                const effRate = Math.min(MAX_RATE, Math.max(MIN_RATE, rate) * catchUp);
-                fraction += effRate * dt;
-                const whole = Math.floor(fraction);
-                if (whole >= 1) {
-                    fraction -= whole;
-                    len = Math.min(target.length, len + whole);
-                    shownLenRef.current = len;
-                    setShown(target.slice(0, len));
-                }
-            }
-            raf = requestAnimationFrame(tick);
-        };
-        raf = requestAnimationFrame(tick);
-        return () => cancelAnimationFrame(raf);
-    }, []);
+    const theme = useTheme();
 
     return (
         <Box sx={{
-            px: '24px', pt: '40px', pb: '64px',
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
-            fontSize: '0.95rem', lineHeight: 1.7, color: 'rgb(55, 53, 47)',
+            ...reportContentSx(theme, reportLook),
+            px: '24px', pt: REPORT_TOP_SPACE, pb: '64px',
         }}>
-            <StreamingMarkdownLite text={shown} resolveChartImage={resolveChartImage} caret={
-                <Box component="span" sx={{
-                    display: 'inline-block', width: '2px', height: '1.1em',
-                    ml: '1px', verticalAlign: 'text-bottom', backgroundColor: 'text.primary',
-                    animation: 'stream-caret 1s step-end infinite',
-                    '@keyframes stream-caret': { '50%': { opacity: 0 } },
-                }} />
-            } />
-            <Box sx={{ mt: shown.length === 0 ? 1 : 2 }}>
+            <StreamingMarkdownLite text={text} resolveChartImage={resolveChartImage} />
+            <Box sx={{ mt: text.length === 0 ? 1 : 2 }}>
                 <WritingIndicator label={t('editor.writingReport')} fontSize="0.85rem" />
             </Box>
         </Box>
@@ -474,16 +535,21 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
     generatingPhase,
     inspectionSteps,
     reportId,
+    reportLook = DEFAULT_LOOK,
+    onOpenSource,
     onUpdate,
 }) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const isFocused = useRef(false);
+    const blockLabels = useReportBlockLabels();
 
     const editor = useEditor({
         extensions: [
             StarterKit.configure({
                 heading: { levels: [1, 2, 3] },
+                // Links open on a plain click only when reading (session files in a canvas tab).
+                link: { openOnClick: false },
             }),
             ResizableImage.configure({
                 inline: false,
@@ -495,8 +561,10 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
             TableRow,
             TableHeader,
             TableCell,
+            ...reportBlockExtensions(blockLabels),
             Markdown.configure({
                 html: true,
+                linkify: true,
                 transformPastedText: true,
             }),
         ],
@@ -539,7 +607,7 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
         if (!editor) return;
         // While the writing phase streams, the lightweight typewriter view owns the
         // display — defer the (expensive) markdown parse until the stream completes.
-        if (generatingPhase === 'writing') return;
+        if (isGenerating && generatingPhase === 'writing') return;
         if (!isFocused.current) {
             editor.commands.setContent(content, { emitUpdate: false });
         } else {
@@ -551,7 +619,73 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
                 editor.commands.setContent(content, { emitUpdate: false });
             }
         }
-    }, [editor, content, generatingPhase]);
+    }, [editor, content, generatingPhase, isGenerating]);
+
+    // A citation number's reference entry (entry n of the references list).
+    const contentRef = useRef<HTMLDivElement>(null);
+    const referenceOf = useCallback((cite: Element): HTMLElement | undefined => {
+        const number = Number(cite.getAttribute('data-cite'));
+        const entries = contentRef.current?.querySelectorAll<HTMLElement>('.report-references li');
+        return number && entries ? entries[number - 1] : undefined;
+    }, []);
+
+    // Opening a reference: its session file in a canvas tab (at the quoted words), else its web page,
+    // else the entry itself in the references list.
+    const openReference = useCallback((entry: HTMLElement) => {
+        const href = entry.querySelector('a[href]')?.getAttribute('href');
+        const fileName = sessionFileName(href);
+        if (fileName) {
+            onOpenSource?.(fileName, { text: quotedPassage(entry.textContent || '') });
+            return;
+        }
+        const web = safeHttpUrl(href) ?? safeHttpUrl(entry.textContent?.match(/https?:\/\/\S+/)?.[0]?.replace(/[).,;]+$/, ''));
+        if (web) {
+            window.open(web, '_blank', 'noopener,noreferrer');
+            return;
+        }
+        entry.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, [onOpenSource]);
+
+    // Hovering a citation previews its reference.
+    const [citePreview, setCitePreview] = useStateReact<{ anchor: HTMLElement; text: string } | null>(null);
+    const handleCiteHover = useCallback((event: React.MouseEvent) => {
+        const cite = (event.target as HTMLElement).closest?.('sup.report-cite[data-cite]') as HTMLElement | null;
+        if (!cite) return;
+        const entry = referenceOf(cite);
+        if (entry) setCitePreview({ anchor: cite, text: entry.textContent || '' });
+    }, [referenceOf]);
+    const handleCiteLeave = useCallback((event: React.MouseEvent) => {
+        if ((event.target as HTMLElement).closest?.('sup.report-cite')) setCitePreview(null);
+    }, []);
+
+    // A link to a session file (an excerpt's source, or a files/… link in the text) opens it in a
+    // canvas tab — an excerpt's near its page and quoted words. Web links open normally. A citation
+    // number opens its reference's source.
+    const handleSourceClick = useCallback((event: React.MouseEvent) => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey) return;
+        const cite = (event.target as HTMLElement).closest?.('sup.report-cite[data-cite]') as HTMLElement | null;
+        if (cite && !editable) {
+            const entry = referenceOf(cite);
+            if (entry) {
+                event.preventDefault();
+                setCitePreview(null);
+                openReference(entry);
+            }
+            return;
+        }
+        const link = (event.target as HTMLElement).closest?.('a') as HTMLAnchorElement | null;
+        if (!link) return;
+        const fromExcerpt = link.getAttribute('data-open-file');
+        if (editable && !fromExcerpt) return;
+        const fileName = fromExcerpt || sessionFileName(link.getAttribute('href'));
+        if (!fileName) return;
+        event.preventDefault();
+        const page = Number(link.getAttribute('data-page')?.match(/\d+/)?.[0]) || undefined;
+        const text = fromExcerpt
+            ? link.closest('figure')?.querySelector('.report-block-body')?.textContent ?? undefined
+            : undefined;
+        onOpenSource?.(fileName, { page, text });
+    }, [editable, onOpenSource, referenceOf, openReference]);
 
     const copyAsRichText = useCallback(async () => {
         if (!editor) return;
@@ -654,124 +788,16 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
             </Box>
             )}
             {/* Editor */}
-            <Box sx={{
+            <Box ref={contentRef} onClick={handleSourceClick} onMouseOver={handleCiteHover} onMouseOut={handleCiteLeave} sx={{
                 flex: 1,
                 overflow: 'visible',
                 position: 'relative',
                 '& .tiptap': {
+                    ...reportContentSx(theme, reportLook),
                     outline: 'none',
-                    padding: '16px 24px',
+                    // The page's own top space: the first block (usually the title) has no top margin.
+                    padding: `${REPORT_TOP_SPACE} 24px 16px`,
                     minHeight: '100%',
-                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
-                    fontSize: '0.95rem',
-                    lineHeight: 1.7,
-                    color: 'rgb(55, 53, 47)',
-                    '& h1': {
-                        fontSize: '1.75rem',
-                        fontWeight: 700,
-                        lineHeight: 1.25,
-                        letterSpacing: '-0.02em',
-                        marginTop: '1.5em',
-                        marginBottom: '0.5em',
-                    },
-                    '& h2': {
-                        fontSize: '1.4rem',
-                        fontWeight: 600,
-                        lineHeight: 1.3,
-                        marginTop: '1.25em',
-                        marginBottom: '0.4em',
-                    },
-                    '& h3': {
-                        fontSize: '1.15rem',
-                        fontWeight: 600,
-                        lineHeight: 1.4,
-                        marginTop: '1em',
-                        marginBottom: '0.3em',
-                    },
-                    '& p': {
-                        marginBottom: '0.75em',
-                    },
-                    '& img': {
-                        maxWidth: '100%',
-                        height: 'auto',
-                        borderRadius: '4px',
-                        margin: '0.5em 0',
-                    },
-                    '& blockquote': {
-                        borderLeft: '3px solid',
-                        borderColor: alpha(theme.palette.text.disabled, 0.3),
-                        paddingLeft: '1em',
-                        margin: '0.75em 0',
-                        fontStyle: 'italic',
-                        color: 'rgb(73, 73, 73)',
-                    },
-                    '& ul, & ol': {
-                        paddingLeft: '1.5em',
-                        marginBottom: '0.75em',
-                    },
-                    '& li': {
-                        marginBottom: '0.25em',
-                    },
-                    '& strong': {
-                        fontWeight: 600,
-                    },
-                    '& code': {
-                        backgroundColor: 'rgba(247, 246, 243, 1)',
-                        padding: '0.15em 0.4em',
-                        borderRadius: '3px',
-                        fontSize: '0.85em',
-                        fontFamily: 'var(--df-font-mono)',
-                    },
-                    '& pre': {
-                        backgroundColor: 'rgba(247, 246, 243, 1)',
-                        padding: '0.75em 1em',
-                        borderRadius: '4px',
-                        overflow: 'auto',
-                        '& code': {
-                            backgroundColor: 'transparent',
-                            padding: 0,
-                        },
-                    },
-                    '& hr': {
-                        border: 'none',
-                        borderTop: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
-                        margin: '1.5em 0',
-                    },
-                    '& table': {
-                        borderCollapse: 'collapse',
-                        margin: '0.75em 0',
-                        width: 'auto',
-                        tableLayout: 'auto',
-                        fontSize: '0.82em',
-                        lineHeight: 1.35,
-                        color: 'rgb(73, 73, 73)',
-                    },
-                    '& table td, & table th': {
-                        border: `1px solid ${alpha(theme.palette.divider, 0.55)}`,
-                        padding: '4px 8px',
-                        verticalAlign: 'top',
-                        position: 'relative',
-                        minWidth: '1em',
-                    },
-                    '& table th': {
-                        backgroundColor: alpha(theme.palette.text.primary, 0.04),
-                        fontWeight: 600,
-                        textAlign: 'left',
-                        color: 'rgb(55, 53, 47)',
-                    },
-                    '& .tableWrapper': {
-                        overflowX: 'auto',
-                        margin: '0.75em 0',
-                    },
-                    '& .column-resize-handle': {
-                        position: 'absolute',
-                        right: -2,
-                        top: 0,
-                        bottom: -2,
-                        width: 4,
-                        backgroundColor: alpha(theme.palette.primary.main, 0.35),
-                        pointerEvents: 'none',
-                    },
                 },
             }}>
                 {/* While inspecting, the report is still empty — show progress.
@@ -780,11 +806,24 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
                 {isGenerating && generatingPhase !== 'writing' ? (
                     <InspectingStatus steps={inspectionSteps} />
                 ) : isGenerating && generatingPhase === 'writing' ? (
-                    <StreamingText text={streamingText ?? ''} resolveChartImage={resolveChartImage} />
+                    <StreamingText text={streamingText ?? ''} reportLook={reportLook} resolveChartImage={resolveChartImage} />
                 ) : (
                     <EditorContent editor={editor} />
                 )}
             </Box>
+            <Popper open={!!citePreview} anchorEl={citePreview?.anchor} placement="top" sx={{ zIndex: 1300, pointerEvents: 'none' }}
+                modifiers={[{ name: 'offset', options: { offset: [0, 6] } }]}>
+                <Paper elevation={3} sx={{ maxWidth: 380, px: 1.25, py: 0.9, borderRadius: '6px' }}>
+                    <Typography sx={{ fontSize: textVar.sm, lineHeight: 1.45, color: 'text.primary', overflowWrap: 'anywhere' }}>
+                        {citePreview?.text}
+                    </Typography>
+                    {!editable && (
+                        <Typography sx={{ mt: 0.5, fontSize: textVar.xs, color: 'text.disabled' }}>
+                            {t('report.blocks.openCite')}
+                        </Typography>
+                    )}
+                </Paper>
+            </Popper>
         </Box>
     );
 };

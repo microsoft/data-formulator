@@ -1,5 +1,7 @@
 include py-src/data_formulator/dist/*
 include py-src/data_formulator/dist/assets/*
 recursive-include py-src/data_formulator/data_loader/guides *.md
+include py-src/data_formulator/analyst/skills/map/countries.json
+recursive-include py-src/data_formulator/demos *.md *.yaml *.py *.csv *.png *.json *.parquet
 global-exclude .DS_Store
 exclude py-src/examples

@@ -1,0 +1,605 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "create_data",
+      "description": "Register newly acquired data as a reusable workspace input using acquisition metadata, or create an independently needed data deliverable. For chart-specific transformations, use visualize directly: it publishes both the derived table and chart. Rejects existing names. Provide rows OR sandboxed Python code producing a DataFrame; parsing and normalization can happen in this call. Declare actual data/file input_sources; use [] only for generated data without inputs and identify synthetic data. Returns the stable input ID, path, table name and content hash for immediate analysis and charting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table_name": { "type": "string", "description": "New workspace table identifier, using letters, digits and underscores." },
+          "display_name": { "type": "string", "maxLength": 80, "description": "Short human-readable table title, supplied when creating the table. Describe its contents; do not use the internal identifier or wait for background naming." },
+          "rows": { "type": "array", "items": { "type": "object" }, "description": "Literal records. Omit when using code." },
+          "code": { "type": "string", "description": "Python that reads listed inputs and computes output_variable; do not write files directly." },
+          "output_variable": { "type": "string", "description": "Variable containing the resulting pandas DataFrame." },
+          "acquisition": { "type": "object", "description": "Supply for acquired analysis inputs, not derived results or synthetic data. Declare the acquired files in input_sources. Store only non-sensitive source and coverage details, never credentials. The server records acquired_at when registering the dataset.", "properties": {
+            "source": { "type": "string", "minLength": 1, "maxLength": 8000, "description": "Non-secret source URL, local file, or service/resource identity." },
+            "scope": { "type": "string", "minLength": 1, "maxLength": 8000, "description": "Dataset coverage: subjects, dates, grain, measures, and units." },
+            "query": { "type": "string", "minLength": 1, "maxLength": 8000, "description": "Non-sensitive query or retrieval description." },
+            "limitations": { "type": "string", "minLength": 1, "maxLength": 8000, "description": "Known gaps, partial coverage, or other material limitations." }
+          }, "required": ["source", "scope"], "additionalProperties": false },
+          "input_sources": { "type": "array", "items": { "type": "object", "properties": {
+            "id": { "type": "string" }, "kind": { "type": "string", "enum": ["data", "file"] }
+          }, "required": ["id", "kind"], "additionalProperties": false }, "description": "Inputs materially used: a table name or its session/tables/<name>.json path (kind data); a files/... or scratch/... path (kind file)." }
+        },
+        "required": ["table_name", "display_name", "input_sources"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "update_data",
+      "description": "Explicitly revise agent-created editable workspace data under the same table ID. User uploads and connector tables are protected; create a derived copy instead. Provide rows OR Python producing a replacement DataFrame, actual input_sources, and the current table content_hash. When refreshing an acquired dataset, supply acquisition metadata and the newly acquired file inputs. Without acquisition metadata the replacement uses normal generated/derived semantics. On conflict reread and reconcile. Failed validation leaves the existing data intact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table_name": { "type": "string", "description": "Exact existing workspace table name." },
+          "expected_content_hash": { "type": "string", "pattern": "^[0-9a-f]{32}$", "description": "Current table content_hash from inventory or the latest create/update result." },
+          "display_name": { "type": "string", "maxLength": 80 },
+          "rows": { "type": "array", "items": { "type": "object" } },
+          "code": { "type": "string", "description": "Recompute replacement data from listed inputs. Do not write files directly." },
+          "output_variable": { "type": "string", "description": "Resulting pandas DataFrame." },
+          "acquisition": { "type": "object", "description": "For explicitly refreshing an acquired dataset from file inputs. Non-sensitive metadata only; the server records the new acquired_at timestamp.", "properties": {
+            "source": { "type": "string", "minLength": 1, "maxLength": 8000 },
+            "scope": { "type": "string", "minLength": 1, "maxLength": 8000 },
+            "query": { "type": "string", "minLength": 1, "maxLength": 8000 },
+            "limitations": { "type": "string", "minLength": 1, "maxLength": 8000 }
+          }, "required": ["source", "scope"], "additionalProperties": false },
+          "input_sources": { "type": "array", "items": { "type": "object", "properties": {
+            "id": { "type": "string" }, "kind": { "type": "string", "enum": ["data", "file"] }
+          }, "required": ["id", "kind"], "additionalProperties": false } }
+        },
+        "required": ["table_name", "expected_content_hash", "input_sources"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_file",
+      "description": "Create an agent-managed durable workspace file from literal text OR a sandboxed Python output variable. Python may read listed workspace and scratch inputs. A DataFrame becomes a Parquet file; str becomes UTF-8; bytes are saved as-is. Rejects existing filenames: use edit_file for revisions. Files appear immediately in the workspace and input inventory. For registered analysis tables use create_data; a file extension never registers data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filename": { "type": "string", "description": "File path including extension, optionally in folders, e.g. summary.md, notes/plan.md, lib/cleaning.py." },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "Always provide a concise human-readable title for the Workspace card: 2-5 meaningful words, preserving acronyms, e.g. UNESCO Education. Omit extensions, underscores, and redundant details. This is separate from the actual filename."
+          },
+          "content": {
+            "type": "string",
+            "description": "Complete UTF-8 text contents, up to 2 MB; omit when using code."
+          },
+          "code": {
+            "type": "string",
+            "description": "Python producing output_variable. Read either source or scratch inputs, but do not write files directly."
+          },
+          "output_variable": {
+            "type": "string",
+            "description": "Variable produced by code containing a DataFrame (requires .parquet filename), str, or bytes. Binary artifacts are limited to 128 MB."
+          }
+        },
+        "required": [
+          "filename"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "edit_file",
+      "description": "Edit an existing agent-managed workspace file. Provide exactly one of replacement content, Python code/output_variable, or text replacements/append_text. Requires the current content_hash from creation, editing, or read_file. Also edits the session's chart specs (session/charts/<id>.json) and reports (session/reports/<id>.md); those edits are validated and rejected, changing nothing, if they are invalid. User-managed sources and internal files are protected; create a copy instead. Preserves filename and display name unless a new display_name is supplied; an app is edited in place.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "replaces": {
+            "type": "string",
+            "description": "The file's files/... path, equal to path. Only to fix an artifact the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the fixed file moves to after the latest request and the thread notes that it replaced the old one. Omit it for ordinary changes the user asks for."
+          },
+          "path": { "type": "string", "description": "Exact existing path: files/... from list_files, the input inventory, or create_file; or session/charts/<id>.json or session/reports/<id>.md." },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "Optional short title of 2-5 meaningful words. Preserve acronyms; omit extensions and underscores."
+          },
+          "code": {
+            "type": "string",
+            "description": "Python producing output_variable. Read sources or scratch but do not write files directly."
+          },
+          "output_variable": {
+            "type": "string",
+            "description": "DataFrame (requires .parquet), str, or bytes for full replacement. Binary artifacts are limited to 128 MB."
+          },
+          "content": {
+            "type": "string",
+            "description": "Complete replacement UTF-8 text, up to 2 MB."
+          },
+          "expected_content_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Current SHA-256 of the file bytes. On conflict, reread and reconcile before retrying."
+          },
+          "replacements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "old_text": {
+                  "type": "string",
+                  "description": "Exact non-empty text to replace."
+                },
+                "new_text": {
+                  "type": "string",
+                  "description": "Replacement text; empty deletes the match."
+                },
+                "replace_all": {
+                  "type": "boolean",
+                  "default": false
+                }
+              },
+              "required": [
+                "old_text",
+                "new_text"
+              ],
+              "additionalProperties": false
+            },
+            "description": "For patch, ordered exact replacements. Ambiguous matches fail unless replace_all is true."
+          },
+          "append_text": {
+            "type": "string",
+            "description": "For patch, optional text appended after replacements."
+          }
+        },
+        "required": [
+          "path",
+          "expected_content_hash"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_files",
+      "description": "List the session's files with the name the user sees, kind and size: workspace files (files/: documents, PDFs, spreadsheets, data files, apps, your notes and Python helpers), the session (session/: index.md, tables/<name>.json for every table, charts/<id>.json and reports/<id>.md you can edit, references/<id>.json for connected-source tables, threads/<n>.md), and scratch/ intermediates. sources/ holds connected-source catalogs (sources/<source_id>/<path>), listed one level at a time; workflows/ (saved and built-in workflows and schedules, read-only) is listed only when path names it. The kind and detail (rows, pages, sheets) tell which read_file parameters apply.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Folder, prefix or glob to list, e.g. files/docs, session/tables, files/*.pdf. Omit for everything."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "read_file",
+      "description": "Read session files: any path from the session index or list_files (files/..., session/..., scratch/..., sources/..., workflows/...), several in one call within a size budget. Each item takes only the parameters for its kind; omit them for the default. Text and session views: offset/limit lines (default: the first 400). Tables (session/tables/<name>.json): the view with description, columns, samples and the parquet file for Python; rows=\"1790-1800\" (and columns) reads rows, at most 200 per item. Excel: its sheets; sheet + rows reads rows. Parquet files: shape and samples; rows reads rows. CSV: text by lines; rows reads it as a table. PDF: whole when short, else the first pages; pages=\"6-10\" reads pages (at most 20). A connected-source table (sources/...): its source_id, table_key, description and columns one per line (offset/limit page wide tables). Large text files are paged with a notice. A parameter that does not fit is ignored with a warning. Returns content_hash for edit_file and whether you may edit each file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "Items to read, e.g. [{\"path\": \"session/tables/sales.json\"}, {\"path\": \"session/tables/sales.json\", \"rows\": \"1-50\"}, {\"path\": \"files/report.pdf\", \"pages\": \"3-5\"}]. Globs in path read every match with the same parameters.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "A path or glob, e.g. files/notes/plan.md, session/charts/*."
+                },
+                "offset": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Text: first line to read (default 1)."
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000,
+                  "description": "Text: lines to read (default 400)."
+                },
+                "rows": {
+                  "type": "string",
+                  "description": "Tables, Excel, parquet, CSV: row range such as \"1-50\" or \"1790-1800\" (at most 200 rows)."
+                },
+                "columns": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Tables: only these columns."
+                },
+                "sheet": {
+                  "type": "string",
+                  "description": "Excel: the sheet to read (default: the first)."
+                },
+                "pages": {
+                  "type": "string",
+                  "description": "PDF: page range such as \"6-10\" (at most 20 pages)."
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "search",
+      "description": "Search this session: tables (name, description, column names and every row), files (text, PDF, Excel, notes) and session items (charts, reports, threads, references), then connected-source catalogs (sources/: table names, descriptions and columns, not rows), so one search tells whether data is already here or must be loaded. Every word must appear, in any order (case-insensitive); quote a phrase to match it exactly. A table match returns whole rows, so use it to look up a code or ID by its label (for example in a codebook or lookup table) before querying the data; a file match returns the line. Words must match within one row or line, so search for one thing at a time. Searches everything except workflows/ by default, catalog matches last; pass path (e.g. session/tables/, files/docs/, sources/ or sources/<source_id>/) when you know where to look. Connected sources match on cached metadata only; probe_data queries their values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Words to find; \"a quoted phrase\" must appear exactly."
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Where to search: folders, items or globs, e.g. [\"session/tables/\"] or [\"files/report.pdf\"]. Omit for everything."
+          },
+          "regex": {
+            "type": "boolean",
+            "description": "Treat query as a regular expression matched against each line or table cell."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows and lines shown in total (default 20); every matching item still reports its count."
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "move_file",
+      "description": "Rename or move a workspace file, into folders as needed (files/draft.md -> files/notes/draft.md). Content is unchanged; the file keeps its place in the thread. Organize your own files freely; move the user's files only when they ask.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Current path under files/." },
+          "new_path": { "type": "string", "description": "New path under files/." }
+        },
+        "required": ["path", "new_path"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "delete_items",
+      "description": "Delete tables (loaded or derived), charts, connected-source references, or workspace files and folders from this session when the user asks to remove them. Deletion is immediate and cannot be undone: delete only items the user named or clearly described, or your own working files (notes, helpers) you no longer need. A table goes with its charts, and a derived table goes with its last chart. Refused, deleting nothing, when something kept depends on an item: a table computed from it (include that table too only if the user wants it gone), a report or app using it (the user must change or remove those first), or a table computed from a file or whose code imports a helper. Items made earlier in this run cannot be deleted; fix them with replaces instead. Returns everything deleted: tell the user what went, or on a refusal what depends on it, and ask before also deleting tables computed from it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "type": "string" }, "description": "Ids of the items to delete: table names, chart ids (session/charts/<id>.json in the index), external reference ids, or files/... paths (a folder path deletes its files). Display names also match. An unknown id returns the session's items." }
+        },
+        "required": ["items"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "probe_data",
+      "description": "Resolve unknown values or coverage with a bounded read-only query against a connected table or semantic model. Use known schema from context or the table's sources/ file (read_file). Semantic queries select dimensions and measures in columns; native uses an advertised language and its query_capabilities.native_query_guidance. A small result does not guarantee a cheap scan; check query_capabilities. Results are inspection evidence, not workspace inputs; use propose_data_operation to load data for analysis.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "table_key": {
+            "type": "string"
+          },
+          "query": {
+            "type": "object",
+            "properties": {
+              "native": {
+                "type": "object",
+                "description": "Read-only native query. Cannot combine with other query fields except limit.",
+                "properties": {
+                  "language": {"type": "string", "enum": ["kql", "cube_json", "dax"]},
+                  "text": {"type": "string", "minLength": 1, "maxLength": 16000}
+                },
+                "required": ["language", "text"], "additionalProperties": false
+              },
+              "filters": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "column": {
+                      "type": "string"
+                    },
+                    "op": {
+                      "type": "string",
+                      "enum": [
+                        "EQ",
+                        "NEQ",
+                        "GT",
+                        "GTE",
+                        "LT",
+                        "LTE",
+                        "IN",
+                        "ILIKE",
+                        "BETWEEN",
+                        "IS_NULL"
+                      ]
+                    },
+                    "value": {}
+                  },
+                  "required": [
+                    "column",
+                    "op"
+                  ]
+                }
+              },
+              "columns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "group_by": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "aggregates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "string",
+                      "enum": [
+                        "count",
+                        "count_distinct",
+                        "sum",
+                        "avg",
+                        "min",
+                        "max"
+                      ]
+                    },
+                    "column": {
+                      "type": "string"
+                    },
+                    "as": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op"
+                  ]
+                }
+              },
+              "order_by": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "column": {
+                      "type": "string"
+                    },
+                    "dir": {
+                      "type": "string",
+                      "enum": [
+                        "asc",
+                        "desc"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "column"
+                  ]
+                }
+              },
+              "limit": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "required": [
+          "source_id",
+          "table_key"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "propose_data_operation",
+      "description": "Add connected data to the workspace, following the connected_data skill (load it first). For analysis, submit the needed query directly: the application also registers a virtual source reference only if that source/table is not already in the workspace. No separate preparation call is needed. Query results are materialized and never silently become virtual references. Omit query for an add-source request using automatic small/local or large/virtual loading, matching manual imports. Ground source IDs, table keys, and query fields in discovery or reference context. One option with user_review_needed=false executes automatically; review-required proposals pause for user selection. Multiple options always require review. Inspect load_outcomes: virtual means compute_ready=false with no local path; materialized means compute_ready=true with input paths and scope. When both are returned, compute from the materialized result without loading again. Source registration does not imply query success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_review_needed": {
+            "type": "boolean",
+            "description": "Defaults to false when omitted. False to execute one unambiguous recommended option without confirmation. True to ask about ambiguity or material deviations from the user's request."
+          },
+          "response": {
+            "type": "string",
+            "description": "Fallback only. Leave empty when you narrate in your message text, which is what the user reads."
+          },
+          "options": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "description": "Concise action label, ideally 2-6 words."
+                },
+                "tables": {
+                  "type": "array",
+                  "description": "The tables that serve the same analysis.",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "source_id": {
+                        "type": "string"
+                      },
+                      "table_key": {
+                        "type": "string"
+                      },
+                      "display_name": {
+                        "type": "string",
+                        "description": "Name for the resulting workspace table, not the raw source. For filtered/projected/limited data, name the subject and scope, e.g. 'Last of Us Part II Reviews' or '2025 West Region Orders'. Do not claim full coverage for a limited extract."
+                      },
+                      "query": {
+                        "type": "object",
+                        "description": "Omit for automatic local/virtual selection; semantic models become references. Supply a query to materialize data, with no virtual fallback. Semantic queries select dimensions and measures in columns at the required grain. Use advertised native queries for shapes structured queries cannot express. Native, semantic, and aggregate results allow at most 10000 rows; explicit limits define requested coverage.",
+                        "properties": {
+                          "native": {
+                            "type": "object",
+                            "description": "Read-only native query following query_capabilities.native_query_guidance for the connector. KQL: a complete expression including the selected table, for example Events | where event_time >= datetime(2026-01-01) and event_time < datetime(2026-02-01) | summarize event_count=count() by category; the connector does not prepend a table, so do not start with where or a bare pipe. cube_json: one Cube REST query object as JSON text using member refs from describe_data. dax: one DEFINE/EVALUATE query with exactly one EVALUATE, using table, column and measure names from describe_data. Use verified names. No commands, semicolons, comments, settings, external/remote access, or plugins. Cannot combine with other query fields except limit. Constrain scan scope explicitly. Native limits or sampling in the text define coverage, never assume a complete population.",
+                            "properties": {
+                              "language": {"type": "string", "enum": ["kql", "cube_json", "dax"]},
+                              "text": {"type": "string", "minLength": 1, "maxLength": 16000},
+                              "reads": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"type": "string", "minLength": 1, "maxLength": 256},
+                                "description": "Every source table the text reads, by name (e.g. [\"Events\"]); include joined, unioned or subqueried tables. A result is shown as coming from the selected table only when this lists just that table."}
+                            },
+                            "required": ["language", "text"], "additionalProperties": false
+                          },
+                          "group_by": {"type": "array", "items": {"type": "string"}},
+                          "aggregates": {"type": "array", "items": {
+                            "type": "object",
+                            "properties": {
+                              "op": {"type": "string", "enum": ["count", "count_distinct", "sum", "avg", "min", "max"]},
+                              "column": {"type": "string"},
+                              "as": {"type": "string", "description": "Unique output column name, distinct from group keys."}
+                            },
+                            "required": ["op", "as"], "additionalProperties": false
+                          }},
+                          "filters": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "column": {
+                                  "type": "string"
+                                },
+                                "op": {
+                                  "type": "string",
+                                  "enum": [
+                                    "EQ",
+                                    "NEQ",
+                                    "GT",
+                                    "GTE",
+                                    "LT",
+                                    "LTE",
+                                    "IN",
+                                    "ILIKE",
+                                    "BETWEEN",
+                                    "IS_NULL"
+                                  ]
+                                },
+                                "value": {}
+                              },
+                              "required": [
+                                "column",
+                                "op"
+                              ]
+                            }
+                          },
+                          "columns": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "order_by": {
+                            "type": "array",
+                            "maxItems": 1,
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "column": {
+                                  "type": "string"
+                                },
+                                "dir": {
+                                  "type": "string",
+                                  "enum": [
+                                    "asc",
+                                    "desc"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "column"
+                              ]
+                            }
+                          },
+                          "limit": {
+                            "type": "integer",
+                            "minimum": 1
+                          }
+                        }
+                      }
+                    },
+                    "required": [
+                      "source_id",
+                      "table_key"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "label",
+                "tables"
+              ]
+            }
+          }
+        },
+        "required": [
+          "options"
+        ]
+      }
+    }
+  }
+]

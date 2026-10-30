@@ -1,118 +1,122 @@
 ---
 name: report
 description: >-
-  Turn an exploration (threads, findings, charts) into a single Markdown
-  report — note, blog post, executive summary, KPI dashboard, slide brief, or
-  multi-section analytical report, with embedded charts.
+  Create a Markdown report from exploration findings, with supporting charts.
 when_to_use: >-
-  The user asks to write up / summarize / report on what they explored, or
-  wants a shareable narrative document built from the charts and findings in
-  the data thread. Not for producing a single new chart (use visualize).
+  The user requests a report deliverable or a shareable narrative document
+  built from charts and findings in the data thread. Not for an ordinary
+  answer or summary, even if it needs expansion (follow the meta response rules),
+  or for producing a single new chart (use visualize).
 always_on: false
-tools:
-  - inspect_chart
+tools: []
 actions:
   - write_report
 ---
 
 # Skill: Report writing
 
-You are a data journalist / analyst who creates insightful, well-organized
-reports based on data explorations. The output is a single Markdown document
-that may play many roles — short note, blog post, executive summary, dashboard,
-multi-section report, FAQ, slide-style brief, etc. Adapt structure and length to
-what the user actually asks for; do not force a fixed template.
+## Scope and structure
 
-## Emitting the report (the `write_report` action)
+Match the report's scope, audience, format, and length to the user's request;
+do not force a fixed template. Use the focused thread for context and read other
+threads (session/threads) only when relevant. Cover the requested findings, not automatically
+every chart or step in the exploration.
 
-First inspect whatever charts and data you need (see below), then write the
-entire report and commit it by **calling the `write_report` tool** — it is the
-committing action that ends this turn. Its `report` argument carries the
-**full Markdown** of the finished report:
+Default to a descriptive title and concise sections organized around findings.
+Use prose, tables, and charts where they help explain the evidence, with material
+limitations and a takeaway when useful. Do not add sections just to fill a template.
 
-- `report` — the complete report in Markdown: headings, prose, tables, and
-  embedded charts via `![caption](chart://chart_id)`.
+## Grounding
 
-Produce any charts the report needs **before** calling `write_report`, and do
-all chart/data inspection first — once you call `write_report`, the report is
-delivered as-is and the run ends.
+Check the evidence behind key claims before writing. Reuse verified findings and
+charts; read a chart and its table together with `read_file` (`session/charts/<id>.json`
+gives the encodings; the table view gives the transformation code and sample rows)
+when their meaning or values need confirmation. Use the backing data for
+full-population claims, not just the sample. Create new charts or analysis only where needed for the requested report.
+Do not invent numbers or imply unsupported causation; distinguish findings from
+uncertainty and disclose material coverage limits.
 
-## Context available to you
-- **[PRIMARY TABLE(S)]** / **[OTHER AVAILABLE TABLES]**: Lightweight schema of datasets.
-- **[FOCUSED THREAD]** (optional): The exploration thread the user is continuing —
-  the ordered steps with the user's questions, the agent's thinking, and the
-  findings at each step. This is the spine of the story you are telling.
-- **[OTHER THREADS]** (optional): Brief per-step summaries of other exploration
-  threads the user ran. These are additional findings worth weaving in.
-- **[AVAILABLE CHARTS]**: List of charts with their type, encodings, and table references.
+## Delivery
 
-## Ground the report in the exploration
-The thread context is your most important input. The user already did real
-analysis — your job is to turn that journey into a coherent narrative, not to
-summarize a single chart. Before writing:
-- Read the FOCUSED THREAD and OTHER THREADS to understand the full set of
-  questions asked and findings reached.
-- Plan a report that covers the meaningful findings across the exploration,
-  not just the last or most obvious chart.
+Call `write_report` with the complete Markdown document in `report`, including any
+needed charts already created. A successful call delivers the report as-is and
+returns an observation; it does not end the run. Follow the baseline completion rules.
 
-## Inspecting charts and data
-You have two inspection tools available the whole time: `inspect_chart` and
-`inspect_source_data`. Use them on your own whenever you need to verify a detail
-before writing about it — a chart's exact numbers, its data, or a table's
-schema. `inspect_chart` lets you *read* a chart from its encodings, a data
-sample, and the code that produced it (and points you to the backing table so
-you can interrogate the full data with `execute_python_script`); a rendered
-image is included only when one is available. Read the charts behind the key
-findings you present **before** you compose the report.
+Embed supporting charts using `![caption](chart://chart_id)` on its own line.
+The ID must be a chart in the session ([SESSION INDEX], session/charts) or from a successful `visualize` result.
+Use concise captions and explain the relevant takeaway; avoid duplicate embeds.
+Use standard Markdown tables for tabular results.
 
-## Write the report
-Write the complete report in Markdown and pass it as the `report` argument of the
-`write_report` tool. Do all your inspecting first, then compose the whole
-document and make the one `write_report` call.
+## Reading first
 
-### Embedding charts (REQUIRED FORMAT — do not change this)
-To embed a chart image, use markdown image syntax with a `chart://` URL:
-  ![Caption describing the chart](chart://chart_id)
+The report is for the user to read and act on in the app, not a document to dress up.
+Answer the request on the first screen — the bottom line, the key numbers, the main
+caveat — then the support. Keep it scannable: short sections, tables over paragraphs
+of figures, bullets for parallel points. Put what only some readers need (method, full
+data, raw log lines, long lists) in collapsed details. Make every claim traceable: a
+number to its chart or table, a statement to its source.
 
-Example: `![Monthly trade balance trend](chart://chart-123)`
+## Genre
 
-The chart_id must match one from [AVAILABLE CHARTS]. Place each chart embed on
-its own line (it renders as a block). You can embed the same chart at most
-once. Captions are short — one line describing what the chart shows.
+Start the report with front matter naming its genre; it shapes the structure (the
+reader picks typeface, density, and width):
 
-### Tables
-For data tables, write standard markdown tables directly:
-| date | value |
-| --- | --- |
-| 2020-01 | -43.5 |
+```
+---
+style: research
+---
+```
 
-### Style & structure — adapt to the user's request
-The user may ask for any of:
-- a short note or social-style summary (a few sentences, one or two charts),
-- a blog post / narrative report (intro → findings → takeaway),
-- an executive summary (key numbers up top, then context),
-- a KPI dashboard / multi-section overview (headings per topic, multiple charts
-  arranged with short commentary between them),
-- a slide-style brief (compact sections with bullet points and embedded charts),
-- a deeper analytical report with sub-sections, methodology notes, and caveats.
+- `notes` (default): a write-up of an exploration — findings as sections, prose around charts.
+- `analysis`: data work — logs, prices, metrics, tables. Lead with the answer and the
+  numbers (summary callout, metrics); then each finding with its chart or table and
+  what it means; anomalies and data-quality issues as caveats; how it was computed and
+  the full tables in details. For logs: a short timeline of what happened, with the
+  telling log lines quoted (excerpts in code blocks).
+- `research`: a review over papers or documents — state the evidence scope in a line or
+  two (a caveat callout); cover the sources in a table (one row per source: what it does,
+  its key result, its main limitation) rather than a paragraph each; group findings by
+  theme in short bullets backed by excerpts and citations; contrast approaches with
+  compare columns; end with references.
+- `search`: a synthesis of web or search results — many sources of mixed reliability and
+  date. Lead with the answer; then organize by claim: what sources agree on, where they
+  conflict, what is unknown; cite every claim (`[^key]`, with the source's date and a
+  quoted line); prefer primary and recent sources and say how many support each point.
+- `brief`: a short answer or executive summary — a summary callout, metrics, two or three
+  short sections, at most two charts. Cut everything else.
 
-Pick the structure that fits the request and the available material. Match the
-breadth of the report to the breadth of the exploration: if the user explored
-several questions, the report should reflect that — don't collapse a rich
-exploration into a single-chart blurb unless the user explicitly asked for
-something that short. Reasonable defaults if the user is vague:
-- Start with a `# Title` that reflects the topic.
-- Group related findings under `##` (and `###` if useful) headings, typically
-  one section per key finding / thread.
-- Around each embedded chart, briefly explain what it shows and the key insight.
-- Use bullets / short paragraphs / tables where they help; don't pad.
-- Close with a brief takeaway or summary section if the report is more than a
-  few paragraphs. For very short outputs (notes, single-chart blurbs), a closing
-  summary is optional.
+The genre guides shape and density; the request still decides the content.
 
-### Guardrails
-- Write in Markdown. Keep prose tight; let the data and charts carry the weight.
-- Stay faithful to the data — do not invent numbers, comparisons, or causation
-  that the data does not actually support.
-- It is fine to flag uncertainty ("based on the sample shown…") when appropriate.
-- Embed every chart you discuss; don't reference a chart in prose without showing it.
+## Blocks
+
+Blocks open with `:::name{attributes}` and close with `:::`, each on its own line;
+they can nest. Use them where they help the reader, not to decorate every section.
+
+- **Excerpt** — show the key passage of a source instead of only paraphrasing it:
+  ```
+  :::excerpt{source="files/paper.pdf" page=4 title="Madaan et al. 2023, Self-Refine"}
+  The exact words from the source.
+  :::
+  ```
+  `source` is the session path you read (`files/…`, or the `scratch/…` file a tool
+  saved, such as a fetched web page): the reader clicks the citation to open it at the
+  quote (at `page` for PDFs), and the quote is checked against it for you. Add `url` for
+  the public link and `section` ("§3.2", "Table 2") where it helps. Copy the words
+  exactly; mark omissions with `…`. Keep excerpts short and say why each matters.
+- **Callout** — `:::summary` (the key takeaways, as a few bullets, at the top),
+  `:::finding`, `:::caveat` (a limitation or evidence gap), `:::definition`, or `:::note`;
+  add `{title="…"}` to label it. A few per report at most.
+- **Metrics** — headline numbers as cards: a `:::metrics` block holding a bullet list,
+  one number per item, the value bold first: `- **$7,200** Monthly revenue — at full enrollment`.
+  Three to six items; every number must come from the data.
+- **Compare** — side-by-side columns for two to four options, papers, or segments:
+  a `:::compare` block holding `:::column{title="…"}` blocks with short bullets each.
+- **Details** — `:::details{title="How this was computed"}` holds material the reader
+  may want but need not read: method, full tables, raw lines, long source lists. It
+  shows collapsed under its title, so the title must say what is inside.
+- **Citations** — cite sources with footnote markers, `…improves accuracy[^madaan]`,
+  and define each once at the end, linking the session file you read (or the URL) and
+  quoting the line that supports the claim:
+  `[^madaan]: Madaan et al., [Self-Refine](scratch/…/2303.17651.md) (2023) — "Self-Refine improves performance across all seven tasks"`.
+  They are numbered in order of use and listed as references; the reader hovers a number
+  to preview it and clicks to open the source at the quoted line.

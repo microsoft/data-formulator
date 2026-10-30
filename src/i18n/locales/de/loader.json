@@ -1,0 +1,143 @@
+{
+  "loader": {
+    "mysql": {
+      "user": "MySQL-Benutzername",
+      "password": "Leer lassen für kein Passwort",
+      "host": "Serveradresse",
+      "port": "Serverport",
+      "database": "Datenbankname",
+      "database_hint": "Leer lassen, um alle Datenbanken zu durchsuchen.",
+      "authInstructions": "**Beispiel**\n\nhost: `localhost` · port: `3306` · user: `root` · database: `mydb`\n\n**Anmeldeinformationen**\n\nVerwenden Sie ein Konto, das die benötigten Tabellen lesen kann. Ein lokaler Server hat möglicherweise kein Passwort. Für einen Remote-Server erhalten Sie die Angaben von Ihrem Datenbankadministrator; stellen Sie sicher, dass Ihre IP sich verbinden darf.\n\n**Bereich**\n\nLassen Sie `database` leer, um alle Datenbanken zu durchsuchen, oder geben Sie eine ein, um direkt ihre Tabellen zu öffnen.\n\n**Prüfen**\n\nTesten Sie dieselben Angaben mit `mysql -u <user> -p -h <host> -P <port>`."
+    },
+    "mssql": {
+      "server": "Hostname oder Instanz",
+      "database": "Datenbankname",
+      "database_hint": "Leer lassen, um alle Datenbanken zu durchsuchen.",
+      "user": "Benutzername",
+      "password": "Passwort",
+      "port": "1433",
+      "encrypt": "ja oder nein",
+      "trust_server_certificate": "ja oder nein",
+      "connection_timeout": "Zeitlimit für die Verbindung in Sekunden",
+      "authInstructions": "**Beispiel**\n\nserver: `myserver.database.windows.net` · database: `mydb`\n\n**Anmeldung**\n\n- **Microsoft Entra ID:** empfohlen für Azure SQL. Führen Sie [`az login`](https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively) aus und lassen Sie Benutzer und Passwort leer.\n- **SQL Server authentication:** Geben Sie einen SQL-Login und ein Passwort ein.\n- **Windows authentication:** nur unter Windows; verwendet Ihr Windows-Konto.\n\n**Zugriff**\n\nEin Administrator muss Ihrer Identität Zugriff auf die Datenbank gewähren. Für Entra ID zum Beispiel: `CREATE USER [you@contoso.com] FROM EXTERNAL PROVIDER;`\n\n**Prüfen**\n\n`az account show` zeigt das Konto an, das Entra ID verwendet. Stellen Sie bei einem lokalen Server sicher, dass SQL Server läuft und TCP/IP aktiviert ist."
+    },
+    "postgresql": {
+      "user": "PostgreSQL-Benutzername",
+      "password": "Leer lassen für kein Passwort",
+      "host": "PostgreSQL-Host",
+      "port": "PostgreSQL-Port",
+      "database": "Datenbankname",
+      "database_hint": "Leer lassen, um alle Datenbanken zu durchsuchen.",
+      "authInstructions": "**Beispiel**\n\nhost: `localhost` · port: `5432` · user: `postgres` · database: `mydb`\n\n**Anmeldeinformationen**\n\nVerwenden Sie ein Konto mit `SELECT`-Zugriff auf die benötigten Tabellen. Ein lokaler Server hat möglicherweise kein Passwort. Für einen Remote-Server erhalten Sie die Angaben von Ihrem Datenbankadministrator.\n\n**Bereich**\n\nLassen Sie `database` leer, um alle Datenbanken zu durchsuchen, oder geben Sie eine ein, um direkt ihre Schemas zu öffnen.\n\n**Prüfen**\n\nTesten Sie dieselben Angaben mit `psql -U <user> -h <host> -p <port> -d <database>`."
+    },
+    "mongodb": {
+      "host": "Serveradresse",
+      "port": "Serverport",
+      "username": "Leer lassen, falls keine Authentifizierung",
+      "password": "Leer lassen, falls keine Authentifizierung",
+      "database": "Datenbankname",
+      "collection": "Collection-Name",
+      "collection_hint": "Leer lassen, um alle Collections aufzulisten.",
+      "authSource": "admin",
+      "authSource_hint": "Nur, wenn der Benutzer in einer anderen Datenbank definiert ist.",
+      "authInstructions": "**Beispiel**\n\nhost: `localhost` · port: `27017` · database: `mydb`\n\n**Anmeldung**\n\nWählen Sie **No authentication** für einen lokalen Server ohne Zugriffskontrolle. Geben Sie andernfalls einen Benutzer ein, der die Datenbank lesen kann, und setzen Sie `authSource` nur, wenn dieser Benutzer in einer anderen Datenbank definiert ist (oft `admin`).\n\n**Bereich**\n\nLassen Sie `collection` leer, um alle Collections der Datenbank zu durchsuchen.\n\n**Prüfen**\n\nTesten Sie den Server mit `mongosh --host <host> --port <port>`."
+    },
+    "cosmosdb": {
+      "endpoint": "Cosmos DB-Konto-Endpunkt-URL",
+      "key": "Kontoschlüssel oder Emulator-Schlüssel",
+      "database": "Datenbankname",
+      "container": "Leer lassen, um alle Container aufzulisten",
+      "authInstructions": "**Beispiel**\n\nendpoint: `https://myaccount.documents.azure.com:443/` · database: `mydb`\n\n**Anmeldeinformationen**\n\nKopieren Sie den Endpunkt und einen schreibgeschützten Schlüssel von der Seite **Keys** des Kontos im Azure-Portal. Für den lokalen Emulator verwenden Sie `https://localhost:8081` und den Emulator-Schlüssel.\n\n**Bereich**\n\nLassen Sie `container` leer, um alle Container der Datenbank zu durchsuchen.\n\n**Prüfen**\n\nWird die Verbindung abgelehnt, stellen Sie sicher, dass die Firewall des Kontos Ihre IP zulässt."
+    },
+    "bigquery": {
+      "project_id": "Google Cloud-Projekt-ID",
+      "dataset_id": "analytics",
+      "dataset_id_hint": "Leer lassen für alle Datasets; mehrere durch Kommas trennen.",
+      "credentials_path": "/path/to/key.json",
+      "location": "US",
+      "authInstructions": "**Beispiel**\n\nproject_id: `my-gcp-project` · dataset_id: `analytics` · location: `US`\n\n**Anmeldung**\n\n- **Application default credentials:** empfohlen. Installieren Sie die [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) und führen Sie `gcloud auth application-default login` aus, oder setzen Sie `GOOGLE_APPLICATION_CREDENTIALS`.\n- **Service account file:** Geben Sie den Pfad zur JSON-Schlüsseldatei des Kontos ein.\n\n**Zugriff**\n\nDie Identität benötigt **BigQuery Data Viewer** für die Datasets und **BigQuery Job User** für das Projekt.\n\n**Bereich**\n\nLassen Sie `dataset_id` leer, um alle Datasets zu durchsuchen, oder geben Sie durch Kommas getrennte IDs ein. Setzen Sie `location` auf den Standort der Datasets."
+    },
+    "athena": {
+      "aws_profile": "default",
+      "aws_access_key_id": "Zugriffsschlüssel-ID",
+      "aws_secret_access_key": "Geheimer Zugriffsschlüssel",
+      "aws_session_token": "Sitzungstoken",
+      "aws_session_token_hint": "Nur für temporäre Anmeldeinformationen.",
+      "region_name": "AWS-Regionsname",
+      "workgroup": "primary",
+      "output_location": "s3://bucket/path/",
+      "output_location_hint": "Leer lassen, um den Ergebnisspeicherort der Arbeitsgruppe zu verwenden.",
+      "database": "Datenbankname",
+      "database_hint": "Leer lassen, um alle Datenbanken zu durchsuchen.",
+      "query_timeout": "300",
+      "query_timeout_hint": "In Sekunden.",
+      "authInstructions": "**Beispiel**\n\nregion_name: `us-east-1` · workgroup: `primary` · aws_profile: `default`\n\n**Anmeldung**\n\n- **AWS profile:** empfohlen. Geben Sie ein Profil aus `~/.aws/credentials` ein; erstellen Sie eines mit `aws configure --profile <name>`.\n- **Access keys:** Geben Sie eine Zugriffsschlüssel-ID und den geheimen Schlüssel ein. Temporäre Anmeldeinformationen benötigen zusätzlich das Sitzungstoken.\n\n**Zugriff**\n\nDie Identität muss Athena-Abfragen ausführen, den Glue-Katalog lesen sowie die S3-Speicherorte für Ihre Daten und Abfrageergebnisse lesen und schreiben können.\n\n**Bereich**\n\nLassen Sie `database` leer, um alle Datenbanken zu durchsuchen. Ergebnisse werden am Speicherort der Arbeitsgruppe abgelegt, sofern Sie nicht `output_location` in den erweiterten Einstellungen festlegen."
+    },
+    "kusto": {
+      "kusto_cluster": "https://mycluster.region.kusto.windows.net",
+      "kusto_database": "Datenbankname",
+      "client_id": "Nur für Dienstprinzipal",
+      "client_secret": "Nur für Dienstprinzipal",
+      "tenant_id": "Nur für Dienstprinzipal",
+      "authInstructions": "**Beispiel**\n\nkusto_cluster: `https://help.kusto.windows.net` · kusto_database: `Samples`\n\n**Anmeldung**\n\n- **Microsoft sign-in:** Melden Sie sich mit Ihrem eigenen Konto an. Wird angezeigt, wenn der Server dafür eingerichtet ist.\n- **Azure default identity:** verwendet lokal Ihre [`az login`](https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively)-Sitzung oder in Azure eine [verwaltete Identität](https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/overview). Nach der Anmeldung können Sie Abonnement, Cluster und Datenbank aus Listen auswählen.\n- **Service principal:** Geben Sie `client_id`, `client_secret` und `tenant_id` der App ein.\n\n**Zugriff**\n\nDie Identität benötigt mindestens Viewer-Zugriff auf die Datenbank; die Anmeldung allein gewährt diesen nicht.\n\n**Prüfen**\n\n`az account show` zeigt das aktive Konto und den Mandanten an."
+    },
+    "databricks": {
+      "server_hostname": "adb-1234567890.11.azuredatabricks.net",
+      "http_path": "/sql/1.0/warehouses/abc123",
+      "catalog": "Katalogname",
+      "catalog_hint": "Leer lassen, um alle Kataloge zu durchsuchen.",
+      "schema": "Schemaname",
+      "schema_hint": "Leer lassen, um alle Schemas im Katalog zu durchsuchen.",
+      "access_token": "dapi…",
+      "authInstructions": "**Beispiel**\n\nserver_hostname: `dbc-a1b2c3d4-e5f6.cloud.databricks.com` · http_path: `/sql/1.0/warehouses/abc123`\n\n**Verbindung**\n\nÖffnen Sie in Databricks **SQL Warehouses**, wählen Sie Ihr Warehouse und kopieren Sie `server_hostname` und `http_path` aus **Connection details**.\n\n**Anmeldeinformationen**\n\nErstellen Sie ein persönliches Zugriffstoken unter **Settings → Developer → Access tokens**. Es beginnt mit `dapi`.\n\n**Zugriff**\n\nDer Benutzer des Tokens benötigt `USE CATALOG`, `USE SCHEMA` und `SELECT` für die Tabellen, die Sie lesen möchten.\n\n**Bereich**\n\nLassen Sie `catalog` und `schema` leer, um alles zu durchsuchen, oder legen Sie sie fest, um direkt ein Schema zu öffnen."
+    },
+    "superset": {
+      "url": "https://bi.company.com",
+      "username": "Benutzername",
+      "password": "Passwort",
+      "authInstructions": "**Beispiel**\n\nurl: `https://bi.company.com`\n\n**Anmeldeinformationen**\n\nVerwenden Sie ein Konto mit mindestens der Rolle **Gamma** und Lesezugriff auf die benötigten Datasets. Verwendet Ihr Superset SSO, melden Sie sich stattdessen per SSO an; diese Option wird angezeigt, wenn der Server `PLG_SUPERSET_SSO_LOGIN_URL` setzt.\n\n**Prüfen**\n\nVerwenden Sie die Basis-URL, keinen Link zu einem Dashboard oder Diagramm."
+    },
+    "azure_blob": {
+      "account_name": "Azure-Speicherkontoname",
+      "container_name": "Azure-Blob-Container-Name",
+      "connection_string": "DefaultEndpointsProtocol=https;AccountName=…",
+      "credential_chain": "cli;managed_identity;env",
+      "credential_chain_hint": "Azure-Anmeldeinformationsanbieter, die der Reihe nach versucht werden.",
+      "account_key": "Azure-Speicherkontoschlüssel",
+      "sas_token": "Azure-SAS-Token",
+      "endpoint": "Azure-Endpunktüberschreibung",
+      "authInstructions": "**Beispiel**\n\naccount_name: `mystorageacct` · container_name: `mydata`\n\n**Anmeldung**\n\n- **Azure identity:** empfohlen. Verwendet lokal Ihre [`az login`](https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively)-Sitzung oder in Azure eine [verwaltete Identität](https://learn.microsoft.com/azure/storage/blobs/authorize-managed-identity).\n- **SAS token:** ein zeitlich begrenztes Token, das das Auflisten und Lesen des Containers erlaubt.\n- **Connection string** oder **Account key:** unter **Storage account → Access keys** im Azure-Portal.\n\n**Zugriff**\n\nDie Azure-Identität benötigt die Rolle [Storage Blob Data Reader](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/storage#storage-blob-data-reader) für den Container.\n\n**Dateien**\n\nCSV, TSV, Parquet, JSON und JSONL."
+    },
+    "s3": {
+      "aws_access_key_id": "AWS-Zugriffsschlüssel-ID",
+      "aws_secret_access_key": "AWS-Geheimzugriffsschlüssel",
+      "aws_session_token": "Sitzungstoken",
+      "aws_session_token_hint": "Nur für temporäre Anmeldeinformationen.",
+      "region_name": "AWS-Regionsname",
+      "bucket": "S3-Bucket-Name",
+      "authInstructions": "**Beispiel**\n\nregion_name: `us-east-1` · bucket: `my-data-bucket`\n\n**Anmeldung**\n\n- **Access keys:** Erstellen Sie einen unter **IAM → Users → Security credentials → Create access key**. Temporäre Anmeldeinformationen benötigen zusätzlich das Sitzungstoken.\n- **AWS default credentials:** verwendet Ihre lokale AWS-Konfiguration, etwa `aws configure`, Umgebungsvariablen oder eine Instanzrolle.\n\n**Zugriff**\n\nDie Identität benötigt `s3:ListBucket` für den Bucket und `s3:GetObject` für die Dateien.\n\n**Dateien**\n\nCSV, TSV, Parquet, JSON und JSONL."
+    },
+    "local_folder": {
+      "root_dir": "/path/to/folder",
+      "recursive": "Dateien in Unterverzeichnissen einschließen",
+      "file_pattern": "*.csv",
+      "authInstructions": "**Ordner**\n\nWählen Sie einen Ordner mit **Browse** aus oder fügen Sie seinen vollständigen Pfad ein. Aktivieren Sie die rekursive Suche, um Unterordner einzubeziehen, und grenzen Sie die Dateien mit dem Dateimuster in den erweiterten Einstellungen ein, zum Beispiel `*.csv`.\n\n**Dateien**\n\nCSV, TSV, Parquet, JSON und JSONL werden als Tabellen geladen. Excel, Markdown, PDF und andere Dateien können in der Vorschau angezeigt und als Dateien in den Arbeitsbereich kopiert werden."
+    },
+    "_common": {
+      "table_filter": "z. B. sales",
+      "table_filter_hint": "Nur Tabellen auflisten, deren Namen diese Stichwörter enthalten."
+    },
+    "clickhouse": {
+      "authInstructions": "**Beispiel**\n\nhost: `localhost` · port: `8123` · username: `default`\n\n**Verbindung**\n\nClickHouse Cloud verwendet Port `8443` mit aktiviertem `secure`. Selbst gehostete Server nutzen meist den HTTP-Port `8123`.\n\n**Anmeldeinformationen**\n\nVerwenden Sie ein Konto, das die benötigten Datenbanken lesen kann. Bei einer lokalen Installation hat `default` oft kein Passwort.\n\n**Bereich**\n\nLassen Sie `database` leer, um alle Datenbanken zu durchsuchen, oder geben Sie eine ein, um direkt ihre Tabellen zu öffnen."
+    },
+    "cube": {
+      "authInstructions": "**Beispiel**\n\napi_url: `http://localhost:4000`\n\n**Anmeldeinformationen**\n\nGeben Sie ein API-Token ein: ein JWT, das mit dem `CUBEJS_API_SECRET` der Bereitstellung signiert ist. Sein Sicherheitskontext bestimmt, welche Daten Sie abfragen können. Ein lokaler Server im Entwicklungsmodus (`CUBEJS_DEV_MODE=true`) benötigt kein Token.\n\n**Prüfen**\n\nVerwenden Sie die REST-API-URL, nicht die Playground-Seite; `/cubejs-api` wird angehängt, wenn die URL keinen Pfad hat. Es werden nur öffentliche Cubes und Views aufgelistet."
+    },
+    "powerbi": {
+      "authInstructions": "**Beispiel**\n\nworkspace: `Sales Analytics`\n\n**Arbeitsbereich**\n\nGeben Sie den Namen des Arbeitsbereichs oder die ID aus seiner URL ein (`.../groups/<id>/...`).\n\n**Anmeldung**\n\n- **Azure default identity:** empfohlen. Führen Sie `az login` mit einem Konto aus, das die Modelle öffnen kann; Ihre Berechtigungen und die Sicherheit auf Zeilenebene gelten.\n- **Service principal:** Client-ID, Geheimnis und Mandanten-ID einer Entra-App, die dem Arbeitsbereich hinzugefügt wurde. Sie kann keine Modelle abfragen, die Sicherheit auf Zeilenebene oder SSO verwenden.\n\n**Zugriff**\n\nSie benötigen **Read** und **Build** für jedes semantische Modell. Ein Power BI-Administrator muss *Dataset Execute Queries REST API* aktivieren, für Dienstprinzipale zusätzlich *Allow service principals to use Power BI APIs*.\n\n**Limits**\n\n120 Abfragen pro Minute und Benutzer sowie bis zu 10.000 Zeilen pro Ergebnis. Modelle in Azure Analysis Services werden nicht unterstützt."
+    },
+    "sample_datasets": {
+      "authInstructions": "Integrierte Beispieldatensätze erfordern weder Einrichtung noch Anmeldeinformationen. Öffnen Sie den Connector, um die Beispiele zu durchsuchen und eine Tabelle zu importieren."
+    }
+  }
+}

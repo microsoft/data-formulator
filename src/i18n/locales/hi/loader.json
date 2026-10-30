@@ -1,0 +1,143 @@
+{
+  "loader": {
+    "mysql": {
+      "user": "MySQL उपयोगकर्ता नाम",
+      "password": "बिना पासवर्ड के लिए खाली छोड़ें",
+      "host": "सर्वर पता",
+      "port": "सर्वर पोर्ट",
+      "database": "डेटाबेस का नाम",
+      "database_hint": "सभी डेटाबेस ब्राउज़ करने के लिए खाली छोड़ें।",
+      "authInstructions": "**उदाहरण**\n\nhost: `localhost` · port: `3306` · user: `root` · database: `mydb`\n\n**क्रेडेंशियल**\n\nऐसे खाते का उपयोग करें जो आवश्यक टेबल पढ़ सके। स्थानीय सर्वर पर पासवर्ड न भी हो सकता है। रिमोट सर्वर के लिए, विवरण अपने डेटाबेस व्यवस्थापक से लें और सुनिश्चित करें कि आपके IP को कनेक्ट करने की अनुमति है।\n\n**दायरा**\n\nसभी डेटाबेस ब्राउज़ करने के लिए `database` खाली छोड़ें, या किसी एक की टेबल सीधे खोलने के लिए उसे दर्ज करें।\n\n**जांच**\n\nउन्हीं विवरणों को `mysql -u <user> -p -h <host> -P <port>` से जांचें।"
+    },
+    "mssql": {
+      "server": "होस्ट नाम या इंस्टेंस",
+      "database": "डेटाबेस का नाम",
+      "database_hint": "सभी डेटाबेस ब्राउज़ करने के लिए खाली छोड़ें।",
+      "user": "उपयोगकर्ता नाम",
+      "password": "पासवर्ड",
+      "port": "1433",
+      "encrypt": "हां या नहीं",
+      "trust_server_certificate": "हां या नहीं",
+      "connection_timeout": "कनेक्शन समयबाह्य (सेकंड में)",
+      "authInstructions": "**उदाहरण**\n\nserver: `myserver.database.windows.net` · database: `mydb`\n\n**साइन इन**\n\n- **Microsoft Entra ID:** Azure SQL के लिए अनुशंसित। [`az login`](https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively) चलाएं और उपयोगकर्ता व पासवर्ड खाली छोड़ें।\n- **SQL Server authentication:** SQL लॉगिन और पासवर्ड दर्ज करें।\n- **Windows authentication:** केवल Windows पर; आपके Windows खाते का उपयोग करता है।\n\n**पहुंच**\n\nकिसी व्यवस्थापक को आपकी पहचान को डेटाबेस तक पहुंच देनी होगी। Entra ID के लिए, उदाहरण के लिए: `CREATE USER [you@contoso.com] FROM EXTERNAL PROVIDER;`\n\n**जांच**\n\n`az account show` वह खाता दिखाता है जिसका Entra ID उपयोग करेगा। स्थानीय सर्वर के लिए, सुनिश्चित करें कि SQL Server TCP/IP सक्षम करके चल रहा है।"
+    },
+    "postgresql": {
+      "user": "PostgreSQL उपयोगकर्ता नाम",
+      "password": "बिना पासवर्ड के लिए खाली छोड़ें",
+      "host": "PostgreSQL होस्ट",
+      "port": "PostgreSQL पोर्ट",
+      "database": "डेटाबेस का नाम",
+      "database_hint": "सभी डेटाबेस ब्राउज़ करने के लिए खाली छोड़ें।",
+      "authInstructions": "**उदाहरण**\n\nhost: `localhost` · port: `5432` · user: `postgres` · database: `mydb`\n\n**क्रेडेंशियल**\n\nआवश्यक टेबल पर `SELECT` पहुंच वाले खाते का उपयोग करें। स्थानीय सर्वर पर पासवर्ड न भी हो सकता है। रिमोट सर्वर के लिए, विवरण अपने डेटाबेस व्यवस्थापक से लें।\n\n**दायरा**\n\nसभी डेटाबेस ब्राउज़ करने के लिए `database` खाली छोड़ें, या किसी एक के schemas सीधे खोलने के लिए उसे दर्ज करें।\n\n**जांच**\n\nउन्हीं विवरणों को `psql -U <user> -h <host> -p <port> -d <database>` से जांचें।"
+    },
+    "mongodb": {
+      "host": "सर्वर पता",
+      "port": "सर्वर पोर्ट",
+      "username": "बिना प्रमाणीकरण के लिए खाली छोड़ें",
+      "password": "बिना प्रमाणीकरण के लिए खाली छोड़ें",
+      "database": "डेटाबेस नाम",
+      "collection": "Collection का नाम",
+      "collection_hint": "सभी collections सूचीबद्ध करने के लिए खाली छोड़ें।",
+      "authSource": "admin",
+      "authSource_hint": "केवल तभी, जब उपयोगकर्ता किसी दूसरे डेटाबेस में परिभाषित हो।",
+      "authInstructions": "**उदाहरण**\n\nhost: `localhost` · port: `27017` · database: `mydb`\n\n**साइन इन**\n\nबिना access control वाले स्थानीय सर्वर के लिए **No authentication** चुनें। अन्यथा, ऐसा उपयोगकर्ता दर्ज करें जो डेटाबेस पढ़ सके, और `authSource` केवल तभी सेट करें जब वह उपयोगकर्ता किसी दूसरे डेटाबेस में परिभाषित हो (अक्सर `admin`)।\n\n**दायरा**\n\nडेटाबेस के सभी collections ब्राउज़ करने के लिए `collection` खाली छोड़ें।\n\n**जांच**\n\nसर्वर को `mongosh --host <host> --port <port>` से जांचें।"
+    },
+    "cosmosdb": {
+      "endpoint": "Cosmos DB खाता एंडपॉइंट URL",
+      "key": "खाता कुंजी या एम्युलेटर कुंजी",
+      "database": "डेटाबेस नाम",
+      "container": "सभी कंटेनर सूचीबद्ध करने के लिए खाली छोड़ें",
+      "authInstructions": "**उदाहरण**\n\nendpoint: `https://myaccount.documents.azure.com:443/` · database: `mydb`\n\n**क्रेडेंशियल**\n\nAzure पोर्टल में खाते के **Keys** पेज से endpoint और एक read-only key कॉपी करें। स्थानीय एमुलेटर के लिए `https://localhost:8081` और एमुलेटर key का उपयोग करें।\n\n**दायरा**\n\nडेटाबेस के सभी कंटेनर ब्राउज़ करने के लिए `container` खाली छोड़ें।\n\n**जांच**\n\nयदि कनेक्शन अस्वीकार हो जाए, तो सुनिश्चित करें कि खाते का फ़ायरवॉल आपके IP को अनुमति देता है।"
+    },
+    "bigquery": {
+      "project_id": "Google Cloud प्रोजेक्ट ID",
+      "dataset_id": "analytics",
+      "dataset_id_hint": "सभी datasets के लिए खाली छोड़ें; कई को अल्पविराम से अलग करें।",
+      "credentials_path": "/path/to/key.json",
+      "location": "US",
+      "authInstructions": "**उदाहरण**\n\nproject_id: `my-gcp-project` · dataset_id: `analytics` · location: `US`\n\n**साइन इन**\n\n- **Application default credentials:** अनुशंसित। [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) इंस्टॉल करें और `gcloud auth application-default login` चलाएं, या `GOOGLE_APPLICATION_CREDENTIALS` सेट करें।\n- **Service account file:** खाते की JSON की फ़ाइल का पथ दर्ज करें।\n\n**पहुंच**\n\nपहचान को datasets पर **BigQuery Data Viewer** और प्रोजेक्ट पर **BigQuery Job User** चाहिए।\n\n**दायरा**\n\nसभी datasets ब्राउज़ करने के लिए `dataset_id` खाली छोड़ें, या अल्पविराम से अलग की गई ID दर्ज करें। `location` को उस स्थान पर सेट करें जहां datasets मौजूद हैं।"
+    },
+    "athena": {
+      "aws_profile": "default",
+      "aws_access_key_id": "एक्सेस की ID",
+      "aws_secret_access_key": "सीक्रेट एक्सेस की",
+      "aws_session_token": "सेशन टोकन",
+      "aws_session_token_hint": "केवल अस्थायी क्रेडेंशियल के लिए।",
+      "region_name": "AWS क्षेत्र का नाम",
+      "workgroup": "primary",
+      "output_location": "s3://bucket/path/",
+      "output_location_hint": "वर्कग्रुप के परिणाम स्थान का उपयोग करने के लिए खाली छोड़ें।",
+      "database": "डेटाबेस का नाम",
+      "database_hint": "सभी डेटाबेस ब्राउज़ करने के लिए खाली छोड़ें।",
+      "query_timeout": "300",
+      "query_timeout_hint": "सेकंड में।",
+      "authInstructions": "**उदाहरण**\n\nregion_name: `us-east-1` · workgroup: `primary` · aws_profile: `default`\n\n**साइन इन**\n\n- **AWS profile:** अनुशंसित। `~/.aws/credentials` से कोई प्रोफ़ाइल दर्ज करें; नई प्रोफ़ाइल `aws configure --profile <name>` से बनाएं।\n- **Access keys:** एक्सेस की ID और सीक्रेट दर्ज करें। अस्थायी क्रेडेंशियल के लिए सेशन टोकन भी आवश्यक है।\n\n**पहुंच**\n\nपहचान को Athena क्वेरी चलाने, Glue कैटलॉग पढ़ने, और आपके डेटा व क्वेरी परिणामों के S3 स्थानों को पढ़ने और लिखने की अनुमति चाहिए।\n\n**दायरा**\n\nसभी डेटाबेस ब्राउज़ करने के लिए `database` खाली छोड़ें। परिणाम वर्कग्रुप के स्थान पर जाते हैं, जब तक कि आप उन्नत सेटिंग्स में `output_location` सेट न करें।"
+    },
+    "kusto": {
+      "kusto_cluster": "https://mycluster.region.kusto.windows.net",
+      "kusto_database": "डेटाबेस का नाम",
+      "client_id": "केवल service principal",
+      "client_secret": "केवल service principal",
+      "tenant_id": "केवल service principal",
+      "authInstructions": "**उदाहरण**\n\nkusto_cluster: `https://help.kusto.windows.net` · kusto_database: `Samples`\n\n**साइन इन**\n\n- **Microsoft sign-in:** अपने खाते से साइन इन करें। यह तब दिखता है जब सर्वर इसके लिए कॉन्फ़िगर हो।\n- **Azure default identity:** स्थानीय रूप से आपके [`az login`](https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively) सेशन का, या Azure में [managed identity](https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/overview) का उपयोग करता है। साइन इन के बाद आप सूचियों से subscription, cluster और डेटाबेस चुन सकते हैं।\n- **Service principal:** ऐप का `client_id`, `client_secret` और `tenant_id` दर्ज करें।\n\n**पहुंच**\n\nपहचान को डेटाबेस पर कम से कम viewer पहुंच चाहिए; केवल साइन इन करने से यह नहीं मिलती।\n\n**जांच**\n\n`az account show` सक्रिय खाता और tenant दिखाता है।"
+    },
+    "databricks": {
+      "server_hostname": "adb-1234567890.11.azuredatabricks.net",
+      "http_path": "/sql/1.0/warehouses/abc123",
+      "catalog": "Catalog का नाम",
+      "catalog_hint": "सभी catalogs ब्राउज़ करने के लिए खाली छोड़ें।",
+      "schema": "Schema का नाम",
+      "schema_hint": "Catalog के सभी schemas ब्राउज़ करने के लिए खाली छोड़ें।",
+      "access_token": "dapi…",
+      "authInstructions": "**उदाहरण**\n\nserver_hostname: `dbc-a1b2c3d4-e5f6.cloud.databricks.com` · http_path: `/sql/1.0/warehouses/abc123`\n\n**कनेक्शन**\n\nDatabricks में **SQL Warehouses** खोलें, अपना warehouse चुनें, और **Connection details** से `server_hostname` और `http_path` कॉपी करें।\n\n**क्रेडेंशियल**\n\n**Settings → Developer → Access tokens** में एक personal access token बनाएं। यह `dapi` से शुरू होता है।\n\n**पहुंच**\n\nटोकन के उपयोगकर्ता को उन टेबल पर `USE CATALOG`, `USE SCHEMA` और `SELECT` चाहिए जिन्हें आप पढ़ना चाहते हैं।\n\n**दायरा**\n\nसब कुछ ब्राउज़ करने के लिए `catalog` और `schema` खाली छोड़ें, या किसी एक schema को सीधे खोलने के लिए उन्हें सेट करें।"
+    },
+    "superset": {
+      "url": "https://bi.company.com",
+      "username": "उपयोगकर्ता नाम",
+      "password": "पासवर्ड",
+      "authInstructions": "**उदाहरण**\n\nurl: `https://bi.company.com`\n\n**क्रेडेंशियल**\n\nऐसे खाते का उपयोग करें जिसके पास कम से कम **Gamma** भूमिका और आवश्यक datasets की read पहुंच हो। यदि आपका Superset SSO का उपयोग करता है, तो इसके बजाय SSO से साइन इन करें; यह विकल्प तब दिखता है जब सर्वर `PLG_SUPERSET_SSO_LOGIN_URL` सेट करता है।\n\n**जांच**\n\nबेस URL का उपयोग करें, किसी डैशबोर्ड या चार्ट के लिंक का नहीं।"
+    },
+    "azure_blob": {
+      "account_name": "Azure स्टोरेज खाता नाम",
+      "container_name": "Azure blob कंटेनर नाम",
+      "connection_string": "DefaultEndpointsProtocol=https;AccountName=…",
+      "credential_chain": "cli;managed_identity;env",
+      "credential_chain_hint": "आज़माए जाने वाले Azure क्रेडेंशियल प्रदाता, क्रम से।",
+      "account_key": "Azure स्टोरेज खाता कुंजी",
+      "sas_token": "Azure SAS टोकन",
+      "endpoint": "Azure एंडपॉइंट ओवरराइड",
+      "authInstructions": "**उदाहरण**\n\naccount_name: `mystorageacct` · container_name: `mydata`\n\n**साइन इन**\n\n- **Azure identity:** अनुशंसित। स्थानीय रूप से आपके [`az login`](https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively) सेशन का, या Azure में [managed identity](https://learn.microsoft.com/azure/storage/blobs/authorize-managed-identity) का उपयोग करता है।\n- **SAS token:** एक समय-सीमित टोकन जो कंटेनर को सूचीबद्ध करने और पढ़ने की अनुमति देता है।\n- **Connection string** या **Account key:** Azure पोर्टल में **Storage account → Access keys** से प्राप्त करें।\n\n**पहुंच**\n\nAzure पहचान को कंटेनर पर [Storage Blob Data Reader](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/storage#storage-blob-data-reader) भूमिका चाहिए।\n\n**फ़ाइलें**\n\nCSV, TSV, Parquet, JSON और JSONL।"
+    },
+    "s3": {
+      "aws_access_key_id": "AWS access key ID",
+      "aws_secret_access_key": "AWS secret access key",
+      "aws_session_token": "सेशन टोकन",
+      "aws_session_token_hint": "केवल अस्थायी क्रेडेंशियल के लिए।",
+      "region_name": "AWS क्षेत्र का नाम",
+      "bucket": "S3 bucket नाम",
+      "authInstructions": "**उदाहरण**\n\nregion_name: `us-east-1` · bucket: `my-data-bucket`\n\n**साइन इन**\n\n- **Access keys:** **IAM → Users → Security credentials → Create access key** में एक बनाएं। अस्थायी क्रेडेंशियल के लिए सेशन टोकन भी आवश्यक है।\n- **AWS default credentials:** आपके स्थानीय AWS सेटअप का उपयोग करता है, जैसे `aws configure`, environment variables, या instance role।\n\n**पहुंच**\n\nपहचान को bucket पर `s3:ListBucket` और फ़ाइलों पर `s3:GetObject` चाहिए।\n\n**फ़ाइलें**\n\nCSV, TSV, Parquet, JSON और JSONL।"
+    },
+    "local_folder": {
+      "root_dir": "/path/to/folder",
+      "recursive": "उप-निर्देशिकाओं की फ़ाइलें शामिल करें",
+      "file_pattern": "*.csv",
+      "authInstructions": "**फ़ोल्डर**\n\n**Browse** से फ़ोल्डर चुनें, या उसका पूरा पथ पेस्ट करें। सबफ़ोल्डर शामिल करने के लिए रिकर्सिव स्कैनिंग चालू करें, और फ़ाइलें सीमित करने के लिए उन्नत सेटिंग्स में फ़ाइल पैटर्न का उपयोग करें, जैसे `*.csv`।\n\n**फ़ाइलें**\n\nCSV, TSV, Parquet, JSON और JSONL टेबल के रूप में लोड होती हैं। Excel, Markdown, PDF और अन्य फ़ाइलों का पूर्वावलोकन किया जा सकता है और उन्हें फ़ाइलों के रूप में वर्कस्पेस में कॉपी किया जा सकता है।"
+    },
+    "_common": {
+      "table_filter": "जैसे sales",
+      "table_filter_hint": "केवल वे टेबल सूचीबद्ध करें जिनके नाम में ये कीवर्ड हों।"
+    },
+    "clickhouse": {
+      "authInstructions": "**उदाहरण**\n\nhost: `localhost` · port: `8123` · username: `default`\n\n**कनेक्शन**\n\nClickHouse Cloud पोर्ट `8443` का उपयोग `secure` चालू करके करता है। सेल्फ़-होस्टेड सर्वर आमतौर पर HTTP पोर्ट `8123` का उपयोग करते हैं।\n\n**क्रेडेंशियल**\n\nऐसे खाते का उपयोग करें जो आवश्यक डेटाबेस पढ़ सके। स्थानीय इंस्टॉल पर `default` का अक्सर कोई पासवर्ड नहीं होता।\n\n**दायरा**\n\nसभी डेटाबेस ब्राउज़ करने के लिए `database` खाली छोड़ें, या किसी एक की टेबल सीधे खोलने के लिए उसे दर्ज करें।"
+    },
+    "cube": {
+      "authInstructions": "**उदाहरण**\n\napi_url: `http://localhost:4000`\n\n**क्रेडेंशियल**\n\nएक API टोकन दर्ज करें: डिप्लॉयमेंट के `CUBEJS_API_SECRET` से साइन किया गया JWT। इसका security context तय करता है कि आप कौन-सा डेटा क्वेरी कर सकते हैं। dev मोड (`CUBEJS_DEV_MODE=true`) में चल रहे स्थानीय सर्वर को टोकन की आवश्यकता नहीं होती।\n\n**जांच**\n\nREST API URL का उपयोग करें, Playground पेज का नहीं; URL में पथ न होने पर `/cubejs-api` जोड़ दिया जाता है। केवल सार्वजनिक cubes और views सूचीबद्ध होते हैं।"
+    },
+    "powerbi": {
+      "authInstructions": "**उदाहरण**\n\nworkspace: `Sales Analytics`\n\n**वर्कस्पेस**\n\nवर्कस्पेस का नाम, या उसके URL से ID (`.../groups/<id>/...`) दर्ज करें।\n\n**साइन इन**\n\n- **Azure default identity:** अनुशंसित। ऐसे खाते से `az login` चलाएं जो मॉडल खोल सके; आपकी अनुमतियां और row-level security लागू होती हैं।\n- **Service principal:** वर्कस्पेस में जोड़े गए Entra ऐप की client ID, secret और tenant ID। यह row-level security या SSO का उपयोग करने वाले मॉडल क्वेरी नहीं कर सकता।\n\n**पहुंच**\n\nआपको हर semantic model पर **Read** और **Build** चाहिए। किसी Power BI व्यवस्थापक को *Dataset Execute Queries REST API* सक्षम करना होगा, और service principals के लिए *Allow service principals to use Power BI APIs* भी।\n\n**सीमाएं**\n\nप्रति उपयोगकर्ता प्रति मिनट 120 क्वेरी, और प्रति परिणाम अधिकतम 10,000 पंक्तियां। Azure Analysis Services के मॉडल समर्थित नहीं हैं।"
+    },
+    "sample_datasets": {
+      "authInstructions": "बिल्ट-इन सैंपल डेटासेट के लिए किसी सेटअप या क्रेडेंशियल की आवश्यकता नहीं है। उदाहरण ब्राउज़ करने और कोई टेबल इम्पोर्ट करने के लिए कनेक्टर खोलें।"
+    }
+  }
+}

@@ -6,6 +6,83 @@ Notable changes to Data Formulator are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The agent finds and reads session content with three path-based tools:
+  `list_files`, `read_file` and `search`. `search` returns whole matching
+  table rows, so looking up a code by its label (for example a UIS indicator)
+  takes one call instead of two or three. `read_file` reads several items at
+  once, with rows for tables, sheets for Excel and pages for PDFs. Large text
+  files are read in pages. Earlier agent memory now appears as ordinary files
+  under `memory/`. See design-docs/65.
+- Saved and built-in workflows are read-only files under `workflows/`, so the
+  agent can read a saved workflow's full definition and revise it. Charts are
+  read as session files, and requests no longer carry sample rows for every
+  chart.
+- Connected-source catalogs are read-only files under `sources/`. One search
+  now covers both the session and the catalogs: it shows the session's matches
+  first, then matching catalog tables. Reading a table shows its columns and
+  the identifiers needed to query or load it. The four separate catalog
+  discovery tools are gone.
+- Report writing is always available to the agent, so a report request no
+  longer spends a model turn loading it first.
+- The agent's always-on instructions are about a third shorter: guidance that
+  was repeated in several places now appears once, and terminal guidance is
+  included only when a session has no data yet or when the agent loads it.
+- In a session with no data yet, the agent starts with setup and connection
+  guidance as well as data loading, so a request to connect a source, schedule
+  a workflow or find a session no longer spends a model turn loading it. The
+  agent can also make several independent lookups (reads, searches, loading
+  guidance) in one step. See design-docs/68.
+- While the agent works, its status now says what it is doing: deciding the
+  next step, writing a chart or Python code, or the sentence it is writing.
+  Before, the label of the last finished step stayed on screen. Long waits
+  show the elapsed time, and a model that has not responded for 30 seconds
+  is reported as still being waited on. Rate-limit retries appear in the
+  status as well.
+- The agent's answer appears in the answer panel as it is written, instead of
+  all at once when the run ends (models that mark which message is the final
+  answer, such as OpenAI's through the Responses API).
+- When one of the agent's chart or data steps is rejected and the agent tries
+  again, the thread now shows the failed attempt and its reason, instead of
+  silently showing the step twice.
+- The agent can build a chart or table on a table it derived earlier, in the
+  same request or a previous one, instead of recomputing it from the loaded
+  data. Before, such a step was rejected and redone from the loaded tables,
+  costing an extra model call on follow-ups. Refreshing data now updates every
+  table in such a chain, in order.
+- The conversation view keeps every tool call the agent made, not only Python
+  and terminal calls: reads, searches, listings and edits are saved with what
+  they were asked and what came back (long text capped), and open by tool, for
+  example the files a read opened, linked to the canvas, or an edit's changes.
+  Failed and retried attempts stay visible too. See design-docs/67.
+
+### Fixed
+
+- In development, a browser tab left open while the frontend code changed
+  could send the agent's requests to the session that was open earlier, so
+  data it loaded landed in the wrong session. Requests now always take the
+  session from the page itself.
+
+- A model request that never answered could leave the agent waiting for
+  10 minutes before retrying; it now gives up after 90 seconds and retries.
+
+- After the agent edits a report to remove a chart, it can now delete that
+  chart in the same request. When a deletion is refused because a report was
+  made from the table being removed, the agent is told that only the user can
+  remove that report, so it asks instead of retrying.
+- The agent no longer tries to edit notes the user wrote (it is not allowed
+  to); it adds its own notes file instead.
+
+- Agent requests no longer wait for the Python sandbox to start before calling
+  the model: the worker now starts in the background. In a new UIS demo session,
+  the first model call starts 5–6 s sooner.
+- Demo-site sessions share warm Python workers like other local sessions, so a
+  new demo session no longer starts its own worker (5–8 s on the first Python step).
+- While the model is rate limited, the agent now tells the user it is retrying
+  and when, instead of going silent for up to 70 s. It waits as long as the
+  provider asks when the provider says so.
+
 ## [0.8.0b1] - 2026-08-15
 
 ### Added

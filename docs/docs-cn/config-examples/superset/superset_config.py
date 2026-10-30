@@ -45,15 +45,25 @@ FEATURE_FLAGS = {
 }
 
 # =============================================================================
-# CORS（DF 跨域调用 Superset API 时需要）
+# CORS（仅当浏览器需要直连 Superset API 时才需要）
+#
+# DF 后端是通过服务端 requests 调用 Superset 的，SSO 弹窗走 postMessage，
+# 两者都不受浏览器同源策略限制，所以这两种场景不需要本段配置。
+# 只有“网页里直接 fetch Superset API”或“嵌 iframe 调接口”时才需要。
 # =============================================================================
 
 ENABLE_CORS = True
 CORS_OPTIONS = {
-    'supports_credentials': True,
-    'allow_headers': ['*'],
-    'resources': ['*'],
-    'origins': ['*'],  # 生产环境请限制为 DF 的实际域名
+    'supports_credentials': True,   # 允许浏览器携带 Superset 的 session cookie
+    'allow_headers': ['*'],         # 允许的请求头，含 Authorization / Content-Type
+    'resources': ['*'],             # 对所有路径生效
+    # origins 填 DF 前端在浏览器地址栏里的 origin，格式：协议://主机:端口
+    # - 不要带路径，也不要带末尾斜杠
+    # - 默认端口可省略（http 80、https 443）
+    # - 有多个地址时用列表，例如：
+    #     ['http://193.111.99.56:5567', 'https://df.example.com']
+    # - 生产环境不要用 ['*']；supports_credentials=True 时通配符也不可靠
+    'origins': ['*'],
 }
 
 # =============================================================================

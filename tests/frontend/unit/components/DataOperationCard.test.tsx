@@ -6,12 +6,12 @@ import { parseDataOperation } from '../../../../src/dataOperations/models';
 
 vi.mock('react-i18next', () => ({
     useTranslation: () => ({
-        t: (key: string) => ({
+        t: (key: string, options?: any) => ({
             'dataLoading.operation.title': 'Data loading options',
             'dataLoading.operation.status.awaitingSelection': 'Awaiting selection',
             'dataLoading.operation.status.partiallyLoaded': 'Partially loaded',
             'dataLoading.operation.failedSteps': '1 table could not be loaded',
-        }[key] || key),
+        }[key] || options?.defaultValue?.replace('{{name}}', options.name) || key),
     }),
 }));
 
@@ -88,5 +88,17 @@ describe('DataOperationCard', () => {
 
         expect(screen.getByText('1 table could not be loaded')).toBeInTheDocument();
         expect(screen.getByText('Customers')).toBeInTheDocument();
+    });
+
+    it('labels virtual sources without implying local rows were loaded', () => {
+        const operation = parseDataOperation({ schema_version: 1, id: 'operation', status: 'loaded',
+            plans: [{ id: 'plan', hash: 'a'.repeat(64), label: 'Add orders', steps: [{ kind: 'connector_query', display_name: 'Orders' }] }],
+            result_references: [{ kind: 'external-table-reference', id: 'external:warehouse:orders',
+                connectorId: 'warehouse', tableKey: 'orders', sourceTable: { id: 'orders', name: 'Orders' },
+                displayName: 'Orders', capturedAt: '2026-09-20T00:00:00Z', summary: { columns: [], rowCount: 2000000 } }],
+        });
+        render(<DataOperationCard operation={operation} />);
+        expect(screen.getByText('Orders: Virtual source (rows remain remote)')).toBeInTheDocument();
+        expect(operation.resultTableIds).toEqual([]);
     });
 });
