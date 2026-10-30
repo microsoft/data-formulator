@@ -5,7 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 import bridgeSource from '../../../../../src/app/htmlApp/dfAppRuntime.js?raw';
 import { createDfTheme } from '../../../../../src/app/theme';
-import { FlintChart } from '../../../../../src/app/reactApp/runtime/chart';
+import { ChartLink, FlintChart, fitChartToWidth, flintChartInput, useChartLink } from '../../../../../src/app/reactApp/runtime/chart';
 import { clearQueryCache, useQuery } from '../../../../../src/app/reactApp/runtime/data';
 import { mount } from '../../../../../src/app/reactApp/runtime/index';
 import { DataTable, Kpi, QueryView, Select } from '../../../../../src/app/reactApp/runtime/ui';
@@ -124,32 +124,28 @@ describe('FlintChart', () => {
         vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ width: 800, height: 300 } as DOMRect);
     });
 
-    it('compiles semantic encodings with the table semantics and renders through the bridge', async () => {
-        const bridge = installBridge();
+    it('gives Flint the rows, the table semantics and display names, and the interactions', () => {
         (window as any).__DF_APP_CONFIG__ = { semantics: { sales: { month: { semanticType: 'YearMonth', displayName: 'Month' } } } };
-        renderThemed(<FlintChart chartType="Line Chart" table="sales" data={[{ month: '2024-01', revenue: 3 }, { month: '2024-02', revenue: 5 }]}
-            encodings={{ x: 'month', y: 'revenue' }} labels={{ revenue: 'Revenue (USD)' }} />);
-        await waitFor(() => expect(bridge.chart).toHaveBeenCalled());
-        const spec = bridge.chart.mock.calls[0][1] as any;
-        expect(spec.data.values).toHaveLength(2);
-        expect(spec.encoding.x).toMatchObject({ field: 'month', type: 'temporal', title: 'Month' });
-        expect(spec.encoding.y.title).toBe('Revenue (USD)');
-        // The whole chart, legend included, fits the 800px container.
-        expect(spec).toMatchObject({ width: 800, autosize: { type: 'fit-x', contains: 'padding' } });
+        const input = flintChartInput({ chartType: 'Line Chart', table: 'sales', encodings: { x: 'month', y: 'revenue' },
+            labels: { revenue: 'Revenue (USD)' }, theme: 'economist', title: 'Revenue', interactions: ['inspect-index', { type: 'brush-x', options: { mode: 'stateful' } }] },
+            [{ month: '2024-01', revenue: 3 }], 800) as any;
+        expect(input.data.values).toHaveLength(1);
+        expect(input.semantic_types).toEqual({ month: 'YearMonth' });
+        expect(input.field_display_names).toEqual({ month: 'Month', revenue: 'Revenue (USD)' });
+        expect(input.chart_spec).toMatchObject({ chartType: 'Line Chart', encodings: { x: { field: 'month' }, y: { field: 'revenue' } },
+            title: 'Revenue', baseSize: { width: 800, height: 260 } });
+        expect(input.theme_spec).toBe('economist');
+        expect(input.interaction_spec).toEqual({ interactions: [{ type: 'inspect-index' }, { type: 'brush-x', options: { mode: 'stateful' } }] });
     });
 
-    it('applies a Flint theme like the DF canvas', async () => {
+    // Flint's first mount loads its renderer, which takes a second or more under jsdom.
+    it('draws with Flint into its card', async () => {
         const bridge = installBridge();
-        const data = [{ year: 2000, value: 3 }, { year: 2001, value: 5 }];
-        renderThemed(<>
-            <FlintChart chartType="Line Chart" data={data} encodings={{ x: 'year', y: 'value' }} />
-            <FlintChart chartType="Line Chart" data={data} encodings={{ x: 'year', y: 'value' }} theme="economist" />
-        </>);
-        await waitFor(() => expect(bridge.chart).toHaveBeenCalledTimes(2));
-        const [plain, themed] = bridge.chart.mock.calls.map(call => call[1] as any);
-        expect(themed.config).toBeDefined();
-        expect(JSON.stringify(themed.config)).not.toBe(JSON.stringify(plain.config));
-    });
+        const { container } = renderThemed(<FlintChart chartType="Bar Chart" data={[{ region: 'East', revenue: 3 }, { region: 'West', revenue: 5 }]}
+            encodings={{ x: 'region', y: 'revenue' }} interactions={['click-highlight']} />);
+        await waitFor(() => expect(container.querySelector('[data-flint-chart] svg')).not.toBeNull(), { timeout: 10000 });
+        expect(bridge.reportError).not.toHaveBeenCalled();
+    }, 15000);
 
     it('shows and reports an unknown chart type', async () => {
         const bridge = installBridge();
@@ -157,6 +153,35 @@ describe('FlintChart', () => {
         await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Chart unavailable'));
         expect(bridge.reportError).toHaveBeenCalledWith(expect.stringContaining('FlintChart'), false);
     });
+
+    it('keeps a long discrete axis at its step, scrolling inside the card', () => {
+        const rows = Array.from({ length: 200 }, (_, index) => ({ name: `item ${index}`, value: index }));
+        const spec = { mark: 'bar', width: { step: 20 }, encoding: {} };
+        expect(fitChartToWidth(spec, 800, rows, 'name')).toBe(spec);
+        expect(fitChartToWidth(spec, 800, rows.slice(0, 30), 'name')).toMatchObject({ width: 800, autosize: { type: 'fit-x' } });
+    });
+
+    it('shares a selection across linked charts, and lets a control or table read and set it', async () => {
+        installBridge();
+        const rows = [{ region: 'East', revenue: 3 }, { region: 'West', revenue: 5 }];
+        let link: ReturnType<typeof useChartLink> | undefined;
+        const Probe = () => { link = useChartLink(); return <p data-testid="linked">{rows.filter(link.matches).map(row => row.region).join(',') || 'none'}</p>; };
+        renderThemed(<ChartLink fields={['region']}>
+            <FlintChart chartType="Bar Chart" data={rows} encodings={{ x: 'region', y: 'revenue' }} interactions={['click-highlight']} />
+            <Probe />
+        </ChartLink>);
+        const linked = () => screen.getByTestId('linked').textContent;
+        expect(linked()).toBe('East,West');
+        // The link validator loads lazily; a selection before it arrives is not kept.
+        await waitFor(() => {
+            act(() => link!.select({ region: { in: ['West'] } }));
+            expect(linked()).toBe('West');
+        }, { timeout: 10000 });
+        expect(link!.active).toBe(true);
+        act(() => link!.clear());
+        await waitFor(() => expect(linked()).toBe('East,West'));
+        expect(link!.active).toBe(false);
+    }, 15000);
 });
 
 describe('mount', () => {

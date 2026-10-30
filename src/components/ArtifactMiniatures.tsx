@@ -14,6 +14,7 @@ import { useSelector } from 'react-redux';
 import { DataFormulatorState } from '../app/dfSlice';
 import { getCachedChart } from '../app/chartCache';
 import { readWorkspaceTextFile } from '../app/workspaceService';
+import { isMapFile } from '../icons';
 
 const frameSx = {
     flexShrink: 0, bgcolor: 'background.paper',
@@ -113,10 +114,65 @@ export const MiniWindow: React.FC<{ width?: number; layout?: AppLayout }> = ({ w
     </Box>;
 };
 
+// ── Map outline ──
+
+/** The silhouette a map miniature draws, from its spec's basemap and projection. */
+export interface MapOutline { d: string; globe: boolean }
+
+const mapOutlines = new Map<string, Promise<MapOutline | null>>();
+
+/** A map's basemap silhouette as an SVG path in a 48×36 box (loaded lazily, cached per basemap and projection). */
+function loadMapOutline(source: string): Promise<MapOutline | null> {
+    let spec: { view?: { basemap?: string; projection?: string; tiles?: string } };
+    try { spec = JSON.parse(source); } catch { return Promise.resolve(null); }
+    const view = spec?.view ?? {};
+    const key = JSON.stringify([view.basemap, view.projection, view.tiles]);
+    let outline = mapOutlines.get(key);
+    if (!outline) {
+        outline = Promise.all([import('d3'), import('../maps/geography'), import('../maps/MapRenderer')]).then(async ([d3, geography, renderer]) => {
+            const basemap = (view.basemap ?? 'world') as never;
+            const setName = geography.basemapGeoSet(basemap) ?? 'countries';
+            const set = await geography.loadGeoSet(setName === 'countries-detailed' ? 'countries' : setName);
+            const projectionName = renderer.viewProjection(view as never);
+            const projection = renderer.makeProjection(projectionName);
+            const globe = projectionName === 'orthographic';
+            const target = set.outline ?? { type: 'FeatureCollection', features: set.features };
+            if (globe) projection.rotate([-10, -25, 0]).fitExtent([[2, 2], [46, 34]], { type: 'Sphere' } as never);
+            else projection.fitExtent([[2, 2], [46, 34]], target as never);
+            return { d: d3.geoPath(projection)(target as never) ?? '', globe };
+        }).catch(() => null);
+        mapOutlines.set(key, outline);
+    }
+    return outline;
+}
+
+/** A tiny map: the basemap's land in the app tint (a globe draws its sphere too). */
+export const MiniMap: React.FC<{ width?: number; outline?: MapOutline | null }> = ({ width = 48, outline }) =>
+    <Box aria-hidden data-mini-map sx={{ ...frameSx, width, height: Math.round(width * 0.75), borderRadius: '4px', overflow: 'hidden',
+        bgcolor: '#f3f6f9', display: 'flex' }}>
+        <svg viewBox="0 0 48 36" width="100%" height="100%">
+            {outline?.globe && <circle cx={24} cy={18} r={16} fill="#fff" stroke="rgba(0,0,0,0.12)" strokeWidth={0.5} />}
+            {outline?.d && <Box component="path" d={outline.d} sx={{ fill: chartFill(0.45), stroke: '#fff', strokeWidth: 0.25 }} />}
+        </svg>
+    </Box>;
+
+const MapMiniature: React.FC<{ path: string; version: string; width?: number }> = ({ path, version, width }) => {
+    const [outline, setOutline] = React.useState<MapOutline | null | undefined>(undefined);
+    React.useEffect(() => {
+        let cancelled = false;
+        readWorkspaceTextFile(path).then(file => loadMapOutline(file.content)).then(result => { if (!cancelled) setOutline(result); }).catch(() => {});
+        return () => { cancelled = true; };
+    }, [path, version]);
+    return <MiniMap width={width} outline={outline} />;
+};
+
 const appLayouts = new Map<string, AppLayout>();
 
-/** An app's window, outlined from its source (one small text read per version of the file, then cached). */
-export const AppMiniature: React.FC<{ path: string; version?: string; width?: number }> = ({ path, version = '', width }) => {
+/** An app's window, outlined from its source (one small text read per version of the file, then cached); a map shows its basemap. */
+export const AppMiniature: React.FC<{ path: string; version?: string; width?: number }> = ({ path, version = '', width }) =>
+    isMapFile(path) ? <MapMiniature path={path} version={version} width={width} /> : <AppWindowMiniature path={path} version={version} width={width} />;
+
+const AppWindowMiniature: React.FC<{ path: string; version: string; width?: number }> = ({ path, version, width }) => {
     const key = `${path}@${version}`;
     const [layout, setLayout] = React.useState(() => appLayouts.get(key));
     React.useEffect(() => {

@@ -104,6 +104,7 @@ include = ["data_formulator*"]
 [tool.setuptools.package-data]
 "*" = ["SKILL.md", "tools.json"]
 "data_formulator.data_loader.guides" = ["*.md"]
+"data_formulator.analyst.skills.map" = ["countries.json"]
 "data_formulator.workflows" = ["*.yaml", "*.md"]
 "data_formulator.analyst" = ["chart_catalog.json"]
 # Demos shipped with the app (see data_formulator/demos/README.md): profile, front-page

@@ -4,7 +4,11 @@ import WrapTextIcon from '@mui/icons-material/WrapText';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import TuneIcon from '@mui/icons-material/Tune';
+import CodeIcon from '@mui/icons-material/Code';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { floatingPillSx } from '../app/tokens';
+import { SourceLocation, onSourceLocation, quoteHighlightSx, showQuote, takeSourceLocation } from '../app/sourceLocation';
 import { useDispatch, useSelector } from 'react-redux';
 import { CompactMarkdown } from './InteractionEntryCard';
 import { MarkdownEditor } from '../components/MarkdownEditor';
@@ -39,6 +43,7 @@ const WorkspacePdfPreview = React.lazy(() => import('./WorkspacePdfPreview').the
 
 const HtmlAppPreview = React.lazy(() => import('./HtmlAppPreview'));
 const ReactAppPreview = React.lazy(() => import('./ReactAppPreview'));
+const MapPreview = React.lazy(() => import('../maps/MapPreview'));
 
 const textDrafts = new Map<string, { content: string; savedContent: string; hash: string }>();
 
@@ -57,6 +62,9 @@ export const WorkspaceFileCanvas: FC<{ fileName: string; sourceFile?: File; floa
     return <WorkspaceFileContent key={`${draftKey}:${!!sourceFile}`} fileName={fileName} draftKey={draftKey} sourceFile={sourceFile}
         floatingAppControls={floatingAppControls} />;
 };
+
+/** Automatic repairs of an app the agent just wrote before its errors are left to the user. */
+const MAX_APP_AUTO_FIXES = 2;
 
 const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?: File; floatingAppControls: boolean }> = ({ fileName, draftKey, sourceFile, floatingAppControls }) => {
     const { t } = useTranslation();
@@ -104,18 +112,35 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
     const isMarkdown = /\.(md|markdown)$/i.test(fileName);
     const isHtml = /\.html?$/i.test(fileName);
     const isReactApp = /\.app\.jsx$/i.test(fileName);
-    const isApp = isHtml || isReactApp;
+    const isMap = /\.map\.json$/i.test(fileName);
+    const isApp = isHtml || isReactApp || isMap;
+    const [styleOpen, setStyleOpen] = useState(false);
     const hasPreview = isMarkdown || isApp;
     const [appReloadKey, setAppReloadKey] = useState(0);
     const dirty = textFile !== null && textFile.content !== textFile.savedContent;
     // Only agent-editable workspace apps can be repaired with edit_file.
     const repairRequest = (errors: string[], hash: string) =>
-        `The app files/${fileName} shows these errors:\n${errors.map(error => `- ${error}`).join('\n')}\n`
+        `The ${isMap ? 'map' : 'app'} files/${fileName} shows these errors:\n${errors.map(error => `- ${error}`).join('\n')}\n`
         + `Fix it in place with edit_file (path "files/${fileName}", expected_content_hash "${hash}", `
-        + `replaces "files/${fileName}"), preferably with targeted replacements; keep its df-app manifest and do not create a copy.`;
+        + `replaces "files/${fileName}"), preferably with targeted replacements; `
+        + (isMap ? 'keep it a valid map spec and do not create a copy.' : 'keep its df-app manifest and do not create a copy.');
     const askAgentToFix = !readOnly && textFile && !dirty ? (errors: string[]) => dispatch(dfActions.queueAnalystTask({
         text: repairRequest(errors, textFile.hash), images: [], attachments: [],
     })) : undefined;
+    // An app the agent just wrote is repaired on its own if it fails when it opens, at most twice;
+    // the request shows in the thread as a step (`auto`), and the failed app is not presented.
+    const autoFixesUsed = useSelector((state: DataFormulatorState) => state.appAutoFixes?.[fileName]);
+    const autoFix = !!askAgentToFix && autoFixesUsed !== undefined && autoFixesUsed < MAX_APP_AUTO_FIXES;
+    const autoFixApp = (errors: string[]) => {
+        if (!textFile) return;
+        dispatch(dfActions.countAppAutoFix(fileName));
+        dispatch(dfActions.queueAnalystTask({
+            text: repairRequest(errors, textFile.hash), displayText: errors[0], images: [], attachments: [], auto: 'app-repair',
+        }));
+    };
+    const releaseApp = () => dispatch(dfActions.releaseAgentApp(fileName));
+    const agentBusy = useSelector((state: DataFormulatorState) => !!state.analystChatPending
+        || state.draftNodes.some(draft => draft.derive?.status === 'running'));
     const [preview, setPreview] = useState<WorkspaceFilePreview | null>(null);
     const [pdfFile, setPdfFile] = useState<Blob | null>(null);
     const [workbookFile, setWorkbookFile] = useState<Blob | null>(null);
@@ -123,6 +148,10 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
     const [pdfPageCount, setPdfPageCount] = useState(0);
     const [pdfPageNumber, setPdfPageNumber] = useState(1);
     const [pdfScale, setPdfScale] = useState(1);
+    // Where a report's excerpt asked to open this file (a page, the quoted words).
+    const [sourceLocation, setSourceLocation] = useState<(SourceLocation & { nonce: number }) | null>(null);
+    const textScrollRef = useRef<HTMLDivElement>(null);
+    const shownQuote = useRef<{ nonce: number; clear: (() => void) | null } | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const isPdf = /\.pdf$/i.test(fileName);
@@ -198,6 +227,33 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
     // Reload once the workspace is known: a read sent before then fails and shows only a raw preview.
     }, [fileName, isPdf, isMarkdown, hasPreview, draftKey, fileRevision, temporary, sourceFile, workspace?.id]);
 
+    useEffect(() => {
+        const take = () => {
+            const location = takeSourceLocation(fileName);
+            if (location) setSourceLocation({ ...location, nonce: Date.now() });
+        };
+        take();
+        return onSourceLocation(name => { if (name === fileName) take(); });
+    }, [fileName]);
+
+    // Show the quoted words once per request (no state change, so the preview doesn't re-render).
+    useEffect(() => {
+        const quote = sourceLocation?.text;
+        if (!sourceLocation || !quote || shownQuote.current?.nonce === sourceLocation.nonce
+            || loading || (!textFile && !preview)) return;
+        if (isMarkdown && textFile && mode !== 'preview') {
+            setMode('preview');
+            return;
+        }
+        const frame = requestAnimationFrame(() => {
+            if (!textScrollRef.current) return;
+            shownQuote.current?.clear?.();
+            shownQuote.current = { nonce: sourceLocation.nonce, clear: showQuote(textScrollRef.current, quote) };
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [sourceLocation, loading, textFile, preview, mode, isMarkdown]);
+    useEffect(() => () => shownQuote.current?.clear?.(), []);
+
     const save = async () => {
         if (!textFile || readOnly || saving || discardOpen || renameOpen || renaming) return;
         setSaving(true);
@@ -213,6 +269,53 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
             setSaving(false);
         }
     };
+
+    const updateContent = (content: string) => {
+        if (readOnly || !textFile) return;
+        const draft = { ...textFile, content };
+        setTextFile(draft);
+        if (content === draft.savedContent) textDrafts.delete(draftKey);
+        else textDrafts.set(draftKey, draft);
+        if (textDrafts.size > 0) window.addEventListener('beforeunload', warnUnsavedDrafts);
+        else window.removeEventListener('beforeunload', warnUnsavedDrafts);
+    };
+
+    // Style edits on a map save as they happen: no Save or Discard. Saves run one at a time, each with
+    // the hash the last one returned; edits made meanwhile are saved right after.
+    const latestFile = useRef(textFile);
+    latestFile.current = textFile;
+    const autoSaveTimer = useRef<number | undefined>(undefined);
+    const autoSaving = useRef(false);
+    const flushAutoSave = async () => {
+        const file = latestFile.current;
+        if (!file || file.content === file.savedContent || readOnly || temporary || sourceFile) return;
+        if (autoSaving.current) { autoSaveTimer.current = window.setTimeout(() => void flushAutoSave(), 300); return; }
+        autoSaving.current = true;
+        try {
+            const saved = await saveWorkspaceTextFile(fileName, file.content, file.hash);
+            const current = latestFile.current ?? file;
+            const next = { content: current.content, savedContent: saved.content, hash: saved.content_hash };
+            if (mounted.current) setTextFile(next);
+            latestFile.current = next;
+            if (next.content === next.savedContent) textDrafts.delete(draftKey); else textDrafts.set(draftKey, next);
+            if (textDrafts.size === 0) window.removeEventListener('beforeunload', warnUnsavedDrafts);
+            if (mounted.current) setSaveError('');
+            if (next.content !== next.savedContent) autoSaveTimer.current = window.setTimeout(() => void flushAutoSave(), 300);
+        } catch (reason) {
+            if (mounted.current) setSaveError(reason instanceof Error ? reason.message : 'Could not save file');
+        } finally {
+            autoSaving.current = false;
+        }
+    };
+    const updateAndSave = (content: string) => {
+        updateContent(content);
+        if (latestFile.current) latestFile.current = { ...latestFile.current, content };
+        window.clearTimeout(autoSaveTimer.current);
+        autoSaveTimer.current = window.setTimeout(() => void flushAutoSave(), 500);
+    };
+    useEffect(() => () => window.clearTimeout(autoSaveTimer.current), []);
+    // The map view saves as it goes; only its source editor has Save and Discard.
+    const autoSaves = isMap && mode === 'preview' && !temporary && !sourceFile;
 
     const discard = () => {
         if (!textFile || saving || renaming) return;
@@ -281,9 +384,9 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--df-font-mono)' }}>{headerMeta}</Typography>}
             </Box>}
             <Box data-file-actions sx={{ position: 'absolute', top: 10, right: 20, zIndex: 10, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                {dirty && <Box component="span" role="status" aria-label="Unsaved changes" title="Unsaved changes"
+                {dirty && !autoSaves && <Box component="span" role="status" aria-label="Unsaved changes" title="Unsaved changes"
                     sx={{ width: 7, height: 7, mr: 0.5, borderRadius: '50%', bgcolor: 'text.secondary' }} />}
-                {textFile && dirty && !temporary && !sourceFile && <>
+                {textFile && dirty && !autoSaves && !temporary && !sourceFile && <>
                     <Button aria-label="Save file" size="small" variant="contained" disableElevation onClick={save} disabled={saving || renaming || workspace?.readOnly}
                         sx={{ position: 'relative', minWidth: 0, height: 30, px: 1.5, borderRadius: '15px', fontSize: '0.8125rem', textTransform: 'none' }}>
                         <Box component="span" sx={{ visibility: saving ? 'hidden' : 'visible' }}>Save</Box>
@@ -292,7 +395,13 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                     <Button aria-label="Discard changes" size="small" color="inherit" onClick={() => setDiscardOpen(true)} disabled={saving || renaming}
                         sx={{ ...floatingPillSx, minWidth: 0, height: 30, px: 1.5, borderRadius: '15px', fontSize: '0.8125rem', textTransform: 'none' }}>Discard</Button>
                 </>}
-                {textFile && hasPreview && <ToggleButtonGroup exclusive value={mode} size="small" aria-label="File view"
+                {/* Apps and maps open as apps; their source is behind ⋯, with a way back. */}
+                {textFile && isApp && mode === 'edit' && <Button size="small" color="inherit" aria-label={t('htmlApp.backToApp')}
+                    startIcon={<ArrowBackIcon sx={{ fontSize: '16px !important' }} />} onClick={() => setMode('preview')}
+                    sx={{ ...floatingPillSx, minWidth: 0, height: 30, px: 1.5, borderRadius: '15px', fontSize: '0.8125rem', textTransform: 'none' }}>
+                    {t(isMap ? 'htmlApp.backToMap' : 'htmlApp.backToApp')}
+                </Button>}
+                {textFile && hasPreview && !isApp && <ToggleButtonGroup exclusive value={mode} size="small" aria-label="File view"
                     onChange={(_, value) => { if (value) setMode(value); }}
                     // Same height and pill as the round buttons beside it; the selected half is an inset chip.
                     sx={{ ...floatingPillSx, boxSizing: 'border-box', height: 30, borderRadius: '15px', p: '3px', gap: '2px', alignItems: 'center',
@@ -305,6 +414,12 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                     <ToggleButton value="edit" aria-label={readOnly ? 'View source' : 'Edit source'}>{readOnly ? 'Source' : 'Edit'}</ToggleButton>
                     <ToggleButton value="preview" aria-label={isApp ? t('htmlApp.previewApp') : 'Preview Markdown'}>Preview</ToggleButton>
                 </ToggleButtonGroup>}
+                {textFile && isMap && mode === 'preview' && <Tooltip title={t('map.style', { defaultValue: 'Style' })}>
+                    <IconButton size="small" aria-label={t('map.style', { defaultValue: 'Style' })} aria-pressed={styleOpen} onClick={() => setStyleOpen(value => !value)}
+                        sx={{ ...floatingPillSx, ...(styleOpen ? { color: 'primary.main' } : {}) }}>
+                        <TuneIcon sx={{ fontSize: iconVar.lg }} />
+                    </IconButton>
+                </Tooltip>}
                 {textFile && isApp && mode === 'preview' && <Tooltip title={t('htmlApp.reload')}>
                     <IconButton size="small" aria-label={t('htmlApp.reload')} onClick={() => setAppReloadKey(value => value + 1)} sx={floatingPillSx}>
                         <RefreshIcon sx={{ fontSize: iconVar.lg }} />
@@ -327,6 +442,10 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                         onClick={() => { setMoreAnchor(null); setNewName(fileName); setRenameError(''); setRenameOpen(true); }}>
                         <ListItemIcon><EditOutlinedIcon /></ListItemIcon>
                         <ListItemText>{t('canvas.rename', { defaultValue: 'Rename' })}</ListItemText>
+                    </MenuItem>}
+                    {textFile && isApp && mode === 'preview' && <MenuItem onClick={() => { setMoreAnchor(null); setMode('edit'); }}>
+                        <ListItemIcon><CodeIcon /></ListItemIcon>
+                        <ListItemText>{t('htmlApp.viewSource')}</ListItemText>
                     </MenuItem>}
                     <MenuItem onClick={() => { setMoreAnchor(null); void handleDownload(); }}>
                         <ListItemIcon><DownloadIcon /></ListItemIcon>
@@ -396,23 +515,20 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                     sx={{ display: 'block', maxWidth: '100%', maxHeight: '100%', mx: 'auto', objectFit: 'contain' }} />}
                 {!loading && textFile && (isApp && mode === 'preview'
                     ? <Suspense fallback={<LoadingStatus label={t('dataThread.loadingFilePreview', { defaultValue: 'Loading file preview...' })} sx={{ height: '100%', p: 2 }} />}>
-                        {isReactApp
-                            ? <ReactAppPreview source={textFile.content} title={fileName} reloadKey={appReloadKey} onAskFix={askAgentToFix} />
-                            : <HtmlAppPreview html={textFile.content} title={fileName} reloadKey={appReloadKey} onAskFix={askAgentToFix} />}
+                        {isMap
+                            ? <MapPreview source={textFile.content} reloadKey={appReloadKey} styleOpen={styleOpen} onStyleClose={() => setStyleOpen(false)}
+                                onSourceChange={readOnly || saving || renaming ? undefined : temporary || sourceFile ? updateContent : updateAndSave} onAskFix={askAgentToFix} />
+                            : isReactApp
+                            ? <ReactAppPreview source={textFile.content} title={fileName} reloadKey={appReloadKey}
+                                onAskFix={autoFix ? autoFixApp : askAgentToFix} autoFix={autoFix} onHealthy={releaseApp} fixPending={agentBusy} />
+                            : <HtmlAppPreview html={textFile.content} title={fileName} reloadKey={appReloadKey}
+                                onAskFix={autoFix ? autoFixApp : askAgentToFix} autoFix={autoFix} onHealthy={releaseApp} fixPending={agentBusy} />}
                     </Suspense>
                     : isMarkdown && mode === 'preview'
-                    ? <Box sx={{ height: '100%', overflow: 'auto', px: 3, py: 2, boxSizing: 'border-box', fontSize: textVar.md, overflowWrap: 'anywhere', '& img': { maxWidth: '100%' }, '& pre': { overflow: 'auto' } }}>
+                    ? <Box ref={textScrollRef} sx={{ height: '100%', overflow: 'auto', px: 3, py: 2, boxSizing: 'border-box', fontSize: textVar.md, overflowWrap: 'anywhere', '& img': { maxWidth: '100%' }, '& pre': { overflow: 'auto' }, ...quoteHighlightSx }}>
                         <CompactMarkdown content={textFile.content} color="text.primary" variant="document" />
                     </Box>
-                    : <MarkdownEditor showToolbar={false} lineWrap={lineWrap} fileName={fileName} value={textFile.content} readOnly={readOnly || saving || renaming} onChange={content => {
-                        if (readOnly) return;
-                        const draft = { ...textFile, content };
-                        setTextFile(draft);
-                        if (content === draft.savedContent) textDrafts.delete(draftKey);
-                        else textDrafts.set(draftKey, draft);
-                        if (textDrafts.size > 0) window.addEventListener('beforeunload', warnUnsavedDrafts);
-                        else window.removeEventListener('beforeunload', warnUnsavedDrafts);
-                    }} />)}
+                    : <MarkdownEditor showToolbar={false} lineWrap={lineWrap} fileName={fileName} value={textFile.content} readOnly={readOnly || saving || renaming} onChange={updateContent} />)}
                 {loading && <LoadingStatus label={t('dataThread.loadingFilePreview', { defaultValue: 'Loading file preview...' })} sx={{ height: '100%', p: 2 }} />}
                 {!loading && error && (
                     <Box sx={{ height: '100%', display: 'grid', placeItems: 'center', px: 3, textAlign: 'center' }}>
@@ -425,7 +541,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                     </Box>
                 )}
                 {!loading && preview && (
-                    <Box sx={{ height: '100%', overflow: 'auto', p: 2.5, boxSizing: 'border-box' }}>
+                    <Box ref={textScrollRef} sx={{ height: '100%', overflow: 'auto', p: 2.5, boxSizing: 'border-box', ...quoteHighlightSx }}>
                         {preview.kind === 'table' ? <TablePreview fileName={fileName} preview={preview} /> : <Typography component="pre" sx={{
                             width: '100%', maxWidth: 960, mx: 'auto', my: 0,
                             whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
@@ -450,6 +566,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                             scale={pdfScale}
                             onPageCountChange={setPdfPageCount}
                             onVisiblePageChange={setPdfPageNumber}
+                            goTo={sourceLocation?.page ? { page: sourceLocation.page, nonce: sourceLocation.nonce } : undefined}
                             errorLabel={t('dataThread.previewUnavailable', {
                                 defaultValue: 'A quick preview is not available for this file type.',
                             })}

@@ -34,6 +34,8 @@ import re
 from typing import Any, Generator
 
 from data_formulator.analyst.replacement import resolve_replacement
+from data_formulator.analyst.session_files import SessionFiles
+from data_formulator.analyst.skills.report.excerpts import check_report_excerpts, summarize_checks
 from data_formulator.analyst.skills.base import (
     Event,
     SkillContext,
@@ -148,8 +150,16 @@ class ReportWritingSkill:
             "content": _strip_leaked_tool_syntax(report),
         }
 
+        # Check the report's excerpts against their sources, for the agent: a misquote is its to report.
+        excerpt_note = None
+        try:
+            excerpt_note = summarize_checks(check_report_excerpts(report, SessionFiles(ctx)))
+        except Exception:
+            logger.warning("Could not check the report's excerpts", exc_info=True)
+
         return "[REPORT DELIVERED] The report was written and shown to the user." + (
-            f" It replaced {replaces['name']} ({replaces['id']}), which is deleted." if replaces else "")
+            f" It replaced {replaces['name']} ({replaces['id']}), which is deleted." if replaces else "") + (
+            f"\n{excerpt_note}" if excerpt_note else "")
 
 
 def get_skill() -> ReportWritingSkill:

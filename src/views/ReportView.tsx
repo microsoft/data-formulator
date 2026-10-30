@@ -9,17 +9,20 @@ import {
     Tooltip,
     Menu,
     MenuItem,
+    Divider,
+    Button,
     useTheme,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/EditOutlined';
 import CheckIcon from '@mui/icons-material/Check';
-import DownloadIcon from '@mui/icons-material/Download';
+import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ImageIcon from '@mui/icons-material/Image';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import FormatSizeIcon from '@mui/icons-material/FormatSize';
 import html2canvas from 'html2canvas';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, GeneratedReport } from '../app/dfSlice';
@@ -31,6 +34,12 @@ import { getCachedChart } from '../app/chartCache';
 import { floatingPillSx } from '../app/tokens';
 import { iconVar, textVar } from '../app/layout';
 import { useTranslation } from 'react-i18next';
+import { resolveCitations, splitFrontMatter } from './reportBlocks';
+import { requestSourceLocation } from '../app/sourceLocation';
+import {
+    DEFAULT_REPORT_DENSITY, DEFAULT_REPORT_TYPEFACE, REPORT_COLUMN_WIDTH, ReportTypeface,
+    reportDensityFor, reportTypefaceFor,
+} from './reportThemes';
 
 export const ReportView: FC = () => {
     // Get all generated reports from Redux state
@@ -63,6 +72,7 @@ export const ReportView: FC = () => {
     const [isEditMode, setIsEditMode] = useState(false);
     // Download/share menu anchored to the floating download button.
     const [downloadMenuAnchor, setDownloadMenuAnchor] = useState<null | HTMLElement>(null);
+    const [themeMenuAnchor, setThemeMenuAnchor] = useState<null | HTMLElement>(null);
     const reportScrollRef = useRef<HTMLDivElement>(null);
     const reportFrameRef = useRef<HTMLDivElement>(null);
     const reportContentRef = useRef<HTMLDivElement>(null);
@@ -143,8 +153,7 @@ export const ReportView: FC = () => {
         }));
     };
 
-    // The report content column is capped at 816px (see render below); leave a
-    // little breathing room so embedded charts never butt against the edge.
+    // Charts keep their own size up to this width; a narrower column shrinks them to fit.
     const REPORT_MAX_CHART_WIDTH = 720;
 
     // Derive the embed dimensions for a chart from the size it is shown at: the
@@ -190,6 +199,8 @@ export const ReportView: FC = () => {
         const clone = reportElement.cloneNode(true) as HTMLElement;
         clone.querySelectorAll('[data-report-toolbar]').forEach(el => el.remove());
         clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+        // Exports show everything: collapsed details open.
+        clone.querySelectorAll('.report-details').forEach(el => el.classList.add('is-open'));
         return { reportElement, clone };
     };
 
@@ -486,7 +497,7 @@ ${styles}
 
     const processReport = (rawReport: string): string => {
         const markdownMatch = rawReport.match(/```markdown\n([\s\S]*?)(?:\n```)?$/);
-        let processed = markdownMatch ? markdownMatch[1] : rawReport;
+        let processed = resolveCitations(splitFrontMatter(markdownMatch ? markdownMatch[1] : rawReport).body);
 
         const makeImg = (chartId: string, url: string, width: number, height: number, caption?: string) => {
             return `<img src="${url}" alt="${caption || t('report.chartAlt')}" data-chart-id="${chartId}" width="${width}" height="${height}" style="max-width:100%;" />`;
@@ -696,11 +707,27 @@ ${styles}
     let displayedReport = generatedReport;
     displayedReport = processReport(displayedReport);
 
-    // Raw markdown (fence stripped) for the lightweight typewriter view while streaming.
-    const rawReportMarkdown = (() => {
+    // Raw markdown (fence and front matter stripped) for the lightweight typewriter view while streaming.
+    const { body: rawReportMarkdown, style: frontMatterGenre } = (() => {
         const m = generatedReport.match(/```markdown\n([\s\S]*?)(?:\n```)?$/);
-        return m ? m[1] : generatedReport;
+        return splitFrontMatter(m ? m[1] : generatedReport);
     })();
+    // The genre comes from the report's front matter (kept on the report once edits turn it into HTML);
+    // the theme is the user's choice, or the genre's default.
+    const reportGenre = frontMatterGenre ?? currentReport?.style;
+    // How the reader reads it: settings saved on the report only where they depart from the defaults.
+    const reportTypeface = reportTypefaceFor(currentReport?.theme);
+    const reportDensity = reportDensityFor(currentReport?.density);
+    const reportLook = { typeface: reportTypeface, density: reportDensity };
+    const columnWidth = `${REPORT_COLUMN_WIDTH}px`;
+    const updateLook = (patch: { theme?: ReportTypeface; density?: 'compact' | 'comfortable' }) => {
+        if (!currentReportId) return;
+        dispatch(dfActions.updateGeneratedReportLook({
+            id: currentReportId,
+            ...('theme' in patch ? { theme: patch.theme === DEFAULT_REPORT_TYPEFACE ? undefined : patch.theme } : {}),
+            ...('density' in patch ? { density: patch.density === DEFAULT_REPORT_DENSITY ? undefined : patch.density } : {}),
+        }));
+    };
 
     const downloadMenuItemSx = {
         minHeight: 30,
@@ -718,56 +745,58 @@ ${styles}
     return (
         <Box sx={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <Box sx={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
-                    {/* Floating action buttons — left side */}
-                    <Box sx={{
-                        position: 'absolute',
-                        top: 12,
-                        left: 12,
-                        zIndex: 10,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 1,
+                    {/* The report's tools float at the top right, as on apps and files: edit, reading
+                        settings, and ⋯ (copy, image, PDF, delete). The page keeps room above the title. */}
+                    <Box data-report-actions sx={{
+                        position: 'absolute', top: 10, right: 20, zIndex: 10,
+                        display: 'flex', alignItems: 'center', gap: 0.5,
                     }}>
-                        {!isGenerating && currentReportId && (
-                            <Tooltip title={isEditMode ? t('report.doneEditing') : t('report.editReport')} placement="right">
+                        {!isGenerating && currentReportId && (isEditMode ? (
+                            <Button size="small" variant="contained" disableElevation onClick={() => setIsEditMode(false)}
+                                sx={{ minWidth: 0, height: 30, px: 1.5, borderRadius: '15px', fontSize: '0.8125rem', textTransform: 'none' }}>
+                                {t('report.doneEditing')}
+                            </Button>
+                        ) : (
+                            <Tooltip title={t('report.editReport')}>
+                                <IconButton size="small" aria-label={t('report.editReport')} onClick={() => setIsEditMode(true)} sx={floatingPillSx}>
+                                    <EditIcon sx={{ fontSize: iconVar.lg }} />
+                                </IconButton>
+                            </Tooltip>
+                        ))}
+                        {currentReportId && (
+                            <Tooltip title={t('report.theme.choose')}>
                                 <IconButton
                                     size="small"
-                                    onClick={() => setIsEditMode((v) => !v)}
-                                    sx={isEditMode ? {
-                                        ...floatingPillSx,
-                                        backgroundColor: 'primary.main',
-                                        color: 'primary.contrastText',
-                                        '&:hover': { backgroundColor: 'primary.dark', color: 'primary.contrastText' },
-                                    } : floatingPillSx}
+                                    aria-label={t('report.theme.choose')}
+                                    onClick={(e) => setThemeMenuAnchor(e.currentTarget)}
+                                    sx={themeMenuAnchor ? { ...floatingPillSx, color: 'primary.main' } : floatingPillSx}
                                 >
-                                    {isEditMode ? <CheckIcon sx={{ fontSize: iconVar.lg }} /> : <EditIcon sx={{ fontSize: iconVar.lg }} />}
+                                    <FormatSizeIcon sx={{ fontSize: iconVar.lg }} />
                                 </IconButton>
                             </Tooltip>
                         )}
-                        {!isGenerating && currentReportId && (
-                            <Tooltip title={t('report.downloadAndShare')} placement="right">
+                        {currentReportId && (
+                            <Tooltip title={t('canvas.more', { defaultValue: 'More' })}>
                                 <IconButton
                                     size="small"
+                                    aria-label={t('canvas.more', { defaultValue: 'More' })}
                                     onClick={(e) => setDownloadMenuAnchor(e.currentTarget)}
-                                    sx={downloadMenuAnchor ? {
-                                        ...floatingPillSx,
-                                        color: 'primary.main',
-                                    } : floatingPillSx}
+                                    sx={downloadMenuAnchor ? { ...floatingPillSx, color: 'primary.main' } : floatingPillSx}
                                 >
-                                    <DownloadIcon sx={{ fontSize: iconVar.lg }} />
+                                    <MoreHorizIcon sx={{ fontSize: iconVar.lg }} />
                                 </IconButton>
                             </Tooltip>
                         )}
                         <Menu
-                            anchorEl={downloadMenuAnchor}
-                            open={Boolean(downloadMenuAnchor)}
-                            onClose={() => setDownloadMenuAnchor(null)}
+                            anchorEl={themeMenuAnchor}
+                            open={Boolean(themeMenuAnchor)}
+                            onClose={() => setThemeMenuAnchor(null)}
                             anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                            transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
                             slotProps={{
                                 paper: {
                                     sx: {
-                                        ml: 0.5,
+                                        mt: 0.5,
                                         borderRadius: '6px',
                                         boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
                                         border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
@@ -775,65 +804,79 @@ ${styles}
                                 }
                             }}
                         >
+                            {(['sans', 'serif'] as const).map((typeface) => (
+                                <MenuItem
+                                    key={typeface}
+                                    selected={reportTypeface === typeface}
+                                    onClick={() => updateLook({ theme: typeface })}
+                                    sx={downloadMenuItemSx}
+                                >
+                                    <CheckIcon sx={{ visibility: reportTypeface === typeface ? 'visible' : 'hidden' }} />
+                                    {t(`report.theme.${typeface}`)}
+                                </MenuItem>
+                            ))}
+                            <Divider sx={{ my: 0.5 }} />
                             <MenuItem
-                                onClick={() => {
-                                    setDownloadMenuAnchor(null);
-                                    void copyReportContent();
-                                }}
+                                onClick={() => updateLook({ density: reportDensity === 'compact' ? 'comfortable' : 'compact' })}
                                 sx={downloadMenuItemSx}
                             >
-                                <ContentCopyIcon />
-                                {t('report.copyContent')}
-                            </MenuItem>
-                            <MenuItem
-                                onClick={() => {
-                                    setDownloadMenuAnchor(null);
-                                    void downloadReportAsPng();
-                                }}
-                                sx={downloadMenuItemSx}
-                            >
-                                <ImageIcon />
-                                {t('report.saveAsImage')}
-                            </MenuItem>
-                            <MenuItem
-                                onClick={() => {
-                                    setDownloadMenuAnchor(null);
-                                    void exportReportAsPdf();
-                                }}
-                                sx={downloadMenuItemSx}
-                            >
-                                <PictureAsPdfIcon />
-                                {t('report.downloadPdf')}
+                                <CheckIcon sx={{ visibility: reportDensity === 'compact' ? 'visible' : 'hidden' }} />
+                                {t('report.theme.compact')}
                             </MenuItem>
                         </Menu>
-                        {currentReportId && (
-                            <Tooltip title={t('report.deleteReport')} placement="right">
-                                <IconButton
-                                    size="small"
-                                    onClick={(e) => deleteReport(currentReportId, e)}
-                                    sx={{
-                                        ...floatingPillSx,
-                                        color: 'error.main',
-                                        '&:hover': { backgroundColor: 'error.50', color: 'error.main' },
-                                    }}
-                                >
-                                    <DeleteIcon sx={{ fontSize: iconVar.lg }} />
-                                </IconButton>
-                            </Tooltip>
-                        )}
+                        <Menu
+                            anchorEl={downloadMenuAnchor}
+                            open={Boolean(downloadMenuAnchor)}
+                            onClose={() => setDownloadMenuAnchor(null)}
+                            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                            slotProps={{
+                                paper: {
+                                    sx: {
+                                        mt: 0.5,
+                                        borderRadius: '6px',
+                                        boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
+                                        border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+                                    }
+                                }
+                            }}
+                        >
+                            {!isGenerating && [
+                                <MenuItem key="copy" onClick={() => { setDownloadMenuAnchor(null); void copyReportContent(); }} sx={downloadMenuItemSx}>
+                                    <ContentCopyIcon />
+                                    {t('report.copyContent')}
+                                </MenuItem>,
+                                <MenuItem key="image" onClick={() => { setDownloadMenuAnchor(null); void downloadReportAsPng(); }} sx={downloadMenuItemSx}>
+                                    <ImageIcon />
+                                    {t('report.saveAsImage')}
+                                </MenuItem>,
+                                <MenuItem key="pdf" onClick={() => { setDownloadMenuAnchor(null); void exportReportAsPdf(); }} sx={downloadMenuItemSx}>
+                                    <PictureAsPdfIcon />
+                                    {t('report.downloadPdf')}
+                                </MenuItem>,
+                                <Divider key="divider" sx={{ my: 0.5 }} />,
+                            ]}
+                            <MenuItem
+                                onClick={(e) => { setDownloadMenuAnchor(null); if (currentReportId) deleteReport(currentReportId, e); }}
+                                sx={{ ...downloadMenuItemSx, color: 'error.main', '& .MuiSvgIcon-root': { ...downloadMenuItemSx['& .MuiSvgIcon-root'], color: 'error.main' } }}
+                            >
+                                <DeleteIcon />
+                                {t('report.deleteReport')}
+                            </MenuItem>
+                        </Menu>
                     </Box>
                     {/* Continuous canvas — content flows cleanly */}
                     <Box ref={reportScrollRef} data-report-scroll sx={{
                         height: '100%', overflow: 'auto', overflowAnchor: 'none',
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                     }}>
-                        <Box ref={reportFrameRef} sx={{ width: '100%', maxWidth: '816px', flexShrink: 0 }}>
+                        <Box ref={reportFrameRef} sx={{ width: '100%', maxWidth: columnWidth, flexShrink: 0 }}>
                         <Box
                             ref={reportContentRef}
                             data-report-content
                             sx={{
                                 width: '100%',
-                                maxWidth: '816px',
+                                maxWidth: columnWidth,
                                 display: 'flex',
                                 flexDirection: 'column',
                                 minHeight: 'fit-content',
@@ -849,6 +892,11 @@ ${styles}
                                 generatingPhase={currentReport?.generatingPhase}
                                 inspectionSteps={currentReport?.inspectionSteps}
                                 reportId={currentReportId}
+                                reportLook={reportLook}
+                                onOpenSource={(fileName, location) => {
+                                    requestSourceLocation(fileName, location);
+                                    dispatch(dfActions.setFocused({ type: 'file', fileName }));
+                                }}
                                 onUpdate={(html) => {
                                     if (currentReportId) {
                                         setGeneratedReport(html);

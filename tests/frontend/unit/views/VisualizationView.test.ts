@@ -289,6 +289,55 @@ it('uses read-only artifact Markdown controls before import without workspace re
     }
 });
 
+it('opens maps as maps, with their source behind the More menu and a way back', async () => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+    const source = JSON.stringify({ title: 'Empty map', view: { basemap: 'none' }, data: {}, layers: [] });
+    const readText = vi.spyOn(workspaceService, 'readWorkspaceTextFile').mockResolvedValue({ name: 'empty.map.json', content: source, content_hash: 'h' } as never);
+    try {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        render(React.createElement(Provider, { store, children: React.createElement(WorkspaceFileCanvas, { fileName: 'empty.map.json' }) }));
+        expect(await screen.findByRole('button', { name: 'Style' })).toBeTruthy();
+        // No Edit / Preview toggle on apps and maps.
+        expect(screen.queryByRole('button', { name: 'Edit source' })).toBeNull();
+        expect(screen.queryByRole('group', { name: 'File view' })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'More' }));
+        fireEvent.click(await screen.findByRole('menuitem', { name: 'View source' }));
+        const back = await screen.findByRole('button', { name: 'Back to app' });
+        expect(back.textContent).toBe('Back to map');
+        expect(screen.queryByRole('button', { name: 'Style' })).toBeNull();
+        fireEvent.click(back);
+        expect(await screen.findByRole('button', { name: 'Style' })).toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Back to app' })).toBeNull();
+    } finally {
+        readText.mockRestore();
+        vi.unstubAllGlobals();
+    }
+});
+
+it('saves map style edits as they happen, without Save or Discard', async () => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+    const source = JSON.stringify({ title: 'Empty map', view: { basemap: 'none' }, data: {}, layers: [] });
+    const readText = vi.spyOn(workspaceService, 'readWorkspaceTextFile').mockResolvedValue({ name: 'empty.map.json', content: source, content_hash: 'h' } as never);
+    const save = vi.spyOn(workspaceService, 'saveWorkspaceTextFile').mockImplementation(async (_name, content) =>
+        ({ name: 'empty.map.json', content, content_hash: 'h2' }) as never);
+    try {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        render(React.createElement(Provider, { store, children: React.createElement(WorkspaceFileCanvas, { fileName: 'empty.map.json' }) }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Style' }));
+        fireEvent.change(await screen.findByRole('textbox', { name: 'Title' }), { target: { value: 'Renamed map' } });
+        expect(screen.queryByRole('button', { name: 'Save file' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Discard changes' })).toBeNull();
+        await waitFor(() => expect(save).toHaveBeenCalledTimes(1), { timeout: 2000 });
+        expect(save.mock.calls[0][0]).toBe('empty.map.json');
+        expect(JSON.parse(save.mock.calls[0][1] as string).title).toBe('Renamed map');
+        expect(save.mock.calls[0][2]).toBe('h');
+    } finally {
+        readText.mockRestore();
+        save.mockRestore();
+        vi.unstubAllGlobals();
+    }
+});
+
 it('uses file display names with the filename in the tooltip, and a legacy fallback', () => {
     const store = configureStore({ reducer: dataFormulatorReducer });
     const file = { name: 'scratch/unesco_education_summary.md', filename: 'unesco_education_summary.md',

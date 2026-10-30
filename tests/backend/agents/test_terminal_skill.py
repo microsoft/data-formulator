@@ -404,6 +404,23 @@ def test_terminal_confines_writes_and_child_processes_to_scratch(tmp_path):
     assert (scratch / "result.txt").read_text() == "allowed"
 
 
+@pytest.mark.parametrize("shell", ["/bin/sh", "/bin/zsh"])
+def test_terminal_shells_can_use_here_documents_and_devices_but_not_write_to_tmp(tmp_path, shell):
+    if not terminal.Path(shell).exists():
+        pytest.skip(f"{shell} is not installed")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    marker = f"/tmp/df-heredoc-escape-{terminal.secrets.token_hex(4)}"
+    script = (f"cat <<'EOF'\nfrom a here-document\nEOF\n"
+              "echo hidden > /dev/null; echo to-stdout > /dev/stdout; echo to-stderr > /dev/stderr\n"
+              f"{{ echo x > {marker}; }} 2>/dev/null && echo escaped || echo blocked")
+    result = list(terminal.run_command({"argv": [shell, "-c", script], "cwd": str(scratch), "timeout_seconds": 10},
+                                       scratch_dir=scratch))[-1]["result"]
+    assert result["exit_code"] == 0, result
+    assert result["output"].splitlines() == ["from a here-document", "to-stdout", "to-stderr", "blocked"]
+    assert not terminal.Path(marker).exists()
+
+
 @pytest.mark.parametrize("configured", [False, True])
 def test_terminal_policy_allows_atomic_updates_but_protects_other_home_files(tmp_path, configured):
     from data_formulator.configuration import save_configuration

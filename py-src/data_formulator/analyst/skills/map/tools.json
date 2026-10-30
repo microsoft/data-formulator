@@ -1,0 +1,98 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "write_map",
+      "description": "Create a map from a template (choropleth, bubble, point, density, spike, flow, track, bivariate, cartogram, or vector map) or from layers (choropleth, bubbles, points, density, hexbins, flows, spikes, paths, vectors, labels; world, US states/counties, or custom GeoJSON; optional street tiles and globe) and open it on the canvas: a new file (filename) or a full rewrite of an existing map (path + expected_content_hash). The map reads workspace tables live and can carry controls (time slider with play, metric switch, filters, search, layer toggles, details and stats panels). The result lists warnings such as unmatched region keys; fix them. For small changes to an existing map, use edit_file replacements instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "plan_step": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "When working through a checklist plan: the number (1-based) of the plan step this result serves. Several results can serve one step; a step is checked off once you move on to a later step or finish."
+          },
+          "replaces": {
+            "type": "string",
+            "description": "The map's files/... path, equal to path. Only to fix a map the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the fixed map moves to after the latest request and the thread notes that it replaced the old one. Omit it for ordinary changes the user asks for."
+          },
+          "filename": {
+            "type": "string",
+            "description": "For a new map: a visible filename ending in .map.json, without directories, for example life_expectancy.map.json."
+          },
+          "path": {
+            "type": "string",
+            "description": "To rewrite an existing agent-editable map in place: its files/... path (ending in .map.json). Omit filename when you pass path."
+          },
+          "expected_content_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "With path: the map's current content_hash. On conflict, reread the map before retrying."
+          },
+          "title": {
+            "type": "string",
+            "description": "Short single-line title shown on the map and in the thread (at most 80 characters)."
+          },
+          "map": {
+            "type": "object",
+            "description": "The map spec. Usually a template: {template, data, encoding, properties?, fields?, view?, subtitle?, source?} — template is choropleth, bubbles, points, density, spikes, flows, tracks, bivariate, cartogram, or vectors; data is one source ({\"table\": ...}, {\"sql\": ..., \"tables\": [...]}, or a few inline values); encoding binds columns to channels; color, color2, size, weight, label, time, and filter may instead list column options ([\"a\", \"b\"], first shown, or {\"field\", \"options\"}) that people choose among. For several layers, give {view, data (named sources), layers, controls?} instead. Do not embed large data.",
+            "properties": {
+              "subtitle": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "view": {
+                "type": "object"
+              },
+              "data": {
+                "type": "object"
+              },
+              "layers": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "controls": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "template": {
+                "type": "string",
+                "enum": [
+                  "choropleth",
+                  "bubbles",
+                  "points",
+                  "density",
+                  "spikes",
+                  "flows",
+                  "tracks",
+                  "bivariate",
+                  "cartogram",
+                  "vectors"
+                ]
+              },
+              "encoding": {
+                "type": "object"
+              },
+              "properties": {
+                "type": "object"
+              },
+              "fields": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "required": [
+          "title",
+          "map"
+        ]
+      }
+    }
+  }
+]

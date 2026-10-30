@@ -10,6 +10,7 @@
  */
 
 import { transform } from 'sucrase';
+import ts from 'typescript';
 
 import type { HtmlAppManifest } from '../htmlApp/htmlAppDocument';
 
@@ -25,8 +26,13 @@ export const ALLOWED_IMPORTS = [
     ...OPTIONAL_IMPORTS,
 ];
 
+/** Bundles the host injects for what an app uses beyond its imports: chart links need Flint's link validator. */
+export type OptionalModule = OptionalImport | 'flint-links';
+
 /** A Flint map draws vendored boundaries from `@df/geo`. */
 const FLINT_MAP_CHART = /(['"])(?:Map|Choropleth)\1/;
+/** Linked charts (`ChartLink`, `useChartLink`) check their links with Flint's validator. */
+const CHART_LINK = /\b(?:ChartLink|useChartLink)\b/;
 
 const MANIFEST_LINE = /^\s*\/\/\s*@df-app\s+(\{.*\})\s*$/m;
 
@@ -50,8 +56,28 @@ export function parseReactAppManifest(source: string): HtmlAppManifest {
 }
 
 export type CompileResult =
-    | { ok: true; code: string; manifest: HtmlAppManifest; optionalModules: OptionalImport[] }
+    | { ok: true; code: string; manifest: HtmlAppManifest; optionalModules: OptionalModule[] }
     | { ok: false; error: string; manifest: HtmlAppManifest };
+
+/**
+ * Where and why the app fails to parse. Sucrase often stops at a later symptom (for a missing `}` in
+ * `encodings={{ x: {...}, y: {...} }}`, the next element), so locate the cause with TypeScript's parser,
+ * and quote what follows it so the agent asked to fix it finds the spot.
+ */
+function describeSyntaxError(source: string, error: unknown): string {
+    const diagnostic = ts.transpileModule(source, {
+        reportDiagnostics: true, fileName: 'App.tsx', compilerOptions: { jsx: ts.JsxEmit.ReactJSX },
+    }).diagnostics?.find(item => item.file && item.start !== undefined);
+    if (diagnostic) {
+        const { line, character } = diagnostic.file!.getLineAndCharacterOfPosition(diagnostic.start!);
+        const after = source.split('\n')[line].slice(character, character + 24).trim();
+        return `Syntax error at line ${line + 1}, column ${character + 1}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`
+            + (after ? ` (just before "${after}")` : '');
+    }
+    const loc = (error as { loc?: { line: number; column: number } }).loc;
+    const message = error instanceof Error ? error.message.replace(/^Error transforming App\.tsx:\s*/, '') : String(error);
+    return `Syntax error${loc ? ` at line ${loc.line}, column ${loc.column + 1}` : ''}: ${message.replace(/\s*\(\d+:\d+\)$/, '')}`;
+}
 
 /** Compile app source to a CommonJS module body, or explain why it cannot run. */
 export function compileReactApp(source: string): CompileResult {
@@ -65,9 +91,7 @@ export function compileReactApp(source: string): CompileResult {
             filePath: 'App.tsx',
         }).code;
     } catch (error) {
-        const loc = (error as { loc?: { line: number; column: number } }).loc;
-        const message = error instanceof Error ? error.message.replace(/^Error transforming App\.tsx:\s*/, '') : String(error);
-        return { ok: false, manifest, error: `Syntax error${loc ? ` at line ${loc.line}, column ${loc.column + 1}` : ''}: ${message.replace(/\s*\(\d+:\d+\)$/, '')}` };
+        return { ok: false, manifest, error: describeSyntaxError(source, error) };
     }
     const imports = [
         ...[...code.matchAll(/\brequire\((['"])([^'"]+)\1\)/g)].map(match => match[2]),
@@ -83,8 +107,8 @@ export function compileReactApp(source: string): CompileResult {
     if (!/\bexports\.\s*default\s*=/.test(code)) {
         return { ok: false, manifest, error: 'The app must `export default` a React component.' };
     }
-    const optionalModules = OPTIONAL_IMPORTS.filter(name => imports.includes(name)
-        || (name === '@df/geo' && FLINT_MAP_CHART.test(source)));
+    const optionalModules: OptionalModule[] = [...OPTIONAL_IMPORTS.filter(name => imports.includes(name)
+        || (name === '@df/geo' && FLINT_MAP_CHART.test(source))), ...(CHART_LINK.test(source) ? ['flint-links' as const] : [])];
     return { ok: true, code, manifest, optionalModules };
 }
 

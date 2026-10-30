@@ -107,14 +107,14 @@ def _app_reading_table(entry: dict[str, Any], ctx: Any) -> str | None:
         return None
     names = {str(entry.get("id") or ""), *(str(alias) for alias in entry.get("aliases") or [])}
     try:
-        from data_formulator.analyst.skills.html_app.skill import read_html_manifest, read_react_manifest
+        from data_formulator.analyst.skills.html_app.skill import APP_FILE_SUFFIXES, read_app_manifest
         for item in workspace.list_workspace_files():
             lower = item.name.lower()
-            if not (lower.endswith(".app.jsx") or lower.endswith(".html")):
+            if not lower.endswith(APP_FILE_SUFFIXES):
                 continue
             _, content = workspace.read_workspace_file(item.name)
             text = content.decode("utf-8", errors="replace")
-            manifest = read_react_manifest(text) if lower.endswith(".app.jsx") else read_html_manifest(text)
+            manifest = read_app_manifest(item.name, text)
             if manifest and names & {str(table) for table in manifest.get("tables") or []}:
                 return f"files/{item.name}"
     except Exception:

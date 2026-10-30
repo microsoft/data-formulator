@@ -42,7 +42,21 @@ describe('compileReactApp', () => {
         const result = compileReactApp('export default function App() {\n  return <div>;\n}');
         expect(result).toMatchObject({ ok: false });
         if (result.ok) return;
-        expect(result.error).toMatch(/^Syntax error at line 2, column \d+: Unexpected token/);
+        expect(result.error).toMatch(/^Syntax error at line 2, column 11: JSX element 'div' has no corresponding closing tag/);
+    });
+
+    it('points at a missing brace in a JSX object attribute, not at the next element', () => {
+        const result = compileReactApp([
+            'export default function App() {',
+            '  return <div>',
+            "    <Chart encodings={{x:{field:'date'},y:{field:'price'}} labels={{date:'Week'}}/>",
+            '    <Kpis />',
+            '  </div>;',
+            '}',
+        ].join('\n'));
+        expect(result).toMatchObject({ ok: false });
+        if (result.ok) return;
+        expect(result.error).toMatch(/^Syntax error at line 3, column \d+: '}' expected\. \(just before "labels=\{\{date:'Week'/);
     });
 
     it('rejects imports the runtime does not provide and a missing default export', () => {

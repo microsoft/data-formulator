@@ -19,6 +19,7 @@ from data_formulator.sandbox.session_imports import helper_warnings, sign_helper
 from data_formulator.analyst.skills.html_app.skill import (
     REACT_APP_SUFFIX, check_app_revision, replace_file_in_place,
 )
+from data_formulator.analyst.skills.map.skill import MAP_SUFFIX, check_map_revision
 from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine, workspace_table_input
 from .data_loading import WorkspaceDataLoading
 
@@ -220,14 +221,17 @@ class WorkspaceSkill:
             app = None
             if editing:
                 previous = original.decode("utf-8", errors="replace") if len(original) <= 2_000_000 else None
-                app = check_app_revision(filename, previous, content, ctx)
+                app = check_app_revision(filename, previous, content, ctx) or check_map_revision(filename, content, ctx)
                 if app is not None and display_name is None:
                     display_name = app["title"]
             elif filename.lower().endswith(REACT_APP_SUFFIX):
                 raise ValueError("Create apps with write_app (html_app skill); it validates the code and opens the app")
+            elif filename.lower().endswith(MAP_SUFFIX):
+                raise ValueError("Create maps with write_map (map skill); it checks the spec against the data and opens the map")
             metadata = ctx.workspace.save_workspace_file(
                 encoded, filename,
-                "text/jsx" if filename.lower().endswith(REACT_APP_SUFFIX) else mimetypes.guess_type(filename)[0],
+                "text/jsx" if filename.lower().endswith(REACT_APP_SUFFIX)
+                else "application/json" if filename.lower().endswith(MAP_SUFFIX) else mimetypes.guess_type(filename)[0],
                 expected_content_hash=expected_hash if editing else None,
                 display_name=display_name, agent_managed=True,
                 code_signature=sign_helper(filename, encoded),
@@ -269,6 +273,8 @@ class WorkspaceSkill:
             raise ValueError(problem)
         if name.lower().endswith(".app.jsx") != new_name.lower().endswith(".app.jsx"):
             raise ValueError("An app keeps its .app.jsx extension")
+        if name.lower().endswith(MAP_SUFFIX) != new_name.lower().endswith(MAP_SUFFIX):
+            raise ValueError("A map keeps its .map.json extension")
         if helper_module_name(source) and helper_module_name(source) != helper_module_name(target):
             from data_formulator.analyst.session_layer import session_layer
             layer = session_layer(ctx.payload)

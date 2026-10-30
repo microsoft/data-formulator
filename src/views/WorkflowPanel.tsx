@@ -85,7 +85,7 @@ export interface Run {
 }
 
 /** Tools whose output is a workspace file the run publishes; apps are files too. */
-const FILE_OUTPUT_TOOLS = ['create_file', 'edit_file', 'write_app', 'write_html_app'];
+const FILE_OUTPUT_TOOLS = ['create_file', 'edit_file', 'write_app', 'write_html_app', 'write_map'];
 
 function workflowOutputIds(run: Run): string[] {
     return [...new Set((run.outputs || []).flatMap(output => {

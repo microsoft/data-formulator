@@ -64,7 +64,7 @@
         "dompurify": "^3.4.16",
         "echarts": "^6.1.0",
         "exceljs": "^4.4.0",
-        "flint-chart": ">=0.5.1",
+        "flint-chart": "1.0.1",
         "html2canvas": "^1.4.1",
         "i18next": "^26.0.1",
         "i18next-browser-languagedetector": "^8.2.1",

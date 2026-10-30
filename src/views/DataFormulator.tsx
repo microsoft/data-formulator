@@ -153,7 +153,10 @@ export const DataFormulatorFC = ({ }) => {
     const site = serverConfig.SITE;
     // The dataset shown in a demo's tabs, which its "Show me your analysis of …" chip names.
     const [demoDataset, setDemoDataset] = useState<SiteStarter>();
-    const headingSize = Math.max(32, Math.min(site ? 60 : 76, 76 * Math.sqrt(15 / (site ? site.headline || site.name : appName).length)));
+    // A demo's headline may break into lines ("\n" in its profile); the longest line sets the size.
+    const headingLines = (site ? site.headline || site.name : appName).split('\n').map(line => line.trim()).filter(Boolean);
+    // A demo's title stays a little narrower than its chat box.
+    const headingSize = Math.max(32, Math.min(site ? 52 : 76, (site ? 70 : 76) * Math.sqrt(15 / Math.max(1, ...headingLines.map(line => line.length)))));
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
     const theme = useTheme();
 
@@ -996,14 +999,18 @@ export const DataFormulatorFC = ({ }) => {
                     overflowWrap: 'anywhere',
                     textWrap: 'balance',
                 }}>
-                    {site ? <>
-                        {site.headline || site.name}
-                        {site.badge && <Box component="span" sx={{ display: 'inline-block', ml: 1.5, px: 1, py: '2px', verticalAlign: 'middle',
-                            position: 'relative', top: '-0.15em', fontSize: { xs: 12, sm: 14 }, fontWeight: 600, lineHeight: 1.3,
-                            color: 'primary.main', borderRadius: 1, bgcolor: alpha(theme.palette.primary.main, 0.1) }}>
-                            {site.badge}
-                        </Box>}
-                    </> : appName}
+                    {site ? headingLines.map((line, index) => <Box component="span" key={index} sx={{ display: 'block' }}>
+                        {/* The badge hangs off the last line's end, so the title stays centred on its words. */}
+                        <Box component="span" sx={{ position: 'relative' }}>
+                            {line}
+                            {site.badge && index === headingLines.length - 1 && <Box component="span" sx={{ position: 'absolute', left: '100%', top: '50%',
+                                transform: 'translateY(-50%)', ml: 1.5, px: 1, py: '2px', whiteSpace: 'nowrap',
+                                fontSize: { xs: 12, sm: 14 }, fontWeight: 600, lineHeight: 1.3, letterSpacing: 0,
+                                color: 'primary.main', borderRadius: 1, bgcolor: alpha(theme.palette.primary.main, 0.1) }}>
+                                {site.badge}
+                            </Box>}
+                        </Box>
+                    </Box>) : appName}
                 </Typography>
             </Box>
             <Box sx={{
@@ -1020,13 +1027,14 @@ export const DataFormulatorFC = ({ }) => {
                     sx={{ width: 25, height: 23, flexShrink: 0, display: 'block', transform: 'translateY(-2px)' }}
                 />
                 <Typography sx={{
-                    fontSize: { xs: 16, sm: 21 },
+                    fontSize: { xs: site ? 15 : 16, sm: site ? 16 : 21 },
                     color: alpha(theme.palette.text.primary, 0.7),
                     lineHeight: 1.4,
                     textAlign: 'center',
                     minWidth: 0,
                     overflowWrap: 'anywhere',
                     whiteSpace: 'pre-line',
+                    textWrap: 'balance',
                 }}>
                     {site?.tagline || serverConfig.APP_TAGLINE || t('landing.tagline')}
                 </Typography>

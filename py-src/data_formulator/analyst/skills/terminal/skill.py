@@ -252,6 +252,12 @@ def confined_command(argv: list[str], scratch_dir: Path, *, write_paths: list[st
         for path in writable:
             matcher = "subpath" if Path(path).is_dir() else "literal"
             profile += f'(allow file-write* ({matcher} {json.dumps(path)}))'
+        # macOS shells keep here-documents in the system temp directory whatever TMPDIR says (bash 3.2,
+        # /bin/sh: /tmp/sh-thd-<n>); allow just those files there, so `cmd <<EOF` works.
+        profile += '(allow file-write* (regex #"^/private/(var/)?tmp/sh-thd-[0-9]+$"))'
+        # Redirections to the standard devices (`2>/dev/null`, `> /dev/stderr`, `/dev/fd/N`) write no files.
+        profile += ('(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty")'
+                    ' (literal "/dev/stdout") (literal "/dev/stderr") (regex #"^/dev/fd/[0-9]+$"))')
         for path in protected_files or []:
             profile += f'(deny file-read* file-write* (literal {json.dumps(path)}))'
         for port in protected_ports or []:
@@ -345,6 +351,8 @@ def prepare_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir:
     environment.update({"DF_SCRATCH_DIR": str(scratch_dir), "DF_RUNTIME_DIR": str(runtime_dir.resolve()),
                         "TMPDIR": str(temporary_dir),
                         "TMP": str(temporary_dir), "TEMP": str(temporary_dir),
+                        # zsh puts here-documents at TMPPREFIX, not TMPDIR.
+                        "TMPPREFIX": str(temporary_dir / "zsh"),
                         "XDG_CACHE_HOME": str(cache_dir), "UV_CACHE_DIR": str(cache_dir / "uv"),
                         "PIP_CACHE_DIR": str(cache_dir / "pip"), "npm_config_cache": str(cache_dir / "npm"),
                         "YARN_CACHE_FOLDER": str(cache_dir / "yarn"), "MPLCONFIGDIR": str(cache_dir / "matplotlib"),

@@ -1316,6 +1316,8 @@ it('breaks a long thread at its requests, keeping an answer to a question in its
   // The answer continues its request's block rather than starting one.
   expect(entryOf('Since 2020')).toBe(entryOf('Request 4'));
   for (let index = 0; index < 8; index++) expect(screen.getAllByText(`Request ${index}`)).toHaveLength(1);
+  // The first part ends by naming the part that continues it.
+  expect(entryOf('Continues in thread - 1.2')).toBe(entryOf('Request 4'));
 });
 
 it('leads the plan label with where it stands', () => {
@@ -1324,6 +1326,11 @@ it('leads the plan label with where it stands', () => {
   expect(screen.getByRole('button', { name: 'Plan 1/3: Who is left behind' })).toBeVisible();
   rerender(React.createElement(RunPlanChecklist, { items: items(3), title: 'Who is left behind' }));
   expect(screen.getByRole('button', { name: 'Completed 3/3: Who is left behind' })).toBeVisible();
+  // A run that finished with a step skipped is complete, and says which step it skipped.
+  rerender(React.createElement(RunPlanChecklist, { title: 'Who is left behind', defaultExpanded: true,
+    items: [...items(2).slice(0, 2), { text: 'Summary', status: 'skipped' as const }] }));
+  expect(screen.getByRole('button', { name: 'Completed 2/3: Who is left behind' })).toBeVisible();
+  expect(screen.getByText('(skipped)')).toBeVisible();
 });
 
 it('drops a finished "creating chart" row that has nothing else to say', () => {

@@ -38,7 +38,7 @@ export const LoadingStatus: React.FC<{ label: string; sx?: SxProps<Theme> }> = (
     </Box>
 );
 
-export const WorkflowGears: React.FC<{ running: boolean; color?: string; label?: string; size?: number; showTooltip?: boolean }> = ({ running, color = 'currentColor', label = running ? 'Workflow running' : 'Workflow', size = 22, showTooltip = true }) => {
+export const WorkflowGears: React.FC<{ running: boolean; color?: string; label?: string; size?: number | string; showTooltip?: boolean }> = ({ running, color = 'currentColor', label = running ? 'Workflow running' : 'Workflow', size = 22, showTooltip = true }) => {
     const outline = Array.from({ length: 32 }, (_, index) => {
         const angle = (Math.floor(index / 4) * 45 + [-17, -9, 9, 17][index % 4]) * Math.PI / 180;
         const radius = index % 4 === 1 || index % 4 === 2 ? 7.5 : 5.6;

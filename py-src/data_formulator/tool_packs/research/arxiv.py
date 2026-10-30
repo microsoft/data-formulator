@@ -6,8 +6,14 @@
 arXiv asks automated clients for at most one request every three seconds over a single connection,
 and blocks clients that burst or do not identify themselves. Every request here goes through one
 connection, spaced at least ``MIN_INTERVAL`` apart, with a descriptive User-Agent; it retries
-rate-limit and server errors with backoff (honouring ``Retry-After``), retries the API's known
-"results but no entries" glitch, and caches responses on disk so repeated work does not reach arXiv.
+server errors and timeouts with backoff, retries the API's known "results but no entries" glitch,
+and caches responses on disk so repeated work does not reach arXiv.
+
+When arXiv throttles (HTTP 429 "Rate exceeded."), it usually sends no ``Retry-After``, answers
+slowly or not at all for a while, and every further request keeps the limit in place. So a 429
+without a short ``Retry-After`` is not retried: the client stops asking for ``RATE_LIMIT_COOLDOWN``
+and says so at once (cached answers still come back); each further 429 in a row doubles the
+cooldown, up to ``MAX_COOLDOWN``. One call never retries past ``CALL_BUDGET``.
 """
 
 from __future__ import annotations
@@ -24,6 +30,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import httpx
+from mcp.server.mcpserver.exceptions import ToolError
 
 API_URL = "https://export.arxiv.org/api/query"
 ABS_URL = "https://arxiv.org/abs/{id}"
@@ -32,7 +39,11 @@ PDF_URL = "https://export.arxiv.org/pdf/{id}"
 MIN_INTERVAL = 3.0
 RETRIES = 4
 MAX_WAIT = 60.0
-RETRY_STATUSES = {429, 500, 502, 503, 504}
+RETRY_STATUSES = {500, 502, 503, 504}
+RATE_LIMIT_COOLDOWN = 120.0  # how long to stop asking after a 429 that names no shorter wait…
+MAX_COOLDOWN = 900.0         # …doubling for each 429 in a row, up to this
+CALL_BUDGET = 120.0          # the most one call spends waiting for and retrying arXiv
+READ_TIMEOUT = 30.0
 
 # How long cached responses stay fresh.
 TTL_SEARCH = 24 * 3600
@@ -46,8 +57,9 @@ _ID = re.compile(r"(?:arxiv:|https?://(?:export\.)?arxiv\.org/(?:abs|pdf|html)/)
                  r"(?P<id>\d{4}\.\d{4,5}(?:v\d+)?|[a-z-]+(?:\.[A-Z]{2})?/\d{7}(?:v\d+)?)(?:\.pdf)?/?$", re.I)
 
 
-class ArxivError(RuntimeError):
-    pass
+class ArxivError(ToolError):
+    """A failure the agent should read. The MCP SDK shows a ``ToolError``'s message to the model;
+    any other exception reaches it only as "Error executing tool <name>"."""
 
 
 def normalize_id(value: str) -> str:
@@ -84,8 +96,10 @@ class Client:
         self._sleep, self._clock = sleep, clock
         self._lock = threading.Lock()
         self._last = -1e9
+        self._blocked_until = -1e9
+        self._cooldown = RATE_LIMIT_COOLDOWN
         self._http = httpx.Client(headers={"User-Agent": self.user_agent}, follow_redirects=True, transport=transport,
-                                  timeout=httpx.Timeout(60.0, connect=15.0), limits=httpx.Limits(max_connections=1))
+                                  timeout=httpx.Timeout(READ_TIMEOUT, connect=10.0), limits=httpx.Limits(max_connections=1))
 
     # -- cache --
 
@@ -133,8 +147,13 @@ class Client:
             return hit
         last_error = "no response"
         with self._lock:
+            if (remaining := self._blocked_until - self._clock()) > 0:
+                raise ArxivError(_rate_limited(remaining))
+            deadline = self._clock() + CALL_BUDGET
+            tries = 0
             for attempt in range(RETRIES):
                 self._wait_turn()
+                tries += 1
                 retry_after: float | None = None
                 try:
                     reply = self._http.get(full)
@@ -146,10 +165,18 @@ class Client:
                     self._last = self._clock()
                 if response is not None:
                     if response.status == 200 and (accept is None or accept(response)):
+                        self._cooldown = RATE_LIMIT_COOLDOWN
                         self._store(full, response)
                         return response
                     if response.status == 200:
                         last_error = "arXiv returned an empty page"
+                    elif response.status == 429:
+                        retry_after = _retry_after(response.headers.get("retry-after") or response.headers.get("Retry-After"))
+                        if retry_after is None or retry_after > MAX_WAIT:
+                            self._blocked_until = self._clock() + (retry_after or self._cooldown)
+                            self._cooldown = min(self._cooldown * 2, MAX_COOLDOWN)
+                            raise ArxivError(_rate_limited(self._blocked_until - self._clock()))
+                        last_error = "HTTP 429"
                     elif response.status in RETRY_STATUSES:
                         last_error = f"HTTP {response.status}"
                         retry_after = _retry_after(response.headers.get("retry-after") or response.headers.get("Retry-After"))
@@ -157,8 +184,12 @@ class Client:
                         raise ArxivError(f"arXiv answered HTTP {response.status} for {full}.")
                 if attempt < RETRIES - 1:
                     backoff = retry_after if retry_after is not None else self.min_interval * (2 ** attempt)
-                    self._sleep(min(MAX_WAIT, backoff) + random.uniform(0, 1))
-        raise ArxivError(f"arXiv did not respond after {RETRIES} tries ({last_error}). It may be busy; try again in a minute.")
+                    wait = min(MAX_WAIT, backoff) + random.uniform(0, 1)
+                    # No attempt starts that could not finish (wait, then a full read timeout) in budget.
+                    if self._clock() + wait + READ_TIMEOUT > deadline:
+                        break
+                    self._sleep(wait)
+        raise ArxivError(f"arXiv did not respond after {tries} tries ({last_error}). It may be busy; try again in a minute.")
 
     # -- API --
 
@@ -194,6 +225,12 @@ def _retry_after(value: str | None) -> float | None:
         return max(0.0, float(value)) if value else None
     except ValueError:
         return None
+
+
+def _rate_limited(seconds: float) -> str:
+    return (f"arXiv is rate-limiting requests from this computer (HTTP 429 \"Rate exceeded.\"). Wait about "
+            f"{max(1, round(seconds))} seconds before asking arXiv again: every request meanwhile, from this tool or a "
+            "script, keeps the limit in place. Queries answered before are still served from the cache.")
 
 
 def _text(element: ET.Element | None) -> str:

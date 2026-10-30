@@ -21,6 +21,7 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
+import RemoveIcon from '@mui/icons-material/Remove';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import WbIncandescentIcon from '@mui/icons-material/WbIncandescent';
@@ -183,13 +184,16 @@ export const RunPlanChecklist: React.FC<{ items: PlanItem[]; title?: string; act
     const counted = items.filter(item => item.status !== 'dropped').length;
     const currentIndex = items.findIndex(item => item.status === 'open');
     const current = items[currentIndex];
-    // The label leads with where the plan stands: "Plan 1/3: …" while steps are open, "Completed 3/3: …" after.
-    const stage = done < counted
+    // The label leads with where the plan stands: "Plan 1/3: …" while steps are open, "Completed 3/3: …" after
+    // (or "Completed 2/3" when the run finished with a step skipped).
+    const stage = currentIndex >= 0
         ? t('dataThread.planStage', { defaultValue: 'Plan {{done}}/{{total}}', done, total: counted })
         : t('dataThread.planCompletedStage', { defaultValue: 'Completed {{done}}/{{total}}', done, total: counted });
     const name = title ? `${stage}: ${title}` : stage;
     const stepIcon = (item: PlanItem, index: number) => item.status === 'done'
         ? <FiberManualRecordIcon aria-hidden sx={{ fontSize: 9, color: 'success.main' }} />
+        : item.status === 'skipped'
+            ? <RemoveIcon aria-hidden sx={{ fontSize: 13, color: 'text.disabled' }} />
         : active && index === currentIndex
             ? <FiberManualRecordIcon aria-label={t('workflow.currentStepRunning', { defaultValue: 'Current step running' })} sx={{ fontSize: 9, color: 'primary.main' }} />
             : <RadioButtonUncheckedIcon aria-hidden sx={{ fontSize: 13, color: 'text.disabled' }} />;
@@ -224,6 +228,7 @@ export const RunPlanChecklist: React.FC<{ items: PlanItem[]; title?: string; act
                                 {item.text}
                             </Box>
                             {item.status === 'dropped' && item.note && <Box component="span" sx={{ fontStyle: 'italic' }}> ({item.note})</Box>}
+                            {item.status === 'skipped' && <Box component="span" sx={{ fontStyle: 'italic' }}> ({t('dataThread.planStepSkipped', { defaultValue: 'skipped' })})</Box>}
                         </Typography>
                     </Box>
                 </Box>)}

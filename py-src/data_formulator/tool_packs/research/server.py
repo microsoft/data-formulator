@@ -36,7 +36,9 @@ Search, track and read arXiv papers (arXiv's own API; no citation counts).
   (or pass include_abstracts to a search). Fetch full texts only for the few papers you need in depth.
 - get_full_text saves up to 5 papers per call (Markdown, else PDF) to scratch; read them from there. Ask for several at
   once rather than one call per paper.
-- Cite papers by arXiv id and link. arXiv limits request rates, so avoid needless repeat calls."""
+- Cite papers by arXiv id and link. arXiv limits request rates, so avoid needless repeat calls.
+- If a tool says arXiv is rate-limiting, wait as long as it says. Do not query arXiv another way meanwhile
+  (a script or a direct API call): that extends the limit. Tell the user if the wait is long."""
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_world_hint=True)
 

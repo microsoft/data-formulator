@@ -2,9 +2,9 @@
 // Licensed under the MIT License.
 
 /**
- * Tabs across the top of the canvas, like a browser's: charts, loaded tables and other artifacts
- * get a tab when shown (derived tables don't), so going back is one click. Results an agent run
- * adds get tabs too, with a yellow dot until visited.
+ * Tabs across the top of the canvas, like VS Code's: reports, apps and maps get a tab that stays
+ * (ones an agent run adds show a yellow dot until visited). Anything else the canvas shows (a chart,
+ * a table, …) gets an italic preview tab that goes when the user moves on; double-click keeps it.
  * The latest tabs that fit show (they shrink to fit more); older ones go in "…".
  * Tabs live in the session (dfSlice `canvasTabs`), so they come back on reload.
  */
@@ -12,8 +12,6 @@
 import React, { FC, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Box, ButtonBase, IconButton, ListItemIcon, ListItemText, Menu, MenuItem } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
-import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
-import PushPinIcon from '@mui/icons-material/PushPin';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import ArticleIcon from '@mui/icons-material/Article';
 import { chartFamilyIcon, FileTypeIcon, FormIcon, InsightIcon, isAppFile, TableIcon } from '../icons';
@@ -28,7 +26,7 @@ import { borderColor } from '../app/tokens';
 
 export const CANVAS_TABS_HEIGHT = 32;
 const TAB_MIN_WIDTH = 96;
-// Recent tabs fill the strip: as many as fit at this width, but at least a few.
+// Tabs fill the strip: as many as fit at this width, but at least a few.
 const TAB_FILL_WIDTH = 130;
 const MIN_RECENT_TABS = 3;
 const TAB_MAX_WIDTH = 180;
@@ -143,22 +141,19 @@ export const CanvasTabs: FC<{ target: FocusedId; viewMode: 'editor' | 'report'; 
         return () => observer.disconnect();
     }, []);
 
-    // Pinned tabs, then as many recent tabs as fill the strip at a comfortable width (at least a few,
-    // shrinking toward TAB_MIN_WIDTH when space is tight), then "+N more". New tabs join on the right;
-    // the oldest leave the strip for "+N more", so it never needs tending.
-    const textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
+    // As many tabs as fill the strip at a comfortable width (at least a few, shrinking toward
+    // TAB_MIN_WIDTH when space is tight), then "+N more". New tabs join on the right; the oldest
+    // leave the strip for "+N more", so it never needs tending.
     const live = tabs.filter(tab => exists(tab.target));
-    const pinnedCount = live.filter(tab => isCanvasTabPinned(tab, textTurns)).length;
-    const fillSlots = width ? Math.floor((width - MORE_WIDTH) / TAB_FILL_WIDTH) - pinnedCount : RECENT_CANVAS_TABS;
-    const fitSlots = width ? Math.floor((width - MORE_WIDTH) / TAB_MIN_WIDTH) - pinnedCount : RECENT_CANVAS_TABS;
+    const fillSlots = width ? Math.floor((width - MORE_WIDTH) / TAB_FILL_WIDTH) : RECENT_CANVAS_TABS;
+    const fitSlots = width ? Math.floor((width - MORE_WIDTH) / TAB_MIN_WIDTH) : RECENT_CANVAS_TABS;
     const slots = Math.max(1, Math.min(fitSlots, Math.max(MIN_RECENT_TABS, fillSlots)));
-    const { pinned, recent, history, activeOutside } = arrangeCanvasTabs(live, textTurns, activeKey, slots);
-    const visible = [...pinned, ...recent];
+    const { visible, history, activeOutside } = arrangeCanvasTabs(live, activeKey, slots);
     const hidden = history;
     const ordered = [...visible, ...history];
 
     // Opening a tab that is in view leaves the strip as it is; one further left (brought back from the
-    // "…" history, by the menu or the thread) moves to the end of the recent tabs.
+    // "…" history, by the menu or the thread) moves to the end of the strip.
     useEffect(() => { if (activeOutside && activeKey) dispatch(dfActions.touchCanvasTab(activeKey)); }, [activeOutside, activeKey]);
 
     const open = (tab: CanvasTab) => {
@@ -177,21 +172,18 @@ export const CanvasTabs: FC<{ target: FocusedId; viewMode: 'editor' | 'report'; 
 
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
     // Drag to reorder, as in Chrome: the grabbed tab follows the pointer and the others slide out of its way.
-    // A tab moves within its own group (pinned or recent) and stops at that group's edges. Pinning is a click.
     const [drag, setDrag] = useState<{ key: string; dx: number; from: number; to: number; slot: number }>();
     const dragStart = useRef<{ key: string; x: number; from: number; to: number; lefts: number[]; widths: number[]; slot: number; moved: boolean;
         order: string[]; first: number; last: number }>();
     const suppressClick = useRef(false);
     const startDrag = (event: React.PointerEvent<HTMLElement>, key: string) => {
-        if (event.button !== 0 || (event.target as HTMLElement).closest('.tab-close, .tab-pin')) return;
+        if (event.button !== 0 || (event.target as HTMLElement).closest('.tab-close')) return;
         const tabsEls = Array.from(rowRef.current?.querySelectorAll<HTMLElement>('[role="tab"]') || []);
         const from = visible.findIndex(tab => tab.key === key);
         if (from < 0 || !tabsEls[from]) return;
         const rects = tabsEls.map(el => el.getBoundingClientRect());
-        const inPinned = from < pinned.length;
         dragStart.current = { key, x: event.clientX, from, to: from, lefts: rects.map(r => r.left), widths: rects.map(r => r.width), slot: rects[from].width,
-            moved: false, order: visible.map(tab => tab.key),
-            first: inPinned ? 0 : pinned.length, last: inPinned ? pinned.length - 1 : visible.length - 1 };
+            moved: false, order: visible.map(tab => tab.key), first: 0, last: visible.length - 1 };
         const move = (e: PointerEvent) => {
             const start = dragStart.current;
             if (!start) return;
@@ -254,17 +246,8 @@ export const CanvasTabs: FC<{ target: FocusedId; viewMode: 'editor' | 'report'; 
         if (drag.to < drag.from && index >= drag.to && index < drag.from) return drag.slot;
         return 0;
     };
-    // Pin by a click on the tab's icon slot: a pinned tab goes last among the pinned, an unpinned one
-    // last among the recent (counted as just seen, so it stays in view).
-    const togglePin = (tab: CanvasTab, isPinned: boolean) => {
-        const lastPinned = pinned.filter(item => item.key !== tab.key).at(-1);
-        dispatch(dfActions.placeCanvasTab({ key: tab.key, pinned: !isPinned,
-            ...(!isPinned && lastPinned ? { afterKey: lastPinned.key } : {}) }));
-    };
-    const pinLabel = t('canvas.pinTab', { defaultValue: 'Pin tab' });
-    const unpinLabel = t('canvas.unpinTab', { defaultValue: 'Unpin tab' });
+    const keepLabel = t('canvas.keepTab', { defaultValue: 'Double-click to keep open' });
     const newLabel = t('canvas.newResult', { defaultValue: 'New, not yet viewed' });
-    // A short rule sets "…" apart from the pinned tabs before it.
     // "+N more" at the strip's right end, as quiet as an inactive tab: the earlier tabs it holds, newest first.
     const moreLabel = t('canvas.moreTabs', { defaultValue: 'More tabs' });
     const moreTabs = <ButtonBase data-more-tabs aria-label={moreLabel} title={moreLabel} onClick={event => setMenuAnchor(event.currentTarget)}
@@ -287,13 +270,15 @@ export const CanvasTabs: FC<{ target: FocusedId; viewMode: 'editor' | 'report'; 
     }}>
         <Box ref={rowRef} sx={{ display: 'flex', alignItems: 'flex-end', flex: 1, minWidth: 0, height: '100%', overflow: 'hidden' }}>
             {visible.map((tab, index) => {
-                const isPinned = index < pinned.length;
+                const isPinned = isCanvasTabPinned(tab);
                 const { title, icon } = label(tab.target);
                 const active = tab.key === activeKey;
                 const dragging = drag?.key === tab.key;
-                return <React.Fragment key={tab.key}><ButtonBase component="div" role="tab" aria-selected={active} title={title}
-                    data-pinned={index < pinned.length ? 'true' : undefined}
+                return <React.Fragment key={tab.key}><ButtonBase component="div" role="tab" aria-selected={active}
+                    title={isPinned ? title : `${title}\n${keepLabel}`}
+                    data-pinned={isPinned ? 'true' : undefined} data-preview={isPinned ? undefined : 'true'}
                     onClick={() => { if (suppressClick.current) { suppressClick.current = false; return; } open(tab); }}
+                    onDoubleClick={event => { if (!isPinned && !(event.target as HTMLElement).closest('.tab-close')) dispatch(dfActions.pinCanvasTab(tab.key)); }}
                     onAuxClick={event => { if (event.button === 1) close([tab.key]); }}
                     onPointerDown={event => startDrag(event, tab.key)}
                     disableRipple={!!drag}
@@ -301,14 +286,13 @@ export const CanvasTabs: FC<{ target: FocusedId; viewMode: 'editor' | 'report'; 
                         position: 'relative', display: 'flex', alignItems: 'center', gap: 0.5, minWidth: TAB_MIN_WIDTH, flex: `0 1 ${TAB_MAX_WIDTH}px`,
                         height: 'calc(100% - 4px)', boxSizing: 'border-box', pl: 0.75, pr: 0.5,
                         borderRadius: '8px 8px 0 0', fontSize: '0.75rem',
-                        color: active ? 'text.primary' : 'text.secondary', bgcolor: active ? 'background.paper' : 'transparent',
+                        color: active && isPinned ? 'text.primary' : 'text.secondary', bgcolor: active ? 'background.paper' : 'transparent',
                         border: '1px solid', borderBottom: 0, borderColor: active ? borderColor.view : 'transparent',
                         // As in VS Code, every tab keeps the close slot, so nothing shifts on hover: the active
                         // tab shows its ×, the others show it on hover (an unseen dot holds the slot meanwhile).
                         '& .tab-close': { visibility: active ? 'visible' : 'hidden' },
                         '&:hover .tab-close': { visibility: 'visible' }, '&:hover .tab-dot': { display: 'none' },
-                        ...(!drag ? { '&:hover .tab-icon': { display: 'none' }, '&:hover .tab-pin': { display: 'inline-flex' } } : {}),
-                        '&:hover': { color: 'text.primary' },
+                        '&:hover': { color: isPinned ? 'text.primary' : 'text.secondary' },
                         transform: `translateX(${dragShift(index)}px)`,
                         // The grabbed tab tracks the pointer exactly; the ones it passes glide aside.
                         transition: dragging || !drag ? 'none' : 'transform 0.15s ease',
@@ -320,20 +304,10 @@ export const CanvasTabs: FC<{ target: FocusedId; viewMode: 'editor' | 'report'; 
                             width: '1px', height: 14, bgcolor: 'rgba(0,0,0,0.12)' },
                         '&:first-of-type::before, &[aria-selected="true"]::before, [aria-selected="true"] + &::before': { display: 'none' },
                     }}>
-                    {/* The icon slot: a pinned tab shows its solid pin (click to unpin); an unpinned one its type
-                        icon, which a hover turns into the outlined pin (click to pin). */}
                     <Box sx={{ position: 'relative', width: 16, height: 16, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        {!isPinned && <Box className="tab-icon" sx={{ display: 'flex', opacity: 0.8, color: tabTone(tab.target), '& svg': { width: 14, height: 14 } }}>{icon}</Box>}
-                        <IconButton className="tab-pin" size="small" aria-label={isPinned ? unpinLabel : pinLabel} title={isPinned ? unpinLabel : pinLabel}
-                            aria-pressed={isPinned}
-                            onClick={event => { event.stopPropagation(); togglePin(tab, isPinned); }}
-                            sx={{ position: 'absolute', inset: 0, p: 0, borderRadius: '4px', display: isPinned ? 'inline-flex' : 'none',
-                                color: 'text.secondary', '&:hover': { bgcolor: 'action.hover', color: 'primary.main' },
-                                '& svg': { fontSize: 13, transform: 'rotate(45deg)' } }}>
-                            {isPinned ? <PushPinIcon /> : <PushPinOutlinedIcon />}
-                        </IconButton>
+                        <Box sx={{ display: 'flex', opacity: isPinned ? 0.8 : 0.6, color: tabTone(tab.target), '& svg': { width: 14, height: 14 } }}>{icon}</Box>
                     </Box>
-                    {/* Recent tabs come and go, so they read as provisional (italic); pinned ones are upright. */}
+                    {/* A preview tab comes and goes, so it reads as provisional (italic); kept ones are upright. */}
                     <Box component="span" sx={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                         fontStyle: isPinned ? 'normal' : 'italic' }}>{title}</Box>
                     <Box sx={{ position: 'relative', width: 16, height: 16, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

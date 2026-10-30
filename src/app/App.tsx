@@ -1605,6 +1605,10 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             lazy: () => import('../views/DevPage').then(module => ({ Component: module.default })),
         },
         {
+            path: "/dev/maps",
+            lazy: () => import('../maps/MapGallery').then(module => ({ Component: module.default })),
+        },
+        {
             path: "/",
             element: <AppShell />,
             errorElement: <ErrorBoundaryFallback />,

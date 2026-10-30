@@ -687,6 +687,12 @@ Custom GitHub Enterprise hosts are not supported by this initial implementation.
     Open [http://localhost:5173](http://localhost:5173) to view it in the browser.
     The page will reload if you make edits. You will also see any lint errors in the console.
 
+- **Component galleries**
+
+    `/dev` shows UI components in their states; `/dev/maps` shows sample map artifacts
+    (every layer type and control, with generated data) and lets you edit their JSON or open
+    the Style panel. See [design-docs/70-map-artifact.md](design-docs/70-map-artifact.md).
+
 ### Advanced: developing against a local `flint-chart`
 
 DF depends on the published [`flint-chart`](https://www.npmjs.com/package/flint-chart) package;

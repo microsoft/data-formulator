@@ -42,6 +42,7 @@ def test_ticks_open_steps_in_order_and_reminds_once():
     assert not plan.tick()
     assert plan.reminder() is None
 
+    plan = RunPlan()
     plan.revise(split_plan("- [x] a\n- [ ] b\n- [ ] c")[0])
     reminder = plan.reminder()
     assert "1) b; 2) c" in reminder
@@ -120,6 +121,22 @@ def test_ending_with_open_steps_asks_once_to_continue():
     assert final["final_text"] == "Done with the overview; the gender gap needs another indicator."
     reminders = [message["content"] for message in messages if message["role"] == "user"]
     assert len(reminders) == 1 and "1) overview; 2) gender gap" in reminders[0]
+    # Still open after the reminder: the run settles them as skipped rather than leaving them open.
+    plans = [event for event in events if event["type"] == "plan"]
+    assert [item["status"] for item in plans[-1]["items"]] == ["skipped", "skipped"]
+
+
+def test_after_the_reminder_a_step_answered_in_prose_can_be_checked_off():
+    agent, client = _agent([
+        [_chunk("- [ ] overview\n- [ ] best case\n\nHere is the overview."), _chunk(finish_reason="stop")],
+        [_chunk("- [x] overview\n- [x] best case\n\nThe best case was in the answer above."), _chunk(finish_reason="stop")],
+    ])
+    messages: list[dict] = []
+    events = _loop(agent, messages)
+    assert client.calls == 2
+    assert "do not make another result just to check it off" in messages[1]["content"]
+    plans = [event for event in events if event["type"] == "plan"]
+    assert [item["status"] for item in plans[-1]["items"]] == ["done", "done"]
 
 
 def test_an_empty_reply_after_delivery_with_open_steps_is_reminded():
@@ -171,6 +188,26 @@ def test_a_reworded_restatement_keeps_results_by_position():
     plan.record(2, "chart-c")
     plan.revise(split_plan("- [x] Spending trends\n- [x] Female share\n- [x] Summary")[0])
     assert [item.results for item in plan.items] == [["chart-a", "chart-b"], ["chart-c"], []]
+
+
+def test_restating_a_step_as_open_does_not_uncheck_it():
+    plan = RunPlan()
+    plan.revise(split_plan("- [ ] Overview\n- [ ] Gender gap")[0])
+    plan.record(2, "chart-b")  # step 1 is done by moving on, without a result of its own
+    plan.revise(split_plan("- [ ] Overview\n- [ ] Gender gap\n- [ ] Urban vs rural")[0])
+    assert [(item.status, item.results) for item in plan.items] == [("done", []), ("open", ["chart-b"]), ("open", [])]
+    # Striking a step through still drops it.
+    plan.revise(split_plan("- [ ] ~~Overview~~ (moot)\n- [ ] Gender gap\n- [ ] Urban vs rural")[0])
+    assert plan.items[0].status == "dropped"
+
+
+def test_settle_only_marks_steps_skipped_after_the_reminder():
+    plan = RunPlan()
+    plan.revise(split_plan("- [x] a\n- [ ] b")[0])
+    assert not plan.settle() and plan.items[1].status == "open"
+    assert plan.reminder()
+    assert plan.settle() and [item.status for item in plan.items] == ["done", "skipped"]
+    assert not plan.open_items()
 
 
 def test_step_text_drops_emphasis_and_step_labels():

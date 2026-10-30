@@ -9,7 +9,7 @@ import vegaLiteSource from '../../node_modules/vega-lite/build/vega-lite.min.js?
 import bridgeSource from '../app/htmlApp/dfAppRuntime.js?raw';
 import reactRuntimeSource from 'virtual:df-react-runtime';
 import { buildAppDocument } from '../app/htmlApp/htmlAppDocument';
-import { compileReactApp, mountScript, type OptionalImport } from '../app/reactApp/compile';
+import { compileReactApp, mountScript, type OptionalModule } from '../app/reactApp/compile';
 import { dfSelectors, type DataFormulatorState } from '../app/dfSlice';
 import type { FieldSemanticsInfo } from '../components/ComponentType';
 import { AppSandbox, useAppSourceResolver, useAppTheme } from './AppSandbox';
@@ -32,16 +32,18 @@ const hostVariablesStylesheet = () => {
 };
 
 /** Optional runtime bundles, code-split so only apps that use them load them. */
-const OPTIONAL_BUNDLES: Record<OptionalImport, () => Promise<{ default: string }>> = {
+const OPTIONAL_BUNDLES: Record<OptionalModule, () => Promise<{ default: string }>> = {
     'd3': () => import('virtual:df-react-runtime/d3'),
     'lodash': () => import('virtual:df-react-runtime/lodash'),
     '@df/geo': () => import('virtual:df-react-runtime/geo'),
+    'flint-links': () => import('virtual:df-react-runtime/flint-links'),
 };
 
 /** A sandboxed React app artifact (`*.app.jsx`), compiled on the host and run in the app frame. */
 export const ReactAppPreview: FC<{
     source: string; title: string; reloadKey?: number; reserveTopRight?: boolean; onAskFix?: (errors: string[]) => void;
-}> = ({ source, title, reloadKey = 0, reserveTopRight = false, onAskFix }) => {
+    autoFix?: boolean; onHealthy?: () => void; fixPending?: boolean;
+}> = ({ source, title, reloadKey = 0, reserveTopRight = false, onAskFix, autoFix, onHealthy, fixPending }) => {
     const compiled = useMemo(() => compileReactApp(source), [source]);
     const { manifest } = compiled;
     const theme = useAppTheme();
@@ -81,7 +83,7 @@ export const ReactAppPreview: FC<{
         });
     }, [compiled, optional, manifest, theme, paletteKey, semantics]);
     return <AppSandbox title={title} manifest={manifest} buildDocument={buildDocument} initialErrors={initialErrors}
-        reloadKey={reloadKey} reserveTopRight={reserveTopRight} onAskFix={onAskFix}
+        reloadKey={reloadKey} reserveTopRight={reserveTopRight} onAskFix={onAskFix} autoFix={autoFix} onHealthy={onHealthy} fixPending={fixPending}
         resolveSource={resolveSource} />;
 };
 

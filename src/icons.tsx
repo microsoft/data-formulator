@@ -112,6 +112,7 @@ const { blue, green, orange, pink, purple, red, yellow, greyLight } = SETI_COLOR
 const FILE_TYPES: [RegExp, FileType][] = [
     [/\.app\.jsx$/i, { glyph: 'react', color: blue, app: true }],
     [/\.html?$/i, { glyph: 'html', color: orange, app: true }],
+    [/\.map\.json$/i, { glyph: 'map', color: green, app: true }],
     [/\.(py|pyw|pyi)$/i, { glyph: 'python', color: blue }],
     [/\.ipynb$/i, { glyph: 'notebook', color: blue }],
     [/\.sql$/i, { glyph: 'db', color: pink }],
@@ -145,8 +146,11 @@ const FILE_TYPES: [RegExp, FileType][] = [
 const fileType = (path: string): FileType =>
     FILE_TYPES.find(([pattern]) => pattern.test(path))?.[1] ?? { glyph: 'default' };
 
-/** Whether a workspace file is an app the workspace runs (an HTML page or a `.app.jsx`). */
+/** Whether a workspace file is an app the workspace runs (an HTML page, a `.app.jsx`, or a `.map.json` map). */
 export const isAppFile = (path: string): boolean => !!fileType(path).app;
+
+/** Whether a workspace file is a map artifact (`.map.json`, drawn by the built-in map renderer). */
+export const isMapFile = (path: string): boolean => /\.map\.json$/i.test(path);
 
 /**
  * A workspace file's type glyph (thread, tabs, workspace, file header, workflows). At rest it takes

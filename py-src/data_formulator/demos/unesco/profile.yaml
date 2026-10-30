@@ -3,11 +3,11 @@
 # local install, or `uv run python py-src/data_formulator/demos/unesco/build.py`.
 
 name: UIS Data Explorer
-# The front page's title; the app bar keeps the short name.
-headline: UNESCO Data Formulator
+# The front page's title (\n breaks it into lines); the app bar keeps the short name.
+headline: "UNESCO Institute for Statistics\nData Formulator"
 # A small label beside the title, e.g. while the site is still being tried out.
 badge: Beta
-tagline: Explore UNESCO data on education, science and culture with AI.
+tagline: Explore data on education, science and culture with AI.
 # The chat box's placeholder. (Above it, the page asks "What datasets do we have here?" and
 # "Show me your analysis of <the dataset in the tab>"; `suggestions` would add more.)
 chat_placeholder: Ask about education, science or culture around the world…

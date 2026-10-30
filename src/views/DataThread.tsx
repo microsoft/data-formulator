@@ -47,6 +47,7 @@ import { createExternalTableReference, externalReferenceTitle, loadsAsConnectorR
 import dfLogo from '../assets/df-logo.svg';
 
 import DeleteIcon from '@mui/icons-material/Delete';
+import BuildCircleOutlinedIcon from '@mui/icons-material/BuildCircleOutlined';
 import PersonIcon from '@mui/icons-material/Person';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
@@ -77,6 +78,7 @@ import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
 import CheckIcon from '@mui/icons-material/Check';
 import KeyboardDoubleArrowUpIcon from '@mui/icons-material/KeyboardDoubleArrowUp';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import SubdirectoryArrowRightIcon from '@mui/icons-material/SubdirectoryArrowRight';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import CodeIcon from '@mui/icons-material/Code';
 
@@ -665,6 +667,9 @@ let SingleThreadGroupView: FC<{
     blockStarts?: Set<string>,
     // A sub-thread shows only its runs from the block starting at `start` up to the one at `end`.
     segment?: { start?: string; end?: string },
+    // The next part of a long thread, named at this part's end; a click goes to it.
+    continuesIn?: string,
+    onContinue?: () => void,
     chartElements: { tableId: string, chartId: string, element: any }[];
     // The focused node and everything above it.
     highlightedNodeIds: Set<string>;
@@ -683,6 +688,8 @@ let SingleThreadGroupView: FC<{
     layoutKey,
     blockStarts,
     segment,
+    continuesIn,
+    onContinue,
     chartElements,
     highlightedNodeIds,
     sx
@@ -1000,6 +1007,24 @@ let SingleThreadGroupView: FC<{
         const entry: InteractionEntry = { from: 'user', to: 'data-agent', role: 'prompt', content,
             ...(turn.attachments?.length ? { attachments: turn.attachments } : {}),
             ...(turn.references?.length ? { references: turn.references } : {}), timestamp: turn.createdAt };
+        // A repair the app sent on its own (the app the agent just wrote failed when it opened) is a step of the
+        // work, not something the user said.
+        if (turn.auto === 'app-repair') {
+            const step: InteractionEntry = { from: 'data-agent', to: 'data-agent', role: 'instruction',
+                content: t('dataThread.appAutoRepair', { defaultValue: 'Found an error when the app opened; fixing it' }), timestamp: turn.createdAt };
+            // Laid out like the agent's own messages around it; the error itself is in the tooltip.
+            timelineItems.push({
+                key: `textturn-prompt-${turn.id}-0`, turnId: turn.id, type: 'artifact', artifactTone: 'agent', highlighted, interactionEntry: step,
+                gutterIcon: <BuildCircleOutlinedIcon sx={{ width: 14, height: 14 }} />,
+                element: <Tooltip title={turn.prompt} placement="right">
+                    <Box data-auto-repair sx={{ width: '100%', minWidth: 0 }}>
+                        <ThreadResponseCard responseKind="agent" selected={false} content={step.content}
+                            highlighted={focusedId?.type !== 'conversation' && highlighted} onSelect={() => undefined} />
+                    </Box>
+                </Tooltip>,
+            });
+            return;
+        }
         const card = <InteractionEntryCard entry={entry} highlighted={focusedId?.type !== 'conversation' && highlighted} />;
         // A prompt nothing answers (its replies were deleted) can be removed too.
         timelineItems.push({
@@ -1082,11 +1107,11 @@ let SingleThreadGroupView: FC<{
     /** An agent message: the step before a table, a run of tool calls, settled thinking, or a response. */
     const pushAgentMessage = (turn: TextTurn, highlighted: boolean, nextNodeId: string | undefined) => {
         pushAgentMessageContent(turn, highlighted, nextNodeId);
-        // A settled plan with steps left open follows its message: it records what the run didn't get to.
+        // A settled plan with steps left open or skipped follows its message: it records what the run didn't get to.
         // A completed one leaves the thread (the conversation view keeps it); its message and results say
         // what was done. While the run is live the plan is drawn at the run's open end (see pushDraft).
         if (turn.plan?.length && !supersededPlanTurnIds.has(turn.id) && turn.id !== livePlanTurnId
-            && turn.plan.some(item => item.status === 'open')) {
+            && turn.plan.some(item => item.status === 'open' || item.status === 'skipped')) {
             timelineItems.push({
                 key: `textturn-${turn.id}-plan`, type: 'trigger', highlighted: false,
                 gutterIcon: <ChecklistIcon sx={{ width: 14, height: 14 }} />,
@@ -1804,7 +1829,8 @@ let SingleThreadGroupView: FC<{
     // running and waiting entries, which split the stack.
     const stackOf = new Map<number, { key: string; indices: number[] }>();
     if (!historyCollapsed) {
-        const isChat = (index: number) => timelineItems[index].key.startsWith('textturn-');
+        // A run's live or stopped status (thinking, failed, interrupted) is not a result: the chat goes on through it.
+        const isChat = (index: number) => /^(textturn|agent-thinking|agent-failed)-/.test(timelineItems[index].key);
         const pinned = (index: number) => {
             const item = timelineItems[index];
             return !!item.live || !!item.isRunning || (!!focusedTimelineKey
@@ -1828,7 +1854,7 @@ let SingleThreadGroupView: FC<{
             const nextPrompt = stretch.findIndex((index, position) => position >= tailStart
                 && timelineItems[index].key.startsWith('textturn-prompt-'));
             if (nextPrompt >= 0) tailStart = nextPrompt;
-            // Where the conversation is still going (the thread's open end), its last two requests stay.
+            // Where the conversation is still going (the thread's open end, no result yet), its last two requests stay.
             if (openEnd) {
                 const prompts = stretch.flatMap((index, position) => timelineItems[index].key.startsWith('textturn-prompt-') ? [position] : []);
                 if (prompts.length >= 2) tailStart = Math.min(tailStart, prompts[prompts.length - 2]);
@@ -1920,6 +1946,18 @@ let SingleThreadGroupView: FC<{
         </Box>
         <Box component="span" sx={{ ml: '4px' }}>
             {historyCollapsed ? t('dataThread.expand', { defaultValue: 'expand' }) : t('dataThread.collapse', { defaultValue: 'collapse' })}</Box>
+    </ButtonBase>;
+    // A part of a long thread ends by naming the part that continues it, quietly; a click goes there.
+    const continuation = continuesIn && <ButtonBase data-thread-continues onClick={onContinue}
+        sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', width: '100%', pr: 0.75, borderRadius: '4px',
+            fontSize: textVar.xxs, fontStyle: 'italic', color: 'text.disabled', transition: transition.fast,
+            '&:hover': { color: 'primary.main' },
+            '&.Mui-focusVisible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1 } }}>
+        <Box component="span" aria-hidden="true" sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+            <SubdirectoryArrowRightIcon sx={{ fontSize: 14 }} />
+        </Box>
+        <Box component="span" sx={{ ml: '4px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {t('dataThread.continuesIn', { defaultValue: 'Continues in {{label}}', label: continuesIn })}</Box>
     </ButtonBase>;
 
     return <Box data-thread-active={threadActive ? 'true' : 'false'} data-thread-highlighted={shouldHighlightThread ? 'true' : 'false'}
@@ -2019,6 +2057,7 @@ let SingleThreadGroupView: FC<{
                                 index, false, lineHL && position < shown.length - 1))}
                     </Box>}
                     {threadEndToggle(lineColor)}
+                    {continuation}
                 </>;
             })()}
             {!historyCollapsed && flowRuns.map((run, runIndex) => runIndex < runRange[0] || runIndex >= runRange[1] ? null
@@ -2057,6 +2096,7 @@ let SingleThreadGroupView: FC<{
                 </Box>)}
             </Box>)}
             {!historyCollapsed && rangeBlocks.length > 0 && threadEndToggle(lineTone)}
+            {!historyCollapsed && continuation}
         </div>
     </Box>
     }
@@ -2462,6 +2502,22 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         toggledTimer.current = setTimeout(() => setToggledThreadKey(undefined), 600);
     };
     useEffect(() => () => clearTimeout(toggledTimer.current), []);
+    /** Go to a later part of a long thread: open it if collapsed, bring its header into view, and flash it. */
+    const goToThreadPart = (part: { key: string; toggleKey: string }) => {
+        const viewport = threadScrollRef.current;
+        if (viewport?.querySelector(`[data-thread-entry="${CSS.escape(`${part.key}:collapsed`)}"]`)) {
+            setThreadExpansion(previous => ({ ...previous, [part.toggleKey]: true }));
+            markThreadToggled(part.toggleKey);
+        }
+        const entryOf = (viewport: HTMLElement) => viewport.querySelector<HTMLElement>(`[data-thread-entry="${CSS.escape(`${part.key}:expanded`)}"]`)
+            ?? viewport.querySelector<HTMLElement>(`[data-thread-entry="${CSS.escape(`${part.key}:collapsed`)}"]`);
+        revealInThread(viewport => entryOf(viewport)?.querySelector<HTMLElement>('[data-thread-flow-header]') ?? null);
+        window.setTimeout(() => {
+            const target = threadScrollRef.current && entryOf(threadScrollRef.current);
+            target?.animate([{ boxShadow: `0 0 0 2px ${alpha(theme.palette.primary.main, 0.5)}` }, { boxShadow: '0 0 0 2px transparent' }],
+                { duration: 1400, easing: 'ease-out' });
+        }, 300);
+    };
     // The latest thread, found during render; the effect below persists it as explicitly expanded.
     const latestThreadKeyRef = useRef<string>();
     useEffect(() => {
@@ -2689,6 +2745,8 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         blockStarts?: Set<string>;
         segment?: { start?: string; end?: string };
         segmentNodeIds?: string[];
+        // The part of the same thread that follows this one.
+        continuesIn?: { key: string; toggleKey: string; label: string };
         // Where this entry's open/collapsed state is kept: the thread's, or its sub-thread's.
         toggleKey?: string;
     };
@@ -2769,7 +2827,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         for (const id of nodeIds) {
             const turn = turnByIdTop.get(id);
             if (turn && threadGraph.kindOf(id) === 'turn') {
-                if (turn.prompt) lines.push({ role: 'user', text: plain(turn.prompt) });
+                if (turn.prompt && !turn.auto) lines.push({ role: 'user', text: plain(turn.prompt) });
                 if (turn.content) lines.push({ role: 'agent', text: plain(turn.content) });
             } else if (threadGraph.isItem(id) && !(id === rootId && !tableById.get(id)?.derive)) {
                 const name = nameOf(id);
@@ -2848,17 +2906,23 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         if (breaks.join() !== (threadBreaks[expansionKey] || []).join()) pendingBreaksRef.current[expansionKey] = breaks;
         if (starts.length === 1) { allThreadEntries.push(entry); return; }
         const blockStarts = new Set(blocks.flatMap(block => block.start ? [block.start] : []));
+        // Each part's entry key, open/collapsed key, and label ("thread - 1", then "thread - 1.2", …).
+        const parts = starts.map((start, part) => ({
+            key: part ? `${thread.key}#${blocks[start].start}` : thread.key,
+            toggleKey: `${expansionKey}#${part ? blocks[start].start : 0}`,
+            label: part ? t('dataThread.threadIndex', { index: `${index + 1}.${part + 1}` }) : entry.threadLabel!,
+        }));
         starts.forEach((start, part) => {
             const end = starts[part + 1];
             const segmentNodeIds = blocks.slice(start, end).flatMap(block => block.nodeIds);
-            const toggleKey = `${expansionKey}#${part ? blocks[start].start : 0}`;
+            const { toggleKey } = parts[part];
             const own = summarizeNodes(segmentNodeIds, thread.rootId);
             allThreadEntries.push({ ...entry, toggleKey, historyCollapsed: !(threadExpansion[toggleKey] ?? expanded),
                 blockStarts, segment: { start: part ? blocks[start].start : undefined, end: end === undefined ? undefined : blocks[end].start },
                 segmentNodeIds, threadLines: own.lines, threadOutputs: own.outputs,
                 threadSummary: own.lines.find(line => line.role === 'user')?.text ?? own.lines[0]?.text ?? '',
-                ...(part > 0 ? { key: `${thread.key}#${blocks[start].start}`,
-                    threadLabel: t('dataThread.threadIndex', { index: `${index + 1}.${part + 1}` }) } : {}) });
+                continuesIn: parts[part + 1],
+                ...(part > 0 ? { key: parts[part].key, threadLabel: parts[part].label } : {}) });
         });
     });
     const entryLayoutKey = (entry: ThreadEntry) => `${entry.key}:${entry.historyCollapsed ? 'collapsed' : 'expanded'}`;
@@ -2921,6 +2985,8 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             layoutKey={entryLayoutKey(entry)}
             blockStarts={entry.blockStarts}
             segment={entry.segment}
+            continuesIn={entry.continuesIn?.label}
+            onContinue={entry.continuesIn && (() => goToThreadPart(entry.continuesIn!))}
             chartElements={chartElements}
             highlightedNodeIds={highlightedNodeIds}
             sx={entrySx} />;

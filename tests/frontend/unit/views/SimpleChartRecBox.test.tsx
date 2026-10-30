@@ -888,7 +888,7 @@ describe('Analyst landing attachment handoff', () => {
         }
     });
 
-    it('updates an edited app in place, where it is in the thread (design-docs/58, rule 8)', async () => {
+    it('moves an app the agent updated to after the request that changed it (design-docs/58, rule 8)', async () => {
         vi.mocked(streamRequest).mockImplementationOnce(async function* () {
             yield { type: 'tool_result', tool: 'edit_file', status: 'ok', stdout: JSON.stringify({
                 path: 'files/sales.app.jsx', name: 'sales.app.jsx', display_name: 'Sales explorer',
@@ -906,14 +906,16 @@ describe('Analyst landing attachment handoff', () => {
             store.dispatch(dfActions.queueAnalystTask({ text: 'Add a units chart to the dashboard', images: [], attachments: [] }));
         });
         await waitFor(() => expect(turnWith(store, turn => turn.content === 'Added a units chart.')).toBeDefined());
-        // app → request → closing answer; the app keeps its place and shows the revision.
+        // built → request → … → app (the one current version) → closing answer; not a fix, so no "replaced" note.
         const request = turnWith(store, turn => turn.prompt === 'Add a units chart to the dashboard');
-        expect(request.parentNodeId).toBe('file-sales.app.jsx');
-        expect(store.getState().fileNodes).toEqual([
-            expect.objectContaining({ id: 'file-sales.app.jsx', contentHash: 'revised-hash', parentNodeId: 'built' }),
-        ]);
+        expect(request.parentNodeId).toBe('built');
+        const [app] = store.getState().fileNodes;
+        expect(store.getState().fileNodes).toHaveLength(1);
+        expect(app).toMatchObject({ id: 'file-sales.app.jsx', contentHash: 'revised-hash' });
+        expect(app.replaced).toBeUndefined();
+        expect(chainAbove(store, app.id)).toContain(request.id);
         const explanation = turnWith(store, turn => turn.content === 'Added a units chart.');
-        expect(explanation.parentNodeId).toBe(request.id);
+        expect(explanation.parentNodeId).toBe(app.id);
         act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: explanation.id })));
         expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'file', fileName: 'sales.app.jsx' });
     });

@@ -89,7 +89,7 @@ _COMPACTED_NOTE = "[Earlier output shortened to fit the model's context window.]
 
 
 # Actions whose success can complete a request on its own.
-_DELIVERY_ACTIONS = frozenset({"visualize", "write_report", "write_app", "write_html_app"})
+_DELIVERY_ACTIONS = frozenset({"visualize", "write_report", "write_app", "write_html_app", "write_map"})
 
 
 class ModelStreamStalled(TimeoutError):
@@ -2175,6 +2175,8 @@ class AnalystAgent:
                     yield self._plan.event(revised=False)
                 if self._remind_open_plan(messages, content, choice):
                     continue
+                if self._plan.settle():
+                    yield self._plan.event(revised=False)
                 # After a delivered chart, report, or app the request can be complete with nothing more to say.
                 logger.info("[AnalystAgent] Empty reply after a delivery ends the run")
                 yield {"type": "agent_action", "action_data": None, "reason": "done", "final_text": "",
@@ -2209,6 +2211,8 @@ class AnalystAgent:
                     if final_text.strip():
                         yield {"type": "thinking_text", "content": final_text}
                 continue
+            if self._plan.settle():
+                yield self._plan.event(revised=False)
             final_msg: dict[str, Any] = {"role": "assistant", "content": content or None}
             attach_reasoning_content(final_msg, choice.message)
             messages.append(final_msg)

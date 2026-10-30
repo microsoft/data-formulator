@@ -283,14 +283,14 @@ class SessionLayer:
             self._apps = []
             if self.workspace is not None:
                 try:
-                    from data_formulator.analyst.skills.html_app.skill import read_html_manifest, read_react_manifest
+                    from data_formulator.analyst.skills.html_app.skill import APP_FILE_SUFFIXES, read_app_manifest
                     for item in self.workspace.list_workspace_files():
                         lower = item.name.lower()
-                        if not (lower.endswith(".app.jsx") or lower.endswith(".html")):
+                        if not lower.endswith(APP_FILE_SUFFIXES):
                             continue
                         _, content = self.workspace.read_workspace_file(item.name)
                         text = content.decode("utf-8", errors="replace")
-                        manifest = read_react_manifest(text) if lower.endswith(".app.jsx") else read_html_manifest(text)
+                        manifest = read_app_manifest(item.name, text)
                         if manifest:
                             self._apps.append((f"files/{item.name}", {str(t) for t in manifest.get("tables") or []},
                                                {str(s) for s in manifest.get("sources") or []}))
@@ -668,7 +668,7 @@ class SessionLayer:
             lines.append(f"  - *Agent thinking:* {_clip(' '.join(thoughts), 1500)}")
         plan = [item for item in turn.get("plan") or [] if isinstance(item, dict) and item.get("text")]
         if plan:
-            marks = {"done": "[x]", "dropped": "[dropped]"}
+            marks = {"done": "[x]", "dropped": "[dropped]", "skipped": "[skipped]"}
             title = f"{_clip(str(turn['planTitle']), 120)}: " if turn.get("planTitle") else ""
             lines.append(f"  - *Plan:* {title}" + "; ".join(
                 f"{marks.get(item.get('status'), '[ ]')} {_clip(str(item['text']), 200)}" for item in plan))

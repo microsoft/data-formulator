@@ -754,7 +754,7 @@
   dependencies:
     "@floating-ui/utils" "^0.2.12"
 
-"@floating-ui/dom@^1.0.0":
+"@floating-ui/dom@^1.0.0", "@floating-ui/dom@^1.7.4":
   version "1.8.0"
   resolved "https://ms-feed-2.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@floating-ui/dom/-/dom-1.8.0.tgz"
   integrity sha1-iiDm+sviRWr9vrbIuWinLfaJz2M=
@@ -3951,10 +3951,14 @@ flatted@^3.2.9:
   resolved "https://registry.npmjs.org/flatted/-/flatted-3.4.2.tgz"
   integrity sha512-PjDse7RzhcPkIJwy5t7KPWQSZ9cAbzQXcafsetQoD7sOJRQlGikNbx7yZp2OotDnJyrDcbyRq3Ttb18iYOqkxA==
 
-flint-chart@>=0.5.1:
-  version "0.5.1"
-  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/flint-chart/-/flint-chart-0.5.1.tgz#b4223b7b26e0011a7f61038daaf09b17f894a30f"
-  integrity sha1-tCI7eybgARp/YQONqvCbF/iUow8=
+flint-chart@1.0.1:
+  version "1.0.1"
+  resolved "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/flint-chart/-/flint-chart-1.0.1.tgz#13dcaf5805b9806bd68dc3509588c676dabf1220"
+  integrity sha512-8buLTEwj+DLAufo/2/QZEBU8v+78shKWjj8sWW0tGXQ92UlE7zJoOvJ+CxCO77MY5bRM86ohUrcl/5CMoh3GuQ==
+  dependencies:
+    "@floating-ui/dom" "^1.7.4"
+    d3-time "^3.1.0"
+    d3-time-format "^4.1.0"
 
 for-each@^0.3.3, for-each@^0.3.5:
   version "0.3.5"

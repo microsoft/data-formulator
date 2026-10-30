@@ -88,6 +88,60 @@ def test_rate_limits_and_server_errors_are_retried_with_backoff():
     assert len(requests) == arxiv.RETRIES
 
 
+def test_a_rate_limit_stops_asking_for_a_while_and_says_so(tmp_path):
+    ok = feed([{"id": "2405.00001", "title": "Ok"}])
+    replies = {"all:cached": [httpx.Response(200, content=ok)],
+               "all:charts": [httpx.Response(429, content=b"Rate exceeded."), httpx.Response(429, content=b"Rate exceeded."),
+                              httpx.Response(200, content=ok), httpx.Response(429, content=b"Rate exceeded.")]}
+    client, requests, clock = make_client(lambda request, count: replies[request.url.params["search_query"]].pop(0), tmp_path)
+    client.query(search_query="all:cached")
+    # arXiv's throttle names no wait: no retry (it would extend the limit), and the reason is given at once.
+    with pytest.raises(arxiv.ArxivError, match=r"rate-limiting .* Wait about 120 seconds"):
+        client.query(search_query="all:charts")
+    assert len(requests) == 2
+    # During the cooldown nothing is sent; answers already cached still come back.
+    clock.now += 60
+    with pytest.raises(arxiv.ArxivError, match="Wait about 60 seconds"):
+        client.query(search_query="all:charts")
+    assert client.query(search_query="all:cached")[1][0]["title"] == "Ok" and len(requests) == 2
+    # Still limited when asked again: the next pause is twice as long.
+    clock.now += 61
+    with pytest.raises(arxiv.ArxivError, match="Wait about 240 seconds"):
+        client.query(search_query="all:charts")
+    clock.now += 241
+    assert client.query(search_query="all:charts", start=1)[1][0]["title"] == "Ok" and len(requests) == 4
+    # An answer resets it.
+    clock.now += 5
+    with pytest.raises(arxiv.ArxivError, match="Wait about 120 seconds"):
+        client.query(search_query="all:charts", start=2)
+
+
+def test_one_call_stops_retrying_at_its_budget():
+    def timeout(request: httpx.Request, count: int) -> httpx.Response:
+        clock.now += 30  # each attempt waits out the read timeout
+        raise httpx.ReadTimeout("The read operation timed out", request=request)
+
+    client, requests, clock = make_client(timeout)
+    started = clock.now
+    with patch("random.uniform", return_value=0), pytest.raises(arxiv.ArxivError, match="did not respond after 3 tries"):
+        client.query(search_query="all:charts")
+    assert len(requests) == 3 and clock.now - started <= arxiv.CALL_BUDGET
+
+
+def test_the_model_reads_why_a_tool_failed(monkeypatch):
+    import asyncio
+
+    from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
+
+    client, _, _ = make_client(lambda request, count: httpx.Response(429, content=b"Rate exceeded."))
+    monkeypatch.setattr(server, "_client", client)
+    with pytest.raises(ToolError) as raised:
+        asyncio.run(server.app.call_tool("search_papers", {"query": "charts"}))
+    # Not masked as a crash ("Error executing tool search_papers" alone): the reason reaches the model.
+    assert not isinstance(raised.value, UnexpectedToolError)
+    assert "arXiv is rate-limiting" in str(raised.value)
+
+
 def test_results_without_entries_are_asked_again():
     replies = [feed([], total=12), feed([{"id": "2405.00001", "title": "Back"}], total=12)]
     client, requests, _ = make_client(lambda request, count: httpx.Response(200, content=replies[count - 1]))

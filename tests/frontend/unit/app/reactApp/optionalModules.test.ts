@@ -1,6 +1,8 @@
 import { screen, waitFor } from '@testing-library/react';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 
+import * as vega from 'vega';
+import * as vegaLite from 'vega-lite';
 import runtimeBundle from 'virtual:df-react-runtime';
 import d3Bundle from 'virtual:df-react-runtime/d3';
 import geoBundle from 'virtual:df-react-runtime/geo';
@@ -34,6 +36,7 @@ export default function App() {
 let sql: ReturnType<typeof vi.fn>;
 let sourceQuery: ReturnType<typeof vi.fn>;
 let chart: ReturnType<typeof vi.fn>;
+let network: ReturnType<typeof vi.fn>;
 
 beforeAll(() => {
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ width: 900, height: 300 } as DOMRect);
@@ -47,12 +50,15 @@ beforeAll(() => {
     (window as any).DF = { ready: Promise.resolve(), manifest: { tables: ['quakes'], sources: ['external:kusto:Events'] },
         theme: { palette: ['#4c78a8'] }, query: vi.fn(), sql, sourceQuery, chart,
         sparkline: vi.fn(async () => ({ finalize: vi.fn() })), format, reportError: vi.fn() };
+    // The frame loads vega and vega-lite as scripts before the runtime, and has no network.
+    network = vi.fn(async () => { throw new Error('the sandbox has no network'); });
+    Object.assign(window, { vega, vegaLite, fetch: network });
     for (const source of [runtimeBundle, d3Bundle, lodashBundle, geoBundle]) new Function(source)();
 });
 
 afterAll(() => {
     vi.restoreAllMocks();
-    for (const name of ['DF', '__DF_REACT__', '__DF_OPTIONAL_MODULES__']) delete (window as any)[name];
+    for (const name of ['DF', '__DF_REACT__', '__DF_OPTIONAL_MODULES__', 'vega', 'vegaLite', '__dfBasemapFetch']) delete (window as any)[name];
 });
 
 it('runs an app using d3, lodash, @df/geo, workspace SQL, a live source, and an offline Flint map', async () => {
@@ -70,11 +76,9 @@ it('runs an app using d3, lodash, @df/geo, workspace SQL, a live source, and an 
     expect(sourceQuery).toHaveBeenCalledWith('external:kusto:Events',
         { group_by: ['day'], aggregates: [{ op: 'count', as: 'events' }] }, {});
 
-    // The map's basemap comes from @df/geo, not vega.github.io (blocked in the sandbox).
-    await waitFor(() => expect(chart).toHaveBeenCalled());
-    const spec = JSON.stringify(chart.mock.calls.at(-1)![1]);
-    expect(spec).not.toContain('vega.github.io');
-    expect(spec).toContain('"type":"Topology"');
+    // Flint draws the map, its basemap served from @df/geo instead of vega.github.io (no network in the sandbox).
+    await waitFor(() => expect(document.querySelectorAll('[data-flint-chart] svg path').length).toBeGreaterThan(100), { timeout: 5000 });
+    expect(network).not.toHaveBeenCalled();
     expect((window as any).DF.reportError).not.toHaveBeenCalled();
     appRoot.unmount();
 });

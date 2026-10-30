@@ -85,11 +85,9 @@ const MOCK_THREAD: MockItem[] = [
     { kind: 'report', label: 'Movie industry report' },
 ];
 const MOCK_FOCUS = 8;
-type MockVariant = 'standard' | 'tinted';
-const MOCK_VARIANTS: [MockVariant, string][] = [['standard', 'standard'], ['tinted', 'tinted (reserved colours)']];
 
-/** A thread rail as DataThread draws it, with chart glyphs coloured per variant. */
-const MockThread: React.FC<{ variant: MockVariant }> = ({ variant }) => {
+/** A thread rail as DataThread draws it: glyphs in the standard state colours (the reserved colours are unused). */
+const MockThread: React.FC = () => {
     const theme = useTheme();
     const primary = theme.palette.primary.main;
     return <Box sx={{ width: 240 }}>
@@ -104,11 +102,11 @@ const MockThread: React.FC<{ variant: MockVariant }> = ({ variant }) => {
                 case 'agent': icon = <AgentToyIcon sx={{ width: 18, height: 18, color }} />; break;
                 case 'table': icon = <TableIcon sx={glyph} />; break;
                 case 'derived': icon = <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: color }} />; break;
-                case 'file': icon = <FileTypeIcon path={item.path!} size={14} active={variant === 'tinted' && onChain} sx={glyph} />; break;
+                case 'file': icon = <FileTypeIcon path={item.path!} size={14} sx={glyph} />; break;
                 case 'report': icon = <ArticleIcon sx={{ ...glyph, color: onChain ? theme.palette.secondary.main : iconTone.muted }} />; break;
                 case 'chart': {
-                    const { Icon, color: familyColor } = chartFamily(item.chart!);
-                    icon = <Icon sx={{ ...glyph, ...(variant === 'tinted' && onChain ? { color: familyColor } : {}) }} />;
+                    const { Icon } = chartFamily(item.chart!);
+                    icon = <Icon sx={glyph} />;
                 }
             }
             const lineColor = (chain: boolean) => chain ? alpha(primary, 0.6) : 'rgba(0,0,0,0.1)';
@@ -182,10 +180,10 @@ export default function DevPage() {
                 <WorkspaceSummary title={title} tables={tables} documents={documents} onExpand={() => {}} />
             </Box>)}
         </Section>
-        <Section title="demo · dataset-loaded hint">
-            {STARTER_HINTS.map(([label, Hint, attached]) => <Box key={label} sx={{ border: 1, borderColor: 'divider' }}>
+        <Section title="dataset-loaded hint">
+            {STARTER_HINTS.map(([label, Hint]) => <Box key={label} sx={{ border: 1, borderColor: 'divider' }}>
                 <Box sx={{ fontSize: 11, px: 1, pt: 0.75, fontFamily: 'var(--df-font-mono, monospace)', color: 'text.secondary' }}>{label}</Box>
-                <StarterHintMock Hint={Hint} attached={attached} />
+                <StarterHintMock Hint={Hint} />
             </Box>)}
         </Section>
         <Section title="files">
@@ -219,10 +217,7 @@ export default function DevPage() {
             </Box>)}
         </Section>
         <Section title="thread rail">
-            {MOCK_VARIANTS.map(([variant, label]) => <Box key={variant} sx={{ p: 1.5, border: 1, borderColor: 'divider' }}>
-                <Box sx={{ fontSize: 11, mb: 1, fontFamily: 'var(--df-font-mono, monospace)', color: 'text.secondary' }}>{label}</Box>
-                <MockThread variant={variant} />
-            </Box>)}
+            <Box sx={{ p: 1.5, border: 1, borderColor: 'divider' }}><MockThread /></Box>
         </Section>
         <Section title="charts · rest, reserved colour">
             {CHART_TYPES.map(type => { const { Icon, color } = chartFamily(type);

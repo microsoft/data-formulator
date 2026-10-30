@@ -104,7 +104,8 @@ export interface ProgressStep {
 /** One step of the checklist plan the analyst writes in its narration. */
 export interface PlanItem {
     text: string;
-    status: 'open' | 'done' | 'dropped';
+    /** `skipped`: still open when the run finished (after one reminder). */
+    status: 'open' | 'done' | 'dropped' | 'skipped';
     note?: string;
     /** Ids of the charts delivered for this step (or 'write_report' / 'write_app' for other results). */
     results?: string[];
@@ -332,6 +333,8 @@ export interface TextTurn {
     /** The user's message (design-docs/58): a turn with a prompt and no
      *  content is a user message node; the agent's reply follows as its own node. */
     prompt?: string;
+    /** The message was sent by the app, not typed: a repair of an app that failed when it opened. */
+    auto?: 'app-repair';
     /** Files and images the user attached to `prompt`. */
     attachments?: string[];
     /** Earlier results the user's message is about, shown with it like attachments. */

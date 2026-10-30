@@ -14,7 +14,7 @@
           },
           "report": {
             "type": "string",
-            "description": "The full Markdown report text. Embed charts with ![caption](chart://chart_id) using IDs of session charts (session/charts/<id>.json) or successful visualize results."
+            "description": "The full Markdown report text, starting with front matter naming its genre (---\\nstyle: notes|analysis|research|search|brief\\n---). Embed charts with ![caption](chart://chart_id) using IDs of session charts (session/charts/<id>.json) or successful visualize results. Blocks (see the report skill): :::excerpt{source=\"<session path>\" page=… title=\"…\" url=\"…\"} quotes a source verbatim; :::summary / :::finding / :::caveat / :::definition / :::note callouts; :::metrics (a bullet list of bold numbers); :::compare with :::column{title=\"…\"} blocks; :::details{title=\"…\"} (collapsed); footnote citations [^key] with [^key]: definitions. Close each block with :::."
           }
         },
         "required": ["report"]
