@@ -98,6 +98,7 @@ const PROVIDERS: Record<string, { label: string; model: string; base: string; co
     chatgpt: { label: 'ChatGPT', model: '', base: '', connectionMethod: 'account' },
     orcarouter: { label: 'OrcaRouter', model: 'auto', base: 'https://api.orcarouter.ai/v1', connectionMethod: 'api' },
     cheaperinference: { label: 'Cheaper Inference', model: 'gpt-5.4-mini', base: 'https://api.cheaperinference.com/v1', connectionMethod: 'api' },
+    runcrate: { label: 'Runcrate', model: 'deepseek-ai/DeepSeek-V4.1-Flash', base: 'https://api.runcrate.ai/v1', connectionMethod: 'api' },
 };
 
 const getModelEndpointLabel = (model: ModelConfig): string => {
@@ -211,7 +212,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         'gemini': [],
         'ollama': [],
         'orcarouter': [],
-        'cheaperinference': []
+        'cheaperinference': [],
+        'runcrate': []
     });
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
@@ -600,7 +602,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
             'gemini': [],
             'ollama': [],
             'orcarouter': [],
-            'cheaperinference': []
+            'cheaperinference': [],
+            'runcrate': []
         };
 
         globalModels.forEach((modelConfig: any) => {
