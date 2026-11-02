@@ -22,7 +22,7 @@ export interface ChartThemePickerProps {
     onThemePreviewEnd?: () => void;
 }
 
-const THEME_CHOICES = [
+export const THEME_CHOICES = [
     {
         id: undefined,
         label: 'Flint default',
@@ -37,7 +37,7 @@ const THEME_CHOICES = [
     })),
 ];
 
-const themeIconUrl = (svg: string) => `data:image/svg+xml,${encodeURIComponent(svg)}`;
+export const themeIconUrl = (svg: string) => `data:image/svg+xml,${encodeURIComponent(svg)}`;
 
 export const ChartThemePicker: FC<ChartThemePickerProps> = function ({ chartId, onThemePreview, onThemePreviewEnd }) {
     const theme = useTheme();

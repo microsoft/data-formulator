@@ -55,7 +55,7 @@ from data_formulator.datalake.parquet_utils import (
     sanitize_dataframe_for_arrow,
     DEFAULT_COMPRESSION,
 )
-from data_formulator.datalake.workspace import Workspace, get_data_formulator_home
+from data_formulator.datalake.workspace import Workspace, get_data_formulator_home, run_sql_over_parquet_file
 from data_formulator.security.path_safety import ConfinedDir
 
 if TYPE_CHECKING:
@@ -435,6 +435,10 @@ class AzureBlobWorkspace(Workspace):
     def _read_workspace_file(self, filename: str) -> bytes:
         return self._download_bytes(self._workspace_file_blob_key(filename))
 
+    def local_workspace_file(self, name: str) -> Path | None:
+        """Blob-backed files have no local path; readers fall back to their bytes."""
+        return None
+
     def _delete_workspace_file(self, filename: str) -> None:
         blob_key = self._workspace_file_blob_key(filename)
         if self._blob_exists(blob_key):
@@ -721,7 +725,6 @@ class AzureBlobWorkspace(Workspace):
         Downloads the blob to a temporary local file for the duration of
         the query, so DuckDB can use its native parquet reader.
         """
-        import duckdb
         from azure.core.exceptions import ResourceNotFoundError
 
         meta = self.get_table_metadata(table_name)
@@ -736,13 +739,7 @@ class AzureBlobWorkspace(Workspace):
             entry = self._ensure_cached(self._data_blob_key(meta.filename))
         except ResourceNotFoundError:
             raise FileNotFoundError(f"Parquet blob not found: {meta.filename}")
-        escaped = str(entry.path).replace("\\", "\\\\").replace("'", "''")
-        full_sql = sql.format(parquet=f"read_parquet('{escaped}')")
-        conn = duckdb.connect(":memory:")
-        try:
-            return conn.execute(full_sql).fetchdf()
-        finally:
-            conn.close()
+        return run_sql_over_parquet_file(entry.path, sql)
 
     # ------------------------------------------------------------------
     # Local directory materialisation (for sandbox execution)

@@ -45,6 +45,26 @@ export function resolveConversationParentNodeId(
     return open?.id;
 }
 
+/**
+ * Where a request about an earlier item goes. Asking about the latest item continues from it as usual
+ * (undefined here); asking about one something already follows adds the request at the end of the
+ * thread the item is in (following the oldest follower at each step, as threads are drawn), rather
+ * than branching a new thread there. A thread whose end is a run still at work (a draft, or a turn
+ * `canContinue` rejects, such as a live workflow's record) is left to branch.
+ */
+export function referencedAskEnd(itemId: string | null | undefined, graph: ThreadGraph,
+    canContinue: (turnId: string) => boolean = () => true): string | undefined {
+    if (!itemId || !graph.nodes.has(itemId) || !graph.followersOf(itemId).length) return undefined;
+    let end = itemId;
+    const seen = new Set<string>([end]);
+    for (let next = graph.followersOf(end)[0]?.id; next && !seen.has(next); next = graph.followersOf(end)[0]?.id) {
+        seen.add(next);
+        end = next;
+    }
+    const kind = graph.kindOf(end);
+    return kind === 'draft' || (kind === 'turn' && !canContinue(end)) ? undefined : end;
+}
+
 export function resolveDerivedTriggerTableId(
     lastCreatedTableId: string | null,
     sourceTableId: string | undefined,

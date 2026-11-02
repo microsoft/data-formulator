@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 import re
 
 _logger = logging.getLogger(__name__)
@@ -489,7 +490,7 @@ def supplement_missing_block(client, messages, assistant_content,
             *messages,
             {"role": "assistant", "content": assistant_content},
             {"role": "user", "content": prompt},
-        ])
+        ], reasoning_effort="low")
         elapsed = time.time() - t0
         supp_text = supp_resp.choices[0].message.content
 
@@ -529,10 +530,22 @@ def get_field_summary(field_name, df, field_sample_size, max_val_chars=100,
             return str(val)
         return val
     
+    # Missing values (None, NaN, NaT) are not shown as values.
+    present = df[field_name].dropna().values
     try:
-        values = sorted([make_hashable(x) for x in list(set([make_hashable(x) for x in df[field_name].values])) if x is not None])
-    except Exception:
-        values = [make_hashable(x) for x in list(set([make_hashable(x) for x in df[field_name].values])) if x is not None]
+        # Vectorized: a Python pass over every cell takes seconds on large tables, and this runs
+        # for each table in the context of every agent request.
+        distinct = pd.unique(present)
+    except TypeError:
+        # Unhashable cells (dynamic/JSON columns) are de-duplicated as strings.
+        distinct = list({make_hashable(x) for x in present})
+    if isinstance(distinct, np.ndarray) and distinct.dtype.kind in "biufcmM":
+        values = list(np.sort(distinct))
+    else:
+        try:
+            values = sorted(distinct)
+        except TypeError:
+            values = list(distinct)
 
     val_sample = ""
 

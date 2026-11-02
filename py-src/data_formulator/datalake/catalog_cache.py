@@ -560,7 +560,7 @@ def find_catalog_cache(
 
 
 # ---------------------------------------------------------------------------
-# Hierarchy navigation (used by the data loading agent's list_data tool)
+# Hierarchy navigation (used by catalog discovery)
 # ---------------------------------------------------------------------------
 
 # Directory listings default to 100 immediate children and allow callers to
@@ -678,7 +678,7 @@ def summarize_catalog_sources(
 def list_sources_summary(
     workspace_root: Path | str,
 ) -> list[dict[str, Any]]:
-    """Return a per-source summary suitable for ``list_data()`` with no args.
+    """Return a per-source summary of every cached source.
 
     Each entry includes a bounded ``top_level`` preview and an explicit
     ``top_level_truncated`` signal. The preview is orientation, not a substitute

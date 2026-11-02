@@ -1322,7 +1322,7 @@
    "id": "textTurn_exploreDataFromNL_1792307641229_1792307717722",
    "displayId": "textTurn_exploreDataFromNL_1792307641229_closing",
    "textKind": "explain",
-   "content": "**Israel spends the most on research relative to its economy: 6.35% of GDP**, followed by **South Korea at 4.94%**.\n\nThe next highest are Sweden (**3.60%**), the US (**3.45%**) and Japan (**3.44%**). All five figures are for **2023**, using each country’s latest report within 2020–2024.\n\nThis compares shares of GDP, not total dollars. The map excludes very small territories; missing countries lack recent data, and some values are estimates.",
+   "content": "**Israel spends the most on research relative to its economy: 6.35% of GDP**, followed by **South Korea at 4.94%**. Sweden (3.60%), the US (3.45%) and Japan (3.44%) come next. All five figures are for 2023.\n\nThis compares shares of GDP, not total dollars. Blank countries have no recent data. Source: UIS, February 2026 release.",
    "parentNodeId": "d_output_2",
    "actionId": "exploreDataFromNL_1792307641229",
    "createdAt": 1792307717722,
@@ -1363,7 +1363,7 @@
  ],
  "activeWorkspace": {
   "id": "science-s20",
-  "displayName": "World research spending climbs, but Africa falls behind"
+  "displayName": "Israel and South Korea spend the most on research"
  },
  "focusedId": {
   "type": "chart",

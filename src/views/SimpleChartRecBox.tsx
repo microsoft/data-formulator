@@ -31,25 +31,27 @@ import { resolveRecommendedChart, getUrls, translateBackend } from '../app/utils
 import { authoredFieldSemantics } from '../app/fieldSemantics';
 import { streamRequest, apiRequest } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
-import { Chart, ClarificationResponse, ComputationInputSource, DictTable, DraftNode, FieldItem, createDictTable, computeInsightKey, TextTurn, TerminalExecution, CodeExecution, createConversationRootId, ProgressStep, PlanItem } from "../components/ComponentType";
+import { Chart, ClarificationResponse, ComputationInputSource, DictTable, DraftNode, FieldItem, createDictTable, computeInsightKey, TextTurn, TerminalExecution, CodeExecution, ToolCall, createConversationRootId, ProgressStep, PlanItem, ThreadReference } from "../components/ComponentType";
 import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clarification';
 import { parseDataOperation } from '../dataOperations/models';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
+import { codeCallsOf, isCodeCall } from '../app/toolCalls';
 import { toAnalystTableRef } from '../app/tableResolution';
 
-import { alpha } from '@mui/material/styles';
-import { WritingPencil } from '../components/FunComponents';
+import { alpha, lighten } from '@mui/material/styles';
+import { WorkflowGears, WritingPencil } from '../components/FunComponents';
+import { FileTypeIcon } from '../icons';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
-import { notifyWorkspaceFilesChanged } from '../app/workspaceService';
+import { notifyWorkspaceFilesChanged, type WorkspaceFile } from '../app/workspaceService';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
+import TipsAndUpdatesOutlinedIcon from '@mui/icons-material/TipsAndUpdatesOutlined';
 import BoltIcon from '@mui/icons-material/Bolt';
 import CloseIcon from '@mui/icons-material/Close';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import StopIcon from '@mui/icons-material/Stop';
-import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
-import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
+import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
 
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
@@ -58,14 +60,21 @@ import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { applySessionDeletion, type DeletionPlan } from '../app/sessionDeletion';
 import { agentSessionState, applySessionUpdate, type SessionUpdate } from '../app/sessionFiles';
-import { resolveConversationParentNodeId, resolveDerivedTriggerTableId, resolveRunParentNodeId, shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
+import { referencedAskEnd, resolveConversationParentNodeId, resolveDerivedTriggerTableId, resolveRunParentNodeId, shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
+import { ThreadReferenceIcon } from '../components/ThreadReferenceIcon';
+import { BackgroundTasksPill, StopAgentDialog } from '../components/BackgroundTasks';
+import { refreshBackgroundTasks, stopBackgroundTasks, useBackgroundTasks } from '../app/backgroundTasks';
 import { ClarificationPanel, ExplanationPanel, ToolActivityPanel, FailedDraftPanel } from './AgentPausePanel';
 import { CARD_WIDTH } from './threadLayout';
 import { iconVar, textVar } from '../app/layout';
 import { formatAnalystToolProgress } from './analystToolProgress';
-import { TerminalAccessButton, TerminalApprovalDialog, TerminalProposal } from '../components/TerminalApprovalDialog';
+import { TerminalApprovalDialog, TerminalProposal } from '../components/TerminalApprovalDialog';
+import { ToolsAccessButton } from '../components/ToolsAccess';
+import { requestToolsDialog } from '../app/toolsSettings';
+import { MCP_CALL_TOOL, McpApprovalDialog, McpDecision, McpProposal, mcpCallArgs, mcpCallRecord } from '../components/McpServers';
 import { selectChatWorkflow, WorkflowProgress, WORKFLOW_AUTHORING_PROMPT } from './WorkflowPanel';
 import { formArtifactFromEvent, requestAutoSubmit } from '../app/setupForms';
+import { buildThreads } from '../app/threadGraph';
 import { handleApiError } from '../app/errorHandler';
 
 // Approx footprint of the leading lightning-bolt IconButton (size small,
@@ -77,6 +86,8 @@ const STARTER_ICON_WIDTH = 28;
 // without typing an explicit instruction. The unified analyst loads its
 // `report` skill and emits `write_report` within a normal explore run.
 const REPORT_SEED_PROMPT = 'Write a report summarizing the exploration.';
+// The quick-action menu's icons share one slot, so their labels line up; they take the menu's icon size (1.2em, see theme).
+const menuIconSlotSx = { display: 'flex', alignItems: 'center', justifyContent: 'center', width: '1.4em', mr: '0.6em', flexShrink: 0 } as const;
 
 // A starter-question chip that only shows a tooltip when its label is
 // truncated (i.e. the text is too long to fit within the capped width).
@@ -110,6 +121,23 @@ const ShowLatestLink: FC<{ count: number; onShow: () => void }> = ({ count, onSh
         '&:hover': { textDecoration: 'underline' } }}>
         {t('chartRec.showLatest', { count, defaultValue: count === 1 ? '1 new result · Show latest' : '{{count}} new results · Show latest' })}
     </ButtonBase>;
+};
+
+/** Live status: elapsed time is shown after this long, and a model that has not started writing after
+ * STILL_WAITING_SECONDS is reported as still being waited on. */
+const SHOW_ELAPSED_SECONDS = 10;
+const STILL_WAITING_SECONDS = 30;
+/** Stream events that show something of their own, so the live status gives way to them. */
+/** How often the streaming answer re-renders (ms): smooth, without re-parsing markdown on every token. */
+const ANSWER_FLUSH_MS = 80;
+const CLEARS_LIVE_STATUS = new Set(['tool_start', 'action', 'result', 'text_delta', 'completion', 'interact', 'clarify',
+    'explain', 'agent_action', 'terminal_started', 'mcp_started', 'data_operation_result']);
+/** What the agent is writing, by the tool whose call is streaming (fast reads keep "deciding"). */
+const WRITING_STATUS: Record<string, string> = {
+    visualize: 'designingChart', execute_python_script: 'writingCode', edit_file: 'writingEdit', create_file: 'writingFile',
+    create_data: 'preparingData', update_data: 'preparingData', write_app: 'writingApp', write_html_app: 'writingApp', write_map: 'writingMap',
+    write_report: 'writingReport', propose_workflow: 'draftingWorkflow', propose_data_operation: 'preparingLoad', load_datasets: 'preparingLoad',
+    long_response: 'writingAnswer', run_terminal: 'writingCommand',
 };
 
 /** How long a result the run brought into view stays there before the next one replaces it. */
@@ -236,6 +264,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
     const [chatPrompt, setChatPrompt] = useState("");
     const [quickActionAnchor, setQuickActionAnchor] = useState<HTMLElement | null>(null);
+    const isDemo = useSelector((state: DataFormulatorState) => !!state.serverConfig.SITE);
     const [chatInputFocused, setChatInputFocused] = useState(false);
     // ── Clarification accumulated answers ────────────────────────────
     // When the agent asks one or more clarification questions, clicking an
@@ -259,6 +288,16 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         lastCreatedTableId: string | null;
         sourceTableIds: string[];
     } | null>(null);
+    // An MCP tool call waiting for the user's approval; deciding resumes the run.
+    const [pendingMcp, setPendingMcp] = useState<{
+        proposal: McpProposal;
+        trajectory: any[];
+        completedStepCount: number;
+        actionId: string;
+        parentNodeId: string;
+        lastCreatedTableId: string | null;
+        sourceTableIds: string[];
+    } | null>(null);
     // Whether the getting-started starter questions are collapsed (click the
     // lightning bolt to expand/collapse).
     const [starterCollapsed, setStarterCollapsed] = useState(false);
@@ -274,10 +313,15 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const [attachedFiles, setAttachedFiles] = useState<{ name: string; scratchPath: string }[]>([]);
     // Short explanations reopen above the composer. Long explanations own the
     // visualization canvas so they do not crowd the conversation input.
+    // The run's answer while the model is still writing it; the closing message replaces it when the run ends.
+    const [streamingAnswer, setStreamingAnswer] = useState<string | null>(null);
+    const streamingAnswerDismissRef = useRef<() => void>(() => setStreamingAnswer(null));
     const [viewingToolActivity, setViewingToolActivity] = useState<{ nodeId: string;
-        execution: NonNullable<TextTurn['executions']>[number] | NonNullable<TextTurn['codeExecutions']>[number] } | null>(null);
+        execution: NonNullable<TextTurn['executions']>[number] | CodeExecution } | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const agentAbortRef = useRef<AbortController | null>(null);
+    // The running request's id, which the background tasks it starts carry.
+    const agentActionIdRef = useRef<string | null>(null);
     // The chart the user was on when the current run started — provenance for a
     // clarify/explain TextTurn emitted mid/end of the run (design-docs/41).
     const runSourceChartIdRef = useRef<string | null>(null);
@@ -321,7 +365,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
     /** Focus a new result if the user hasn't steered this run; otherwise count it for "Show latest". */
     const followFocus = (target: NonNullable<FocusedId>): boolean => {
-        // Every result gets a tab, unseen until visited, including any a burst skips past.
+        // Reports, apps and maps get a tab, unseen until visited, including any a burst skips past.
         dispatch(dfActions.noteCanvasResult(target));
         if (!shouldAutoFocusGeneratedChart(userSteeredRef.current)) {
             setUnseenResults(previous => ({ count: previous.count + 1, target }));
@@ -346,6 +390,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         if (wait <= 0) apply();
         else followTimerRef.current = setTimeout(apply, wait);
         return true;
+    };
+    /**
+     * Keep the answer the user watched being written in view: focus its message now. The streaming preview
+     * shows regardless of the follow rules, so it hands over the same way, even if the user clicked meanwhile
+     * or another result was focused a moment ago; a result still waiting to be focused gives way to it.
+     */
+    const showWrittenAnswer = (target: NonNullable<FocusedId>) => {
+        if (followTimerRef.current) { clearTimeout(followTimerRef.current); followTimerRef.current = null; }
+        pendingFollowRef.current = undefined;
+        lastFollowFocusAtRef.current = Date.now();
+        dispatch(dfActions.followFocused(target));
     };
     const showLatestResult = () => {
         const target = unseenResults.target;
@@ -396,6 +451,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         ? [...loadedTableNodes, ...fileNodes].find(node => node.id === focusedId.referenceId)
         : undefined;
     const analystChatPending = useSelector((state: DataFormulatorState) => state.analystChatPending);
+    // Set while a queued request the app sends on the user's behalf is being submitted (see the prompt turn's `auto`).
+    const autoPromptRef = useRef<TextTurn['auto']>(undefined);
 
     const focusedTableId = useCallback(() => {
         if (!focusedId) return undefined;
@@ -429,6 +486,48 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         }
         return undefined;
     }, [focusedId, charts, generatedReports, textTurns, tables, draftNodes, focusedReference, threadGraph])();
+
+    // A run's own record and its steering messages belong to the run; a finished run's record is followed like any reply.
+    const canContinueTurn = useCallback((turnId: string) => !textTurns.some(turn => turn.id === turnId && (turn.workflowMessage
+        || (turn.workflow && ['running', 'paused'].includes(turn.workflow.status)))), [textTurns]);
+    // Asking about an earlier result (one something already follows) adds the request at the end of its
+    // thread, with the result as a reference on the message, instead of branching a new thread there.
+    const askReference = React.useMemo((): { reference: ThreadReference; itemId: string; endId: string } | undefined => {
+        const derived = (tableId: string | undefined) => !!tableId && !!tables.find(table => table.id === tableId)?.derive;
+        let itemId: string | undefined;
+        let reference: ThreadReference | undefined;
+        if (focusedId?.type === 'chart') {
+            const chart = charts.find(item => item.id === focusedId.chartId);
+            if (!chart || !derived(chart.tableRef)) return undefined;
+            itemId = chart.tableRef;
+            reference = { kind: 'chart', id: chart.id, label: chart.title || chart.chartType };
+        } else if (focusedId?.type === 'table' && derived(focusedId.tableId)) {
+            itemId = focusedId.tableId;
+            reference = { kind: 'table', id: itemId, label: tables.find(table => table.id === itemId)?.displayId || itemId };
+        } else if (focusedId?.type === 'reference' && focusedReference) {
+            itemId = threadGraph.continuationOf(focusedReference.id);
+            reference = focusedReference.kind === 'file'
+                ? { kind: 'file', id: focusedReference.id, label: focusedReference.displayName || focusedReference.path }
+                : { kind: 'table', id: focusedReference.tableId, label: tables.find(table => table.id === focusedReference.tableId)?.displayId || focusedReference.tableId };
+        } else if (focusedId?.type === 'file') {
+            const file = fileNodes.find(node => node.path === focusedId.fileName);
+            if (!file) return undefined;
+            itemId = threadGraph.continuationOf(file.id);
+            reference = { kind: 'file', id: file.id, label: file.displayName || file.path };
+        } else if (focusedId?.type === 'report') {
+            const report = generatedReports.find(item => item.id === focusedId.reportId);
+            if (!report?.parentNodeId) return undefined;
+            itemId = threadGraph.continuationOf(report.id);
+            reference = { kind: 'report', id: report.id, label: report.title || t('report.untitled') };
+        }
+        if (!itemId || !reference || resolveConversationParentNodeId(undefined, itemId, threadGraph, canContinueTurn)) return undefined;
+        const endId = referencedAskEnd(itemId, threadGraph, canContinueTurn);
+        return endId ? { reference, itemId, endId } : undefined;
+    }, [focusedId, charts, tables, focusedReference, fileNodes, generatedReports, threadGraph, canContinueTurn, t]);
+    // The user can drop the reference from the message; the request still goes to the end of the thread.
+    const [droppedReference, setDroppedReference] = useState<string>();
+    const shownReference = askReference && droppedReference !== `${askReference.reference.kind}:${askReference.reference.id}`
+        ? askReference.reference : undefined;
 
     // Remember the last chart the user focused so a pause "Close" can restore it.
     useEffect(() => {
@@ -547,7 +646,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
     const handleAttachFiles = React.useCallback((fileList: FileList | File[] | null) => {
         if (!fileList) return;
-        const files = Array.from(fileList);
+        // A demo's analyst works only on the demo's datasets: images (e.g. of a chart) only (design-docs/69).
+        const files = Array.from(fileList).filter(file => !isDemo || file.type.startsWith('image/'));
+        if (!files.length) return;
         setAttachmentUploads(count => count + files.length);
         files.forEach(async file => {
             try {
@@ -580,7 +681,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 setAttachmentUploads(count => count - 1);
             }
         });
-    }, [dispatch, t]);
+    }, [dispatch, t, isDemo]);
 
     // Paste handler: capture pasted files — images AND other files (CSV, Excel,
     // etc.) — so the chat box accepts the same attachments as the "+" button,
@@ -621,10 +722,15 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         lastCreatedTableId?: string | null;
         parentNodeId?: string;
         sourceTableIds?: string[];
+        // Earlier results the request is about (shown on the message), and the node a new thread
+        // would start from if the agent finds the request is a line of analysis of its own.
+        references?: ThreadReference[];
+        branchFromNodeId?: string;
         // Re-run a failed step in place: the message is already in the thread at
         // `parentNodeId`, and the new draft replaces the failed one there.
         retry?: boolean;
         terminalResponse?: { request_id: string; decision: 'approve' | 'reject' };
+        mcpResponse?: { request_id: string; decision: McpDecision };
         interactionResponse?: {
             operation_id: string;
             plan_id?: string;
@@ -685,9 +791,15 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             const sourceNames = sources
                 .filter(source => source.kind === 'data')
                 .map(source => source.displayName.replace(/\.[^/.]+$/, ""));
-            return [...runSourceTables.values()].filter(table => {
-                const name = table.virtual?.tableId || table.id.replace(/\.[^/.]+$/, "");
-                return !!name && sourceNames.includes(name);
+            const nameOf = (table: DictTable) => table.virtual?.tableId || table.id.replace(/\.[^/.]+$/, "");
+            // This run's tables first, then any session table: a derived table can be built on too.
+            const sessionTables = dfSelectors.getAllTables(currentStore.getState() as DataFormulatorState);
+            const matched = new Set<string>();
+            return [...runSourceTables.values(), ...sessionTables].filter(table => {
+                const name = nameOf(table);
+                if (!name || !sourceNames.includes(name) || matched.has(name)) return false;
+                matched.add(name);
+                return true;
             }).map(table => table.id);
         };
 
@@ -762,7 +874,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             if (parent?.answered !== undefined) return false;
             return threadGraph.childrenOf(nodeId).length === failedDraftIds(nodeId).length;
         };
-        const replacesUnanswered = !clarificationContext?.terminalResponse && !clarificationContext?.retry && !isResume;
+        const replacesUnanswered = !clarificationContext?.terminalResponse && !clarificationContext?.mcpResponse && !clarificationContext?.retry && !isResume;
         const askedFromNode = replacesUnanswered && isUnanswered(requestedParentNode)
             ? threadGraph.parentOf(requestedParentNode) ?? requestedParentNode
             : requestedParentNode;
@@ -810,9 +922,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         };
 
         // ── Route through the unified AnalystAgent (design-35/36) ──
-        // The unified agent can also write reports inside the same run, so we
-        // ship the available charts (same shape the report flow gets) for the
-        // report skill's inspect_chart.
+        // The chart ids a report edit may embed (chart://<id>). The agent reads
+        // charts and their data as session files, so no rows or code are sent.
         const streamUrl = getUrls().ANALYST_STREAMING;
         const availableCharts = charts
             .filter(c => c.chartType !== 'Table' && c.chartType !== 'Auto')
@@ -833,11 +944,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     chart_type: c.chartType,
                     encodings,
                     table_ref: tbl?.virtual?.tableId || c.tableRef,
-                    code: tbl?.derive?.code || '',
-                    chart_data: tbl ? { name: tbl.virtual?.tableId || tbl.id, rows: tbl.rows.slice(0, 50) } : undefined,
                 };
             });
         requestBody.charts = availableCharts;
+        if (clarificationContext?.references?.length) requestBody.references = clarificationContext.references;
         const formOwner = canvasTarget?.type === 'text'
             ? textTurns.find(turn => turn.id === canvasTarget.textId && turn.form)
             : undefined;
@@ -867,6 +977,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             if (clarificationContext!.terminalResponse) {
                 requestBody.terminal_response = clarificationContext!.terminalResponse;
             }
+            if (clarificationContext!.mcpResponse) {
+                requestBody.mcp_response = clarificationContext!.mcpResponse;
+            }
         } else {
             requestBody.user_question = agentPrompt;
         }
@@ -875,11 +988,19 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
         const controller = new AbortController();
         agentAbortRef.current = controller;
+        agentActionIdRef.current = actionId;
         const pendingLoadId = `agent-load-${runKey}`;
         const clearPendingLoad = () => dispatch(dfActions.finishTableLoad(pendingLoadId));
         controller.signal.addEventListener('abort', clearPendingLoad, { once: true });
         let timedOut = false;
-        const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 6 * 1000);
+        const runTimeoutMs = config.formulateTimeoutSeconds * 6 * 1000;
+        let timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, runTimeoutMs);
+        // Waiting on background tasks is not the run stalling: the clock pauses for a wait (up to its
+        // 30-minute ceiling) and starts over after it.
+        const restartRunTimer = (ms = runTimeoutMs) => {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, ms);
+        };
 
         let allResults: any[] = [];
         let createdTables: DictTable[] = [];
@@ -915,12 +1036,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         // from (design-docs/58). Approving a pending command is not a message,
         // and a retry re-runs a message that is already in the thread.
         let draftParentId = askedFromNode;
-        if (!clarificationContext?.terminalResponse && !clarificationContext?.retry) {
+        let promptTurnId: string | null = null;
+        if (!clarificationContext?.terminalResponse && !clarificationContext?.mcpResponse && !clarificationContext?.retry) {
             const promptId = `textTurn_${runKey}_prompt`;
+            promptTurnId = promptId;
+            const auto = autoPromptRef.current;
             dispatch(dfActions.addTextTurn({
                 kind: 'text', id: promptId, displayId: promptId, textKind: 'explain', content: '',
                 prompt: cleanDisplay || agentPrompt,
+                ...(auto ? { auto } : {}),
                 ...(attachmentNames.length ? { attachments: attachmentNames } : {}),
+                ...(clarificationContext?.references?.length ? { references: clarificationContext.references } : {}),
                 externalReferenceId, parentNodeId: askedFromNode, actionId, createdAt: Date.now(),
             }));
             runLastNodeRef.current = promptId;
@@ -958,9 +1084,21 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             thinkingSteps.push(step);
             return step;
         };
-        const snapshotProgress = (settled = false): ProgressStep[] => thinkingSteps.map(step => ({ ...step,
+        // The live status while the model works: what it is doing now (deciding, writing a chart, its own
+        // narration), with elapsed time once it runs long. Replaced as it changes; never part of the saved steps.
+        let liveStatus: { label: string; since: number; waiting: boolean } | null = null;
+        const liveStatusSteps = (): ProgressStep[] => {
+            if (!liveStatus) return [];
+            const seconds = Math.floor((Date.now() - liveStatus.since) / 1000);
+            if (!liveStatus.label && !(liveStatus.waiting && seconds >= STILL_WAITING_SECONDS)) return [];
+            const label = liveStatus.waiting && seconds >= STILL_WAITING_SECONDS
+                ? t('dataThread.status.stillWaiting', { seconds })
+                : seconds >= SHOW_ELAPSED_SECONDS ? `${liveStatus.label} (${seconds}s)` : liveStatus.label;
+            return [{ id: `status-${runKey}`, kind: 'thought', label, status: 'running' }];
+        };
+        const snapshotProgress = (settled = false): ProgressStep[] => [...thinkingSteps.map(step => ({ ...step,
             status: settled && step.status === 'running' ? step.kind === 'tool' ? 'interrupted' : 'completed' : step.status,
-        }));
+        })), ...(settled ? [] : liveStatusSteps())];
         const publishProgress = (steps = snapshotProgress()) => {
             if (currentDraftId) dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId,
                 plan: steps.map(step => step.label).join(STEP_SEP), progressSteps: steps }));
@@ -973,7 +1111,34 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             dispatch(dfActions.updateTextTurn({ id: turnId, progressSteps: steps.some(item => item.id === step.id)
                 ? steps.map(item => item.id === step.id ? { ...step } : item) : [...steps, { ...step }] }));
         };
+        /** A call's record joins the message its step settled on; a call cut off by the run's end is interrupted. */
+        const attachToolCalls = (turnId: string, steps: ProgressStep[]) => {
+            for (const step of steps) {
+                const entry = step.kind === 'tool' && step.toolCallId ? toolRecords.get(step.toolCallId) : undefined;
+                if (!entry || entry.turnId) continue;
+                entry.turnId = turnId;
+                if (entry.call.status === 'running' && step.status !== 'running') entry.call = { ...entry.call, status: 'interrupted' };
+                dispatch(dfActions.upsertTurnExecution({ turnId, toolCall: entry.call }));
+            }
+        };
+        const setLiveStatus = (label: string, waiting: boolean, restart: boolean) => {
+            liveStatus = { label, waiting, since: restart || !liveStatus ? Date.now() : liveStatus.since };
+            publishProgress();
+        };
+        const clearLiveStatus = () => {
+            if (!liveStatus) return;
+            liveStatus = null;
+            publishProgress();
+        };
+        const statusTimer = setInterval(() => {
+            if (isCompleted || controller.signal.aborted) {
+                clearInterval(statusTimer);
+                return;
+            }
+            if (liveStatus && Date.now() - liveStatus.since >= SHOW_ELAPSED_SECONDS * 1000) publishProgress();
+        }, 1000);
         const interruptProgress = () => {
+            liveStatus = null;
             for (const step of pendingToolSteps.values()) {
                 step.status = 'interrupted';
                 persistExecutionProgress(step);
@@ -982,6 +1147,27 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             thinkingSteps.forEach(step => { if (step.status === 'running') step.status = 'interrupted'; });
             publishProgress();
         };
+
+        // ── Live answer streaming ──
+        // The model's final answer arrives as `answer`-channel `text_delta`s while it is written (providers that
+        // mark a message as the final answer). It shows in the answer panel straight away, coalesced like reports;
+        // `answer_retracted` means a tool call followed after all, so it was a note and the preview goes.
+        let answerText = '';
+        let answerFlushTimer: ReturnType<typeof setTimeout> | null = null;
+        let answerDismissed = false;
+        // Whether the preview is on screen now (shown, not retracted or dismissed).
+        let answerOnScreen = false;
+        const clearStreamingAnswer = () => {
+            if (answerFlushTimer) { clearTimeout(answerFlushTimer); answerFlushTimer = null; }
+            answerText = '';
+            answerOnScreen = false;
+            setStreamingAnswer(null);
+        };
+        const dismissStreamingAnswer = () => {
+            answerDismissed = true;
+            clearStreamingAnswer();
+        };
+        streamingAnswerDismissRef.current = dismissStreamingAnswer;
 
         // ── Live report streaming (AnalystAgent only) ──
         // The unified agent can write a report inside the same run: it emits an
@@ -1043,9 +1229,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         };
 
         let terminalResultReceived = false;
+        let mcpResultReceived = false;
         const runningTerminalExecutions = new Map<string, { turnId: string; proposal: TerminalProposal }>();
-        const runningCodeExecutions = new Map<string, { turnId: string; execution: NonNullable<TextTurn['codeExecutions']>[number] }>();
-        let codeExecutionCount = 0;
+        // Every tool call's record, by id: code calls sit on their step message from the start; any other
+        // call joins the message its progress step settles on (`attachToolCalls`).
+        const toolRecords = new Map<string, { turnId?: string; call: ToolCall }>();
+        let toolCallCount = 0;
 
         // ── The run's chain (design-docs/58) ──
         // `runLastNodeRef` is the head of this run's chain. The current step's
@@ -1115,6 +1304,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             dispatch(dfActions.updateTextTurn({ id: turnId,
                 ...(content !== undefined ? { content } : {}),
                 progressSteps: [...(existing?.progressSteps || []).filter(step => !finished.some(item => item.id === step.id)), ...finished] }));
+            attachToolCalls(turnId, finished);
             thinkingSteps = thinkingSteps.filter(step => step.status === 'running');
             pendingThought = '';
             publishProgress();
@@ -1165,26 +1355,33 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             if (!together) itemProduced(id);
             return id;
         };
-        /** A file or app the run wrote. A file it updated in place keeps its existing place in the thread. */
-        const addFileItem = (fileName: string, displayName: string, contentHash: string, replaces?: { name?: string }) => {
+        /**
+         * A file or app the run wrote or loaded. A file it updated in place keeps its existing place in the thread.
+         * With `together`, the caller chains it with the others from the same result; returns the new item's id.
+         */
+        const addFileItem = (fileName: string, displayName: string, contentHash: string, replaces?: { name?: string },
+            together = false): string | undefined => {
             const existing = (currentStore.getState() as DataFormulatorState).fileNodes.find(node => node.path === fileName);
-            if (existing && replaces) {
-                // Fixed in place (`replaces`): it keeps its name and moves to after the request that fixed it.
+            // An app or map has one current version: one the agent fixed (`replaces`) or updated moves to
+            // after the request that changed it, so it sits with the latest work and earlier turns can fold away.
+            if (existing && (replaces || /\.(app\.jsx|html?|map\.json)$/i.test(fileName))) {
                 settleStep();
                 dispatch(dfActions.replaceFileNode({ kind: 'file', id: existing.id, path: fileName, displayName, contentHash,
                     parentNodeId: chainHead(), createdAt: Date.now(),
-                    replaced: { id: existing.id, name: replaces.name || existing.displayName || fileName } }));
+                    ...(replaces ? { replaced: { id: existing.id, name: replaces.name || existing.displayName || fileName } } : {}) }));
                 itemProduced(existing.id);
-                return;
+                return undefined;
             }
             const exists = !!existing;
             if (!exists) settleStep();
             dispatch(dfActions.upsertFileNode({ kind: 'file', id: `file-${fileName}`, path: fileName, displayName, contentHash,
                 parentNodeId: chainHead(), createdAt: Date.now() }));
-            if (!exists) itemProduced(`file-${fileName}`);
+            if (exists) return undefined;
+            if (!together) itemProduced(`file-${fileName}`);
+            return `file-${fileName}`;
         };
         /** Put a tool call on the step's agent message; a call awaiting approval pauses the run. */
-        const addToolCall = (purpose: string, call: { execution?: TerminalExecution; codeExecution?: CodeExecution }, running: boolean) => {
+        const addToolCall = (purpose: string, call: { execution?: TerminalExecution; toolCall?: ToolCall }, running: boolean) => {
             const turnId = ensureStepMessage(purpose);
             // A step opened before its first call (e.g. to hold the plan) takes the call's purpose as its label.
             if (purpose && !(currentStore.getState() as DataFormulatorState).textTurns.find(turn => turn.id === turnId)?.content) {
@@ -1203,6 +1400,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             const progressSteps = turn.progressSteps?.filter(step => !(step.executionId && executionTurnIds.has(step.executionId)));
             dispatch(dfActions.addTextTurn({ ...turn, progressSteps: progressSteps?.length ? progressSteps : undefined,
                 parentNodeId: chainHead(), actionId, createdAt: Date.now() }));
+            attachToolCalls(turn.id, progressSteps || []);
             runLastNodeRef.current = turn.id;
             stepMessageId = null;
             // The plan settles after whatever closes the run: an answer, a question, or a form.
@@ -1265,12 +1463,85 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             reportFinalized = true;
         };
         const processStreamingResult = async (result: any) => {
+            // The agent found the referenced request is a line of analysis of its own: before it has made
+            // anything, the request moves to a thread of its own, from the result it was asked about.
+            if (result.type === 'placement') {
+                const from = clarificationContext?.branchFromNodeId;
+                if (result.new_thread && from && promptTurnId && clarificationContext?.references?.length
+                    && createdTables.length === 0 && createdCharts.length === 0) {
+                    dispatch(dfActions.updateTextTurn({ id: promptTurnId, parentNodeId: from }));
+                }
+                return;
+            }
+            if (result.type === 'status') {
+                if (result.phase === 'thinking') {
+                    // Between steps the row keeps the step just done (the thread spins beside it); "still waiting"
+                    // takes over only if the model is slow. Before any step, it says it is thinking.
+                    setLiveStatus(thinkingSteps.length ? '' : t('dataThread.thinking'), true, true);
+                } else if (result.phase === 'writing') {
+                    const key = WRITING_STATUS[result.tool as string];
+                    if (key) setLiveStatus(t(`dataThread.status.${key}`), false, true);
+                    else if (liveStatus) liveStatus.waiting = false;
+                } else if (result.phase === 'narrating' && typeof result.text === 'string' && result.text.trim()) {
+                    setLiveStatus(result.text.trim(), false, false);
+                }
+                return;
+            }
+            // An action that failed without ending the run (e.g. a chart whose code or inputs were rejected): the agent
+            // reads why and usually tries again, so the user sees the failure rather than a silent retry.
+            if (result.type === 'action_failed') {
+                for (const step of thinkingSteps) if (step.kind === 'chart' && step.status === 'running') step.status = 'failed';
+                addProgressStep(t(result.action === 'visualize' ? 'dataThread.status.chartFailed' : 'dataThread.status.actionFailed',
+                    { reason: result.message || '' }), 'warning', 'failed');
+                liveStatus = null;
+                publishProgress();
+                return;
+            }
+            // What the run shows on its own (a tool step, a chart, a report, the answer) replaces the live status;
+            // heartbeats and narration do not.
+            if (CLEARS_LIVE_STATUS.has(result.type)) clearLiveStatus();
             if (result.type === 'terminal_running' && clarificationContext?.terminalResponse?.decision === 'approve') {
                 const execution = textTurns.find(turn => turn.id === clarificationContext.parentNodeId)?.executions
                     ?.find(execution => execution.id === clarificationContext.terminalResponse!.request_id);
                 await processStreamingResult({ type: 'tool_start', tool: 'run_terminal', purpose: execution?.purpose,
                     tool_call_id: clarificationContext.terminalResponse.request_id,
                     execution_id: clarificationContext.terminalResponse.request_id });
+                return;
+            }
+            if (result.type === 'mcp_started' || result.type === 'mcp_result' || (result.type === 'interact' && result.mcp_request)) {
+                const proposal = (result.mcp_request || result.request) as McpProposal;
+                const label = t('dataThread.callingMcp', { defaultValue: 'Calling {{server}} · {{tool}}',
+                    server: proposal.server_name, tool: proposal.tool });
+                const outcome = result.type === 'mcp_result' ? (result.result || {}) : undefined;
+                const finalStatus = outcome?.rejected ? 'rejected' as const : outcome?.error ? 'failed' as const : 'completed' as const;
+                if (result.type === 'interact') {
+                    const turnId = addToolCall(proposal.purpose || label, { toolCall: mcpCallRecord(proposal, 'awaiting_approval') }, false);
+                    setPendingMcp({ proposal, trajectory: result.trajectory, completedStepCount: result.completed_step_count || 0,
+                        actionId, parentNodeId: turnId, lastCreatedTableId, sourceTableIds: selectedTableIds });
+                    setChatPrompt('');
+                    setAttachedImages([]);
+                    setAttachedFiles([]);
+                    dispatch(dfActions.setFocused({ type: 'text', textId: turnId }));
+                    return;
+                }
+                // An approved call resumes on the message that proposed it.
+                if (clarificationContext?.mcpResponse?.request_id === proposal.id && clarificationContext.parentNodeId) {
+                    if (outcome) mcpResultReceived = true;
+                    dispatch(dfActions.upsertTurnExecution({ turnId: clarificationContext.parentNodeId,
+                        toolCall: mcpCallRecord(proposal, outcome ? finalStatus : 'running', outcome) }));
+                    if (!outcome) setLiveStatus(label, false, true);
+                    return;
+                }
+                // A call that ran without asking is one of the run's tool calls.
+                if (!outcome) {
+                    await processStreamingResult({ type: 'tool_start', tool: MCP_CALL_TOOL, tool_call_id: proposal.id,
+                        args: mcpCallArgs(proposal), purpose: proposal.purpose });
+                } else {
+                    const record = mcpCallRecord(proposal, finalStatus, outcome);
+                    await processStreamingResult({ type: 'tool_result', tool: MCP_CALL_TOOL, tool_call_id: proposal.id,
+                        status: finalStatus === 'completed' ? 'success' : 'error', error: record.error,
+                        record: { args: record.args, output: record.output, error: record.error } });
+                }
                 return;
             }
             if (result.type === 'terminal_started' || result.type === 'terminal_result' || (result.type === 'interact' && result.terminal_request)) {
@@ -1358,11 +1629,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     progressSteps: snapshotProgress(true),
                 });
                 if (!existingFormId && result.form.auto_submit === true) requestAutoSubmit(turnId);
+                // MCP setup is reviewed in the Tools dialog; the canvas keeps what it showed.
+                if (result.form.kind === 'mcp') requestToolsDialog(turnId);
                 // An open form stays in view until it is resolved, including when the agent updates it.
-                dispatch(dfActions.setFocused({ type: 'text', textId: existingFormId || turnId }));
+                else dispatch(dfActions.setFocused({ type: 'text', textId: existingFormId || turnId }));
                 setIsChatFormulating(false);
                 agentAbortRef.current = null;
                 clearTimeout(timeoutId);
+                clearInterval(statusTimer);
                 setChatPrompt("");
                 setAttachedImages([]);
                 setAttachedFiles([]);
@@ -1430,6 +1704,18 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         const added = addLoadedItem(`loaded-table-${runKey}-${table.id}`, table.id, false, true);
                         if (added) loadedIds.push(added);
                     }
+                    // Documents that came with the tables (a dataset's data guide) join them in the thread.
+                    const loadedFiles = Array.isArray(result.files) ? result.files : [];
+                    const addedFiles: WorkspaceFile[] = [];
+                    for (const file of loadedFiles) {
+                        if (typeof file?.path !== 'string' || !file.path.startsWith('files/') || typeof file.content_hash !== 'string') continue;
+                        const fileName = file.path.slice('files/'.length);
+                        const added = addFileItem(fileName, file.display_name || fileName, file.content_hash, undefined, true);
+                        if (added) loadedIds.push(added);
+                        addedFiles.push({ name: fileName, filename: fileName, display_name: file.display_name, content_hash: file.content_hash,
+                            created_at: new Date().toISOString(), file_size: 0, media_type: null });
+                    }
+                    if (loadedFiles.length) notifyWorkspaceFilesChanged(addedFiles);
                     itemsProducedTogether(loadedIds);
                     const firstLoadedTable = loadedIds.find(id => id.startsWith(`loaded-table-${runKey}-`));
                     if (firstLoadedTable) followFocus({ type: 'reference', referenceId: firstLoadedTable });
@@ -1471,6 +1757,22 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }
                 return;
             }
+            if (result.type === "text_delta" && result.channel === "answer") {
+                answerText += result.content || '';
+                if (!answerFlushTimer && !answerDismissed) {
+                    answerFlushTimer = setTimeout(() => {
+                        answerFlushTimer = null;
+                        if (answerDismissed) return;
+                        answerOnScreen = true;
+                        setStreamingAnswer(answerText);
+                    }, ANSWER_FLUSH_MS);
+                }
+                return;
+            }
+            if (result.type === "answer_retracted") {
+                clearStreamingAnswer();
+                return;
+            }
             // report-channel markdown deltas → stream into the report content.
             if (result.type === "text_delta" && result.channel === "report") {
                 ensureReport();
@@ -1479,19 +1781,21 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 return;
             }
 
-            // write_app / write_html_app (new or rewritten in place) → add the app to the thread and open it.
-            if (result.type === "action" && (result.action === "write_app" || result.action === "write_html_app")) {
+            // write_app / write_html_app / write_map (new or rewritten in place) → add the app or map to the thread and open it.
+            if (result.type === "action" && (result.action === "write_app" || result.action === "write_html_app" || result.action === "write_map")) {
                 const file = result.file;
                 if (file && typeof file.path === 'string' && file.path.startsWith('files/')
                     && typeof file.content_hash === 'string') {
                     const fileName = file.path.slice('files/'.length);
                     notifyWorkspaceFilesChanged();
+                    if (result.action !== 'write_map') dispatch(dfActions.watchAgentApp(fileName));
                     addFileItem(fileName, file.display_name || fileName, file.content_hash, result.replaces);
                     followFocus({ type: 'file', fileName });
                     if (pendingThought) {
                         flushNarration();
                     }
-                    addProgressStep(t(result.updated ? 'htmlApp.updated' : 'htmlApp.created', { title: file.display_name || fileName }), 'info');
+                    const kind = result.action === 'write_map' ? 'map' : 'htmlApp';
+                    addProgressStep(t(result.updated ? `${kind}.updated` : `${kind}.created`, { title: file.display_name || fileName }), 'info');
                     if (currentDraftId) {
                         publishProgress();
                     }
@@ -1529,17 +1833,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             // ── thinking_text: LLM reasoning alongside tool calls ──
             // Accumulate into pendingThought; don't create a visible step
             if (result.type === "thinking_text") {
+                // The live status already shows what the agent is doing while it thinks.
                 pendingThought += (pendingThought ? '\n' : '') + result.content;
-                // Only show as a step if there are no tool/action steps yet (initial thinking)
-                if (thinkingSteps.length === 0) {
-                    // Show a temporary "thinking..." indicator
-                    if (currentDraftId) {
-                        publishProgress([{ id: `thinking-${runKey}`, kind: 'thought', label: t('dataThread.thinking'), status: 'running' }]);
-                    }
-                }
             }
 
             // ── tool_start: agent is calling a tool (explore/inspect) ──
+            if (result.type === "tool_start" && result.tool === 'wait_tasks') restartRunTimer(runTimeoutMs + 30 * 60 * 1000);
+            if (result.type === "tool_result" && result.tool === 'wait_tasks') restartRunTimer();
+            if (result.type === 'terminal_result' && result.result?.background_task) void refreshBackgroundTasks();
             if (result.type === "tool_start") {
                 const toolCallId = result.tool_call_id || (result.tool === 'run_terminal'
                     ? clarificationContext?.terminalResponse?.request_id : undefined);
@@ -1548,7 +1849,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 if (pendingThought) {
                     flushNarration();
                 }
-                const step = addProgressStep('', 'tool', 'running', { tool: result.tool, toolCallId,
+                const step = addProgressStep('', 'tool', 'running', { tool: result.tool,
+                    toolCallId: toolCallId || (result.tool === 'run_terminal' ? undefined : `call_${runKey}_${++toolCallCount}`),
                     executionId: result.execution_id || (result.tool === 'run_terminal' ? toolCallId : undefined) });
                 pendingToolSteps.set(step.id, step);
                 // An approved command resumes on the message that proposed it; any other command
@@ -1557,15 +1859,19 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     && clarificationContext?.parentNodeId && clarificationContext.terminalResponse?.request_id === step.executionId) {
                     executionTurnIds.set(step.executionId, clarificationContext.parentNodeId);
                 }
-                if (result.tool === 'execute_python_script' || result.tool === 'explore') {
-                    const execution: CodeExecution = {
-                        id: `code_${runKey}_${++codeExecutionCount}`, tool: result.tool, purpose: result.purpose || t('dataThread.runningCode'),
-                        code: result.code || result.args?.code || '', status: 'running', createdAt: Date.now(),
-                    };
-                    const turnId = addToolCall(execution.purpose, { codeExecution: execution }, true);
-                    runningCodeExecutions.set(step.id, { turnId, execution });
-                    step.executionId = execution.id;
-                    executionTurnIds.set(execution.id, turnId);
+                if (result.tool !== 'run_terminal' && step.toolCallId) {
+                    const isCode = result.tool === 'execute_python_script' || result.tool === 'explore';
+                    const call: ToolCall = { id: step.toolCallId, tool: result.tool, status: 'running', createdAt: Date.now(),
+                        args: isCode ? { code: result.code || result.args?.code || '', purpose: result.purpose || t('dataThread.runningCode') }
+                            : (result.args && typeof result.args === 'object' ? result.args : {}) };
+                    if (isCode) {
+                        const turnId = addToolCall(String(call.args.purpose), { toolCall: call }, true);
+                        toolRecords.set(call.id, { turnId, call });
+                        step.executionId = call.id;
+                        executionTurnIds.set(call.id, turnId);
+                    } else {
+                        toolRecords.set(call.id, { call });
+                    }
                 }
                 if (result.tool === 'load_data' && !controller.signal.aborted) {
                     const names = (Array.isArray(result.args?.tables) ? result.args.tables : [])
@@ -1587,15 +1893,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 } else if (result.tool === "inspect_source_data") {
                     const tableNames = result.table_names?.join(', ') || '';
                     step.label = t('dataThread.inspectingData') + (tableNames ? ` ${tableNames}` : '');
-                } else if (result.tool === "inspect_chart") {
-                    step.label = t('dataThread.inspectingChart');
                 } else if (result.tool === "load_skill") {
                     step.label = t('dataThread.loadingSkill', { skill: result.skill || '' });
                 } else if (result.tool === "search_data_tables" || result.tool === "search_knowledge") {
                     const query = result.query || '';
                     step.label = t('dataThread.searching') + (query ? ` "${query}"` : '');
-                } else if (["visualize", "clarify", "present", "action"].includes(result.tool)) {
-                    step.label = t('dataThread.producingAction', { action: result.tool });
                 } else {
                     step.label = formatAnalystToolProgress(
                         result.tool || 'tool',
@@ -1614,13 +1916,15 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 const matchingSteps = [...pendingToolSteps.values()].filter(step => step.tool === result.tool
                     && (!result.tool_call_id || step.toolCallId === result.tool_call_id));
                 const step = matchingSteps.length === 1 ? matchingSteps[0] : undefined;
-                const runningCode = step && runningCodeExecutions.get(step.id);
-                if (runningCode) {
-                    dispatch(dfActions.upsertTurnExecution({ turnId: runningCode.turnId, codeExecution: {
-                        ...runningCode.execution, status: isError ? 'failed' : 'completed',
-                        output: String(result.stdout || ''), error: result.error ? String(result.error) : undefined,
-                    } }));
-                    runningCodeExecutions.delete(step!.id);
+                const record = step?.toolCallId ? toolRecords.get(step.toolCallId) : undefined;
+                if (record) {
+                    // The server's record carries the full (capped) arguments and output; older servers send only the output.
+                    const saved = result.record && typeof result.record === 'object' ? result.record as Partial<ToolCall> : undefined;
+                    record.call = { ...record.call, ...(saved || {}), id: record.call.id,
+                        args: saved?.args ? { ...(isCodeCall(record.call) ? record.call.args : {}), ...saved.args } : record.call.args,
+                        status: isError ? 'failed' : 'completed',
+                        ...(saved ? {} : { output: String(result.stdout || ''), error: result.error ? String(result.error) : undefined }) };
+                    if (record.turnId) dispatch(dfActions.upsertTurnExecution({ turnId: record.turnId, toolCall: record.call }));
                 }
                 if (step) {
                     step.status = isError ? 'failed' : 'completed';
@@ -1746,7 +2050,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }
                 if (result.action === "visualize") {
                     lastAgentDisplayInstruction = result.display_instruction || null;
-                    addProgressStep(t('dataThread.creatingChart') + (lastAgentDisplayInstruction ? ` ${lastAgentDisplayInstruction}` : ''), 'chart', 'running');
+                    addProgressStep(lastAgentDisplayInstruction
+                        ? t('dataThread.buildingChart', { instruction: lastAgentDisplayInstruction })
+                        : t('dataThread.creatingChart'), 'chart', 'running');
                     if (currentDraftId) {
                         publishProgress();
                     }
@@ -1911,6 +2217,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     setIsChatFormulating(false);
                     agentAbortRef.current = null;
                     clearTimeout(timeoutId);
+                    clearInterval(statusTimer);
                     isCompleted = true;
                     return;
                 }
@@ -1940,6 +2247,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 setIsChatFormulating(false);
                 agentAbortRef.current = null;
                 clearTimeout(timeoutId);
+                clearInterval(statusTimer);
                 setChatPrompt("");
                 setAttachedImages([]);
                 setAttachedFiles([]);
@@ -1948,6 +2256,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
             // ── completion: final summary ──
             if (result.type === "completion") {
+                const answerWasShown = answerOnScreen;
+                clearStreamingAnswer();
                 const rawSummary = result.content?.summary || "";
                 const summary = result.status === "max_iterations"
                     ? translateBackend(rawSummary, result.content?.summary_code) || t('chartRec.maxIterationsReached')
@@ -1959,8 +2269,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     if (closingTurnId) {
                         // Expand the answer once the run lands (unless the user took over) — the
                         // canvas still resolves to the nearest chart, so this doesn't hide the
-                        // artifact the answer is about.
-                        followFocus({ type: 'text', textId: closingTurnId });
+                        // artifact the answer is about. An answer already on screen stays there.
+                        if (answerWasShown) showWrittenAnswer({ type: 'text', textId: closingTurnId });
+                        else followFocus({ type: 'text', textId: closingTurnId });
                     }
                 }
             }
@@ -1968,11 +2279,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
         const handleCompletion = () => {
             if (isCompleted) return;
+            clearStreamingAnswer();
+            liveStatus = null;
             finalizeReport('error');
             isCompleted = true;
             setIsChatFormulating(false);
             agentAbortRef.current = null;
             clearTimeout(timeoutId);
+            clearInterval(statusTimer);
             if (reportFlushTimer) { clearTimeout(reportFlushTimer); reportFlushTimer = null; }
 
             // Clean up any remaining draft (the last step created a new draft that was never filled)
@@ -2005,6 +2319,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 : t('chartRec.errorDuringExploration');
                         setIsChatFormulating(false);
                         clearTimeout(timeoutId);
+                        clearInterval(statusTimer);
                         dispatch(dfActions.addMessages({
                             timestamp: Date.now(), type: 'error',
                             component: 'data-agent', value: errMsg,
@@ -2023,6 +2338,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     }
 
                     if (data.type === "warning") {
+                        // A rate-limit retry is what the run is waiting on now: show it as the status too.
+                        if ((data as any).warning?.message_code === 'LLM_RATE_LIMIT_RETRY') {
+                            setLiveStatus(translateBackend((data as any).warning.message, 'LLM_RATE_LIMIT_RETRY'), false, true);
+                        }
                         dispatch(dfActions.addMessages({
                             timestamp: Date.now(), type: 'warning',
                             component: 'data-agent',
@@ -2045,6 +2364,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 setIsChatFormulating(false);
                 agentAbortRef.current = null;
                 clearTimeout(timeoutId);
+                clearInterval(statusTimer);
                 const isAbort = error.name === 'AbortError';
                 const isCancelled = isAbort && !isCompleted && !timedOut;
                 const isTimeout = isAbort && timedOut;
@@ -2080,9 +2400,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     currentDraftId = null;
                 }
             } finally {
+                // An answer cut off by an error or a stop is not the run's answer.
+                if (answerFlushTimer || answerText) clearStreamingAnswer();
                 interruptProgress();
-                for (const { turnId, execution } of runningCodeExecutions.values()) {
-                    dispatch(dfActions.upsertTurnExecution({ turnId, codeExecution: { ...execution, status: 'interrupted' } }));
+                for (const { turnId, call } of toolRecords.values()) {
+                    if (turnId && call.status === 'running') dispatch(dfActions.upsertTurnExecution({ turnId, toolCall: { ...call, status: 'interrupted' } }));
                 }
                 for (const { turnId, proposal } of runningTerminalExecutions.values()) {
                     dispatch(dfActions.upsertTurnExecution({ turnId, execution: {
@@ -2090,6 +2412,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         dangerouslyDisableSandbox: proposal.dangerouslyDisableSandbox, sandboxDisablingReason: proposal.sandboxDisablingReason,
                         sandboxFilesystem: proposal.sandboxFilesystem,
                     } }));
+                }
+                if (clarificationContext?.mcpResponse && clarificationContext.mcpResponse.decision !== 'reject' && !mcpResultReceived) {
+                    const owner = (currentStore.getState() as DataFormulatorState).textTurns.find(turn => turn.id === clarificationContext.parentNodeId);
+                    const call = owner?.toolCalls?.find(item => item.id === clarificationContext.mcpResponse!.request_id);
+                    if (owner && call) dispatch(dfActions.upsertTurnExecution({ turnId: owner.id, toolCall: { ...call, status: 'interrupted' } }));
                 }
                 if (clarificationContext?.terminalResponse?.decision === 'approve' && !terminalResultReceived) {
                     const owner = textTurns.find(turn => turn.id === clarificationContext.parentNodeId);
@@ -2149,15 +2476,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             }
             return focusedTableId;
         })();
-        const conversationParentId = resolveConversationParentNodeId(
-            focusedTurn?.id,
-            focusedItemId,
-            threadGraph,
-            // A finished workflow run's record closes its chain and is followed like any reply;
-            // a live run's record and its steering messages belong to the run.
-            turnId => !textTurns.some(turn => turn.id === turnId && (turn.workflowMessage
-                || (turn.workflow && ['running', 'paused'].includes(turn.workflow.status)))),
-        );
+        const conversationParentId = resolveConversationParentNodeId(focusedTurn?.id, focusedItemId, threadGraph, canContinueTurn);
+        if (!focusedTurn && askReference) {
+            exploreFromChat(prompt, { parentNodeId: askReference.endId, branchFromNodeId: askReference.itemId,
+                ...(shownReference ? { references: [shownReference] } : {}) }, displayPrompt, explicitAttachments);
+            setDroppedReference(undefined);
+            return;
+        }
         if (focusedTurn) {
             // A workflow run's record is the open end of its chain; a follow-up continues from it.
             if (focusedTurn.workflow) {
@@ -2180,7 +2505,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             return;
         }
         exploreFromChat(prompt, undefined, displayPrompt, explicitAttachments);
-    }, [exploreFromChat, focusedId, focusedTableId, tables, textTurns, focusedReference, fileNodes, generatedReports, dispatch, focusCanvasAfterReply, threadGraph]);
+    }, [exploreFromChat, focusedId, focusedTableId, tables, textTurns, focusedReference, fileNodes, generatedReports, dispatch, focusCanvasAfterReply, threadGraph, canContinueTurn, askReference, shownReference]);
 
     // Replay a workflow: the KnowledgePanel fires `df-replay-workflow`
     // with a prompt describing the captured workflow; we hand it straight to
@@ -2269,14 +2594,16 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     files: attachments.map(name => ({ name, scratchPath: `scratch/${name}` })) });
                 return;
             }
+            autoPromptRef.current = analystChatPending.auto;
             submitChat(text, analystChatPending.displayText, {
                 images,
                 files: attachments.map(name => ({ name, scratchPath: `scratch/${name}` })),
             });
+            autoPromptRef.current = undefined;
         }
     }, [analystChatPending, isChatFormulating, attachmentUploads, submitChat, exploreFromChat, dispatch]);
 
-    const cancelAgent = useCallback(() => {
+    const stopAgentNow = useCallback(() => {
         if (agentAbortRef.current) {
             agentAbortRef.current.abort();
             agentAbortRef.current = null;
@@ -2285,13 +2612,32 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         // but a direct cancel should guarantee the UI unblocks immediately.
         setIsChatFormulating(false);
     }, []);
+    // Background tasks this request started outlive it; stopping it asks whether to stop them too.
+    const backgroundTasks = useBackgroundTasks();
+    const runTasks = backgroundTasks.filter(task => task.status === 'running' && task.conversation_id === agentActionIdRef.current);
+    const [stopDialogOpen, setStopDialogOpen] = useState(false);
+    const cancelAgent = useCallback(() => {
+        if (runTasks.length) setStopDialogOpen(true);
+        else stopAgentNow();
+    }, [runTasks.length, stopAgentNow]);
+    const taskRequestOf = useCallback((conversationId: string) => {
+        const turn = textTurns.find(item => item.actionId === conversationId && item.prompt);
+        return turn ? { text: turn.prompt!, open: () => dispatch(dfActions.setFocused({ type: 'text', textId: turn.id })) } : undefined;
+    }, [textTurns, dispatch]);
 
     // A text panel can open over a file the canvas is already showing (an app or
     // document the turn follows); closing the panel should leave that file in focus.
+    // Closing a message keeps the result the canvas shows for it (a file or report) in view.
     const keepCanvasFile = useCallback(() => {
-        if (canvasTarget?.type !== 'file') return false;
-        dispatch(dfActions.setFocused({ type: 'file', fileName: canvasTarget.fileName }));
-        return true;
+        if (canvasTarget?.type === 'file') {
+            dispatch(dfActions.setFocused({ type: 'file', fileName: canvasTarget.fileName }));
+            return true;
+        }
+        if (canvasTarget?.type === 'report') {
+            dispatch(dfActions.setFocused({ type: 'report', reportId: canvasTarget.reportId }));
+            return true;
+        }
+        return false;
     }, [canvasTarget, dispatch]);
 
     // ── Focused text turn (design-docs/41) ──────────────────────────────────
@@ -2302,10 +2648,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         : undefined;
     // The calls of the viewed step, in order, to step through from its panel.
     const viewingStepTurn = viewingToolActivity ? textTurns.find(turn => turn.id === viewingToolActivity.nodeId) : undefined;
-    const viewingStepCalls = [...(viewingStepTurn?.executions || []), ...(viewingStepTurn?.codeExecutions || [])]
+    const viewingStepCalls = [...(viewingStepTurn?.executions || []), ...codeCallsOf(viewingStepTurn)]
         .sort((left, right) => (left.createdAt ?? 0) - (right.createdAt ?? 0));
     const selectedExecution = viewingToolActivity ? ('code' in viewingToolActivity.execution
-        ? textTurns.find(turn => turn.id === viewingToolActivity.nodeId)?.codeExecutions || []
+        ? codeCallsOf(textTurns.find(turn => turn.id === viewingToolActivity.nodeId))
         : textTurns.find(turn => turn.id === viewingToolActivity.nodeId)?.executions || [])
         .find(execution => execution.id === viewingToolActivity.execution.id) || viewingToolActivity.execution : undefined;
     const focusedTextTurnContent = focusedTextTurn
@@ -2340,7 +2686,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             const turn = textTurns.find(item => item.id === nodeId);
             const leftover = !!turn && !turn.prompt && !turn.form && !turn.dataOperation && !turn.workflow
                 && !turn.options?.length && turn.answered === undefined
-                && !!(turn.executions?.length || turn.codeExecutions?.length || turn.progressSteps?.length)
+                && !!(turn.executions?.length || turn.toolCalls?.length || turn.progressSteps?.length)
                 && threadGraph.childrenOf(turn.id).every(node => node.id === childId);
             if (!turn || !leftover) break;
             leftovers.push(turn.id);
@@ -2365,9 +2711,21 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // Close a focused turn without deleting it: return to its source chart or
     // nearest parent artifact. Root-level turns explicitly clear focus so the
     // canvas returns to its empty state.
+    // A message read in full: its thread's chat view, brought to that message.
+    const openTurnInChat = (turnId: string) => {
+        const thread = buildThreads(threadGraph).find(item => item.nodeIds.some(id => id === turnId || threadGraph.membersOf(id).includes(turnId)));
+        dispatch(dfActions.setFocused({ type: 'conversation', tableId: thread?.key ?? turnId, anchorId: turnId,
+            ...(thread ? { nodeIds: thread.nodeIds.flatMap(id => [id, ...threadGraph.membersOf(id)]) } : {}) }));
+    };
     const closeTextTurn = useCallback(() => {
         if (!focusedTextTurn) return;
         if (keepCanvasFile()) return;
+        // Else the report or file it follows in its thread.
+        const result = threadGraph.resultAbove(focusedTextTurn.parentNodeId);
+        if (result?.kind === 'report') {
+            dispatch(dfActions.setFocused({ type: 'report', reportId: result.id }));
+            return;
+        }
         if (focusedTextTurn.sourceChartId && charts.some(chart => chart.id === focusedTextTurn.sourceChartId)) {
             dispatch(dfActions.setFocused({ type: 'chart', chartId: focusedTextTurn.sourceChartId }));
             return;
@@ -2520,7 +2878,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 read-only (question → answer). Gated to not overlap the legacy
                 live pause. Stays visible while a run is in flight so the user
                 can keep reading what they focused. */}
-            {!viewingToolActivity && !chatWorkflow && focusedTextTurn && focusedId !== submittedPanelFocus && !focusedTextTurnUsesCanvas && (
+            {!viewingToolActivity && !chatWorkflow && streamingAnswer !== null && (
+                <ExplanationPanel key="streaming-answer" content={streamingAnswer}
+                    onClose={() => streamingAnswerDismissRef.current()} />
+            )}
+            {!viewingToolActivity && !chatWorkflow && streamingAnswer === null && focusedTextTurn && focusedId !== submittedPanelFocus && !focusedTextTurnUsesCanvas && (
                 (focusedTextTurn.textKind === 'clarify' && !focusedTextTurn.answered && focusedTextTurn.options && focusedTextTurn.options.length > 0) ? (
                     // Desaturated rather than dimmed — opacity would blend it
                     // toward the background and just read as dark.
@@ -2543,6 +2905,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         content={focusedTextTurnContent}
                         onClose={() => closeTextTurn()}
                         onDelete={() => dispatch(dfActions.removeTextTurn(focusedTextTurn.id))}
+                        onOpen={() => openTurnInChat(focusedTextTurn.id)}
                     />
                 )
             )}
@@ -2559,12 +2922,37 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     })}
                 />
             )}
+            {/* Background tasks stay in reach above the input, over the working veil. */}
+            <BackgroundTasksPill requestOf={taskRequestOf} sx={{ display: 'flex', px: 0.5, pb: 0.5, position: 'relative', zIndex: 3 }} />
+            <StopAgentDialog open={stopDialogOpen} tasks={runTasks} onClose={() => setStopDialogOpen(false)}
+                onStop={ids => { setStopDialogOpen(false); void stopBackgroundTasks(ids); stopAgentNow(); }} />
             {/* Input area wrapper */}
             <Box sx={{ position: 'relative' }}>
             {/* Chips only for context the user added: @-mentioned tables and attached images or files, as in
-                chat and coding agents. The table in view is implied (the canvas tab names it) and is still sent. */}
-            {(mentionedChipIds.length > 0 || attachedImages.length > 0 || attachedFiles.length > 0) && !isChatFormulating && (
+                chat and coding agents, and an earlier result the request is about. The table in view is implied
+                (the canvas tab names it) and is still sent. */}
+            {(shownReference || mentionedChipIds.length > 0 || attachedImages.length > 0 || attachedFiles.length > 0) && !isChatFormulating && (
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px', px: 0.5, pb: '2px' }}>
+                    {/* The earlier result being asked about; sent as part of the message. */}
+                    {shownReference && <Chip
+                        size="small"
+                        data-ask-reference
+                        icon={<ThreadReferenceIcon reference={shownReference} />}
+                        label={shownReference.label}
+                        onDelete={() => setDroppedReference(`${shownReference.kind}:${shownReference.id}`)}
+                        sx={{
+                            height: 20,
+                            fontSize: textVar.xxs,
+                            maxWidth: 220,
+                            color: theme.palette.text.secondary,
+                            backgroundColor: 'rgba(0,0,0,0.04)',
+                            border: 'none',
+                            borderRadius: '4px',
+                            '& .MuiChip-label': { px: '4px', overflow: 'hidden', textOverflow: 'ellipsis' },
+                            '& .MuiChip-icon': { ml: '4px', mr: '-2px', color: theme.palette.text.secondary },
+                            '& .MuiChip-deleteIcon': { fontSize: iconVar.xs, color: theme.palette.text.disabled, mr: '2px' },
+                        }}
+                    />}
                     {mentionedChipIds.map(id => {
                         const tbl = tables.find(t => t.id === id);
                         return (
@@ -2759,6 +3147,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         ref={fileInputRef}
                         type="file"
                         multiple
+                        accept={isDemo ? 'image/*' : undefined}
                         style={{ display: 'none' }}
                         onChange={(e) => { handleAttachFiles(e.target.files); if (e.target) e.target.value = ''; }}
                     />
@@ -2771,7 +3160,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             </IconButton>
                         </span>
                     </Tooltip>
-                    <TerminalAccessButton />
+                    <ToolsAccessButton />
                 </Box>
                 <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
                 {isChatFormulating ? (
@@ -2801,20 +3190,22 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 setQuickActionAnchor(null);
                                 submitChat(t('chartRec.reportConversationPrompt'));
                             }}>
-                                <EditOutlinedIcon fontSize="small" sx={{ mr: 1 }} />{t('chartRec.writeReport')}
+                                <Box component="span" sx={menuIconSlotSx}><ArticleOutlinedIcon /></Box>{t('chartRec.writeReport')}
                             </MenuItem>
-                            <MenuItem onClick={() => {
+                            {/* A demo's analyst builds no apps or workflows (design-docs/69). */}
+                            {!isDemo && <MenuItem onClick={() => {
                                 setQuickActionAnchor(null);
                                 submitChat(t('chartRec.appConversationPrompt'));
                             }}>
-                                <DashboardOutlinedIcon fontSize="small" sx={{ mr: 1 }} />{t('chartRec.createApp')}
-                            </MenuItem>
-                            <MenuItem onClick={() => {
+                                {/* Apps are React files, so they take the React file glyph, as in the thread and tabs. */}
+                                <Box component="span" sx={menuIconSlotSx}><FileTypeIcon path="app.app.jsx" size="1em" /></Box>{t('chartRec.createApp')}
+                            </MenuItem>}
+                            {!isDemo && <MenuItem onClick={() => {
                                 setQuickActionAnchor(null);
                                 exploreFromChat(WORKFLOW_AUTHORING_PROMPT, { authorWorkflow: true });
                             }}>
-                                <AccountTreeOutlinedIcon fontSize="small" sx={{ mr: 1 }} />{t('chartRec.createWorkflow')}
-                            </MenuItem>
+                                <Box component="span" sx={menuIconSlotSx}><WorkflowGears running={false} size="1.2em" showTooltip={false} /></Box>{t('chartRec.createWorkflow')}
+                            </MenuItem>}
                         </Menu>
                         <Tooltip title={t('chartRec.getIdeaSuggestions')}>
                             <span>
@@ -2987,29 +3378,32 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // analysis with their own question or click one of these. It floats above
     // the panes, starting over the input and reaching across into the canvas,
     // with its pointer on the input.
-    // Styled as a plain tooltip (MUI's default dark fill, no border).
-    const calloutFill = alpha(theme.palette.grey[700], 0.92);
-    const calloutText = theme.palette.common.white;
+    // A faint tint of the theme's primary colour, no border or shadow (design-docs/69).
+    const calloutFill = lighten(theme.palette.primary.main, 0.94);
+    const calloutText = theme.palette.text.primary;
     const showFollowUps = !!exampleFollowUps && !workspaceReadOnly && !chatWorkflow && !isChatFormulating;
     const followUpsBlock = showFollowUps && exampleFollowUps ? (
         <Popper open={!!followUpsAnchor} anchorEl={followUpsAnchor} placement="top-start" style={{ zIndex: 1250 }}
             modifiers={[{ name: 'offset', options: {
-                // Open, the hint sits mostly over the canvas (about 30% over the chat pane, 70% beyond),
-                // so it leaves the latest thread items in view; its pointer stays on the input.
-                offset: ({ reference, popper }: { reference: { width: number }; popper: { width: number } }) => followUpsFolded
-                    ? [20, 6] : [Math.max(20, reference.width - 0.3 * popper.width), 12] } }, { name: 'preventOverflow', options: { padding: 12 } }, { name: 'flip', enabled: false }]}>
+                // Open beside a narrow chat pane, the hint sits mostly over the canvas (about 30% over the pane,
+                // 70% beyond), so it leaves the latest thread items in view; over a wide, centred input (an empty
+                // session) it sits on the input's left edge. Its pointer stays on the input either way.
+                offset: ({ reference, popper }: { reference: { width: number }; popper: { width: number } }) =>
+                    followUpsFolded || reference.width >= popper.width
+                    ? [20, followUpsFolded ? 6 : 12] : [Math.max(20, reference.width - 0.3 * popper.width), 12] } }, { name: 'preventOverflow', options: { padding: 12 } }, { name: 'flip', enabled: false }]}>
         <Box ref={followUpsRef}>
         {followUpsFolded ? <ButtonBase onClick={() => setFollowUpsFolded(false)} sx={{
             display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.375, borderRadius: '4px',
             bgcolor: calloutFill, color: calloutText,
             fontFamily: 'inherit', fontSize: textVar.xs, fontWeight: 500,
-            '&:hover, &.Mui-focusVisible': { bgcolor: theme.palette.grey[800] },
+            '&:hover, &.Mui-focusVisible': { bgcolor: lighten(theme.palette.primary.main, 0.88) },
         }}>
-            <TipsAndUpdatesIcon sx={{ fontSize: iconVar.sm }} />
+            <TipsAndUpdatesOutlinedIcon sx={{ fontSize: iconVar.sm, color: 'primary.main' }} />
             {t('chartRec.followUpsFolded', { defaultValue: 'Follow-up ideas' })}
         </ButtonBase> :
         <Box role="note" aria-label={t('chartRec.followUpsTitle', { defaultValue: 'Follow-up suggestions' })} sx={{
-            position: 'relative', width: 'min(440px, calc(100vw - 32px))', boxSizing: 'border-box', px: 1.25, pt: 0.875, pb: 1, borderRadius: '4px',
+            position: 'relative', width: 'min(440px, calc(100vw - 32px))', boxSizing: 'border-box',
+            px: 1.5, pt: 1, pb: 1.125, borderRadius: '8px',
             bgcolor: calloutFill, color: calloutText,
             animation: 'followUpsIn 0.22s ease-out',
             '@keyframes followUpsIn': { from: { opacity: 0, transform: 'translateY(4px)' }, to: { opacity: 1, transform: 'none' } },
@@ -3020,14 +3414,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             },
         }}>
             <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75 }}>
-                <TipsAndUpdatesIcon sx={{ fontSize: iconVar.sm, mt: '2px', flexShrink: 0, opacity: 0.85 }} />
+                <TipsAndUpdatesOutlinedIcon sx={{ fontSize: iconVar.sm, mt: '2px', flexShrink: 0, color: 'primary.main' }} />
                 <Typography sx={{ flex: 1, minWidth: 0, fontSize: textVar.xs, lineHeight: 1.5, color: 'inherit' }}>
-                    {t('chartRec.followUpsBody', { defaultValue: 'You can ask follow-up questions in the chat to continue the analysis: ask for new charts, explanations or a new report. Try these examples:' })}
+                    {exampleFollowUps.intro || t('chartRec.followUpsBody', { defaultValue: 'You can ask follow-up questions in the chat to continue the analysis: ask for new charts, explanations or a new report. Try these examples:' })}
                 </Typography>
                 <Tooltip title={t('chartRec.followUpsDismiss', { defaultValue: 'Dismiss suggestions' })}>
                     <IconButton size="small" aria-label={t('chartRec.followUpsDismiss', { defaultValue: 'Dismiss suggestions' })}
                         onClick={() => dispatch(dfActions.setExampleFollowUps(undefined))}
-                        sx={{ p: 0.25, mt: '-2px', mr: '-4px', color: alpha(calloutText, 0.75), flexShrink: 0,
+                        sx={{ p: 0.25, mt: '-2px', mr: '-4px', color: alpha(calloutText, 0.4), flexShrink: 0,
                             '&:hover': { color: calloutText, bgcolor: alpha(calloutText, 0.12) } }}>
                         <CloseIcon sx={{ fontSize: iconVar.sm }} />
                     </IconButton>
@@ -3036,7 +3430,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             <Box sx={{ mt: 0.5, pl: 2.5, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
                 {exampleFollowUps.questions.map(question => <ButtonBase key={question} onClick={() => submitChat(question)} sx={{
                     display: 'inline-flex', alignItems: 'baseline', gap: 0.5, py: 0.25, borderRadius: '4px',
-                    fontFamily: 'inherit', fontSize: textVar.xs, lineHeight: 1.45, textAlign: 'left', color: 'inherit', fontWeight: 600,
+                    fontFamily: 'inherit', fontSize: textVar.xs, lineHeight: 1.45, textAlign: 'left',
+                    color: 'primary.dark', fontWeight: 500,
                     '& .follow-up-arrow': { transition: 'transform 0.12s' },
                     '&:hover, &.Mui-focusVisible': { textDecoration: 'underline', textUnderlineOffset: '2px' },
                     '&:hover .follow-up-arrow, &.Mui-focusVisible .follow-up-arrow': { transform: 'translateX(2px)' },
@@ -3080,6 +3475,18 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         >
             {/* Shares its width with the thread block above (see tokens). */}
             <Box sx={{ width: '100%', maxWidth: conversationWidth, mx: 'auto' }}>
+                {pendingMcp && <McpApprovalDialog key={pendingMcp.proposal.id}
+                    proposal={pendingMcp.proposal}
+                    onDecision={decision => {
+                        const pending = pendingMcp;
+                        setPendingMcp(null);
+                        dispatch(dfActions.upsertTurnExecution({ turnId: pending.parentNodeId,
+                            toolCall: mcpCallRecord(pending.proposal, decision === 'reject' ? 'rejected' : 'running') }));
+                        exploreFromChat(decision === 'reject' ? 'Do not run this MCP tool call.' : 'Run the approved MCP tool call.', {
+                            ...pending,
+                            mcpResponse: { request_id: pending.proposal.id, decision },
+                        }, undefined, { images: [], files: [] });
+                    }} />}
                 {pendingTerminal && <TerminalApprovalDialog key={pendingTerminal.proposal.id}
                     proposal={pendingTerminal.proposal}
                     onDecision={decision => {

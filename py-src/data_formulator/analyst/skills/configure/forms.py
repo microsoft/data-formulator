@@ -18,7 +18,7 @@ from typing import Any
 
 from data_formulator.analyst.skills.base import Event, SkillContext
 
-FORM_KINDS = ("connector", "schedule", "sessions", "workflow")
+FORM_KINDS = ("connector", "schedule", "sessions", "workflow", "mcp")
 
 
 def identity_of(ctx: SkillContext) -> str:

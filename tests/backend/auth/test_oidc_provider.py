@@ -264,3 +264,20 @@ class TestOIDCSkip:
             headers={"Authorization": "Bearer some.jwt.token"}
         ):
             assert p.authenticate(flask.request) is None
+
+
+class TestOIDCProviderBackendSession:
+
+    @pytest.mark.parametrize("user, expected", [
+        ({"sub": "user-7"}, "user-7"),
+        ({"id": 7}, "7"),
+        ({"name": "No Subject"}, None),
+        (None, None),
+    ])
+    def test_session_identity_requires_a_subject(self, app, provider, monkeypatch, user, expected):
+        monkeypatch.setattr("data_formulator.auth.providers.oidc.is_backend_oidc_mode", lambda: True)
+        app.secret_key = "test"
+        with app.test_request_context("/"):
+            flask.session["sso"] = {"access_token": "tok", "user": user}
+            result = provider.authenticate(flask.request)
+        assert (result.user_id if result else None) == expected

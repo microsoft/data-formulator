@@ -10,7 +10,7 @@
 // reference card instead of repeating its actions, so "which column owns this
 // table" never has to be arbitrated.
 
-import React, { FC, memo, useEffect, useMemo, useRef, useState } from 'react';
+import React, { FC, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ScrollFadeEdge, useScrollFade } from '../components/ScrollFade';
 
 import {
@@ -60,8 +60,9 @@ import {
     type WorkspaceFile,
 } from '../app/workspaceService';
 import { useDataRefresh } from '../app/useDataRefresh';
-import { ViewBorderStyle } from '../app/tokens';
-import { StreamIcon, TableIcon } from '../icons';
+import { iconTone, ViewBorderStyle } from '../app/tokens';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import { FileTypeIcon, StreamIcon, TableIcon } from '../icons';
 import { ArtifactMenuButton } from './DataThreadCards';
 import { RefreshDataDialog } from './RefreshDataDialog';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
@@ -77,7 +78,6 @@ const SHELF_MAX_HEIGHT = 'min(40vh, 360px)';
 const IMPORT_GROUP_OPEN_LIMIT = 3;
 // Indent per folder level: one icon plus the row gap, so contents line up under the folder's name.
 const ROW_INDENT_PX = 18;
-const ICON_COLOR = 'rgba(0,0,0,0.4)';
 
 // Mirror DataThread's timeline geometry so the shelf's rail lines up with the
 // thread rails below it.
@@ -86,8 +86,6 @@ const GUTTER_GAP = '4px';         // DataThread's TIMELINE_GAP
 const RAIL_LINE = '2px solid rgba(0,0,0,0.1)';
 // Left offset that puts the 2px rail on the gutter's centre line.
 const RAIL_OFFSET = '6px';
-// The lead-in the rail draws above the "add data" row.
-const ROW_GAP = '6px';
 
 /** A row beside the shelf's timeline rail, which runs unbroken past every row. */
 const RailRow: FC<{ children: React.ReactNode; rowProps?: Record<string, string> }> = ({ children, rowProps }) => (
@@ -115,7 +113,9 @@ const WorkspaceRow: FC<{
     onClick?: () => void;
     actions?: React.ReactNode;
     rowProps?: Record<string, string>;
-}> = ({ icon, label, title, note, selected = false, depth = 0, dimmed = false, expanded, onClick, actions, rowProps }) => {
+    /** A command rather than an item (e.g. "Add more data"): muted, turning primary on hover. */
+    action?: boolean;
+}> = ({ icon, label, title, note, selected = false, depth = 0, dimmed = false, expanded, onClick, actions, rowProps, action = false }) => {
     const theme = useTheme();
     const content = <>
         <Box component="span" sx={{ display: 'flex', flexShrink: 0 }}>{icon}</Box>
@@ -128,12 +128,13 @@ const WorkspaceRow: FC<{
     // The row and its button clip, so a long name ends in an ellipsis before the row's actions.
     const innerSx = { flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 0.5,
         pl: `${depth * ROW_INDENT_PX + 4}px`, pr: 0.5, py: '2px',
-        color: selected ? 'primary.main' : 'text.primary', textAlign: 'left' } as const;
+        color: selected ? 'primary.main' : action ? 'text.secondary' : 'text.primary', textAlign: 'left' } as const;
     return <RailRow rowProps={rowProps}>
         <Box sx={{
             display: 'flex', alignItems: 'center', minWidth: 0, overflow: 'hidden', borderRadius: '4px', opacity: dimmed ? 0.55 : 1,
             bgcolor: selected ? alpha(theme.palette.primary.main, 0.08) : undefined,
             '&:hover': { bgcolor: selected ? alpha(theme.palette.primary.main, 0.12) : 'action.hover' },
+            ...(action && { '&:hover .MuiButtonBase-root, &:hover .MuiSvgIcon-root': { color: 'primary.main' } }),
             '& .artifact-actions': { opacity: 0 },
             '&:hover .artifact-actions, &:focus-within .artifact-actions': { opacity: 1 },
             '@media (hover: none)': { '& .artifact-actions': { opacity: 1 } },
@@ -451,6 +452,87 @@ const RenameTablePopup = memo<{
     );
 });
 
+/** The workspace's root name, as a file explorer shows its root folder: bold, after a chevron. */
+const workspaceRootSx = (titled: boolean) => ({
+    flex: 1, minWidth: 0, fontSize: textVar.sm, fontWeight: 600, lineHeight: 1.4, color: 'text.primary',
+    ...(titled ? {} : { textTransform: 'capitalize' }),
+} as const);
+const ROOT_CHEVRON_PX = 16;
+const ROOT_CHEVRON_GAP_PX = 4;
+
+/** The open list's header: "⌄ <name>", which folds the list. */
+const WorkspaceHeader: FC<{ title?: string | null; onCollapse: () => void }> = ({ title, onCollapse }) => {
+    const { t } = useTranslation();
+    const heading = title || t('dataThread.workspace', { defaultValue: 'Workspace' });
+    return <ButtonBase aria-expanded aria-controls="data-source-shelf-content" onClick={onCollapse}
+        sx={{ width: '100%', display: 'flex', alignItems: 'center', gap: `${ROOT_CHEVRON_GAP_PX}px`, minHeight: 20, mb: 0.5, pr: 0.5,
+            textAlign: 'left', borderRadius: '4px', '&:hover': { bgcolor: 'action.hover' },
+            '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
+        <KeyboardArrowDownIcon sx={{ fontSize: ROOT_CHEVRON_PX, color: 'text.secondary', flexShrink: 0 }} />
+        <Typography component="span" noWrap title={heading} sx={workspaceRootSx(!!title)}>{heading}</Typography>
+    </ButtonBase>;
+};
+
+const SUMMARY_ROWS = 1;
+
+/** Item names that fit on one line, then how many more. */
+const useFittingItems = <T,>(items: T[], key: string) => {
+    const ref = useRef<HTMLElement | null>(null);
+    const [visible, setVisible] = useState(items.length);
+    const [width, setWidth] = useState(0);
+    useLayoutEffect(() => setVisible(items.length), [key, width]);
+    useLayoutEffect(() => {
+        const children = Array.from(ref.current?.children ?? []) as HTMLElement[];
+        if (new Set(children.map(child => child.offsetTop)).size > SUMMARY_ROWS && visible > 1) setVisible(visible - 1);
+    });
+    useEffect(() => {
+        const element = ref.current;
+        if (!element || typeof ResizeObserver === 'undefined') return;
+        const observer = new ResizeObserver(([entry]) => setWidth(Math.round(entry.contentRect.width)));
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, []);
+    return { ref, shown: items.slice(0, visible), more: items.length - Math.min(visible, items.length) };
+};
+
+/** The folded workspace: one card named like a file explorer's root folder ("› <dataset title>", else "› Workspace")
+ *  over the first items that fit on a line; clicking it opens the list. */
+export const WorkspaceSummary: FC<{ tables: string[]; documents: string[]; onExpand: () => void;
+    /** The dataset the session was opened from, e.g. "Culture: SDG 11.4". */
+    title?: string | null }> = ({ tables, documents, onExpand, title }) => {
+    const { t } = useTranslation();
+    const heading = title || t('dataThread.workspace', { defaultValue: 'Workspace' });
+    const counts = [t('dataThread.workspaceTables', { count: tables.length }),
+        documents.length > 0 && t('dataThread.workspaceDocuments', { count: documents.length })].filter(Boolean).join(' · ');
+    // Items by name, tables first; then how many more.
+    const items = [...tables.map(item => ({ name: item, file: false })), ...documents.map(item => ({ name: item, file: true }))];
+    const fitting = useFittingItems(items, items.map(item => item.name).join('\n'));
+    return <ButtonBase aria-expanded={false} aria-controls="data-source-shelf-content" aria-label={`${heading}: ${counts}`} onClick={onExpand}
+        sx={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 0.5, px: 1, py: 0.75, textAlign: 'left',
+            borderRadius: '8px', bgcolor: 'background.paper', border: '1px solid rgba(0,0,0,0.1)',
+            transition: 'background-color 120ms ease, border-color 120ms ease',
+            '&:hover': { borderColor: 'rgba(0,0,0,0.18)', bgcolor: 'rgba(0,0,0,0.025)' },
+            '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
+        <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: `${ROOT_CHEVRON_GAP_PX}px`, minHeight: 20 }}>
+            <KeyboardArrowRightIcon sx={{ fontSize: ROOT_CHEVRON_PX, color: 'text.secondary', flexShrink: 0 }} />
+            <Typography component="span" noWrap title={heading} sx={workspaceRootSx(!!title)}>{heading}</Typography>
+        </Box>
+        {/* Named like a thread's "Using" sources: an icon and the name, no chip. */}
+        {/* Indented under the name, as a folder's contents are. */}
+        <Box component="span" aria-hidden ref={fitting.ref} sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: '8px', rowGap: '2px',
+            minWidth: 0, pl: `${ROOT_CHEVRON_PX + ROOT_CHEVRON_GAP_PX}px`, fontSize: textVar.xs, lineHeight: 1.4, color: 'text.secondary' }}>
+            {fitting.shown.map((item, index) => <Box component="span" key={index} title={item.name}
+                sx={{ display: 'inline-flex', alignItems: 'center', columnGap: '3px', minWidth: 0, maxWidth: '100%' }}>
+                {item.file
+                    ? <FileTypeIcon path={item.name} size={textVar.xs} sx={{ color: 'inherit', flexShrink: 0 }} />
+                    : <TableIcon sx={{ fontSize: textVar.xs, color: 'inherit', flexShrink: 0 }} />}
+                <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</Box>
+            </Box>)}
+            {fitting.more > 0 && <Box component="span" sx={{ flexShrink: 0, color: 'text.disabled' }}>+{fitting.more}</Box>}
+        </Box>
+    </ButtonBase>;
+};
+
 export const SourceTableShelf: FC<{
     /** The workspace input tables, in display order, materialized for the cards. */
     inputTables: DictTable[];
@@ -470,12 +552,24 @@ export const SourceTableShelf: FC<{
     const tables = useSelector(dfSelectors.getAllTables);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    const tablesMissingData = useSelector((state: DataFormulatorState) => state.tablesMissingData);
+    const missingDataIcon = (tableId: string) => tablesMissingData.includes(tableId)
+        ? <Tooltip title={t('dataThread.tableDataMissingTooltip')}>
+            <WarningAmberIcon role="img" aria-label={t('dataThread.tableDataMissingTooltip')}
+                sx={{ width: 14, height: 14, color: 'warning.main' }} />
+        </Tooltip>
+        : undefined;
     const canvasTarget = useSelector(dfSelectors.selectCanvasTarget);
     const externalReferences = useSelector((state: DataFormulatorState) => state.externalTableReferences);
     const pendingTableLoads = useSelector((state: DataFormulatorState) => state.pendingTableLoads);
+    const isDemo = useSelector((state: DataFormulatorState) => !!state.serverConfig.SITE);
+    const collapsedByDefault = useSelector((state: DataFormulatorState) => !!state.serverConfig.SITE?.workspace_collapsed);
     const workspaceItemOrder = useSelector((state: DataFormulatorState) => state.workspaceItemOrder);
+    const workspaceTitle = useSelector((state: DataFormulatorState) => state.workspaceTitle);
 
-    const [sectionExpanded, setSectionExpanded] = useState(true);
+    // A site can start its sessions with the workspace folded into its summary card (null: not toggled yet).
+    const [sectionToggled, setSectionExpanded] = useState<boolean | null>(null);
+    const sectionExpanded = sectionToggled ?? !collapsedByDefault;
     const [importGroupExpansion, setImportGroupExpansion] = useState<Record<string, boolean>>({});
     const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
     const importGroupSizesRef = useRef<Record<string, number>>({});
@@ -815,20 +909,20 @@ export const SourceTableShelf: FC<{
         const highlighted = selected || highlightedTableIds.includes(tbl.id);
         const name = tbl.displayId || tbl.id;
         const originalName = tbl.source?.originalTableName || tbl.virtual?.tableId;
-        const iconSx = { width: 14, height: 14, color: highlighted ? theme.palette.primary.main : ICON_COLOR };
+        const iconSx = { width: 14, height: 14, color: highlighted ? theme.palette.primary.main : iconTone.rest };
         return <WorkspaceRow key={`shelf-card-${tbl.id}`} rowProps={{ 'data-table-id': tbl.id }}
-            icon={isStreaming
-                ? <StreamIcon sx={{ ...iconSx, color: highlighted ? theme.palette.success.main : ICON_COLOR,
+            icon={missingDataIcon(tbl.id) ?? (isStreaming
+                ? <StreamIcon sx={{ ...iconSx, color: highlighted ? theme.palette.success.main : iconTone.rest,
                     animation: 'pulse 2s infinite',
                     '@keyframes pulse': { '0%': { opacity: 1 }, '50%': { opacity: 0.4 }, '100%': { opacity: 1 } } }} />
-                : <TableIcon sx={iconSx} />}
+                : <TableIcon sx={iconSx} />)}
             label={name} title={originalName && originalName !== name ? `${name} (${originalName})` : name}
             selected={selected}
             onClick={() => dispatch(dfActions.setFocused({ type: 'table', tableId: tbl.id }))}
             actions={<ArtifactMenuButton tooltip={t('dataThread.moreOptions')}
                 label={t('dataThread.fileActions', { name, defaultValue: `Actions for ${name}` })}
                 onClick={anchorEl => handleOpenTableMenu(tbl, anchorEl)} />} />;
-    }), [visibleTables, highlightedTableIds, focusedTableId, focusedId, theme, t]);
+    }), [visibleTables, highlightedTableIds, focusedTableId, focusedId, tablesMissingData, theme, t]);
 
     // Files in folders are grouped under their top-level folder.
     const fileFolder = (workspaceFile: WorkspaceFile) => !workspaceFile.temporary && workspaceFile.name.includes('/')
@@ -839,6 +933,7 @@ export const SourceTableShelf: FC<{
             : folder ? workspaceFile.name.slice(folder.length + 1) : workspaceFile.name;
         return {
             key: `workspace-file-${workspaceFile.name}`,
+            path: workspaceFile.name,
             folder,
             artifactType: 'file' as const,
             title: workspaceFile.display_name || fileName,
@@ -853,6 +948,7 @@ export const SourceTableShelf: FC<{
         const title = externalReferenceTitle(reference);
         return {
             key: reference.id,
+            path: undefined as string | undefined,
             folder: undefined as string | undefined,
             artifactType: 'table' as const,
             title,
@@ -873,13 +969,13 @@ export const SourceTableShelf: FC<{
         const importToggleSx = { display: 'flex', width: '100%', justifyContent: 'flex-start', gap: 0.5, py: '2px',
             pl: `${(depth + 1) * ROW_INDENT_PX + 4}px`, color: 'text.secondary', fontSize: textVar.xs,
             '&:hover': { color: 'text.primary' }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } };
-        const iconColor = artifact.selected ? theme.palette.primary.main : ICON_COLOR;
+        const iconColor = artifact.selected ? theme.palette.primary.main : iconTone.rest;
         return (
         <Box key={artifact.key}>
             <WorkspaceRow rowProps={{ 'data-workspace-item': artifact.key }} depth={depth}
                 icon={artifact.artifactType === 'table'
                     ? <TableIcon sx={{ width: 14, height: 14, color: iconColor }} />
-                    : <InsertDriveFileOutlinedIcon sx={{ width: 14, height: 14, color: iconColor }} />}
+                    : <FileTypeIcon path={artifact.path || ''} size={14} active={artifact.selected} sx={{ color: iconTone.rest }} />}
                 label={artifact.title}
                 title={artifact.notes ? `${artifact.title} (${artifact.notes})` : artifact.title}
                 // A file's name, when it has a display name, is in the row's tooltip rather than beside it.
@@ -911,7 +1007,7 @@ export const SourceTableShelf: FC<{
                             const name = table.displayId || table.id;
                             return <Box component="li" key={table.id}>
                                 <WorkspaceRow rowProps={{ 'data-workspace-import': table.id }} depth={depth + 1}
-                                    icon={<TableIcon sx={{ width: 14, height: 14, color: selected ? theme.palette.primary.main : ICON_COLOR }} />}
+                                    icon={missingDataIcon(table.id) ?? <TableIcon sx={{ width: 14, height: 14, color: selected ? theme.palette.primary.main : iconTone.rest }} />}
                                     label={name} title={`${name}${table.displayId !== table.id ? ` (${table.id})` : ''}`}
                                     selected={selected}
                                     onClick={() => dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }))}
@@ -987,28 +1083,7 @@ export const SourceTableShelf: FC<{
         <Box sx={{ padding: '2px 4px 2px 4px', display: 'flex', flexDirection: 'column' }}>
             {/* Section label, in the same type as a thread's "THREAD - N" header.
                 Left-aligned: unlike a thread header there's no dot to sit beside. */}
-            <Box sx={{ pr: 0.5, display: 'flex', alignItems: 'center', minHeight: 16, mb: 0.5 }}>
-                <Typography sx={{
-                    flex: 1,
-                    fontSize: textVar.xs, fontWeight: 700,
-                    textTransform: 'uppercase', letterSpacing: '0.02em',
-                    color: 'rgba(0,0,0,0.55)',
-                }}>
-                    {t('dataThread.workspace', { defaultValue: 'Workspace' })}
-                </Typography>
-                <IconButton
-                    size="small"
-                    aria-label={t(`dataThread.${sectionExpanded ? 'collapse' : 'expand'}`)}
-                    aria-expanded={sectionExpanded}
-                    aria-controls="data-source-shelf-content"
-                    onClick={() => setSectionExpanded(current => !current)}
-                    sx={{ p: 0.25, color: 'text.secondary' }}
-                >
-                    {sectionExpanded
-                        ? <KeyboardArrowUpIcon sx={{ fontSize: iconVar.sm }} />
-                        : <KeyboardArrowDownIcon sx={{ fontSize: iconVar.sm }} />}
-                </IconButton>
-            </Box>
+            {sectionExpanded && <WorkspaceHeader title={workspaceTitle} onCollapse={() => setSectionExpanded(false)} />}
 
             <Collapse in={sectionExpanded} timeout="auto">
                 <Box id="data-source-shelf-content">
@@ -1022,7 +1097,7 @@ export const SourceTableShelf: FC<{
                     {pendingTableLoads.flatMap(load => load.names.map((name, index) => (
                         <Box key={`${load.id}-${index}`} role="status" aria-label={t('dataThread.loadingTable', { name, defaultValue: 'Loading {{name}}' })}>
                             <WorkspaceRow dimmed label={name}
-                                icon={<TableIcon sx={{ width: 14, height: 14, color: ICON_COLOR }} />}
+                                icon={<TableIcon sx={{ width: 14, height: 14, color: iconTone.rest }} />}
                                 note={<InlineLoadingStatus label={t('common.loading', { defaultValue: 'Loading...' })}
                                     sx={{ fontSize: textVar.xs, gap: 0.5 }} />} />
                         </Box>
@@ -1035,83 +1110,21 @@ export const SourceTableShelf: FC<{
                         <ScrollFadeEdge visible={listMoreBelow} />
                     </Box>
                     </Box>
+                    {/* Adding data is one more row of the list. A demo's data is its own datasets, which its analyst
+                        loads when asked (design-docs/69). */}
+                    {!isDemo && <WorkspaceRow action icon={<AddIcon sx={{ fontSize: 14, color: iconTone.rest }} />}
+                        label={t('dataThread.addMoreData', { defaultValue: 'Add more data' })}
+                        onClick={() => setAddDataDialogOpen(true)} />}
                 </Box>
             </Collapse>
 
-            {!sectionExpanded && (
-                <Box sx={{ display: 'flex', flexDirection: 'row' }}>
-                    <Box sx={{ width: `calc(${GUTTER_WIDTH}px + ${GUTTER_GAP})`, flexShrink: 0, display: 'flex' }}>
-                        <Box aria-hidden sx={{ ml: RAIL_OFFSET, borderLeft: RAIL_LINE }} />
-                    </Box>
-                    <Box sx={{ flex: 1, minWidth: 0, pt: 0.5, pr: 0.5 }}>
-                        <Button
-                            fullWidth
-                            size="small"
-                            startIcon={<TableIcon sx={{ width: 14, height: 14, color: 'rgba(0,0,0,0.35)' }} />}
-                            aria-label={t('dataThread.expand')}
-                            aria-controls="data-source-shelf-content"
-                            onClick={() => setSectionExpanded(true)}
-                            sx={{
-                                justifyContent: 'flex-start',
-                                px: 1, py: 0.75,
-                                borderRadius: '6px',
-                                backgroundColor: 'rgba(0,0,0,0.045)',
-                                color: 'text.secondary',
-                                textTransform: 'none',
-                                fontSize: textVar.xs,
-                                fontWeight: 400,
-                                '& .MuiButton-startIcon': { mr: 0.75 },
-                                '&:hover': { backgroundColor: 'rgba(0,0,0,0.08)' },
-                            }}
-                        >
-                            {t('dataThread.tablesAvailableToAgent', {
-                                count: inputTables.length,
-                                defaultValue: `${inputTables.length} tables available to the agent`,
-                            })}
-                        </Button>
-                    </Box>
-                </Box>
-            )}
+            {!sectionExpanded && <Box sx={{ pr: 0.5 }}>
+                <WorkspaceSummary title={workspaceTitle}
+                    tables={[...inputTables.map(table => table.displayId || table.id), ...(externalReferences || []).map(reference => reference.displayName)]}
+                    documents={workspaceFiles.map(file => file.display_name || file.name.split('/').pop() || file.name)}
+                    onExpand={() => setSectionExpanded(true)} />
+            </Box>}
 
-            {/* Grow the workspace right where its tables are read, instead of hunting for the sidebar.
-                The rail turns right to meet the button's left edge at its mid-height. */}
-            <Box sx={{ display: 'flex', flexDirection: 'row' }}>
-                <Box sx={{ width: `calc(${GUTTER_WIDTH}px + ${GUTTER_GAP})`, flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
-                    <Box aria-hidden sx={{ ml: RAIL_OFFSET, height: ROW_GAP, borderLeft: RAIL_LINE }} />
-                    <Box aria-hidden sx={{
-                        ml: RAIL_OFFSET, flex: '1 1 0',
-                        borderLeft: RAIL_LINE, borderBottom: RAIL_LINE,
-                        borderBottomLeftRadius: '4px',
-                    }} />
-                    <Box sx={{ flex: '1 1 0' }} />
-                </Box>
-                <Box sx={{ flex: 1, minWidth: 0, pt: ROW_GAP, pr: 0.5 }}>
-                    <Button
-                        fullWidth
-                        size="small"
-                        startIcon={<AddIcon sx={{ fontSize: iconVar.sm }} />}
-                        onClick={() => setAddDataDialogOpen(true)}
-                        sx={{
-                            justifyContent: 'flex-start',
-                            textTransform: 'none',
-                            fontSize: textVar.xs,
-                            fontWeight: 500,
-                            py: 0.5,
-                            borderRadius: '6px',
-                            // A muted filled button, not a dashed outline.
-                            backgroundColor: 'rgba(0,0,0,0.04)',
-                            color: 'text.secondary',
-                            '& .MuiButton-startIcon': { mr: 0.5 },
-                            '&:hover': {
-                                color: 'primary.main',
-                                backgroundColor: alpha(theme.palette.primary.main, 0.08),
-                            },
-                        }}
-                    >
-                        {t('dataThread.addMoreData', { defaultValue: 'Add more data' })}
-                    </Button>
-                </Box>
-            </Box>
         </Box>
 
         {addDataDialogOpen && (

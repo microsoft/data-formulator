@@ -11,7 +11,7 @@
 
 import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
-import { Alert, Box, Button, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, Typography } from '@mui/material';
 import SentimentDissatisfiedOutlinedIcon from '@mui/icons-material/SentimentDissatisfiedOutlined';
 import { alpha, useTheme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
@@ -93,12 +93,24 @@ export interface AppSandboxProps {
     reserveTopRight?: boolean;
     /** Offer "Ask agent to fix" with the current errors. */
     onAskFix?: (errors: string[]) => void;
+    /**
+     * The agent just wrote this app: if it fails when it opens, ask the agent to fix it right away and
+     * show that it is being fixed instead of the broken app.
+     */
+    autoFix?: boolean;
+    /** The app opened without errors (only reported with `autoFix`). */
+    onHealthy?: () => void;
+    /** The agent is working (or about to): an automatic repair is still on its way. */
+    fixPending?: boolean;
     /** Resolve a source the app declared (an external reference id) for live queries. */
     resolveSource?: (source: string) => AppSource | undefined;
 }
 
+/** Errors within this long after an app opens are failures of the app as written, not of later use. */
+const AUTO_FIX_WINDOW_MS = 8000;
+
 export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument, initialErrors, reloadKey = 0, reserveTopRight = false, onAskFix,
-    resolveSource }) => {
+    autoFix = false, onHealthy, fixPending = false, resolveSource }) => {
     const { t } = useTranslation();
     const containerRef = useRef<HTMLIFrameElement>(null);
     const [containerReady, setContainerReady] = useState(false);
@@ -107,6 +119,9 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
     // The app cannot render at all: it did not compile, failed to start, or crashed.
     const [fatal, setFatal] = useState(false);
     const [askedFix, setAskedFix] = useState(false);
+    // The app failed when it opened and the agent was asked to fix it: show that, not the broken app.
+    const [autoFixing, setAutoFixing] = useState(false);
+    const [openedAt, setOpenedAt] = useState(0);
     // Read when a query runs, so a change to the session's sources does not reload the app.
     const resolveSourceRef = useRef(resolveSource);
     resolveSourceRef.current = resolveSource;
@@ -116,6 +131,8 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
         setErrors(initialErrors ?? []);
         setFatal(!!initialErrors?.length);
         setAskedFix(false);
+        setAutoFixing(false);
+        setOpenedAt(Date.now());
         setStopped(false);
         if (!containerReady || !containerWindow || !containerDocument || !buildDocument) return;
         let disposed = false;
@@ -229,9 +246,34 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
     }, [containerReady, buildDocument, initialErrors, manifest, title, reloadKey, t]);
 
     const askFix = onAskFix && !askedFix ? () => { setAskedFix(true); onAskFix(errors); } : undefined;
+
+    // An app the agent just wrote that fails when it opens goes straight back to the agent.
+    const onAskFixRef = useRef(onAskFix);
+    onAskFixRef.current = onAskFix;
+    const onHealthyRef = useRef(onHealthy);
+    onHealthyRef.current = onHealthy;
+    useEffect(() => {
+        if (!autoFix || askedFix || stopped || !errors.length || !onAskFixRef.current) return;
+        if (!fatal && Date.now() - openedAt > AUTO_FIX_WINDOW_MS) return;
+        setAskedFix(true);
+        setAutoFixing(true);
+        onAskFixRef.current(errors);
+    }, [autoFix, askedFix, stopped, errors, fatal, openedAt]);
+    useEffect(() => {
+        if (!autoFix || !buildDocument || errors.length) return;
+        const timer = setTimeout(() => onHealthyRef.current?.(), AUTO_FIX_WINDOW_MS);
+        return () => clearTimeout(timer);
+    }, [autoFix, buildDocument, errors.length, openedAt]);
+    // The agent finished without changing the app: show its errors (and the button to ask again).
+    useEffect(() => {
+        if (!autoFixing || fixPending) return;
+        const timer = setTimeout(() => setAutoFixing(false), 2000);
+        return () => clearTimeout(timer);
+    }, [autoFixing, fixPending]);
+
     return (
         <Box sx={{ position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#fff' }}>
-            {!fatal && (errors.length > 0 || stopped) && (
+            {!fatal && !autoFixing && (errors.length > 0 || stopped) && (
                 <Alert severity={stopped ? 'warning' : 'error'}
                     action={!stopped && onAskFix ? <Button color="inherit" size="small" disabled={askedFix} onClick={askFix}>
                         {askedFix ? t('htmlApp.askedAgentToFix', { defaultValue: 'Sent to the agent' }) : t('htmlApp.askAgentToFix')}</Button> : undefined}
@@ -245,8 +287,24 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
             <Box sx={{ position: 'relative', flex: 1, minHeight: 0 }}>
                 <iframe ref={containerRef} srcDoc={CONTAINER_DOCUMENT} title={t('htmlApp.frameTitle', { title: manifest.title || title })}
                     onLoad={() => setContainerReady(true)}
-                    style={{ display: 'block', border: 0, width: '100%', height: '100%', visibility: fatal ? 'hidden' : 'visible' }} />
-                {fatal && (
+                    style={{ display: 'block', border: 0, width: '100%', height: '100%', visibility: fatal || autoFixing ? 'hidden' : 'visible' }} />
+                {autoFixing && (
+                    <Box data-app-fixing role="status" sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center',
+                        justifyContent: 'center', gap: 1.25, px: 4, bgcolor: 'grey.50', color: 'text.secondary', textAlign: 'center' }}>
+                        <CircularProgress size={22} thickness={5} />
+                        <Typography sx={{ fontSize: 15, fontWeight: 500, color: 'text.primary' }}>
+                            {t('htmlApp.autoFixing', { defaultValue: 'Fixing an error in this app' })}
+                        </Typography>
+                        <Typography sx={{ fontSize: 13, maxWidth: 480 }}>
+                            {t('htmlApp.autoFixingDetail', { defaultValue: 'The agent found a problem when the app opened and is fixing it.' })}
+                        </Typography>
+                        <Box sx={{ maxWidth: 560, maxHeight: 96, overflow: 'auto', fontFamily: 'var(--df-font-mono, ui-monospace, monospace)',
+                            fontSize: 11.5, lineHeight: 1.5, color: 'text.disabled', overflowWrap: 'anywhere' }}>
+                            {errors.map(message => <Box key={message} component="div">{message}</Box>)}
+                        </Box>
+                    </Box>
+                )}
+                {fatal && !autoFixing && (
                     <Box data-app-crash role="alert" sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
                         alignItems: 'center', justifyContent: 'center', gap: 1.5, px: 4, bgcolor: 'grey.50', color: 'text.secondary', textAlign: 'center' }}>
                         <SentimentDissatisfiedOutlinedIcon sx={{ fontSize: 48, color: 'text.disabled' }} />

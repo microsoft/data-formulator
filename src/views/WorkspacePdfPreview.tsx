@@ -3,7 +3,7 @@ import { Box, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { LoadingStatus } from '../components/FunComponents';
 import { Document, Page, pdfjs } from 'react-pdf';
-import { Virtuoso } from 'react-virtuoso';
+import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
@@ -21,6 +21,8 @@ interface WorkspacePdfPreviewProps {
     scale: number;
     onPageCountChange: (pageCount: number) => void;
     onVisiblePageChange: (pageNumber: number) => void;
+    /** Scroll to this page (1-based) once the document has loaded; a new `nonce` asks again. */
+    goTo?: { page: number; nonce: number };
 }
 
 export const WorkspacePdfPreview: FC<WorkspacePdfPreviewProps> = ({
@@ -30,9 +32,19 @@ export const WorkspacePdfPreview: FC<WorkspacePdfPreviewProps> = ({
     scale,
     onPageCountChange,
     onVisiblePageChange,
+    goTo,
 }) => {
     const { t } = useTranslation();
     const viewportRef = useRef<HTMLDivElement>(null);
+    const listRef = useRef<VirtuosoHandle>(null);
+
+    useEffect(() => {
+        if (!goTo || pageCount <= 0) return;
+        const index = Math.min(Math.max(goTo.page, 1), pageCount) - 1;
+        // Let the list lay out its first pages before jumping.
+        const timer = window.setTimeout(() => listRef.current?.scrollToIndex({ index, align: 'start' }), 50);
+        return () => window.clearTimeout(timer);
+    }, [goTo?.nonce, goTo?.page, pageCount]);
     const [pageWidth, setPageWidth] = useState(720);
 
     useEffect(() => {
@@ -58,6 +70,7 @@ export const WorkspacePdfPreview: FC<WorkspacePdfPreviewProps> = ({
             >
                 {pageCount > 0 && (
                     <Virtuoso
+                        ref={listRef}
                         style={{ height: '100%' }}
                         totalCount={pageCount}
                         increaseViewportBy={600}

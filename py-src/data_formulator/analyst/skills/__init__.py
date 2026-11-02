@@ -109,21 +109,96 @@ class SkillRegistry:
     # ``actions`` is a committing action, in ``tools`` an inspection tool).
     tool_specs: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     _doc_paths: dict[str, Path] = field(default_factory=dict)
+    # Bodies made for this registry rather than read from a SKILL.md (the demo skill's).
+    _bodies: dict[str, str] = field(default_factory=dict)
+    # Passages of a skill's body this registry replaces, as (old, new) pairs (a demo's, see with_demo).
+    _body_edits: dict[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)
     terminal_mode: str = "ask"
+    # Actions whose arguments are a third party's schema (MCP tools): passed through untouched.
+    external_actions: frozenset[str] = frozenset()
+
+    def with_mcp_servers(self, servers: list[dict[str, Any]], mode: str) -> SkillRegistry:
+        """This registry plus one gated skill per usable MCP server (see ``mcp_servers.skill``)."""
+        from data_formulator.mcp_servers.skill import registry_entries
+
+        entries = registry_entries(servers, mode) if mode != "off" else []
+        if not entries:
+            return self
+        registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
+                           _bodies=dict(self._bodies), _body_edits=dict(self._body_edits))
+        external = set(self.external_actions)
+        for entry in entries:
+            registry.metas[entry["name"]] = entry["meta"]
+            registry.skills[entry["name"]] = entry["skill"]
+            registry.tool_specs[entry["name"]] = entry["specs"]
+            registry._bodies[entry["name"]] = entry["body"]
+            external.update(entry["meta"].action_names)
+        registry.external_actions = frozenset(external)
+        return registry
+
+    def without_tools(self, names: set[str] | frozenset[str]) -> SkillRegistry:
+        """This registry minus the named tools and actions (skills keep their other tools)."""
+        if not any(set(meta.tool_names + meta.action_names) & names for meta in self.metas.values()):
+            return self
+        registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
+                           _bodies=dict(self._bodies), _body_edits=dict(self._body_edits))
+        for name, meta in list(registry.metas.items()):
+            if set(meta.tool_names + meta.action_names) & names:
+                registry.metas[name] = replace(
+                    meta, tool_names=tuple(item for item in meta.tool_names if item not in names),
+                    action_names=tuple(item for item in meta.action_names if item not in names))
+                registry.tool_specs[name] = [spec for spec in registry.tool_specs.get(name, [])
+                                             if spec.get("function", {}).get("name") not in names]
+        return registry
 
     def with_terminal_policy(self, mode: str) -> SkillRegistry:
         registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
-                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths), terminal_mode=mode)
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
+                           _bodies=dict(self._bodies), _body_edits=dict(self._body_edits), terminal_mode=mode)
         if mode == "off":
             for collection in (registry.metas, registry.skills, registry.tool_specs, registry._doc_paths):
                 collection.pop("terminal", None)
         elif "terminal" in registry.metas:
-            registry.metas["terminal"] = replace(registry.metas["terminal"], always_on=True)
+            # Enabled, it loads on demand like other gated skills (preloaded when a session has no data yet).
             for spec in registry.tool_specs.get("terminal", []):
                 spec["function"]["description"] += (
                     " Each invocation requires exact-command approval." if mode == "ask" else
                     " The application automatically executes permitted invocations; do not ask for routine approval."
                 )
+        return registry
+
+    def with_demo(self, site_id: str | None) -> SkillRegistry:
+        """This registry for a request on the demo ``site_id`` (design-docs/69); unchanged without one.
+
+        The copy gains the ``demo`` skill, made for that demo, and loses what a demo does not offer: data
+        beyond it (``connected_data``, ``terminal``, connected-source tools), setting up the app
+        (``configure``) and apps (``html_app``); the baseline guidance about them is rewritten for the demo.
+        """
+        from data_formulator.sites.skill import (
+            DEMO_SKILL, DEMO_WITHOUT_TOOLS, SKILL_DIR, demo_body_edits, demo_skill_available, demo_skill_body,
+            demo_tool_specs,
+        )
+
+        if not demo_skill_available(site_id):
+            return self
+        from data_formulator.sites.skill.skill import get_skill
+
+        registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
+                           _bodies=dict(self._bodies), _body_edits=dict(self._body_edits))
+        for name in ("connected_data", "terminal", "configure", "html_app"):
+            for collection in (registry.metas, registry.skills, registry.tool_specs, registry._doc_paths):
+                collection.pop(name, None)
+        registry = registry.without_tools(DEMO_WITHOUT_TOOLS)
+        registry._body_edits.update(demo_body_edits())
+        registry.tool_specs = {name: demo_tool_specs(specs) for name, specs in registry.tool_specs.items()}
+        raw, _ = _parse_front_matter((SKILL_DIR / SKILL_DOC_NAME).read_text(encoding="utf-8"))
+        registry.metas[DEMO_SKILL] = _meta_from_frontmatter(raw, DEMO_SKILL)
+        registry.skills[DEMO_SKILL] = get_skill()
+        registry.tool_specs[DEMO_SKILL] = _load_tool_specs(SKILL_DIR)
+        registry._bodies[DEMO_SKILL] = demo_skill_body(site_id)
         return registry
 
     def canonical_name(self, name: str) -> str:
@@ -230,8 +305,8 @@ class SkillRegistry:
         for name in self.gated_skill_names():
             meta = self.metas[name]
             blurb = (meta.when_to_use or meta.description or "").strip().replace("\n", " ")
-            unlocks = ", ".join(meta.action_names) if meta.action_names else "(no actions)"
-            lines.append(f"- **{name}** — unlocks `{unlocks}`. {blurb}")
+            unlocks = f"unlocks `{', '.join(meta.action_names)}`. " if meta.action_names else ""
+            lines.append(f"- **{name}** — {unlocks}{blurb}")
         return "\n".join(lines)
 
     def load_body(self, name: str) -> str:
@@ -241,10 +316,18 @@ class SkillRegistry:
             raise KeyError(f"Unknown skill: {name!r}")
         bodies: list[str] = []
         for expanded_name in self.expanded_names([name]):
+            if expanded_name in self._bodies:
+                bodies.append(self._bodies[expanded_name])
+                continue
             path = self._doc_paths.get(expanded_name)
             if not path or not path.exists():
                 continue
             _, body = _parse_front_matter(path.read_text(encoding="utf-8"))
+            for old, new in self._body_edits.get(expanded_name, ()):
+                body = body.replace(old, new)
+            if expanded_name == "configure" and "propose_mcp_changes" not in self.metas[expanded_name].action_names:
+                body = re.sub(r"\n## MCP servers\n.*?(?=\n## |\Z)", "\n", body, flags=re.S)
+                body = re.sub(r"^\|[^\n]*`propose_mcp_changes`[^\n]*\n", "", body, flags=re.M)
             if expanded_name == "connected_data":
                 terminal_route = (
                     "| Existing CLI access or local files | Use `run_terminal` to acquire a bounded dataset "
@@ -264,7 +347,25 @@ class SkillRegistry:
                     "execute immediately. Only dangerouslyDisableSandbox requests require user approval."
                 )
                 body = body.replace("{terminal_policy}", policy)
-                from data_formulator.analyst.skills.terminal.skill import sandbox_filesystem_policy
+                from data_formulator.analyst.skills.terminal.skill import (
+                    sandbox_filesystem_policy, terminal_host, terminal_sandbox)
+                host = terminal_host()
+                host_note = {
+                    "wsl": ("This is Windows: commands run in WSL (Linux), so use Linux tools and paths. Windows drives "
+                            "are at /mnt/<drive letter>, e.g. C:\\Users\\me is /mnt/c/Users/me. Give `cwd` as a Windows "
+                            "path; the command starts in its WSL equivalent. CLI logins made in Windows are not visible "
+                            "in WSL; ones made inside WSL are."),
+                    "windows": ("This is Windows without WSL: commands run natively. There is no Unix shell; call "
+                                "`powershell -NoProfile -Command ...` or Windows executables explicitly, with Windows paths."),
+                }.get(host)
+                if host_note:
+                    body = body.replace(policy, f"{policy} {host_note}", 1)
+                    policy = f"{policy} {host_note}"
+                if terminal_sandbox() is None:
+                    policy_note = ("No sandbox is installed on this machine: every command runs with the user's normal "
+                                   "access and needs their approval, even in Auto. Do not set dangerouslyDisableSandbox "
+                                   "for that reason alone. Keep commands minimal and their side effects clear.")
+                    body = body.replace(policy, f"{policy} {policy_note}", 1)
                 body = body.replace("{terminal_filesystem_policy}", json.dumps(sandbox_filesystem_policy()))
             if body.strip():
                 bodies.append(body.strip())
@@ -321,6 +422,8 @@ class SkillRegistry:
         """Return the required argument names for the action ``name`` (empty if
         unknown), read from the action schema's ``parameters.required``. Used for
         a cheap pre-dispatch completeness check."""
+        if name in self.external_actions:
+            return ()
         for skill_name in self.names():
             for spec in self._specs_split(skill_name)[1]:
                 if spec.get("function", {}).get("name") == name:

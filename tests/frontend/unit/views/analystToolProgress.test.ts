@@ -27,6 +27,19 @@ describe('formatAnalystToolProgress', () => {
             .toBe('Reading: session/charts/*, session/tables/sales.json');
     });
 
+    it('names each read item with the rows or pages it reads', () => {
+        expect(formatAnalystToolProgress('read_file', {
+            files: [{ path: 'session/tables/t.json', rows: '1-50' }, { path: 'files/r.pdf', pages: '3' }],
+        }, (key: string) => key === 'dataThread.readingFile' ? 'Reading' : key))
+            .toBe('Reading: session/tables/t.json (rows 1-50), files/r.pdf (pages 3)');
+    });
+
+    it('shows a session search with its query and scope', () => {
+        expect(formatAnalystToolProgress('search', { query: 'out of school', path: ['session/tables/'] },
+            (key: string) => key === 'dataThread.searchingSession' ? 'Searching the session' : key))
+            .toBe('Searching the session: “out of school” in session/tables/');
+    });
+
     it('keeps catalog paths compact', () => {
         expect(formatAnalystToolProgress('list_data', {
             source_id: 'mysql:mysql',

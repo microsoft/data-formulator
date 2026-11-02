@@ -986,7 +986,7 @@
    "id": "textTurn_exploreDataFromNL_1792309690825_1792309726512",
    "displayId": "textTurn_exploreDataFromNL_1792309690825_closing",
    "textKind": "explain",
-   "content": "**Government heritage spending varies widely: the middle reporting country spends about $21 per person a year.** This covers public spending on protecting both cultural and natural heritage, using each country’s latest available figure from 2020–2024.\n\nFor comparison, Belgium reported **$369 per person** in 2023, Canada **$212** in 2024, and Kenya **$4.18** in 2024. Thirteen reporting countries spent less than $1 per person.\n\nThese are **2017 purchasing-power dollars**, adjusted for price differences—not current US dollars. Coverage includes only 74 countries and territories, with different reporting years and one estimated figure, so it does not establish a worldwide average.\n\nSource: UNESCO Institute for Statistics, February 2026 release.",
+   "content": "**The typical reporting country's government spends about $21 per person a year on its heritage**, cultural and natural, using each country's latest figure from 2020–2024.\n\nSpending ranges widely: Belgium reported **$369 per person** (2023), Canada **$212** (2024) and Kenya **$4.18** (2024). Thirteen countries spent less than $1.\n\nOnly 74 countries report, so this is not a world average. Dollars are adjusted for price differences between countries. Source: UIS, February 2026 release.",
    "parentNodeId": "d_output",
    "actionId": "exploreDataFromNL_1792309690825",
    "createdAt": 1792309726512,

@@ -230,8 +230,9 @@ export const ConfigurationView = () => {
                 {environmentManaged && <Alert severity="info" sx={{ mb: 2 }}>{t('administration.environmentManaged')}</Alert>}
                 {editing && tab === 'models' && <Box sx={{ display: 'grid', gap: 1.5, mb: 1.5 }}>
                     <TextField size="small" label={t('administration.displayName')} value={propertyName} onChange={event => setPropertyName(event.target.value)} />
-                    <TextField size="small" select label={t('model.thinking')} value={propertyReasoning || 'low'} helperText={t('model.thinkingHint')}
-                        onChange={event => setPropertyReasoning(event.target.value === 'low' ? '' : event.target.value)}>
+                    <TextField size="small" select label={t('model.thinking')} value={propertyReasoning || 'default'} helperText={t('model.thinkingHint')}
+                        onChange={event => setPropertyReasoning(event.target.value === 'default' ? '' : event.target.value)}>
+                        <MenuItem value="default">{t('model.thinkingDefault')}</MenuItem>
                         <MenuItem value="low">{t('model.thinkingLow')}</MenuItem>
                         <MenuItem value="medium">{t('model.thinkingMedium')}</MenuItem>
                         <MenuItem value="high">{t('model.thinkingHigh')}</MenuItem>

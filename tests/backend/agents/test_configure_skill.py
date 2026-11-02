@@ -20,6 +20,16 @@ def _context(**payload) -> SkillContext:
                         payload={"identity_id": IDENTITY, "workspace_id": "session_current", **payload})
 
 
+def _workflow_files(ctx: SkillContext | None = None) -> dict[str, dict]:
+    from data_formulator.analyst.session_files import SessionFiles
+    return {item["path"]: item for item in SessionFiles(ctx or _context()).list("workflows/")["files"]}
+
+
+def _schedules(ctx: SkillContext | None = None) -> dict:
+    from data_formulator.analyst.session_files import SessionFiles
+    return json.loads(SessionFiles(ctx or _context()).read("workflows/schedules.json")["content"])
+
+
 def _action(name: str, spec: dict, ctx: SkillContext | None = None) -> tuple[list[dict], str | None]:
     events, generator = [], ConfigureSkill().handle_action(name, spec, ctx or _context())
     try:
@@ -112,8 +122,7 @@ def test_list_sessions_can_find_every_empty_session(sessions) -> None:
 
 
 def test_schedule_proposal_validates_workflow_and_gates_direct_saves(scheduling) -> None:
-    listed = json.loads(ConfigureSkill().handle_tool("list_workflows", {}, _context()).text)
-    assert "demo/gas-price-review.yaml" in {item["path"] for item in listed["workflows"]}
+    assert "workflows/demo/gas-price-review.yaml" in _workflow_files()
 
     events, _ = _action("propose_schedule", {
         "workflow": "demo/gas-price-review.yaml", "time": "09:00", "weekdays": [4, 0, 1, 2, 3],
@@ -165,15 +174,18 @@ def test_ask_user_keeps_multi_choice_only_with_options() -> None:
 def test_schedule_edits_merge_existing_config(scheduling) -> None:
     saved = scheduling.save(IDENTITY, {"name": "Fuel", "workflow": "demo/gas-price-review.yaml", "model_id": "server-model",
                                        "time": "08:00", "timezone": "UTC", "weekdays": [0]})
-    listed = json.loads(ConfigureSkill().handle_tool("list_workflows", {}, _context()).text)
-    fuel = next(item for item in listed["workflows"] if item["path"] == "demo/gas-price-review.yaml")
-    # Each workflow lists its schedules; scheduling itself is described once.
-    assert [schedule["cadence"] for schedule in fuel["schedules"]] == ["Mon at 08:00 (UTC)"]
-    assert all(not item["schedules"] for item in listed["workflows"] if item is not fuel)
-    assert listed["scheduling"]["available"] is True
-    assert listed["scheduling"]["server_models"] == [{"id": "server-model", "model": "gpt", "provider": "openai"}]
+    listed = _workflow_files()
+    # Each workflow lists its schedules; scheduling itself is described once, in schedules.json.
+    fuel = listed["workflows/demo/gas-price-review.yaml"]
+    assert f'schedule "Fuel" ({saved["id"]}): Mon at 08:00 (UTC)' in fuel["detail"]
+    assert all("schedule " not in item.get("detail", "") for path, item in listed.items()
+               if path not in ("workflows/demo/gas-price-review.yaml", "workflows/schedules.json"))
+    scheduling = _schedules()
+    assert scheduling["available"] is True and [item["id"] for item in scheduling["schedules"]] == [saved["id"]]
+    assert scheduling["server_models"] == [{"id": "server-model", "model": "gpt", "provider": "openai"}]
 
-    events, _ = _action("propose_schedule", {"schedule_id": saved["id"], "enabled": False})
+    events, _ = _action("propose_schedule", {"schedule_id": saved["id"], "enabled": False,
+                                             "workflow": "workflows/demo/gas-price-review.yaml"})
     form = events[0]["form"]
     assert form["title"] == "Update Fuel"
     assert form["schedule"]["target"] == {"id": saved["id"], "name": "Fuel"}
@@ -190,7 +202,14 @@ def test_workflow_revision_targets_only_saved_user_workflows(scheduling) -> None
                   "steps": [{"id": "work", "description": "Review prices.", "instructions": "Compare prices."}]}
     WorkflowStore(get_user_home(IDENTITY)).save("fuel.workflow.yaml", yaml.safe_dump(definition))
 
-    events, _ = _action("propose_workflow", {"definition": definition, "summary": "Revised", "replaces": "fuel.workflow.yaml"})
+    listed = _workflow_files()
+    assert listed["workflows/fuel.workflow.yaml"]["detail"] == "saved by the user"
+    from data_formulator.analyst.session_files import SessionFiles
+    read = SessionFiles(_context()).read("workflows/fuel.workflow.yaml")
+    assert yaml.safe_load(read["content"]) == definition and 'replaces="workflows/fuel.workflow.yaml"' in read["note"]
+
+    events, _ = _action("propose_workflow", {"definition": definition, "summary": "Revised",
+                                             "replaces": "workflows/fuel.workflow.yaml"})
     form = events[0]["content"]["form"]
     assert events[0]["type"] == "completion" and form["kind"] == "workflow" and form["title"] == "Fuel"
     assert form["workflow"]["definition"] == definition
@@ -204,10 +223,9 @@ def test_workflow_revision_targets_only_saved_user_workflows(scheduling) -> None
 def test_scheduling_unavailable_is_reported_without_a_form(monkeypatch) -> None:
     monkeypatch.setattr("data_formulator.workflows.scheduler.scheduling_available", lambda: False)
     monkeypatch.setattr("data_formulator.analyst.skills.configure.automation.workflows_unavailable", lambda: None)
-    listed = json.loads(ConfigureSkill().handle_tool("list_workflows", {}, _context()).text)
     events, observation = _action("propose_schedule", {"workflow": "demo/gas-price-review.yaml"})
 
-    assert listed["scheduling"]["available"] is False and listed["workflows"]
+    assert _schedules()["available"] is False and len(_workflow_files()) > 1
     assert events == [] and "only available in the local Data Formulator app" in observation
 
 
@@ -218,9 +236,12 @@ def test_analyst_gates_setup_actions_until_configure_loads_and_streams_the_form(
 
     client = MagicMock()
     client.model = "test-model"
-    agent = AnalystAgent(client=client, workspace=Workspace(IDENTITY, root_dir=tmp_path / "ws"),
-                         identity_id=IDENTITY, workspace_id="session_current")
-    assert agent._initial_loaded_skills(None) == {"meta"} | ({"terminal"} if agent.registry.has("terminal") else set())
+    import pandas as pd
+    workspace = Workspace(IDENTITY, root_dir=tmp_path / "ws")
+    # A session with data: setup guidance loads on demand (an empty session starts with it).
+    workspace.write_parquet(pd.DataFrame({"title": ["Heat"]}), "movies")
+    agent = AnalystAgent(client=client, workspace=workspace, identity_id=IDENTITY, workspace_id="session_current")
+    assert agent._initial_loaded_skills(None) == {"meta"}
     assert "configure" in agent._initial_loaded_skills(None, {"form_id": "form-1"})
     observations = []
 
@@ -235,7 +256,7 @@ def test_analyst_gates_setup_actions_until_configure_loads_and_streams_the_form(
                "action_data": {"action": "propose_session_changes", "open_session_id": "session_movies", "user_review_needed": False}}
 
     agent._get_next_action = next_action
-    events = list(agent.run([], "Open my movies session"))
+    events = list(agent.run([{"name": "movies", "rows": []}], "Open my movies session"))
 
     assert any("[GATED]" in message and "configure" in message for message in observations)
     interact = next(event for event in events if event["type"] == "interact")

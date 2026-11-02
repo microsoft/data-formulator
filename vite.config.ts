@@ -57,6 +57,11 @@ export default defineConfig({
         target: `http://localhost:${apiPort}`,
         changeOrigin: false,
       },
+      // MCP settings check that requests come from the app's own origin; OAuth also redirects back here.
+      '/api/mcp': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: false,
+      },
       '/api': {
         target: `http://localhost:${apiPort}`,
         changeOrigin: true,

@@ -32,15 +32,7 @@ class WorkspaceDataLoading:
         ctx: SkillContext,
     ) -> ToolResult:
         service = DataDiscoveryService(ctx.workspace)
-        if name == "summarize_data_sources":
-            result = service.summarize_data_sources(args)
-        elif name == "list_data":
-            result = service.list_data(args)
-        elif name == "find_data":
-            result = service.find_data(args)
-        elif name == "describe_data":
-            result = service.describe_data(args)
-        elif name == "probe_data":
+        if name == "probe_data":
             result = service.probe_data(args, self._probe_budget(ctx))
         else:
             result = {"error": f"workspace has no data-loading tool '{name}'."}

@@ -24,7 +24,7 @@ import { FC, useEffect, useRef, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { Chart, DictTable, FieldItem, FieldSemanticsInfo } from '../components/ComponentType';
-import { assembleVegaChart, prepVisTable } from '../app/utils';
+import { assembleVegaChart, chartCanvasBox, containScale, prepVisTable } from '../app/utils';
 import { getDataTable, checkChartAvailability } from './ChartUtils';
 import { getCachedChart, setCachedChart, computeCacheKey, invalidateChart, ChartCacheEntry } from '../app/chartCache';
 import { displayRowsCache, computeDisplayRowsCacheKey } from '../app/displayRowsCache';
@@ -203,8 +203,10 @@ export const ChartRenderService: FC = () => {
             );
 
             if (!fullSpec || fullSpec === "Table") return;
+            const box = chartCanvasBox(fullSpec);
             // --- Render headlessly (single full-size render) ---
             const fullResult = await renderHeadless(fullSpec);
+            const fit = containScale(fullResult, box);
 
             // Scale the full-size PNG down to thumbnail dimensions
             const thumbnailPng = await scalePngDown(
@@ -221,6 +223,8 @@ export const ChartRenderService: FC = () => {
                 specKey: cacheKey,
                 naturalWidth: fullResult.width,
                 naturalHeight: fullResult.height,
+                displayWidth: Math.round(fullResult.width * fit),
+                displayHeight: Math.round(fullResult.height * fit),
             };
             setCachedChart(chart.id, entry);
 
@@ -236,7 +240,7 @@ export const ChartRenderService: FC = () => {
         } finally {
             renderingRef.current.delete(chart.id);
         }
-    }, [dispatch]);
+    }, [dispatch, maxStretchFactor]);
 
     useEffect(() => {
         // Clean up cache entries for deleted charts
@@ -286,6 +290,7 @@ export const ChartRenderService: FC = () => {
                 table.metadata,
                 fieldSemantics,
                 `${chart.themeId || ''}|${chartTitleFits(chart) ? `${chart.title}|${chart.subtitle || ''}` : ''}`,
+                `stretch:${maxStretchFactor ?? ''}`,
             );
 
             const cached = getCachedChart(chart.id);
@@ -324,7 +329,7 @@ export const ChartRenderService: FC = () => {
 
             return () => { cancelled = true; };
         }
-    }, [charts, tables, conceptShelfItems, tableSemantics, chartSynthesisInProgress, displayRowsTick, processChart, dispatch]);
+    }, [charts, tables, conceptShelfItems, tableSemantics, chartSynthesisInProgress, displayRowsTick, maxStretchFactor, processChart, dispatch]);
 
     // This component renders nothing
     return null;

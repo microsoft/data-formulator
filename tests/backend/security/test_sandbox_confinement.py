@@ -50,16 +50,133 @@ def test_worker_command_isolates_the_interpreter(monkeypatch):
     monkeypatch.setattr(confinement, "shared_read_roots", lambda: ["/df/users"])
     command = confinement.confined_worker_command("seatbelt", confinement.SHARED, "/tmp", 5, 6)
     assert command[0] == confinement.SEATBELT and '(subpath "/df/users")' in command[2]
-    assert command[3:6] == [os.sys.executable, "-I", "-m"] and command[-3:] == ["5", "6", "1"]
+    assert command[3:7] == [os.sys.executable, "-s", "-P", "-m"] and command[-3:] == ["5", "6", "1"]
     linked = confinement.confined_worker_command("seatbelt", "/data/linked", "/tmp", 5, 6)
     assert '(subpath "/data/linked")' in linked[2] and "/df/users" not in linked[2]
 
 
 def test_worker_keys_share_df_workspaces(tmp_path, monkeypatch):
+    monkeypatch.setattr("data_formulator.auth.identity.is_local_mode", lambda: True)
     monkeypatch.setattr(confinement, "shared_read_roots", lambda: [os.path.realpath(tmp_path / "users")])
     assert confinement.worker_key(str(tmp_path / "users" / "me" / "workspaces" / "a")) == confinement.SHARED
     assert confinement.worker_key(str(tmp_path / "linked")) == os.path.realpath(tmp_path / "linked")
     assert confinement.worker_key(None) == ""
+
+
+def test_multi_user_servers_dedicate_a_worker_to_each_workspace(tmp_path, monkeypatch):
+    # DuckDB and pyarrow open files natively, past the audit hook, so a worker
+    # shared between visitors could read the other visitors' workspaces.
+    monkeypatch.setattr("data_formulator.auth.identity.is_local_mode", lambda: False)
+    monkeypatch.setattr(confinement, "shared_read_roots", lambda: [os.path.realpath(tmp_path / "sites")])
+    visitor = tmp_path / "sites" / "unesco" / "users" / "visitor" / "workspaces" / "a"
+    assert confinement.worker_key(str(visitor)) == os.path.realpath(visitor)
+    command = confinement.confined_worker_command("bwrap", confinement.worker_key(str(visitor)), "/tmp/w", 5, 6)
+    assert os.path.realpath(visitor) in command and os.path.realpath(tmp_path / "sites") not in command
+
+
+def test_bwrap_can_skip_proc_where_containers_forbid_mounting_it():
+    assert "--proc" in confinement.bwrap_prefix([], "/tmp/w")
+    without = confinement.bwrap_prefix([], "/tmp/w", mount_proc=False)
+    assert "--proc" not in without and "/proc" not in without
+
+
+def test_bwrap_workers_survive_the_thread_that_prewarmed_them():
+    # Linux sends --die-with-parent's signal when the spawning thread exits.
+    assert "--die-with-parent" not in confinement.bwrap_prefix([], "/tmp/w")
+
+
+def _fake_binary(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\nexit 0\n")
+    path.chmod(0o644)  # as a zip built on Windows leaves it
+    return path
+
+
+def test_bwrap_is_found_from_setting_then_path_then_bundle(tmp_path, monkeypatch):
+    bundled = _fake_binary(tmp_path / "pkg" / "bin" / "bwrap")
+    monkeypatch.setattr(confinement, "BUNDLED_BWRAP", bundled)
+    monkeypatch.delenv("DF_SANDBOX_BWRAP", raising=False)
+    monkeypatch.setattr(confinement.shutil, "which", lambda name: None)
+    assert confinement.bwrap_executable() == str(bundled)
+    assert os.access(bundled, os.X_OK)  # the executable bit is restored
+    on_path = _fake_binary(tmp_path / "usr" / "bin" / "bwrap")
+    on_path.chmod(0o755)
+    monkeypatch.setattr(confinement.shutil, "which", lambda name: str(on_path))
+    assert confinement.bwrap_executable() == str(on_path)
+    configured = _fake_binary(tmp_path / "opt" / "bwrap")
+    monkeypatch.setenv("DF_SANDBOX_BWRAP", str(configured))
+    assert confinement.bwrap_executable() == str(configured)
+    monkeypatch.setenv("APP_ROOT_FOR_TEST", str(tmp_path / "opt"))
+    monkeypatch.setenv("DF_SANDBOX_BWRAP", "$APP_ROOT_FOR_TEST/bwrap")
+    assert confinement.bwrap_executable() == str(configured)
+    # A stale configured path (e.g. App Service moved the app) falls through to the others.
+    monkeypatch.setenv("DF_SANDBOX_BWRAP", str(tmp_path / "missing"))
+    assert confinement.bwrap_executable() == str(on_path)
+
+
+def test_worker_environment_carries_the_servers_import_path(tmp_path, monkeypatch):
+    extra = tmp_path / "venv-site-packages"
+    extra.mkdir()
+    monkeypatch.syspath_prepend(str(extra))
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-secret")
+    environment = confinement.worker_environment(str(tmp_path / "w"))
+    assert str(extra) in environment["PYTHONPATH"].split(os.pathsep)
+    assert os.path.realpath(os.getcwd()) not in [os.path.realpath(p) for p in environment["PYTHONPATH"].split(os.pathsep)]
+    assert "OPENAI_API_KEY" not in environment
+
+
+@pytest.mark.skipif(os.name != "posix", reason="clean workers inherit POSIX pipe descriptors")
+def test_unconfined_worker_imports_from_the_servers_extra_path(tmp_path, monkeypatch):
+    # App Service's Oryx build installs packages into a virtualenv reached only via PYTHONPATH.
+    extra = tmp_path / "oryx-site-packages"
+    extra.mkdir()
+    (extra / "df_probe_module.py").write_text("VALUE = 42\n")
+    monkeypatch.syspath_prepend(str(extra))
+    pool = local_sandbox._WarmWorkerPool()
+    monkeypatch.setattr(pool, "_confinement", lambda: None)
+    proc, conn = pool.acquire(str(tmp_path))
+    try:
+        assert isinstance(proc, local_sandbox._ConfinedProcess)
+        conn.send(("import df_probe_module\nout = df_probe_module.VALUE", {"out": None}, str(tmp_path)))
+        assert conn.poll(60)
+        result = conn.recv()
+        assert result.get("allowed_objects", {}).get("out") == 42, result
+    finally:
+        pool.shutdown()
+
+
+def test_unusable_bwrap_means_no_confinement(tmp_path, monkeypatch):
+    monkeypatch.setattr(confinement.sys, "platform", "linux")
+    monkeypatch.setattr(confinement, "bwrap_executable", lambda: "/usr/bin/bwrap")
+    monkeypatch.setattr(confinement, "bwrap_usable", lambda path: False)
+    assert confinement.confinement_kind() is None
+    assert "cannot create a sandbox" in confinement.describe()
+
+
+def test_required_os_sandbox_refuses_to_fall_back(tmp_path, monkeypatch):
+    monkeypatch.setenv("DF_REQUIRE_OS_SANDBOX", "1")
+    pool = local_sandbox._WarmWorkerPool()
+    monkeypatch.setattr(pool, "_confinement", lambda: None)
+    with pytest.raises(RuntimeError, match="requires OS isolation"):
+        pool.acquire(str(tmp_path))
+    pool.shutdown()
+
+
+def test_plain_worker_command_has_no_os_sandbox():
+    command = confinement.confined_worker_command(None, "", "/tmp", 5, 6)
+    assert command == [os.sys.executable, "-s", "-P", "-m", "data_formulator.sandbox.confined_worker", "5", "6", "0"]
+
+
+def test_demo_site_workspaces_share_the_worker(tmp_path, monkeypatch):
+    monkeypatch.setattr("data_formulator.auth.identity.is_local_mode", lambda: True)
+    monkeypatch.setenv("DATA_FORMULATOR_HOME", str(tmp_path))
+    (tmp_path / "users").mkdir()
+    roots = confinement.shared_read_roots()
+    # The sites folder exists before any demo session, so a worker started now can read later ones.
+    assert os.path.realpath(tmp_path / "sites") in roots
+    site_workspace = tmp_path / "sites" / "unesco" / "users" / "visitor" / "workspaces" / "a"
+    assert confinement.worker_key(str(site_workspace)) == confinement.SHARED
+    assert confinement.worker_key(str(tmp_path / "credentials")) != confinement.SHARED
 
 
 def test_worker_environment_drops_server_secrets(monkeypatch):
@@ -93,6 +210,23 @@ def test_failed_confinement_falls_back_to_audit_hooks(tmp_path, monkeypatch, cap
         assert pool._confinement_failed and "falling back" in caplog.text
         conn.send(("out = 1 + 1", {"out": None}, str(tmp_path)))
         assert conn.poll(60) and conn.recv()["allowed_objects"]["out"] == 2
+    finally:
+        pool.shutdown()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="clean workers inherit POSIX pipe descriptors")
+def test_unconfined_worker_is_a_fresh_interpreter_without_server_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-server-secret")
+    import data_formulator.model_registry  # noqa: F401  (server state the worker must not inherit)
+    pool = local_sandbox._WarmWorkerPool()
+    monkeypatch.setattr(pool, "_confinement", lambda: None)
+    proc, conn = pool.acquire(str(tmp_path))
+    try:
+        assert isinstance(proc, local_sandbox._ConfinedProcess)
+        conn.send(("import os, sys\nout = (os.environ.get('OPENAI_API_KEY'),"
+                   " 'data_formulator.model_registry' in sys.modules, 'data_formulator.app' in sys.modules)",
+                   {"out": None}, str(tmp_path)))
+        assert conn.poll(60) and conn.recv()["allowed_objects"]["out"] == (None, False, False)
     finally:
         pool.shutdown()
 

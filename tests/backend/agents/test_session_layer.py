@@ -157,6 +157,10 @@ def test_views_link_to_each_other_and_read_table_rows_from_the_workspace(tmp_pat
     assert source["computed_into"] == ["d_by_region"] and source["columns"][0]["description"] == "Sales region"
     thread = layer.view("session/threads/1.md")["content"]
     assert "- **User:** Totals by region" in thread and "- **Report** session/reports/r1.md \"Findings\"" in thread
+    state = _layer_state()
+    state["textTurns"][0]["references"] = [{"kind": "chart", "id": "chart-1", "label": "Totals"}]
+    assert "- **User:** Totals by region (about `session/charts/chart-1.json`)" in SessionLayer(state, workspace).view(
+        "session/threads/1.md")["content"]
     assert layer.view("session/threads/2.md")["content"].startswith("# Thread 2 (from sales) — branches from table d_by_region")
     assert json.loads(layer.view("session/references/ref-orders.json")["content"])["tableKey"] == "public.orders"
     assert layer.view("session/charts/chart-auto.json") is None and layer.view("session/reports/r-draft.md") is None
@@ -222,15 +226,15 @@ def test_replaceable_artifacts_match_the_application() -> None:
     assert '"Line Chart of D_RETITLED" — Line Chart, of d_retitled, cannot replace: the user edited its chart' in layer.index()
 
 
-def test_table_views_carry_the_input_id_values_and_descriptions(tmp_path) -> None:
+def test_table_views_carry_the_file_values_and_descriptions(tmp_path) -> None:
     import pandas as pd
     from data_formulator.analyst.session_layer import SessionLayer
     from data_formulator.datalake.workspace import Workspace
     workspace = Workspace("test-user", root_dir=tmp_path)
     workspace.write_parquet(pd.DataFrame({"region": ["N", "S", "N"], "total": [5, 3, 1]}), "d_by_region")
     table = json.loads(SessionLayer(_layer_state(), workspace).view("session/tables/d_by_region.json")["content"])
-    content_hash = workspace.get_table_metadata("d_by_region").content_hash
-    assert table["input_id"] == f"data:{content_hash}:d_by_region"
+    # Tables are cited by name or path; item ids stay internal (design-docs/65).
+    assert "input_id" not in table
     assert table["file"].endswith("d_by_region.parquet")
     region, total = table["columns"]
     assert region["values"] == "N, S" and total["range"] == {"min": 1, "max": 5, "mean": 3.0}

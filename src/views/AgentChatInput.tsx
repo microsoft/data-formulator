@@ -73,6 +73,8 @@ export interface AgentChatInputProps {
      * instead of, or in addition to, the attach affordance.
      */
     leadingSlot?: React.ReactNode;
+    /** Rendered right after the attach button, as in the chat box (e.g. the Tools chip). */
+    trailingSlot?: React.ReactNode;
     /**
      * If false, the attach button is hidden (paste of images still works).
      */
@@ -141,6 +143,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
     minRows,
     maxRows = 8,
     leadingSlot,
+    trailingSlot,
     showAttachButton = true,
     layout = 'inline',
     topSlot,
@@ -470,7 +473,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                         <Box sx={{ px: 1, pt: 0.5, width: '100%', boxSizing: 'border-box', display: 'flex' }}>
                             {inputField}
                         </Box>
-                        {/* Bottom toolbar: leading slot + attach on the left, send on the right. */}
+                        {/* Bottom toolbar: leading slot, attach, trailing slot on the left; send on the right. */}
                         <Box sx={{
                             display: 'flex',
                             alignItems: 'center',
@@ -480,9 +483,10 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                             pt: 0.25,
                             gap: 0.5,
                         }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                 {leadingSlot}
                                 {attachButton}
+                                {trailingSlot}
                             </Box>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                 {sendButton}
@@ -496,6 +500,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                         {showAttachButton && (
                             <Box sx={{ mb: 0.25 }}>{attachButton}</Box>
                         )}
+                        {trailingSlot}
                         {inputField}
                         <Box sx={{ mb: 0.25 }}>{sendButton}</Box>
                     </Box>

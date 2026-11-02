@@ -1,8 +1,9 @@
 import json
+import logging
 
 import pytest
 
-from data_formulator.configuration import read_configuration, save_configuration, effective_limit
+from data_formulator.configuration import read_configuration, save_configuration, effective_limit, terminal_mode
 
 pytestmark = [pytest.mark.backend]
 
@@ -33,6 +34,8 @@ def test_terminal_policy_persistence_and_deployment_ceiling(monkeypatch, mode):
     assert configuration.terminal_mode() == 'off'
     monkeypatch.setenv('DF_TERMINAL_MODE', 'auto')
     monkeypatch.setattr(configuration.sys, 'platform', 'win32')
+    assert configuration.terminal_mode() == 'auto'
+    monkeypatch.setattr(configuration.sys, 'platform', 'freebsd14')
     assert configuration.terminal_mode() == 'off'
     monkeypatch.setattr(configuration.sys, 'platform', 'darwin')
     monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: False)
@@ -311,7 +314,9 @@ def test_model_thinking_level_applies_to_the_analysis_agent_only(monkeypatch):
             agents.get_client({'endpoint': 'openai', 'model': 'gpt-5', 'api_key': 'key', 'reasoning_effort': 'extreme'})
     assert (server.reasoning_effort, personal.reasoning_effort) == ('medium', 'high')
     assert reasoning_effort_for('analyst', 'gpt-5', server.reasoning_effort) == 'medium'
-    assert reasoning_effort_for('analyst', 'gpt-5', None) == 'low'
+    # Without a chosen level the analysis agent sends none: the model reasons at its own default.
+    assert reasoning_effort_for('analyst', 'gpt-5', None) is None
+    assert reasoning_effort_for('starter_questions', 'gpt-5') == 'low'
     assert reasoning_effort_for('chart_insight', 'gpt-5') == 'minimal'
 
 
@@ -523,14 +528,16 @@ def test_managed_startup_admin_warnings(monkeypatch, caplog, local, provider_nam
     monkeypatch.delenv('WEBSITE_INSTANCE_ID', raising=False)
     caplog.clear()
     application._safety_checks()
+    # The sandbox-isolation line is informational; this test is about warnings.
+    warnings = lambda: [record for record in caplog.records if record.levelno >= logging.WARNING]
     if expected:
         assert expected in caplog.text
     else:
-        assert not caplog.records
+        assert not warnings()
     caplog.clear()
     application.app.config['CLI_ARGS']['managed'] = False
     application._safety_checks()
-    assert not caplog.records
+    assert not warnings()
 
 
 def test_managed_app_config_reports_mode_separately_from_admin_permission(monkeypatch):
@@ -554,6 +561,7 @@ def test_managed_app_config_reports_mode_separately_from_admin_permission(monkey
         assert config['APP_TAGLINE'] == ''
         assert config['MANAGED_MODE'] is True
         assert config['CAN_CONFIGURE'] is False
+        assert config['WORKFLOWS_AVAILABLE'] is True
         assert config['EXTERNAL_TABLE_MAX_ROWS'] == 1000000
         assert config['EXTERNAL_TABLE_MAX_BYTES'] == 512 * 1048576
         save_configuration({'app_name': '  Team Analytics  ', 'app_tagline': '  Explore our data.  ',
@@ -566,9 +574,12 @@ def test_managed_app_config_reports_mode_separately_from_admin_permission(monkey
         monkeypatch.setattr(configurations, 'get_identity_id', lambda: 'user:admin')
         assert application.app.make_response(application.get_app_config()).get_json()['data']['CAN_CONFIGURE'] is True
         application.app.config['CLI_ARGS']['managed'] = False
+        # A hosted (not local) deployment that is not managed offers no workflows; the frontend hides them.
+        monkeypatch.setattr(identity, 'is_local_mode', lambda: False)
         config = application.app.make_response(application.get_app_config()).get_json()['data']
         assert config['MANAGED_MODE'] is False
         assert config['CAN_CONFIGURE'] is False
+        assert config['WORKFLOWS_AVAILABLE'] is False
 
 
 def test_admin_branding_save_and_reset(config_client):
@@ -809,13 +820,22 @@ def test_local_terminal_settings_without_administration(config_client, monkeypat
     filesystem = policy.pop('sandboxFilesystem')
     assert filesystem['configured'] is False
     assert '~/.azure' in filesystem['requested']
-    assert policy == {'mode': 'off', 'available': True, 'locked': False, 'revision': saved['revision']}
+    # Whether a sandbox is installed depends on the machine; a hint shows only without one.
+    sandboxed, hint = policy.pop('sandboxed'), policy.pop('sandboxInstallHint')
+    assert isinstance(sandboxed, bool) and (hint is None if sandboxed else hint is None or 'bubblewrap' in hint)
+    assert policy == {'mode': 'off', 'enabled': True, 'available': True, 'locked': False, 'revision': saved['revision']}
     response = config_client.put('/api/configurations/terminal', json={'mode': mode, 'revision': policy['revision']},
         headers={'Origin': 'http://localhost', 'X-DF-Configuration': '1'})
     assert response.get_json()['data']['mode'] == mode
     assert read_configuration()['overrides'] == {'app_name': 'Keep this', 'terminal_mode': mode}
     assert config_client.put('/api/configurations/terminal', json={'mode': mode, 'revision': policy['revision']},
         headers={'Origin': 'http://localhost', 'X-DF-Configuration': '1'}).status_code == 409
+    # The terminal's own switch turns it off without changing the mode the agent's other tools share.
+    revision = read_configuration()['revision']
+    switched = config_client.put('/api/configurations/terminal', json={'enabled': False, 'revision': revision},
+        headers={'Origin': 'http://localhost', 'X-DF-Configuration': '1'}).get_json()['data']
+    assert switched['mode'] == mode and switched['enabled'] is False and terminal_mode() == 'off'
+    assert read_configuration()['overrides'] == {'app_name': 'Keep this', 'terminal_mode': mode, 'terminal_enabled': False}
 
 
 @pytest.mark.parametrize('case', ['hosted', 'identity', 'origin', 'no-origin', 'header', 'cross-site', 'remote', 'host', 'locked', 'disabled', 'extra-field'])

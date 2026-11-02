@@ -15,9 +15,9 @@ def test_builtin_meta_bundle_has_concrete_hidden_owners() -> None:
     registry = build_registry()
 
     assert registry.expanded_names(["meta"]) == [
-        "meta", "analysis", "workspace", "visualization",
+        "meta", "analysis", "workspace", "visualization", "report",
     ]
-    assert registry.gated_skill_names() == ["configure", "connected_data", "html_app", "report", "terminal"]
+    assert registry.gated_skill_names() == ["configure", "connected_data", "html_app", "map", "terminal"]
     assert registry.get_skill("meta") is not None
     assert not registry.has("interaction")
     assert registry.action_owner("visualize") == "visualization"
@@ -26,25 +26,21 @@ def test_builtin_meta_bundle_has_concrete_hidden_owners() -> None:
         spec["function"]["name"] for spec in registry.tools_for(["meta"])
     } == {
         "execute_python_script",
-        "inspect_source_data",
         "create_file",
         "edit_file",
         "delete_items",
         "list_files",
         "read_file",
-        "search_files",
+        "search",
         "move_file",
         "create_data",
         "update_data",
-        "list_workspace_items",
-        "read_workspace_item",
-        "search_workspace_items",
-        "summarize_data_sources", "list_data", "find_data", "describe_data", "probe_data",
+        "probe_data",
     }
     assert {
         spec["function"]["name"] for spec in registry.action_tools_for(["meta"])
     } == {
-        "visualize", "ask_user", "long_response", "propose_data_operation",
+        "visualize", "ask_user", "long_response", "propose_data_operation", "write_report",
     }
     assert registry.action_owner("long_response") == "meta"
 
@@ -84,7 +80,8 @@ def test_baseline_guides_progressive_visual_analysis() -> None:
     assert "Concrete queries never silently fall back to references" in workspace
     assert "Do not make a separate preparation call" in workspace
     assert "Use that dataset directly" in workspace
-    assert "Virtual load outcomes are not local chart inputs" in visualization
+    # Which load outcomes are computation inputs is said once, for all Python (charts included).
+    assert "Only `compute_ready: true` load outcomes are local computation inputs" in registry.load_body("analysis")
 
 
 def test_long_response_emits_terminal_completion_and_rejects_empty_content() -> None:
@@ -110,17 +107,18 @@ def test_setup_actions_are_owned_by_the_gated_configure_skill() -> None:
 
     assert action_names == {
         "propose_connection", "update_connector_form", "propose_workflow", "propose_schedule", "propose_session_changes",
+        "propose_mcp_changes",
     }
     for action_name in action_names:
         assert registry.action_owner(action_name) == "configure"
         assert action_name not in tool_names
         assert not registry.is_active(["meta"], "configure")
     assert tool_names == {
-        "list_connectors", "read_connector_form", "list_workflows", "list_sessions",
+        "list_connectors", "read_connector_form", "list_sessions", "list_mcp_servers",
     }
     assert {spec["function"]["name"] for spec in registry.action_tools_for(["workspace"])} == {"propose_data_operation"}
     configure = registry.load_body("configure")
-    for section in ("## Connections", "## Workflows", "## Schedules", "## Sessions"):
+    for section in ("## Connections", "## Workflows", "## Schedules", "## Sessions", "## MCP servers"):
         assert configure.count(section) == 1
     assert "user_review_needed: false" in configure
 

@@ -305,7 +305,7 @@ def test_visualize_rejects_unknown_input_source_before_execution():
     assert "Unknown or mismatched input source" in events[0]["message"]
     runtime.run_visualize_code.assert_not_called()
 
-def test_input_sources_resolve_unique_shortened_ids_and_list_valid_ids():
+def test_input_sources_resolve_unique_shortened_ids_and_refuse_unknown_tables():
     from data_formulator.analyst.input_provenance import normalize_input_sources
 
     manifest = _manifest()
@@ -313,5 +313,56 @@ def test_input_sources_resolve_unique_shortened_ids_and_list_valid_ids():
     shortened = data_ids[0].rsplit(":", 1)[0]
     resolved = normalize_input_sources({"input_sources": [{"id": shortened, "kind": "data"}]}, manifest)
     assert resolved[0]["id"] == data_ids[0]
-    with pytest.raises(ValueError, match=f"exact data input id: {data_ids[0]}"):
+    with pytest.raises(ValueError, match="Use a table name from session/tables/"):
         normalize_input_sources({"input_sources": [{"id": "d_result", "kind": "data"}]}, manifest)
+
+
+def _workspace_with_derived_table(tmp_path):
+    import pandas as pd
+    from data_formulator.datalake.workspace import Workspace
+
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    workspace.write_parquet(pd.DataFrame({"country": ["A", "B"], "rate": [1.0, 2.0]}), "d_result_5")
+    return workspace
+
+
+@pytest.mark.parametrize("reference", [
+    "d_result_5", "session/tables/d_result_5.json", "data/d_result_5.parquet", "data:d_result_5",
+])
+def test_input_sources_accept_derived_workspace_tables_outside_the_scoped_inputs(tmp_path, reference):
+    from data_formulator.analyst.input_provenance import normalize_input_sources
+
+    workspace = _workspace_with_derived_table(tmp_path)
+    content_hash = workspace.get_table_metadata("d_result_5").content_hash
+
+    resolved = normalize_input_sources(
+        {"input_sources": [{"id": reference, "kind": "data"}]}, _manifest(), workspace)
+
+    assert resolved == [{"id": f"data:{content_hash}:d_result_5", "kind": "data", "display_name": "d_result_5"}]
+
+
+def test_input_sources_refuse_a_derived_table_that_changed_since_it_was_named(tmp_path):
+    from data_formulator.analyst.input_provenance import normalize_input_sources
+
+    workspace = _workspace_with_derived_table(tmp_path)
+    with pytest.raises(ValueError, match="changed since it was read"):
+        normalize_input_sources(
+            {"input_sources": [{"id": "data:stale:d_result_5", "kind": "data"}]}, _manifest(), workspace)
+    with pytest.raises(ValueError, match="Unknown or mismatched input source: d_missing"):
+        normalize_input_sources({"input_sources": [{"id": "d_missing", "kind": "data"}]}, _manifest(), workspace)
+
+
+def test_visualize_builds_on_a_table_derived_in_an_earlier_request(tmp_path):
+    workspace = _workspace_with_derived_table(tmp_path)
+    runtime = MagicMock()
+    runtime.run_visualize_code.return_value = {"status": "error", "error_message": "stop"}
+    ctx = SkillContext(client=None, workspace=workspace, runtime=runtime,
+                       payload={"workspace_inputs": _manifest()})
+
+    events = list(VisualizationSkill()._handle_visualize(_action(input_sources=[
+        {"id": "orders", "kind": "data"}, {"id": "session/tables/d_result_5.json", "kind": "data"},
+    ]), ctx))
+
+    assert events[0]["type"] == "action"
+    assert events[0]["input_tables"] == ["orders", "d_result_5"]
+    runtime.run_visualize_code.assert_called_once()

@@ -11,7 +11,7 @@
 
 import React, { createContext, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Box, ButtonBase, IconButton, TextField, Tooltip, TooltipProps, Typography } from '@mui/material';
+import { alpha, Box, ButtonBase, IconButton, TextField, Tooltip, TooltipProps, Typography } from '@mui/material';
 import { iconVar, textVar } from '../app/layout';
 import { sidebarRowActionSx, sidebarRowDangerActionSx, sidebarRowMetaSx, sidebarRowSx, sidebarRowTitleSx } from '../app/tokens';
 
@@ -20,6 +20,29 @@ export const cardHoverSx = {
     transition: 'box-shadow 90ms ease, transform 90ms ease, border-color 90ms ease',
     '&:hover': { borderColor: 'rgba(0, 0, 0, 0.18)', boxShadow: '0 2px 8px rgba(32, 33, 36, 0.08)', transform: 'translateY(-1px)' },
     '@media (prefers-reduced-motion: reduce)': { transition: 'none', '&:hover': { transform: 'none' } },
+} as const;
+
+/** The landing page's example cards (sessions and workflows): a raised surface that lifts onto the accent border. */
+export const exampleCardSx = (disabled = false) => ({
+    position: 'relative', display: 'flex', minWidth: 0,
+    border: '1px solid rgba(0, 0, 0, 0.18)', borderRadius: 1, bgcolor: 'background.paper',
+    boxShadow: '0 1px 3px rgba(32, 33, 36, 0.06)',
+    transition: 'box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+    ...(disabled ? {} : { '&:hover': { transform: 'translateY(-2px)', borderColor: 'primary.light', boxShadow: '0 4px 12px rgba(32, 33, 36, 0.12)' } }),
+    '@media (prefers-reduced-motion: reduce)': { '&:hover': { transform: 'none' } },
+} as const);
+
+/** The example card's whole-card button. */
+export const exampleCardButtonSx = {
+    display: 'flex', alignItems: 'stretch', flex: 1, width: '100%', minWidth: 0, textAlign: 'left', borderRadius: 'inherit',
+    '&.Mui-disabled': { opacity: 0.6 }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
+} as const;
+
+export const exampleCardTitleSx = { minWidth: 0, fontSize: textVar.md, fontWeight: 400, lineHeight: 1.4, color: 'text.primary', overflowWrap: 'anywhere' } as const;
+
+export const exampleCardDescriptionSx = {
+    mt: 0.25, fontSize: textVar.xs, lineHeight: 1.5, color: 'text.secondary', overflowWrap: 'anywhere',
+    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
 } as const;
 
 /** Filled background shared by run chips and metadata chips. */
@@ -105,7 +128,9 @@ export const ItemCardAction: React.FC<{ label: string; icon: React.ReactNode; on
     return <Tooltip title={label}><span>
         <IconButton size="small" aria-label={label} aria-haspopup={menu ? 'menu' : undefined} disabled={disabled}
             sx={rowStyle ? (danger ? sidebarRowDangerActionSx : sidebarRowActionSx)
-                : { p: 0.5, color: danger ? 'error.main' : 'text.secondary', '& .MuiSvgIcon-root': { fontSize: iconVar.md } }}
+                : { p: 0.5, color: danger ? 'error.main' : 'text.secondary', '& .MuiSvgIcon-root': { fontSize: iconVar.md },
+                    '&:hover': { color: danger ? 'error.main' : 'text.primary',
+                        bgcolor: theme => alpha(danger ? theme.palette.error.main : theme.palette.text.primary, danger ? 0.1 : 0.08) } }}
             onClick={event => { event.stopPropagation(); onClick(event.currentTarget); }}>{icon}</IconButton>
     </span></Tooltip>;
 };
@@ -206,11 +231,11 @@ export const ItemCard: React.FC<ItemCardProps> = ({ title, badges, captions = []
         {badges}
     </Box>;
     const card = <Box component="article" onClick={handleClick} onAuxClick={handleAuxClick} className={active ? 'item-active' : undefined} sx={{
+        ...(compact ? { border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper', ...(clickable ? cardHoverSx : {}) }
+            : exampleCardSx(!clickable)),
         position: 'relative', minWidth: 0, textAlign: 'left', fontFamily: theme => theme.typography.fontFamily,
-        border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper',
         px: compact ? 1 : 2, py: compact ? 0.75 : 1.5, display: 'flex', flexDirection: 'column', gap: compact ? 0.25 : 0,
         cursor: clickable ? 'pointer' : 'default', opacity: inactive ? 0.55 : 1,
-        ...(clickable ? cardHoverSx : {}),
         '& .item-overlay-actions': { opacity: 0, transition: 'opacity 90ms' },
         '&:hover .item-overlay-actions, &:has(:focus-visible) .item-overlay-actions, &.item-active .item-overlay-actions': { opacity: 1 },
         '@media (hover: none)': { '& .item-overlay-actions': { opacity: 1 } },

@@ -270,6 +270,26 @@ def read_html_manifest(html: str) -> dict[str, Any] | None:
     return manifest if isinstance(manifest, dict) else None
 
 
+APP_FILE_SUFFIXES = (REACT_APP_SUFFIX, ".html", ".map.json")
+
+
+def read_app_manifest(name: str, text: str) -> dict[str, Any] | None:
+    """The manifest of a workspace app or map file (``tables``, ``sources``), or ``None``."""
+    lower = name.lower()
+    if lower.endswith(REACT_APP_SUFFIX):
+        return read_react_manifest(text)
+    if lower.endswith(".html"):
+        return read_html_manifest(text)
+    if lower.endswith(".map.json"):
+        from data_formulator.analyst.skills.map.validate import map_tables
+        try:
+            spec = json.loads(text)
+        except ValueError:
+            return None
+        return {"title": spec.get("title"), "tables": map_tables(spec)} if isinstance(spec, dict) else None
+    return None
+
+
 def check_app_revision(filename: str, original: str | None, content: Any, ctx: SkillContext) -> dict[str, Any] | None:
     """Validate an ``edit_file`` revision of an app like ``write_app`` validates a new one.
 

@@ -104,7 +104,8 @@ export interface ProgressStep {
 /** One step of the checklist plan the analyst writes in its narration. */
 export interface PlanItem {
     text: string;
-    status: 'open' | 'done' | 'dropped';
+    /** `skipped`: still open when the run finished (after one reminder). */
+    status: 'open' | 'done' | 'dropped' | 'skipped';
     note?: string;
     /** Ids of the charts delivered for this step (or 'write_report' / 'write_app' for other results). */
     results?: string[];
@@ -124,6 +125,7 @@ export interface InteractionEntry {
      *  chips in the message bubble (the file bytes live in workspace scratch/,
      *  not here). */
     attachments?: string[];
+    references?: ThreadReference[];
     inputTableNames?: string[]; // table names actually used for this derivation step
     clarificationQuestions?: ClarificationQuestion[];
     /** Legacy persisted delegate metadata; new AnalystAgent runs do not emit it. */
@@ -266,6 +268,25 @@ export interface TerminalExecution {
     result?: Record<string, unknown>;
 }
 
+/**
+ * One agent tool call as saved on the message that made it: the tool, its arguments and what came
+ * back, with long text capped by the server (`truncated` holds the original sizes). Views show a call
+ * by its tool (design-docs/67). Terminal commands keep their own record (`TerminalExecution`).
+ */
+export interface ToolCall {
+    id: string;
+    tool: string;
+    args: Record<string, unknown>;
+    // MCP calls can wait for the user's approval and be rejected (see McpServers.tsx).
+    status: 'awaiting_approval' | 'running' | 'completed' | 'failed' | 'rejected' | 'interrupted' | 'unknown';
+    output?: string;
+    error?: string;
+    createdAt?: number;
+    durationMs?: number;
+    truncated?: Record<string, number>;
+}
+
+/** A code-running tool call in the shape code views use (see `codeCallsOf`). */
 export interface CodeExecution {
     id: string;
     createdAt?: number;
@@ -283,6 +304,13 @@ export interface WorkflowDefinition {
         required?: boolean; default?: string | number | boolean; options?: string[]; allow_custom?: boolean }[];
     steps?: { id: string; instructions: string; description?: string; next?: string;
         checkers?: { id: string; condition: string; when?: 'before' | 'during' | 'after'; on_fail?: string }[] }[];
+}
+
+/** An earlier result a request is about: a chart, table, report or file (by its id). */
+export interface ThreadReference {
+    kind: 'chart' | 'table' | 'report' | 'file';
+    id: string;
+    label: string;
 }
 
 export interface TextTurn {
@@ -305,8 +333,12 @@ export interface TextTurn {
     /** The user's message (design-docs/58): a turn with a prompt and no
      *  content is a user message node; the agent's reply follows as its own node. */
     prompt?: string;
+    /** The message was sent by the app, not typed: a repair of an app that failed when it opened. */
+    auto?: 'app-repair';
     /** Files and images the user attached to `prompt`. */
     attachments?: string[];
+    /** Earlier results the user's message is about, shown with it like attachments. */
+    references?: ThreadReference[];
     /** A workflow run's outputs, in the order the run produced them. */
     outputIds?: string[];
     workflow?: {
@@ -344,7 +376,8 @@ export interface TextTurn {
         log?: { id: string; tool: string; text: string; call?: number; step_id?: string; plan_revision?: number; details?: Record<string, string>; input?: Record<string, unknown> }[];
     };
     executions?: TerminalExecution[];
-    codeExecutions?: CodeExecution[];
+    /** Every other tool call of the message, in the order they ran. */
+    toolCalls?: ToolCall[];
     /** clarify only (empty/undefined ⇒ a plain explanation). */
     options?: ClarificationQuestion[];
     /** Display-only immutable loading alternatives for a data-operation pause. */
@@ -499,8 +532,36 @@ export interface WorkflowFormArtifact extends SetupFormBase {
     };
 }
 
+/** A server the agent proposed to add; the user reviews it, types any secrets, and adds it. */
+export interface McpServerProposal {
+    name: string;
+    transport: 'http' | 'sse' | 'stdio';
+    url?: string;
+    auth?: { type: 'none' | 'header' | 'oauth'; header?: string; client_id?: string; scope?: string };
+    command?: string;
+    args?: string[];
+    cwd?: string;
+    /** Environment variables the local server needs; the user types their values. */
+    envNames?: string[];
+    reason?: string;
+    /** The server's ID once the user added it. */
+    addedId?: string;
+}
+
+export interface McpFormArtifact extends SetupFormBase {
+    kind: 'mcp';
+    mcp: {
+        add: McpServerProposal[];
+        /** Switches for existing servers and tools; applied together with the mode. */
+        changes: { serverId: string; serverName: string; enabled?: boolean; tools?: { name: string; enabled: boolean }[]; reason?: string }[];
+        mode?: 'off' | 'ask' | 'auto';
+        currentMode?: 'off' | 'ask' | 'auto';
+        applied?: boolean;
+    };
+}
+
 /** Canvas-owning form artifacts. Add future setup form kinds to this union. */
-export type FormArtifact = ConnectorFormArtifact | ScheduleFormArtifact | SessionsFormArtifact | WorkflowFormArtifact;
+export type FormArtifact = ConnectorFormArtifact | ScheduleFormArtifact | SessionsFormArtifact | WorkflowFormArtifact | McpFormArtifact;
 
 // Data source types for tracking where data originated
 export type DataSourceType = 'paste' | 'file' | 'url' | 'stream' | 'database' | 'example' | 'extract';

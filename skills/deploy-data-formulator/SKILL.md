@@ -100,9 +100,10 @@ restrictions.
   existing vault entries require decryption with the old key and re-encryption
   with the new one, or deliberate credential re-provisioning. Preserve recovery
   material securely and rotate exposed upstream credentials as appropriate.
-- Do not deploy with `--dev`: without an explicit code-signing secret, development
-  mode uses a fixed, publicly known signing key. Keep production signing secrets
-  stable rather than relying on automatically generated per-process Flask keys.
+- Do not deploy with `--dev`. Keep production signing secrets stable: without
+  `DF_CODE_SIGNING_SECRET` or `FLASK_SECRET_KEY`, generated code is signed with a
+  per-installation key in `DATA_FORMULATOR_HOME/.code-signing-key`, which each
+  instance creates separately unless that directory is shared.
 
 ### Identity Boundary
 

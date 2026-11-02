@@ -178,6 +178,9 @@ class EphemeralWorkspaceManager(WorkspaceManager):
         except (OSError, json.JSONDecodeError):
             logger.warning("Failed to update ephemeral workspace access time", exc_info=True)
 
+    def mark_accessed(self, workspace_id: str) -> None:
+        self._touch(workspace_id)
+
     def open_workspace(self, workspace_id: str, identity_id: str) -> Workspace:
         workspace = super().open_workspace(workspace_id, identity_id)
         self._touch(workspace_id)

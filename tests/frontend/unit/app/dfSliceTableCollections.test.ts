@@ -598,6 +598,20 @@ describe("split table collections", () => {
     expect(dfSelectors.selectCanvasTarget(state)).toEqual({ type: "table", tableId: "orders" });
   });
 
+  it("shows the report a focused message follows, not the item before the report", () => {
+    let state = dataFormulatorReducer(undefined, dfActions.addTableToStore(sourceTable as any));
+    state = dataFormulatorReducer(state, dfActions.saveGeneratedReport({
+      id: "report-1", content: "# Report", selectedChartIds: [], createdAt: 2, status: "completed", parentNodeId: "orders",
+    } as any));
+    state = dataFormulatorReducer(state, dfActions.addTextTurn({
+      kind: "text", id: "textTurn-summary", displayId: "Summary", textKind: "explain",
+      content: "Created a report summarizing the data.", parentNodeId: "report-1", createdAt: 3,
+    }));
+    state = dataFormulatorReducer(state, dfActions.setFocused({ type: "text", textId: "textTurn-summary" }));
+
+    expect(dfSelectors.selectCanvasTarget(state)).toEqual({ type: "report", reportId: "report-1" });
+  });
+
   it("passes workspace file focus through to the canvas without a table context", () => {
     const state = dataFormulatorReducer(
       undefined,
@@ -908,5 +922,25 @@ describe("removing thread items (design-docs/58)", () => {
     expect(state.artifactSets).toEqual([]);
     expect(parentOf(state, "file-c.md")).toBe("ask");
     expect(parentOf(state, "after")).toBe("file-c.md");
+  });
+
+  it("returns focus to the report a deleted summary followed, not the table before it", () => {
+    let state = dataFormulatorReducer(undefined, { type: "init" });
+    state = dataFormulatorReducer(state, dfActions.addTableToStore(sourceTable as any));
+    const turn = (id: string, parentNodeId: string, extra = {}) => dfActions.addTextTurn({ kind: "text", id, displayId: id,
+      textKind: "explain", content: "", parentNodeId, createdAt: 1, ...extra } as any);
+    state = dataFormulatorReducer(state, turn("ask", "orders", { prompt: "Write a brief" }));
+    state = dataFormulatorReducer(state, dfActions.saveGeneratedReport({ id: "brief", title: "Brief", content: "# Brief",
+      parentNodeId: "ask", selectedChartIds: [], createdAt: 2, status: "completed" } as any));
+    state = dataFormulatorReducer(state, turn("summary", "brief", { content: "The brief is ready." }));
+    state = dataFormulatorReducer(state, dfActions.setFocused({ type: "text", textId: "summary" }));
+    state = dataFormulatorReducer(state, dfActions.removeTextTurn("summary"));
+    expect(state.focusedId).toEqual({ type: "report", reportId: "brief" });
+
+    // Without a report above it, a deleted message still goes back to its table.
+    state = dataFormulatorReducer(state, turn("note", "orders", { content: "A note." }));
+    state = dataFormulatorReducer(state, dfActions.setFocused({ type: "text", textId: "note" }));
+    state = dataFormulatorReducer(state, dfActions.removeTextTurn("note"));
+    expect(state.focusedId).toEqual({ type: "table", tableId: "orders" });
   });
 });

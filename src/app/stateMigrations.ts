@@ -26,9 +26,10 @@
  */
 
 import { buildThreadGraph } from './threadGraph';
+import { toolCallFromCodeExecution } from './toolCalls';
 
 /** Current persisted-state schema version. Bump when adding a migration. */
-export const DF_STATE_VERSION = 14;
+export const DF_STATE_VERSION = 15;
 
 type SavedState = Record<string, any>;
 
@@ -457,6 +458,25 @@ function dropTableCodeCalls(state: SavedState): SavedState {
 }
 
 /**
+ * Code calls were saved as `codeExecutions`; every tool call is now one `toolCalls` record
+ * (tool, arguments, output), so other tools' calls can be kept beside them.
+ */
+function codeExecutionsToToolCalls(state: SavedState): SavedState {
+    if (!Array.isArray(state.textTurns)) return { ...state, __stateVersion: 15 };
+    return {
+        ...state,
+        textTurns: state.textTurns.map((turn: any) => {
+            if (!Array.isArray(turn?.codeExecutions)) return turn;
+            const { codeExecutions, ...rest } = turn;
+            const calls = [...(Array.isArray(turn.toolCalls) ? turn.toolCalls : []),
+                ...codeExecutions.filter((call: any) => call && typeof call === 'object').map(toolCallFromCodeExecution)];
+            return calls.length ? { ...rest, toolCalls: calls } : rest;
+        }),
+        __stateVersion: 15,
+    };
+}
+
+/**
  * A follow-up on an app, file, report or reference used to start from the item
  * itself even while a conversation after it was still open, so it read as a
  * separate thread. Derived tables already continued their open conversation
@@ -813,6 +833,7 @@ const MIGRATIONS: Migration[] = [
     { to: 12, migrate: dropQueriedSourcesFromSets },
     { to: 13, migrate: dropTableCodeCalls },
     { to: 14, migrate: continueOpenConversationsAfterItems },
+    { to: 15, migrate: codeExecutionsToToolCalls },
 ];
 
 /**

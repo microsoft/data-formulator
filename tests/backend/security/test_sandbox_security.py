@@ -254,6 +254,41 @@ finally:
         assert "OSError" in result["error_message"]
         assert "forbidden" in result["error_message"]
 
+    @pytest.mark.parametrize("operation", [
+        "os.remove(a)", "os.unlink(a)", "os.rename(a, b)", "os.replace(a, b)",
+        "os.symlink(a, b)", "os.link(a, b)", "os.truncate(a, 0)", "os.chmod(a, 0o777)",
+        "os.rmdir(d)",
+    ])
+    def test_destructive_filesystem_operations_denied(self, run_code, workspace, operation):
+        target = os.path.join(workspace._path, "keep.txt")
+        folder = os.path.join(workspace._path, "keep-dir")
+        os.makedirs(folder, exist_ok=True)
+        with open(target, "w") as stream:
+            stream.write("unchanged")
+        other = os.path.join(workspace._path, "other.txt")
+        before = sorted(os.listdir(workspace._path))
+        result = run_code(f"import os\na, b, d = {target!r}, {other!r}, {folder!r}\n{operation}")
+        assert result["status"] == "error", result
+        assert "forbidden" in result["error_message"]
+        assert sorted(os.listdir(workspace._path)) == before
+        with open(target) as stream:
+            assert stream.read() == "unchanged"
+
+    def test_windows_process_creation_event_denied(self, run_code):
+        result = run_code("import sys\nsys.audit('_winapi.CreateProcess')")
+        assert result["status"] == "error", result
+        assert "forbidden" in result["error_message"]
+
+    def test_ambient_cloud_identity_is_not_inherited(self, run_code, monkeypatch):
+        leaked = {"IDENTITY_HEADER": "h", "IDENTITY_ENDPOINT": "http://127.0.0.1:1/msi/token",
+                  "MSI_ENDPOINT": "m", "MSI_SECRET": "s", "AZURE_CLIENT_ID": "c",
+                  "AWS_ACCESS_KEY_ID": "a", "GOOGLE_CLOUD_PROJECT": "g"}
+        for key, value in leaked.items():
+            monkeypatch.setenv(key, value)
+        result = run_code(f"import os\nout = sorted(k for k in {sorted(leaked)!r} if k in os.environ)")
+        assert result["status"] == "ok", result
+        assert result["allowed_objects"]["out"] == []
+
 
 # ===================================================================
 # LocalSandbox — file-write restrictions

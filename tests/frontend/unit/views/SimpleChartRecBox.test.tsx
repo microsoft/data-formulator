@@ -1,4 +1,5 @@
 import React, { StrictMode } from 'react';
+import { codeCallsOf, toolCallFromCodeExecution } from '../../../../src/app/toolCalls';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
@@ -54,6 +55,34 @@ describe('Analyst landing attachment handoff', () => {
     const turnWith = (store: { getState: () => any }, predicate: (turn: any) => boolean) =>
         store.getState().textTurns.find(predicate);
 
+    it('shows the answer while it is written, drops a retracted one, and hands over to the closing message', async () => {
+        let finish!: () => void;
+        const written = new Promise<void>(resolve => { finish = resolve; });
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            // A first "answer" turned out to be a note before a tool call.
+            yield { type: 'text_delta', channel: 'answer', content: 'Let me check ' };
+            yield { type: 'answer_retracted' };
+            yield { type: 'thinking_text', content: 'Let me check' };
+            yield { type: 'text_delta', channel: 'answer', content: '**India** has ' };
+            yield { type: 'text_delta', channel: 'answer', content: 'the most.' };
+            await written;
+            yield { type: 'completion', status: 'success', content: { summary: '**India** has the most.' } };
+        });
+        const { store } = mountTask({ text: 'Where do most out-of-school children live?', images: [], attachments: [] });
+        await waitFor(() => expect(screen.getByTestId('explanation-panel')).toHaveTextContent('**India** has the most.'));
+        expect(screen.getByTestId('explanation-panel')).not.toHaveTextContent('Let me check');
+        // While it is written, the answer is only shown; the thread gets it when the run ends.
+        expect(turnWith(store, turn => turn.content?.includes('India'))).toBeUndefined();
+        // Clicking while it is written would stop later results taking focus; the answer on screen stays anyway.
+        fireEvent.pointerDown(screen.getByTestId('explanation-panel'));
+        await act(async () => { finish(); });
+        await waitFor(() => expect(turnWith(store, turn => turn.content === '**India** has the most.')).toBeDefined());
+        const answer = turnWith(store, turn => turn.content === '**India** has the most.');
+        expect(store.getState().focusedId).toEqual({ type: 'text', textId: answer.id });
+        expect(screen.getAllByTestId('explanation-panel')).toHaveLength(1);
+        expect(screen.getByTestId('explanation-panel')).toHaveTextContent('**India** has the most.');
+    });
+
     it('retries an interrupted later step with the request that started its run', async () => {
         const { store } = mountTask();
         act(() => {
@@ -65,7 +94,7 @@ describe('Analyst landing attachment handoff', () => {
                 content: '', prompt: 'Explain them together', parentNodeId: 'loaded', createdAt: 1.5 }));
             store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'step-1', displayId: 'Step', textKind: 'explain',
                 content: 'Compare the datasets', parentNodeId: 'reply', actionId: 'run', createdAt: 2,
-                codeExecutions: [{ id: 'step-1', tool: 'execute_python_script', code: 'print(1)', purpose: 'Compare', status: 'completed' }] }));
+                toolCalls: [{ id: 'step-1', tool: 'execute_python_script', code: 'print(1)', purpose: 'Compare', status: 'completed' }].map(toolCallFromCodeExecution as any) }));
             store.dispatch(dfActions.addTableToStore({ kind: 'table', id: 'chart-data', displayId: 'Chart data', names: [],
                 metadata: {}, rows: [], parentNodeId: 'step-1', derive: { source: ['life'], code: '', dialog: [],
                     trigger: { tableId: 'life', resultTableId: 'chart-data', interaction: [
@@ -92,7 +121,7 @@ describe('Analyst landing attachment handoff', () => {
                 content: '', prompt: 'Compare regions', parentNodeId: 'conversation-root:test', createdAt: 1 }));
             store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'leftover', displayId: 'Step', textKind: 'explain',
                 content: '', parentNodeId: 'ask', actionId: 'cut-off', createdAt: 2,
-                codeExecutions: [{ id: 'check', tool: 'execute_python_script', code: 'print(1)', purpose: 'Check coverage', status: 'completed' }] }));
+                toolCalls: [{ id: 'check', tool: 'execute_python_script', code: 'print(1)', purpose: 'Check coverage', status: 'completed' }].map(toolCallFromCodeExecution as any) }));
             store.dispatch(dfActions.createDraftNode({ id: 'failed', displayId: 'Failed', parentNodeId: 'leftover',
                 parentTableId: 'leftover', source: [], interaction: [], actionId: 'cut-off' }));
             store.dispatch(dfActions.updateDeriveStatus({ nodeId: 'failed', status: 'interrupted' }));
@@ -656,7 +685,7 @@ describe('Analyst landing attachment handoff', () => {
             // table keeps its own code rather than listing it as a call.
             const step = turnWith(store, turn => turn.id === derived?.parentNodeId);
             expect(step.content).toBe('');
-            expect(step.codeExecutions ?? []).toEqual([]);
+            expect(codeCallsOf(step)).toEqual([]);
             expect(derived?.derive?.code).toBeTruthy();
             expect(store.getState().fileNodes).toEqual([]);
         } finally {
@@ -859,7 +888,7 @@ describe('Analyst landing attachment handoff', () => {
         }
     });
 
-    it('updates an edited app in place, where it is in the thread (design-docs/58, rule 8)', async () => {
+    it('moves an app the agent updated to after the request that changed it (design-docs/58, rule 8)', async () => {
         vi.mocked(streamRequest).mockImplementationOnce(async function* () {
             yield { type: 'tool_result', tool: 'edit_file', status: 'ok', stdout: JSON.stringify({
                 path: 'files/sales.app.jsx', name: 'sales.app.jsx', display_name: 'Sales explorer',
@@ -877,14 +906,16 @@ describe('Analyst landing attachment handoff', () => {
             store.dispatch(dfActions.queueAnalystTask({ text: 'Add a units chart to the dashboard', images: [], attachments: [] }));
         });
         await waitFor(() => expect(turnWith(store, turn => turn.content === 'Added a units chart.')).toBeDefined());
-        // app → request → closing answer; the app keeps its place and shows the revision.
+        // built → request → … → app (the one current version) → closing answer; not a fix, so no "replaced" note.
         const request = turnWith(store, turn => turn.prompt === 'Add a units chart to the dashboard');
-        expect(request.parentNodeId).toBe('file-sales.app.jsx');
-        expect(store.getState().fileNodes).toEqual([
-            expect.objectContaining({ id: 'file-sales.app.jsx', contentHash: 'revised-hash', parentNodeId: 'built' }),
-        ]);
+        expect(request.parentNodeId).toBe('built');
+        const [app] = store.getState().fileNodes;
+        expect(store.getState().fileNodes).toHaveLength(1);
+        expect(app).toMatchObject({ id: 'file-sales.app.jsx', contentHash: 'revised-hash' });
+        expect(app.replaced).toBeUndefined();
+        expect(chainAbove(store, app.id)).toContain(request.id);
         const explanation = turnWith(store, turn => turn.content === 'Added a units chart.');
-        expect(explanation.parentNodeId).toBe(request.id);
+        expect(explanation.parentNodeId).toBe(app.id);
         act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: explanation.id })));
         expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'file', fileName: 'sales.app.jsx' });
     });
@@ -1245,6 +1276,24 @@ describe('Analyst landing attachment handoff', () => {
         },
     );
 
+    it('keeps the report in view when a summary after it is closed', () => {
+        const { store } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.addChart({ id: 'orders-chart', chartType: 'Bar Chart', tableRef: 'orders', source: 'user', encodingMap: {} } as any));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'ask', displayId: 'ask', textKind: 'explain', content: '',
+                prompt: 'Write a brief', parentNodeId: 'orders', createdAt: 2 }));
+            store.dispatch(dfActions.saveGeneratedReport({ id: 'brief', title: 'Brief', content: '# Brief', parentNodeId: 'ask',
+                selectedChartIds: [], createdAt: 3, status: 'completed' } as any));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'summary', displayId: 'summary', textKind: 'explain',
+                content: 'The brief is ready.', parentNodeId: 'brief', createdAt: 4 }));
+            store.dispatch(dfActions.setFocused({ type: 'text', textId: 'summary' }));
+        });
+        expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'report', reportId: 'brief' });
+        expect(screen.getByTestId('explanation-panel')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Close explanation' }));
+        expect(store.getState().focusedId).toEqual({ type: 'report', reportId: 'brief' });
+    });
+
     it.each([undefined, 'long_response'])('reserves the document canvas for explicit long responses: %s', async (presentation) => {
         const content = presentation ? 'An explicitly expanded answer.' : 'A normal answer. '.repeat(200);
         vi.mocked(streamRequest).mockImplementationOnce(async function* () {
@@ -1541,7 +1590,7 @@ describe('Analyst landing attachment handoff', () => {
         });
         const { store } = mountTask({ text: 'Go deeper', images: [], attachments: [] });
         await waitFor(() => expect(store.getState().textTurns.some(turn => turn.content === 'Done.')).toBe(true));
-        const step = store.getState().textTurns.find(turn => turn.codeExecutions?.length)!;
+        const step = store.getState().textTurns.find(turn => codeCallsOf(turn).length)!;
         expect(step.content).toBe('Find PPP measures');
         expect(store.getState().textTurns.some(turn => turn.content === 'I will check whether the earlier patterns hold.')).toBe(false);
         expect(store.getState().textTurns.flatMap(turn => turn.progressSteps || []).filter(item => item.kind === 'thought')
@@ -1560,26 +1609,26 @@ describe('Analyst landing attachment handoff', () => {
             yield { type: 'completion', content: { summary: 'Calculation finished.' } } as any;
         });
         const { store } = mountTask({ text: 'Calculate a total', images: [], attachments: [] });
-        const codeStep = () => store.getState().textTurns.find(turn => turn.codeExecutions?.length);
+        const codeStep = () => store.getState().textTurns.find(turn => codeCallsOf(turn).length);
         try {
-            await waitFor(() => expect(codeStep()?.codeExecutions?.[0].status).toBe('running'));
+            await waitFor(() => expect(codeCallsOf(codeStep())[0]?.status).toBe('running'));
             expect(store.getState().draftNodes[0].derive.runningPlan).toContain('Calculate total');
             expect(store.getState().textTurns.filter(turn => turn.prompt)).toHaveLength(1);
         } finally {
             await act(async () => { continueStream(); });
         }
-        await waitFor(() => expect(codeStep()?.codeExecutions?.[0].status).toBe(outcome));
+        await waitFor(() => expect(codeCallsOf(codeStep())[0]?.status).toBe(outcome));
         const step = codeStep()!;
         expect(step.progressSteps).toMatchObject([{ kind: 'tool', tool: 'execute_python_script',
-            status: outcome, executionId: step.codeExecutions![0].id }]);
-        expect(step.codeExecutions![0].code).toBe('print(42)');
-        if (outcome !== 'interrupted') expect(step.codeExecutions![0].output).toBe('42');
-        if (outcome === 'failed') expect(step.codeExecutions![0].error).toBe('Calculation failed');
+            status: outcome, executionId: codeCallsOf(step)[0].id }]);
+        expect(codeCallsOf(step)[0].code).toBe('print(42)');
+        if (outcome !== 'interrupted') expect(codeCallsOf(step)[0].output).toBe('42');
+        if (outcome === 'failed') expect(codeCallsOf(step)[0].error).toBe('Calculation failed');
         const focus = store.getState().focusedId;
         act(() => { window.dispatchEvent(new CustomEvent('df-view-tool-activity', { detail: {
-            nodeId: step.id, execution: step.codeExecutions![0],
+            nodeId: step.id, execution: codeCallsOf(step)[0],
         } })); });
-        await waitFor(() => expect(screen.getByTestId('tool-activity-panel')).toHaveAttribute('data-code-calls', step.codeExecutions![0].id));
+        await waitFor(() => expect(screen.getByTestId('tool-activity-panel')).toHaveAttribute('data-code-calls', codeCallsOf(step)[0].id));
         expect(screen.queryByTestId('explanation-panel')).toBeNull();
         expect(store.getState().focusedId).toEqual(focus);
         fireEvent.click(screen.getByRole('button', { name: 'Close tool activity' }));
@@ -1593,16 +1642,16 @@ describe('Analyst landing attachment handoff', () => {
             { id: 'second-call', tool: 'execute_python_script', purpose: 'Second check', code: 'print(2)', status: 'completed' as const },
         ];
         act(() => store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'activity-owner', displayId: 'Activity', textKind: 'explain',
-            content: 'Response stays separate', parentNodeId: 'conversation-root:test', createdAt: 1, codeExecutions: calls })));
+            content: 'Response stays separate', parentNodeId: 'conversation-root:test', createdAt: 1, toolCalls: calls.map(toolCallFromCodeExecution as any) })));
         const focus = store.getState().focusedId;
         act(() => { window.dispatchEvent(new CustomEvent('df-view-tool-activity', { detail: { nodeId: 'activity-owner', execution: calls[0] } })); });
         expect(screen.getByTestId('tool-activity-panel')).toHaveAttribute('data-code-calls', 'first-call');
         expect(screen.getByTestId('tool-activity-panel').textContent).not.toContain('second-call');
         expect(screen.getByTestId('tool-activity-panel').textContent).not.toContain('Response stays separate');
         expect(store.getState().focusedId).toEqual(focus);
-        act(() => store.dispatch(dfActions.updateTextTurn({ id: 'activity-owner', codeExecutions: [
+        act(() => store.dispatch(dfActions.updateTextTurn({ id: 'activity-owner', toolCalls: [
             { ...calls[0], status: 'completed', output: 'Fresh result' }, calls[1],
-        ] })));
+        ].map(toolCallFromCodeExecution as any) })));
         expect(screen.getByTestId('tool-activity-panel').textContent).toContain('Fresh result');
         act(() => { window.dispatchEvent(new CustomEvent('df-view-tool-activity', { detail: { nodeId: 'activity-owner', execution: calls[1] } })); });
         expect(screen.getByTestId('tool-activity-panel')).toHaveAttribute('data-code-calls', 'second-call');
@@ -1624,20 +1673,20 @@ describe('Analyst landing attachment handoff', () => {
             yield { type: 'completion', content: { summary: 'Finished both calls.' } } as any;
         });
         const { store } = mountTask({ text: 'Run both checks', images: [], attachments: [] });
-        const codeStatuses = () => store.getState().textTurns.flatMap(turn => turn.codeExecutions || []).map(call => call.status);
+        const codeStatuses = () => store.getState().textTurns.flatMap(turn => codeCallsOf(turn)).map(call => call.status);
         await waitFor(() => expect(store.getState().textTurns.at(-1)?.content).toBe('Finished both calls.'));
         const turns = store.getState().textTurns;
         // request → step message with both calls → closing answer
         expect(turns).toHaveLength(3);
         const step = turns[1];
         expect(step.parentNodeId).toBe(turns[0].id);
-        expect(step.codeExecutions).toMatchObject([
+        expect(codeCallsOf(step)).toMatchObject([
             { code: 'print(1)', output: 'first output', status: 'completed' },
             { code: 'print(2)', output: 'second output', status: 'failed' },
         ]);
         expect(step.progressSteps!.filter(item => item.kind === 'tool')).toMatchObject([
-            { toolCallId: 'first', status: 'completed', executionId: step.codeExecutions![0].id },
-            { toolCallId: 'second', status: 'failed', executionId: step.codeExecutions![1].id },
+            { toolCallId: 'first', status: 'completed', executionId: codeCallsOf(step)[0].id },
+            { toolCallId: 'second', status: 'failed', executionId: codeCallsOf(step)[1].id },
         ]);
         expect(turns[2].parentNodeId).toBe(step.id);
         expect((turns[2].progressSteps || []).filter(item => item.kind === 'tool')).toHaveLength(0);
@@ -1654,9 +1703,9 @@ describe('Analyst landing attachment handoff', () => {
         });
         const { store } = mountTask({ text: 'Run legacy checks', images: [], attachments: [] });
         await waitFor(() => expect(store.getState().textTurns.at(-1)?.content).toBe('Stream ended.'));
-        const step = store.getState().textTurns.find(turn => turn.codeExecutions?.length)!;
+        const step = store.getState().textTurns.find(turn => codeCallsOf(turn).length)!;
         expect(step.progressSteps!.map(item => item.status)).toEqual(['interrupted', 'interrupted']);
-        expect(step.codeExecutions!.map(call => [call.status, call.output])).toEqual([['interrupted', undefined], ['interrupted', undefined]]);
+        expect(codeCallsOf(step).map(call => [call.status, call.output])).toEqual([['interrupted', undefined], ['interrupted', undefined]]);
     });
 
     it('keeps the earlier request when a run resumes from its question', async () => {
@@ -1683,7 +1732,7 @@ describe('Analyst landing attachment handoff', () => {
         expect(turnWith(store, turn => turn.id === request.id)).toMatchObject({ prompt: request.prompt, parentNodeId: request.parentNodeId });
         expect(reply.id).not.toBe(request.id);
         expect(reply.parentNodeId).toBe(question.id);
-        const steps = store.getState().textTurns.filter(turn => turn.codeExecutions?.length);
+        const steps = store.getState().textTurns.filter(turn => codeCallsOf(turn).length);
         expect(steps.map(step => step.parentNodeId)).toEqual([request.id, reply.id]);
         expect(new Set(store.getState().textTurns.map(turn => turn.id)).size).toBe(store.getState().textTurns.length);
         const threads = buildThreads(dfSelectors.getThreadGraph(store.getState()));
@@ -1813,8 +1862,10 @@ describe('Analyst landing attachment handoff', () => {
         const input = screen.getByRole('textbox');
         fireEvent.change(input, { target: { value: 'Extract data' } });
 
-        await waitFor(() => expect(apiRequest).toHaveBeenCalledTimes(1));
-        const [url, options] = vi.mocked(apiRequest).mock.calls[0];
+        // Calls other than the background-task list (which the input box polls).
+        const uploads = () => vi.mocked(apiRequest).mock.calls.filter(([url]) => url !== '/api/tasks/list');
+        await waitFor(() => expect(uploads()).toHaveLength(1));
+        const [url, options] = uploads()[0];
         expect(url).toBe('/api/agent/workspace/scratch/upload');
         expect((options?.body as FormData).get('file')).toBe(file);
         fireEvent.keyDown(input, { key: 'Enter' });

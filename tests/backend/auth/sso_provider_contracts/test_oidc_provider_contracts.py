@@ -199,6 +199,8 @@ class TestMainstreamOIDCProviderContracts:
             "access_token": f"{contract['id']}-access-token",
             "refresh_token": f"{contract['id']}-refresh-token",
             "expires_in": 3600,
+            "id_token": pyjwt.encode({"sub": contract["subject"], **contract["claims"]}, "contract-key",
+                                     algorithm="HS256"),
         }
         userinfo_resp = MagicMock()
         userinfo_resp.ok = True
@@ -240,10 +242,8 @@ class TestMainstreamOIDCProviderContracts:
         with client.session_transaction() as sess:
             sso = sess["sso"]
             assert sso["access_token"] == f"{contract['id']}-access-token"
-            if contract["userinfo_url"]:
-                assert sso["user"]["sub"] == contract["subject"]
-            else:
-                assert sso["user"] is None
+            # Without UserInfo the subject comes from the ID token.
+            assert sso["user"]["sub"] == contract["subject"]
 
 
 # Provider-independent code paths: one representative contract is enough.

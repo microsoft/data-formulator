@@ -101,7 +101,7 @@ _default_ws_backend = os.environ.get('WORKSPACE_BACKEND', 'local')
 if _disable_database and _default_ws_backend == 'local':
     _default_ws_backend = 'ephemeral'
 app.config['CLI_ARGS'] = {
-    'host': os.environ.get('HOST', '127.0.0.1'),
+    'host': os.environ.get('HOST'),
     'managed': _disable_database or os.environ.get('DF_MANAGED', 'false').lower() == 'true',
     'disable_database': _disable_database,
     'sandbox': os.environ.get('SANDBOX', 'local'),
@@ -293,6 +293,8 @@ def _register_blueprints():
     # Initialise pluggable authentication (reads AUTH_PROVIDER env var)
     from data_formulator.auth.identity import init_auth, get_active_provider
     init_auth(app)
+    from data_formulator.data_loader import load_plugins
+    load_plugins()
 
     # Register auth gateway blueprints for stateful providers (e.g. GitHub OAuth)
     provider = get_active_provider()
@@ -325,11 +327,15 @@ def _register_blueprints():
 
     from data_formulator.routes.workflows import workflow_bp
     app.register_blueprint(workflow_bp)
+    from data_formulator.routes.tasks import task_bp
+    app.register_blueprint(task_bp)
     from data_formulator.routes.schedules import schedule_bp
     app.register_blueprint(schedule_bp)
 
     from data_formulator.routes.configurations import configuration_bp
     app.register_blueprint(configuration_bp)
+    from data_formulator.mcp_servers.routes import mcp_bp
+    app.register_blueprint(mcp_bp)
 
     with spinner("Loading data connectors"):
         from data_formulator.data_connector import register_data_connectors
@@ -363,13 +369,27 @@ def _safety_checks():
                 logger.warning('DF_ADMIN_EMAILS contains invalid sign-in addresses. Use full addresses, not short aliases.')
             if not local_mode and (provider is None or not (identities or (email_supported and valid_emails))):
                 logger.warning('Managed mode has no usable administrator access configuration. Configure authentication and DF_ADMIN_EMAILS or DF_ADMIN_IDENTITIES.')
-            host = cli.get('host') or os.environ.get('HOST', '127.0.0.1')
+            host = cli.get('host') or os.environ.get('HOST', '')
             if local_mode and (host not in ('127.0.0.1', 'localhost', '::1')
                                or os.environ.get('WEBSITE_INSTANCE_ID') or os.environ.get('WEBSITE_HOSTNAME')):
                 logger.critical('SECURITY WARNING: Managed mode uses local-owner administrator identity on a hosted or non-loopback server. Configure verified authentication before exposing this server.')
     backend = cli.get('workspace_backend', 'local')
     sandbox = cli.get('sandbox', 'not_a_sandbox')
     multi_user = backend != 'local'
+
+    if sandbox == 'local':
+        from data_formulator.sandbox.confinement import confinement_kind, describe
+        from data_formulator.sandbox.local_sandbox import _os_sandbox_required
+        # A data_formulator logger: under `gunicorn --chdir .../data_formulator app:app` this
+        # module is the top-level `app`, whose INFO records would not reach the configured handler.
+        sandbox_log = logging.getLogger('data_formulator.sandbox')
+        isolation = describe()
+        if confinement_kind() is None and _os_sandbox_required():
+            sandbox_log.critical('Python sandbox isolation: %s. DF_REQUIRE_OS_SANDBOX is set, so generated code will not run.', isolation)
+        elif confinement_kind() is None and multi_user:
+            sandbox_log.warning('Python sandbox isolation: %s. Native libraries (DuckDB, pyarrow) can read files beyond the workspace.', isolation)
+        else:
+            sandbox_log.info('Python sandbox isolation: %s', isolation)
 
     if multi_user and sandbox == 'not_a_sandbox':
         logger.critical(
@@ -417,7 +437,8 @@ def get_auth_info():
 @app.route('/api/app-config', methods=['GET'])
 def get_app_config():
     """Provide frontend configuration settings from CLI arguments"""
-    from data_formulator.configuration import effective_limit, is_managed_mode, read_configuration, terminal_available, terminal_mode, user_connectors_disabled, user_models_disabled
+    from data_formulator.configuration import effective_limit, is_managed_mode, read_configuration, terminal_available, terminal_enabled, terminal_mode, tools_mode, user_connectors_disabled, user_models_disabled
+    from data_formulator.mcp_servers.config import mcp_available, mcp_servers_on
     args = app.config['CLI_ARGS']
     
     workspace_backend = args.get('workspace_backend', 'local')
@@ -432,6 +453,10 @@ def get_app_config():
         "TERMINAL_MODE": terminal_mode(),
         "TERMINAL_AVAILABLE": terminal_available(),
         "TERMINAL_CONFIG_LOCKED": 'DF_TERMINAL_MODE' in os.environ,
+        "TERMINAL_ENABLED": terminal_enabled(),
+        "TOOLS_MODE": tools_mode(),
+        "MCP_AVAILABLE": mcp_available(),
+        "MCP_SERVERS_ON": mcp_servers_on(),
         "DISABLE_CUSTOM_MODELS": user_models_disabled(),
         "MAX_DISPLAY_ROWS": effective_limit('max_display_rows'),
         "EXTERNAL_TABLE_MAX_ROWS": effective_limit('external_table_max_rows'),
@@ -456,6 +481,8 @@ def get_app_config():
 
     from data_formulator.auth.identity import is_local_mode
     config["IS_LOCAL_MODE"] = is_local_mode()
+    from data_formulator.analyst.skills.configure.automation import workflows_unavailable
+    config["WORKFLOWS_AVAILABLE"] = workflows_unavailable() is None
     from data_formulator.routes.configurations import can_configure
     config["CAN_CONFIGURE"] = can_configure()
 
@@ -614,6 +641,13 @@ def run_app():
     # Now that --data-dir is applied, ensure the persistent log file lives
     # under the resolved DF home (re-points if it differs from the default).
     configure_file_logging()
+
+    # Single-user mode and plugins were first decided at import, before --host was known.
+    if os.environ.get('AUTH_PROVIDER', '').strip().lower() in ('', 'anonymous'):
+        from data_formulator.auth.identity import configure_local_mode
+        configure_local_mode(app)
+    from data_formulator.data_loader import load_plugins
+    load_plugins()
 
     # Register blueprints (this is where heavy imports happen)
     _register_blueprints()

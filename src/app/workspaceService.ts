@@ -8,7 +8,7 @@
  * manager is active. All backends expose the same API contract.
  */
 
-import { CONNECTOR_ACTION_URLS, fetchWithIdentity, getUrls } from './utils';
+import { CONNECTOR_ACTION_URLS, currentStore, fetchWithIdentity, getUrls } from './utils';
 import { apiRequest, ApiRequestError, assertDownloadResponseOk } from './apiClient';
 import { workspaceDB, TableIndexEntry } from './workspaceDB';
 import { INPUT_TABLE_PREVIEW_ROW_LIMIT, replaceInputTablePreviews } from './inputTablePreviewCache';
@@ -88,8 +88,7 @@ export interface WorkspaceFilePreview {
 }
 
 async function isEphemeralBackend(): Promise<boolean> {
-    const { store } = await import('./store');
-    return store.getState().serverConfig?.WORKSPACE_BACKEND === 'ephemeral';
+    return (await currentStore()).getState().serverConfig?.WORKSPACE_BACKEND === 'ephemeral';
 }
 
 function createRecoveryState(state: Record<string, unknown>): Record<string, unknown> {
@@ -142,13 +141,19 @@ function _notifyListChanged(): void {
     window.dispatchEvent(new Event(WORKSPACE_LIST_CHANGED));
 }
 
-export function onWorkspaceFilesChanged(cb: () => void): () => void {
-    window.addEventListener(WORKSPACE_FILES_CHANGED, cb);
-    return () => window.removeEventListener(WORKSPACE_FILES_CHANGED, cb);
+/** Listen for changes to the session's files; `added` are files known to exist already, before a re-list. */
+export function onWorkspaceFilesChanged(cb: (added: WorkspaceFile[]) => void): () => void {
+    const listener = (event: Event) => cb((event as CustomEvent<WorkspaceFile[] | undefined>).detail ?? []);
+    window.addEventListener(WORKSPACE_FILES_CHANGED, listener);
+    return () => window.removeEventListener(WORKSPACE_FILES_CHANGED, listener);
 }
 
-export function notifyWorkspaceFilesChanged(): void {
-    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
+/**
+ * Tell file lists the session's files changed. Pass the files a result just added, so lists show them at once:
+ * right after a load the browser's few connections are busy with per-table requests, and a re-list can wait seconds.
+ */
+export function notifyWorkspaceFilesChanged(added: WorkspaceFile[] = []): void {
+    window.dispatchEvent(new CustomEvent<WorkspaceFile[]>(WORKSPACE_FILES_CHANGED, { detail: added }));
 }
 
 type PreparedInputTablePreview = {
@@ -298,8 +303,7 @@ export async function updateWorkspaceMeta(id: string, displayName: string): Prom
 
 /** Save current workspace state (called by auto-save). */
 export async function saveWorkspaceState(state: Record<string, unknown>): Promise<void> {
-    const { store } = await import('./store');
-    const fullState = store.getState();
+    const fullState = (await currentStore()).getState();
     const ws = fullState.activeWorkspace;
     if (!ws || isWorkspaceReadOnly(ws)) return;
 
@@ -353,7 +357,10 @@ export async function importWorkspace(
         method: 'POST',
         body: formData,
     });
-    return migrateState(data.state);
+    const state = migrateState(data.state);
+    // Input tables keep their preview rows outside the state, so load them as opening a session does.
+    replaceInputTablePreviews(await prepareInputTablePreviews(state, workspaceId));
+    return state;
 }
 
 // ── Table operations ────────────────────────────────────────────────────

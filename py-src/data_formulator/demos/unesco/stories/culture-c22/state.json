@@ -389,7 +389,7 @@
    "id": "textTurn_exploreDataFromNL_1792308820533_1792308913449",
    "displayId": "textTurn_exploreDataFromNL_1792308820533_closing",
    "textKind": "explain",
-   "content": "**Nature gets the bigger share in Colombia, Estonia, Georgia and Ecuador.** Its share of combined cultural and natural heritage spending is:\n\n- **Colombia: 90%** (2023)\n- **Estonia: 72%** (2021)\n- **Georgia: 69%** (2021)\n- **Ecuador: 52%** (2024)\n\nThese are the only four of 18 comparable reporting countries where nature receives more than half. The map uses each country’s latest matched year in 2020–2024; missing countries lack comparable data, not necessarily spending on nature.",
+   "content": "**Nature gets the bigger share of heritage spending in only four countries:**\n\n- **Colombia:** 90% (2023)\n- **Estonia:** 72% (2021)\n- **Georgia:** 69% (2021)\n- **Ecuador:** 52% (2024)\n\nIn the other 14 of the 18 countries with comparable data, cultural heritage gets more. Blank countries have no comparable data. Source: UIS, February 2026 release.",
    "parentNodeId": "d_out_2",
    "actionId": "exploreDataFromNL_1792308820533",
    "createdAt": 1792308913449,
@@ -460,7 +460,7 @@
  ],
  "activeWorkspace": {
   "id": "culture-c22",
-  "displayName": "Most heritage money goes to culture, not nature"
+  "displayName": "Only four countries spend more on nature than on monuments"
  },
  "focusedId": {
   "type": "chart",

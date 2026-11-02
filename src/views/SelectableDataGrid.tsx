@@ -580,6 +580,12 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
         fetchVirtualDataRef.current = fetchVirtualData;
     }, [fetchVirtualData]);
 
+    // A virtual table's in-memory preview can be empty (an imported session, or one restored after a
+    // reload), and with no rows the list never reaches its end to load more, so fetch the first page.
+    React.useEffect(() => {
+        if (virtual && rows.length === 0 && rowCount > 0) fetchVirtualData([], 'asc', 0, false);
+    }, [tableId]);
+
     // Refetch from offset 0 whenever filters change (virtual tables only).
     // Skip the initial mount; the first load happens via the existing
     // virtual-data effect.

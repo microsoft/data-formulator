@@ -3,6 +3,8 @@ import path from 'path';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 
+import * as vega from 'vega';
+import * as vegaLite from 'vega-lite';
 import runtimeBundle from 'virtual:df-react-runtime';
 import bridgeSource from '../../../../../src/app/htmlApp/dfAppRuntime.js?raw';
 import { compileReactApp, mountScript } from '../../../../../src/app/reactApp/compile';
@@ -46,10 +48,12 @@ beforeAll(() => {
     chart = vi.fn(async () => ({ finalize: vi.fn() }));
     (window as any).DF = { ready: Promise.resolve(), manifest: { tables: ['sales'] }, theme: { palette: ['#4c78a8'] },
         query, chart, sparkline: vi.fn(async () => ({ finalize: vi.fn() })), format, reportError: vi.fn() };
+    // The app frame loads vega and vega-lite as scripts before the runtime; Flint draws with them.
+    Object.assign(window, { vega, vegaLite });
     new Function(runtimeBundle)();
 });
 
-afterAll(() => { vi.restoreAllMocks(); delete (window as any).DF; delete (window as any).__DF_REACT__; });
+afterAll(() => { vi.restoreAllMocks(); for (const name of ['DF', '__DF_REACT__', 'vega', 'vegaLite']) delete (window as any)[name]; });
 
 it('runs the skill starter app end to end in the bundled runtime', async () => {
     const compiled = compileReactApp(starter);
@@ -64,7 +68,8 @@ it('runs the skill starter app end to end in the bundled runtime', async () => {
     await waitFor(() => expect(screen.getByText('Coffee')).toBeInTheDocument());
     expect(screen.getAllByText('Total')).toHaveLength(2);
     expect(query).toHaveBeenCalledWith('sales', expect.objectContaining({ columns: ['month'], aggregates: [{ op: 'sum', field: 'revenue' }] }));
-    await waitFor(() => expect(chart).toHaveBeenCalled());
+    // Flint draws the chart itself, with the frame's vega.
+    await waitFor(() => expect(document.querySelector('[data-flint-chart] svg')).not.toBeNull());
     expect((window as any).DF.reportError).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Orders' }));

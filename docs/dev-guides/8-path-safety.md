@@ -208,7 +208,6 @@ LLM 生成的 Python 必须视为不可信代码。当前支持 `SANDBOX=local` 
 | `datalake/workspace.py` | `__init__` (legacy root) | `ConfinedDir(root).resolve(safe_id)` |
 | `routes/agents.py` | `scratch_serve` | `workspace.confined_scratch.resolve(filename)` |
 | `routes/agents.py` | `scratch_upload` | `workspace.confined_scratch.resolve(final_name)` |
-| `cached_azure_blob_workspace.py` | `_cache_path` | `self._cache_jail.resolve(filename)` |
 | `knowledge/store.py` | CRUD | `ConfinedDir(user_home / "knowledge" / category)` |
 | `agents/reasoning_log.py` | log | `ConfinedDir(DATA_FORMULATOR_HOME / "agent-logs" / date / safe_identity_id)` |
 | `local_folder_data_loader.py` | 全文件 | 已使用 `ConfinedDir`（原始采用者） |

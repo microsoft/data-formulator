@@ -1048,7 +1048,7 @@
    "id": "textTurn_exploreDataFromNL_1792308394272_1792308427881",
    "displayId": "textTurn_exploreDataFromNL_1792308394272_closing",
    "textKind": "explain",
-   "content": "**Nearly all students reach that level in Canada and several European countries, as well as Singapore and Hong Kong.**\n\nIn their 2021 assessments, **99% in Canada**, **98% in Russia and Croatia**, and **97% in Poland, Italy, the UK and Singapore** met minimum reading proficiency by the end of primary school.\n\nThe map uses each country’s latest assessment from **2018–2023**. Data cover 102 countries and territories; blank areas mean missing recent data, not low proficiency, and these results describe students—not all children.\n\n*Source: UIS, February 2026 release.*",
+   "content": "**Nearly all students reach that level in Canada and several European countries, as well as Singapore and Hong Kong.** In their 2021 assessments, **99% in Canada**, **98% in Russia and Croatia**, and **97% in Poland, Italy, the UK and Singapore** met minimum reading proficiency by the end of primary school.\n\nThe map uses each country's latest assessment from 2018–2023; blank countries have no recent data. Source: UIS, February 2026 release.",
    "parentNodeId": "d_result_2",
    "actionId": "exploreDataFromNL_1792308394272",
    "createdAt": 1792308427881,
@@ -1113,7 +1113,7 @@
  ],
  "activeWorkspace": {
   "id": "education-sdg4-e22",
-  "displayName": "Two in five primary pupils fall short in reading"
+  "displayName": "Where nearly every pupil learns to read"
  },
  "focusedId": {
   "type": "chart",

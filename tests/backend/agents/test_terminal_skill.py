@@ -34,14 +34,20 @@ def test_terminal_policy_controls_first_turn_prompt_and_tools(tmp_path, monkeypa
     monkeypatch.setattr("data_formulator.configuration.terminal_mode", lambda: mode)
     workspace = Workspace("terminal-policy", root_dir=tmp_path)
     registry = build_registry()
+    preloaded = ""
     if kind == "analyst":
+        from data_formulator.analyst.workspace_inputs import WorkspaceInputManifest
         agent = AnalystAgent(MagicMock(), workspace, skill_registry=registry)
-        agent._loaded_skills = agent._initial_loaded_skills(None)
+        # A session with no data yet preloads terminal (with connected_data); its guidance arrives as a skill message.
+        preload = agent._initial_loaded_skills(WorkspaceInputManifest(inputs=()))
+        agent._loaded_skills = {"meta"}
+        preloaded = "\n".join(str(message["content"]) for message in agent._preload_messages(preload & {"terminal"}))
+        agent._loaded_skills = preload
     else:
         definition = {"version": 1, "name": "Policy", "overview": "Test", "deliverables": ["Summary"],
                       "steps": [{"id": "work", "instructions": "Find data"}]}
         agent = WorkflowAgent(MagicMock(), workspace, new_run(definition, "policy"), lambda state: None, Event(), "")
-    prompt = agent._build_system_prompt()
+    prompt = agent._build_system_prompt() + ("\n" + preloaded if preloaded else "")
     tools = agent._current_tools()
     names = {spec["function"]["name"] for spec in tools}
     assert registry.has("terminal")
@@ -50,7 +56,11 @@ def test_terminal_policy_controls_first_turn_prompt_and_tools(tmp_path, monkeypa
     assert "{terminal_acquisition_route}" not in prompt
     if mode == "off":
         assert "terminal" not in prompt.lower()
-        assert "terminal" not in json.dumps(tools).lower()
+        # Other than configure's workflow settings (auto-approving terminal commands in workflow runs).
+        configure_tools = {spec["function"]["name"] for spec in agent.registry.tools_for(["configure"])
+                           + agent.registry.action_tools_for(["configure"])} if kind == "analyst" else set()
+        assert "terminal" not in json.dumps([spec for spec in tools
+                                             if spec["function"]["name"] not in configure_tools]).lower()
         assert "Existing CLI access or local files" not in workspace_guidance
         assert not agent.registry.has("terminal")
         assert not agent._build_skill_body_message("terminal")[0]
@@ -87,6 +97,24 @@ def test_terminal_policy_controls_first_turn_prompt_and_tools(tmp_path, monkeypa
     assert "{terminal_acquisition_route}" not in history[1]["content"]
     assert ("Existing CLI access or local files" in history[1]["content"]) == (mode != "off")
     assert ("terminal" in agent._loaded_skills) == (mode != "off")
+
+
+@pytest.mark.parametrize("mode", ["ask", "auto"])
+def test_terminal_loads_on_demand_once_a_session_has_data(tmp_path, monkeypatch, mode):
+    from unittest.mock import MagicMock
+    from data_formulator.analyst.agent import AnalystAgent
+    from data_formulator.analyst.skills import build_registry
+    from data_formulator.datalake.workspace import Workspace
+
+    monkeypatch.setattr("data_formulator.configuration.terminal_mode", lambda: mode)
+    agent = AnalystAgent(MagicMock(), Workspace("terminal-policy", root_dir=tmp_path), skill_registry=build_registry())
+    agent._loaded_skills = agent._initial_loaded_skills(None)
+    prompt = agent._build_system_prompt()
+    assert "terminal" not in agent._loaded_skills
+    assert "**terminal**" in prompt and "Use it proactively" not in prompt
+    assert "run_terminal" not in {spec["function"]["name"] for spec in agent._current_tools()}
+    agent._loaded_skills.add("terminal")
+    assert "run_terminal" in {spec["function"]["name"] for spec in agent._current_tools()}
 
 
 @pytest.mark.slow
@@ -139,8 +167,10 @@ def test_terminal_acquired_data_can_be_analyzed_and_published_without_connector(
     assert not result["truncated"]
     skill = WorkspaceSkill()
     context = SkillContext(client=None, workspace=workspace, runtime=AnalystAgent(client=None, workspace=workspace))
-    items = json.loads(skill.handle_tool("list_workspace_items", {"scope": "temp"}, context).text)["items"]
-    acquired = next(item for item in items if item["path"] == "scratch/usage.csv")
+    listed = json.loads(skill.handle_tool("list_files", {"path": "scratch/"}, context).text)["files"]
+    assert [item["path"] for item in listed] == ["scratch/usage.csv"]
+    acquired = json.loads(skill.handle_tool("read_file", {"files": [{"path": "scratch/usage.csv"}]},
+                                            context).text)["files"][0]
     assert workspace.list_tables() == []
     published = json.loads(skill.handle_tool("create_data", {
         "table_name": "acquired_usage",
@@ -374,6 +404,23 @@ def test_terminal_confines_writes_and_child_processes_to_scratch(tmp_path):
     assert (scratch / "result.txt").read_text() == "allowed"
 
 
+@pytest.mark.parametrize("shell", ["/bin/sh", "/bin/zsh"])
+def test_terminal_shells_can_use_here_documents_and_devices_but_not_write_to_tmp(tmp_path, shell):
+    if not terminal.Path(shell).exists():
+        pytest.skip(f"{shell} is not installed")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    marker = f"/tmp/df-heredoc-escape-{terminal.secrets.token_hex(4)}"
+    script = (f"cat <<'EOF'\nfrom a here-document\nEOF\n"
+              "echo hidden > /dev/null; echo to-stdout > /dev/stdout; echo to-stderr > /dev/stderr\n"
+              f"{{ echo x > {marker}; }} 2>/dev/null && echo escaped || echo blocked")
+    result = list(terminal.run_command({"argv": [shell, "-c", script], "cwd": str(scratch), "timeout_seconds": 10},
+                                       scratch_dir=scratch))[-1]["result"]
+    assert result["exit_code"] == 0, result
+    assert result["output"].splitlines() == ["from a here-document", "to-stdout", "to-stderr", "blocked"]
+    assert not terminal.Path(marker).exists()
+
+
 @pytest.mark.parametrize("configured", [False, True])
 def test_terminal_policy_allows_atomic_updates_but_protects_other_home_files(tmp_path, configured):
     from data_formulator.configuration import save_configuration
@@ -541,7 +588,7 @@ def test_terminal_rejects_home_and_ancestor_grants():
 
 def test_terminal_refuses_unconfined_fallback(tmp_path, monkeypatch):
     monkeypatch.setattr(terminal.sys, "platform", "linux")
-    monkeypatch.setattr(terminal.shutil, "which", lambda name: None)
+    monkeypatch.setattr(terminal, "terminal_sandbox", lambda: None)
     with patch.object(terminal.subprocess, "Popen") as spawn:
         with pytest.raises(OSError, match="requires Bubblewrap"):
             list(terminal.run_command({"argv": ["touch", "/outside"], "cwd": str(tmp_path),
@@ -549,9 +596,44 @@ def test_terminal_refuses_unconfined_fallback(tmp_path, monkeypatch):
         spawn.assert_not_called()
 
 
+def test_without_a_sandbox_every_command_is_unsandboxed_and_needs_approval(tmp_path, monkeypatch):
+    monkeypatch.setattr(terminal.sys, "platform", "linux")
+    monkeypatch.setattr(terminal, "terminal_sandbox", lambda: None)
+    broker = terminal.TerminalRequests()
+    proposal = broker.propose("local:user", "conversation", {"argv": ["ls"], "cwd": str(tmp_path), "purpose": "List files"},
+                              mode="auto")
+    assert proposal["dangerouslyDisableSandbox"] is True
+    assert proposal["sandboxDisablingReason"] == terminal.NO_SANDBOX_REASON
+    assert proposal["sandboxUnavailable"] is True
+    assert "apt install bubblewrap" in proposal["sandboxInstallHint"]
+    # The agent's own reason for leaving the sandbox is kept.
+    proposal = broker.propose("local:user", "conversation", {"argv": ["ls"], "cwd": str(tmp_path), "purpose": "List files",
+                              "dangerouslyDisableSandbox": True, "sandboxDisablingReason": "Write a client config"})
+    assert proposal["sandboxDisablingReason"] == "Write a client config"
+    assert proposal["sandboxUnavailable"] is True
+    # Approved, it runs as any unsandboxed command does; unapproved, the runner refuses it.
+    with pytest.raises(ValueError, match="explicit approval"):
+        terminal.prepare_command(proposal, scratch_dir=tmp_path, runtime_dir=tmp_path)
+    argv, _, policy = terminal.prepare_command({**proposal, "decision": "approve"}, scratch_dir=tmp_path, runtime_dir=tmp_path)
+    assert argv == ["ls"] and policy is None
+
+
+def test_with_a_sandbox_commands_stay_confined_and_no_hint_shows(tmp_path, monkeypatch):
+    monkeypatch.setattr(terminal.sys, "platform", "linux")
+    monkeypatch.setattr(terminal, "terminal_sandbox", lambda: "/usr/bin/bwrap")
+    proposal = terminal.TerminalRequests().propose("local:user", "conversation",
+                                                   {"argv": ["ls"], "cwd": str(tmp_path), "purpose": "List files"})
+    assert proposal["dangerouslyDisableSandbox"] is False
+    assert "sandboxUnavailable" not in proposal
+    assert terminal.sandbox_install_hint() is None
+    monkeypatch.setattr(terminal.sys, "platform", "darwin")
+    monkeypatch.setattr(terminal, "terminal_sandbox", lambda: None)
+    assert terminal.sandbox_install_hint() is None
+
+
 def test_linux_terminal_mounts_host_read_only_and_scratch_writable(tmp_path, monkeypatch):
     monkeypatch.setattr(terminal.sys, "platform", "linux")
-    monkeypatch.setattr(terminal.shutil, "which", lambda name: "/usr/bin/bwrap")
+    monkeypatch.setattr(terminal, "terminal_sandbox", lambda: "/usr/bin/bwrap")
     command = terminal.confined_command(["printf", "hello"], tmp_path)
     assert command[command.index("--ro-bind") + 1:command.index("--ro-bind") + 3] == ["/", "/"]
     assert command[command.index("--bind") + 1:command.index("--bind") + 3] == [str(tmp_path.resolve())] * 2
@@ -570,6 +652,7 @@ def test_terminal_hides_df_secrets_and_api_port(tmp_path, monkeypatch):
     secret.write_text("key")
     monkeypatch.setattr(terminal.sys, "platform", "darwin")
     monkeypatch.setattr(terminal.Path, "is_file", lambda self: True)
+    monkeypatch.setattr(terminal, "terminal_sandbox", lambda: terminal.SEATBELT_EXEC)
     command = terminal.confined_command(["ls"], tmp_path, protected_files=[str(secret)], protected_ports=[5567])
     profile = command[2]
     assert f'(deny file-read* file-write* (literal "{secret}"))' in profile
@@ -577,7 +660,7 @@ def test_terminal_hides_df_secrets_and_api_port(tmp_path, monkeypatch):
     # Everything else stays open: reads, other local ports, and the network.
     assert "(allow file-read* sysctl-read mach-lookup network*)" in profile
     monkeypatch.setattr(terminal.sys, "platform", "linux")
-    monkeypatch.setattr(terminal.shutil, "which", lambda name: "/usr/bin/bwrap")
+    monkeypatch.setattr(terminal, "terminal_sandbox", lambda: "/usr/bin/bwrap")
     command = terminal.confined_command(["ls"], tmp_path, protected_files=[str(secret)], protected_ports=[5567])
     assert command[command.index(str(secret)) - 2:command.index(str(secret)) + 1] == ["--ro-bind", "/dev/null", str(secret)]
     assert "--share-net" in command
@@ -663,8 +746,11 @@ def test_terminal_registered_as_committing_action():
 
     registry = build_registry()
     assert registry.action_owner("run_terminal") == "terminal"
-    assert registry.tools_for(["terminal"]) == []
+    assert registry.action_owner("start_task") == "terminal"
+    # Following and stopping background tasks are inspection tools.
+    assert [tool["function"]["name"] for tool in registry.tools_for(["terminal"])] == ["wait_tasks", "stop_task"]
     assert registry.action_required_fields("run_terminal") == ("argv", "cwd", "purpose")
+    assert registry.action_required_fields("start_task") == ("argv", "cwd", "purpose")
 
 
 def test_closing_terminal_stream_kills_process_group(tmp_path):

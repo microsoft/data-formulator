@@ -91,7 +91,7 @@ class CubeDataLoader(ExternalDataLoader):
             **super().query_capabilities(),
             "native_query_languages": ["cube_json"],
             "native_query_guidance": (
-                "One Cube REST query object as JSON text, using member refs from describe_data "
+                "One Cube REST query object as JSON text, using member refs from the model's sources/ file "
                 "(e.g. {\"measures\": [\"orders.count\"], \"dimensions\": [\"orders.status\"], "
                 "\"filters\": [{\"member\": \"orders.count\", \"operator\": \"gt\", \"values\": [\"100\"]}]}). "
                 "Members must belong to the selected cube or view. Use it for measure-value filters "
@@ -338,7 +338,7 @@ class CubeDataLoader(ExternalDataLoader):
         if not columns:
             raise ValueError(
                 f"Select at least one dimension or measure of {source_table!r} in columns. "
-                "Use describe_data to list fields."
+                "Read the model's sources/ file to list fields."
             )
         if len(set(columns)) != len(columns):
             raise ValueError("Each column may be selected only once.")
@@ -357,7 +357,7 @@ class CubeDataLoader(ExternalDataLoader):
             if field is None or field["role"] != "time_dimension" or match.group("grain") not in field["granularities"]:
                 raise ValueError(
                     f"Unknown field {column!r} for semantic model {source_table!r}. "
-                    "Use describe_data to list fields; select time grains as 'Name (grain)'."
+                    "Read the model's sources/ file to list fields; select time grains as 'Name (grain)'."
                 )
             grain = match.group("grain")
             cube_query.setdefault("timeDimensions", []).append({"dimension": field["ref"], "granularity": grain})
@@ -390,7 +390,7 @@ class CubeDataLoader(ExternalDataLoader):
                 match = _GRAIN_NAME_RE.match(str(column or ""))
                 field = by_name.get(match.group("base")) if match else None
                 if field is None or field["role"] != "time_dimension":
-                    raise ValueError(f"Unknown filter column {column!r}. Filter on a dimension name from describe_data.")
+                    raise ValueError(f"Unknown filter column {column!r}. Filter on a dimension name from the model's sources/ file.")
                 grain = match.group("grain")
             if field["role"] == "measure":
                 raise ValueError("Filters on measure values require a native cube_json query.")

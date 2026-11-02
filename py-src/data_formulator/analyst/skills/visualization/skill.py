@@ -62,6 +62,7 @@ class VisualizationSkill:
             input_sources = normalize_input_sources(
                 action,
                 (ctx.payload or {}).get("workspace_inputs"),
+                ctx.workspace,
             )
             replaces = resolve_replacement(action["replaces"], "table", ctx) if action.get("replaces") is not None else None
             if action.get("connector_inputs"):
@@ -69,7 +70,7 @@ class VisualizationSkill:
                 code = "connector_inputs = " + repr({item["alias"]: item["path"] for item in bindings}) + "\n" + code
                 input_sources = normalize_input_sources({"input_sources": [
                     *input_sources, *({"id": item["id"], "kind": "data"} for item in bindings),
-                ]}, ctx.payload["workspace_inputs"])
+                ]}, ctx.payload["workspace_inputs"], ctx.workspace)
         except ValueError as exc:
             message = str(exc)
             yield {
@@ -245,8 +246,8 @@ class VisualizationSkill:
         if chart_id:
             chart_ref = (
                 f"\n\n**Chart id**: `{chart_id}` — to embed this chart in a report, "
-                f"write `![caption](chart://{chart_id})`; to read it again, pass this "
-                f"id to `inspect_chart`."
+                f"write `![caption](chart://{chart_id})`; to read it again, read "
+                f"`session/charts/{chart_id}.json`."
             )
         return (
             f"[OBSERVATION – Step {step_index}]\n\n"

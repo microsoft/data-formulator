@@ -6,8 +6,9 @@ import { compile } from 'vega-lite';
 import '../../../../../src/app/reactApp/runtime/optional/geo';
 import { resolveBasemaps } from '../../../../../src/app/reactApp/runtime/chart';
 
-// Flint map basemaps resolve to the vendored @df/geo boundaries and render
-// offline, joining on the same numeric ids as Vega's world-110m/us-10m files.
+// Flint map basemaps resolve to the vendored @df/geo boundaries and render offline: Vega's
+// world-110m and us-10m files, and the pre-projected US atlas (us-atlas counties-albers-10m)
+// Flint 1.0 draws US choropleths from.
 const render = async (chartType: string, rows: Record<string, unknown>[], encodings: Record<string, { field: string }>) => {
     const spec = assembleVegaLite({
         data: { values: rows },
@@ -15,9 +16,10 @@ const render = async (chartType: string, rows: Record<string, unknown>[], encodi
         chart_spec: { chartType, encodings, baseSize: { width: 600, height: 350 } } as any,
         options: {},
     } as any) as Record<string, unknown>;
-    expect(JSON.stringify(spec)).toContain('vega.github.io');
+    const web = /vega\.github\.io|cdn\.jsdelivr\.net/;
+    expect(JSON.stringify(spec)).toMatch(web);
     const resolved = resolveBasemaps(spec) as Record<string, unknown>;
-    expect(JSON.stringify(resolved)).not.toContain('vega.github.io');
+    expect(JSON.stringify(resolved)).not.toMatch(web);
     const view = new vega.View(vega.parse(compile(resolved as any).spec), { renderer: 'none' });
     return view.toSVG();
 };
@@ -44,5 +46,8 @@ describe('offline Flint maps', () => {
         const svg = await render('Choropleth', [{ state: 'California', value: 3 }, { state: 'Texas', value: 7 }],
             { id: { field: 'state' }, color: { field: 'value' } });
         expect((svg.match(/<path/g) ?? []).length).toBeGreaterThanOrEqual(2);
+        // Both states join their values and take their own colors.
+        const filled = svg.match(/fill="rgb\([^)]*\)"/g) ?? [];
+        expect(new Set(filled).size).toBeGreaterThanOrEqual(2);
     });
 });

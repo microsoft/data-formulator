@@ -23,13 +23,16 @@ RUN yarn build
 # ---------------------------------------------------------------------------
 FROM python:3.11-slim AS runtime
 
-# System dependencies needed by some Python packages
+# System dependencies needed by some Python packages.
+# bubblewrap gives the Python sandbox OS-level isolation (see sandbox/confinement.py);
+# without it the sandbox falls back to audit hooks only.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc \
         g++ \
         libpq-dev \
         unixodbc-dev \
         curl \
+        bubblewrap \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a non-root user to run the application

@@ -369,7 +369,7 @@ def build_story(story: dict, starter: dict, work: Path, content: Path) -> Path:
 
 
 def install_static(profile: dict, site: Path) -> None:
-    """Copy the profile and front-page images into the installed site."""
+    """Copy the profile, the analyst's demo guidance and front-page images into the installed site."""
     content = site / str(profile["release"])
     for path in sorted(ASSETS.rglob("*")):
         if path.is_file():
@@ -378,6 +378,8 @@ def install_static(profile: dict, site: Path) -> None:
             shutil.copyfile(path, target)
     site.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(PROFILE, site / "profile.yaml")
+    (site / "skill").mkdir(exist_ok=True)
+    shutil.copyfile(HERE / "skill" / "SKILL.md", site / "skill" / "SKILL.md")
 
 
 def missing_files(profile: dict, content: Path) -> list[str]:

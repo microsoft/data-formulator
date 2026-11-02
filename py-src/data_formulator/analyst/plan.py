@@ -8,7 +8,8 @@ action and restates the list only when it changes. Each chart, report, or app it
 delivers names the step it serves (``plan_step``), so a step can collect several
 results; a step is done once a later step gets a result or the run finishes with
 it answered. Without ``plan_step`` the next open step is ticked instead. The
-harness asks once before the run ends with steps still open.
+harness asks once before the run ends with steps still open; steps still open
+after that are settled as skipped.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ _MIN_ITEMS = 2
 @dataclass
 class PlanItem:
     text: str
-    status: str  # "open" | "done" | "dropped"
+    status: str  # "open" | "done" | "dropped" | "skipped" (left open when the run ended)
     note: str = ""
     # Ids of the charts (or kinds of the reports/apps) delivered for this step.
     results: list[str] = field(default_factory=list)
@@ -88,13 +89,18 @@ class RunPlan:
     def revise(self, items: list[PlanItem], title: str | None = None) -> None:
         if title:
             self.title = title
-        # A restated checklist keeps the results already delivered for its steps. Agents often
-        # reword steps when restating, so a list of the same length is matched by position.
-        by_text = {item.text: item.results for item in self.items}
+        # A restated checklist keeps the results already delivered for its steps, and a step once done
+        # stays done unless struck through: agents often restate every step as `[ ]` when adding one.
+        # Agents also reword steps when restating, so a list of the same length is matched by position.
+        by_text = {item.text: item for item in self.items}
         same_shape = len(items) == len(self.items)
         for index, item in enumerate(items):
-            kept = self.items[index].results if same_shape else by_text.get(item.text, [])
-            item.results = list(kept)
+            before = self.items[index] if same_shape else by_text.get(item.text)
+            if before is None:
+                continue
+            item.results = list(before.results)
+            if before.status == "done" and item.status == "open":
+                item.status = "done"
         self.items = items
 
     def tick(self) -> bool:
@@ -135,6 +141,15 @@ class RunPlan:
                 changed = True
         return changed
 
+    def settle(self) -> bool:
+        """A run that ends after the reminder with steps still open skipped them; say so rather than leave them open."""
+        if not self.reminded:
+            return False
+        open_items = self.open_items()
+        for item in open_items:
+            item.status = "skipped"
+        return bool(open_items)
+
     def open_items(self) -> list[PlanItem]:
         return [item for item in self.items if item.status == "open"]
 
@@ -148,6 +163,7 @@ class RunPlan:
             return None
         self.reminded = True
         steps = "; ".join(f"{number}) {item.text}" for number, item in enumerate(self.open_items(), start=1))
-        return (f"[Automatic message] Your plan still has open steps: {steps}. Continue with the next one. If a "
-                "step no longer serves the request, restate the checklist with it struck through "
-                "(`- [ ] ~~step~~ (reason)`) and finish.")
+        return (f"[Automatic message] Your plan still has open steps: {steps}. If your messages already answer a "
+                "step, restate the checklist with it checked (`- [x] step`); do not make another result just to "
+                "check it off. If a step no longer serves the request, strike it through (`- [ ] ~~step~~ (reason)`). "
+                "Otherwise continue with the next open step.")

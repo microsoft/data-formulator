@@ -12,6 +12,7 @@ from contextvars import ContextVar
 import logging
 import os
 import signal
+import sys
 import threading
 import time
 import warnings
@@ -51,9 +52,13 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
 
     # Scrub sensitive environment variables before accepting any code.
     # Legitimate sandbox code (pandas/numpy transforms) never needs these.
+    # The prefixes cover ambient cloud identities: App Service / Container Apps
+    # managed identity (IDENTITY_*, MSI_*) and Azure/AWS/GCP SDK settings.
     _SENSITIVE_PATTERNS = ("KEY", "SECRET", "TOKEN", "PASSWORD", "CREDENTIAL", "CONNECTION_STRING")
+    _SENSITIVE_PREFIXES = ("IDENTITY_", "MSI_", "AZURE_", "AWS_", "GOOGLE_", "GCP_", "ARM_")
     for _key in list(os.environ):
-        if any(p in _key.upper() for p in _SENSITIVE_PATTERNS):
+        _upper = _key.upper()
+        if any(p in _upper for p in _SENSITIVE_PATTERNS) or _upper.startswith(_SENSITIVE_PREFIXES):
             del os.environ[_key]
 
     # Mutable container: the audit hook reads this to know which
@@ -74,6 +79,8 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
         _sysconfig.get_path("purelib"),
         _sysconfig.get_path("platlib"),
         getattr(_sys, "_MEIPASS", None),
+        # Import directories handed over by the server (e.g. App Service's Oryx virtualenv).
+        *os.environ.get("PYTHONPATH", "").split(os.pathsep),
     ):
         if _p:
             _rp = os.path.realpath(_p)
@@ -166,10 +173,16 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
             "os.system", "os.exec", "os.spawn", "os.fork",
             "os.kill", "os.killpg", "os.startfile",
             "os.putenv", "os.unsetenv",
+            # Destructive filesystem changes (writes are already denied at open).
+            "os.remove", "os.rmdir", "os.rename", "os.symlink", "os.link",
+            "os.truncate", "os.chmod", "os.chown", "os.chflags",
+            "os.setxattr", "os.removexattr",
         })
         if (event in _blocked_os_events
                 or event.startswith(("os.exec", "os.spawn", "os.posix_spawn", "os.fork"))):
             raise IOError("dangerous os operation forbidden in sandbox")
+        if event == "_winapi.CreateProcess":
+            raise IOError("process creation forbidden in sandbox")
         # Block network access — code should only transform data, not
         # make outbound connections (prevents data exfiltration). An OS-confined
         # worker may reach the internet; its sandbox denies loopback and sockets.
@@ -353,8 +366,19 @@ class _ConfinedProcess:
         shutil.rmtree(self._write_dir, ignore_errors=True)
 
 
-def _spawn_confined(kind: str, key: str) -> tuple[_ConfinedProcess, DuplexConnection]:
-    """Start a warm worker under the OS sandbox and wait for its ready handshake."""
+def _os_sandbox_required() -> bool:
+    """``DF_REQUIRE_OS_SANDBOX``: refuse to run code rather than fall back to audit hooks only."""
+    return os.environ.get("DF_REQUIRE_OS_SANDBOX", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _can_start_clean_worker() -> bool:
+    """A fresh ``python -I`` worker needs an interpreter executable (not a frozen
+    app) and inherited pipe descriptors (POSIX)."""
+    return os.name == "posix" and not getattr(sys, "frozen", False)
+
+
+def _spawn_confined(kind: str | None, key: str) -> tuple[_ConfinedProcess, DuplexConnection]:
+    """Start a warm worker (under the OS sandbox unless *kind* is ``None``) and wait for its ready handshake."""
     import subprocess
     import tempfile
     from multiprocessing.connection import Connection
@@ -386,6 +410,14 @@ def _spawn_confined(kind: str, key: str) -> tuple[_ConfinedProcess, DuplexConnec
     return proc, conn
 
 
+class _PendingWorker:
+    """A worker being started in the background by :meth:`_WarmWorkerPool.prewarm`."""
+
+    def __init__(self):
+        self.done = threading.Event()
+        self.pair: tuple[object, object] | None = None
+
+
 class _WarmWorkerPool:
     """Pool of persistent child processes with pre-imported libraries.
 
@@ -401,6 +433,7 @@ class _WarmWorkerPool:
 
     READY_TIMEOUT = 60
     MAX_WORKSPACES = 3
+    REAP_INTERVAL = 30
 
     def __init__(self, size: int = 2):
         self._size = size
@@ -411,7 +444,71 @@ class _WarmWorkerPool:
         self._closed = False
         self._confinement_failed = False
         self._keys: dict[int, object] = {}
+        self._pending: dict[object, list[_PendingWorker]] = {}
+        # id(proc) -> (idle since, returned after use); see _reap_locked.
+        self._idle: dict[int, tuple[float, bool]] = {}
+        self._reaper: threading.Thread | None = None
         atexit.register(self.shutdown)
+
+    @staticmethod
+    def _idle_limits() -> tuple[float, int | None]:
+        """(seconds an idle worker is kept, most used workers kept idle per process).
+
+        An isolated worker is a separate interpreter (~200 MB with pandas, NumPy,
+        DuckDB, scikit-learn). On a multi-user server each gunicorn process has its
+        own pool and a visitor's next request rarely returns to the same process, so
+        idle workers are kept briefly; sessions prewarm theirs during the model call.
+        """
+        from data_formulator.auth.identity import is_local_mode
+        local = is_local_mode()
+        configured = os.environ.get("DF_SANDBOX_IDLE_SECONDS", "").strip()
+        try:
+            ttl = float(configured) if configured else (600.0 if local else 120.0)
+        except ValueError:
+            ttl = 600.0 if local else 120.0
+        return ttl, None if local else 2
+
+    def _mark_idle_locked(self, pair, used: bool) -> None:
+        self._idle[id(pair[0])] = (time.monotonic(), used)
+
+    def _reap_locked(self) -> list[tuple[object, object]]:
+        """Remove idle workers past the idle limit, then used ones beyond the per-process cap."""
+        ttl, cap = self._idle_limits()
+        now = time.monotonic()
+        stale: list[tuple[object, object]] = []
+        used: list[tuple[float, object, tuple[object, object]]] = []
+        for key, pairs in list(self._available.items()):
+            for pair in list(pairs):
+                since, was_used = self._idle.get(id(pair[0]), (now, True))
+                if now - since >= ttl:
+                    pairs.remove(pair)
+                    stale.append(pair)
+                elif was_used:
+                    used.append((since, key, pair))
+        if cap is not None and len(used) > cap:
+            for _, key, pair in sorted(used, key=lambda entry: entry[0])[:len(used) - cap]:
+                self._available[key].remove(pair)
+                stale.append(pair)
+        for pair in stale:
+            self._idle.pop(id(pair[0]), None)
+        return stale
+
+    def _ensure_reaper(self) -> None:
+        with self._lock:
+            if self._reaper is not None or self._closed:
+                return
+            self._reaper = threading.Thread(target=self._reap_loop, daemon=True, name="sandbox-reaper")
+        self._reaper.start()
+
+    def _reap_loop(self) -> None:
+        while True:
+            time.sleep(self.REAP_INTERVAL)
+            with self._lock:
+                if self._closed:
+                    return
+                stale = self._reap_locked()
+            for proc, conn in stale:
+                self.discard(proc, conn)
 
     def _confinement(self) -> str | None:
         from .confinement import confinement_kind
@@ -429,58 +526,142 @@ class _WarmWorkerPool:
             try:
                 return _spawn_confined(kind, self._key(workspace_path))
             except Exception as exc:
+                if _os_sandbox_required():
+                    raise RuntimeError(f"The Python sandbox requires OS isolation, which failed to start: {exc}") from exc
                 self._confinement_failed = True
                 logger.warning(
                     "OS confinement for the Python sandbox is unavailable (%s); "
                     "falling back to the audit-hook sandbox without OS isolation.", exc,
                 )
+        if _os_sandbox_required():
+            raise RuntimeError("The Python sandbox requires OS isolation (DF_REQUIRE_OS_SANDBOX), "
+                               "which is unavailable on this server.")
+        if _can_start_clean_worker():
+            # A fresh interpreter with a minimal environment: unlike a forked
+            # child it holds none of the server's memory (secret keys, model
+            # credentials, other users' data) or environment.
+            try:
+                return _spawn_confined(None, "")
+            except Exception as exc:
+                logger.warning("Could not start a clean Python sandbox worker (%s); "
+                               "using a worker started from the server process.", exc)
         parent_conn, child_conn = Pipe()
         p = Process(target=_warm_worker_loop, args=(child_conn,), daemon=True)
         p.start()
         return p, parent_conn
 
-    def acquire(self, workspace_path: str | None = None) -> tuple[object, object]:
-        """Get a warm worker (process, conn) for *workspace_path*. Spawns one if needed."""
+    def _touch(self, key) -> list[tuple[object, object]]:
+        """Mark *key* most recently used; return the idle workers of keys that fell out (lock held)."""
+        if key in self._recent:
+            self._recent.remove(key)
+        self._recent.append(key)
+        evicted = self._recent[:-self.MAX_WORKSPACES]
+        self._recent = self._recent[-self.MAX_WORKSPACES:]
+        return [pair for old in evicted for pair in self._available.pop(old, [])]
+
+    def _register(self, pair, workspace_path: str | None) -> None:
+        with self._lock:
+            self._all.append(pair)
+            self._keys[id(pair[0])] = self._key(workspace_path)
+        self._ensure_reaper()
+
+    def prewarm(self, workspace_path: str | None = None, count: int | None = None) -> None:
+        """Start workers for *workspace_path* in the background until *count* (default: the pool size)
+        are idle or starting, so that a later :meth:`acquire` does not wait for a cold start
+        (seconds: the worker imports pandas, numpy, scikit-learn, ... before it is ready)."""
         key = self._key(workspace_path)
         with self._lock:
-            if key in self._recent:
-                self._recent.remove(key)
-            self._recent.append(key)
-            evicted = [old for old in self._recent[:-self.MAX_WORKSPACES]]
-            self._recent = self._recent[-self.MAX_WORKSPACES:]
-            stale = [pair for old in evicted for pair in self._available.pop(old, [])]
-            available = self._available.setdefault(key, [])
+            if self._closed:
+                return
+            stale = self._touch(key)
+            idle = sum(1 for proc, _ in self._available.get(key, []) if proc.is_alive())
+            starting = self._pending.setdefault(key, [])
+            wanted = self._size if count is None else count
+            new = [_PendingWorker() for _ in range(max(wanted - idle - len(starting), 0))]
+            starting.extend(new)
+        for proc, conn in stale:
+            self.discard(proc, conn)
+        for pending in new:
+            threading.Thread(target=self._fill, args=(pending, key, workspace_path), daemon=True,
+                             name="sandbox-prewarm").start()
+
+    def _fill(self, pending: "_PendingWorker", key, workspace_path: str | None) -> None:
+        try:
+            pair = self._spawn(workspace_path)
+        except Exception as exc:
+            # An acquire waiting on this worker starts its own and surfaces the error.
+            logger.warning("Prewarming a Python sandbox worker failed: %s", exc)
             pair = None
+        if pair is not None:
+            self._register(pair, workspace_path)
+        stale = None
+        with self._lock:
+            starting = self._pending.get(key, [])
+            if pending in starting:
+                # Not claimed by an acquire: keep it idle for the next one.
+                starting.remove(pending)
+                if pair is not None:
+                    if self._closed or key not in self._recent:
+                        stale = pair
+                    else:
+                        self._available.setdefault(key, []).append(pair)
+                        self._mark_idle_locked(pair, used=False)
+            pending.pair = pair
+            pending.done.set()
+        if stale is not None:
+            self.discard(*stale)
+
+    def acquire(self, workspace_path: str | None = None) -> tuple[object, object]:
+        """Get a warm worker (process, conn) for *workspace_path*: an idle one, else one already
+        starting (see :meth:`prewarm`), else a new one."""
+        key = self._key(workspace_path)
+        with self._lock:
+            stale = self._touch(key) + self._reap_locked()
+            available = self._available.setdefault(key, [])
+            pair = pending = None
             while available:
                 proc, conn = available.pop()
+                self._idle.pop(id(proc), None)
                 if proc.is_alive():
                     pair = (proc, conn)
                     break
                 # Dead worker -- discard and try next
+            if pair is None and self._pending.get(key):
+                pending = self._pending[key].pop(0)
         for proc, conn in stale:
             self.discard(proc, conn)
         if pair is not None:
             return pair
+        if pending is not None:
+            pending.done.wait()
+            if pending.pair is not None and pending.pair[0].is_alive():
+                return pending.pair
         # No available workers -- spawn a new one (up to pool size is advisory)
         pair = self._spawn(workspace_path)
-        with self._lock:
-            self._all.append(pair)
-            self._keys[id(pair[0])] = self._key(workspace_path)
+        self._register(pair, workspace_path)
         return pair
 
     def release(self, proc, conn) -> None:
         """Return a worker to the pool for reuse."""
+        stale: list[tuple[object, object]] = []
+        kept = False
         with self._lock:
             key = self._keys.get(id(proc))
             if not self._closed and proc.is_alive() and key in self._recent:
                 self._available.setdefault(key, []).append((proc, conn))
-                return
-        self.discard(proc, conn)
+                self._mark_idle_locked((proc, conn), used=True)
+                kept = True
+                stale = self._reap_locked()  # may include this worker if over the cap
+        for pair in stale:
+            self.discard(*pair)
+        if not kept:
+            self.discard(proc, conn)
 
     def discard(self, proc, conn) -> None:
         """Discard a broken worker (don't put it back)."""
         with self._lock:
             self._keys.pop(id(proc), None)
+            self._idle.pop(id(proc), None)
             self._all = [pair for pair in self._all if pair[0] is not proc]
         try:
             conn.send(None)
@@ -531,12 +712,14 @@ class SandboxSession:
     EXECUTION_TIMEOUT = int(os.environ.get("DF_SANDBOX_TIMEOUT", "120"))
 
     def __init__(self, workspace_path: str | None = None):
-        # Confined workers can read only the workspace they were started for,
-        # so the worker is acquired on first use when no workspace is given.
+        # Confined workers can read only the workspace they were started for.
+        # The worker is acquired on first use; with a workspace it starts now in
+        # the background, so opening a session never waits for a cold start.
         self._proc = self._conn = None
         self._closed = False
+        self._workspace_path = workspace_path
         if workspace_path is not None:
-            self._proc, self._conn = _worker_pool.acquire(workspace_path)
+            _worker_pool.prewarm(workspace_path, count=1)
 
     # -- public API --------------------------------------------------------
 
@@ -550,7 +733,7 @@ class SandboxSession:
         if self._closed:
             return {"status": "error", "error_message": "Session is closed"}
         if self._conn is None:
-            self._proc, self._conn = _worker_pool.acquire(workspace_path)
+            self._proc, self._conn = _worker_pool.acquire(workspace_path or self._workspace_path)
         try:
             self._conn.send((code, {**allowed_objects}, workspace_path, True))
             if self._conn.poll(timeout=self.EXECUTION_TIMEOUT):

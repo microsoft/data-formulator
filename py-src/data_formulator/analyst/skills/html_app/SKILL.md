@@ -56,6 +56,12 @@ dialogs, or navigation; keep state in React. Import only from these modules:
 Never hardcode colors or fonts. Read data only with `@df/data`; do not embed it,
 including map boundaries (use `@df/geo` or Flint's Map charts).
 
+Lay the code out like the starter app below: 2-space indentation, one statement
+per line, one JSX element per line (break a long tag's props over several
+lines), and lines under about 100 characters. Never pack a component, a query,
+or a chart onto one long line: dense lines are where unbalanced braces (such as
+`encodings={{ x: {...}, y: {...} }}`) slip in and stop the app from loading.
+
 ## `@df/data`
 
 - `useQuery(table, options)` → `{rows, totalRowCount, loading, error, truncated}`.
@@ -117,18 +123,20 @@ error states itself; `children` may then be a function of the rows.
 
 ## `@df/chart`, `@df/format`, `@df/icons`
 
-- `FlintChart {chartType, encodings, data | query, table, labels, title,
-  subtitle, theme, height = 260}` is the same chart engine as the DF canvas. `encodings` maps
-  channels (`x`, `y`, `color`, `size`, `column`, …) to a column name or
-  `{field, type, aggregate, sortBy, sortOrder}`; leave out `type` unless needed.
-  Pass `table` when the rows keep that table's columns so its semantic types
-  apply, and `labels` (`{field: "Axis title"}`) for computed columns. `theme` is
-  a Flint theme id (e.g. `"economist"`); when the session's charts use one (the
-  `theme` in `session/charts/<id>.json`), pass the same so the app matches. Chart types include Bar Chart, Grouped Bar Chart, Stacked Bar Chart,
-  Line Chart, Area Chart, Scatter Plot, Heatmap, Histogram, Boxplot, Pie Chart,
-  Donut Chart, Lollipop Chart, Slope Chart, Bump Chart, Range Area Chart, Map
+- `FlintChart {chartType, encodings, data | query, table, semanticTypes, labels,
+  title, subtitle, theme, height = 260, interactions, onSelect, updates}` is the
+  same chart engine as the DF canvas, live in the app: it shows a tooltip on
+  hover and fits its card. `encodings` maps channels (`x`, `y`, `color`, `size`,
+  `column`, `detail`, …) to a column name or `{field, type, aggregate, sortBy,
+  sortOrder}`; leave out `type` unless needed. `theme` is a Flint theme id (e.g.
+  `"economist"`); when the session's charts use one (the `theme` in
+  `session/charts/<id>.json`), pass the same so the app matches. Chart types
+  include Bar Chart, Grouped Bar Chart, Stacked Bar Chart, Line Chart, Area
+  Chart, Scatter Plot, Heatmap, Histogram, Boxplot, Pie Chart, Donut Chart,
+  Lollipop Chart, Slope Chart, Bump Chart, Range Area Chart, Map
   (`latitude`/`longitude`, with `size`/`color`), Choropleth (country or US state
-  names or codes as `id`). Maps draw world or US boundaries offline.
+  names or codes as `id`). Maps draw world or US boundaries offline; a
+  Choropleth is drawn static, without interactions or links.
 - `VegaChart {spec, data | query, height}`: a raw Vega-Lite spec for custom
   visuals; `width` defaults to the container.
 - `Sparkline {data, x, y}`.
@@ -136,6 +144,65 @@ error states itself; `children` may then be a function of the rows.
   0–1), `.delta(v)` (+1.2 / −0.4), `.date(v)`; each returns "—" for missing values.
 - `Icon {name}`: `trend-up`, `trend-down`, `info`, `warning`, `money`, `people`,
   `globe`, `calendar`, `time`, `chart`, `table`, `search`, `filter`, `star`, …
+
+### Making a chart
+
+- Pick the chart for the question: change over time → Line Chart; comparing
+  categories → Bar Chart sorted by value (on the category channel, `sortBy:
+  "y", sortOrder: "descending"`), with the categories on `y` when names are long; parts of a whole → Stacked Bar Chart (Pie or Donut
+  only for 2–5 parts); a distribution → Histogram or Boxplot; a relationship →
+  Scatter Plot; two categories → Heatmap; places → Map or Choropleth.
+- Name what the chart shows: the `ChartCard` title says what it shows, and its
+  subtitle gives the measure, unit, and period ("Average price, $/gal, weekly").
+  Inside a `ChartCard`, leave the chart's own `title` off.
+- Tell Flint what the fields mean. Pass `table` when the rows keep that table's
+  columns, so its semantic types and names apply. For computed columns
+  (`price_avg`, `amount_sum`, `_count`) pass `labels` (`{price_avg: "Avg
+  price"}`) and `semanticTypes` (`{price_avg: "Price"}`): the type sets number
+  formats, the zero baseline, and the colour scheme. Use `Amount`, `Price`,
+  `Quantity`, `Count`, `Number`, `Percentage`, `PercentageChange`, `Profit`,
+  `Rank`, `Score`, `Temperature`, `Date`, `Year`, `YearMonth`, `Category`,
+  `Country`, `State`, or `City`; `{semanticType, unit: "USD"}` adds a unit when
+  the data establishes it.
+- Keep it legible: about 12 categories on an axis and 8 colours at most; cut
+  the rest in the query (`orderBy` with `limit`). One measure per chart.
+
+### Interactive charts
+
+Give a chart `interactions` for what its reader does with it: preset names, or
+`{type, options}`. Two or three per chart, for the questions the app answers:
+
+| Chart | Presets |
+| --- | --- |
+| Time series | `inspect-index` (read every series at a date), `brush-x` (focus a period), `legend-toggle` (hide a `color` series) |
+| Bars and other categories | `click-highlight` (single one out; shift-click adds), `legend-toggle` |
+| Scatter, dense points | `select` or `lasso-select` (a region), `navigate` (pan and zoom), `click-highlight` |
+| Heatmap | `click-highlight`, `axis-highlight` (a whole row or column) |
+| Map | `click-highlight`, `navigate` |
+
+A click on empty space or Escape clears a selection.
+
+- `onSelect(values)`: a chart as a control. After each selection the app gets
+  the selected marks as their field values (`[]` once cleared), e.g. a
+  drill-down with `click-highlight` and
+  `onSelect={values => setRegion(values[0]?.region ?? '')}`, filtering the other
+  queries by `region`.
+- `updates`: marks the app calls out, as Flint update layers, e.g.
+  `[{id: "peak", ops: [{op: "set-annotation", target: {select: {key: {month:
+  "2024-06"}}}, value: {text: "Record high"}}]}]`, or `op: "set-style"` with
+  `targets: [{select: {where: {region: {in: ["West"]}}}}]` and `value: {state:
+  "emphasized"}`.
+
+### Linked charts
+
+`ChartLink {fields}` around a group of charts links them on those fields: a
+selection in one (a click or a brush) emphasizes the matching marks in every
+other chart that carries the field. A chart carries the fields it encodes (on
+`detail`, where the chart has it, if nothing else shows one) and sends
+selections through a selecting preset (`click-highlight`, `brush-x`, `select`, …). Inside a `ChartLink`,
+`useChartLink()` shares the selection with the rest of the app: `matches(row)`
+(filter a table or a KPI to it), `active`, `select({region: {in: ["West"]}})`
+or `select({year: {range: [2010, 2020]}})` from a control, and `clear()`.
 
 ## `d3`, `lodash`, `@df/geo`
 
@@ -156,10 +223,27 @@ networks, trees, annotated diagrams).
 
 ```jsx
 import { useState } from 'react';
-import { Page, FilterBar, Select, Segmented, KpiGrid, Kpi, Grid, ChartCard, DataTable, Note, Badge } from '@df/ui';
+import {
+  Page,
+  FilterBar,
+  Select,
+  Segmented,
+  KpiGrid,
+  Kpi,
+  Grid,
+  ChartCard,
+  DataTable,
+  Note,
+  Badge,
+} from '@df/ui';
 import { useQuery, useDistinct } from '@df/data';
 import { FlintChart } from '@df/chart';
 import { format } from '@df/format';
+
+const METRICS = [
+  { value: 'revenue', label: 'Revenue', type: 'Amount' },
+  { value: 'orders', label: 'Orders', type: 'Count' },
+];
 
 export default function App() {
   const [region, setRegion] = useState('');
@@ -167,35 +251,108 @@ export default function App() {
   const regions = useDistinct('sales', 'region');
   const filters = region ? [{ field: 'region', op: 'in', values: [region] }] : [];
   const value = `${metric}_sum`;
-  const monthly = useQuery('sales', { columns: ['month'], filters, aggregates: [{ op: 'sum', field: metric }], orderBy: 'month' });
-  const top = useQuery('sales', { columns: ['product'], filters, aggregates: [{ op: 'sum', field: metric }],
-    orderBy: [{ field: value, descending: true }], limit: 8 });
+  const measure = METRICS.find(option => option.value === metric);
+  const aggregates = [{ op: 'sum', field: metric }];
+  const monthly = useQuery('sales', {
+    columns: ['month'],
+    filters,
+    aggregates,
+    orderBy: 'month',
+  });
+  const byRegion = useQuery('sales', {
+    columns: ['region'],
+    aggregates,
+  });
+  const top = useQuery('sales', {
+    columns: ['product'],
+    filters,
+    aggregates,
+    orderBy: [{ field: value, descending: true }],
+    limit: 8,
+  });
   const rows = monthly.rows;
   const total = rows.reduce((sum, row) => sum + row[value], 0);
   const first = rows[0]?.[value];
   const last = rows[rows.length - 1]?.[value];
 
   return (
-    <Page eyebrow="Sales" title="Revenue grew through the year" subtitle="Monthly sales by region and product."
-          meta={<Badge>{rows.length} months</Badge>}>
+    <Page
+      eyebrow="Sales"
+      title="Revenue grew through the year"
+      subtitle="Monthly sales by region and product."
+      meta={<Badge>{rows.length} months</Badge>}
+    >
       <FilterBar>
-        <Select label="Region" value={region} onChange={setRegion} options={regions.values} allLabel="All regions" />
-        <Segmented label="Metric" value={metric} onChange={setMetric}
-                   options={[{ value: 'revenue', label: 'Revenue' }, { value: 'orders', label: 'Orders' }]} />
+        <Select
+          label="Region"
+          value={region}
+          onChange={setRegion}
+          options={regions.values}
+          allLabel="All regions"
+        />
+        <Segmented
+          label="Metric"
+          value={metric}
+          onChange={setMetric}
+          options={METRICS}
+        />
       </FilterBar>
       <KpiGrid query={monthly}>
-        <Kpi label="Total" value={format.compact(total)} delta={first ? (last - first) / first : null}
-             deltaFormat={format.percent} note="Change from first to last month" spark={{ data: rows, x: 'month', y: value }} />
+        <Kpi
+          label="Total"
+          value={format.compact(total)}
+          delta={first ? (last - first) / first : null}
+          deltaFormat={format.percent}
+          note="Change from first to last month"
+          spark={{ data: rows, x: 'month', y: value }}
+        />
       </KpiGrid>
       <Grid main>
-        <ChartCard title="Monthly trend" subtitle="Selected metric per month" query={monthly}>
-          {data => <FlintChart chartType="Line Chart" data={data} encodings={{ x: 'month', y: value }}
-                               labels={{ month: 'Month', [value]: metric === 'revenue' ? 'Revenue' : 'Orders' }} />}
+        <ChartCard
+          title="Monthly trend"
+          subtitle={`${measure.label} per month`}
+          query={monthly}
+        >
+          {data => (
+            <FlintChart
+              chartType="Line Chart"
+              data={data}
+              encodings={{ x: 'month', y: value }}
+              semanticTypes={{ month: 'YearMonth', [value]: measure.type }}
+              labels={{ month: 'Month', [value]: measure.label }}
+              interactions={['inspect-index', 'brush-x']}
+            />
+          )}
         </ChartCard>
-        <ChartCard title="Top products" query={top}>
-          {data => <DataTable data={data} columns={[{ field: 'product', label: 'Product' }, { field: value, label: 'Total', format: 'compact', bar: true }]} />}
+        <ChartCard
+          title="By region"
+          subtitle={`${measure.label}, all months; click a region to filter`}
+          query={byRegion}
+        >
+          {data => (
+            <FlintChart
+              chartType="Bar Chart"
+              data={data}
+              encodings={{ x: 'region', y: value }}
+              semanticTypes={{ [value]: measure.type }}
+              labels={{ region: 'Region', [value]: measure.label }}
+              interactions={['click-highlight']}
+              onSelect={values => setRegion(values[0]?.region ?? '')}
+            />
+          )}
         </ChartCard>
       </Grid>
+      <ChartCard title="Top products" query={top}>
+        {data => (
+          <DataTable
+            data={data}
+            columns={[
+              { field: 'product', label: 'Product' },
+              { field: value, label: 'Total', format: 'compact', bar: true },
+            ]}
+          />
+        )}
+      </ChartCard>
       <Note>Source: sales table. Months without orders are omitted.</Note>
     </Page>
   );

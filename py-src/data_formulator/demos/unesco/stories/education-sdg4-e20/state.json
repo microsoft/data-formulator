@@ -1431,7 +1431,7 @@
     "y": {
      "fieldID": "concept-country-1792307067645-0.8625743059302777",
      "dtype": "nominal",
-     "sortOrder": "descending",
+     "sortOrder": "ascending",
      "sortBy": "x"
     },
     "color": {
@@ -1453,7 +1453,7 @@
    },
    "tableRef": "d_out_3",
    "source": "user",
-   "title": "High school completion across countries: highest first",
+   "title": "High school completion across countries: lowest first",
    "subtitle": "Latest estimates, 2020–2025 • Girls and boys combined • UIS, February 2026 release",
    "unread": false,
    "themeId": "datawrapper",
@@ -1524,7 +1524,7 @@
    "id": "textTurn_exploreDataFromNL_1792307048893_1792307075547",
    "displayId": "textTurn_exploreDataFromNL_1792307048893_closing",
    "textKind": "explain",
-   "content": "**South Sudan has the lowest estimated high school completion rate among countries with data: just 2% in 2025.** The lowest rates are concentrated in sub-Saharan Africa.\n\nThe five lowest are:\n- **South Sudan:** 2.1%\n- **Niger:** 4.9%\n- **Central African Republic:** 5.6%\n- **Chad:** 6.6%\n- **Zimbabwe:** 8.1%\n\nHere, “high school” means upper secondary education. The map uses each country’s latest estimate from 2020–2025—all available values were for 2025—and combines girls and boys. Some countries lack estimates; territories with fewer than 100,000 people are excluded.\n\nSource: UIS, February 2026 release.",
+   "content": "**South Sudan has the lowest high school completion rate: just 2% in 2025.** The lowest rates are concentrated in sub-Saharan Africa:\n\n- **South Sudan:** 2.1%\n- **Niger:** 4.9%\n- **Central African Republic:** 5.6%\n- **Chad:** 6.6%\n- **Zimbabwe:** 8.1%\n\n\"High school\" means upper secondary education. Blank countries have no recent estimate. Source: UIS, February 2026 release.",
    "parentNodeId": "d_out_3",
    "actionId": "exploreDataFromNL_1792307048893",
    "createdAt": 1792307075547,
@@ -1583,7 +1583,7 @@
  ],
  "activeWorkspace": {
   "id": "education-sdg4-e20",
-  "displayName": "More young people finish school, but reading lags"
+  "displayName": "Finishing high school is rarest in sub-Saharan Africa"
  },
  "focusedId": {
   "type": "chart",

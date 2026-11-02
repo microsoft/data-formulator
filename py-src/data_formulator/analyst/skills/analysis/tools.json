@@ -13,19 +13,5 @@
         "required": ["purpose", "code"]
       }
     }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "inspect_source_data",
-      "description": "Get a detailed summary of one or more analysis input tables — schema, field-level statistics, and sample rows. Cheaper than execute_python_script for basic data inspection.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "table_names": {"type": "array", "items": {"type": "string"}, "description": "Names listed in the analysis-input-tables context to inspect."}
-        },
-        "required": ["table_names"]
-      }
-    }
   }
 ]

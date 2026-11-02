@@ -181,8 +181,8 @@ class SupersetLoader(ExternalDataLoader):
             self._refresh_token = result.get("refresh_token")
             if self._access_token:
                 logger.info("SSO token exchange succeeded for Superset")
-        except Exception:
-            logger.debug("SSO token exchange not available", exc_info=True)
+        except Exception as exc:
+            logger.warning("SSO token exchange failed for Superset: %s", exc)
 
     @staticmethod
     def _is_token_expired(token: str, buffer_seconds: int = 60) -> bool:

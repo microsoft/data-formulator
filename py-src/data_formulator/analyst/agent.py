@@ -11,7 +11,7 @@ of **skills** that unlock additional **gated actions** on demand. See
 model in ``design-docs/36-artifact-turn-model.md``.
 
 Architecture (a vanilla tool-calling loop, plus the skills layer):
-  - **Inspection tools** (``execute_python_script``, ``inspect_source_data``, ``load_skill``,
+  - **Inspection tools** (``execute_python_script``, ``load_skill``, the workspace file tools,
     plus skill-private tools) are called via the tool-calling API to gather
     information. Parallel-safe, internal, no side effects.
   - **Committing actions** (``visualize``, ``delegate``) render a user-visible
@@ -55,7 +55,6 @@ from data_formulator.agents.agent_utils import (
     attach_reasoning_content,
     ensure_output_variable_in_code,
 )
-from data_formulator.agents.context import handle_inspect_source_data
 from data_formulator.agents.client_utils import Client
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.datalake.workspace_metadata import MemorySource
@@ -70,9 +69,13 @@ from data_formulator.analyst.skills import (
 from data_formulator.analyst.tools import build_tools
 from data_formulator.analyst.history import SessionHistory
 from data_formulator.analyst.plan import RunPlan, read_plan, split_plan
+
+# The agent's request to move a referenced request to a thread of its own (see AnalystAgent._reference_note).
+_NEW_THREAD_LINE = re.compile(r"^[ \t>*_#]*New thread:\**[ \t]*(.*?)[ \t*_]*$\n?", re.MULTILINE | re.IGNORECASE)
 from data_formulator.analyst.session_files import render_session_context, render_turn_context
 from data_formulator.analyst.session_layer import SessionLayer, load_saved_state
 from data_formulator.analyst.session_layer.layer import seen_versions
+from data_formulator.analyst.tool_records import tool_call_record
 from data_formulator.analyst.workspace_inputs import (
     WorkspaceInputManifest,
     build_workspace_input_manifest,
@@ -86,7 +89,7 @@ _COMPACTED_NOTE = "[Earlier output shortened to fit the model's context window.]
 
 
 # Actions whose success can complete a request on its own.
-_DELIVERY_ACTIONS = frozenset({"visualize", "write_report", "write_app", "write_html_app"})
+_DELIVERY_ACTIONS = frozenset({"visualize", "write_report", "write_app", "write_html_app", "write_map"})
 
 
 class ModelStreamStalled(TimeoutError):
@@ -100,8 +103,76 @@ def _stream_deadline(name: str, default: float) -> float:
         return default
 
 
+_STATUS_INTERVAL = 0.4   # seconds between narration status updates
+_STATUS_CHARS = 160
+_STATUS_MIN_CHARS = 24   # a line still being written shows once it has a few words
+
+
+def _status_line(text: str) -> str:
+    """The latest line of the model's narration, as plain text for a status: not plan checklist rows, tables or
+    code; a line still being written shows once it has a few words; long lines keep their end, cut at a word."""
+    lines = text.splitlines()
+    open_line = bool(lines) and not text.endswith("\n")
+    for index in range(len(lines) - 1, -1, -1):
+        line = lines[index].strip()
+        if line.startswith(("|", "```")):
+            continue
+        line = re.sub(r"(\*\*|__|`)", "", line.lstrip("#>*- ")).strip()
+        if not line or re.match(r"^\[[ xX]\]", line) or re.match(r"^plan\b", line, re.I):
+            continue
+        if index == len(lines) - 1 and open_line and len(line) < _STATUS_MIN_CHARS:
+            continue
+        if len(line) > _STATUS_CHARS:
+            tail = line[-(_STATUS_CHARS - 1):]
+            line = "…" + (tail.split(" ", 1)[1] if " " in tail else tail)
+        return line
+    return ""
+
+
+def _failure_reason(message: str) -> str:
+    """A failed action's reason in one line for the user: its first sentence, without long id lists."""
+    first = re.split(r"(?<=[.!?])\s", message.strip(), maxsplit=1)[0]
+    return first if len(first) <= 200 else first[:199] + "…"
+
+
 def _first_chunk_deadline() -> float:
     return _stream_deadline("DF_MODEL_FIRST_CHUNK_SECONDS", 90.0)
+
+
+_MAX_RETRY_AFTER_SECONDS = 60.0
+_RETRY_AFTER_TEXT = re.compile(r"retry after (\d+(?:\.\d+)?)\s*(milliseconds?|ms|seconds?|secs?|s)\b", re.I)
+
+
+def _retry_after_seconds(exc: BaseException) -> float | None:
+    """How long a rate-limited provider asked us to wait (``retry-after-ms`` / ``retry-after`` headers,
+    or "retry after N seconds" in the message), searched through wrapped exceptions; None if not said."""
+    pending, seen = [exc], set()
+    while pending:
+        error = pending.pop(0)
+        if error is None or id(error) in seen:
+            continue
+        seen.add(id(error))
+        for headers in (getattr(error, "litellm_response_headers", None),
+                        getattr(getattr(error, "response", None), "headers", None),
+                        getattr(error, "headers", None)):
+            if not hasattr(headers, "get"):
+                continue
+            try:
+                if (value := headers.get("retry-after-ms")) is not None:
+                    return float(value) / 1000
+                if (value := headers.get("retry-after")) is not None:
+                    try:
+                        return float(value)
+                    except ValueError:
+                        from email.utils import parsedate_to_datetime
+                        return max(parsedate_to_datetime(value).timestamp() - time.time(), 0.0)
+            except (TypeError, ValueError, OverflowError):
+                continue
+        if match := _RETRY_AFTER_TEXT.search(str(error)):
+            amount, unit = float(match.group(1)), match.group(2).lower()
+            return amount / 1000 if unit.startswith("m") else amount
+        pending += [getattr(error, "original_exception", None), error.__cause__, error.__context__]
+    return None
 
 
 _STREAM_END = object()
@@ -186,31 +257,40 @@ _META_SKILL = "meta"
 # drift, and the regex is anchored to the message start so only banners *we*
 # emitted match — never the same text pasted by a user or echoed by the model.
 _SKILL_LOADED_BANNER = "[SKILL LOADED: {name}]"
+# Configure-skill tools for managing MCP servers; offered only where MCP is available.
+MCP_SETUP_TOOLS = frozenset({"list_mcp_servers", "propose_mcp_changes"})
 _SKILL_LOADED_RE = re.compile(r"^\[SKILL LOADED: ([^\]]+)\]")
 _SKILL_PRELOADED_PREFIX = "[SKILL: "
 _SKILL_PRELOADED_SUFFIX = " Preloaded for this run"
 
+
+def _unavailable_skill_note(name: str, content: str) -> str:
+    """What replaces an earlier skill body whose skill this run no longer offers."""
+    if name.startswith("mcp-"):
+        title = re.search(r"^# MCP server: (.+)$", content, re.M)
+        server = title.group(1).strip() if title else name.removeprefix("mcp-")
+        return (f"The user removed or turned off the MCP server {server}; its tools are no longer available. "
+                "Do not call or suggest them; if the request needs them, say the user can add or turn the server "
+                "back on in Tools.")
+    return "Application capability guidance is no longer available under the current policy."
+
+
 _TOOL_PROGRESS_ARG_KEYS: dict[str, tuple[str, ...]] = {
-    "summarize_data_sources": (),
-    "list_data": ("source_id", "path", "filter_by"),
-    "find_data": ("query", "source_id", "path", "filter_by"),
-    "describe_data": ("source_id", "table_key"),
     "probe_data": ("source_id", "table_key", "query"),
     "list_connectors": ("source_type",),
     "list_sessions": ("query",),
-    "inspect_chart": ("chart_id",),
     "search_data_tables": ("query",),
     "search_knowledge": ("query",),
-    "list_workspace_items": ("scope", "kinds", "query"),
-    "read_workspace_item": ("item_id", "locator"),
-    "search_workspace_items": ("query", "item_ids", "kinds"),
     "create_file": ("filename", "display_name"),
     "edit_file": ("path", "display_name"),
     "delete_items": ("items",),
     "list_files": ("path",),
-    "read_file": ("path", "paths"),
-    "search_files": ("pattern", "path"),
+    "read_file": ("files", "path", "paths"),
+    "search": ("query", "path"),
     "move_file": ("path", "new_path"),
+    "load_skill": ("name",),
+    "create_data": ("table_name",),
+    "update_data": ("table_name",),
 }
 
 
@@ -356,10 +436,12 @@ not only tables and prose.
 - Plain text with no tool calls ends the run; `long_response` also finishes it.
     Choose the response form using the baseline workflows below.
 
-Call an action alone, with any accompanying prose: only the first action executes,
-and all sibling calls, including non-action tools, are discarded. Observe its
-result before choosing another action. Wait for prerequisites before dependent
-calls; do not claim success from intent or a pending proposal.
+Make independent tool calls together in one response: searches and reads you
+already know you need, or loading a skill alongside them. Call an action alone,
+with any accompanying prose: only the first action executes, and all sibling calls,
+including non-action tools, are discarded. Observe its result before choosing
+another action. Wait for prerequisites before dependent calls; do not claim success
+from intent or a pending proposal.
 
 ## Understanding your context
 
@@ -393,6 +475,11 @@ class AnalystAgent:
     but do not impose execution limits.
     """
 
+    # Several independent tool calls per model response (see _open_stream).
+    PARALLEL_TOOL_CALLS = True
+    # Set by _stream_llm when it streamed answer text (see there).
+    _answer_streamed = False
+
     def __init__(
         self,
         client: Client,
@@ -406,13 +493,25 @@ class AnalystAgent:
         identity_id: str | None = None,
         execution_config: AnalystExecutionConfig | None = None,
         workspace_id: str | None = None,
+        demo: str | None = None,
+        mcp: bool = False,
     ):
         self.client = client
         self.workspace = workspace
         self.identity_id = identity_id
         self.workspace_id = workspace_id
         from data_formulator.configuration import terminal_mode
-        self.registry = (skill_registry or build_registry()).with_terminal_policy(terminal_mode())
+        # The demo the request came from (its X-DF-Demo header), or None for the standard app; only then is
+        # the demo skill in the registry (design-docs/69).
+        self.demo = demo
+        self.registry = (skill_registry or build_registry()).with_terminal_policy(terminal_mode()).with_demo(demo)
+        if mcp and not demo:
+            # The user's MCP servers, each a skill the agent loads when it needs it (local mode only).
+            from data_formulator.mcp_servers.skill import usable_servers
+            self.registry = self.registry.with_mcp_servers(*usable_servers())
+        from data_formulator.mcp_servers.config import mcp_available
+        if not (mcp and not demo and mcp_available()):
+            self.registry = self.registry.without_tools(MCP_SETUP_TOOLS)
         self.agent_exploration_rules = agent_exploration_rules
         self.agent_coding_rules = agent_coding_rules
         self.language_instruction = language_instruction
@@ -468,6 +567,8 @@ class AnalystAgent:
         self._progress_reminder_start = 0
         # The run's checklist plan, read from the agent's narration (design-docs/64).
         self._plan = RunPlan()
+        self._references: list[dict[str, Any]] = []
+        self._placement_open = False
         self._last_run_chart_id: str | None = None
 
     # ------------------------------------------------------------------
@@ -494,7 +595,7 @@ class AnalystAgent:
 
     def _system_skills(self) -> set[str]:
         """Skills whose guidance is part of the system prompt: fixed for the deployment, not the request."""
-        return {name for name in ("terminal",) if self.registry.has(name)}
+        return set()
 
     def _preload_messages(self, skills: set[str]) -> list[dict]:
         """Skill messages for skills a request needs before its first call and does not have yet."""
@@ -512,15 +613,25 @@ class AnalystAgent:
     ) -> set[str]:
         """Return the skill gates that must be open before the first LLM call.
 
-        A request made while a connector form owns the canvas preloads
-        ``configure`` so the agent can read and revise that form in place. A
-        session with no data or files preloads ``connected_data``: any analysis
-        starts by finding data.
+        Each rule reads the session, not the wording of the request: loading a skill on demand costs a model
+        turn, while a preloaded one only costs its tokens.
+
+        - A session with no data or files preloads ``connected_data``, ``configure`` and, where it exists,
+          ``terminal``: such a request starts by acquiring data or setting up a source.
+        - A connector form on the canvas preloads ``configure``, to read and revise that form in place.
+        - A demo request preloads ``demo``, which nearly every question there starts from (design-docs/69).
+
+        What else is on the canvas is not used: preloading app guidance while an app was open pulled some chart
+        requests into editing the app (design-docs/68).
         """
-        empty = workspace_inputs is not None and not workspace_inputs.data and not workspace_inputs.files
-        return ({_META_SKILL} | ({"terminal"} if self.registry.has("terminal") else set())
-                | ({"configure"} if connector_form and self.registry.has("configure") else set())
-                | ({"connected_data"} if empty and self.registry.has("connected_data") else set()))
+        wanted: set[str] = set()
+        if workspace_inputs is not None and not workspace_inputs.data and not workspace_inputs.files:
+            wanted |= {"connected_data", "configure", "terminal"}
+        if connector_form:
+            wanted.add("configure")
+        if self.demo:
+            wanted.add("demo")
+        return {_META_SKILL} | {name for name in wanted if self.registry.has(name)}
 
     # ------------------------------------------------------------------
     # Public API
@@ -539,6 +650,7 @@ class AnalystAgent:
         connector_form: dict[str, Any] | None = None,
         external_references: list[dict[str, Any]] | None = None,
         session_state: dict[str, Any] | None = None,
+        references: list[dict[str, Any]] | None = None,
     ) -> Generator[dict[str, Any], None, None]:
         """Run the unified analyst loop.
 
@@ -559,6 +671,9 @@ class AnalystAgent:
         completed_steps: list[dict[str, Any]] = []
         iteration = completed_step_count
         final_status = "success"
+        if hasattr(self.workspace, "migrate_legacy_memory"):
+            # Legacy memory becomes ordinary files the agent lists, reads and searches (design-docs/65).
+            self.workspace.migrate_legacy_memory()
         workspace_files = sorted(
             self.workspace.list_workspace_files(), key=lambda item: item.name.lower(),
         )
@@ -594,6 +709,8 @@ class AnalystAgent:
             "identity_id": self.identity_id,
             "workspace_id": self.workspace_id,
             "conversation_id": conversation_id,
+            # The demo this run belongs to; the demo skill's handlers act only for it.
+            "demo": self.demo if self.registry.has("demo") else None,
             # Skill instances are registry singletons, so mutable per-run state
             # belongs here. SkillContext receives shallow payload copies; this
             # nested mapping intentionally remains shared across tool calls in
@@ -622,6 +739,9 @@ class AnalystAgent:
                 self.workspace, "confined_scratch") else None
             continued, turn_start, self._run_end, self._delivered = False, None, None, False
             self._plan = RunPlan()
+            # Earlier results the request is about; with one, the run may move it to a new thread (_read_placement).
+            self._references = [item for item in references or [] if isinstance(item, dict) and item.get("id")]
+            self._placement_open = bool(self._references)
             if trajectory is None:
                 stored, why = history.continuable(self.client.model) if history else (None, "no workspace")
                 if stored is None:
@@ -854,7 +974,7 @@ class AnalystAgent:
                     if name in {"terminal", "workspace", "connected_data"} and body not in content:
                         message["content"] = _SKILL_LOADED_BANNER.format(name=name) + "\n" + body
                 else:
-                    message["content"] = "Application capability guidance is no longer available under the current policy."
+                    message["content"] = _unavailable_skill_note(name, content)
             for candidate in content.split(_SKILL_PRELOADED_PREFIX)[1:]:
                 name, separator, remainder = candidate.partition("]")
                 if not separator or not remainder.startswith(_SKILL_PRELOADED_SUFFIX):
@@ -994,7 +1114,7 @@ class AnalystAgent:
                  iteration=iteration, skill=skill_name)
         gen = skill.handle_action(action_type, action, ctx)
         observation = yield from self._route_skill_events(
-            gen, iteration, trajectory, completed_steps,
+            gen, iteration, trajectory, completed_steps, action_type,
         )
         if "workspace_inputs" in ctx.payload:
             self._run_payload["workspace_inputs"] = ctx.payload["workspace_inputs"]
@@ -1006,6 +1126,7 @@ class AnalystAgent:
         iteration: int,
         trajectory: list[dict],
         completed_steps: list[dict[str, Any]],
+        action: str = "",
     ) -> Generator[Event, None, str | None]:
         """The shell's router: a skill yields events to *here* (never straight
         to the frontend), and this is the single place that decides what to
@@ -1031,10 +1152,11 @@ class AnalystAgent:
         returned observation string (e.g. visualize's "chart fields not found",
         a malformed ``ask_user`` payload). That observation is fed back to the
         agent as the action's tool-call result, so the agent sees the failure and
-        self-corrects on the next iteration. These are *internal* retry signals,
-        not user-facing failures, so they are dropped here and never streamed to
-        the frontend. Only fatal, run-ending errors (LLM API failures) are
-        emitted directly by ``run`` outside this router and do reach the client.
+        self-corrects on the next iteration. They do not end the run, so they are
+        forwarded as ``action_failed`` (the action and a one-line reason), which the
+        application shows as a failed step instead of a silent retry. Only fatal,
+        run-ending errors (LLM API failures) are emitted as ``error``, directly by
+        ``run`` outside this router.
         """
         suppress_channel = self._suppress_stream_channel
         try:
@@ -1051,6 +1173,10 @@ class AnalystAgent:
                 )
                 if etype in ("completion", "interact"):
                     self._run_end = etype
+                if etype == "error":
+                    yield {"type": "action_failed", "action": action, "iteration": iteration,
+                           "message": _failure_reason(str(ev.get("message") or "")),
+                           **({"message_code": ev["message_code"]} if ev.get("message_code") else {})}
                 if not drop:
                     if etype == "result":
                         content = ev.get("content", {}) or {}
@@ -1106,9 +1232,9 @@ class AnalystAgent:
         reference and inspect it within the same run.
 
         The entry mirrors the shape the frontend forwards for pre-existing charts
-        (``chart_id`` / ``chart_type`` / ``encodings`` / ``table_ref`` / ``code`` /
-        ``chart_data``). Charts are read by the agent from their encodings + sample
-        data (and code), not a rendered image. The mutation lands on
+        (``chart_id`` / ``chart_type`` / ``encodings`` / ``table_ref``), so a report
+        edit may embed it. The agent reads the chart as ``session/charts/<id>.json``
+        (added to the session layer below). The mutation lands on
         ``self._run_payload['charts']`` so the next dispatched skill ctx sees it.
         """
         chart_id = transform_result.get("chart_id")
@@ -1117,7 +1243,6 @@ class AnalystAgent:
             return
         content = transform_result.get("content", {}) or {}
         table_name = (content.get("virtual", {}) or {}).get("table_name", "")
-        rows = content.get("rows", []) or []
         charts = self._run_payload.setdefault("charts", [])
         if any(c.get("chart_id") == chart_id for c in charts):
             return
@@ -1126,8 +1251,6 @@ class AnalystAgent:
             "chart_type": chart_spec.get("type") or chart_spec.get("chart_type") or "Unknown",
             "encodings": dict(chart_spec.get("encodings", {}) or {}),
             "table_ref": table_name,
-            "code": transform_result.get("code", ""),
-            "chart_data": {"name": table_name, "rows": rows[:50]},
         })
         # Editable as a session file for the rest of the run (when its type is a catalog name).
         from data_formulator.analyst.session_edits import chart_catalog
@@ -1417,7 +1540,7 @@ class AnalystAgent:
                 # Backend-minted, run-stable chart id. Forwarded to the frontend
                 # in the ``result`` event so it adopts this id verbatim — the same
                 # id the agent can embed in a same-run report (``chart://<id>``)
-                # and pass to ``inspect_chart``. NOT derived from the table name
+                # and read as ``session/charts/<id>.json``. NOT derived from the table name
                 # (one table may back many charts).
                 "chart_id": f"chart-{uuid.uuid4().hex[:12]}",
                 "code": code,
@@ -1476,12 +1599,11 @@ class AnalystAgent:
             "and reread only changed items you rely on. The user may switch threads between requests; work from "
             "where they are now.",
             "- Charts in the session already exist: build on them or reference them; do not re-create an "
-            "equivalent chart. When asked to deliver a report or narrative document, load the `report` skill "
+            "equivalent chart. When asked to deliver a report or narrative document, write it with `write_report` "
             "and embed those charts by id rather than producing equivalent visualizations. An ordinary "
             "summary can be answered directly without report delivery.",
             "- Cite inputs by the name or path you see (a table name or `session/tables/<name>.json`, a "
-            "`files/...` path). `replaces` takes the id in a session path (table name, chart id, report id) or "
-            "a `files/...` path, only to fix what the user says is wrong — never to explore.",
+            "`files/...` path).",
         ]
         context_lines.append(
             "- **[USER ATTACHMENT(S)]**, when present, are images the user attached to the request. "
@@ -1529,6 +1651,9 @@ class AnalystAgent:
                 f"actions are active now.\n\n{body}"
             )
 
+        if self.registry.has("demo"):
+            # A demo has no connector forms (design-docs/69).
+            prompt = prompt.replace(" and connector forms pause", " pause")
         if self.agent_coding_rules and self.agent_coding_rules.strip():
             prompt += (
                 "\n\n## Agent Coding Rules\n\n"
@@ -1577,6 +1702,10 @@ class AnalystAgent:
                 "Use create_file/edit_file for durable workspace documents and exports. "
                 "Prioritize relevant user-managed sources.\n\n"
             )
+
+        if self._references:
+            user_content += self._reference_note()
+        user_content += self._background_task_note()
 
         # The request comes last.
         user_content += f"[USER QUESTION]\n\n{user_question}"
@@ -1649,6 +1778,52 @@ class AnalystAgent:
         self._progress_reminder_start = len(messages)
         return True
 
+    def _background_task_note(self) -> str:
+        """The session's background tasks: those still running, and those that ended recently (maybe while no run was there)."""
+        try:
+            from data_formulator.analyst.background_tasks import describe_tasks, task_manager
+            from data_formulator.workspace_factory import get_active_workspace_id
+            owner, workspace_id = self.identity_id, get_active_workspace_id()
+            if not owner or not workspace_id:
+                return ""
+            recent = time.time() - 6 * 3600
+            tasks = [task for task in task_manager().list(owner, workspace_id) if task.running or (task.ended or 0) > recent][-8:]
+        except Exception:  # task bookkeeping must never block a request
+            return ""
+        if not tasks:
+            return ""
+        return ("[BACKGROUND TASKS]\n\nLong commands started in this session (they run apart from any agent run; the user "
+                "can stop them). Use wait_tasks (terminal skill) or their logs to follow up when relevant; do not restart one the user stopped "
+                "unless they ask.\n" + describe_tasks(tasks, lines=3) + "\n\n")
+
+    def _reference_note(self) -> str:
+        """What the request is about: an earlier result in its thread, and the run's one chance to start a new thread."""
+        layer = (getattr(self, "_run_payload", None) or {}).get("session_layer")
+        items = []
+        for item in self._references:
+            path = layer.output_path(str(item["id"])) if layer is not None else str(item["id"])
+            label = str(item.get("label") or "").strip()
+            items.append(f"- `{path}`" + (f' "{label}"' if label else ""))
+        return (
+            "[REFERENCE]\n\n"
+            "The user asked this about an earlier result in their thread:\n"
+            + "\n".join(items) + "\n\n"
+            "The request is added at the end of that thread. If it starts a separate line of analysis rather "
+            "than continuing the thread, write the line `New thread: <a few words>` at the start of your first "
+            "message; it then opens a thread of its own from that result.\n\n"
+        )
+
+    def _read_placement(self, content: str) -> Generator[Event, None, str]:
+        """The first message may ask for a new thread (see _reference_note); later ones cannot."""
+        if not self._placement_open:
+            return content
+        self._placement_open = False
+        match = _NEW_THREAD_LINE.search(content or "")
+        if not match:
+            return content
+        yield {"type": "placement", "new_thread": True, "title": match.group(1).strip()}
+        return (content[:match.start()] + content[match.end():]).strip()
+
     def _read_plan(self, content: str) -> Generator[Event, None, str]:
         """Take a checklist the agent wrote as its plan (design-docs/64); return the remaining narration."""
         items, title, narration = read_plan(content)
@@ -1673,7 +1848,7 @@ class AnalystAgent:
         """The tool set offered this turn: baseline inspection tools plus
         load_skill + loaded skills' tools) plus the committing **action**
         tools of loaded skills (visualize/ask_user always; write_report
-        once the report skill is loaded). The model gathers with inspection tools
+        always on). The model gathers with inspection tools
         and acts with at most one action per turn."""
         extra_tools = self.registry.tools_for(self._loaded_skills)
         action_tools = self.registry.action_tools_for(self._loaded_skills)
@@ -1775,13 +1950,17 @@ class AnalystAgent:
 
             # --- tool calls: partition into committing actions vs inspection ---
             if tool_calls:
+                if self._answer_streamed:
+                    # Text streamed as the answer was followed by a tool call: it was a note after all.
+                    yield {"type": "answer_retracted"}
+                content = yield from self._read_placement(content)
                 narration = yield from self._read_plan(content)
                 if narration:
                     yield {"type": "thinking_text", "content": narration}
 
                 # A committing action is a tool call (visualize / delegate /
-                # write_report). Inspection tools (explore /
-                # inspect_source_data / inspect_chart / load_skill) gather. A turn
+                # write_report). Inspection tools (execute_python_script /
+                # read_file / search / load_skill) gather. A turn
                 # ends with exactly ONE action; the harness enforces that here.
                 action_names = self.registry.action_names()
                 action_calls = [tc for tc in tool_calls
@@ -1846,10 +2025,9 @@ class AnalystAgent:
                         "args": _tool_progress_args(tool_name, tool_args),
                         "purpose": tool_args.get("purpose") if tool_name == "execute_python_script" else None,
                         "code": tool_args.get("code") if tool_name == "execute_python_script" else None,
-                        "table_names": tool_args.get("table_names") if tool_name == "inspect_source_data" else None,
                         "skill": tool_args.get("name") if tool_name == "load_skill" else None,
                         "query": tool_args.get("query") if tool_name in (
-                            "search_data_tables", "search_knowledge", "search_workspace_items",
+                            "search_data_tables", "search_knowledge", "search",
                         ) else None,
                     }
 
@@ -1872,18 +2050,9 @@ class AnalystAgent:
                             "status": tool_status,
                             "stdout": result.get("stdout", ""),
                             "error": result.get("error"),
-                        }
-                    elif tool_name == "inspect_source_data":
-                        table_names = tool_args.get("table_names", [])
-                        tool_content = handle_inspect_source_data(
-                            table_names, input_tables or [], self.workspace,
-                        )
-                        yield {
-                            "type": "tool_result",
-                            "tool": tool_name,
-                            "tool_call_id": tc.id,
-                            "status": "ok",
-                            "stdout": tool_content,
+                            "record": tool_call_record(
+                                call_id=tc.id, tool=tool_name, args=tool_args, output=result.get("stdout", ""),
+                                error=result.get("error"), status=tool_status, started=tool_t0, ended=time.time()),
                         }
                     elif tool_name == "load_skill":
                         skill_name = self.registry.canonical_name(tool_args.get("name", ""))
@@ -1910,6 +2079,9 @@ class AnalystAgent:
                             "status": tool_status,
                             "stdout": message,
                             "error": None if ok else message,
+                            "record": tool_call_record(
+                                call_id=tc.id, tool=tool_name, args=tool_args, output=message if ok else None,
+                                error=None if ok else message, status=tool_status, started=tool_t0, ended=time.time()),
                         }
                     elif tool_name in skill_tool_owners:
                         skill = skill_tool_owners[tool_name]
@@ -1938,9 +2110,23 @@ class AnalystAgent:
                             "tool_call_id": tc.id,
                             "status": tool_status,
                             "stdout": tool_content,
+                            "record": tool_call_record(
+                                call_id=tc.id, tool=tool_name, args=tool_args, output=tool_content,
+                                error=None, status=tool_status, started=tool_t0, ended=time.time()),
                         }
                     else:
                         tool_content = f"Unknown tool: {tool_name}"
+                        tool_status = "error"
+                        yield {
+                            "type": "tool_result",
+                            "tool": tool_name,
+                            "tool_call_id": tc.id,
+                            "status": tool_status,
+                            "error": tool_content,
+                            "record": tool_call_record(
+                                call_id=tc.id, tool=tool_name, args=tool_args, output=None,
+                                error=tool_content, status=tool_status, started=tool_t0, ended=time.time()),
+                        }
 
                     tool_latency = int((time.time() - tool_t0) * 1000)
                     output_summary = (tool_content[:200] + "...") if len(tool_content) > 200 else tool_content
@@ -1989,6 +2175,8 @@ class AnalystAgent:
                     yield self._plan.event(revised=False)
                 if self._remind_open_plan(messages, content, choice):
                     continue
+                if self._plan.settle():
+                    yield self._plan.event(revised=False)
                 # After a delivered chart, report, or app the request can be complete with nothing more to say.
                 logger.info("[AnalystAgent] Empty reply after a delivery ends the run")
                 yield {"type": "agent_action", "action_data": None, "reason": "done", "final_text": "",
@@ -2012,11 +2200,19 @@ class AnalystAgent:
             # as the summary). Record it as a plain assistant turn and signal
             # "done" to the outer loop.
             logger.info("[AnalystAgent] No action committed; final text ends the run")
+            content = yield from self._read_placement(content)
             final_text = yield from self._read_plan(content)
             if self._plan.finish():
                 yield self._plan.event(revised=False)
             if self._remind_open_plan(messages, content, choice):
+                if self._answer_streamed:
+                    # The run goes on to finish its plan, so the streamed text was not the end.
+                    yield {"type": "answer_retracted"}
+                    if final_text.strip():
+                        yield {"type": "thinking_text", "content": final_text}
                 continue
+            if self._plan.settle():
+                yield self._plan.event(revised=False)
             final_msg: dict[str, Any] = {"role": "assistant", "content": content or None}
             attach_reasoning_content(final_msg, choice.message)
             messages.append(final_msg)
@@ -2065,8 +2261,12 @@ class AnalystAgent:
             action_data = {}
         if not isinstance(action_data, dict):
             action_data = {}
-        _rescue_unpack_json_strings(action_data)
-        action_data["action"] = chosen_name
+        if chosen_name in self.registry.external_actions:
+            # A third party's schema: keep the arguments exactly as written, apart from our own fields.
+            action_data = {"action": chosen_name, "arguments": action_data}
+        else:
+            _rescue_unpack_json_strings(action_data)
+            action_data["action"] = chosen_name
 
         # Record the commitment as an assistant turn carrying ONLY the chosen
         # action's tool call — dropping siblings keeps the trajectory valid for
@@ -2174,14 +2374,11 @@ class AnalystAgent:
 
         ``stream=True`` is what makes live report streaming possible: the loop's
         LLM call always streams, and the agent forwards a streaming action's
-        argument as it arrives (design-docs/36 §5). ``parallel_tool_calls=False``
-        forces one tool call per response — the structural backstop for the
-        one-action-per-turn rule: actions are sequential (each result shapes the
-        next), so the model must never batch them. It also serializes inspection
-        tools — a minor extra round-trip — an acceptable trade for never silently
-        dropping batched actions. Providers that don't support the flag drop it
-        (``drop_params=True``); the first-wins cardinality guard remains as a
-        belt-and-suspenders net.
+        argument as it arrives (design-docs/36 §5). ``PARALLEL_TOOL_CALLS`` lets
+        one response carry several independent calls (reads, searches, a skill
+        load), saving a model turn each. Actions stay one per turn: the first-wins
+        cardinality guard commits the first action and tells the model what it
+        dropped. Providers that don't support the flag drop it (``drop_params=True``).
         """
         max_attempts = self.execution_config.stream_open_retries + 1
         cancel = getattr(self, "cancel", None)
@@ -2193,7 +2390,10 @@ class AnalystAgent:
                 source = self.client.get_completion_with_tools(
                     messages, tools=tools, stream=True,
                     reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model, getattr(self.client, "reasoning_effort", None)),
-                    parallel_tool_calls=False,
+                    parallel_tool_calls=self.PARALLEL_TOOL_CALLS,
+                    # Opening the stream can block too (the provider holds the request); without this the
+                    # HTTP default of 600 s applies before the stream deadlines below start.
+                    timeout=_first_chunk_deadline(),
                 )
                 # Responses streams send the request lazily, so request errors surface on the first chunk.
                 return _PrimedStream(source, deadline=_first_chunk_deadline())
@@ -2208,11 +2408,20 @@ class AnalystAgent:
                     backoff = (self.execution_config.rate_limit_backoff_seconds if rate_limited
                                else self.execution_config.stream_open_backoff_seconds)
                     wait = backoff * 2 ** (attempt - 1)
+                    asked = _retry_after_seconds(e) if rate_limited else None
+                    if asked is not None:
+                        wait = min(max(asked, 1.0), _MAX_RETRY_AFTER_SECONDS)
                     logger.warning(
                         "[AnalystAgent] Transient LLM error (attempt %d/%d), "
-                        "retrying in %gs: %s",
-                        attempt, limit, wait, e,
+                        "retrying in %gs%s: %s",
+                        attempt, limit, wait, "" if asked is None else f" (provider asked for {asked:g}s)", e,
                     )
+                    if rate_limited:
+                        from data_formulator.error_handler import collect_stream_warning
+                        collect_stream_warning(
+                            f"The AI model is busy (rate limit reached). Retrying in {wait:.0f} seconds…",
+                            message_code="LLM_RATE_LIMIT_RETRY",
+                        )
                     if cancel is not None:
                         cancel.wait(wait)
                     else:
@@ -2265,8 +2474,15 @@ class AnalystAgent:
         # Each LLM call starts a fresh streamed-channel map; only the round that
         # actually commits a streaming action leaves an entry for the run loop.
         self._streamed_channels = {}
+        # Whether this call streamed text the provider marked as the final answer (``answer`` channel).
+        self._answer_streamed = False
 
+        # Status for the user while the model works (it is ~95% of a request): thinking until it writes,
+        # then what it is writing (the tool's name arrives first), and its narration as it streams.
+        yield {"type": "status", "phase": "thinking"}
         stream = self._open_stream(messages, tools)
+        announced: set[int] = set()
+        narrated, narrated_at = "", 0.0
 
         content_parts: list[str] = []
         reasoning_acc: str | None = None
@@ -2294,6 +2510,17 @@ class AnalystAgent:
             content = getattr(delta, "content", None)
             if content:
                 content_parts.append(content)
+                # The answer streams to the user as it is written; notes before a tool call stay a status line.
+                # Only providers that mark a message's phase (OpenAI Responses) tell the two apart this early.
+                if (getattr(delta, "provider_specific_fields", None) or {}).get("phase") == "final_answer":
+                    self._answer_streamed = True
+                    yield {"type": "text_delta", "channel": "answer", "content": content}
+                    continue
+                line = _status_line("".join(content_parts))
+                now = time.monotonic()
+                if line and line != narrated and now - narrated_at >= _STATUS_INTERVAL:
+                    narrated, narrated_at = line, now
+                    yield {"type": "status", "phase": "narrating", "text": line}
 
             for tcd in getattr(delta, "tool_calls", None) or []:
                 idx = getattr(tcd, "index", 0) or 0
@@ -2306,6 +2533,9 @@ class AnalystAgent:
                 if fn is not None:
                     if getattr(fn, "name", None):
                         slot["name"] = fn.name
+                        if idx not in announced and fn.name in available_tool_names:
+                            announced.add(idx)
+                            yield {"type": "status", "phase": "writing", "tool": fn.name}
                     arg_delta = getattr(fn, "arguments", None)
                     if arg_delta:
                         slot["arguments"] += arg_delta

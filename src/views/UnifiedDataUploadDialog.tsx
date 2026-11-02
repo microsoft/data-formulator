@@ -34,7 +34,7 @@ import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutl
 import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import FolderZipOutlinedIcon from '@mui/icons-material/FolderZipOutlined';
-import { StreamIcon, getConnectorIcon, connectorSortOrder, connectorCategory } from '../icons';
+import { StreamIcon, getConnectorIcon, connectorSortOrder, connectorCategory, FileTypeIcon } from '../icons';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
@@ -47,7 +47,8 @@ import { loadTable } from '../app/tableThunks';
 import { DataSourceConfig, DictTable, ConnectorAuthPath, ConnectorInstance } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, readFileText } from '../data/utils';
 import { ScrollFadeContainer } from '../components/ScrollFade';
-import { ListDetailList, ListDetailNav, listDetailItemSx } from '../components/ListDetailDialog';
+import { ListDetailList, ListDetailNav } from '../components/ListDetailDialog';
+import type { Theme } from '@mui/material';
 import { CONNECTOR_URLS, CONNECTOR_ACTION_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { deriveConnectorDisplayName } from '../app/connectorNames';
@@ -716,16 +717,26 @@ const ConnectorTypePicker: React.FC<{
     disabledLoaders?: Record<string, { install_hint: string }>;
 }> = ({ loaderTypes, selectedType, onSelect, disabledLoaders = {} }) => {
     const { t } = useTranslation();
-    const itemSx = (selected: boolean) => ({ ...listDetailItemSx(selected), display: 'flex', alignItems: 'center', gap: 0.75,
-        '& .MuiSvgIcon-root': { fontSize: iconVar.md, color: 'text.secondary' } });
-    return <ListDetailList role="group" aria-label={t('upload.dataSourceTypes', { defaultValue: 'Data Sources' })}>
+    // A picker of types, not a list of objects: plain rows, with the selection as a tint rather than a card.
+    const itemSx = (selected: boolean) => ({
+        display: 'flex', alignItems: 'center', gap: 0.75, flexShrink: 0,
+        width: { xs: 'auto', sm: '100%' }, minWidth: { xs: 'max-content', sm: 0 },
+        px: 1, py: 0.625, borderRadius: 1, fontSize: textVar.sm, textAlign: 'left',
+        color: selected ? 'primary.main' : 'text.primary', fontWeight: selected ? 500 : 400,
+        bgcolor: selected ? (theme: Theme) => alpha(theme.palette.primary.main, 0.08) : 'transparent',
+        transition: 'background-color 120ms ease',
+        '&:hover': { bgcolor: selected ? undefined : 'action.hover' },
+        '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 },
+        '& .MuiSvgIcon-root': { fontSize: iconVar.md, color: selected ? 'primary.main' : (theme: Theme) => alpha(theme.palette.text.primary, 0.75) },
+    });
+    return <ListDetailList role="group" gap={0.25} aria-label={t('upload.dataSourceTypes', { defaultValue: 'Data Sources' })}>
         {[...loaderTypes].sort((first, second) => connectorSortOrder(first.type, second.type)).map((loader, index, sorted) => {
             const isPlugin = loader.source === 'plugin';
             const category = connectorCategory(loader.type);
             const header = (index === 0 || connectorCategory(sorted[index - 1].type) !== category) && <Typography
                 key={`group-${category}`} role="presentation" sx={{
-                    display: { xs: 'none', sm: 'block' }, px: 0.5, pt: index === 0 ? 0.25 : 0.75,
-                    fontSize: textVar.xs, color: 'text.disabled',
+                    display: { xs: 'none', sm: 'block' }, px: 1, pt: index === 0 ? 0.25 : 1.25, pb: 0.25,
+                    fontSize: textVar.xs, color: 'text.secondary',
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0,
                 }}>
                 {t(`upload.connectorGroups.${category}`)}
@@ -752,7 +763,7 @@ const ConnectorTypePicker: React.FC<{
         {Object.entries(disabledLoaders).sort(([first], [second]) => connectorSortOrder(first, second)).map(([name, { install_hint }]) => (
             <Tooltip key={name} title={install_hint} placement="right" arrow>
                 <Box component="span" sx={{ display: 'flex', flexShrink: 0 }}>
-                    <ButtonBase disabled sx={{ ...itemSx(false), width: '100%', color: 'text.disabled', borderStyle: 'dashed',
+                    <ButtonBase disabled sx={{ ...itemSx(false), width: '100%', color: 'text.disabled',
                         '& .MuiSvgIcon-root': { fontSize: iconVar.md, opacity: 0.4 } }}>
                         {getConnectorIcon(name)}
                         <Box component="span" sx={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</Box>
@@ -2036,9 +2047,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         {filePreviewFiles.map(file => {
                                             const tableIndex = filePreviewTableFiles.findIndex(tableFile => tableFile === file);
                                             const hasTablePreview = tableIndex >= 0;
-                                            const { color: categoryColor, Icon: CategoryIcon } = fileCategoryVisuals[
-                                                getFileCategory(file.name, hasTablePreview)
-                                            ];
+                                            const category = getFileCategory(file.name, hasTablePreview);
+                                            const { color: categoryColor, Icon: CategoryIcon } = fileCategoryVisuals[category];
                                             const isPreviewSelected = (hasTablePreview
                                                 && showSelectedFileTablePreview
                                                 && filePreviewActiveIndex === tableIndex)
@@ -2082,7 +2092,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                                     color: categoryColor,
                                                     backgroundColor: 'action.hover',
                                                 }}>
-                                                    <CategoryIcon sx={{ fontSize: iconVar.md }} />
+                                                    {category === 'document' || category === 'generic'
+                                                        ? <FileTypeIcon path={file.name} size={iconVar.md} />
+                                                        : <CategoryIcon sx={{ fontSize: iconVar.md }} />}
                                                 </Box>
                                                 <Box sx={{ flex: 1, minWidth: 0 }}>
                                                     <Typography noWrap sx={{ fontSize: textVar.sm, fontWeight: 500 }}>

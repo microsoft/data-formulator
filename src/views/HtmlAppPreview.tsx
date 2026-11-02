@@ -13,7 +13,8 @@ import { AppSandbox, useAppSourceResolver, useAppTheme } from './AppSandbox';
 /** A sandboxed HTML app artifact. */
 export const HtmlAppPreview: FC<{
     html: string; title: string; reloadKey?: number; reserveTopRight?: boolean; onAskFix?: (errors: string[]) => void;
-}> = ({ html, title, reloadKey = 0, reserveTopRight = false, onAskFix }) => {
+    autoFix?: boolean; onHealthy?: () => void; fixPending?: boolean;
+}> = ({ html, title, reloadKey = 0, reserveTopRight = false, onAskFix, autoFix, onHealthy, fixPending }) => {
     const manifest = useMemo(() => parseAppManifest(html), [html]);
     const theme = useAppTheme();
     const resolveSource = useAppSourceResolver();
@@ -24,7 +25,7 @@ export const HtmlAppPreview: FC<{
         config: { channel, hostOrigin: window.location.origin, manifest, theme },
     }), [html, manifest, theme]);
     return <AppSandbox title={title} manifest={manifest} buildDocument={buildDocument} reloadKey={reloadKey}
-        reserveTopRight={reserveTopRight} onAskFix={onAskFix} resolveSource={resolveSource} />;
+        reserveTopRight={reserveTopRight} onAskFix={onAskFix} autoFix={autoFix} onHealthy={onHealthy} fixPending={fixPending} resolveSource={resolveSource} />;
 };
 
 export default HtmlAppPreview;

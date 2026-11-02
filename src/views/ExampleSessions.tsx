@@ -7,13 +7,13 @@ import i18n from '../i18n';
 import {
     Typography,
     Box,
-    Card,
+    ButtonBase,
 } from '@mui/material';
 import { StreamIcon } from '../icons';
 import { textVar } from '../app/layout';
 import { apiRequest } from '../app/apiClient';
-import { ItemCard, itemCardGridSx } from '../components/ItemCard';
-import { ArtifactDeleteButton } from './DataThreadCards';
+import { exampleCardButtonSx, exampleCardDescriptionSx, exampleCardSx, exampleCardTitleSx, ItemCard, ItemCardAction, itemCardGridSx } from '../components/ItemCard';
+import DeleteIcon from '@mui/icons-material/Delete';
 
 // Example session data for pre-built sessions
 export interface ExampleSession {
@@ -224,7 +224,7 @@ export const PublishedExamplesPanel: React.FC = () => {
         {error && <Typography role="alert" sx={{ fontSize: textVar.xs, color: 'error.main' }}>{error}</Typography>}
         {!examples.length && <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{t('administration.noExampleSessions')}</Typography>}
         {examples.map(example => <ItemCard key={example.id} title={example.title} captions={[example.description]}
-            actions={<ArtifactDeleteButton label={t('administration.removeItem', { name: example.title })} onClick={() => void remove(example.id)} />} />)}
+            actions={<ItemCardAction danger label={t('administration.removeItem', { name: example.title })} icon={<DeleteIcon />} onClick={() => void remove(example.id)} />} />)}
     </Box>;
 };
 
@@ -233,67 +233,18 @@ export const ExampleSessionCard: React.FC<{
     session: ExampleSession;
     onClick: () => void;
     disabled?: boolean;
-}> = ({ session, onClick, disabled }) => {
-    return (
-        <Card
-            variant="outlined"
-            sx={{
-                textAlign: 'left',
-                cursor: disabled ? 'default' : 'pointer',
-                display: 'flex',
-                alignItems: 'stretch',
-                gap: 0,
-                p: 0,
-                overflow: 'hidden',
-                borderColor: 'rgba(0, 0, 0, 0.18)',
-                boxShadow: '0 1px 3px rgba(32, 33, 36, 0.06)',
-                '&:hover': disabled ? {} : {
-                    transform: 'translateY(-2px)',
-                    borderColor: 'primary.light',
-                    boxShadow: '0 4px 12px rgba(32, 33, 36, 0.12)',
-                },
-            }}
-            onClick={disabled ? undefined : onClick}
-        >
-            {session.previewImage && <Box
-                sx={{
-                    height: 56,
-                    alignSelf: 'center',
-                    ml: 0.75,
-                    flexShrink: 0,
-                    overflow: 'hidden',
-                }}
-            >
-                <Box
-                    component="img"
-                    src={session.previewImage}
-                    alt={session.title}
-                    sx={{
-                        width: 'auto',
-                        height: '100%',
-                        objectFit: 'contain',
-                        display: 'block',
-                    }}
-                />
-            </Box>}
-
+}> = ({ session, onClick, disabled }) => (
+    <Box component="article" sx={exampleCardSx(disabled)}>
+        <ButtonBase aria-label={session.title} disabled={disabled} onClick={onClick} sx={exampleCardButtonSx}>
+            {session.previewImage && <Box component="img" src={session.previewImage} alt=""
+                sx={{ height: 56, width: 'auto', alignSelf: 'center', ml: 0.75, flexShrink: 0, objectFit: 'contain', display: 'block' }} />}
             <Box sx={{ flex: 1, minWidth: 0, p: 1.5 }}>
-                <Typography variant="body2" fontWeight={400} noWrap sx={{ color: 'text.primary' }}>
+                <Typography sx={exampleCardTitleSx}>
                     {session.live && <StreamIcon sx={{ fontSize: textVar.xxs, color: 'success.main', mr: 0.5 }} />}
                     {session.title}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{
-                    fontSize: textVar.xs,
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
-                    lineHeight: 1.3,
-                    mt: 0.25,
-                }}>
-                    {session.description}
-                </Typography>
+                <Typography sx={exampleCardDescriptionSx}>{session.description}</Typography>
             </Box>
-        </Card>
-    );
-};
+        </ButtonBase>
+    </Box>
+);

@@ -56,6 +56,10 @@ export interface SiteConfig {
     /** A small label beside the title, e.g. "Beta". */
     badge?: string;
     tagline?: string;
+    /** Short questions offered as chips above the chat; sending one starts the analyst on it. */
+    suggestions?: string[];
+    /** The chat box's placeholder. */
+    chat_placeholder?: string;
     /** Short points on what the site is built from, shown as bullets before the intro; [text](url) is a link. */
     about?: string[];
     intro?: string;
@@ -66,6 +70,8 @@ export interface SiteConfig {
     /** A note after "Powered by Data Formulator" at the foot of the page; [text](url) is a link. */
     disclaimer?: string;
     links?: { label: string; url: string }[];
+    /** Sessions start with the workspace folded into its summary card. */
+    workspace_collapsed?: boolean;
     starters: SiteStarter[];
     /** "ready" once the demo's content is installed on this server. */
     status?: 'ready' | 'not_installed';
@@ -77,12 +83,6 @@ export interface SiteConfig {
 
 export interface SiteLandingProps {
     site: SiteConfig;
-    /** Opens a starter session; with a question, asks it once the session is open. */
-    onOpenStarter: (starter: SiteStarter, question?: string) => void;
-    /** Opens a story's pre-made session (or, before it is built, its first question on the starter). */
-    onOpenStory: (starter: SiteStarter, story: SiteStory) => void;
     /** The visitor's saved sessions on this site, already rendered. */
     sessions?: ReactNode;
-    footer?: ReactNode;
-    disabled?: boolean;
 }

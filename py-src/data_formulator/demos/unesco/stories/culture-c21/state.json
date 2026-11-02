@@ -341,7 +341,7 @@
    "id": "textTurn_exploreDataFromNL_1792308340159_1792308395655",
    "displayId": "textTurn_exploreDataFromNL_1792308340159_closing",
    "textKind": "explain",
-   "content": "**National governments usually spend more—but local governments lead in some countries.** National spending exceeded local spending in **30 of 37 countries** with matched figures, using each country’s latest available year from 2020–2024.\n\nLocal governments accounted for **88%** of combined national-and-local heritage spending in Belgium, **75%** in Belarus and **68%** in Serbia. In contrast, their share was only **5%** in Sweden and **3%** in Malta.\n\nThese figures cover cultural and natural heritage, exclude regional governments and private funding, and are not a worldwide total; reporting is incomplete and some values are estimates. Source: UIS, February 2026 release.",
+   "content": "**National governments usually spend more on heritage, but local governments lead in some countries.** National spending was higher in **30 of 37 countries** with figures for both.\n\nLocal governments supplied **88%** of the combined spending in Belgium, **75%** in Belarus and **68%** in Serbia, but only **5%** in Sweden and **3%** in Malta.\n\nLatest matched year from 2020–2024; regional governments and private money are not included. Source: UIS, February 2026 release.",
    "parentNodeId": "d_output",
    "actionId": "exploreDataFromNL_1792308340159",
    "createdAt": 1792308395655,

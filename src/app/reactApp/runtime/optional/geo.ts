@@ -12,8 +12,10 @@
 
 import { feature, merge, mesh, neighbors } from 'topojson-client';
 import type { GeometryCollection, Topology } from 'topojson-specification';
+import { assembleVegaLite } from 'flint-chart/vegalite';
 import countries110m from 'world-atlas/countries-110m.json';
 import states10m from 'us-atlas/states-10m.json';
+import countiesAlbers10m from 'us-atlas/counties-albers-10m.json';
 
 import { registerOptionalModule } from './register';
 
@@ -36,6 +38,11 @@ const withNumericIds = (topology: unknown): Atlas => {
 export const world = withNumericIds(countries110m);
 /** US states (unprojected; use an Albers USA projection): objects `states` and `nation`. */
 export const us = withNumericIds(states10m);
+/**
+ * US states and counties already projected to Albers USA (975×610), with the atlas's own string ids:
+ * the basemap of Flint's US choropleths, which convert the ids themselves.
+ */
+export const usAlbers = countiesAlbers10m as unknown as Atlas;
 
 export const countries = () => feature(world, world.objects.countries).features;
 export const land = () => feature(world, world.objects.land);
@@ -44,6 +51,9 @@ export const states = () => feature(us, us.objects.states).features;
 export const nation = () => feature(us, us.objects.nation);
 export const stateBorders = () => mesh(us, us.objects.states, (a, b) => a !== b);
 
-const geo = { world, us, countries, land, countryBorders, states, nation, stateBorders, feature, mesh, merge, neighbors };
+const geo = { world, us, usAlbers, countries, land, countryBorders, states, nation, stateBorders, feature, mesh, merge, neighbors };
 
 registerOptionalModule('@df/geo', geo);
+// Choropleths draw through Flint's static compiler, so places without data keep their shape (see
+// chartMaps.keepUnmatchedRegions); it rides with the boundaries every map app loads.
+registerOptionalModule('@df/geo/flint', { assembleVegaLite });

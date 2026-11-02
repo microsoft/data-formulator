@@ -400,6 +400,11 @@ def import_session():
             ws = get_workspace(identity_id)
 
         state = ws.import_session_zip(io.BytesIO(file.read()))
+        # The archive's snapshot carries its own (old) timestamps; an expiring
+        # backend must not mistake the freshly imported workspace for an idle one.
+        imported_id = workspace_id or get_active_workspace_id()
+        if imported_id:
+            mgr.mark_accessed(imported_id)
         return json_ok({"state": state})
     except ValueError:
         raise AppError(ErrorCode.INVALID_REQUEST, "Invalid session file")

@@ -8,7 +8,12 @@ from unittest.mock import patch
 
 import pytest
 
-from data_formulator.security.url_allowlist import validate_api_base, _load_patterns
+from data_formulator.security.url_allowlist import (
+    _load_patterns,
+    host_of,
+    reject_cloud_metadata_host,
+    validate_api_base,
+)
 
 pytestmark = [pytest.mark.backend, pytest.mark.security]
 
@@ -26,7 +31,53 @@ class TestOpenMode:
 
     @patch.dict(os.environ, {}, clear=True)
     def test_private_ip_allowed_in_open_mode(self):
-        validate_api_base("http://169.254.169.254/latest/meta-data/")
+        validate_api_base("http://10.0.0.5:8000/v1")
+        validate_api_base("http://localhost:11434")
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_cloud_metadata_rejected_even_in_open_mode(self):
+        with pytest.raises(ValueError, match="metadata"):
+            validate_api_base("http://169.254.169.254/latest/meta-data/")
+
+
+# ===================================================================
+# Cloud metadata / link-local hosts
+# ===================================================================
+
+class TestCloudMetadataHosts:
+
+    @pytest.mark.parametrize("value, host", [
+        ("http://169.254.169.254/x", "169.254.169.254"),
+        ("db.example.com:5432", "db.example.com"),
+        ("tcp:sql.example.com,1433", "sql.example.com"),
+        ("[fe80::1]:80", "fe80::1"),
+        ("https://[fd00:ec2::254]/", "fd00:ec2::254"),
+        ("plainhost", "plainhost"),
+    ])
+    def test_host_of(self, value, host):
+        assert host_of(value) == host
+
+    @pytest.mark.parametrize("value", [
+        "169.254.169.254", "http://169.254.169.254:80/metadata/identity", "169.254.170.2:80",
+        "168.63.129.16", "http://100.100.100.200/", "[fd00:ec2::254]", "fe80::1",
+        "::ffff:169.254.169.254", "tcp:169.254.169.254,1433",
+    ])
+    def test_metadata_addresses_rejected(self, value):
+        with pytest.raises(ValueError):
+            reject_cloud_metadata_host(value)
+
+    @pytest.mark.parametrize("value", [
+        "10.0.0.5", "192.168.1.20:3306", "127.0.0.1", "localhost", "",
+        "https://myorg.openai.azure.com/", "no-such-host.invalid",
+    ])
+    def test_ordinary_hosts_allowed(self, value):
+        reject_cloud_metadata_host(value)
+
+    def test_name_resolving_to_metadata_rejected(self):
+        answer = [(2, 1, 6, "", ("169.254.169.254", 0))]
+        with patch("data_formulator.security.url_allowlist.socket.getaddrinfo", return_value=answer):
+            with pytest.raises(ValueError):
+                reject_cloud_metadata_host("http://rebind.attacker.example/")
 
 
 # ===================================================================
@@ -58,8 +109,10 @@ class TestEnforceMode:
 
     @patch.dict(os.environ, {"DF_ALLOWED_API_BASES": ALLOWLIST})
     def test_private_ip_rejected(self):
-        with pytest.raises(ValueError, match="allowlist"):
+        with pytest.raises(ValueError, match="metadata"):
             validate_api_base("http://169.254.169.254/latest/meta-data/")
+        with pytest.raises(ValueError, match="allowlist"):
+            validate_api_base("http://10.0.0.5/v1")
 
     @patch.dict(os.environ, {"DF_ALLOWED_API_BASES": ALLOWLIST})
     def test_internal_network_rejected(self):

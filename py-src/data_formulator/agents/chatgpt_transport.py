@@ -1,4 +1,4 @@
-"""Request-scoped authentication for LiteLLM 1.91's native ChatGPT adapter."""
+"""Request-scoped authentication for LiteLLM's native ChatGPT adapter (1.91 through 1.106)."""
 
 import logging
 from collections import Counter
@@ -35,6 +35,10 @@ def get_account_chatgpt_headers(access_token, account_id, session_id=None):
 class AccountChatGPTConfig(ChatGPTConfig):
     def __init__(self, *args, **kwargs):
         OpenAIConfig.__init__(self)
+
+    def api_base_without_login(self, *args, **kwargs):
+        # LiteLLM 1.106 asks for this when recording response metadata; never read its shared login file.
+        return CHATGPT_API_BASE
 
     def _get_openai_compatible_provider_info(self, model, api_base, api_key, custom_llm_provider):
         if not api_key:

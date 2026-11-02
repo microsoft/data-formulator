@@ -176,6 +176,20 @@ export const CONNECTOR_URLS = {
     DELETE: (id: string) => `/api/connectors/${id}`,
 } as const;
 
+// The store the page renders with, registered by index.tsx. Request code reads the session and identity from it
+// rather than importing the store module, which in a dev tab can resolve to a second copy after hot reloads
+// (with its own, stale state) and so send requests to another session.
+let pageStore: { getState: () => any } | null = null;
+
+export function setPageStore(store: { getState: () => any }): void {
+    pageStore = store;
+}
+
+/** The page's store (see `setPageStore`), or the store module's when none is registered (tests, scripts). */
+export async function currentStore(): Promise<{ getState: () => any }> {
+    return pageStore ?? (await import('./store')).store;
+}
+
 /**
  * Get the current namespaced identity from the Redux store, or fall back to browser ID.
  * Returns identity in "type:id" format (e.g., "user:alice@example.com" or "browser:550e8400-...")
@@ -185,8 +199,7 @@ export const CONNECTOR_URLS = {
  */
 async function getCurrentNamespacedIdentity(): Promise<string> {
     try {
-        const { store } = await import('./store');
-        const state = store.getState();
+        const state = (await currentStore()).getState();
         if (state.identity?.id && state.identity?.type) {
             return `${state.identity.type}:${state.identity.id}`;
         }
@@ -206,8 +219,7 @@ async function getCurrentNamespacedIdentity(): Promise<string> {
  */
 async function getActiveWorkspaceId(): Promise<string | null> {
     try {
-        const { store } = await import('./store');
-        const state = store.getState();
+        const state = (await currentStore()).getState();
         return state?.activeWorkspace?.id ?? null;
     } catch {
         return null;
@@ -589,6 +601,26 @@ export function prepVisTable(table: any[], allFields: FieldItem[], encodingMap: 
 /** Key of the non-enumerable Flint input attached to an assembled spec (see assembleVegaChart). */
 export const FLINT_INPUT = '__flintInput';
 
+export interface Size { width: number; height: number }
+
+/**
+ * The box (`canvasSize`) an assembled spec was laid out for, exactly as passed
+ * to Flint. Undefined for specs Flint did not assemble.
+ */
+export const chartCanvasBox = (spec: any): Size | undefined => {
+    const box = spec?.[FLINT_INPUT]?.chart_spec?.canvasSize;
+    return box && box.width > 0 && box.height > 0 ? { width: box.width, height: box.height } : undefined;
+};
+
+/**
+ * Flint's host contract: a drawing is scaled into its box (contain), never up.
+ * Flint keeps the result legible (≥ 70%), so a host never needs to clip.
+ */
+export const containScale = (drawn: Size, box: Size | undefined): number => {
+    if (!box || drawn.width <= 0 || drawn.height <= 0) return 1;
+    return Math.min(1, box.width / drawn.width, box.height / drawn.height);
+};
+
 export const assembleVegaChart = (
     chartType: string, 
     encodingMap: { [key in Channel]: EncodingItem; }, 
@@ -651,11 +683,13 @@ export const assembleVegaChart = (
     const effectiveW = Math.round(baseChartWidth * scaleFactor);
     const effectiveH = Math.round(baseChartHeight * scaleFactor);
 
-    // Flint 0.2.x sizing: `baseSize` is the target the chart aims for; `canvasSize`
-    // is the hard ceiling (= base × stretch). DF's `maxStretchFactor` is that
-    // multiplier; fall back to 1.5 so the ceiling is always set explicitly rather
-    // than relying on flint's default. (Radial charts — pie/rose/etc. — render at the
-    // target like any other type under flint 0.2.1, so no pie-specific damping.)
+    // Flint sizing: `baseSize` is the target the chart aims for; `canvasSize`
+    // (= base × stretch) is the box the chart is laid out for and scaled into.
+    // The plot never stretches past it, but the title, keys and axes share the
+    // box, so the drawing may come out a little larger: every host must
+    // contain-scale it into this box (see `chartCanvasBox` / `containScale`).
+    // DF's `maxStretchFactor` is the multiplier; fall back to 1.5 so the box is
+    // always set explicitly rather than relying on flint's default.
     const stretch = maxStretchFactor ?? 1.5;
 
     const fieldDisplayNames: Record<string, string> = {};
@@ -672,8 +706,8 @@ export const assembleVegaChart = (
             ...(title ? { title } : {}),
             ...(subtitle ? { subtitle } : {}),
             // DF's default chart width/height is the *target* size → flint `baseSize`.
-            // The hard ceiling is base × stretch (see `stretch` above), so charts render
-            // at the configured size and only grow under pressure up to that ceiling.
+            // The box is base × stretch (see `stretch` above), so charts render at
+            // the configured size and only grow under pressure up to that box.
             baseSize: { width: effectiveW, height: effectiveH },
             canvasSize: {
                 width: Math.round(effectiveW * stretch),

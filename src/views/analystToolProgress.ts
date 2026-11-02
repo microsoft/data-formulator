@@ -47,8 +47,12 @@ const toolLabelKeys: Record<string, string> = {
     delete_items: 'dataThread.deletingItems',
     list_files: 'dataThread.listingFiles',
     read_file: 'dataThread.readingFile',
+    search: 'dataThread.searchingSession',
+    // Older conversations name the earlier grep tool.
     search_files: 'dataThread.searchingFiles',
     move_file: 'dataThread.movingFile',
+    wait_tasks: 'backgroundTasks.waiting',
+    stop_task: 'backgroundTasks.stopping',
 };
 
 export const formatAnalystToolProgress = (
@@ -57,6 +61,11 @@ export const formatAnalystToolProgress = (
     t: Translate,
 ): string => {
     const values = args && typeof args === 'object' ? args : {};
+    // A tool from one of the user's MCP servers (see McpServers.tsx).
+    if (tool === 'mcp_call') {
+        return t('dataThread.callingMcp', { defaultValue: 'Calling {{server}} · {{tool}}',
+            server: String(values.server || 'MCP'), tool: String(values.tool || '') });
+    }
     let detail = '';
     switch (tool) {
         case 'list_data': {
@@ -91,9 +100,23 @@ export const formatAnalystToolProgress = (
         case 'list_files':
             detail = values.path || '';
             break;
-        case 'read_file':
-            detail = [values.path, ...(Array.isArray(values.paths) ? values.paths : [])].filter(Boolean).map(String).join(', ');
+        case 'read_file': {
+            const items = Array.isArray(values.files) ? values.files : [];
+            const described = items.map((item: any) => {
+                if (typeof item === 'string') return item;
+                if (!item || typeof item !== 'object' || !item.path) return '';
+                const unit = item.rows ? `rows ${item.rows}` : item.pages ? `pages ${item.pages}` : item.sheet ? item.sheet : '';
+                return unit ? `${item.path} (${unit})` : String(item.path);
+            });
+            detail = [values.path, ...(Array.isArray(values.paths) ? values.paths : []), ...described]
+                .filter(Boolean).map(String).join(', ');
             break;
+        }
+        case 'search': {
+            const scope = Array.isArray(values.path) ? values.path.join(', ') : values.path;
+            detail = [values.query ? `“${values.query}”` : '', scope ? `in ${scope}` : ''].filter(Boolean).join(' ');
+            break;
+        }
         case 'search_files':
             detail = [values.pattern ? `“${values.pattern}”` : '', values.path ? `in ${values.path}` : ''].filter(Boolean).join(' ');
             break;
@@ -102,6 +125,19 @@ export const formatAnalystToolProgress = (
             break;
         case 'delete_items':
             detail = Array.isArray(values.items) ? values.items.map(String).join(', ') : '';
+            break;
+        case 'load_skill':
+            detail = values.name || '';
+            break;
+        case 'edit_file':
+            detail = values.path || '';
+            break;
+        case 'create_file':
+            detail = values.filename || '';
+            break;
+        case 'create_data':
+        case 'update_data':
+            detail = values.table_name || '';
             break;
     }
 

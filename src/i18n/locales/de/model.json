@@ -32,8 +32,8 @@
     "smallModelOptional": "Kleines Modell (optional)",
     "sameAsModel": "Dasselbe Modell",
     "thinking": "Denkintensität",
-    "thinkingHint": "Wird von den Analyse- und Workflow-Agenten verwendet. Niedrig ist am schnellsten; Mittel hilft bei langen Workflows und Berichten; Hoch ist am langsamsten und am teuersten. Schnelle Hilfsaufgaben verwenden immer eine geringe Denkintensität.",
-    "thinkingLow": "Niedrig (Standard)",
+    "thinkingHint": "Für die Analyse- und Workflow-Agenten. Der Modellstandard nutzt, worauf das Modell abgestimmt ist; Niedrig ist schneller und günstiger; Mittel und Hoch denken länger und kosten mehr. Kleine Hilfsaufgaben nutzen immer leichtes Denken.",
+    "thinkingLow": "Niedrig",
     "thinkingMedium": "Mittel",
     "thinkingHigh": "Hoch",
     "apiBase": "Basis-URL",
@@ -145,6 +145,7 @@
     "disconnectOpenRouterTitle": "OpenRouter trennen?",
     "disconnectOpenRouterMessage": "Dies entfernt den gespeicherten Schlüssel in Data Formulator. Alle Modelle, die diese Verbindung verwenden, müssen neu verbunden werden. Um den Schlüssel auch auf OpenRouter zu entfernen, löschen Sie ihn aus Ihren OpenRouter-Schlüsseln.",
     "manageOpenRouterKeys": "OpenRouter-Schlüssel verwalten",
-    "configuredMessage": "Vom Server konfiguriert. Klicken Sie, um die Verbindung zu prüfen."
+    "configuredMessage": "Vom Server konfiguriert. Klicken Sie, um die Verbindung zu prüfen.",
+    "thinkingDefault": "Modellstandard"
   }
 }

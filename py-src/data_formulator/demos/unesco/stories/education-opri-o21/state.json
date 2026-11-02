@@ -1352,7 +1352,7 @@
    "id": "textTurn_exploreDataFromNL_1792308091512_1792308181031",
    "displayId": "textTurn_exploreDataFromNL_1792308091512_closing",
    "textKind": "explain",
-   "content": "**The US and UK are the largest destinations for students studying abroad.** The leading hosts in 2023 were:\n\n| Destination | International students |\n|---|---:|\n| US | 957,000 |\n| UK | 748,000 |\n| Australia | 467,000 |\n| Germany | 423,000 |\n| Canada | 389,000 |\n\nRussia, Turkey and France came next. These figures count international students in higher education.\n\nThe map uses each destination’s latest report from **2021–2023**; countries without recent data are left blank. Source: UIS, February 2026 release.",
+   "content": "**The US and UK host the most students from abroad.** International students in higher education, 2023:\n\n| Destination | International students |\n|---|---:|\n| US | 957,000 |\n| UK | 748,000 |\n| Australia | 467,000 |\n| Germany | 423,000 |\n| Canada | 389,000 |\n\nThe map uses each country's latest report from 2021–2023; blank countries have no recent data. Source: UIS, February 2026 release.",
    "parentNodeId": "d_out_2",
    "actionId": "exploreDataFromNL_1792308091512",
    "createdAt": 1792308181031,
@@ -1399,7 +1399,7 @@
  ],
  "activeWorkspace": {
   "id": "education-opri-o21",
-  "displayName": "Students abroad have more than tripled since 2000"
+  "displayName": "The US and UK host the most students from abroad"
  },
  "focusedId": {
   "type": "chart",

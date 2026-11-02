@@ -1604,7 +1604,7 @@
    "id": "textTurn_exploreDataFromNL_1792309324960_1792309345146",
    "displayId": "textTurn_exploreDataFromNL_1792309324960_closing",
    "textKind": "explain",
-   "content": "**The biggest gaps are in sub-Saharan Africa.** Among countries reporting recent data, primary schools without electricity account for:\n\n- **99% in Chad** (2024)\n- **92% in Niger** (2024)\n- **90% in DR Congo** (2023)\n- **88% in Madagascar** (2024)\n- **83% in Sierra Leone** (2024)\n\nThe map shows each country’s latest reported value from **2020–2025**, covering 153 countries and territories. Countries without recent data are missing—not necessarily fully electrified.\n\nSource: UIS, February 2026 release.",
+   "content": "**Schools without power are concentrated in sub-Saharan Africa.** Share of primary schools without electricity:\n\n- **Chad:** 99% (2024)\n- **Niger:** 92% (2024)\n- **DR Congo:** 90% (2023)\n- **Madagascar:** 88% (2024)\n- **Sierra Leone:** 83% (2024)\n\nThe map uses each country's latest figure from 2020–2025; blank countries have no recent data. Source: UIS, February 2026 release.",
    "parentNodeId": "d_out",
    "actionId": "exploreDataFromNL_1792309324960",
    "createdAt": 1792309345146,
@@ -1678,7 +1678,7 @@
  ],
  "activeWorkspace": {
   "id": "education-sdg4-e23",
-  "displayName": "One in five primary schools still has no power"
+  "displayName": "In Chad, 99% of primary schools have no power"
  },
  "focusedId": {
   "type": "chart",

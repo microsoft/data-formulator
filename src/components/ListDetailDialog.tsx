@@ -12,14 +12,16 @@ export const ListDetailList: React.FC<{
     component?: 'nav' | 'div';
     role?: string;
     'aria-label': string;
+    /** Space between items; plain-row lists sit tighter than card lists. */
+    gap?: number;
     children: React.ReactNode;
-}> = ({ component = 'div', role, 'aria-label': ariaLabel, children }) => {
+}> = ({ component = 'div', role, 'aria-label': ariaLabel, gap = 0.75, children }) => {
     const scrollRef = React.useRef<HTMLDivElement>(null);
     const { moreAbove, moreBelow, update } = useScrollFade(scrollRef);
     return <Box sx={{ position: 'relative', display: 'flex', flexShrink: 0, minHeight: 0, width: { xs: '100%', sm: 240 },
         borderRight: { xs: 0, sm: `1px solid ${borderColor.divider}` }, borderBottom: { xs: `1px solid ${borderColor.divider}`, sm: 0 } }}>
         <Box ref={scrollRef} component={component} role={role} aria-label={ariaLabel} onScroll={update} sx={{
-            flex: 1, minWidth: 0, display: 'flex', flexDirection: { xs: 'row', sm: 'column' }, gap: 0.75,
+            flex: 1, minWidth: 0, display: 'flex', flexDirection: { xs: 'row', sm: 'column' }, gap,
             px: 1.25, pt: { xs: 1, sm: 0.5 }, pb: { xs: 1, sm: 4 },
             overflowY: { xs: 'hidden', sm: 'auto' }, overflowX: { xs: 'auto', sm: 'hidden' } }}>
             {children}

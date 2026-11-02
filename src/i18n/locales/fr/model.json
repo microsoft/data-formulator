@@ -32,8 +32,8 @@
     "smallModelOptional": "Petit modèle (facultatif)",
     "sameAsModel": "Identique au modèle",
     "thinking": "Réflexion",
-    "thinkingHint": "Utilisé par les agents d’analyse et de workflow. Faible est le plus rapide ; Moyen convient aux workflows et rapports longs ; Élevé est le plus lent et coûte le plus cher. Les petites tâches d’aide utilisent toujours une réflexion légère.",
-    "thinkingLow": "Faible (par défaut)",
+    "thinkingHint": "Utilisé par les agents d’analyse et de workflow. « Par défaut du modèle » suit le réglage prévu par le modèle ; Faible est plus rapide et moins cher ; Moyen et Élevé réfléchissent plus longtemps et coûtent plus. Les petites tâches d’assistance utilisent toujours une réflexion légère.",
+    "thinkingLow": "Faible",
     "thinkingMedium": "Moyen",
     "thinkingHigh": "Élevé",
     "apiBase": "URL de base",
@@ -145,6 +145,7 @@
     "disconnectOpenRouterTitle": "Déconnecter OpenRouter ?",
     "disconnectOpenRouterMessage": "Cela oublie la clé enregistrée dans Data Formulator. Tous les modèles utilisant cette connexion devront être reconnectés. Pour révoquer la clé sur OpenRouter également, supprimez-la de vos clés OpenRouter.",
     "manageOpenRouterKeys": "Gérer les clés OpenRouter",
-    "configuredMessage": "Configuré par le serveur, cliquez pour vérifier la connectivité"
+    "configuredMessage": "Configuré par le serveur, cliquez pour vérifier la connectivité",
+    "thinkingDefault": "Par défaut du modèle"
   }
 }

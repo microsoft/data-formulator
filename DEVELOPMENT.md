@@ -286,7 +286,9 @@ use `create_file`. Requests for uploads, authentication,
 or clarification should address concrete blockers, not replace an available
 authorized acquisition step.
 
-Terminal access supports single-user local mode on macOS and Linux. Both the
+Terminal access supports single-user local mode on macOS, Linux and Windows. The
+terminal is one of the agent's **tools**, alongside the user's MCP servers: all
+tools share one approval mode, and each has its own on/off switch. Both the
 analyst and workflow agents use the same server-owned policy:
 
 - **Off** (`off`): no terminal tool, skill catalog entry, or application-supplied
@@ -297,18 +299,21 @@ analyst and workflow agents use the same server-owned policy:
   Reject** dialog showing arguments, working directory, purpose, and host-access
   warning. Approval covers the entire invocation, including a shell script, not
   each individual line.
-- **Auto approve** (`auto`): the same preloaded tools and guidance, with immediate
+- **Auto when safe** (`auto`): the same preloaded tools and guidance, with immediate
   sandboxed execution, including writes allowed by the filesystem policy.
   `dangerouslyDisableSandbox` always requires user approval and a reason.
 
-Click **Terminal: Off / Ask / Auto** beside the chat input, choose a mode in the
-**Terminal access** dialog, and click **Save**. This local-user setting is available
-without managed mode or Administration access. Its dedicated endpoint accepts only
-the mode and configuration revision, requires a same-origin local request, and
-preserves all other settings. Closing the dialog discards an unsaved choice.
+Click **Tools** beside the chat input. The **Tools** dialog applies each change
+immediately: the shared mode (Off / Ask every time / Auto when safe), the
+**Terminal** switch (stored as `overrides.terminal_enabled`; off turns the terminal
+off without changing the shared mode), and, in the Terminal row's details, the
+sandbox write paths. This local-user setting is available without managed mode or
+Administration access. Its dedicated endpoint (`/api/configurations/terminal`)
+accepts only `mode`, `enabled`, `sandbox` and the configuration revision, requires
+a same-origin local request, and preserves all other settings.
 
-Alternatively, launch with `DF_TERMINAL_MODE=off|ask|auto`. The environment takes
-precedence and locks the selector; invalid environment values fail closed to Off.
+Alternatively, launch with `DF_TERMINAL_MODE=off|ask|auto`, which sets the shared
+tools mode. The environment takes precedence and locks the selector; invalid environment values fail closed to Off.
 Persisted configuration uses `overrides.terminal_mode`. Deployment restrictions
 still apply. Chat text, workflow definitions, and tool arguments cannot set it.
 
@@ -324,6 +329,26 @@ Commands normally run with OS-enforced filesystem write confinement: macOS uses
 namespaces. Writable areas include workspace scratch, private per-invocation
 runtime storage (mode 0700), and the filesystem policy below. Children inherit
 the restriction.
+
+Without a sandbox (Linux without a working Bubblewrap, or Windows without WSL or
+without Bubblewrap inside WSL), the terminal still works, but every command runs
+unsandboxed with the user's normal access: proposals are marked
+`dangerouslyDisableSandbox` with `sandboxUnavailable`, so each one asks for
+approval even in Auto. The approval and Tools dialogs show a warning and
+an install hint, and the agent is told. Installing a sandbox takes effect after a
+backend restart.
+
+On Windows, commands run in WSL (`data_formulator/sandbox/wsl.py`) when it has a
+working default distribution: `wsl.exe -e bwrap … -- <argv>`, as on Linux, with
+Windows paths bound as `/mnt/<drive>/…`, the `DEFAULT_ALLOW_WRITE` CLI-state paths
+also bound in the WSL home when present, and WSL interop (`/run/WSL`,
+`WSL_INTEROP`) hidden so a sandboxed command cannot start Windows programs. Command
+variables reach WSL through `WSLENV` (paths translated). Unsandboxed commands run
+as `wsl.exe -e <argv>`; without WSL they run natively and the agent is told to use
+PowerShell. Process start, output streaming, interrupt and tree kill go through
+`data_formulator/analyst/process_io.py` (process groups and a selector on POSIX; a
+reader thread, CTRL_BREAK and `taskkill /T` on Windows). The Windows paths are
+covered by simulated unit tests only.
 Commands receive `DF_SCRATCH_DIR` for outputs and `DF_RUNTIME_DIR` for disposable
 state. TMPDIR/TMP/TEMP, XDG_CACHE_HOME, UV_CACHE_DIR, PIP_CACHE_DIR,
 npm_config_cache, YARN_CACHE_FOLDER, MPLCONFIGDIR, HF_HOME, and NUMBA_CACHE_DIR
@@ -411,7 +436,7 @@ Scratch files are absent from the ordinary workspace listing. In Backend Log,
 the **Scratch files** tab lists visible scratch entries for the active workspace,
 with read-only previews and downloads. Hidden execution state remains internal.
 
-Terminal access is rejected in hosted mode, on Windows, when data connectors are
+Terminal access is rejected in hosted mode, when data connectors are
 disabled, or without a matching local Host and Origin. The Vite analyst proxy
 preserves Host for this check. Restart the backend after adding the skill; Vite
 reloads its proxy configuration automatically. Pending approvals are transient
@@ -420,8 +445,85 @@ and cannot be restored after reloading the page; ask for a fresh proposal.
 Focused checks (no browser automation required):
 
 ```bash
-uv run pytest tests/backend/agents/test_terminal_skill.py tests/backend/agents/test_analyst_skill_registry.py tests/backend/routes/test_analyst_data_operation_flow.py
-npx vitest run tests/frontend/unit/views/TerminalApprovalDialog.test.tsx
+uv run pytest tests/backend/agents/test_terminal_skill.py tests/backend/agents/test_terminal_windows.py tests/backend/agents/test_background_tasks.py tests/backend/agents/test_analyst_skill_registry.py tests/backend/routes/test_analyst_data_operation_flow.py
+npx vitest run tests/frontend/unit/views/TerminalApprovalDialog.test.tsx tests/frontend/unit/views/ToolsAccess.test.tsx
+```
+
+### MCP Servers (Local Mode)
+
+In single-user local mode the analyst agent can call tools from MCP servers the
+user adds, as tools next to the terminal: **Tools** beside the chat input lists
+them, and **+ Add MCP server** takes one server's MCP configuration JSON
+(**How to add a server** in the form shows examples), the format VS Code
+(`servers`), Claude Desktop and Cursor (`mcpServers`) use; Codex TOML
+(`[mcp_servers.*]`) is also accepted. A remote server is a `url` (`"type": "sse"`
+for older servers) with optional `headers`; a local one is a `command` with
+`args`, `env` and `cwd`. MCP is off
+in hosted and managed deployments and when data connectors are disabled.
+
+- **Storage.** Server definitions and the reviewed tool snapshots
+  live in `~/.data_formulator/mcp.json` (under `DATA_FORMULATOR_HOME`). API keys,
+  header values, environment variables, OAuth tokens and client secrets go to the
+  credential vault under `mcp:<server-id>`, never into the file.
+- **Sign-in.** Public servers need nothing. A `headers` entry sends an API key
+  or token. A server that answers 401 without either is retried with the MCP SDK's
+  OAuth flow (PKCE, dynamic client registration), as other MCP clients do; when it
+  offers no OAuth, the error suggests adding a header. For providers that require a
+  pre-registered app, add `"oauth": {"client_id": …, "client_secret": …, "scope": …}`.
+  The redirect URI is `http://localhost:<port>/api/mcp/oauth/callback`. Agent runs
+  never start a sign-in; an expired sign-in asks the user to sign in again in settings.
+- **Remote URLs** must be HTTPS except `localhost`/`127.0.0.1`. **Local commands**
+  run as the user, outside the terminal sandbox, so add only trusted servers.
+- **Calls.** Each enabled server becomes a gated skill (`mcp-<id>`) whose actions
+  are `mcp_<id>__<tool>` with the tool's own input schema. They follow the
+  shared tools mode: *Off*; *Ask every time* (default); *Auto when safe* (tools
+  annotated `readOnlyHint` run without asking). Tools the user marked **Always
+  allow** never ask. Approval pauses the
+  run like a terminal command (**Reject / Always allow this tool / Run once**);
+  the server-side request is single-use and bound to the conversation, and the
+  stored arguments, not the client's, are what run.
+- **Tool changes.** The first connection's tools count as reviewed. New or changed
+  tools (name, description, schema or annotations) are held until the user allows
+  them in settings; a call to a tool that changed since approval is refused.
+- **Results.** Short text returns inline (marked untrusted). Large text, images,
+  audio and binary content are saved under `scratch/mcp/<server>/`; the agent
+  promotes anything worth keeping with its normal workspace actions.
+
+- **Agent-assisted setup.** The configure skill's `list_mcp_servers` shows the
+  agent each server's status, last error, missing key or sign-in, and tools (never
+  secret values). `propose_mcp_changes` publishes an `mcp` setup form that opens in the
+  **Tools** dialog (not the canvas; the thread entry reopens it): each proposed
+  server appears as prefilled configuration JSON with empty `""` slots for keys and
+  environment values, which the user fills in before **Add and connect**. The dialog
+  closes once the new server connects (it stays open while signing in or on errors); server/tool switches and the
+  shared tools mode apply on **Apply changes**. The form never submits itself, proposals
+  containing secret values are rejected, and approving changed tools or
+  **Always allow** stay manual. Both tools exist only when MCP is available and
+  are excluded from workflow runs.
+
+- **Toolkits (tool packs).** **+ Add tool → Toolkits** adds a ready-made server that
+  ships with Data Formulator (`py-src/data_formulator/tool_packs/`) in one step; it
+  runs with Data Formulator's own Python (no Node or `uv` download) and is then an
+  ordinary MCP server row (`pack` records its origin). `GET /api/mcp/packs` lists
+  packs; `POST /api/mcp/packs/<id>` adds one (once) with its optional settings.
+  - **Research (arXiv)** (`tool_packs/research`): `search_papers`, `recent_papers`,
+    `paper_details` (up to 20 ids), `count_papers` (per year/month, for trends) and
+    `get_full_text` (arXiv's HTML as Markdown, else the PDF; saved to scratch). All
+    are read-only. It uses only arXiv's own API and pages (no citation counts) and is
+    polite by construction: one connection, requests at least 3 seconds apart, a
+    descriptive User-Agent with the optional contact email, retries with backoff on
+    429/5xx (honouring `Retry-After`) and on the API's "results but no entries"
+    glitch, and a disk cache under `~/.data_formulator/cache/research` (searches a
+    day, papers a week, versioned papers for good). Large JSON results save to
+    scratch as `.json` so the agent can load them with `create_data`.
+
+Routes live under `/api/mcp` (`py-src/data_formulator/mcp_servers/routes.py`);
+changes require a same-origin local request with `X-DF-Configuration: 1`. The
+Vite dev proxy preserves Host for `/api/mcp`, so the check and OAuth redirects use
+the app's own origin.
+
+```bash
+uv run pytest tests/backend/mcp
 ```
 
 ### Azure CLI Deployment Discovery
@@ -584,6 +686,12 @@ Custom GitHub Enterprise hosts are not supported by this initial implementation.
     ```
     Open [http://localhost:5173](http://localhost:5173) to view it in the browser.
     The page will reload if you make edits. You will also see any lint errors in the console.
+
+- **Component galleries**
+
+    `/dev` shows UI components in their states; `/dev/maps` shows sample map artifacts
+    (every layer type and control, with generated data) and lets you edit their JSON or open
+    the Style panel. See [design-docs/70-map-artifact.md](design-docs/70-map-artifact.md).
 
 ### Advanced: developing against a local `flint-chart`
 
@@ -749,12 +857,16 @@ To stop the container: `docker compose down`
 
 Workspace data (uploaded files, sessions) is persisted in a Docker volume (`data_formulator_home`) so it survives container restarts.
 
+Compose publishes the port on `127.0.0.1` only and sets `DF_SINGLE_USER=1`, so you get single-user local mode (no login, all local features). To share the container with other machines, remove both: other clients then get separate anonymous workspaces instead of acting as you.
+
 ### Build the image manually
 
 ```bash
 docker build -t data-formulator .
-docker run --rm -p 5567:5567 --env-file .env data-formulator
+docker run --rm -p 127.0.0.1:5567:5567 -e DF_SINGLE_USER=1 --env-file .env data-formulator
 ```
+
+Without `DF_SINGLE_USER=1` the container (which listens on `0.0.0.0`) runs in anonymous multi-user mode. Set it only when the published port is reachable from your machine alone.
 
 ### Docker sandbox (`SANDBOX=docker`) is not supported inside a container
 
@@ -1020,7 +1132,9 @@ enabled or disabled; turning it off hides administration, not policy enforcement
 Legacy configurations trigger a startup notice explaining how to enable access.
 
 `--disable-database` / `DISABLE_DATABASE=true` is deprecated. It still selects
-managed mode plus its legacy demo restrictions and ephemeral workspace behavior.
+managed mode plus its legacy demo restrictions and ephemeral workspace behavior,
+and turns the credential vault off unless `CREDENTIAL_VAULT` is set (shared
+connections that store secrets need `CREDENTIAL_VAULT=local`).
 For new deployments, use `--managed` with explicit authentication, storage, and
 policy settings.
 
@@ -1049,6 +1163,8 @@ data_formulator \
 | Identity | `local:<os_username>` | Fixed, OS-derived — survives localStorage clear |
 
 **Security notes:** In single-user localhost mode, the server ignores the `X-Identity-Id` header entirely and uses a fixed identity derived from the OS username (e.g., `local:alice`). This means vault credentials and workspaces are tied to your OS account, not a random browser UUID — clearing localStorage won't orphan your data.
+
+Single-user mode applies only when the server listens on a loopback address (`--host 127.0.0.1`, the CLI default). A server on `--host 0.0.0.0`, or under a WSGI server such as gunicorn without `HOST=127.0.0.1`, uses anonymous multi-user mode, because anyone who can reach it would otherwise act as you. `DF_SINGLE_USER=1` keeps single-user mode where access is restricted another way; `docker-compose.yml` sets it and publishes the port on `127.0.0.1` only. Data-loader plugins (`*_data_loader.py` in `~/.data_formulator/plugins`) load only in single-user mode, unless `DF_ALLOW_PLUGINS=1`.
 
 ### Profile 2: Multi-User Anonymous (demo / public hosting)
 
@@ -1166,7 +1282,7 @@ FLASK_SECRET_KEY=<generate-with-secrets-token-hex-32>
 | — | `DF_ADMIN_EMAILS` | *(unset)* | Comma-separated full EasyAuth sign-in addresses allowed to administer a managed installation; case-insensitive exact matches |
 | `--workspace-backend` | `WORKSPACE_BACKEND` | `local` | `local`, `azure_blob`, or `ephemeral` |
 | `--sandbox` | `SANDBOX` | `local` | Code execution backend: `local` or `docker` |
-| `--disable-database` | `DISABLE_DATABASE` | `false` | **Deprecated demo preset**: managed mode + ephemeral + configured connectors only + no custom models + hide keys |
+| `--disable-database` | `DISABLE_DATABASE` | `false` | **Deprecated demo preset**: managed mode + ephemeral + configured connectors only + no custom models + hide keys + credential vault off (unless `CREDENTIAL_VAULT` is set) |
 | `--disable-display-keys` | `DISABLE_DISPLAY_KEYS` | `false` | Hide API keys in frontend UI |
 | `--disable-data-connectors` | `DISABLE_DATA_CONNECTORS` | `false` | Allow configured sources only; block personal connector creation and use |
 | `--disable-custom-models` | `DISABLE_CUSTOM_MODELS` | `false` | Prevent users from adding custom LLM endpoints |
@@ -1174,7 +1290,9 @@ FLASK_SECRET_KEY=<generate-with-secrets-token-hex-32>
 | `--scratch-max-size-mb` | `SCRATCH_MAX_SIZE_MB` | `1024` | Max total size (MB) of a workspace's agent scratch dir before LRU eviction |
 | `--scratch-max-file-size-mb` | `SCRATCH_MAX_FILE_SIZE_MB` | `20` | Max size (MB) of a single agent-written scratch file, e.g. a `fetch_url` download |
 | `--data-dir` | `DATA_FORMULATOR_HOME` | `~/.data_formulator` | Data directory |
-| `--host` | `HOST` | `127.0.0.1` | Network interface to bind |
+| `--host` | `HOST` | `127.0.0.1` | Network interface to bind. Only a loopback address selects single-user local mode; under gunicorn, set `HOST=127.0.0.1` for that |
+| | `DF_SINGLE_USER` | unset | `1` keeps single-user local mode on a non-loopback address. Only for servers no one else can reach (e.g. a container port published on `127.0.0.1`) |
+| | `DF_ALLOW_PLUGINS` | unset | `1` loads data-loader plugins outside single-user local mode. The plugin directory must be trusted |
 | `-p`, `--port` | — | `5567` | Port number |
 | `--dev` | `DEV_MODE` | `false` | Development mode (no auto-open browser) |
 | — | `AUTH_PROVIDER` | *(unset)* | `oidc`, `github`, `azure_easyauth`, or unset for anonymous |
@@ -1325,10 +1443,10 @@ skill; the execution agent cannot call `propose_workflow`.
 ### Configuring Data Formulator in Chat
 
 The analyst's gated `configure` skill (`analyst/skills/configure/`) sets up the
-application for the user: connections, workflows, workflow schedules, and
-sessions. Read-only tools inspect the current setup (`list_connectors`,
+application for the user: connections, workflows, workflow schedules,
+sessions, and (local app only) MCP servers. Read-only tools inspect the current setup (`list_connectors`,
 `describe_connector`, `read_connector_form`, `list_workflows`, `list_schedules`,
-`list_sessions`). Each committing action publishes one prefilled setup form artifact:
+`list_sessions`, `list_mcp_servers`). Each committing action publishes one prefilled setup form artifact:
 `propose_connection` / `update_connector_form` (connector form),
 `propose_schedule` (schedule form), and `propose_session_changes` (a session panel
 whose cards each offer rename, open in a new tab, and delete; the agent only lists
@@ -1431,7 +1549,12 @@ When migrating Data Formulator to a new server (or rebuilding a Docker container
 | `.vault_key` | `DATA_FORMULATOR_HOME/.vault_key` | `credentials.db` becomes undecryptable — all stored database passwords / service credentials are lost. |
 | `credentials.db` | `DATA_FORMULATOR_HOME/credentials.db` | Same as above — the encrypted credential store itself. |
 | `DF_CODE_SIGNING_SECRET` | `.env` (env var, optional) | If set, overrides Flask-derived signing key. Must match the old value or all code signatures break. |
+| `.code-signing-key` | `DATA_FORMULATOR_HOME/.code-signing-key` | Code-signing key used when neither `DF_CODE_SIGNING_SECRET` nor `FLASK_SECRET_KEY` is set. Saved charts cannot refresh until re-executed. |
 | `CREDENTIAL_VAULT_KEY` | `.env` (env var, optional) | If set, overrides `.vault_key` file. Must match or vault data is unreadable. |
+| `CREDENTIAL_VAULT=off` | env var (optional) | Disables the vault: no `.vault_key` or `credentials.db` is created, credentials last only for the session, and shared connections or account model sign-ins that need stored secrets are unavailable. The default under `DISABLE_DATABASE`; set `CREDENTIAL_VAULT=local` to keep the vault there. |
+| `DF_SANDBOX_BWRAP` | env var (optional) | Path to a bubblewrap binary for the Python sandbox's OS isolation on Linux, when it is neither on `PATH` nor bundled at `py-src/data_formulator/sandbox/bin/bwrap` (a git-ignored location that deployment packages fill). The startup log reports the isolation in use: `Python sandbox isolation: ...`. |
+| `DF_REQUIRE_OS_SANDBOX=1` | env var (optional) | Refuse to run generated code when OS isolation is unavailable, instead of falling back to audit hooks only. Recommended for hosted deployments once the startup log confirms isolation. |
+| `DF_SANDBOX_IDLE_SECONDS` | env var (optional) | How long an idle Python sandbox worker (a separate ~200 MB interpreter) is kept for reuse. Default 600 in local mode, 120 otherwise; multi-user servers also keep at most two used workers idle per server process. |
 | `users/` & `workspaces/` | `DATA_FORMULATOR_HOME/` | User workspace data (parquet files, session metadata). |
 | `configuration.json` | `DATA_FORMULATOR_HOME/configuration.json` | Installation policies, enabled resources, defaults, and shared-connection vault references. |
 | `workflows/` | `DATA_FORMULATOR_HOME/workflows/` | Administrator-published workflow YAML referenced by installation configuration. |
