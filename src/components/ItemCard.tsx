@@ -9,9 +9,11 @@
  * from the title.
  */
 
-import React, { createContext, useContext } from 'react';
+import React, { createContext, useCallback, useContext, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { alpha, Box, ButtonBase, IconButton, TextField, Tooltip, TooltipProps, Typography } from '@mui/material';
+import StarRoundedIcon from '@mui/icons-material/StarRounded';
+import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded';
 import { iconVar, textVar } from '../app/layout';
 import { sidebarRowActionSx, sidebarRowDangerActionSx, sidebarRowMetaSx, sidebarRowSx, sidebarRowTitleSx } from '../app/tokens';
 
@@ -112,11 +114,46 @@ export const ViewAllButton: React.FC<{ label: string; onClick: () => void; disab
 };
 
 /** Grid for item cards: as many ~220px columns as fit. */
+const ITEM_CARD_MIN_WIDTH_PX = 220;
+const ITEM_CARD_GAP_PX = 12;
 export const itemCardGridSx = {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))',
-    gap: 1.5,
+    gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${ITEM_CARD_MIN_WIDTH_PX}px), 1fr))`,
+    gap: `${ITEM_CARD_GAP_PX}px`,
 } as const;
+
+/** Column count an `itemCardGridSx` grid lays out at its current width, e.g. to cap a grid at whole rows. */
+export function useItemCardGridColumns(): [(element: HTMLElement | null) => void, number] {
+    const [columns, setColumns] = useState(1);
+    const observerRef = React.useRef<ResizeObserver | null>(null);
+    const ref = useCallback((element: HTMLElement | null) => {
+        observerRef.current?.disconnect();
+        observerRef.current = null;
+        if (!element) return;
+        const measure = () => setColumns(Math.max(1,
+            Math.floor((element.clientWidth + ITEM_CARD_GAP_PX) / (ITEM_CARD_MIN_WIDTH_PX + ITEM_CARD_GAP_PX))));
+        measure();
+        if (typeof ResizeObserver === 'undefined') return;
+        observerRef.current = new ResizeObserver(measure);
+        observerRef.current.observe(element);
+    }, []);
+    return [ref, columns];
+}
+
+/** Gold accent for starred items. */
+export const starredColor = '#e0a526';
+
+/** Star/unstar action for an item card. */
+export const StarAction: React.FC<{ starred: boolean; onToggle: () => void }> = ({ starred, onToggle }) => {
+    const { t } = useTranslation();
+    return <ItemCardAction label={starred ? t('workspace.unstar') : t('workspace.star')} onClick={onToggle}
+        icon={starred ? <StarRoundedIcon sx={{ color: starredColor }} /> : <StarBorderRoundedIcon />} />;
+};
+
+const StarredMark: React.FC<{ size: number }> = ({ size }) => {
+    const { t } = useTranslation();
+    return <StarRoundedIcon titleAccess={t('workspace.starred')} sx={{ fontSize: size, color: starredColor, flexShrink: 0 }} />;
+};
 
 // Sidebar-sized cards and rows use accent row actions; regular cards use muted ones.
 const RowActionContext = createContext(false);
@@ -165,6 +202,8 @@ export interface ItemCardProps {
     compact?: boolean;
     /** One-line sidebar row. */
     mini?: boolean;
+    /** Starred by the user: a gold star before the title and, on cards, a gold-tinted surface. */
+    starred?: boolean;
 }
 
 const RenameField: React.FC<{ rename: NonNullable<ItemCardProps['rename']>; mini: boolean }> = ({ rename, mini }) =>
@@ -189,7 +228,7 @@ const revealSx = {
 const stopClick = (event: React.MouseEvent) => event.stopPropagation();
 
 export const ItemCard: React.FC<ItemCardProps> = ({ title, badges, captions = [], meta, rename, actions, persistentActions = false,
-    onOpen, openLabel, onOpenInNewTab, tooltip, inactive = false, current = false, active = false, compact = false, mini = false }) => {
+    onOpen, openLabel, onOpenInNewTab, tooltip, inactive = false, current = false, active = false, compact = false, mini = false, starred = false }) => {
     const clickable = !!onOpen && !rename && !inactive && !current;
     const handleClick = (event: React.MouseEvent) => {
         if (rename || inactive) return;
@@ -210,6 +249,7 @@ export const ItemCard: React.FC<ItemCardProps> = ({ title, badges, captions = []
                     sx={{ ...sidebarRowSx, ...revealSx, cursor: clickable ? 'pointer' : 'default', opacity: inactive ? 0.55 : 1 }}>
                     {current && <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: 'primary.main', flexShrink: 0 }} />}
                     {rename ? <RenameField rename={rename} mini /> : <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        {starred && <StarredMark size={13} />}
                         <Typography noWrap sx={{ ...sidebarRowTitleSx, flex: '0 1 auto',
                             color: titleColor, textDecoration: inactive ? 'line-through' : 'none' }}>{title}</Typography>
                         {badges}
@@ -226,13 +266,20 @@ export const ItemCard: React.FC<ItemCardProps> = ({ title, badges, captions = []
     }
 
     const titleContent = <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+        {starred && <StarredMark size={compact ? 14 : 16} />}
         <Typography component="span" noWrap={!compact} sx={{ color: titleColor, textDecoration: inactive ? 'line-through' : 'none',
             ...(compact ? { ...sidebarRowTitleSx, flex: '0 1 auto', overflowWrap: 'anywhere' } : { minWidth: 0, fontSize: '0.875rem', lineHeight: 1.43 }) }}>{title}</Typography>
         {badges}
     </Box>;
+    const baseSurfaceSx: Record<string, any> = compact
+        ? { border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper', ...(clickable ? cardHoverSx : {}) }
+        : exampleCardSx(!clickable);
+    const surfaceSx = starred ? {
+        ...baseSurfaceSx, borderColor: alpha(starredColor, 0.6), bgcolor: alpha(starredColor, 0.06),
+        ...(baseSurfaceSx['&:hover'] ? { '&:hover': { ...baseSurfaceSx['&:hover'], borderColor: starredColor } } : {}),
+    } : baseSurfaceSx;
     const card = <Box component="article" onClick={handleClick} onAuxClick={handleAuxClick} className={active ? 'item-active' : undefined} sx={{
-        ...(compact ? { border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper', ...(clickable ? cardHoverSx : {}) }
-            : exampleCardSx(!clickable)),
+        ...surfaceSx,
         position: 'relative', minWidth: 0, textAlign: 'left', fontFamily: theme => theme.typography.fontFamily,
         px: compact ? 1 : 2, py: compact ? 0.75 : 1.5, display: 'flex', flexDirection: 'column', gap: compact ? 0.25 : 0,
         cursor: clickable ? 'pointer' : 'default', opacity: inactive ? 0.55 : 1,
@@ -254,8 +301,12 @@ export const ItemCard: React.FC<ItemCardProps> = ({ title, badges, captions = []
             sx={{ fontSize: textVar.xs, lineHeight: 1.5, color: 'text.secondary', overflowWrap: 'anywhere' }}>{caption}</Typography>)}
         {meta && <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5 }}>{meta}</Box>}
         {showActions && !persistentActions && <RowActionContext.Provider value={compact}>
+            {/* Near-opaque so captions under the actions don't read through; the halo softens its edge. */}
             <Box className="item-overlay-actions" onClick={stopClick} onAuxClick={stopClick}
-                sx={{ position: 'absolute', bottom: 4, right: 4, display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'default' }}>{actions}</Box>
+                sx={{ position: 'absolute', bottom: 4, right: 4, display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'default',
+                    borderRadius: 1, bgcolor: theme => alpha(theme.palette.background.paper, 0.92),
+                    boxShadow: theme => `0 0 6px 3px ${alpha(theme.palette.background.paper, 0.92)}`,
+                    ...(starred ? { backgroundImage: `linear-gradient(${alpha(starredColor, 0.06)}, ${alpha(starredColor, 0.06)})` } : {}) }}>{actions}</Box>
         </RowActionContext.Provider>}
     </Box>;
     return tooltip && !rename ? <MetadataTooltip title={tooltip} placement={compact ? 'right-start' : 'bottom-start'}>{card}</MetadataTooltip> : card;

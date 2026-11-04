@@ -101,6 +101,14 @@ describe('scales', () => {
         expect(scale.color(null)).toBe('#e3e3e3');
     });
 
+    it('starts a ramp at its floor, so the lightest colour is not near white', () => {
+        const plain = colorScale({ field: 'v', method: 'continuous', scheme: 'blues' }, [0, 10], 'v');
+        const floored = colorScale({ field: 'v', method: 'continuous', scheme: 'blues' }, [0, 10], 'v', undefined, {}, { floor: 0.3 });
+        const lightness = (color: string) => d3.hsl(color).l;
+        expect(lightness(floored.color(0))).toBeLessThan(lightness(plain.color(0)));
+        expect(floored.color(10)).toBe(plain.color(10));
+    });
+
     it('finds natural breaks', () => {
         expect(jenksBreaks([1, 1, 2, 2, 10, 11, 12, 50, 51], 3)).toEqual([10, 50]);
     });
@@ -229,5 +237,15 @@ describe('boundaries across basemaps and zoom', () => {
         expect(countryDetail(1200, 'world-detailed')).toBe(1);
         expect(countryDetail(6000, 'world')).toBe(1);
         expect(countryDetail(40000, 'world')).toBe(2);
+    });
+});
+
+describe('sample data', () => {
+    it('places each country in its real region, so a region filter picks real places', async () => {
+        const { worldIndicators } = await import('../../../../src/maps/samples');
+        const regionOf = (iso3: string) => worldIndicators().find(row => row.iso3 === iso3)?.region;
+        expect(['USA', 'CAN', 'BRA'].map(regionOf)).toEqual(['Americas', 'Americas', 'Americas']);
+        expect(['NGA', 'EGY', 'CHN', 'IND', 'FRA', 'RUS', 'AUS'].map(regionOf)).toEqual(['Africa', 'Africa', 'Asia', 'Asia', 'Europe', 'Europe', 'Oceania']);
+        expect(worldIndicators().filter(row => row.iso3 !== 'WLD').every(row => row.region)).toBe(true);
     });
 });

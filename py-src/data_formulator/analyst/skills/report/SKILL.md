@@ -4,9 +4,11 @@ description: >-
   Create a Markdown report from exploration findings, with supporting charts.
 when_to_use: >-
   The user requests a report deliverable or a shareable narrative document
-  built from charts and findings in the data thread. Not for an ordinary
-  answer or summary, even if it needs expansion (follow the meta response rules),
-  or for producing a single new chart (use visualize).
+  built from charts and findings in the data thread: prose with charts running
+  between paragraphs. Not for an ordinary answer or summary, even if it needs
+  expansion (follow the meta response rules), for producing a single new chart
+  (use visualize), or for putting charts together side by side on one page
+  (a panel: use html_app).
 always_on: false
 tools: []
 actions:

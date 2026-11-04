@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { chartThemeKey, useSavedThemes } from '../app/savedThemes';
 
 import {
     Box,
@@ -102,6 +103,7 @@ import CodeIcon from '@mui/icons-material/Code';
 import type { DataOperation } from '../dataOperations/models';
 import { DataFrameTable } from './DataFrameTable';
 import { WorkspaceFileCanvas } from './WorkspaceFileCanvas';
+import { ArtifactDraftCanvas } from './ArtifactDraft';
 import { ExternalTableReferenceCanvas } from './ExternalTableReferenceCanvas';
 import { ExplanationCanvas } from './ExplanationCanvas';
 
@@ -632,6 +634,9 @@ const VegaChartRenderer: FC<{
     // The box Flint laid this render out for, magnified with the render.
     const boxRef = useRef<Size | undefined>(undefined);
     const [assemblyError, setAssemblyError] = useState<string>();
+    // The saved theme the chart (or the preview) names: the chart is drawn again when it changes.
+    useSavedThemes();
+    const themeKey = chartThemeKey(themePreview?.active ? themePreview.themeId : chart.themeId);
 
     useEffect(() => {
         setAssemblyError(undefined);
@@ -740,7 +745,7 @@ const VegaChartRenderer: FC<{
             el.innerHTML = '';
         };
 
-    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, chart.themeId, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, insightTitle, insightSubtitle, themePreview?.active, themePreview?.themeId, fieldSemantics, onSpecReady, elementId]);
+    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, chart.themeId, themeKey, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, insightTitle, insightSubtitle, themePreview?.active, themePreview?.themeId, fieldSemantics, onSpecReady, elementId]);
 
     // Resize the drawn canvas instead of recompiling. Overriding Vega's inline
     // width (with `height: auto` from the wrapper) scales the chart uniformly
@@ -1904,6 +1909,10 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     }
     if (focusedId?.type === 'file') {
         return <WorkspaceFileCanvas fileName={focusedId.fileName} floatingAppControls />;
+    }
+    // A run's open end owns the canvas only while it writes an app or map (selectCanvasTarget).
+    if (focusedId?.type === 'draft') {
+        return <ArtifactDraftCanvas draftId={focusedId.draftId} />;
     }
     if (focusedId?.type === 'conversation') {
         return <ConversationCanvas textTurnId={focusedId.tableId} nodeIds={focusedId.nodeIds} label={focusedId.label} anchorId={focusedId.anchorId} />;

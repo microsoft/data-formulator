@@ -314,42 +314,25 @@ export function quotedPassage(text: string): string | undefined {
 
 // ── Streaming view ─────────────────────────────────────────────────────────
 
-export type StreamSegment =
-    | { type: 'lines'; lines: string[] }
-    | { type: 'block'; block: BlockType; attrs: BlockAttrs; children: StreamSegment[]; closed: boolean };
+const TABLE_DELIMITER = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
 /**
- * Group streamed Markdown lines into plain runs and (possibly still open) blocks, so the
- * lightweight typewriter view can draw a block's box while it is being written.
+ * The part of a report still being written that reads well formatted now. A line still arriving waits
+ * while it would show as raw syntax for a moment (a table row, a directive, a chart, a citation
+ * definition, a code fence), a table waits for its delimiter row, and a citation waits for its
+ * definition (written at the end).
  */
-export function segmentStreamingLines(lines: string[]): StreamSegment[] {
-    const root: StreamSegment[] = [];
-    const stack: Extract<StreamSegment, { type: 'block' }>[] = [];
-    const current = () => (stack.length ? stack[stack.length - 1].children : root);
-    const pushLine = (line: string) => {
-        const target = current();
-        const last = target[target.length - 1];
-        if (last?.type === 'lines') last.lines.push(line);
-        else target.push({ type: 'lines', lines: [line] });
-    };
-    for (const line of lines) {
-        const trimmed = line.trim();
-        const open = trimmed.match(OPENER);
-        const resolved = open ? resolveBlock(open[2], parseBlockAttrs(open[3])) : null;
-        if (resolved) {
-            const block: Extract<StreamSegment, { type: 'block' }> = {
-                type: 'block', block: resolved.type, attrs: resolved.attrs, children: [], closed: false,
-            };
-            current().push(block);
-            stack.push(block);
-        } else if (stack.length && CLOSER.test(trimmed)) {
-            stack.pop()!.closed = true;
-        } else if (/^:{3,}/.test(trimmed)) {
-            // Directive syntax still being typed (`:::excerpt{sou`) or a stray closer: not prose.
-            continue;
-        } else {
-            pushLine(line);
-        }
+export function streamingReportText(text: string): string {
+    const lines = text.split('\n');
+    if (/^\s*(\||:{3}|!\[|\[\^|`{3}|~{3})/.test(lines[lines.length - 1])) lines.pop();
+    const end = lines[lines.length - 1] === '' ? lines.length - 1 : lines.length;
+    let tableStart = end;
+    while (tableStart > 0 && lines[tableStart - 1].trim().startsWith('|')) tableStart--;
+    if (tableStart < end && !lines.slice(tableStart, end).some(line => TABLE_DELIMITER.test(line))) {
+        lines.length = tableStart;
     }
-    return root;
+    const body = lines.join('\n').replace(/\[\^[^\]\s]*$/, '');
+    if (!body.includes('[^')) return body;
+    const defined = new Set([...body.matchAll(/^\[\^([^\]\s]+)\]:/gm)].map(match => match[1]));
+    return body.replace(CITE_REF, (ref, key: string) => defined.has(key) ? ref : '');
 }

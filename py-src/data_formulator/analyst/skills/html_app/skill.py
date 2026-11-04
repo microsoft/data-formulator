@@ -42,8 +42,10 @@ MAX_APP_BYTES = 500_000
 
 REACT_APP_SUFFIX = ".app.jsx"
 # Modules the sandboxed React runtime provides (src/app/reactApp/compile.ts ALLOWED_IMPORTS).
-ALLOWED_IMPORTS = ("react", "react/jsx-runtime", "@df/ui", "@df/data", "@df/chart", "@df/format", "@df/icons", "@mui/material",
-                   "d3", "lodash", "@df/geo")
+ALLOWED_IMPORTS = ("react", "react/jsx-runtime", "@df/data", "@df/chart", "@df/format", "@df/icons", "@mui/material",
+                   "d3", "lodash", "@df/geo", "@mui/icons-material")
+# `@mui/material/Box`, `@mui/material/styles`: paths into MUI, which the runtime resolves.
+_MUI_PATH_RE = re.compile(r"^@mui/(?:material/[A-Za-z]+|icons-material/[A-Za-z0-9]+)$")
 _REACT_MANIFEST_RE = re.compile(r"^[ \t]*//[ \t]*@df-app\b.*(?:\r?\n|$)", re.MULTILINE)
 _IMPORT_FROM_RE = re.compile(r"^\s*(?:import|export)\s[^'\";]*?\bfrom\s*['\"]([^'\"]+)['\"]", re.MULTILINE)
 _BARE_IMPORT_RE = re.compile(r"^\s*import\s*['\"]([^'\"]+)['\"]", re.MULTILINE)
@@ -156,7 +158,7 @@ def validate_react_app(code: str) -> None:
 
     Syntax and runtime errors show when the app renders, with a button to ask the agent to fix them.
     """
-    disallowed = [name for name in react_imports(code) if name not in ALLOWED_IMPORTS]
+    disallowed = [name for name in react_imports(code) if name not in ALLOWED_IMPORTS and not _MUI_PATH_RE.match(name)]
     if disallowed:
         allowed = ", ".join(name for name in ALLOWED_IMPORTS if name != "react/jsx-runtime")
         raise ValueError(f"Cannot import {', '.join(disallowed)}; apps can import only {allowed}")
@@ -171,8 +173,8 @@ def lint_react_app(code: str, tables: list[str]) -> list[str]:
     colors = sorted({color.strip("'\"").lower() for color in _HEX_COLOR_RE.findall(code)})
     if len(colors) > MAX_COLOR_LITERALS:
         warnings.append(
-            f"The app hardcodes {len(colors)} colors ({', '.join(colors[:5])}); use theme colors such as "
-            "'primary.main' or 'text.secondary', and the Kpi/Callout tones, so the app matches Data Formulator."
+            f"The app hardcodes {len(colors)} colors ({', '.join(colors[:5])}); use MUI theme colors such as "
+            "'primary.main', 'text.secondary', 'success.main' or 'divider', so the app matches Data Formulator and its AppTheme."
         )
     return warnings
 

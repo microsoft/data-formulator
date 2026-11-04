@@ -204,6 +204,13 @@ export interface ExternalTableReference {
     queryIntent?: Record<string, unknown>;
 }
 
+/** An artifact a run is writing: the tool writing it, its title once known, and when the writing began (ms). */
+export interface DraftWriting {
+    tool: string;
+    title?: string;
+    startedAt: number;
+}
+
 export interface DraftNode {
     kind: 'draft';
     id: string;
@@ -217,6 +224,8 @@ export interface DraftNode {
         status: DeriveStatus;
         runningPlan?: string; // live agent thought text while running
         progressSteps?: ProgressStep[];
+        /** The artifact (an app or map) the run is writing right now: the draft shows it until it lands (design-docs/58). */
+        writing?: DraftWriting;
         code?: string;
         codeSignature?: string;
         outputVariable?: string;

@@ -37,7 +37,8 @@ tooltips, click to select (shift adds), and restyle layers in the Style panel.
    - Counts or totals by region or city: `bubbles` (area-true), or `spikes`
      for many overlapping places; `cartogram` to size regions by value.
    - Individual locations: `points` (thousands are fine); many overlapping
-     points: `density` (hexagon bins or a heatmap).
+     points: `density` (hexagon bins or a heatmap). To single out notable
+     rows (M7+ quakes over all quakes' density), add `highlight` (below).
    - Origin → destination: `flows` (`"curve": "great-circle"` for flights or
      shipping). Ordered tracks (routes, storms): `tracks`. Both show which way
      they go with an arrowhead at the destination; `direction` can instead be
@@ -66,7 +67,7 @@ tooltips, click to select (shift adds), and restyle layers in the Style panel.
    unit or kind: fossil/nuclear/renewable TWh, several rates), the main
    measure channel lists them, 2–4 with the asked-for one first, so the map
    gets a switch; useful category columns go in filter options. Extra `controls` (a `range` filter, `stats`) can sit
-   beside a template; layer toggles need the layer spec.
+   beside a template.
 4. Read the result: `write_map` returns `warnings` (unmatched keys, missing
    coordinates, constant controls). Fix real problems (clean names, set
    `keyType`, filter out aggregates like "World") with `edit_file`.
@@ -79,8 +80,8 @@ let the fields' semantics, the theme, and the style decide the rest:
 ```json
 {"template": "choropleth",
  "data": {"table": "indicators"},
- "encoding": {"region": "country", "color": "life_expectancy", "time": "year"},
- "fields": {"life_expectancy": {"semanticType": "Quantity", "unit": "years"}},
+ "encoding": {"region": "country", "color": "gdp_per_capita", "time": "year"},
+ "fields": {"gdp_per_capita": {"semanticType": "Price", "unit": "USD"}},
  "properties": {"classes": 5},
  "view": {"style": "light"}}
 ```
@@ -120,7 +121,7 @@ optional): `geography` (`world`, `us-states`, `us-counties`, or a
 `scheme`, `color`, `sizeMax`, `opacity`, `density` (`hexbin` or `heatmap`), `radius`,
 `curve` (flows), `direction` (flows and tracks: `taper`, `arrow`, `animate`,
 `none`), `play` (false: no play button), `search`, `details`
-(default on), `stats` (default off). `fields`, `view`, `title`-level text
+(default on), `stats` (default off), `highlight` (below). `fields`, `view`, `title`-level text
 (`subtitle`, `source`), and extra `controls` work as below. Marks are already
 semi-transparent with outlines: leave `opacity` unset unless a dense layer
 needs fading, or the map turns washed out.
@@ -134,29 +135,43 @@ charts; leave it unset otherwise. `properties.scheme` picks the ramp for a
 colour column, or for density (hexbins and heatmaps). In a layer spec, use
 `color: {"value": "#…"}` or `color: {"field", "scheme"}`.
 
+Highlight (`density`, `points`, `bubbles`, `spikes` placed by lat/lon): rows
+meeting one condition are drawn as points above the map, with checkboxes to
+show or hide each layer; the time slider and filters apply to both.
+`{"field", "op", "value", "label", "color"}` — `op` as in layer filters
+(default `==`), `label` names the layer (default the condition), `color`
+defaults to a dark red. Sized by `weight` or `size` when bound.
+
+```json
+{"template": "density",
+ "data": {"table": "quakes"},
+ "encoding": {"lat": "lat", "lon": "lon", "weight": "magnitude", "time": "year"},
+ "properties": {"density": "heatmap", "highlight": {"field": "magnitude", "op": ">=", "value": 7, "label": "M7+"}}}
+```
+
 The user can switch the map type, choose among the offered columns, and
 change these properties in the Style panel. Write a layer spec (below) only when the map
-needs several layers (e.g. density under points, regions under bubbles) or
-linked layers.
+needs layers a template cannot make (e.g. regions under bubbles from another
+table) or linked layers.
 
 ## Layer spec
 
 ```json
 {
-  "subtitle": "Life expectancy at birth, 1960–2020",
+  "subtitle": "GDP per capita, 1960–2020",
   "source": "World Bank",
   "view": {"basemap": "world", "projection": "equalEarth"},
-  "data": {"le": {"table": "life_expectancy"}},
-  "fields": {"life_exp": {"semanticType": "Quantity", "unit": "years", "displayName": "Life expectancy"}},
+  "data": {"gdp": {"table": "gdp_per_capita"}},
+  "fields": {"gdp_pc": {"semanticType": "Price", "unit": "USD", "displayName": "GDP per capita"}},
   "layers": [
-    {"id": "le", "type": "regions", "data": "le", "key": "iso3",
-     "color": {"field": "life_exp", "aggregate": "mean"},
-     "tooltip": ["country", "life_exp"]}
+    {"id": "gdp", "type": "regions", "data": "gdp", "key": "iso3",
+     "color": {"field": "gdp_pc", "aggregate": "mean"},
+     "tooltip": ["country", "gdp_pc"]}
   ],
   "controls": [
-    {"type": "slider", "field": "year", "data": "le", "play": true},
-    {"type": "search", "layer": "le"},
-    {"type": "details", "layer": "le"}
+    {"type": "slider", "field": "year", "data": "gdp", "play": true},
+    {"type": "search", "layer": "gdp"},
+    {"type": "details", "layer": "gdp"}
   ]
 }
 ```
@@ -181,14 +196,19 @@ linked layers.
   when the user asks for the world context. `center` `[lon, lat]` with `zoom`
   (1 = whole basemap) sets an explicit view.
 - `graticule: true` draws latitude/longitude lines.
+- `layout`: leave it unset (`auto`). The controls, timeline and legend are
+  placed where they cover the least data and leave the map largest (a globe
+  gets a column beside it; a US map often gets a row along the bottom). Set
+  `top` (a row under the title), `bottom` (a row along the bottom) or `side`
+  (a column at the left) only when the user asks for one.
 - `style`: the basemap's look — `light` (default; Datawrapper-like grey land
   with white borders on the page), `muted` (near-white land drawn by grey
   borders: a stage for strong colours), `atlas` (blue water filling the
   frame, warm land), `dark` (dark water filling the frame), `minimal`
   (outlines, for print). Leave it unset unless the user asks for a look.
 - `theme`: a chart theme (`datawrapper`, `nyt`, `economist`, `swiss`,
-  `nature`, `mckinsey`, `powerbi`, `powerbi-light`, `pop`, `cartoon`, or
-  `none`); it sets the title font, single and categorical colours, and the
+  `nature`, `mckinsey`, `powerbi`, `powerbi-light`, `pop`, `cartoon`, one of
+  the user's saved themes by id, or `none`); it sets the title font, single and categorical colours, and the
   sequential and diverging ramps. Omit it to follow the app's chart theme, so
   maps match the session's charts.
 - `labels: false` hides country and state names (shown where they fit).
@@ -230,14 +250,14 @@ read per source.
 Common keys: `id` (unique; controls name layers by it), `type`, `name`
 (legend/layer list), `data`, `filter` (`[{"field", "op", "value"}]`, ops
 `== != > >= < <= in between contains`), `opacity`, `visible`, `tooltip`
-(fields as names or `{"field", "label", "format"}`; `false` hides it), `text`
+(fields as names or `{"field", "label", "format"}`), `text`
 (a label field).
 
 Placing rows:
 - Regions: `key` (column) with optional `keyType`: `auto` (default; detects
   ISO numeric, ISO2, ISO3, names), `iso3`, `iso2`, `iso-numeric`,
   `country-name`, `us-state` (names, USPS codes, or FIPS), `fips` (5-digit
-  counties), `property`. `geo` chooses the boundaries: `countries`,
+  counties). `geo` chooses the boundaries: `countries`,
   `us-states`, `us-counties`, or a workspace file `files/x.geojson`
   (GeoJSON or TopoJSON) with `featureKey` naming the feature property the key
   matches (case-insensitive). Without `geo`, the basemap decides.
@@ -300,7 +320,8 @@ its stores.
 - `layers`: toggle layer visibility.
 - `details`: a side panel with the clicked place's fields (`fields`, `layer`).
 - `stats`: a summary of a layer's places (count, total or average, top 5)
-  that follows the selection (`layer`, `fields`, `label`).
+  that follows the selection (`layer`, `label`; `fields` picks the measure:
+  the first one is summarized).
 
 A time slider keeps one colour and size scale across its frames, so frames
 compare. Users can also shift-drag (or use the selection tool) to lasso

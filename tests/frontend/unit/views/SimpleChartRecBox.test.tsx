@@ -136,23 +136,104 @@ describe('Analyst landing attachment handoff', () => {
     });
 
     it.each([
-        ['the message before it', 'answer'],
-        ['the stopped message itself', 'stopped'],
-    ])('replaces a message a stopped run left unanswered when sending from %s', async (_label, focusTextId) => {
+        ['the message before it', { type: 'text', textId: 'answer' }],
+        ['the stopped message itself', { type: 'text', textId: 'stopped' }],
+        ['the stopped run', { type: 'draft', draftId: 'stopped-run' }],
+    ] as const)('continues after a message a stopped run left unanswered when sending from %s', async (_label, focus) => {
         const { store } = mountTask();
         act(() => {
             store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'answer', displayId: 'Answer', textKind: 'explain',
-                content: 'Updated all five charts.', parentNodeId: 'conversation-root:test', createdAt: 1 }));
+                content: 'Updated all five charts.', parentNodeId: 'conversation-root:test', createdAt: 1, answered: true }));
             store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'stopped', displayId: 'Stopped', textKind: 'explain',
                 content: '', prompt: 'Update the app', parentNodeId: 'answer', createdAt: 2 }));
-            store.dispatch(dfActions.setFocused({ type: 'text', textId: focusTextId }));
+            store.dispatch(dfActions.createDraftNode({ id: 'stopped-run', displayId: 'Stopped run', parentNodeId: 'stopped',
+                parentTableId: 'stopped', source: [], interaction: [], actionId: 'stopped-action' }));
+            store.dispatch(dfActions.updateDeriveStatus({ nodeId: 'stopped-run', status: 'interrupted' }));
+            store.dispatch(dfActions.setFocused(focus));
         });
-        act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Update the app', images: [], attachments: [] })));
+        act(() => store.dispatch(dfActions.queueAnalystTask({ text: 'Use the Edge browser', images: [], attachments: [] })));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
-        const prompts = store.getState().textTurns.filter(turn => turn.prompt === 'Update the app');
-        expect(prompts).toHaveLength(1);
-        expect(prompts[0]).toMatchObject({ parentNodeId: 'answer' });
-        expect(prompts[0].id).not.toBe('stopped');
+        // The stopped message stays; the new one follows it in the same thread, in place of its retry.
+        expect(turnWith(store, turn => turn.id === 'stopped')).toBeDefined();
+        expect(turnWith(store, turn => turn.prompt === 'Use the Edge browser')).toMatchObject({ parentNodeId: 'stopped' });
+        expect(store.getState().draftNodes.some(draft => draft.id === 'stopped-run')).toBe(false);
+        expect(buildThreads(dfSelectors.getThreadGraph(store.getState())).some(thread => thread.branchFromId)).toBe(false);
+    });
+
+    it('unsends a message stopped before any reply: back in the chat box, focus restored, resent without a branch', async () => {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        render(<Provider store={store}><SimpleChartRecBox /></Provider>);
+        act(() => {
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'answer', displayId: 'Answer', textKind: 'explain',
+                content: 'Checked the browsers.', parentNodeId: 'conversation-root:test', createdAt: 1 }));
+            store.dispatch(dfActions.setFocused({ type: 'text', textId: 'answer' }));
+        });
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'thinking_text', content: 'Looking for Edge' };
+            throw new DOMException('Stopped', 'AbortError');
+        });
+        const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+        fireEvent.change(input, { target: { value: 'use edge browswer' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(turnWith(store, turn => turn.prompt === 'use edge browswer')).toBeUndefined());
+        expect(store.getState().draftNodes).toHaveLength(0);
+        expect(input.value).toBe('use edge browswer');
+        expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'answer' });
+        expect(turnWith(store, turn => turn.id === 'answer').answered).toBeUndefined();
+
+        fireEvent.change(input, { target: { value: 'use the Edge browser' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(2));
+        expect(store.getState().textTurns.filter(turn => turn.prompt)).toEqual([
+            expect.objectContaining({ prompt: 'use the Edge browser', parentNodeId: 'answer' })]);
+        expect(buildThreads(dfSelectors.getThreadGraph(store.getState())).some(thread => thread.branchFromId)).toBe(false);
+    });
+
+    it('keeps a run stopped after it produced something, with the message left in the chat box to send on from there', async () => {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        render(<Provider store={store}><SimpleChartRecBox /></Provider>);
+        act(() => {
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'answer', displayId: 'Answer', textKind: 'explain',
+                content: 'Checked the browsers.', parentNodeId: 'conversation-root:test', createdAt: 1 }));
+            store.dispatch(dfActions.setFocused({ type: 'text', textId: 'answer' }));
+        });
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'tool_start', tool: 'execute_python_script', tool_call_id: 'find', code: 'print(1)', purpose: 'Find Edge' } as any;
+            throw new DOMException('Stopped', 'AbortError');
+        });
+        const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+        fireEvent.change(input, { target: { value: 'use edge browswer' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        await waitFor(() => expect(store.getState().draftNodes[0]?.derive.status).toBe('interrupted'));
+        const stopped = store.getState().draftNodes[0];
+        expect(store.getState().focusedId).toEqual({ type: 'draft', draftId: stopped.id });
+        expect(input.value).toBe('use edge browswer');
+        expect(turnWith(store, turn => turn.prompt === 'use edge browswer')).toBeDefined();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(2));
+        expect(requestBody(1).user_question).toBe('use edge browswer');
+        expect(store.getState().textTurns.filter(turn => turn.prompt === 'use edge browswer')).toHaveLength(1);
+    });
+
+    it('sends on from where a run stopped after it produced something', async () => {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        render(<Provider store={store}><SimpleChartRecBox /></Provider>);
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'tool_start', tool: 'execute_python_script', tool_call_id: 'find', code: 'print(1)', purpose: 'Find Edge' } as any;
+            throw new DOMException('Stopped', 'AbortError');
+        });
+        const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+        fireEvent.change(input, { target: { value: 'use edge browswer' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        await waitFor(() => expect(store.getState().draftNodes[0]?.derive.status).toBe('interrupted'));
+        const stoppedAt = store.getState().draftNodes[0].parentNodeId;
+        fireEvent.change(input, { target: { value: 'use the Edge browser' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(2));
+        expect(turnWith(store, turn => turn.prompt === 'use the Edge browser')).toMatchObject({ parentNodeId: stoppedAt });
+        expect(store.getState().draftNodes.every(draft => draft.derive.status !== 'interrupted')).toBe(true);
         expect(buildThreads(dfSelectors.getThreadGraph(store.getState())).some(thread => thread.branchFromId)).toBe(false);
     });
 
@@ -1124,6 +1205,32 @@ describe('Analyst landing attachment handoff', () => {
             : { type: 'reference', referenceId: 'loaded-beats' });
     });
 
+    it('continues the open chat\'s thread as it stands now, after a stopped request, without branching', async () => {
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'completion', status: 'success', content: { summary: 'Trying Edge.' } };
+        });
+        const { store } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'ask', displayId: 'Ask', textKind: 'explain',
+                content: '', prompt: 'Can we scrape fares?', parentNodeId: 'conversation-root:test', createdAt: 1 }));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'answer', displayId: 'Answer', textKind: 'explain',
+                content: 'It is a real risk.', parentNodeId: 'ask', createdAt: 2, answered: true }));
+            // The chat was opened before the answer; the thread then went on in it.
+            store.dispatch(dfActions.setFocused({ type: 'conversation', tableId: 'thread-ask', nodeIds: ['ask'] }));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'research', displayId: 'Research', textKind: 'explain',
+                content: '', prompt: 'Lets research this', parentNodeId: 'answer', createdAt: 3 }));
+            store.dispatch(dfActions.createDraftNode({ id: 'stopped', displayId: 'stopped', parentNodeId: 'research',
+                parentTableId: 'research', source: [], interaction: [{ from: 'user', to: 'data-agent', role: 'prompt', content: 'Lets research this', timestamp: 4 }] }));
+            store.dispatch(dfActions.updateDeriveStatus({ nodeId: 'stopped', status: 'interrupted' }));
+            store.dispatch(dfActions.queueAnalystTask({ text: 'Try Edge', images: [], attachments: [] }));
+        });
+        await waitFor(() => expect(turnWith(store, turn => turn.content === 'Trying Edge.')).toBeDefined());
+        expect(turnWith(store, turn => turn.prompt === 'Try Edge').parentNodeId).toBe('research');
+        expect(store.getState().draftNodes.some(draft => draft.id === 'stopped')).toBe(false);
+        expect(buildThreads(dfSelectors.getThreadGraph(store.getState())).some(thread => thread.branchFromId)).toBe(false);
+        expect(store.getState().focusedId).toMatchObject({ type: 'conversation', tableId: 'thread-ask' });
+    });
+
     it('shows the running plan while the agent works on the focused app', async () => {
         let continueStream!: () => void;
         const continuation = new Promise<void>(resolve => { continueStream = resolve; });
@@ -1880,6 +1987,32 @@ describe('Analyst landing attachment handoff', () => {
         } else {
             expect(requestBody()).not.toHaveProperty('attached_images');
         }
+    });
+
+    it('attaches a large text paste as a document and keeps short pastes in the message', async () => {
+        vi.mocked(apiRequest).mockResolvedValue({ data: { path: 'scratch/pasted-text-1_ab12.txt' } });
+        mountTask();
+        const input = screen.getByRole('textbox');
+        const paste = (text: string) => fireEvent.paste(input, {
+            clipboardData: { items: [], files: [], getData: (type: string) => type === 'text/plain' ? text : '' },
+        });
+
+        expect(paste('a short note')).toBe(true);
+        expect(apiRequest).not.toHaveBeenCalledWith('/api/agent/workspace/scratch/upload', expect.anything());
+
+        const big = 'Rohani v. Blinken, 2:24-cv-00389, filed March 21st, 2024. '.repeat(100);
+        expect(paste(big)).toBe(false);
+        await screen.findByText('pasted-text-1.txt');
+        const upload = vi.mocked(apiRequest).mock.calls.find(([url]) => url === '/api/agent/workspace/scratch/upload')!;
+        const file = (upload[1]?.body as FormData).get('file') as File;
+        expect(file.name).toBe('pasted-text-1.txt');
+        expect(await file.text()).toBe(big);
+
+        fireEvent.change(input, { target: { value: 'How many cases were filed per month?' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        expect(requestBody().scratch_files).toEqual(['scratch/pasted-text-1_ab12.txt']);
+        expect(requestBody().user_question).toBe('How many cases were filed per month?');
     });
 
     it('sends an uploaded image without requiring text', async () => {

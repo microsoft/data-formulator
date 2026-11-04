@@ -165,9 +165,10 @@ def test_lint_steers_styling_toward_the_df_app_kit() -> None:
 
 REACT_APP = """import { useState } from 'react';
 import {
-  Page,
-  Select,
-} from '@df/ui';
+  Container as Page,
+  MenuItem,
+  TextField,
+} from '@mui/material';
 import { useQuery, useDistinct } from '@df/data';
 import { FlintChart } from '@df/chart';
 
@@ -175,7 +176,8 @@ export default function App() {
   const [region, setRegion] = useState('');
   const regions = useDistinct('sales', 'region');
   const totals = useQuery('sales', { columns: ['region'], aggregates: [{ op: 'sum', field: 'amount' }] });
-  return <Page title="Sales"><Select label="Region" value={region} onChange={setRegion} options={regions.values} />
+  return <Page title="Sales"><TextField select label="Region" value={region} onChange={event => setRegion(event.target.value)}>
+    {regions.values.map(name => <MenuItem key={name} value={name}>{name}</MenuItem>)}</TextField>
     <FlintChart chartType="Bar Chart" query={totals} encodings={{ x: 'region', y: 'amount_sum' }} /></Page>;
 }
 """
@@ -231,7 +233,7 @@ def test_react_app_text_stays_readable_after_agent_edits(workspace) -> None:
 
 
 def test_react_lint_and_import_helpers() -> None:
-    assert react_imports(REACT_APP) == ["react", "@df/ui", "@df/data", "@df/chart"]
+    assert react_imports(REACT_APP) == ["react", "@mui/material", "@df/data", "@df/chart"]
     validate_react_app(REACT_APP)
     assert lint_react_app(REACT_APP, ["sales"]) == []
     warnings = " ".join(lint_react_app(
@@ -243,12 +245,16 @@ def test_react_lint_and_import_helpers() -> None:
     assert stamped == '// @df-app {"version": 2}\nexport default 1'
 
 
-def test_skill_starter_app_is_valid_and_lint_clean() -> None:
+def test_skill_example_apps_are_valid_and_lint_clean() -> None:
     body = build_registry().load_body("html_app")
-    starter = body.split("```jsx", 1)[1].split("```", 1)[0]
-    validate_react_app(starter)
-    assert set(react_imports(starter)) <= set(ALLOWED_IMPORTS)
-    assert lint_react_app(starter, ["sales"]) == []
+    blocks = [block.split("```", 1)[0] for block in body.split("```jsx")[1:]]
+    apps = [block for block in blocks if "export default" in block]
+    # The starter dashboard and the story example; other blocks are fragments.
+    assert len(apps) == 2
+    for app in apps:
+        validate_react_app(app)
+        assert set(react_imports(app)) <= set(ALLOWED_IMPORTS)
+        assert lint_react_app(app, ["sales"]) == []
 
 
 def _hash(workspace, name):

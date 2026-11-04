@@ -505,16 +505,17 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 {entry.attachments && entry.attachments.length > 0 && (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px', mt: 0.5 }}>
                         {entry.attachments.map((name, i) => (
-                            <Box key={i} sx={{
+                            <Box key={i} title={name} sx={{
                                 display: 'inline-flex', alignItems: 'center', gap: '2px',
-                                maxWidth: '100%', fontSize: textVar.xxs, fontFamily: theme.typography.fontFamily,
+                                maxWidth: '100%', minWidth: 0, boxSizing: 'border-box',
+                                fontSize: textVar.xxs, fontFamily: theme.typography.fontFamily,
                                 color: theme.palette.text.secondary,
                                 backgroundColor: alpha(theme.palette.text.primary, 0.05),
                                 border: `1px solid ${borderColor.divider}`,
                                 borderRadius: '4px', px: '5px', py: '1px',
                             }}>
-                                <AttachFileIcon sx={{ fontSize: textVar.xs, transform: 'rotate(45deg)' }} />
-                                <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</Box>
+                                <AttachFileIcon sx={{ fontSize: textVar.xs, transform: 'rotate(45deg)', flexShrink: 0 }} />
+                                <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</Box>
                             </Box>
                         ))}
                     </Box>

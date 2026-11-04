@@ -24,6 +24,7 @@ import requests as http
 from filelock import FileLock
 from flask import Blueprint, Response, request
 
+from data_formulator.auth.github_device_flow import GitHubDeviceFlow, connection_lock, connection_vault
 from data_formulator.auth.identity import get_identity_id, is_local_mode
 from data_formulator.auth.vault import get_credential_vault
 from data_formulator.datalake.workspace import get_data_formulator_home, get_user_home
@@ -62,6 +63,8 @@ _FLOW_TTL = 600
 _COPILOT_CONNECTION_KEY = "model-connection:github_copilot"
 _COPILOT_FLOW_KEY = "model-connection-flow:github_copilot"
 _COPILOT_CLIENT_ID = "Iv1.b507a08c87ecfe98"
+_COPILOT_FLOW = GitHubDeviceFlow(_COPILOT_FLOW_KEY, lambda: os.environ.get("GITHUB_COPILOT_CLIENT_ID", _COPILOT_CLIENT_ID),
+                                 "read:user")
 _CHATGPT_CONNECTION_KEY = "model-connection:chatgpt"
 _CHATGPT_FLOW_KEY = "model-connection-flow:chatgpt"
 _COPILOT_BASES = {"https://api.githubcopilot.com", "https://api.individual.githubcopilot.com",
@@ -297,51 +300,18 @@ def poll_copilot_connection():
     body = _connection_body()
     vault = _connection_vault()
     identity = get_identity_id()
-    with _connection_lock():
-        flow = vault.retrieve(identity, _COPILOT_FLOW_KEY)
-        if not flow or flow["id"] != body.get("flow_id") or flow["expires_at"] <= time.time():
-            raise AppError(ErrorCode.INVALID_REQUEST, "Authorization expired or was cancelled. Start again.")
-        if flow["status"] != "pending" or flow["next_poll_at"] > time.time():
-            return json_ok({"id": "github_copilot", "flow": {"id": flow["id"], "status": flow["status"]}})
-        flow["next_poll_at"] = time.time() + max(flow["interval"], 90)
-        flow["poll_id"] = secrets.token_urlsafe(16)
-        vault.store(identity, _COPILOT_FLOW_KEY, flow)
-    connection = None
-    error = None
-    try:
-        result = _github_auth_request("https://github.com/login/oauth/access_token", {
-            "client_id": flow["client_id"], "device_code": flow["device_code"],
-            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-        })
-        if result.get("error") == "slow_down":
-            flow["interval"] += 5
-        elif result.get("error") == "authorization_pending":
-            pass
-        elif isinstance(result.get("access_token"), str) and result["access_token"]:
-            credentials = _copilot_credentials(result["access_token"])
-            profile = _copilot_get("https://api.github.com/user", result["access_token"])
-            connection = {"id": flow["id"], "access_token": result["access_token"], **credentials,
-                          "login": profile.get("login") if isinstance(profile.get("login"), str) else None}
-            flow["status"] = "connected"
-        else:
-            flow["status"] = "error"
-    except AppError as caught:
-        flow["status"] = "error"
-        error = caught
-    if flow["status"] != "pending":
-        flow.pop("device_code", None)
-    flow["next_poll_at"] = time.time() + flow["interval"]
-    with _connection_lock():
-        current = vault.retrieve(identity, _COPILOT_FLOW_KEY)
-        if (not current or current["id"] != flow["id"] or current["expires_at"] <= time.time()
-            or current.get("poll_id") != flow["poll_id"]):
-            raise AppError(ErrorCode.INVALID_REQUEST, "Authorization was cancelled or expired")
-        if connection:
-            vault.store(identity, _COPILOT_CONNECTION_KEY, connection)
-        vault.store(identity, _COPILOT_FLOW_KEY, flow)
-    if error:
-        raise error
-    return json_ok({"id": "github_copilot", "flow": {"id": flow["id"], "status": flow["status"]}})
+
+    def connect(access_token: str, _response: dict | None = None) -> dict:
+        credentials = _copilot_credentials(access_token)
+        profile = _copilot_get("https://api.github.com/user", access_token)
+        return {"access_token": access_token, **credentials,
+                "login": profile.get("login") if isinstance(profile.get("login"), str) else None}
+
+    def commit(connection: dict) -> None:
+        vault.store(identity, _COPILOT_CONNECTION_KEY, {"id": body.get("flow_id"), **connection})
+
+    flow = _COPILOT_FLOW.poll(identity, body.get("flow_id"), connect, commit)
+    return json_ok({"id": "github_copilot", "flow": flow})
 
 
 def _load_copilot_catalog(config: dict) -> tuple[list[dict], dict[str, str]]:
@@ -385,68 +355,18 @@ def list_copilot_models():
                                    "settings_url": "https://github.com/settings/copilot"}})
 
 
-def _github_auth_request(url: str, payload: dict) -> dict:
-    try:
-        response = http.post(url, json=payload, headers={"Accept": "application/json"},
-                             timeout=20, allow_redirects=False)
-        if response.status_code != 200:
-            raise ValueError("GitHub authorization unavailable")
-        result = response.json()
-        if not isinstance(result, dict):
-            raise ValueError("Invalid authorization response")
-        return result
-    except (http.RequestException, ValueError):
-        raise AppError(ErrorCode.SERVICE_UNAVAILABLE, "Could not contact GitHub. Try again.") from None
-
-
 @model_endpoints_bp.route("/connections/github_copilot/start", methods=["POST"])
 def start_copilot_connection():
     _connection_body()
-    identity = get_identity_id()
-    vault = _connection_vault()
-    flow_id = secrets.token_urlsafe(32)
-    client_id = os.environ.get("GITHUB_COPILOT_CLIENT_ID", _COPILOT_CLIENT_ID)
-    with _connection_lock():
-        vault.store(identity, _COPILOT_FLOW_KEY, {
-            "id": flow_id, "status": "starting", "expires_at": time.time() + _FLOW_TTL,
-        })
-    result = _github_auth_request("https://github.com/login/device/code", {
-        "client_id": client_id, "scope": "read:user",
-    })
-    if (not all(isinstance(result.get(field), str) and result[field]
-                for field in ("device_code", "user_code"))
-            or result.get("verification_uri") != "https://github.com/login/device"
-            or not isinstance(result.get("expires_in"), int)
-            or not 0 < result["expires_in"] <= 3600
-            or not isinstance(result.get("interval", 5), int)
-            or not 0 < result.get("interval", 5) <= 60):
-        raise AppError(ErrorCode.SERVICE_UNAVAILABLE, "Invalid GitHub authorization response. Try again.")
-    interval = max(5, result.get("interval", 5))
-    with _connection_lock():
-        current = vault.retrieve(identity, _COPILOT_FLOW_KEY)
-        if not current or current["id"] != flow_id:
-            raise AppError(ErrorCode.INVALID_REQUEST, "Authorization was cancelled")
-        vault.store(identity, _COPILOT_FLOW_KEY, {
-            "id": flow_id, "client_id": client_id, "status": "pending",
-            "device_code": result["device_code"], "user_code": result["user_code"],
-            "expires_at": time.time() + result["expires_in"],
-            "interval": interval, "next_poll_at": time.time() + interval,
-        })
-    return json_ok({"flow_id": flow_id, "user_code": result["user_code"],
-                    "authorization_url": result["verification_uri"],
-                    "expires_in": result["expires_in"], "interval": interval})
+    return json_ok(_COPILOT_FLOW.start(get_identity_id()))
 
 
 @model_endpoints_bp.route("/connections/github_copilot", methods=["GET"])
 def copilot_connection_status():
     identity = get_identity_id()
-    vault = _connection_vault()
+    flow = _COPILOT_FLOW.current(identity)
     with _connection_lock():
-        flow = vault.retrieve(identity, _COPILOT_FLOW_KEY)
-        if flow and flow["expires_at"] <= time.time():
-            vault.delete(identity, _COPILOT_FLOW_KEY)
-            flow = None
-        connected = bool(vault.retrieve(identity, _COPILOT_CONNECTION_KEY))
+        connected = bool(_connection_vault().retrieve(identity, _COPILOT_CONNECTION_KEY))
     return json_ok({"id": "github_copilot", "connected": connected,
                     "flow": {"id": flow["id"], "status": flow["status"]} if flow else None})
 
@@ -454,12 +374,7 @@ def copilot_connection_status():
 @model_endpoints_bp.route("/connections/github_copilot/cancel", methods=["POST"])
 def cancel_copilot_connection():
     body = _connection_body()
-    vault = _connection_vault()
-    identity = get_identity_id()
-    with _connection_lock():
-        flow = vault.retrieve(identity, _COPILOT_FLOW_KEY)
-        if flow and flow["id"] == body.get("flow_id"):
-            vault.delete(identity, _COPILOT_FLOW_KEY)
+    _COPILOT_FLOW.cancel(get_identity_id(), body.get("flow_id"))
     return json_ok({})
 
 
@@ -474,10 +389,7 @@ def disconnect_copilot_connection():
     return json_ok({})
 
 
-def _connection_lock():
-    home = get_data_formulator_home()
-    home.mkdir(parents=True, exist_ok=True)
-    return FileLock(home / ".model-connections.lock", timeout=10)
+_connection_lock = connection_lock
 
 
 @model_endpoints_bp.after_request
@@ -488,11 +400,7 @@ def protect_model_connection_response(response):
     return response
 
 
-def _connection_vault():
-    vault = get_credential_vault()
-    if vault is None:
-        raise AppError(ErrorCode.SERVICE_UNAVAILABLE, "Secure credential storage is unavailable")
-    return vault
+_connection_vault = connection_vault
 
 
 def resolve_model_connection(model_config: dict) -> dict:

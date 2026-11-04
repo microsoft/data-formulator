@@ -18,11 +18,14 @@ export const REACT_APP_FILE = /\.app\.jsx$/i;
 
 /** Modules the runtime provides; must match `MODULES` in runtime/index.tsx. */
 /** Modules in their own runtime bundles, injected only into apps that use them. */
-export const OPTIONAL_IMPORTS = ['d3', 'lodash', '@df/geo'] as const;
+export const OPTIONAL_IMPORTS = ['d3', 'lodash', '@df/geo', '@mui/icons-material'] as const;
 export type OptionalImport = typeof OPTIONAL_IMPORTS[number];
 
+/** `@mui/material/Box`, `@mui/icons-material/TrendingUp`: paths the runtime resolves into those packages. */
+const MUI_PATH = /^@mui\/(?:material\/[A-Za-z]+|icons-material\/[A-Za-z0-9]+)$/;
+
 export const ALLOWED_IMPORTS = [
-    'react', 'react/jsx-runtime', '@df/ui', '@df/data', '@df/chart', '@df/format', '@df/icons', '@mui/material',
+    'react', 'react/jsx-runtime', '@df/data', '@df/chart', '@df/format', '@df/icons', '@mui/material',
     ...OPTIONAL_IMPORTS,
 ];
 
@@ -31,8 +34,13 @@ export type OptionalModule = OptionalImport | 'flint-links';
 
 /** A Flint map draws vendored boundaries from `@df/geo`. */
 const FLINT_MAP_CHART = /(['"])(?:Map|Choropleth)\1/;
-/** Linked charts (`ChartLink`, `useChartLink`) check their links with Flint's validator. */
-const CHART_LINK = /\b(?:ChartLink|useChartLink)\b/;
+/** Charts the app sets a focus or updates on: Flint's chart validator checks what the app asks of them. */
+const CHART_CHECKS = new RegExp([
+    /\bfocus\s*[=:]\s*\{/.source,
+    /\bannotations\s*[=:]\s*\{?\s*\[/.source,
+    /\bhide\s*[=:]\s*\{/.source,
+    /(['"])set-(?:style|annotation|viewport|order|overlay|freeform-overlay|data)\1/.source,
+].join('|'));
 
 const MANIFEST_LINE = /^\s*\/\/\s*@df-app\s+(\{.*\})\s*$/m;
 
@@ -100,7 +108,7 @@ export function compileReactApp(source: string): CompileResult {
         ...[...source.matchAll(/^\s*import\s*(['"])([^'"]+)\1/gm)].map(match => match[2]),
         ...[...source.matchAll(/\b(?:require|import)\s*\(\s*(['"])([^'"]+)\1\s*\)/g)].map(match => match[2]),
     ];
-    const disallowed = [...new Set(imports.filter(name => !ALLOWED_IMPORTS.includes(name)))];
+    const disallowed = [...new Set(imports.filter(name => !ALLOWED_IMPORTS.includes(name) && !MUI_PATH.test(name)))];
     if (disallowed.length) {
         return { ok: false, manifest, error: `Cannot import ${disallowed.map(name => `"${name}"`).join(', ')}. Apps can import only: ${ALLOWED_IMPORTS.filter(name => name !== 'react/jsx-runtime').join(', ')}.` };
     }
@@ -108,7 +116,8 @@ export function compileReactApp(source: string): CompileResult {
         return { ok: false, manifest, error: 'The app must `export default` a React component.' };
     }
     const optionalModules: OptionalModule[] = [...OPTIONAL_IMPORTS.filter(name => imports.includes(name)
-        || (name === '@df/geo' && FLINT_MAP_CHART.test(source))), ...(CHART_LINK.test(source) ? ['flint-links' as const] : [])];
+        || (name === '@df/geo' && FLINT_MAP_CHART.test(source))
+        || (name === '@mui/icons-material' && imports.some(path => path.startsWith('@mui/icons-material/')))), ...(CHART_CHECKS.test(source) ? ['flint-links' as const] : [])];
     return { ok: true, code, manifest, optionalModules };
 }
 

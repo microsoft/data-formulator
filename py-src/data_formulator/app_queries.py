@@ -22,6 +22,18 @@ import duckdb
 
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 
+
+def _app_records(frame) -> list[dict[str, Any]]:
+    """Rows for an app. A date column (every value at midnight, as DuckDB's DATE arrives in pandas) is written
+    as "YYYY-MM-DD" rather than a midnight timestamp, so charts and labels read it as the date it is."""
+    dated = frame.copy(deep=False)
+    for column in dated.select_dtypes(include=["datetime", "datetimetz"]).columns:
+        values = dated[column]
+        present = values.dropna()
+        if len(present) and (present == present.dt.normalize()).all():
+            dated[column] = values.dt.strftime("%Y-%m-%d").where(values.notna(), None)
+    return df_to_safe_records(dated)
+
 DEFAULT_ROWS = 5_000
 MAX_ROWS = 50_000
 MAX_PARAMS = 100
@@ -137,7 +149,7 @@ def run_app_sql(workspace: Any, tables: Any, sql: Any, params: Any = None, limit
         connection.close()
     truncated = len(frame) > rows
     frame = frame.head(rows)
-    return {"rows": df_to_safe_records(frame), "columns": list(frame.columns), "truncated": truncated}
+    return {"rows": _app_records(frame), "columns": list(frame.columns), "truncated": truncated}
 
 
 def run_app_source_query(workspace: Any, connector_id: Any, table_key: Any, query: Any, limit: Any = None) -> dict[str, Any]:
@@ -182,4 +194,4 @@ def run_app_source_query(workspace: Any, connector_id: Any, table_key: Any, quer
         raise TypeError("Connector query must return a table")
     truncated = table.num_rows > rows
     frame = table.slice(0, rows).to_pandas()
-    return {"rows": df_to_safe_records(frame), "columns": list(frame.columns), "truncated": truncated}
+    return {"rows": _app_records(frame), "columns": list(frame.columns), "truncated": truncated}

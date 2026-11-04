@@ -104,13 +104,15 @@ export interface AppSandboxProps {
     fixPending?: boolean;
     /** Resolve a source the app declared (an external reference id) for live queries. */
     resolveSource?: (source: string) => AppSource | undefined;
+    /** The session the app's queries read (by default the open one), e.g. a sample shown outside its session. */
+    workspaceId?: string;
 }
 
 /** Errors within this long after an app opens are failures of the app as written, not of later use. */
 const AUTO_FIX_WINDOW_MS = 8000;
 
 export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument, initialErrors, reloadKey = 0, reserveTopRight = false, onAskFix,
-    autoFix = false, onHealthy, fixPending = false, resolveSource }) => {
+    autoFix = false, onHealthy, fixPending = false, resolveSource, workspaceId }) => {
     const { t } = useTranslation();
     const containerRef = useRef<HTMLIFrameElement>(null);
     const [containerReady, setContainerReady] = useState(false);
@@ -188,7 +190,7 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
                 }
                 apiRequest<{ rows: unknown; total_row_count?: number; truncated?: boolean }>(request.url, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}) },
                     body: JSON.stringify(request.body),
                 })
                     .then(({ data }) => {
@@ -243,7 +245,7 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
             containerWindow.removeEventListener('message', onMessage);
             frame.remove();
         };
-    }, [containerReady, buildDocument, initialErrors, manifest, title, reloadKey, t]);
+    }, [containerReady, buildDocument, initialErrors, manifest, title, reloadKey, t, workspaceId]);
 
     const askFix = onAskFix && !askedFix ? () => { setAskedFix(true); onAskFix(errors); } : undefined;
 

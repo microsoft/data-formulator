@@ -3,9 +3,11 @@
 
 """The Research toolkit's MCP server: search, track and read arXiv papers.
 
-Started by Data Formulator over stdio (``python -m data_formulator.tool_packs.research``). Lists come
-back as JSON tables the agent can load with ``create_data``; full texts come back as Markdown (from
-arXiv's HTML) or the PDF, which Data Formulator saves to scratch for the agent to read.
+Started by Data Formulator over stdio (``python -m data_formulator.tool_packs.research``). Searching and counting go to
+OpenAlex (citation counts, generous limits; see ``openalex``), and to arXiv's own API for what only it has: its
+categories, the last few days' papers, paper records and full texts, and as the fallback when OpenAlex cannot answer.
+Lists come back as JSON tables the agent can load with ``create_data``; full texts come back as Markdown (from arXiv's
+HTML) or the PDF, which Data Formulator saves to scratch for the agent to read.
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ from __future__ import annotations
 import argparse
 import base64
 import datetime as dt
+import os
 import re
 from pathlib import Path
 from typing import Any, Literal
@@ -20,8 +23,10 @@ from typing import Any, Literal
 from mcp.server import MCPServer
 from mcp.types import BlobResourceContents, EmbeddedResource, TextContent, TextResourceContents, ToolAnnotations
 
+from . import openalex
 from .arxiv import (HTML_URL, PDF_URL, TTL_PAPER, TTL_RECENT, TTL_SEARCH, TTL_VERSIONED, ArxivError, Client, Response,
                     normalize_id)
+from .openalex import OpenAlexError, parse_day
 
 MAX_LIMIT = 100
 MAX_DETAILS = 20
@@ -29,9 +34,10 @@ MAX_PERIODS = 20
 MAX_FULL_TEXTS = 5
 
 INSTRUCTIONS = """\
-Search, track and read arXiv papers (arXiv's own API; no citation counts).
+Search, track and read arXiv papers. Searches and counts use OpenAlex (with citation counts; it lists new arXiv papers a
+few days late); a category, arXiv query syntax, or the last few days go to arXiv's own API, as do paper records and texts.
 - Lists (search_papers, recent_papers) return a JSON table; load a large one with create_data from the saved file, then chart it.
-- count_papers counts submissions per year or month for trends; it takes a few seconds per period.
+- count_papers counts papers per year or month for trends (slower by category, which arXiv counts a period at a time).
 - For overviews and comparisons, abstracts are usually enough: paper_details reads them for up to 20 ids in one call
   (or pass include_abstracts to a search). Fetch full texts only for the few papers you need in depth.
 - get_full_text saves up to 5 papers per call (Markdown, else PDF) to scratch; read them from there. Ask for several at
@@ -43,6 +49,7 @@ Search, track and read arXiv papers (arXiv's own API; no citation counts).
 READ_ONLY = ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_world_hint=True)
 
 _client: Client | None = None
+_openalex: openalex.Client | None = None
 
 
 def client() -> Client:
@@ -52,24 +59,25 @@ def client() -> Client:
     return _client
 
 
+def openalex_client() -> openalex.Client:
+    global _openalex
+    if _openalex is None:
+        _openalex = openalex.Client(api_key=os.environ.get("OPENALEX_API_KEY"))
+    return _openalex
+
+
+def _arxiv_only(query: str = "", category: str = "") -> bool:
+    """A search only arXiv's API can run: by arXiv category, or in arXiv's own query syntax."""
+    return bool(category.strip() or _FIELDS.search(query) or re.search(r"\b(AND|OR|ANDNOT)\b", query))
+
+
 # -- query building --
 
 _FIELDS = re.compile(r"\b(ti|au|abs|co|jr|cat|rn|id|all|submittedDate):", re.I)
 
 
 def _day(value: str, end: bool) -> str:
-    text = str(value).strip()
-    for pattern, fill in (("%Y-%m-%d", None), ("%Y-%m", "month"), ("%Y", "year")):
-        try:
-            day = dt.datetime.strptime(text, pattern).date()
-        except ValueError:
-            continue
-        if end and fill == "month":
-            day = (day.replace(day=28) + dt.timedelta(days=4)).replace(day=1) - dt.timedelta(days=1)
-        elif end and fill == "year":
-            day = day.replace(month=12, day=31)
-        return day.strftime("%Y%m%d")
-    raise ArxivError(f"Use a date like 2024, 2024-05 or 2024-05-17, not {value!r}.")
+    return parse_day(value, end).strftime("%Y%m%d")
 
 
 def _terms(text: str, field: str) -> list[str]:
@@ -119,6 +127,24 @@ def _row(paper: dict[str, Any], abstracts: bool) -> dict[str, Any]:
     return row
 
 
+def _openalex_row(paper: dict[str, Any], abstracts: bool) -> dict[str, Any]:
+    authors = paper["authors"]
+    row = {
+        "id": paper["id"],
+        "title": paper["title"],
+        "first_author": authors[0] if authors else None,
+        "authors": ", ".join(authors[:5]) + (f" et al. ({len(authors)} authors)" if len(authors) > 5 else ""),
+        "published": paper["published"],
+        "year": paper["year"],
+        "cited_by": paper["cited_by"],
+        "topic": paper["topic"],
+        "url": paper["url"],
+    }
+    if abstracts:
+        row["abstract"] = paper["abstract"]
+    return row
+
+
 def _bounded(limit: int) -> int:
     return max(1, min(MAX_LIMIT, int(limit)))
 
@@ -130,17 +156,31 @@ app = MCPServer("research", instructions=INSTRUCTIONS)
 
 @app.tool(annotations=READ_ONLY)
 def search_papers(query: str = "", title: str = "", author: str = "", category: str = "", date_from: str = "",
-                  date_to: str = "", sort: Literal["relevance", "newest", "updated"] = "relevance", limit: int = 25,
+                  date_to: str = "", sort: Literal["relevance", "newest", "cited", "updated"] = "relevance", limit: int = 25,
                   offset: int = 0, include_abstracts: bool = False) -> dict[str, Any]:
-    """Search arXiv papers. `query` is free text (all words must match) or arXiv syntax such as
-    `ti:transformer AND cat:cs.CL`; `category` takes ids like cs.HC (several separated by commas);
-    dates are submission dates (2024, 2024-05 or 2024-05-17). Returns up to 100 papers per call; page with `offset`."""
+    """Search arXiv papers. `query` is free text, or arXiv syntax such as `ti:transformer AND cat:cs.CL`; `title` and
+    `author` narrow it; `category` takes arXiv ids like cs.HC (several separated by commas); dates (2024, 2024-05 or
+    2024-05-17) bound publication. `sort` "cited" puts the most cited first. Rows carry citation counts (`cited_by`)
+    and a topic, except for a search by category or in arXiv syntax, which arXiv answers with its categories instead.
+    Returns up to 100 papers per call; page with `offset`."""
+    if not _arxiv_only(query, category) and sort != "updated":
+        try:
+            total, first, papers = openalex_client().search(query=query, title=title, author=author, date_from=date_from,
+                                                            date_to=date_to, sort=sort, limit=_bounded(limit), offset=offset)
+            return {"source": "openalex", "total": total, "offset": first, "returned": len(papers),
+                    "papers": [_openalex_row(paper, include_abstracts) for paper in papers]}
+        except OpenAlexError as exc:
+            note = f"Searched arXiv instead: {exc}"
+        if not (query.strip() or title.strip() or author.strip() or category.strip()):
+            raise ArxivError(note)
+    else:
+        note = None
     search = build_query(query, title, author, category, date_from, date_to)
-    sort_by = {"relevance": "relevance", "newest": "submittedDate", "updated": "lastUpdatedDate"}[sort]
+    sort_by = {"relevance": "relevance", "newest": "submittedDate", "updated": "lastUpdatedDate", "cited": "relevance"}[sort]
     total, papers = client().query(search_query=search, start=max(0, int(offset)), max_results=_bounded(limit),
                                    sort_by=sort_by, ttl=TTL_SEARCH)
-    return {"query": search, "total": total, "offset": offset, "returned": len(papers),
-            "papers": [_row(paper, include_abstracts) for paper in papers]}
+    return {"source": "arxiv", "query": search, "total": total, "offset": offset, "returned": len(papers),
+            **({"note": note} if note else {}), "papers": [_row(paper, include_abstracts) for paper in papers]}
 
 
 @app.tool(annotations=READ_ONLY)
@@ -192,16 +232,29 @@ def _periods(by: str, date_from: str, date_to: str) -> list[tuple[str, str, str]
 @app.tool(annotations=READ_ONLY)
 def count_papers(date_from: str, date_to: str = "", by: Literal["year", "month"] = "year", query: str = "",
                  title: str = "", author: str = "", category: str = "") -> dict[str, Any]:
-    """How many arXiv papers match, per year or month of submission (up to 20 periods), for trend charts.
-    Each period is one arXiv request, a few seconds apart."""
+    """How many arXiv papers match, per year or month of publication (up to 20 periods), for trend charts.
+    By category (or in arXiv query syntax) each period is one arXiv request, a few seconds apart."""
+    periods = _periods(by, date_from, date_to)
+    filters = {key: value for key, value in {"query": query, "title": title, "author": author, "category": category}.items() if value}
+    if not _arxiv_only(query, category):
+        try:
+            search = openalex_client()
+            if by == "year":
+                found = search.count(query=query, title=title, author=author, date_from=periods[0][1],
+                                     date_to=periods[-1][2], by_year=True)
+                counts = [{by: label, "papers": found.get(label, 0)} for label, _, _ in periods]
+            else:
+                counts = [{by: label, "papers": search.count(query=query, title=title, author=author, date_from=first,
+                                                              date_to=last)} for label, first, last in periods]
+            return {"source": "openalex", "by": by, "filters": filters, "counts": counts}
+        except OpenAlexError:
+            pass  # counted on arXiv below
     counts = []
-    for label, first, last in _periods(by, date_from, date_to):
-        search = build_query(query, title, author, category, first, last)
-        total, _ = client().query(search_query=search, max_results=1, ttl=TTL_SEARCH)
+    for label, first, last in periods:
+        search_query = build_query(query, title, author, category, first, last)
+        total, _ = client().query(search_query=search_query, max_results=1, ttl=TTL_SEARCH)
         counts.append({by: label, "papers": total})
-    return {"by": by, "filters": {key: value for key, value in
-                                  {"query": query, "title": title, "author": author, "category": category}.items() if value},
-            "counts": counts}
+    return {"source": "arxiv", "by": by, "filters": filters, "counts": counts}
 
 
 def html_to_markdown(html: bytes) -> str | None:
@@ -280,10 +333,13 @@ def _pdf(paper: str, ttl: float | None) -> Response:
 
 
 def main(argv: list[str] | None = None) -> None:
-    global _client
+    global _client, _openalex
     parser = argparse.ArgumentParser(description="Data Formulator's Research toolkit (arXiv) as an MCP server.")
     parser.add_argument("--email", default="", help="Contact address sent to arXiv with each request.")
-    parser.add_argument("--cache", default="", help="Directory for cached arXiv responses.")
+    parser.add_argument("--cache", default="", help="Directory for cached arXiv and OpenAlex responses.")
     options = parser.parse_args(argv)
-    _client = Client(Path(options.cache).expanduser() if options.cache else None, options.email or None)
+    cache = Path(options.cache).expanduser() if options.cache else None
+    _client = Client(cache, options.email or None)
+    # The OpenAlex key, if the user set one, comes from the credential vault as an environment variable.
+    _openalex = openalex.Client(cache / "openalex" if cache else None, os.environ.get("OPENALEX_API_KEY"))
     app.run("stdio")

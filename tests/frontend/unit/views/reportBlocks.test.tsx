@@ -3,11 +3,15 @@ import { describe, expect, it, vi } from 'vitest';
 import MarkdownIt from 'markdown-it';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table-row';
+import { TableHeader } from '@tiptap/extension-table-header';
+import { TableCell } from '@tiptap/extension-table-cell';
 import { Markdown } from 'tiptap-markdown';
 import { createTheme } from '@mui/material/styles';
 import {
-    excerptCitation, excerptLinks, parseBlockAttrs, quotedPassage, reportBlocksPlugin, resolveCitations, segmentStreamingLines,
-    splitFrontMatter,
+    excerptCitation, excerptLinks, parseBlockAttrs, quotedPassage, reportBlocksPlugin, resolveCitations, splitFrontMatter,
+    streamingReportText,
 } from '../../../../src/views/reportBlocks';
 import {
     Callout, DEFAULT_REPORT_BLOCK_LABELS, Excerpt, reportBlockExtensions,
@@ -78,14 +82,40 @@ describe('excerpt citation and target', () => {
     });
 });
 
-describe('segmentStreamingLines', () => {
-    it('groups lines into blocks, keeps an unclosed block open, and hides partial directives', () => {
-        const segments = segmentStreamingLines(['Intro', ':::excerpt{source="files/a.md"}', 'Quoted', ':::', ':::callout{kind=caveat}', 'Still writ', ':::excer']);
-        expect(segments).toEqual([
-            { type: 'lines', lines: ['Intro'] },
-            { type: 'block', block: 'excerpt', attrs: { source: 'files/a.md' }, closed: true, children: [{ type: 'lines', lines: ['Quoted'] }] },
-            { type: 'block', block: 'callout', attrs: { kind: 'caveat' }, closed: false, children: [{ type: 'lines', lines: ['Still writ'] }] },
-        ]);
+describe('streamingReportText', () => {
+    it('keeps prose still arriving, and holds a line that would show as raw syntax until it is complete', () => {
+        expect(streamingReportText('# Brief\n\nCosts rose by')).toBe('# Brief\n\nCosts rose by');
+        for (const partial of [':::excer', '![Trend](chart://c', '[^madaan]: [Self', '```pyth', '| 1 | 2']) {
+            expect(streamingReportText(`Intro\n${partial}`)).toBe('Intro');
+        }
+    });
+
+    it('shows a table once its delimiter row arrives, and its rows as they complete', () => {
+        expect(streamingReportText('Intro\n\n| Region | Cost |\n')).toBe('Intro\n');
+        expect(streamingReportText('Intro\n\n| Region | Cost |\n|---|--')).toBe('Intro\n');
+        expect(streamingReportText('Intro\n\n| Region | Cost |\n|---|---:|\n| North | 4')).toBe('Intro\n\n| Region | Cost |\n|---|---:|');
+        expect(streamingReportText('| Region | Cost |\n|---|---|\n| North | 4 |\n')).toBe('| Region | Cost |\n|---|---|\n| North | 4 |\n');
+        // A pipe line a blank line has ended is prose, not a table still arriving.
+        expect(streamingReportText('| not a table |\n\nNext')).toBe('| not a table |\n\nNext');
+    });
+
+    it('drops citations until their definitions arrive', () => {
+        expect(streamingReportText('Claim[^a] and[^b] more[^ma')).toBe('Claim and more');
+        expect(streamingReportText('Claim[^a].\n\n[^a]: Source\n')).toBe('Claim[^a].\n\n[^a]: Source\n');
+    });
+
+    it('formats a partial report the way the finished one is formatted', () => {
+        const editor = new Editor({
+            element: document.createElement('div'),
+            extensions: [StarterKit, Table, TableRow, TableHeader, TableCell, Callout, Markdown.configure({ html: true })],
+            content: streamingReportText('# Costs\n\n| Region | Cost |\n|---|---|\n| North | 4 |\n\n:::caveat\nAbstract-only rev'),
+        });
+        const html = editor.getHTML();
+        expect(html).toContain('<th');
+        expect(html).toContain('North');
+        expect(html).toMatch(/<aside[^>]*data-kind="caveat"/);
+        expect(html).toContain('Abstract-only rev');
+        editor.destroy();
     });
 });
 

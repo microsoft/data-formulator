@@ -196,6 +196,25 @@ class TestSessionState:
         )
         assert meta["displayName"] == "Some Name"
 
+    def test_set_starred_survives_saves_without_bumping_updated_at(self, manager):
+        manager.create_workspace("ws")
+        manager.save_session_state("ws", {"tables": [], "activeWorkspace": {"id": "ws", "displayName": "Sales"}})
+        meta_file = manager.get_workspace_path("ws") / WORKSPACE_META_FILENAME
+        updated_at = json.loads(meta_file.read_text(encoding="utf-8"))["updatedAt"]
+
+        manager.set_starred("ws", True)
+
+        assert json.loads(meta_file.read_text(encoding="utf-8"))["updatedAt"] == updated_at
+        assert [w["starred"] for w in manager.list_workspaces()] == [True]
+
+        manager.save_session_state("ws", {"tables": [], "activeWorkspace": {"id": "ws", "displayName": "Sales"}})
+        manager.update_display_name("ws", "Renamed")
+        assert manager.list_workspaces()[0]["starred"] is True
+
+        manager.set_starred("ws", False)
+        assert "starred" not in json.loads(meta_file.read_text(encoding="utf-8"))
+        assert manager.list_workspaces()[0]["starred"] is False
+
     def test_save_to_nonexistent_workspace_raises(self, manager):
         with pytest.raises(ValueError, match="does not exist"):
             manager.save_session_state("nope", {"tables": []})

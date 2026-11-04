@@ -539,6 +539,7 @@
     "movingFile": "移動しています",
     "movedFile": "{{from}} を {{to}} に移動しました",
     "editedChart": "チャート {{name}} を編集しました",
+    "savedTheme": "テーマ {{name}} を保存しました",
     "editedReport": "レポート {{name}} を編集しました",
     "editSkippedChanged": "{{name}} へのエージェントの編集は適用されませんでした: エージェントの作業中に変更されました",
     "jumpToThreadRange": "スレッド {{label}} に移動します",
@@ -836,6 +837,11 @@
     "publishExample": "サンプルとして公開",
     "publishedExample": "「{{title}}」をサンプルセッションとして公開しました。",
     "publishExampleFailed": "サンプルセッションを公開できませんでした。",
+    "star": "スターを付ける",
+    "unstar": "スターを外す",
+    "starred": "スター付き",
+    "showAllStarred": "スター付きをすべて表示（{{count}}）",
+    "starFailed": "スターを更新できませんでした。もう一度お試しください。",
     "yourSchedules": "あなたのスケジュール",
     "yourWorkflows": "あなたのワークフロー",
     "importSession": "セッションをインポート",
@@ -1524,7 +1530,9 @@
     "created": "アプリを作成しました: {{title}}",
     "updated": "アプリを更新しました: {{title}}",
     "backToApp": "アプリに戻る",
-    "backToMap": "地図に戻る"
+    "backToMap": "地図に戻る",
+    "generating": "アプリを生成中",
+    "generatingPage": "ページを生成中"
   },
   "mcp": {
     "connect": "接続",
@@ -1537,9 +1545,8 @@
     "turnOff": "オフにする",
     "serverEnabled": "{{name}} を使用",
     "toolEnabled": "{{name}} を使用",
-    "showTools": "ツールを表示",
     "noTools": "接続するとサーバーのツールが表示されます。",
-    "alwaysAllow": "常に許可",
+    "toolList": "ツール",
     "toolsChanged": "新規または変更されたツールは許可するまで保留されます：{{names}}",
     "approveChanges": "許可",
     "headerValue": "{{header}} の値",
@@ -1605,15 +1612,72 @@
     "removeNamed": "{{name}} を削除",
     "pack": {
       "builtIn": "Data Formulator ツールキット",
-      "add": "追加",
-      "added": "追加済み",
+      "noSettings": "設定は不要です。追加すればすぐに使えます。",
       "research": {
         "name": "リサーチ",
-        "description": "arXiv を検索し、分野の新着論文を追い、出版動向をグラフにし、全文を読みます。",
+        "description": "OpenAlex の被引用数つきで arXiv 論文を検索し、分野の新着論文を追い、出版動向をグラフにし、全文を読みます。",
         "email": "連絡先メール（任意）",
-        "emailHint": "arXiv が自動クライアントに求めるとおり、各リクエストとともに arXiv に送信されます。"
+        "emailHint": "arXiv が自動クライアントに求めるとおり、各リクエストとともに arXiv に送信されます。",
+        "openalex_key": "OpenAlex API キー（任意）",
+        "openalex_keyHint": "検索には OpenAlex を使います。キーがないとネットワーク全体で少ない1日の予算を共有します。無料のキー（openalex.org/settings/api）で10倍になります。"
+      },
+      "github": {
+        "name": "GitHub",
+        "description": "公開 GitHub リポジトリ、コード、Issue を検索し、README やファイルを読みます。読み取り専用。"
+      },
+      "huggingface": {
+        "name": "Hugging Face データセット",
+        "description": "Hugging Face Hub でデータセットを探し、説明と行を確認して、表として読み込みます。",
+        "hf_token": "Hugging Face トークン",
+        "hf_tokenHint": "huggingface.co/settings/tokens の読み取りトークン。"
+      },
+      "finance": {
+        "name": "金融",
+        "description": "SEC EDGAR の企業財務データと提出書類、FRED の経済系列、株価（無料の Twelve Data キーが必要）。",
+        "email": "連絡先メール",
+        "emailHint": "SEC が自動化クライアントに求めるとおり、各リクエストとともに SEC に送信されます。",
+        "twelvedata_key": "Twelve Data API キー（任意）",
+        "twelvedata_keyHint": "株価用：無料キー（twelvedata.com）で 1 日 800 リクエストまで使えます。",
+        "fred_key": "FRED API キー（任意）",
+        "fred_keyHint": "キーワードで経済系列を検索するために使います。ID で系列を取得するだけならキーは不要です。fred.stlouisfed.org で無料で入手できます。"
+      },
+      "notAdded": "未追加",
+      "runsLocally": "Data Formulator とともにこのコンピューターで実行されます。キーは資格情報ストアに保存されます。",
+      "toolsPreview": "追加後にそれぞれをオンまたはオフにできます。"
+    },
+    "signin": {
+      "signedInAs": "GitHub に @{{login}} としてサインイン中 · 公開リポジトリのみ読み取ります",
+      "prompt": "GitHub でサインインすると、コード検索ができ、ご自身のレート制限を使えます。読み取り専用：公開リポジトリのみ。",
+      "reuse": "@{{login}} を使う",
+      "start": "GitHub でサインイン",
+      "signOut": "サインアウト",
+      "cancel": "キャンセル",
+      "enterCode": "このコードを GitHub に入力して承認してください。ここで待機します。",
+      "code": "サインインコード",
+      "open": "コードをコピーして GitHub を開く",
+      "failed": "GitHub のサインインが完了しませんでした。もう一度お試しください。",
+      "paste": "またはトークンを貼り付け",
+      "huggingface": {
+        "prompt": "Hugging Face にサインインすると、同意済みのアクセス制限付きデータセットを開け、自分のレート制限を使えます。読み取り専用。",
+        "signedInAs": "Hugging Face に @{{login}} としてサインイン済み · 公開データセットと同意済みの制限付きデータセットを読み取ります",
+        "start": "Hugging Face でサインイン",
+        "enterCode": "Hugging Face でこのコードを入力して承認してください。ここで待機します。",
+        "open": "コードをコピーして Hugging Face を開く",
+        "failed": "Hugging Face のサインインが完了しませんでした。もう一度お試しください。"
       }
-    }
+    },
+    "section": {
+      "setup": "設定"
+    },
+    "key": {
+      "set": "設定済み",
+      "notSet": "未設定",
+      "add": "キーを追加"
+    },
+    "signedIn": "サインイン済み",
+    "signInHint": "接続するにはサインインします（提供元のページが開きます）。",
+    "alwaysAllowed": "確認なしで実行",
+    "alwaysAllowedHint": "エージェントの確認時に「このツールを常に許可」を選びました。削除すると再び確認されます。"
   },
   "tools": {
     "chipDetails": "エージェントが使えるツール：ターミナルと MCP サーバー",
@@ -1634,25 +1698,32 @@
     },
     "locked": "サーバーの環境変数 DF_TERMINAL_MODE で設定されています。",
     "close": "閉じる",
+    "back": "すべてのツール",
     "terminal": {
       "name": "ターミナル",
       "caption": "CLI のログインを使ってこのコンピューターでコマンドを実行",
       "off": "オフ",
       "sandboxed": "サンドボックス内",
       "unsandboxed": "サンドボックス未インストール",
-      "details": "ターミナルの詳細",
       "use": "ターミナルを使用"
     },
     "count_one": "ツール {{count}} 個",
     "count_other": "ツール {{count}} 個",
     "chipLabel": "ツール：{{count}} 個オン、{{mode}}",
     "add": {
-      "packs": "Data Formulator ツールキット",
       "custom": "カスタム MCP サーバー",
-      "label": "追加",
-      "collapse": "折りたたむ"
+      "customAbout": "任意の MCP サーバー：URL で接続するリモートサーバー、またはローカルコマンド。構成の形式は VS Code、Claude、Cursor と同じです。"
     },
-    "addTool": "+ ツールを追加"
+    "addTool": "+ ツールを追加",
+    "home": {
+      "yours": "あなたのツール",
+      "more": "さらに追加",
+      "setUp": "+ 設定して追加",
+      "customAbout": "構成 JSON から追加する任意の MCP サーバー。",
+      "paste": "+ 構成を貼り付け"
+    },
+    "addToolkit": "ツールキットを追加",
+    "done": "完了"
   },
   "map": {
     "style": "スタイル",
@@ -1702,6 +1773,10 @@
     "selectedCount": "{{count}} 件を選択",
     "clearSelection": "選択を解除",
     "moreCount": "ほか {{count}} 件",
+    "changedCount": "{{count}} 件変更",
+    "showLess": "折りたたむ",
+    "minimizeControls": "コントロールを最小化",
+    "showControls": "すべてのコントロールを表示",
     "summary": "概要",
     "selection": "選択",
     "places": "場所",
@@ -1856,6 +1931,7 @@
       "arc": "弧",
       "great-circle": "大円",
       "straight": "直線"
-    }
+    },
+    "generating": "地図を生成中"
   }
 }

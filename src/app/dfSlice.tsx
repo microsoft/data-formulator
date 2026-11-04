@@ -1,9 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
+import { createAsyncThunk, createSlice, PayloadAction, createSelector, original } from '@reduxjs/toolkit'
 import { shallowEqual } from 'react-redux';
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, DraftNode, InteractionEntry, DeriveStatus, TextTurn, TerminalExecution, ToolCall, InputTable, TableSemanticsInfo, LoadedTableNode, ProgressStep } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, DraftNode, InteractionEntry, DeriveStatus, TextTurn, DraftWriting, TerminalExecution, ToolCall, InputTable, TableSemanticsInfo, LoadedTableNode, ProgressStep } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { ArtifactSetNode, DictTable, FileNode, ReplacedArtifact, ExternalTableReference, ComputationInputSource, createConversationRootId, isConversationRootId } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
@@ -22,7 +22,7 @@ import { Identity, getBrowserId } from './identity';
 import { REHYDRATE } from 'redux-persist';
 import { setInputTablePreview } from './inputTablePreviewCache';
 import { materializeInputTablePreview, materializeTables } from './tableResolution';
-import { buildThreadGraph } from './threadGraph';
+import { buildThreadGraph, conversationNodeIds, threadChatNodeIds, threadOfNode } from './threadGraph';
 import type { SiteConfig } from '../sites/types';
 import { splitFrontMatter, type ReportGenre } from '../views/reportBlocks';
 
@@ -172,7 +172,7 @@ export type FocusedId =
  * goes when the user moves on, unless they keep it (double-click, `pinned`), after which it stays like a
  * report until closed. `addedAt`/`viewedAt` order the tabs for the cap.
  */
-export type CanvasTab = { key: string; target: Exclude<NonNullable<FocusedId>, { type: 'draft' } | { type: 'reference' }>;
+export type CanvasTab = { key: string; target: Exclude<NonNullable<FocusedId>, { type: 'reference' }>;
     pinned?: boolean; unseen?: boolean; addedAt?: number; viewedAt?: number };
 export const MAX_CANVAS_TABS = 40;
 /** Tabs shown before the strip has measured its width; after that it shows as many as fit. */
@@ -220,23 +220,29 @@ export const canvasTabKey = (target: NonNullable<FocusedId>): string => {
     }
 };
 
-const isTabTarget = (target: FocusedId): target is CanvasTab['target'] =>
-    !!target && target.type !== 'draft' && target.type !== 'reference';
+const isTabTarget = (target: FocusedId): target is CanvasTab['target'] => !!target && target.type !== 'reference';
 
 /** A message with a view of its own (design-docs/58, rule 2); other messages show in the chat, beside what the canvas shows. */
 export const textTurnOwnsCanvas = (turn: TextTurn | undefined): boolean => !!turn && !!(turn.dataOperation || turn.form || turn.workflow
     || (turn.textKind === 'explain' && turn.presentation === 'long_response'));
 
-/** Whether a saved tab still opens something: a message's tab only while the message has a view of its own. */
-const keepsCanvasTab = (tab: CanvasTab, textTurns: TextTurn[]): boolean =>
-    tab.target.type !== 'text' || textTurnOwnsCanvas(textTurns.find(turn => turn.id === (tab.target as { textId: string }).textId));
+/** A run's open end has a view of its own while it writes an app or map: the artifact taking shape (design-docs/58, rule 2). */
+export const draftOwnsCanvas = (draft: DraftNode | undefined): boolean => !!draft?.derive.writing;
 
 /**
- * Whatever the canvas shows can have a tab, except a message the chat shows (an answer, a question);
- * only a message with a view of its own opens one.
+ * Whether a saved tab still opens something: a message's tab only while the message has a view of its own; a run's
+ * open end never (a reload ends the run).
+ */
+const keepsCanvasTab = (tab: CanvasTab, textTurns: TextTurn[]): boolean => tab.target.type !== 'draft'
+    && (tab.target.type !== 'text' || textTurnOwnsCanvas(textTurns.find(turn => turn.id === (tab.target as { textId: string }).textId)));
+
+/**
+ * Whatever the canvas shows can have a tab, except a message the chat shows (an answer, a question) or a run's
+ * open end; only one with a view of its own opens one.
  */
 const opensCanvasTab = (state: DataFormulatorState, target: CanvasTab['target']): boolean => {
     if (target.type === 'text') return textTurnOwnsCanvas(state.textTurns.find(turn => turn.id === target.textId));
+    if (target.type === 'draft') return draftOwnsCanvas(state.draftNodes.find(draft => draft.id === target.draftId));
     return true;
 };
 
@@ -262,6 +268,41 @@ const ensureCanvasTab = (state: DataFormulatorState, target: CanvasTab['target']
         state.canvasTabs = state.canvasTabs.filter(item => item.key !== drop.key);
     }
     return state.canvasTabs.find(item => item.key === key)!;
+};
+
+/** A message the chat shows in full; one that waits on the user (a question, a form, a data step) or a run opens on its own. */
+export const chatShowsTurn = (turn: TextTurn | undefined): boolean => !!turn && !turn.dataOperation && !turn.form && !turn.workflow
+    && !(turn.textKind === 'clarify' && !turn.answered && !!turn.options?.length);
+
+/**
+ * With a chat open, it stays open: a message it shows is brought into view there (in its own thread's chat if it is
+ * on another thread), and a run's newest result (`follow`) is too, if the chat shows it, rather than replacing the
+ * chat. Returns whether the focus stayed on the chat.
+ */
+const stayInChat = (state: DataFormulatorState, target: FocusedId, follow: boolean): boolean => {
+    const chat = state.focusedId;
+    if (chat?.type !== 'conversation' || !target || target.type === 'conversation') return false;
+    // The graph comes from the state before this action, which did not change it, so the memoized one serves.
+    const graph = selectThreadGraph(original(state) ?? state);
+    if (target.type === 'text') {
+        const turn = state.textTurns.find(item => item.id === target.textId);
+        if (!turn || !chatShowsTurn(turn)) return false;
+        const thread = threadOfNode(graph, turn.id);
+        if (thread && thread.key !== chat.tableId) {
+            state.focusedId = { type: 'conversation', tableId: thread.key, nodeIds: threadChatNodeIds(graph, thread), anchorId: turn.id };
+        } else {
+            chat.anchorId = turn.id;
+        }
+        return true;
+    }
+    if (!follow) return false;
+    const anchorId = target.type === 'table' ? target.tableId
+        : target.type === 'chart' ? collectAllCharts(state).find(chart => chart.id === target.chartId)?.tableRef
+        : target.type === 'reference' ? state.loadedTableNodes.find(node => node.id === target.referenceId)?.tableId
+        : undefined;
+    const shown = conversationNodeIds(graph, chat.tableId, chat.nodeIds) ?? [];
+    if (anchorId && shown.some(id => id === anchorId || graph.nodes.get(id)?.tableId === anchorId)) chat.anchorId = anchorId;
+    return true;
 };
 
 export const explanationContent = (content: string) => content;
@@ -1356,6 +1397,7 @@ export const dataFormulatorSlice = createSlice({
                             derive: {
                                 ...node.derive,
                                 status: 'interrupted' as const,
+                                writing: undefined,
                                 progressSteps: interruptProgressSteps(node.derive.progressSteps),
                                 trigger: {
                                     ...node.derive.trigger,
@@ -2104,7 +2146,16 @@ export const dataFormulatorSlice = createSlice({
             const draft = state.draftNodes.find(d => d.id === action.payload.nodeId);
             if (draft?.derive) {
                 draft.derive.status = action.payload.status;
+                // A run that stopped is no longer writing anything.
+                if (action.payload.status !== 'running' && action.payload.status !== 'clarifying') delete draft.derive.writing;
             }
+        },
+        /** The artifact a run's open end is writing (or, with none, that it has stopped: the artifact landed or failed). */
+        setDraftWriting: (state, action: PayloadAction<{ draftId: string; writing?: DraftWriting }>) => {
+            const draft = state.draftNodes.find(d => d.id === action.payload.draftId);
+            if (!draft?.derive) return;
+            if (action.payload.writing) draft.derive.writing = action.payload.writing;
+            else delete draft.derive.writing;
         },
         promoteDraft: (state, action: PayloadAction<{ draftId: string; rows: any[]; names: string[]; metadata: any; code: string; codeSignature?: string; outputVariable?: string; dialog?: any[]; explanation?: any; virtual: { tableId: string; rowCount: number }; description?: string; source?: DataSourceConfig }>) => {
             const { draftId, rows, names, metadata, code, codeSignature, outputVariable, dialog, explanation, virtual, description, source } = action.payload;
@@ -2227,11 +2278,12 @@ export const dataFormulatorSlice = createSlice({
         /** An agent run shows its newest result: like setFocused, but a report's or app's new tab stays unseen. */
         followFocused: (state, action: PayloadAction<NonNullable<FocusedId>>) => {
             const payload = action.payload;
+            if (isTabTarget(payload) && autoPinned(payload)) ensureCanvasTab(state, payload, true);
+            if (stayInChat(state, payload, true)) { state.canvasFollow = true; return; }
             state.focusedId = payload;
             state.canvasFollow = true;
             if (payload.type === 'chart' && state.viewMode === 'report') state.viewMode = 'editor';
             if (payload.type === 'report') state.viewMode = 'report';
-            if (isTabTarget(payload) && autoPinned(payload)) ensureCanvasTab(state, payload, true);
         },
         /**
          * A result an agent run added while the user was elsewhere: a report, app or map gets a new,
@@ -2288,6 +2340,7 @@ export const dataFormulatorSlice = createSlice({
         },
         setFocused: (state, action: PayloadAction<FocusedId>) => {
             const payload = action.payload;
+            if (stayInChat(state, payload, false)) { state.canvasFollow = false; return; }
             state.focusedId = payload;
             state.canvasFollow = false;
 
@@ -2651,6 +2704,7 @@ export const dataFormulatorSlice = createSlice({
                                 ...node.derive,
                                 status: 'interrupted' as const,
                                 runningPlan: undefined,
+                                writing: undefined,
                                 progressSteps: interruptProgressSteps(node.derive.progressSteps),
                                 trigger: {
                                     ...node.derive.trigger,
@@ -3104,8 +3158,9 @@ export const dfSelectors = {
             (state: DataFormulatorState) => state.loadedTableNodes,
             (state: DataFormulatorState) => state.fileNodes,
             selectThreadGraph,
+            (state: DataFormulatorState) => state.draftNodes,
         ],
-        (focusedId, textTurns, userCharts, triggerCharts, tables, loadedTableNodes, fileNodes, graph): FocusedId => {
+        (focusedId, textTurns, userCharts, triggerCharts, tables, loadedTableNodes, fileNodes, graph, draftNodes): FocusedId => {
             if (focusedId?.type === 'reference') {
                 const node = loadedTableNodes.find(item => item.id === focusedId.referenceId);
                 if (node) return node.external ? { type: 'external-table', referenceId: node.tableId } : { type: 'table', tableId: node.tableId };
@@ -3113,6 +3168,7 @@ export const dfSelectors = {
                 return file ? { type: 'file', fileName: file.path } : undefined;
             }
             if (focusedId?.type !== 'text' && focusedId?.type !== 'draft') return focusedId;
+            if (focusedId.type === 'draft' && draftOwnsCanvas(draftNodes.find(draft => draft.id === focusedId.draftId))) return focusedId;
             const startId = focusedId.type === 'text' ? focusedId.textId : focusedId.draftId;
             const turn = textTurns.find(item => item.id === startId);
             // A message with its own view shows it while focused (design-docs/58, rule 2).
@@ -3212,8 +3268,8 @@ export const dfSelectors = {
     getFocusNodeId: createSelector(
         [(state: DataFormulatorState) => state.focusedId, (state: DataFormulatorState) => state.fileNodes,
          (state: DataFormulatorState) => state.loadedTableNodes, (state: DataFormulatorState) => state.charts,
-         selectTriggerCharts, selectAllTables],
-        (focusedId, fileNodes, loadedTableNodes, userCharts, triggerCharts, tables): string | undefined => {
+         selectTriggerCharts, selectAllTables, selectThreadGraph],
+        (focusedId, fileNodes, loadedTableNodes, userCharts, triggerCharts, tables, graph): string | undefined => {
             const charts = [...userCharts, ...triggerCharts];
             if (!focusedId) return undefined;
             switch (focusedId.type) {
@@ -3224,7 +3280,8 @@ export const dfSelectors = {
                 case 'file': return fileNodes.find(node => node.path === focusedId.fileName)?.id;
                 case 'external-table':
                     return [...loadedTableNodes].reverse().find(node => node.external && node.tableId === focusedId.referenceId)?.id;
-                case 'conversation': return focusedId.nodeIds?.at(-1);
+                // The chat's latest node, as the thread stands now: a follow-up from the chat continues it.
+                case 'conversation': return conversationNodeIds(graph, focusedId.tableId, focusedId.nodeIds)?.at(-1);
                 case 'table':
                 case 'chart': {
                     const tableId = focusedId.type === 'table' ? focusedId.tableId : charts.find(chart => chart.id === focusedId.chartId)?.tableRef;

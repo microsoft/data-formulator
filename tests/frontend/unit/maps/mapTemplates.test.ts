@@ -108,4 +108,21 @@ describe('template colours', () => {
             .toEqual({ scheme: 'ylOrRd' });
         expect(templateErrors({ ...flows, properties: { color: 'not a colour' } })).toContain('properties.color must be a CSS colour, such as "#4e79a7" or "darkslategray".');
     });
+
+    it('highlights notable rows as points above the map, with layer toggles', () => {
+        const quakes = { template: 'density' as const, data: { table: 'q' }, encoding: { lat: 'lat', lon: 'lon', weight: 'mag', time: 'year' },
+            properties: { density: 'heatmap' as const, highlight: { field: 'mag', op: '>=' as const, value: 7, label: 'M7+' } } };
+        const compiled = compileTemplate(quakes);
+        expect(compiled.layers.map(layer => [layer.id, layer.type, layer.name])).toEqual([['main', 'heatmap', 'Density'], ['highlight', 'points', 'M7+']]);
+        expect(compiled.layers[1]).toMatchObject({ data: 'main', lon: 'lon', lat: 'lat', filter: [{ field: 'mag', op: '>=', value: 7 }], size: { field: 'mag', max: 6 } });
+        expect(compiled.layers[1].tooltip).toEqual(['mag', 'year']);
+        expect(compiled.controls.map(control => control.type)).toEqual(['slider', 'layers']);
+        // The default name says the condition.
+        expect(compileTemplate({ ...quakes, properties: { highlight: { field: 'mag', op: '>=', value: 7 } } }).layers[1].name).toBe('mag >= 7');
+        // Ignored where marks are not at lat/lon, so switching the map type keeps working.
+        const choropleth = compileTemplate({ template: 'choropleth', data: { table: 'q' }, encoding: { region: 'country', color: 'mag' }, properties: quakes.properties });
+        expect(choropleth.layers).toHaveLength(1);
+        expect(templateErrors({ ...quakes, properties: { highlight: { field: 'mag' } } })[0]).toMatch(/needs field and value/);
+        expect(templateErrors({ ...quakes, properties: { highlight: { field: 'mag', op: '~', value: 7 } } })[0]).toMatch(/op must be one of/);
+    });
 });

@@ -25,6 +25,13 @@ export interface ChartCacheEntry {
     // box Flint laid it out for (its title, keys and axes may run past it).
     displayWidth: number;
     displayHeight: number;
+    /**
+     * The size the chart draws at on the canvas (laid out for the canvas's default chart size, then
+     * contain-scaled into its box): its shape as the user sees it, which the agent is told so an app can
+     * give the chart room of the same shape.
+     */
+    canvasWidth?: number;
+    canvasHeight?: number;
 }
 
 const cache = new Map<string, ChartCacheEntry>();

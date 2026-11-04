@@ -539,6 +539,7 @@
     "movingFile": "Déplacement",
     "movedFile": "{{from}} déplacé vers {{to}}",
     "editedChart": "Graphique {{name}} modifié",
+    "savedTheme": "Thème {{name}} enregistré",
     "editedReport": "Rapport {{name}} modifié",
     "editSkippedChanged": "La modification de l'agent sur {{name}} n'a pas été appliquée : l'élément a changé pendant que l'agent travaillait",
     "jumpToThreadRange": "Accéder aux fils {{label}}",
@@ -836,6 +837,11 @@
     "publishExample": "Publier comme exemple",
     "publishedExample": "« {{title}} » publié comme session d'exemple.",
     "publishExampleFailed": "Impossible de publier la session d'exemple.",
+    "star": "Ajouter aux favoris",
+    "unstar": "Retirer des favoris",
+    "starred": "Favoris",
+    "showAllStarred": "Afficher tous les favoris ({{count}})",
+    "starFailed": "Impossible de mettre à jour le favori. Veuillez réessayer.",
     "yourSchedules": "Vos planifications",
     "yourWorkflows": "Vos workflows",
     "importSession": "Importer la session",
@@ -1524,7 +1530,9 @@
     "created": "Application créée : {{title}}",
     "updated": "Application mise à jour : {{title}}",
     "backToApp": "Retour à l’application",
-    "backToMap": "Retour à la carte"
+    "backToMap": "Retour à la carte",
+    "generating": "Génération de l'application",
+    "generatingPage": "Génération de la page"
   },
   "mcp": {
     "connect": "Se connecter",
@@ -1537,9 +1545,8 @@
     "turnOff": "Désactiver",
     "serverEnabled": "Utiliser {{name}}",
     "toolEnabled": "Utiliser {{name}}",
-    "showTools": "Afficher les outils",
     "noTools": "Connectez-vous pour lister les outils du serveur.",
-    "alwaysAllow": "Toujours autoriser",
+    "toolList": "Outils",
     "toolsChanged": "Les outils nouveaux ou modifiés restent bloqués jusqu’à votre autorisation : {{names}}",
     "approveChanges": "Autoriser",
     "headerValue": "Valeur de {{header}}",
@@ -1605,15 +1612,72 @@
     "removeNamed": "Supprimer {{name}}",
     "pack": {
       "builtIn": "Boîte à outils Data Formulator",
-      "add": "Ajouter",
-      "added": "Ajouté",
+      "noSettings": "Rien à configurer : ajoutez-la et elle est prête.",
       "research": {
         "name": "Recherche",
-        "description": "Chercher dans arXiv, suivre les nouveaux articles d’un domaine, tracer les tendances de publication et lire les textes complets.",
+        "description": "Chercher des articles arXiv avec leurs nombres de citations issus d’OpenAlex, suivre les nouveaux articles d’un domaine, tracer les tendances de publication et lire les textes complets.",
         "email": "E-mail de contact (facultatif)",
-        "emailHint": "Envoyé à arXiv avec chaque requête, comme arXiv le demande aux clients automatisés."
+        "emailHint": "Envoyé à arXiv avec chaque requête, comme arXiv le demande aux clients automatisés.",
+        "openalex_key": "Clé d’API OpenAlex (facultatif)",
+        "openalex_keyHint": "Les recherches passent par OpenAlex. Sans clé, elles partagent un petit budget quotidien avec votre réseau ; une clé gratuite (openalex.org/settings/api) en donne dix fois plus."
+      },
+      "github": {
+        "name": "GitHub",
+        "description": "Chercher dans les dépôts, le code et les tickets publics de GitHub, et lire leurs README et fichiers. Lecture seule."
+      },
+      "huggingface": {
+        "name": "Jeux de données Hugging Face",
+        "description": "Trouver des jeux de données sur le Hub Hugging Face, consulter leurs fiches et leurs lignes, et les charger comme tableaux.",
+        "hf_token": "Jeton Hugging Face",
+        "hf_tokenHint": "Un jeton de lecture de huggingface.co/settings/tokens."
+      },
+      "finance": {
+        "name": "Finance",
+        "description": "Données financières et dépôts des entreprises depuis SEC EDGAR, séries économiques de FRED et cours boursiers (avec une clé Twelve Data gratuite).",
+        "email": "E-mail de contact",
+        "emailHint": "Envoyé à la SEC avec chaque requête, comme elle le demande aux clients automatisés.",
+        "twelvedata_key": "Clé API Twelve Data (facultative)",
+        "twelvedata_keyHint": "Pour les cours boursiers : une clé gratuite (twelvedata.com) permet 800 requêtes par jour.",
+        "fred_key": "Clé API FRED (facultative)",
+        "fred_keyHint": "Pour chercher des séries économiques par mot-clé ; obtenir une série par son identifiant ne demande pas de clé. Gratuite sur fred.stlouisfed.org."
+      },
+      "notAdded": "pas encore ajoutée",
+      "runsLocally": "Elle s’exécute sur cet ordinateur avec Data Formulator ; les clés sont conservées dans votre magasin d’identifiants.",
+      "toolsPreview": "Chacun peut être activé ou désactivé une fois ajouté."
+    },
+    "signin": {
+      "signedInAs": "Connecté à GitHub en tant que @{{login}} · lit uniquement les dépôts publics",
+      "prompt": "Connectez-vous avec GitHub pour chercher dans le code et utiliser vos propres limites de requêtes. Lecture seule : dépôts publics uniquement.",
+      "reuse": "Utiliser @{{login}}",
+      "start": "Se connecter avec GitHub",
+      "signOut": "Se déconnecter",
+      "cancel": "Annuler",
+      "enterCode": "Saisissez ce code sur GitHub, puis approuvez. L’attente se fait ici.",
+      "code": "Code de connexion",
+      "open": "Copier le code et ouvrir GitHub",
+      "failed": "La connexion à GitHub n’a pas abouti. Réessayez.",
+      "paste": "Ou coller un jeton",
+      "huggingface": {
+        "prompt": "Connectez-vous avec Hugging Face pour ouvrir les jeux de données à accès restreint que vous avez acceptés et utiliser vos propres limites. Lecture seule.",
+        "signedInAs": "Connecté à Hugging Face en tant que @{{login}} · lit les jeux de données publics et restreints acceptés",
+        "start": "Se connecter avec Hugging Face",
+        "enterCode": "Saisissez ce code sur Hugging Face, puis approuvez. Cette fenêtre vous attend.",
+        "open": "Copier le code et ouvrir Hugging Face",
+        "failed": "La connexion à Hugging Face n’a pas abouti. Réessayez."
       }
-    }
+    },
+    "section": {
+      "setup": "Configuration"
+    },
+    "key": {
+      "set": "Définie",
+      "notSet": "Non définie",
+      "add": "Ajouter une clé"
+    },
+    "signedIn": "Connecté",
+    "signInHint": "Connectez-vous pour vous connecter au serveur (la page du fournisseur s’ouvre).",
+    "alwaysAllowed": "S’exécute sans demander",
+    "alwaysAllowedHint": "Vous avez choisi « Toujours autoriser cet outil » quand l’agent l’a demandé. Retirez-le pour être de nouveau sollicité."
   },
   "tools": {
     "chipDetails": "Outils utilisables par l’agent : le terminal et les serveurs MCP",
@@ -1634,25 +1698,32 @@
     },
     "locked": "Défini par la variable d’environnement serveur DF_TERMINAL_MODE.",
     "close": "Fermer",
+    "back": "Tous les outils",
     "terminal": {
       "name": "Terminal",
       "caption": "Exécuter des commandes sur cet ordinateur avec vos connexions CLI",
       "off": "Désactivé",
       "sandboxed": "En bac à sable",
       "unsandboxed": "Aucun bac à sable installé",
-      "details": "Détails du terminal",
       "use": "Utiliser le terminal"
     },
     "count_one": "{{count}} outil",
     "count_other": "{{count}} outils",
     "chipLabel": "Outils : {{count}} activé(s), {{mode}}",
     "add": {
-      "packs": "Boîtes à outils Data Formulator",
       "custom": "Serveur MCP personnalisé",
-      "label": "Ajouter",
-      "collapse": "Réduire"
+      "customAbout": "N'importe quel serveur MCP : un serveur distant par son URL, ou une commande locale. Le format de configuration est le même que dans VS Code, Claude et Cursor."
     },
-    "addTool": "+ Ajouter un outil"
+    "addTool": "+ Ajouter un outil",
+    "home": {
+      "yours": "Vos outils",
+      "more": "Ajouter d’autres outils",
+      "setUp": "+ Configurer et ajouter",
+      "customAbout": "N’importe quel serveur MCP, à partir de sa configuration JSON.",
+      "paste": "+ Coller sa configuration"
+    },
+    "addToolkit": "Ajouter la boîte à outils",
+    "done": "Terminé"
   },
   "map": {
     "style": "Style",
@@ -1702,6 +1773,10 @@
     "selectedCount": "{{count}} sélectionné(s)",
     "clearSelection": "Effacer la sélection",
     "moreCount": "{{count}} de plus",
+    "changedCount": "{{count}} modifié(s)",
+    "showLess": "Afficher moins",
+    "minimizeControls": "Réduire les contrôles",
+    "showControls": "Afficher tous les contrôles",
     "summary": "Résumé",
     "selection": "sélection",
     "places": "Lieux",
@@ -1856,6 +1931,7 @@
       "arc": "Arcs",
       "great-circle": "Grands cercles",
       "straight": "Droites"
-    }
+    },
+    "generating": "Génération de la carte"
   }
 }

@@ -252,12 +252,14 @@ it.each([
   expect(heading.contains(openThreadButton)).toBe(false);
   fireEvent.click(openThreadButton);
   expect(store.getState().focusedId).toEqual(segmentFocus);
+  // With the chat open, a message the user clicks is brought into view there; the chat stays.
+  const inChat = (anchorId: string) => ({ ...segmentFocus, anchorId });
   if (hasReport) {
     expect(screen.getByText('Pending report')).toBeTruthy();
     fireEvent.click(screen.getByText('second response'));
-    expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'second' });
+    expect(store.getState().focusedId).toEqual(inChat('second'));
     fireEvent.click(screen.getByText('latest response'));
-    expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'latest' });
+    expect(store.getState().focusedId).toEqual(inChat('latest'));
     return;
   }
   // Every round is there: the earlier ones folded into a stack that opens in place.
@@ -271,7 +273,12 @@ it.each([
     expect(screen.getByText('Response after the result')).toBeTruthy();
   }
   fireEvent.click(screen.getByText('second response'));
-  expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'second' });
+  expect(store.getState().focusedId).toEqual(inChat('second'));
+  fireEvent.click(screen.getByText('latest response'));
+  expect(store.getState().focusedId).toEqual(inChat('latest'));
+  expect(container.querySelector('[data-thread-active="true"]')).toBeTruthy();
+  // Leaving the chat: the clicked message is then focused on its own.
+  act(() => { store.dispatch(dfActions.setFocused(undefined)); });
   fireEvent.click(screen.getByText('latest response'));
   expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'latest' });
   expect(container.querySelector('[data-thread-active="true"]')).toBeNull();
@@ -1316,8 +1323,38 @@ it('breaks a long thread at its requests, keeping an answer to a question in its
   // The answer continues its request's block rather than starting one.
   expect(entryOf('Since 2020')).toBe(entryOf('Request 4'));
   for (let index = 0; index < 8; index++) expect(screen.getAllByText(`Request ${index}`)).toHaveLength(1);
-  // The first part ends by naming the part that continues it.
-  expect(entryOf('Continues in thread - 1.2')).toBe(entryOf('Request 4'));
+  // The next part sits right below the first in its column, so the first part needs no link to it.
+  expect(entryOf('Request 4')!.closest('[data-thread-column]')).toBe(entryOf('Request 5')!.closest('[data-thread-column]'));
+  expect(screen.queryByText('Continues in thread - 1.2')).toBeNull();
+  for (const button of screen.getAllByRole('button', { name: 'Collapse thread' })) fireEvent.click(button);
+  expect(screen.queryByText('Continues in thread - 1.2')).toBeNull();
+});
+
+it('names the part that continues a thread when it is not right below, open or collapsed', () => {
+  const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(300);
+  onTestFinished(() => height.mockRestore());
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  let parent = CONVERSATION_ROOT_ID;
+  for (let index = 0; index < 8; index++) {
+    store.dispatch(userMessage(`ask-${index}`, `Request ${index}`, parent, index * 10));
+    store.dispatch(agentMessage(`reply-${index}`, `Response ${index}`, `ask-${index}`, index * 10 + 3));
+    store.dispatch(dfActions.addTableToStore(derivedTable(`result-${index}`, `Result ${index}`, `reply-${index}`)));
+    parent = `result-${index}`;
+  }
+  renderDataThread(store, { denseColumns: true });
+  const columnOf = (text: string) => screen.getByText(text).closest('[data-thread-column]')?.getAttribute('data-thread-column');
+  expect([columnOf('Request 0'), columnOf('Request 5')]).toEqual(['0', '1']);
+  // The first part ends by naming the part that continues it in the next column, above its collapse toggle.
+  expect(columnOf('Continues in thread - 1.2')).toBe('0');
+  const continuesBeforeToggle = () => {
+    const continues = screen.getByText('Continues in thread - 1.2').closest('[data-thread-continues]')!;
+    const toggle = continues.closest('[data-thread-entry]')!.querySelector('[data-thread-collapse], [data-thread-expand]')!;
+    return !!(continues.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING);
+  };
+  expect(continuesBeforeToggle()).toBe(true);
+  fireEvent.click(screen.getAllByRole('button', { name: 'Collapse thread' })[0]);
+  expect(screen.getByText('Continues in thread - 1.2')).toBeTruthy();
+  expect(continuesBeforeToggle()).toBe(true);
 });
 
 it('leads the plan label with where it stands', () => {

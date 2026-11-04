@@ -174,6 +174,16 @@ def test_charts_render_like_the_application_does() -> None:
     assert {chart["id"]: layer.chart_spec(chart) for chart in layer.charts} == fixture["expected"]
 
 
+def test_a_chart_tells_its_drawn_size_on_the_canvas_without_changing_what_is_edited() -> None:
+    from data_formulator.analyst.session_layer import SessionLayer
+    state = _layer_state()
+    state["charts"][0]["drawnSize"] = {"width": 412, "height": 618}
+    view = SessionLayer(state).view("session/charts/chart-1.json")
+    assert "draws at 412×618 px (tall" in view["note"]
+    assert "drawnSize" not in view["content"] and "412" not in view["content"]
+    assert "draws at" not in SessionLayer(_layer_state()).view("session/charts/chart-1.json")["note"]
+
+
 @pytest.mark.parametrize("focus, path, thread", [
     ({"type": "table", "tableId": "t-region"}, "session/tables/d_by_region.json", 1),
     ({"type": "report", "reportId": "r1"}, "session/reports/r1.md", 1),

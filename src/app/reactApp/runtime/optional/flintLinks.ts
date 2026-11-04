@@ -2,12 +2,13 @@
 // Licensed under the MIT License.
 
 /**
- * Flint's link validator, which `useLinkedCharts` needs to connect charts: a bundle of its own,
- * injected only into apps that link charts (`ChartLink`), as the core runtime's Flint asks for it.
+ * Flint's validators, a bundle of their own: FlintChart checks the focus and updates an app gives it
+ * with the chart validator. Injected only into apps that set a chart's focus or updates. The link
+ * validator stays registered for Flint React's `useLinkedCharts`, which DF does not use.
  */
 
-import { validateLinks } from 'flint-chart/validate';
+import { validateChart, validateLinks } from 'flint-chart/validate';
 
 import { registerOptionalModule } from './register';
 
-registerOptionalModule('flint-links', { validateLinks });
+registerOptionalModule('flint-links', { validateLinks, validateChart });

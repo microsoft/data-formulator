@@ -8,7 +8,7 @@
  */
 
 import * as d3 from 'd3';
-import { THEME_PRESETS } from 'flint-chart';
+import { resolvedChartTheme } from '../app/savedThemes';
 
 import type { Palette } from './scales';
 import type { MapStyleName } from './spec';
@@ -103,12 +103,12 @@ const rampInterpolator = (ramp: Ramp | undefined) => {
 /** A Flint theme's ink for maps; undefined for Flint's own defaults ("none" or unknown ids). */
 export function themeInk(themeId: string | undefined): ThemeInk | undefined {
     if (!themeId || themeId === 'none') return undefined;
-    const preset = (THEME_PRESETS as Record<string, { spec?: { ink?: Record<string, any>; type?: Record<string, any> } }>)[themeId];
-    const ink = preset?.spec?.ink;
+    const spec = resolvedChartTheme(themeId);
+    const ink = spec?.ink;
     if (!ink) return undefined;
     const series = ink.series ?? {};
     const sequential = series.sequential as Ramp | undefined;
-    const family = preset.spec?.type?.headline?.family as string | undefined;
+    const family = spec?.type?.headline?.family as string | undefined;
     return {
         primary: ink.text?.primary,
         secondary: ink.text?.secondary,

@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { useCallback, useEffect, useRef } from 'react';
-import { useSelector } from 'react-redux';
+import { useStore } from 'react-redux';
 import { DataFormulatorState, dfSelectors } from './dfSlice';
 import { saveWorkspaceState } from './workspaceService';
 import { handleApiError } from './errorHandler';
@@ -62,15 +62,16 @@ export function getSerializableState(state: DataFormulatorState): Record<string,
  * flood the server. Sensitive fields are stripped before sending.
  *
  * The backend writes the state to `session_state.json` in the active workspace.
+ * It subscribes to the store directly: selecting the whole state would
+ * re-render its host (the app shell) on every action.
  */
 export function useAutoSave() {
-    const state = useSelector((s: DataFormulatorState) => s);
+    const store = useStore<DataFormulatorState>();
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const isSavingRef = useRef(false);
     const pendingRef = useRef(false);
     const lastErrorNotifyRef = useRef(0);
-    const latestStateRef = useRef(state);
-    latestStateRef.current = state;
+    const latestStateRef = useRef(store.getState());
 
     const saveLatestState = useCallback(async () => {
         if (isSavingRef.current) {
@@ -100,26 +101,38 @@ export function useAutoSave() {
     }, []);
 
     useEffect(() => {
-        // Nothing to save while a session is loading, read-only, workspace-less,
-        // or still empty. A conversation with no tables yet IS worth saving.
-        if (state.sessionLoading || !state.activeWorkspace || state.activeWorkspace.readOnly
-            || dfSelectors.selectSessionEmpty(state)) {
-            return;
-        }
+        let previous: DataFormulatorState | undefined;
+        const onChange = () => {
+            const state = store.getState();
+            if (state === previous) return;
+            previous = state;
+            latestStateRef.current = state;
 
-        // Debounce: reset timer on every state change
-        if (timerRef.current) {
-            clearTimeout(timerRef.current);
-        }
+            // Debounce: every state change restarts the timer
+            if (timerRef.current) {
+                clearTimeout(timerRef.current);
+                timerRef.current = null;
+            }
 
-        timerRef.current = setTimeout(() => {
-            void saveLatestState();
-        }, AUTO_SAVE_DEBOUNCE_MS);
+            // Nothing to save while a session is loading, read-only, workspace-less,
+            // or still empty. A conversation with no tables yet IS worth saving.
+            if (state.sessionLoading || !state.activeWorkspace || state.activeWorkspace.readOnly
+                || dfSelectors.selectSessionEmpty(state)) {
+                return;
+            }
+
+            timerRef.current = setTimeout(() => {
+                void saveLatestState();
+            }, AUTO_SAVE_DEBOUNCE_MS);
+        };
+        onChange();
+        const unsubscribe = store.subscribe(onChange);
 
         return () => {
+            unsubscribe();
             if (timerRef.current) {
                 clearTimeout(timerRef.current);
             }
         };
-    }, [saveLatestState, state]);
+    }, [saveLatestState, store]);
 }

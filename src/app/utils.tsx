@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import _, {  } from "lodash";
+import { chartThemeSpec } from './savedThemes';
 import { useEffect, useRef } from "react";
 import ts from "typescript";
 import { Channel, Chart, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, Trigger } from "../components/ComponentType";
@@ -723,7 +724,7 @@ export const assembleVegaChart = (
             ...(maxStretchFactor != null ? { maxStretch: maxStretchFactor } : {}),
             ...assembleOptions,
         },
-        ...(themeId ? { theme_spec: themeId } : {}),
+        ...(chartThemeSpec(themeId) ? { theme_spec: chartThemeSpec(themeId) } : {}),
         ...(Object.keys(fieldDisplayNames).length > 0 ? { field_display_names: fieldDisplayNames } : {}),
     };
     const spec = mergeableLayerSorts(keepUnmatchedRegions(assembleVegaLite(flintInput)));

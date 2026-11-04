@@ -9,6 +9,7 @@ import pytest
 from flask import Flask
 
 from data_formulator.error_handler import register_error_handlers
+from data_formulator.auth import github_device_flow
 from data_formulator.routes import model_endpoints
 
 
@@ -30,6 +31,9 @@ def connection_api(monkeypatch, tmp_path):
     monkeypatch.setattr(model_endpoints, "get_identity_id", lambda: identity[0])
     monkeypatch.setattr(model_endpoints, "is_local_mode", lambda: True)
     monkeypatch.setattr(model_endpoints, "get_data_formulator_home", lambda: tmp_path)
+    # The vault and lock the GitHub sign-in flow shares with other connections.
+    monkeypatch.setattr(github_device_flow, "get_credential_vault", lambda: vault)
+    monkeypatch.setattr(github_device_flow, "get_data_formulator_home", lambda: tmp_path)
     return app.test_client(), identity, stored
 
 

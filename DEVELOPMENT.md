@@ -452,9 +452,15 @@ npx vitest run tests/frontend/unit/views/TerminalApprovalDialog.test.tsx tests/f
 ### MCP Servers (Local Mode)
 
 In single-user local mode the analyst agent can call tools from MCP servers the
-user adds, as tools next to the terminal: **Tools** beside the chat input lists
-them, and **+ Add MCP server** takes one server's MCP configuration JSON
-(**How to add a server** in the form shows examples), the format VS Code
+user adds, as tools next to the terminal. **Tools** beside the chat input opens a
+dialog with two levels (`src/components/ToolsAccess.tsx`): a home page (the shared
+approval mode, **Your tools** as cards with their switches, and **Add more**: the
+toolkits not added yet and **Custom MCP server**), and one page per tool, the same
+for a toolkit before and after it is added and for a custom server (`ToolPage` in
+`McpServers.tsx`: header with state, connect and on/off; About; Account & keys;
+Tools; Remove). The page's main action is in the dialog's footer (**Add toolkit**,
+**Add and connect**, else **Done**). **Custom MCP server** takes one server's MCP
+configuration JSON (**How to add a server** below the form shows examples), the format VS Code
 (`servers`), Claude Desktop and Cursor (`mcpServers`) use; Codex TOML
 (`[mcp_servers.*]`) is also accepted. A remote server is a `url` (`"type": "sse"`
 for older servers) with optional `headers`; a local one is a `command` with
@@ -477,8 +483,9 @@ in hosted and managed deployments and when data connectors are disabled.
 - **Calls.** Each enabled server becomes a gated skill (`mcp-<id>`) whose actions
   are `mcp_<id>__<tool>` with the tool's own input schema. They follow the
   shared tools mode: *Off*; *Ask every time* (default); *Auto when safe* (tools
-  annotated `readOnlyHint` run without asking). Tools the user marked **Always
-  allow** never ask. Approval pauses the
+  annotated `readOnlyHint` run without asking). A tool approved with **Always allow
+  this tool** never asks again; its page tags it **Runs without asking**, and removing
+  the tag makes it ask again (there is no per-tool checkbox). Approval pauses the
   run like a terminal command (**Reject / Always allow this tool / Run once**);
   the server-side request is single-use and bound to the conversation, and the
   stored arguments, not the client's, are what run.
@@ -501,21 +508,89 @@ in hosted and managed deployments and when data connectors are disabled.
   **Always allow** stay manual. Both tools exist only when MCP is available and
   are excluded from workflow runs.
 
-- **Toolkits (tool packs).** **+ Add tool → Toolkits** adds a ready-made server that
+- **Toolkits (tool packs).** A toolkit's page (from **Add more**) adds a ready-made server that
   ships with Data Formulator (`py-src/data_formulator/tool_packs/`) in one step; it
   runs with Data Formulator's own Python (no Node or `uv` download) and is then an
-  ordinary MCP server row (`pack` records its origin). `GET /api/mcp/packs` lists
-  packs; `POST /api/mcp/packs/<id>` adds one (once) with its optional settings.
-  - **Research (arXiv)** (`tool_packs/research`): `search_papers`, `recent_papers`,
+  ordinary MCP server (`pack` records its origin). `GET /api/mcp/packs` lists
+  packs, with an added pack's `values` (a plain setting's value, whether each key is
+  set: keys never leave the vault); `POST /api/mcp/packs/<id>` adds one (once) with
+  its settings (a `required` one must be filled); `PUT /api/mcp/packs/<id>/settings`
+  changes them later (an empty key removes it) and restarts the server. A `secret`
+  setting (an API key) never goes in the server's arguments: it is stored in the
+  credential vault and reaches the server as an environment variable. Signing in to a
+  toolkit not added yet adds it first.
+  - **Research (arXiv + OpenAlex)** (`tool_packs/research`): `search_papers`, `recent_papers`,
     `paper_details` (up to 20 ids), `count_papers` (per year/month, for trends) and
     `get_full_text` (arXiv's HTML as Markdown, else the PDF; saved to scratch). All
-    are read-only. It uses only arXiv's own API and pages (no citation counts) and is
-    polite by construction: one connection, requests at least 3 seconds apart, a
-    descriptive User-Agent with the optional contact email, retries with backoff on
-    429/5xx (honouring `Retry-After`) and on the API's "results but no entries"
-    glitch, and a disk cache under `~/.data_formulator/cache/research` (searches a
-    day, papers a week, versioned papers for good). Large JSON results save to
-    scratch as `.json` so the agent can load them with `create_data`.
+    are read-only. Search and fetch are split by source:
+    - **Searching and counting** go to OpenAlex (`openalex.py`), over any work with
+      a copy on arXiv, by words in the title and abstract: citation counts (`cited_by`,
+      `sort="cited"`), and a per-year count in one request. Its limits are generous
+      (10 requests/s) from a daily budget: $0.10 a day without a key, shared on the
+      network, $1 with a free key (pack setting **OpenAlex API key**, env
+      `OPENALEX_API_KEY`); a search costs $0.001. It lists new arXiv papers a few
+      days late and has no arXiv categories.
+    - **arXiv's own API** answers a search by category or in arXiv syntax
+      (`ti:… AND cat:…`), `recent_papers`, `paper_details` and `get_full_text`, and
+      any search when OpenAlex cannot (its budget spent: the result says so in
+      `note`). Results carry `source`. The arXiv client is polite by construction:
+      one connection, requests at least 3 seconds apart, a descriptive User-Agent
+      with the optional contact email, retries with backoff on 429/5xx (honouring
+      `Retry-After`) and on the API's "results but no entries" glitch, and a
+      cooldown after a 429.
+    - Both cache answers on disk under `~/.data_formulator/cache/research` (searches
+      a day, papers a week, versioned papers for good). Large JSON results save to
+      scratch as `.json` so the agent can load them with `create_data`.
+  - **GitHub (public)** (`tool_packs/github`): `search_repositories`, `search_code`,
+    `search_issues` (issues or pull requests), `repo_details` (facts and README) and
+    `read_file`. Read-only and public-only: results from private repositories are
+    dropped and private repositories are refused, whatever the token could reach.
+    **Click-to-sign-in**: the toolkit's row in Tools offers **Sign in with GitHub**
+    (GitHub's device flow, `auth/github_device_flow.py`, shared with the GitHub
+    Copilot model connection): the user enters a short code on github.com and
+    approves. It asks for no scopes, so the token reads public data only, under the
+    user's own limits (5,000 requests an hour; code search needs the sign-in). A
+    user already connected to GitHub Copilot for models gets **Use @login** instead,
+    reusing that token. The token is stored in the credential vault and reaches the
+    server as `GITHUB_TOKEN`; signing in or out restarts the server. The sign-in uses
+    the GitHub app in `GITHUB_TOOLS_CLIENT_ID` (an OAuth app with device flow
+    enabled); without one, for now, the Copilot connection's public client ID.
+    Routes: `POST /api/mcp/packs/github/signin/{start,poll,cancel,reuse}` and
+    `/api/mcp/packs/github/signout`.
+  - **Hugging Face datasets** (`tool_packs/huggingface`): `search_datasets` (tabular
+    ones by default, with license, size, gated and synthetic flags), `dataset_details`
+    (card, subsets and splits with row counts, columns), `preview_rows` (up to 100 rows,
+    from the dataset viewer) and `load_dataset`, which returns one split as a Parquet
+    file the conversation saves to scratch (an embedded resource). It reads the
+    viewer's Parquet copy with HTTP range requests, so of a large split only the
+    `columns` and first `max_rows` asked for are fetched; image and audio columns are
+    left out unless named, and the file is cut to stay under 25 MB. Public datasets
+    need no token (500 Hub API calls per 5 minutes per computer). Signing in opens
+    gated datasets the user accepted and raises the limits (`HF_TOKEN`), three ways
+    (`tool_packs/signin.py`): **Use @user**, this computer's Hugging Face login
+    (`hf auth login` or `HF_TOKEN`, re-read before each use so it follows the user's
+    login); **Sign in with Hugging Face**, a device flow (scope `openid profile
+    gated-repos`: nothing private, nothing written) with our app in `HF_TOOLS_CLIENT_ID`
+    or, for now, huggingface_hub's public CLI app; its token expires, so its refresh
+    token is kept in the vault and the token is renewed before the server is used
+    (the hub calls `prepare`; a changed token restarts the server); or **Or paste a
+    token** (the `hf_token` setting, whose account is looked up). The device flow is
+    the shared `auth/github_device_flow.py` `DeviceFlow` with a Hugging Face
+    `DeviceProvider` (form posts; pending answers come as HTTP 400). The viewer's `/filter` and `/search` endpoints are not used: they
+    time out too often.
+  - **Finance** (`tool_packs/finance`): `find_company`, `company_financials`,
+    `list_filings` (SEC EDGAR), `economic_series` and `search_economic_series` (FRED),
+    and `stock_prices` (Twelve Data). `company_financials` turns EDGAR's XBRL company
+    facts into a tidy table: each metric (revenue, net income, EPS, cash flow, balance
+    sheet items…) merges the concepts companies have used for it, keeps each period's
+    latest filing, picks annual or quarterly periods by length, and derives Q4 (the
+    year minus its first three quarters, flagged `derived`). The SEC refuses requests
+    without a contact email, so the pack's `email` setting is `required` (the add form
+    disables **Add** until it is filled) and requests are paced under 10 a second.
+    FRED series download by id without a key; searching needs `fred_key`
+    (`FRED_API_KEY`). Stock prices need `twelvedata_key` (`TWELVE_DATA_API_KEY`; the
+    free plan allows 8 requests a minute, 800 a day). Keys are sent with requests but
+    never written to the cache.
 
 Routes live under `/api/mcp` (`py-src/data_formulator/mcp_servers/routes.py`);
 changes require a same-origin local request with `X-DF-Configuration: 1`. The

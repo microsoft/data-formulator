@@ -1,5 +1,6 @@
 import { ShimmerText, WorkflowGears } from '../components/FunComponents';
 import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { savedThemeFromResult, upsertSavedTheme } from '../app/savedThemes';
 import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { CanvasHeader } from './CanvasHeader';
@@ -417,6 +418,9 @@ export async function publishWorkflowRun(run: Run, workspaceId: string, focus = 
         } else if (output.type === 'tool_result' && output.tool === 'edit_file' && JSON.parse(output.stdout || '{}').session_update) {
             // A chart or report the run edited, applied as an analyst edit is (unless it changed meanwhile).
             applySessionUpdate(JSON.parse(output.stdout || '{}').session_update, store.dispatch, () => store.getState());
+        } else if (output.type === 'tool_result' && output.tool === 'save_theme') {
+            const saved = savedThemeFromResult(output.stdout);
+            if (saved) upsertSavedTheme(saved);
         } else if (output.type === 'tool_result' && output.tool === 'delete_items') {
             const plan: DeletionPlan | undefined = JSON.parse(output.stdout || '{}').deleted;
             if (plan) {

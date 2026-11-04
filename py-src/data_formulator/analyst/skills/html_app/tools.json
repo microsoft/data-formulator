@@ -45,7 +45,7 @@
           },
           "code": {
             "type": "string",
-            "description": "The complete single-file React app: imports only from react, @df/ui, @df/data, @df/chart, @df/format, @df/icons, @mui/material, d3, lodash, or @df/geo, and `export default function App()`."
+            "description": "The complete single-file React app: imports only from react, @mui/material (UI and layout), @df/chart (FlintChart, DataTable, AppTheme), @df/data, @df/format, @df/icons, d3, lodash, or @df/geo, and `export default function App()`."
           }
         },
         "required": [

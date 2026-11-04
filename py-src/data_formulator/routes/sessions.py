@@ -14,7 +14,7 @@ Routes:
   POST /api/sessions/delete      — delete a workspace
   POST /api/sessions/create      — create a new workspace
   POST /api/sessions/rename      — rename a workspace
-  POST /api/sessions/update-meta — update display name (lightweight, no full state)
+  POST /api/sessions/update-meta — update display name and/or starred flag (lightweight, no full state)
   POST /api/sessions/export      — export active workspace as zip
   POST /api/sessions/import      — import workspace from zip
 
@@ -223,6 +223,8 @@ def list_sessions():
         entry["source_ids"] = w.get("source_ids", [])
         if w.get("scheduled_run"):
             entry["scheduled_run"] = w["scheduled_run"]
+        if w.get("starred"):
+            entry["starred"] = True
         sessions.append(entry)
     sessions.sort(key=lambda item: item.get("saved_at") or "", reverse=True)
     return json_ok({"sessions": sessions})
@@ -320,14 +322,17 @@ def rename_workspace_route():
 
 @session_bp.route("/update-meta", methods=["POST"])
 def update_workspace_meta():
-    """Update workspace display name without writing full session state."""
+    """Update a workspace's display name and/or starred flag without writing full session state."""
     data = request.get_json(force=True)
     workspace_id: str = (data.get("id") or "").strip()
     display_name: str = (data.get("display_name") or "").strip()
+    starred = data.get("starred")
     if not workspace_id:
         raise AppError(ErrorCode.INVALID_REQUEST, "Workspace id is required")
-    if not display_name:
-        raise AppError(ErrorCode.INVALID_REQUEST, "display_name is required")
+    if starred is not None and not isinstance(starred, bool):
+        raise AppError(ErrorCode.INVALID_REQUEST, "starred must be a boolean")
+    if not display_name and starred is None:
+        raise AppError(ErrorCode.INVALID_REQUEST, "display_name or starred is required")
 
     identity_id = get_identity_id()
     mgr = get_workspace_manager(identity_id)
@@ -335,8 +340,14 @@ def update_workspace_meta():
     if not mgr.workspace_exists(workspace_id):
         raise AppError(ErrorCode.TABLE_NOT_FOUND, "Workspace not found")
 
-    mgr.update_display_name(workspace_id, display_name)
-    return json_ok({"id": workspace_id, "display_name": display_name})
+    result: dict = {"id": workspace_id}
+    if display_name:
+        mgr.update_display_name(workspace_id, display_name)
+        result["display_name"] = display_name
+    if starred is not None:
+        mgr.set_starred(workspace_id, starred)
+        result["starred"] = starred
+    return json_ok(result)
 
 
 @session_bp.route("/export", methods=["POST"])

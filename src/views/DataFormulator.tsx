@@ -76,12 +76,12 @@ import { Trans, useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { handleApiError } from '../app/errorHandler';
-import { listWorkspaceFiles, listWorkspaces, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, updateWorkspaceMeta } from '../app/workspaceService';
+import { listWorkspaceFiles, listWorkspaces, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, setWorkspaceStarred, updateWorkspaceMeta } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import { AppDispatch, store } from '../app/store';
 import { generateWorkspaceId, ensureActiveWorkspace, openSession } from '../app/sessionThunks';
-import { ItemCard, ItemCardAction, itemCardGridSx } from '../components/ItemCard';
+import { ItemCard, ItemCardAction, itemCardGridSx, StarAction, useItemCardGridColumns } from '../components/ItemCard';
 import IconButton from '@mui/material/IconButton';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -99,6 +99,8 @@ const CANVAS_TRANSITION_MS = 140;
 /** A thread-pane drag at least this far moves a whole column in its direction. */
 const DRAG_INTENT_PX = 24;
 const INITIAL_SESSION_COUNT = 12;
+const homeSessionGroupHeaderSx = { m: 0, mb: 1, textAlign: 'left', fontSize: textVar.xs, fontWeight: 600, letterSpacing: '0.04em',
+    textTransform: 'uppercase', color: 'text.secondary' } as const;
 
 type LibraryTab = 'sessions' | 'workflows' | 'schedules';
 
@@ -213,6 +215,8 @@ export const DataFormulatorFC = ({ }) => {
     // ── Workspace list (shown on landing page) ────────────────────
     const [savedWorkspaces, setSavedWorkspaces] = useState<WorkspaceSummary[]>([]);
     const [allSessionsOpen, setAllSessionsOpen] = useState(false);
+    const [allSessionsStarredOnly, setAllSessionsStarredOnly] = useState(false);
+    const [starredGridRef, starredGridColumns] = useItemCardGridColumns();
     const [confirmDeleteWs, setConfirmDeleteWs] = useState<string | null>(null);
 
     // Inline rename: which card's title is currently being edited, and
@@ -313,6 +317,20 @@ export const DataFormulatorFC = ({ }) => {
         }
     }, [renamingWs, renameDraft, savedWorkspaces, cancelRenameWorkspace, dispatch, fetchWorkspaces]);
 
+    const toggleStarWorkspace = useCallback(async (workspace: WorkspaceSummary) => {
+        const starred = !workspace.starred;
+        setSavedWorkspaces(prev => prev.map(w => (w.id === workspace.id ? { ...w, starred } : w)));
+        try {
+            await setWorkspaceStarred(workspace.id, starred);
+        } catch {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'error',
+                component: 'workspace', value: t('workspace.starFailed'),
+            }));
+            fetchWorkspaces();
+        }
+    }, [dispatch, fetchWorkspaces, t]);
+
     const handleExportWorkspace = useCallback(async (id: string) => {
         try {
             const blob = await exportWorkspace(id);
@@ -379,10 +397,11 @@ export const DataFormulatorFC = ({ }) => {
                 return copy;
         }
     }, [savedWorkspaces, wsSort]);
+    const starredSavedWorkspaces = useMemo(() => sortedSavedWorkspaces.filter(w => w.starred), [sortedSavedWorkspaces]);
     const publishedExamples = usePublishedExamples(!inSession);
 
     const workspaceCard = (w: WorkspaceSummary, onOpened?: () => void) =>
-        <ItemCard key={w.id} title={w.display_name} onOpen={() => { onOpened?.(); void handleOpenWorkspace(w.id, w.display_name); }}
+        <ItemCard key={w.id} title={w.display_name} starred={w.starred} onOpen={() => { onOpened?.(); void handleOpenWorkspace(w.id, w.display_name); }}
             rename={renamingWs === w.id ? { value: renameDraft, label: t('workspace.rename'), onChange: setRenameDraft,
                 onCommit: commitRenameWorkspace, onCancel: cancelRenameWorkspace } : undefined}
             captions={[
@@ -393,6 +412,7 @@ export const DataFormulatorFC = ({ }) => {
                 w.saved_at && new Date(w.saved_at).toLocaleString(),
             ]}
             actions={w.read_only ? undefined : <>
+                <StarAction starred={!!w.starred} onToggle={() => void toggleStarWorkspace(w)} />
                 <ItemCardAction label={t('workspace.rename')} icon={<EditOutlinedIcon />}
                     onClick={() => startRenameWorkspace(w.id, w.display_name)} />
                 <ItemCardAction label={t('workspace.export')} icon={<DownloadIcon />} onClick={() => handleExportWorkspace(w.id)} />
@@ -962,11 +982,24 @@ export const DataFormulatorFC = ({ }) => {
                     </Button>
                 </>}
                 sessions={<>
+                {starredSavedWorkspaces.length > 0 && <Box component="section" aria-labelledby="home-starred-sessions" sx={{ mb: 2.5 }}>
+                    <Typography id="home-starred-sessions" component="h3" sx={homeSessionGroupHeaderSx}>{t('workspace.starred')}</Typography>
+                    <Box ref={starredGridRef} sx={itemCardGridSx}>
+                        {starredSavedWorkspaces.slice(0, starredGridColumns * 2).map(w => workspaceCard(w))}
+                    </Box>
+                    {starredSavedWorkspaces.length > starredGridColumns * 2 && (
+                        <Button size="small" aria-haspopup="dialog" onClick={() => { setAllSessionsStarredOnly(true); setAllSessionsOpen(true); }}
+                            sx={{ mt: 1, textTransform: 'none', fontSize: textVar.sm, fontWeight: 400 }}>
+                            {t('workspace.showAllStarred', { count: starredSavedWorkspaces.length })}
+                        </Button>
+                    )}
+                    <Typography component="h3" sx={{ ...homeSessionGroupHeaderSx, mt: 2.5 }}>{t('workspace.sessions')}</Typography>
+                </Box>}
                 <Box id="saved-session-grid" sx={itemCardGridSx}>
                     {sortedSavedWorkspaces.slice(0, INITIAL_SESSION_COUNT).map(w => workspaceCard(w))}
                 </Box>
                 {sortedSavedWorkspaces.length > INITIAL_SESSION_COUNT && (
-                    <Button size="small" aria-haspopup="dialog" onClick={() => setAllSessionsOpen(true)}
+                    <Button size="small" aria-haspopup="dialog" onClick={() => { setAllSessionsStarredOnly(false); setAllSessionsOpen(true); }}
                         sx={{ mt: 1, textTransform: 'none', fontSize: textVar.sm, fontWeight: 400 }}>
                         {t('workspace.showAllSessions', { defaultValue: 'Show all ({{count}})', count: sortedSavedWorkspaces.length })}
                     </Button>
@@ -1179,7 +1212,7 @@ export const DataFormulatorFC = ({ }) => {
             }} renderLanding={homeLibrary} /> : homeLibrary({})}
             {/* ── All sessions ────────────────────── */}
             <SessionsDialog open={allSessionsOpen} onClose={() => { cancelRenameWorkspace(); setAllSessionsOpen(false); }}
-                title={t('workspace.yourSessions')} sessions={sortedSavedWorkspaces}
+                title={t('workspace.yourSessions')} sessions={sortedSavedWorkspaces} starredOnly={allSessionsStarredOnly}
                 groupTime={wsSort === 'name_asc' ? undefined
                     : wsSort === 'updated_desc' ? (w => w.saved_at || w.created_at) : (w => w.created_at)}
                 renderCard={w => workspaceCard(w, () => setAllSessionsOpen(false))} />

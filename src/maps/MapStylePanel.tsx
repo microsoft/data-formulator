@@ -21,7 +21,7 @@ import { BIVARIATE_SCHEMES, CATEGORICAL_SCHEMES, DIVERGING_SCHEMES, SEQUENTIAL_S
 import { bindChannel, boundField, channelBinding, CHOICE_CHANNELS, compatibleTemplates, switchTemplate, TEMPLATE_DEFS, TEMPLATES, type Encoding, type TemplateName } from './templates';
 import { BASEMAPS, CLASS_METHODS, FLOW_DIRECTIONS, MAP_STYLES, PROJECTIONS, TILES, type LayerType, type MapSpec, type MapStyleName, type Row } from './spec';
 import { mapStyle } from './styles';
-import { THEME_CHOICES, themeIconUrl } from '../views/ChartThemePicker';
+import { themeIconUrl, useThemeChoices } from '../views/ChartThemePicker';
 
 type Raw = Record<string, any>;
 
@@ -86,6 +86,7 @@ export const MapStylePanel: FC<{
     onClose: () => void;
 }> = ({ source, spec, data, readOnly, onChange, onClose }) => {
     const { t } = useTranslation();
+    const themeChoices = useThemeChoices();
     const raw = useMemo<Raw>(() => { try { return JSON.parse(source); } catch { return {}; } }, [source]);
     const [open, setOpen] = useState<string | null>(spec.layers[0]?.id ?? null);
     const patch = (mutate: (draft: Raw) => void) => {
@@ -179,10 +180,10 @@ export const MapStylePanel: FC<{
             </Row>
             <Row label={t('map.theme')}>
                 <Select size="small" value={view.theme ?? ''} displayEmpty disabled={readOnly} sx={selectSx} inputProps={{ 'aria-label': t('map.theme') }}
-                    renderValue={value => value ? (THEME_CHOICES.find(choice => (choice.id ?? 'none') === value)?.label ?? value) : t('map.appTheme')}
+                    renderValue={value => value ? (themeChoices.find(choice => (choice.id ?? 'none') === value)?.label ?? value) : t('map.appTheme')}
                     onChange={event => setView('theme', event.target.value || undefined)}>
                     <MenuItem value="" sx={itemSx}>{t('map.appTheme')}</MenuItem>
-                    {THEME_CHOICES.map(choice => <MenuItem key={choice.id ?? 'none'} value={choice.id ?? 'none'} sx={{ ...itemSx, gap: 1 }}>
+                    {themeChoices.map(choice => <MenuItem key={choice.id ?? 'none'} value={choice.id ?? 'none'} sx={{ ...itemSx, gap: 1 }}>
                         <Box component="img" src={themeIconUrl(choice.icon)} alt="" sx={{ width: 18, height: 18 }} />{choice.label}
                     </MenuItem>)}
                 </Select>

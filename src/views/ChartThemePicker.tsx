@@ -4,13 +4,14 @@
 // The chart toolbar's Flint theme picker: hovering a theme previews it on the
 // canvas, choosing one sets the chart's themeId.
 
-import { FC, useEffect, useRef, useState } from 'react';
+import { FC, useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 
 import { Box, alpha, useTheme, Tooltip, Divider, Menu, MenuItem } from '@mui/material';
 import { DEFAULT_THEME_ICON, THEME_PRESETS } from 'flint-chart';
 
 import { dfActions, dfSelectors } from '../app/dfSlice';
+import { deleteSavedTheme, resolvedChartTheme, useSavedThemes, type SavedTheme } from '../app/savedThemes';
 import { AppDispatch } from '../app/store';
 import { transition } from '../app/tokens';
 import { Chart } from '../components/ComponentType';
@@ -39,10 +40,34 @@ export const THEME_CHOICES = [
 
 export const themeIconUrl = (svg: string) => `data:image/svg+xml,${encodeURIComponent(svg)}`;
 
+/** A saved theme's icon: its first series colors as bars on its paper. */
+const savedThemeIcon = (theme: SavedTheme) => {
+    const resolved = resolvedChartTheme(theme.id);
+    const series: string[] = resolved?.ink?.series?.categorical ?? [];
+    const colors = (series.length ? series : [resolved?.ink?.series?.single ?? '#4c78a8']).slice(0, 3);
+    const paper = resolved?.ink?.surface?.source === 'house' ? resolved.ink.surface.plot ?? resolved.ink.surface.canvas ?? '#ffffff' : '#ffffff';
+    const safe = (color: string) => /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : '#888888';
+    const bars = colors.map((color, index) => `<rect x="${3 + index * 4}" y="${12 - (index + 2) * 2}" width="3" height="${(index + 2) * 2}" fill="${safe(color)}"/>`).join('');
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect x="0.5" y="0.5" width="15" height="15" rx="3" fill="${safe(paper)}" stroke="#c8c8c8"/>${bars}</svg>`;
+};
+
+export type ThemeChoice = typeof THEME_CHOICES[number] & { saved?: boolean };
+
+/** Flint's presets, then the user's saved themes. */
+export function useThemeChoices(): ThemeChoice[] {
+    const saved = useSavedThemes();
+    return useMemo(() => [
+        ...THEME_CHOICES,
+        ...saved.map(theme => ({ id: theme.id, label: theme.label || theme.id, icon: savedThemeIcon(theme),
+            description: theme.description ?? `Your saved theme${theme.extends ? `, based on ${theme.extends}` : ''}.`, saved: true })),
+    ], [saved]);
+}
+
 export const ChartThemePicker: FC<ChartThemePickerProps> = function ({ chartId, onThemePreview, onThemePreviewEnd }) {
     const theme = useTheme();
     const dispatch = useDispatch<AppDispatch>();
     const allCharts = useSelector(dfSelectors.getAllCharts);
+    const choices = useThemeChoices();
 
     const [themeAnchor, setThemeAnchor] = useState<HTMLElement | null>(null);
     const themePreviewTimerRef = useRef<number | null>(null);
@@ -88,7 +113,7 @@ export const ChartThemePicker: FC<ChartThemePickerProps> = function ({ chartId, 
     // Themes only apply to rendered charts, not the raw table or the "Auto" placeholder.
     if (chart.chartType === 'Table' || chart.chartType === 'Auto') return null;
 
-    const selectedTheme = THEME_CHOICES.find(choice => choice.id === chart.themeId) ?? THEME_CHOICES[0];
+    const selectedTheme = choices.find(choice => choice.id === chart.themeId) ?? choices[0];
 
     return (
         <Box sx={{
@@ -153,7 +178,10 @@ export const ChartThemePicker: FC<ChartThemePickerProps> = function ({ chartId, 
                     list: { sx: { p: 0 }, onMouseLeave: endThemePreview },
                 }}
             >
-                {THEME_CHOICES.map(choice => (
+                {choices.map((choice, index) => [
+                    choice.saved && !choices[index - 1]?.saved
+                        ? <Divider key="saved-divider" sx={{ my: '4px !important' }} />
+                        : null,
                     <MenuItem
                         key={choice.id ?? 'default'}
                         selected={chart.themeId === choice.id}
@@ -174,11 +202,22 @@ export const ChartThemePicker: FC<ChartThemePickerProps> = function ({ chartId, 
                         }}
                     >
                         <Box component="img" src={themeIconUrl(choice.icon)} alt="" sx={{ width: 15, height: 15, display: 'block', flex: '0 0 auto' }} />
-                        <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <Box component="span" sx={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {choice.label}
                         </Box>
-                    </MenuItem>
-                ))}
+                        {choice.saved && choice.id && (
+                            <Box component="button" type="button" aria-label={`Remove theme ${choice.label}`} title="Remove from your themes"
+                                onClick={(event: React.MouseEvent) => {
+                                    event.stopPropagation();
+                                    if (window.confirm(`Remove the theme "${choice.label}" from your themes? Charts that use it go back to the default look.`)) {
+                                        void deleteSavedTheme(choice.id!);
+                                    }
+                                }}
+                                sx={{ border: 0, bgcolor: 'transparent', color: 'text.disabled', cursor: 'pointer', p: '0 2px', lineHeight: 1, fontSize: 14,
+                                    opacity: 0, '.MuiMenuItem-root:hover &': { opacity: 1 }, '&:hover': { color: 'text.primary' } }}>×</Box>
+                        )}
+                    </MenuItem>,
+                ])}
             </Menu>
         </Box>
     );

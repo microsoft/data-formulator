@@ -19,7 +19,7 @@
 
 import * as d3 from 'd3';
 
-import type { Control, DataSource, FieldRef, FlowDirection, Layer, LayerType, MapView } from './spec';
+import { FILTER_OPS, type Control, type DataSource, type FieldRef, type FilterOp, type FlowDirection, type Layer, type LayerType, type MapView } from './spec';
 
 export const TEMPLATES = ['choropleth', 'bubbles', 'points', 'density', 'spikes', 'flows', 'tracks', 'bivariate', 'cartogram', 'vectors'] as const;
 export type TemplateName = typeof TEMPLATES[number];
@@ -84,12 +84,42 @@ export interface TemplateProperties {
     curve?: Layer['curve'];
     /** Flows and tracks: arrowheads, a taper from origin to destination, moving dashes, or none. */
     direction?: FlowDirection;
+    /** Maps placed by lat/lon: rows meeting one condition drawn as points above the map (M7+ quakes over their density). */
+    highlight?: Highlight;
 
     /** Interaction kit. */
     search?: boolean;
     details?: boolean;
     stats?: boolean;
     play?: boolean;
+}
+
+export interface Highlight {
+    field: string;
+    op?: FilterOp;
+    value: unknown;
+    /** Its name in the legend and layer list; default "field op value". */
+    label?: string;
+    color?: string;
+}
+
+/** Templates whose marks sit at lat/lon, where a highlight can mark notable rows. */
+export const HIGHLIGHT_TEMPLATES: TemplateName[] = ['density', 'points', 'bubbles', 'spikes'];
+
+/** What is wrong with a highlight, if anything. */
+export function highlightErrors(highlight: unknown): string[] {
+    if (highlight === undefined) return [];
+    if (!isRecord(highlight) || !isText(highlight.field) || !('value' in highlight)) {
+        return ['properties.highlight needs field and value (and op, default "=="), e.g. {"field": "magnitude", "op": ">=", "value": 7}.'];
+    }
+    const errors: string[] = [];
+    if (highlight.op !== undefined && !(FILTER_OPS as readonly unknown[]).includes(highlight.op)) {
+        errors.push(`properties.highlight.op must be one of ${FILTER_OPS.join(' ')}.`);
+    }
+    if (highlight.color !== undefined && !(typeof highlight.color === 'string' && d3.color(highlight.color))) {
+        errors.push('properties.highlight.color must be a CSS colour.');
+    }
+    return errors;
 }
 
 export interface TemplateSpec {
@@ -172,6 +202,7 @@ export function templateErrors(raw: Record<string, unknown>): string[] {
     if (properties.color !== undefined && !(typeof properties.color === 'string' && d3.color(properties.color))) {
         errors.push('properties.color must be a CSS colour, such as "#4e79a7" or "darkslategray".');
     }
+    errors.push(...highlightErrors(properties.highlight));
     if (name === 'flows') {
         if (has('originLat') !== has('originLon')) errors.push('encoding.originLat and originLon go together.');
         if (has('destinationLat') !== has('destinationLon')) errors.push('encoding.destinationLat and destinationLon go together.');
@@ -279,8 +310,27 @@ export function compileTemplate(spec: TemplateSpec): { data: Record<string, Data
     if (properties.details ?? template !== 'density') controls.push({ type: 'details', layer: 'main' });
     if (properties.stats) controls.push({ type: 'stats', layer: 'main' });
 
+    const layers = [layer];
+    // Ignored where marks are not at lat/lon, so switching the map type in the Style panel keeps working.
+    const highlight = properties.highlight;
+    if (highlight && HIGHLIGHT_TEMPLATES.includes(template) && layer.lon && layer.lat && !highlightErrors(highlight).length) {
+        const op = highlight.op ?? '==';
+        const size = encoding.weight ?? encoding.size;
+        layer.name = def.label;
+        layers.push({
+            id: 'highlight', type: 'points', data: 'main', lon: layer.lon, lat: layer.lat,
+            name: highlight.label ?? `${highlight.field} ${op} ${Array.isArray(highlight.value) ? highlight.value.join('–') : String(highlight.value)}`,
+            filter: [{ field: highlight.field, op, value: highlight.value }],
+            size: size ? { field: size, max: 6 } : { value: 4 },
+            color: { value: highlight.color ?? '#b2182b' },
+            tooltip: Array.from(new Set([...(layer.tooltip || []), highlight.field, ...(encoding.time ? [encoding.time] : [])])),
+            ...(encoding.label ? { text: encoding.label } : {}),
+        });
+        controls.push({ type: 'layers' });
+    }
+
     const basemap = basemapOf(properties.geography);
-    return { data: { main: spec.data }, layers: [layer], controls, view: basemap ? { basemap } : {} };
+    return { data: { main: spec.data }, layers, controls, view: basemap ? { basemap } : {} };
 }
 
 /** Channels to carry over when switching templates: color and size trade places as the new template needs. */

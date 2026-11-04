@@ -909,6 +909,7 @@ def analyst_streaming():
                 conversation_id=conversation_id,
                 connector_form=content.get("connector_form"),
                 references=content.get("references"),
+                timezone=content.get("timezone"),
             ):
                 yield json.dumps(event, ensure_ascii=False) + '\n'
 

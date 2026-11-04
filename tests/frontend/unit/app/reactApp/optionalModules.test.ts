@@ -18,7 +18,7 @@ import { groupBy } from 'lodash';
 import * as d3 from 'd3';
 import { countries, states } from '@df/geo';
 import { useSql, useSourceQuery } from '@df/data';
-import { Page } from '@df/ui';
+import { Container as Page } from '@mui/material';
 import { FlintChart } from '@df/chart';
 export default function App() {
   const byRegion = useSql('select region, count(*) as n from quakes where magnitude >= ? group by 1', [5]);

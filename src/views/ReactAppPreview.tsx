@@ -11,8 +11,11 @@ import reactRuntimeSource from 'virtual:df-react-runtime';
 import { buildAppDocument } from '../app/htmlApp/htmlAppDocument';
 import { compileReactApp, mountScript, type OptionalModule } from '../app/reactApp/compile';
 import { dfSelectors, type DataFormulatorState } from '../app/dfSlice';
-import type { FieldSemanticsInfo } from '../components/ComponentType';
+import type { Chart, DictTable, FieldItem, FieldSemanticsInfo } from '../components/ComponentType';
+import { appChartSpecs } from '../app/sessionFiles';
+import { appThemes, useSavedThemes } from '../app/savedThemes';
 import { AppSandbox, useAppSourceResolver, useAppTheme } from './AppSandbox';
+import type { Density } from '../app/reactApp/runtime/density';
 
 const APP_DOCUMENT = '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="df-app-root"></div></body></html>';
 
@@ -36,6 +39,7 @@ const OPTIONAL_BUNDLES: Record<OptionalModule, () => Promise<{ default: string }
     'd3': () => import('virtual:df-react-runtime/d3'),
     'lodash': () => import('virtual:df-react-runtime/lodash'),
     '@df/geo': () => import('virtual:df-react-runtime/geo'),
+    '@mui/icons-material': () => import('virtual:df-react-runtime/icons'),
     'flint-links': () => import('virtual:df-react-runtime/flint-links'),
 };
 
@@ -43,14 +47,22 @@ const OPTIONAL_BUNDLES: Record<OptionalModule, () => Promise<{ default: string }
 export const ReactAppPreview: FC<{
     source: string; title: string; reloadKey?: number; reserveTopRight?: boolean; onAskFix?: (errors: string[]) => void;
     autoFix?: boolean; onHealthy?: () => void; fixPending?: boolean;
-}> = ({ source, title, reloadKey = 0, reserveTopRight = false, onAskFix, autoFix, onHealthy, fixPending }) => {
+    /** The app's density when it does not set one: 'compact' (the default) or 'normal'. */
+    density?: Density;
+    /** The session the app's queries read, when it is not the open one (a sample shown elsewhere). */
+    workspaceId?: string;
+    /** That session's tables, fields, semantics, and charts, in place of the open session's. */
+    session?: { tables: DictTable[]; fields: FieldItem[]; tableSemantics: DataFormulatorState['tableSemantics']; charts: Chart[] };
+}> = ({ source, title, reloadKey = 0, reserveTopRight = false, onAskFix, autoFix, onHealthy, fixPending, density, workspaceId, session }) => {
     const compiled = useMemo(() => compileReactApp(source), [source]);
     const { manifest } = compiled;
     const theme = useAppTheme();
     const resolveSource = useAppSourceResolver();
     const paletteKey = useSelector((state: DataFormulatorState) => state.config.paletteKey);
-    const tables = useSelector(dfSelectors.getAllTables);
-    const tableSemantics = useSelector((state: DataFormulatorState) => state.tableSemantics);
+    const openTables = useSelector(dfSelectors.getAllTables);
+    const openSemantics = useSelector((state: DataFormulatorState) => state.tableSemantics);
+    const tables = session?.tables ?? openTables;
+    const tableSemantics = session?.tableSemantics ?? openSemantics;
     const semantics = useMemo(() => {
         const byTable: Record<string, Record<string, FieldSemanticsInfo>> = {};
         for (const name of manifest.tables) {
@@ -60,6 +72,17 @@ export const ReactAppPreview: FC<{
         }
         return byTable;
     }, [manifest, tables, tableSemantics]);
+    // The session's charts on the declared tables, which the app can draw by id.
+    const openCharts = useSelector((state: DataFormulatorState) => state.charts);
+    const openFields = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    const sessionCharts = session?.charts ?? openCharts;
+    const fields = session?.fields ?? openFields;
+    const charts = useMemo(() => appChartSpecs(sessionCharts, tables, fields, manifest.tables),
+        [sessionCharts, tables, fields, manifest]);
+    const chartsKey = JSON.stringify(charts);
+    // The user's saved themes, which the app uses by id like presets.
+    const savedThemeList = useSavedThemes();
+    const themes = useMemo(() => appThemes(savedThemeList), [savedThemeList]);
     // The optional modules the app uses (d3, lodash, map boundaries), loaded before it runs.
     const [optional, setOptional] = useState<{ sources: string[] } | { error: string } | null>(null);
     useEffect(() => {
@@ -79,12 +102,13 @@ export const ReactAppPreview: FC<{
             runtimeScripts: [vegaSource, vegaLiteSource, bridgeSource, reactRuntimeSource, ...optional.sources, mountScript(compiled.code)],
             theme,
             kitStylesheet: hostVariablesStylesheet(),
-            config: { channel, hostOrigin: window.location.origin, manifest, theme, paletteKey, semantics },
+            config: { channel, hostOrigin: window.location.origin, manifest, theme, paletteKey, semantics, charts, themes, density },
         });
-    }, [compiled, optional, manifest, theme, paletteKey, semantics]);
+    // `chartsKey` stands for `charts`: the app reloads only when a chart it can draw really changes.
+    }, [compiled, optional, manifest, theme, paletteKey, semantics, chartsKey, themes, density]);
     return <AppSandbox title={title} manifest={manifest} buildDocument={buildDocument} initialErrors={initialErrors}
         reloadKey={reloadKey} reserveTopRight={reserveTopRight} onAskFix={onAskFix} autoFix={autoFix} onHealthy={onHealthy} fixPending={fixPending}
-        resolveSource={resolveSource} />;
+        resolveSource={resolveSource} workspaceId={workspaceId} />;
 };
 
 export default ReactAppPreview;

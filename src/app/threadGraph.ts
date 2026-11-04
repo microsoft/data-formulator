@@ -290,3 +290,20 @@ export function buildThreads(graph: ThreadGraph, includeStart: (id: string) => b
     }
     return threads;
 }
+
+/** A thread's nodes in order with its sets' members after their set: what its chat shows. */
+export const threadChatNodeIds = (graph: ThreadGraph, thread: ThreadSpec): string[] =>
+    thread.nodeIds.flatMap(id => [id, ...graph.membersOf(id)]);
+
+/** The thread a node is on (a set's member is on its set's thread). */
+export const threadOfNode = (graph: ThreadGraph, nodeId: string): ThreadSpec | undefined =>
+    buildThreads(graph).find(thread => thread.nodeIds.some(id => id === nodeId || graph.membersOf(id).includes(nodeId)));
+
+/**
+ * The nodes a thread's chat shows now. The chat names its thread by key, so it grows with the
+ * conversation; `fallback` (what it showed when opened) stands in once the thread is gone.
+ */
+export const conversationNodeIds = (graph: ThreadGraph, threadKey: string, fallback?: string[]): string[] | undefined => {
+    const thread = buildThreads(graph).find(item => item.key === threadKey);
+    return thread ? threadChatNodeIds(graph, thread) : fallback;
+};

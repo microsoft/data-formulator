@@ -27,6 +27,7 @@ import StopIcon from '@mui/icons-material/Stop';
 import { useTranslation } from 'react-i18next';
 import { borderColor, transition, radius } from '../app/tokens';
 import { iconVar, textVar } from '../app/layout';
+import { pastedTextFile } from '../app/pastedText';
 
 export interface AgentChatInputProps {
     value: string;
@@ -220,7 +221,18 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
         if (files && files.length > 0) processFiles(Array.from(files));
     };
 
+    const pasteCount = useRef(0);
     const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+        // A large text paste is attached as a document when this surface accepts files (see pastedText.ts).
+        if (!e.clipboardData?.files?.length && onNonImageFile) {
+            const pasted = pastedTextFile(e.clipboardData?.getData('text/plain') ?? '', pasteCount.current + 1);
+            if (pasted) {
+                e.preventDefault();
+                pasteCount.current += 1;
+                onNonImageFile(pasted);
+                return;
+            }
+        }
         if (e.clipboardData?.files?.length) {
             const imageFiles = Array.from(e.clipboardData.files).filter(f => f.type.startsWith('image/'));
             if (imageFiles.length > 0) {

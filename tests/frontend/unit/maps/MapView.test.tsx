@@ -76,21 +76,166 @@ it('selects a region on click and shows its details', async () => {
     expect(container.querySelector('[data-map-details]')).toBeNull();
 });
 
-it('groups the widgets beside a wide panel, or under the title, with the legend in its own corner', async () => {
-    for (const [size, placement] of [[{ width: 1600, height: 500 }, 'side'], [{ width: 600, height: 700 }, 'top']] as const) {
-        panelSize = size;
-        const { container, unmount } = render(<MapView spec={map} data={{ d: rows }} geoSets={{ countries }} />);
-        await flush();
+it('places the widgets where they leave the map largest: a globe takes a column beside it, not a row over it', async () => {
+    panelSize = { width: 900, height: 600 };
+    const globe = { ...map, view: { ...map.view, projection: 'orthographic' as const } };
+    const { container, unmount } = render(<MapView spec={globe} data={{ d: rows }} geoSets={{ countries }} />);
+    await flush();
+    await flush();
+    const widgets = container.querySelector('[data-map-widgets]') as HTMLElement;
+    expect(widgets).toHaveAttribute('data-map-placement', 'side');
+    // Controls and the timeline sit together.
+    expect(widgets.querySelector('[data-map-controls]')).not.toBeNull();
+    expect(widgets.querySelector('[data-map-timeline]')).not.toBeNull();
+    unmount();
+    panelSize = { width: 900, height: 600 };
+});
+
+it('keeps the chosen layout while the map is used, and follows the spec when it pins one', async () => {
+    panelSize = { width: 900, height: 600 };
+    const globe = { ...map, view: { ...map.view, projection: 'orthographic' as const } };
+    const { container, rerender, unmount } = render(<MapView spec={globe} data={{ d: rows }} geoSets={{ countries }} />);
+    await flush();
+    const widgets = () => container.querySelector('[data-map-widgets]') as HTMLElement;
+    expect(widgets()).toHaveAttribute('data-map-placement', 'side');
+    // A filter re-encodes the map; the panels stay put.
+    fireEvent.click(screen.getByRole('button', { name: 'Life' }));
+    await flush();
+    expect(widgets()).toHaveAttribute('data-map-placement', 'side');
+    // A pinned layout: the controls run along the bottom, and the legend leaves the bottom left to them.
+    rerender(<MapView spec={{ ...globe, view: { ...globe.view, layout: 'bottom' } }} data={{ d: rows }} geoSets={{ countries }} />);
+    await flush();
+    expect(widgets()).toHaveAttribute('data-map-placement', 'bottom');
+    expect(container.querySelector('[data-map-legends][data-map-corner="bottom-left"]')).toBeNull();
+    unmount();
+});
+
+it('minimises the controls to their values, each opening the whole control, and restores them', async () => {
+    panelSize = { width: 900, height: 600 };
+    const { container, unmount } = render(<MapView spec={map} data={{ d: rows }} geoSets={{ countries }} />);
+    await flush();
+    const widgets = () => container.querySelector('[data-map-widgets]') as HTMLElement;
+    fireEvent.click(screen.getByRole('button', { name: 'Minimize controls' }));
+    expect(widgets()).toHaveAttribute('data-map-minimized');
+    // No labels, only values: the timeline keeps ▶ and its year; the measure switch shows its choice.
+    expect(within(widgets()).queryByText('Measure')).toBeNull();
+    expect(within(widgets()).getByRole('button', { name: 'Play' })).toBeInTheDocument();
+    const measure = within(widgets()).getByRole('button', { name: 'Measure: GDP' });
+    fireEvent.click(measure);
+    const life = await screen.findByRole('button', { name: 'Life' });
+    fireEvent.click(life);
+    fireEvent.keyDown(life, { key: 'Escape' });
+    await flush();
+    expect(await within(widgets()).findByRole('button', { name: 'Measure: Life' })).toBeInTheDocument();
+    expect(within(container.querySelector('[data-map-legends]') as HTMLElement).getByText('Life')).toBeInTheDocument();
+    fireEvent.click(within(widgets()).getByRole('button', { name: 'Show all controls' }));
+    expect(widgets()).not.toHaveAttribute('data-map-minimized');
+    expect(within(widgets()).getByText('Measure')).toBeInTheDocument();
+    unmount();
+});
+
+it('keeps every control in the row usable: a long-labelled range stacks, and long lists show the first few', async () => {
+    panelSize = { width: 600, height: 700 };
+    const many = Array.from({ length: 12 }, (_, index) => ({ label: `Option ${index + 1}`, value: index + 1 }));
+    const crowded = parseMapSpec(JSON.stringify({
+        view: { layout: 'top' },
+        data: { d: { values: rows } },
+        layers: Array.from({ length: 7 }, (_, index) => ({ id: `layer${index}`, name: `A long layer name number ${index + 1}`,
+            type: 'regions', data: 'd', key: 'country', color: { field: 'gdp' } })),
+        controls: [
+            { type: 'range', field: 'gdp', data: 'd', label: 'Round-trip starting fare (USD) for the selected week' },
+            { type: 'checkboxes', param: 'picks', label: 'Picks', options: many },
+            { type: 'layers' },
+        ],
+    })).spec!;
+    const { container } = render(<MapView spec={crowded} data={{ d: rows }} geoSets={{ countries }} />);
+    await flush();
+    await flush();
+    const widgets = container.querySelector('[data-map-widgets]') as HTMLElement;
+    expect(widgets).toHaveAttribute('data-map-placement', 'top');
+
+    // The range's label sits above its slider (not beside it, where it would squeeze the slider away), cut short with the whole on hover.
+    const rangeLabel = within(widgets).getByTitle('Round-trip starting fare (USD) for the selected week');
+    const slider = within(widgets).getAllByRole('slider')[0];
+    expect(rangeLabel.parentElement!.contains(slider)).toBe(false);
+    expect(rangeLabel).toHaveStyle({ textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
+
+    // Twelve chips: eight, then the rest on request, and back.
+    const chips = () => within(widgets).getAllByRole('button', { pressed: true });
+    expect(chips()).toHaveLength(8);
+    fireEvent.click(within(widgets).getByRole('button', { name: '4 more' }));
+    expect(chips()).toHaveLength(12);
+    fireEvent.click(within(widgets).getByRole('button', { name: 'Show less' }));
+    expect(chips()).toHaveLength(8);
+
+    // The layers wrap past the first row: open the row, then seven layers show four, the rest on request.
+    fireEvent.click(within(widgets).getByRole('button', { name: /^1 more/ }));
+    expect(within(widgets).getAllByRole('checkbox')).toHaveLength(4);
+    fireEvent.click(within(widgets).getByRole('button', { name: '3 more' }));
+    expect(within(widgets).getAllByRole('checkbox')).toHaveLength(7);
+    panelSize = { width: 900, height: 600 };
+});
+
+it('shows the first row of controls in the row under the title, the rest on request, and flags a changed one it hides', async () => {
+    // Narrow enough that the timeline and the measure switch do not fit side by side.
+    panelSize = { width: 400, height: 700 };
+    const top = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetTop')!;
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!;
+    // jsdom has no layout: the first row's height, for the cut.
+    const isItem = (element: HTMLElement) => element.hasAttribute('data-map-item');
+    Object.defineProperty(HTMLElement.prototype, 'offsetTop', { configurable: true,
+        get(this: HTMLElement) { return isItem(this) ? (this.hasAttribute('data-map-timeline') ? 8 : 48) : top.get!.call(this); } });
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true,
+        get(this: HTMLElement) { return isItem(this) ? 30 : height.get!.call(this); } });
+    try {
+        const { container } = render(<MapView spec={{ ...map, view: { ...map.view, layout: 'top' } }} data={{ d: rows }} geoSets={{ countries }} />);
         await flush();
         const widgets = container.querySelector('[data-map-widgets]') as HTMLElement;
-        expect(widgets).toHaveAttribute('data-map-placement', placement);
-        // Controls and the timeline sit together; the legend does not.
-        expect(widgets.querySelector('[data-map-controls]')).not.toBeNull();
-        expect(widgets.querySelector('[data-map-timeline]')).not.toBeNull();
-        expect(widgets.querySelector('[data-map-legends]')).toBeNull();
-        unmount();
+        expect(widgets).toHaveAttribute('data-map-placement', 'top');
+        expect(widgets).toHaveAttribute('data-map-compact');
+        // The timeline leads and stays in reach; the switch past the first row is out of reach until opened.
+        expect(widgets.querySelector('[data-map-item]')).toHaveAttribute('data-map-timeline');
+        expect(screen.queryByRole('button', { name: 'Life' })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: /1 more/ }));
+        await flush();
+        expect(widgets).not.toHaveAttribute('data-map-compact');
+        fireEvent.click(screen.getByRole('button', { name: 'Life' }));
+        fireEvent.click(screen.getByRole('button', { name: /Show less/ }));
+        await flush();
+        expect(widgets).toHaveAttribute('data-map-compact');
+        expect(within(widgets.querySelector('[data-map-more]') as HTMLElement).getByTitle('1 changed')).toBeInTheDocument();
+    } finally {
+        Object.defineProperty(HTMLElement.prototype, 'offsetTop', top);
+        Object.defineProperty(HTMLElement.prototype, 'offsetHeight', height);
+        panelSize = { width: 900, height: 600 };
     }
-    panelSize = { width: 900, height: 600 };
+});
+
+it('keeps the notes under the legend and a selection\'s details short, the rest on request', async () => {
+    const wide = [{ country: 'France', a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8, note: 'A long note about how this was measured. '.repeat(6) }];
+    const spec = parseMapSpec(JSON.stringify({
+        source: 'Snapshots retrieved with a browser; approximate coordinates; not live quotes. '.repeat(4),
+        data: { d: { values: wide } },
+        layers: [{ id: 'c', type: 'regions', data: 'd', key: 'country', color: { field: 'a' },
+            tooltip: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'note'] }],
+        controls: [{ type: 'details', layer: 'c' }],
+    })).spec!;
+    const { container } = render(<MapView spec={spec} data={{ d: wide }} geoSets={{ countries }} />);
+    await flush();
+    const source = container.querySelector('[data-map-source]') as HTMLElement;
+    expect(source).toHaveStyle({ WebkitLineClamp: '2' });
+    expect(source).toHaveAttribute('title');
+    fireEvent.click(source);
+    expect(source).not.toHaveAttribute('title');
+
+    fireEvent.click(container.querySelectorAll('[data-layer="c"] path')[0]);
+    await flush();
+    const details = container.querySelector('[data-map-details]') as HTMLElement;
+    // Nine fields: six, then the rest on request.
+    expect(within(details).queryByText('G')).toBeNull();
+    fireEvent.click(within(details).getByRole('button', { name: '3 more' }));
+    expect(within(details).getByText('G')).toBeInTheDocument();
+    expect(within(details).getByTitle(/A long note about how this was measured/)).toHaveStyle({ WebkitLineClamp: '2' });
 });
 
 it('locates a searched place and returns to the whole map when the search is cleared', async () => {

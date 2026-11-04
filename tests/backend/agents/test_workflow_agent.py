@@ -1820,9 +1820,9 @@ def test_an_app_the_workflow_writes_is_a_published_output(agent):
     import pandas as pd
     agent.workspace.write_parquet(pd.DataFrame({"region": ["a"], "amount": [1]}), "sales")
     agent._execute("load_skill", {"name": "html_app"}, "load")
-    code = ("import { Page, ChartCard, DataTable } from '@df/ui';\nimport { useTable } from '@df/data';\n"
+    code = ("import { Container } from '@mui/material';\nimport { DataTable } from '@df/chart';\nimport { useTable } from '@df/data';\n"
             "export default function App() {\n  const sales = useTable('sales');\n"
-            "  return <Page title=\"Sales\"><ChartCard title=\"Rows\" query={sales}>{rows => <DataTable data={rows} />}</ChartCard></Page>;\n}\n")
+            "  return <Container><DataTable query={sales} /></Container>;\n}\n")
     result = agent._execute("write_app", {"filename": "sales.app.jsx", "title": "Sales explorer", "tables": ["sales"], "code": code}, "app")
     assert "Evidence ID: app" in result
     output = agent.state["outputs"][-1]

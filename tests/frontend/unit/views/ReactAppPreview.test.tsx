@@ -41,7 +41,7 @@ describe('ReactAppPreview', () => {
     });
 
     it('renders a valid app without errors', () => {
-        renderPreview("import { Page } from '@df/ui';\nexport default function App() { return <Page title=\"Hi\" />; }");
+        renderPreview("import { Typography } from '@mui/material';\nexport default function App() { return <Typography>Hi</Typography>; }");
         expect(screen.queryByRole('alert')).toBeNull();
         expect(screen.getByTitle(/sandboxed app/i)).toBeInTheDocument();
     });

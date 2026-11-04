@@ -5,7 +5,7 @@ import { MODULES, OPTIONAL_MODULES } from '../../../../../src/app/reactApp/runti
 
 const APP = `// @df-app {"version": 2, "title": "Sales", "tables": ["sales", 3, "sales"]}
 import { useState } from 'react';
-import { Page } from '@df/ui';
+import { Container as Page } from '@mui/material';
 export default function App() {
   const [n] = useState(1);
   return <Page title="Sales">{n}</Page>;
@@ -28,7 +28,7 @@ describe('compileReactApp', () => {
         const result = compileReactApp(APP);
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        expect(result.code).toContain("require('@df/ui')");
+        expect(result.code).toContain("require('@mui/material')");
         expect(result.code).toContain('require("react/jsx-runtime")');
         expect(result.code).toMatch(/exports\.default = App/);
         expect(mountScript(result.code)).toMatch(/^window\.__DF_REACT__\.mount\(function \(require, module, exports\) \{/);
@@ -83,9 +83,24 @@ describe('optional modules', () => {
         expect(optional("export default function App() { return <b>plain</b>; }")).toEqual([]);
     });
 
+    it('loads MUI icons for an app that imports them, by package or by path', () => {
+        expect(optional("import { TrendingUp } from '@mui/icons-material';\nexport default function App() { return <TrendingUp />; }"))
+            .toEqual(['@mui/icons-material']);
+        expect(optional("import TrendingUp from '@mui/icons-material/TrendingUp';\nimport Box from '@mui/material/Box';\nexport default function App() { return <Box><TrendingUp /></Box>; }"))
+            .toEqual(['@mui/icons-material']);
+    });
+
     it('loads map boundaries for a Flint map', () => {
         expect(optional("import { FlintChart } from '@df/chart';\nexport default function App() { return <FlintChart chartType=\"Choropleth\" encodings={{}} />; }"))
             .toEqual(['@df/geo']);
+    });
+
+    it("loads Flint's validator for charts the app sets a focus or updates on", () => {
+        expect(optional("import { FlintChart } from '@df/chart';\nexport default function App() { return <FlintChart chartType=\"Bar Chart\" encodings={{}} focus={{ a: 1 }} />; }"))
+            .toEqual(['flint-links']);
+        expect(optional("const steps = [{ id: 'a', ops: [{ op: 'set-annotation' }] }];\nexport default function App() { return <b>{steps.length}</b>; }"))
+            .toEqual(['flint-links']);
+        expect(optional("export default function App() { return <b>set-style</b>; }")).toEqual([]);
     });
 
     it('still refuses other packages', () => {

@@ -539,6 +539,7 @@
     "movingFile": "Memindahkan",
     "movedFile": "Dipindahkan: {{from}} ke {{to}}",
     "editedChart": "Bagan diedit: {{name}}",
+    "savedTheme": "Tema {{name}} disimpan",
     "editedReport": "Laporan diedit: {{name}}",
     "editSkippedChanged": "Suntingan agen pada {{name}} tidak diterapkan: item berubah saat agen bekerja",
     "jumpToThreadRange": "Lompat ke utas {{label}}",
@@ -836,6 +837,11 @@
     "publishExample": "Terbitkan sebagai contoh",
     "publishedExample": "\"{{title}}\" diterbitkan sebagai contoh sesi.",
     "publishExampleFailed": "Tidak dapat menerbitkan contoh sesi.",
+    "star": "Beri bintang",
+    "unstar": "Hapus bintang",
+    "starred": "Berbintang",
+    "showAllStarred": "Tampilkan semua berbintang ({{count}})",
+    "starFailed": "Tidak dapat memperbarui bintang. Silakan coba lagi.",
     "yourSchedules": "Jadwal Anda",
     "yourWorkflows": "Alur kerja Anda",
     "importSession": "Impor sesi",
@@ -1524,7 +1530,9 @@
     "created": "Aplikasi dibuat: {{title}}",
     "updated": "Aplikasi diperbarui: {{title}}",
     "backToApp": "Kembali ke aplikasi",
-    "backToMap": "Kembali ke peta"
+    "backToMap": "Kembali ke peta",
+    "generating": "Membuat aplikasi",
+    "generatingPage": "Membuat halaman"
   },
   "mcp": {
     "connect": "Hubungkan",
@@ -1537,9 +1545,8 @@
     "turnOff": "Nonaktifkan",
     "serverEnabled": "Gunakan {{name}}",
     "toolEnabled": "Gunakan {{name}}",
-    "showTools": "Tampilkan alat",
     "noTools": "Hubungkan untuk menampilkan alat server.",
-    "alwaysAllow": "Selalu izinkan",
+    "toolList": "Alat",
     "toolsChanged": "Alat baru atau yang berubah ditahan sampai Anda mengizinkannya: {{names}}",
     "approveChanges": "Izinkan",
     "headerValue": "Nilai {{header}}",
@@ -1605,15 +1612,72 @@
     "removeNamed": "Hapus {{name}}",
     "pack": {
       "builtIn": "Toolkit Data Formulator",
-      "add": "Tambah",
-      "added": "Ditambahkan",
+      "noSettings": "Tidak ada yang perlu diatur: tambahkan dan langsung siap.",
       "research": {
         "name": "Riset",
-        "description": "Cari di arXiv, ikuti makalah baru di suatu bidang, buat grafik tren publikasi, dan baca teks lengkap.",
+        "description": "Cari makalah arXiv beserta jumlah sitasinya dari OpenAlex, ikuti makalah baru di suatu bidang, buat grafik tren publikasi, dan baca teks lengkap.",
         "email": "Email kontak (opsional)",
-        "emailHint": "Dikirim ke arXiv bersama setiap permintaan, seperti yang diminta arXiv dari klien otomatis."
+        "emailHint": "Dikirim ke arXiv bersama setiap permintaan, seperti yang diminta arXiv dari klien otomatis.",
+        "openalex_key": "Kunci API OpenAlex (opsional)",
+        "openalex_keyHint": "Pencarian menggunakan OpenAlex. Tanpa kunci, pencarian berbagi anggaran harian kecil dengan jaringan Anda; kunci gratis (openalex.org/settings/api) memberi sepuluh kali lipat."
+      },
+      "github": {
+        "name": "GitHub",
+        "description": "Cari repositori, kode, dan isu GitHub publik, serta baca README dan berkasnya. Hanya baca."
+      },
+      "huggingface": {
+        "name": "Dataset Hugging Face",
+        "description": "Temukan dataset di Hugging Face Hub, periksa kartu dan barisnya, lalu muat sebagai tabel.",
+        "hf_token": "Token Hugging Face",
+        "hf_tokenHint": "Token baca dari huggingface.co/settings/tokens."
+      },
+      "finance": {
+        "name": "Keuangan",
+        "description": "Data keuangan dan laporan perusahaan dari SEC EDGAR, deret ekonomi dari FRED, dan harga saham (dengan kunci Twelve Data gratis).",
+        "email": "Email kontak",
+        "emailHint": "Dikirim ke SEC bersama setiap permintaan, sesuai permintaan SEC kepada klien otomatis.",
+        "twelvedata_key": "Kunci API Twelve Data (opsional)",
+        "twelvedata_keyHint": "Untuk harga saham: kunci gratis (twelvedata.com) mengizinkan 800 permintaan per hari.",
+        "fred_key": "Kunci API FRED (opsional)",
+        "fred_keyHint": "Untuk mencari deret ekonomi dengan kata kunci; mengambil deret berdasarkan ID tidak perlu kunci. Gratis di fred.stlouisfed.org."
+      },
+      "notAdded": "belum ditambahkan",
+      "runsLocally": "Berjalan di komputer ini bersama Data Formulator; kunci disimpan di penyimpanan kredensial Anda.",
+      "toolsPreview": "Masing-masing dapat diaktifkan atau dinonaktifkan setelah ditambahkan."
+    },
+    "signin": {
+      "signedInAs": "Masuk ke GitHub sebagai @{{login}} · hanya membaca repositori publik",
+      "prompt": "Masuk dengan GitHub untuk mencari kode dan memakai batas permintaan Anda sendiri. Hanya baca: repositori publik saja.",
+      "reuse": "Gunakan @{{login}}",
+      "start": "Masuk dengan GitHub",
+      "signOut": "Keluar",
+      "cancel": "Batal",
+      "enterCode": "Masukkan kode ini di GitHub, lalu setujui. Di sini akan menunggu.",
+      "code": "Kode masuk",
+      "open": "Salin kode dan buka GitHub",
+      "failed": "Proses masuk GitHub tidak selesai. Coba lagi.",
+      "paste": "Atau tempel token",
+      "huggingface": {
+        "prompt": "Masuk dengan Hugging Face untuk membuka dataset terbatas yang sudah Anda setujui dan memakai batas permintaan Anda sendiri. Hanya baca.",
+        "signedInAs": "Masuk ke Hugging Face sebagai @{{login}} · membaca dataset publik dan dataset terbatas yang disetujui",
+        "start": "Masuk dengan Hugging Face",
+        "enterCode": "Masukkan kode ini di Hugging Face, lalu setujui. Ini akan menunggu Anda.",
+        "open": "Salin kode dan buka Hugging Face",
+        "failed": "Masuk ke Hugging Face tidak selesai. Coba lagi."
       }
-    }
+    },
+    "section": {
+      "setup": "Penyiapan"
+    },
+    "key": {
+      "set": "Sudah diatur",
+      "notSet": "Belum diatur",
+      "add": "Tambah kunci"
+    },
+    "signedIn": "Sudah masuk",
+    "signInHint": "Masuk untuk terhubung (halaman penyedia akan terbuka).",
+    "alwaysAllowed": "Berjalan tanpa bertanya",
+    "alwaysAllowedHint": "Anda memilih \"Selalu izinkan alat ini\" saat agen bertanya. Hapus agar ditanya lagi."
   },
   "tools": {
     "chipDetails": "Alat yang dapat digunakan agen: terminal dan server MCP",
@@ -1634,25 +1698,32 @@
     },
     "locked": "Diatur oleh variabel lingkungan server DF_TERMINAL_MODE.",
     "close": "Tutup",
+    "back": "Semua alat",
     "terminal": {
       "name": "Terminal",
       "caption": "Jalankan perintah di komputer ini dengan login CLI Anda",
       "off": "Mati",
       "sandboxed": "Dalam sandbox",
       "unsandboxed": "Tidak ada sandbox terpasang",
-      "details": "Detail terminal",
       "use": "Gunakan terminal"
     },
     "count_one": "{{count}} alat",
     "count_other": "{{count}} alat",
     "chipLabel": "Alat: {{count}} aktif, {{mode}}",
     "add": {
-      "packs": "Toolkit Data Formulator",
       "custom": "Server MCP kustom",
-      "label": "Tambah",
-      "collapse": "Ciutkan"
+      "customAbout": "Server MCP apa pun: server jarak jauh melalui URL-nya, atau perintah lokal. Format konfigurasinya sama dengan VS Code, Claude, dan Cursor."
     },
-    "addTool": "+ Tambah alat"
+    "addTool": "+ Tambah alat",
+    "home": {
+      "yours": "Alat Anda",
+      "more": "Tambah lagi",
+      "setUp": "+ Atur dan tambahkan",
+      "customAbout": "Server MCP apa pun, dari JSON konfigurasinya.",
+      "paste": "+ Tempel konfigurasinya"
+    },
+    "addToolkit": "Tambahkan toolkit",
+    "done": "Selesai"
   },
   "map": {
     "style": "Gaya",
@@ -1702,6 +1773,10 @@
     "selectedCount": "{{count}} dipilih",
     "clearSelection": "Hapus pilihan",
     "moreCount": "{{count}} lainnya",
+    "changedCount": "{{count}} diubah",
+    "showLess": "Tampilkan lebih sedikit",
+    "minimizeControls": "Perkecil kontrol",
+    "showControls": "Tampilkan semua kontrol",
     "summary": "Ringkasan",
     "selection": "pilihan",
     "places": "Tempat",
@@ -1856,6 +1931,7 @@
       "arc": "Busur",
       "great-circle": "Lingkaran besar",
       "straight": "Lurus"
-    }
+    },
+    "generating": "Membuat peta"
   }
 }

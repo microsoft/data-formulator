@@ -40,11 +40,14 @@ import queue
 import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import asdict, replace
+from datetime import datetime, timezone as dt_timezone
 from itertools import chain, count
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Generator
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -106,6 +109,19 @@ def _stream_deadline(name: str, default: float) -> float:
 _STATUS_INTERVAL = 0.4   # seconds between narration status updates
 _STATUS_CHARS = 160
 _STATUS_MIN_CHARS = 24   # a line still being written shows once it has a few words
+# Providers that don't mark a message as the final answer (Anthropic, Chat Completions): text with no tool call
+# yet streams as the answer once it is clearly more than a note before a tool call. A tool call after it retracts it.
+_ANSWER_MIN_CHARS = 200
+_PLAN_ROW = re.compile(r"^[ \t>]*(?:[-*+]|\d+[.)])?[ \t]*\[[ xX]?\]|^[ \t>*_#]*plan\b", re.MULTILINE | re.IGNORECASE)
+
+
+def _looks_like_answer(text: str) -> bool:
+    """Whether unlabelled streaming text reads as an answer: a paragraph or more, and no plan or new-thread line,
+    which are taken out of the text when it ends."""
+    stripped = text.strip()
+    if _NEW_THREAD_LINE.search(stripped) or _PLAN_ROW.search(stripped):
+        return False
+    return "\n\n" in stripped or len(stripped) >= _ANSWER_MIN_CHARS
 
 
 def _status_line(text: str) -> str:
@@ -407,6 +423,111 @@ class _StreamingArgExtractor:
             return None  # e.g. partial ``\\uXXXX`` — wait for more
 
 
+# ── Artifact draft preview ──────────────────────────────────────────────────
+# While the model writes an app or map (a long call, often 30s+), the run's draft stands for it: its title, and for an
+# app the shape of its code going by (the last few lines with every visible character masked), so the user sees
+# progress without half-written code. A map's spec is not shown. Reports stream readable text of their own instead.
+_DRAFT_FIELDS: dict[str, str | None] = {"write_app": "code", "write_html_app": "html", "write_map": None}
+_DRAFT_INTERVAL = 0.12   # seconds between artifact_draft events
+_DRAFT_TITLE_RE = re.compile(r'"title"\s*:\s*"((?:[^"\\]|\\.)*)"')
+_JSON_ESCAPES = {"n": "\n", "t": "\t", "r": ""}
+
+
+class _ArtifactDraftPreview:
+    """An artifact's title, and the masked tail of its code argument (``field``, if any), as its tool call streams in.
+
+    Decodes only the new part of the arguments on each feed. Spaces, tabs and newlines are kept; every other
+    character becomes ``x`` (the frontend draws each as a glyph).
+    """
+
+    LINES = 5
+    WIDTH = 96
+
+    def __init__(self, field: str | None):
+        self._open_re = re.compile(r'"' + re.escape(field) + r'"\s*:\s*"') if field else None
+        self._pos: int | None = None
+        self._done = False
+        self.lines: deque[str] = deque([""], maxlen=self.LINES)
+        self.line_count = 1
+        self.title = ""
+        self._sent: tuple | None = None
+        self._sent_at = 0.0
+
+    def feed(self, args: str) -> None:
+        if not self.title and (self._pos is None or self._done):
+            match = _DRAFT_TITLE_RE.search(args)
+            if match:
+                try:
+                    self.title = json.loads(f'"{match.group(1)}"')
+                except ValueError:
+                    pass
+        if self._done or self._open_re is None:
+            return
+        if self._pos is None:
+            match = self._open_re.search(args)
+            if not match:
+                return
+            self._pos = match.end()
+        i, n = self._pos, len(args)
+        while i < n:
+            ch = args[i]
+            if ch == '"':
+                self._done = True
+                break
+            if ch == "\\":
+                if i + 1 >= n or (args[i + 1] == "u" and i + 6 > n):
+                    break  # the rest of the escape is in the next chunk
+                escape = args[i + 1]
+                self._put(_JSON_ESCAPES.get(escape, "x"))
+                i += 6 if escape == "u" else 2
+                continue
+            self._put(ch)
+            i += 1
+        self._pos = i
+        if self._done:
+            self.feed(args)  # a title written after the code
+
+    def _put(self, ch: str) -> None:
+        if ch == "\n":
+            self.lines.append("")
+            self.line_count += 1
+            return
+        if not ch:
+            return
+        line = self.lines[-1]
+        if len(line) < self.WIDTH:
+            self.lines[-1] = line + ("  " if ch == "\t" else " " if ch.isspace() else "x")
+
+    def event(self, tool: str, force: bool = False) -> Generator[Event, None, None]:
+        """An ``artifact_draft`` event when the preview changed, at most every ``_DRAFT_INTERVAL`` unless forced."""
+        if self._pos is None and not self.title:
+            return
+        now = time.monotonic()
+        if not force and now - self._sent_at < _DRAFT_INTERVAL:
+            return
+        state = (tuple(self.lines), self.line_count, self.title)
+        if state == self._sent:
+            return
+        self._sent, self._sent_at = state, now
+        yield {"type": "artifact_draft", "tool": tool, "title": self.title,
+               "lines": list(self.lines), "line_count": self.line_count}
+
+
+def now_note(timezone: str | None, now: datetime | None = None) -> str:
+    """The user's date and time for a request, by the server's clock in the time zone the browser reports
+    (UTC when it reports none or one this system does not know). It goes in the request, not the system
+    prompt, which stays the same across a session's requests so the provider can cache it."""
+    try:
+        zone = ZoneInfo(timezone) if timezone else None
+    except Exception:
+        zone = None
+    local = (now or datetime.now(dt_timezone.utc)).astimezone(zone or dt_timezone.utc)
+    offset = local.strftime("%z") or "+0000"
+    name = timezone if zone else "UTC"
+    return (f"[NOW]\n\n{local:%A}, {local.day} {local:%B %Y}, {local:%H:%M} "
+            f"({name}, UTC{offset[0]}{offset[1:3]}:{offset[3:5]}).\n\n")
+
+
 
 # The agent's system frame — shell-owned, invariant across skills: identity, the
 # tools-vs-actions contract, the skills mechanism, and the action budget /
@@ -651,6 +772,7 @@ class AnalystAgent:
         external_references: list[dict[str, Any]] | None = None,
         session_state: dict[str, Any] | None = None,
         references: list[dict[str, Any]] | None = None,
+        timezone: str | None = None,
     ) -> Generator[dict[str, Any], None, None]:
         """Run the unified analyst loop.
 
@@ -742,6 +864,8 @@ class AnalystAgent:
             # Earlier results the request is about; with one, the run may move it to a new thread (_read_placement).
             self._references = [item for item in references or [] if isinstance(item, dict) and item.get("id")]
             self._placement_open = bool(self._references)
+            # The user's time zone (from the browser), for the request's [NOW].
+            self._timezone = timezone if isinstance(timezone, str) else None
             if trajectory is None:
                 stored, why = history.continuable(self.client.model) if history else (None, "no workspace")
                 if stored is None:
@@ -1609,6 +1733,11 @@ class AnalystAgent:
             "- **[USER ATTACHMENT(S)]**, when present, are images the user attached to the request. "
             "Refer to them when relevant to the user's question."
         )
+        context_lines.append(
+            "- **[NOW]** is the user's date, time and time zone when they sent the request. Use it for \"today\", "
+            "\"this year\", \"last quarter\" and other relative dates, for how current data is, and for dates in "
+            "searches and queries; you do not need to look the date up."
+        )
         context_guide = "\n".join(context_lines)
 
         # The skill catalog is static capability config (fixed at agent build,
@@ -1684,9 +1813,9 @@ class AnalystAgent:
         user_content = f"{context}\n\n" if context else ""
 
         # Non-image attachments were uploaded to the workspace scratch/ folder
-        # (raw bytes). Surface them and the two natural uses: read as context
-        # for analysis, or bring into the workspace via data loading (which
-        # shares scratch/ access). Keep it neutral — the agent picks.
+        # (raw bytes), including large text pastes (pasted-text-N.*). Surface
+        # them by path only, so their content is read on demand with the file
+        # tools rather than resent on every model call.
         if scratch_files:
             file_list = "\n".join(f"- {p}" for p in scratch_files)
             user_content += (
@@ -1694,10 +1823,14 @@ class AnalystAgent:
                 "The user attached file(s), saved in the workspace scratch/ "
                 "folder:\n"
                 f"{file_list}\n\n"
-                "Read them with execute_python_script "
-                "(e.g. pd.read_excel('scratch/<name>') or "
-                "pd.read_csv('scratch/<name>')) to use as temporary context for "
-                "your analysis. Use create_data for reusable workspace datasets "
+                "pasted-text-* files hold text the user pasted into the chat; "
+                "treat them as part of the request. Inspect attachments with "
+                "read_file (large ones are paged; read the parts you need) and "
+                "search, and parse or compute over them with "
+                "execute_python_script (e.g. pd.read_excel('scratch/<name>'), "
+                "pd.read_csv('scratch/<name>') or json.load) to use as "
+                "temporary context for your analysis. Use create_data for "
+                "reusable workspace datasets "
                 "and update_data for explicit revisions to agent-created data. "
                 "Use create_file/edit_file for durable workspace documents and exports. "
                 "Prioritize relevant user-managed sources.\n\n"
@@ -1706,6 +1839,7 @@ class AnalystAgent:
         if self._references:
             user_content += self._reference_note()
         user_content += self._background_task_note()
+        user_content += now_note(getattr(self, "_timezone", None))
 
         # The request comes last.
         user_content += f"[USER QUESTION]\n\n{user_question}"
@@ -2492,6 +2626,8 @@ class AnalystAgent:
         tool_calls_acc: dict[int, dict[str, Any]] = {}
         # idx -> {"active", "channel", "extractor", "announced"} for streaming actions
         streamers: dict[int, dict[str, Any]] = {}
+        # idx -> the masked preview of an app being written
+        drafts: dict[int, _ArtifactDraftPreview] = {}
         available_tool_names = {tool["function"]["name"] for tool in tools}
 
         for chunk in stream:
@@ -2511,10 +2647,16 @@ class AnalystAgent:
             if content:
                 content_parts.append(content)
                 # The answer streams to the user as it is written; notes before a tool call stay a status line.
-                # Only providers that mark a message's phase (OpenAI Responses) tell the two apart this early.
-                if (getattr(delta, "provider_specific_fields", None) or {}).get("phase") == "final_answer":
+                # Providers that mark a message's phase (OpenAI Responses) tell the two apart this early; for the
+                # others, text with no tool call yet becomes the answer once it reads as one (see _looks_like_answer).
+                phase = (getattr(delta, "provider_specific_fields", None) or {}).get("phase")
+                if phase == "final_answer" or (phase is None and self._answer_streamed):
                     self._answer_streamed = True
                     yield {"type": "text_delta", "channel": "answer", "content": content}
+                    continue
+                if phase is None and not tool_calls_acc and _looks_like_answer("".join(content_parts)):
+                    self._answer_streamed = True
+                    yield {"type": "text_delta", "channel": "answer", "content": "".join(content_parts)}
                     continue
                 line = _status_line("".join(content_parts))
                 now = time.monotonic()
@@ -2541,6 +2683,13 @@ class AnalystAgent:
                         slot["arguments"] += arg_delta
                 if slot["name"] in available_tool_names:
                     yield from self._forward_stream_delta(slot, streamers)
+                    if slot["name"] in _DRAFT_FIELDS:
+                        draft = drafts.setdefault(idx, _ArtifactDraftPreview(_DRAFT_FIELDS[slot["name"]]))
+                        draft.feed(slot["arguments"])
+                        yield from draft.event(slot["name"])
+
+        for idx, draft in drafts.items():
+            yield from draft.event(tool_calls_acc[idx]["name"], force=True)
 
         # Reconstruct a non-streaming-shaped response for the loop.
         tool_call_objs: list[Any] = []

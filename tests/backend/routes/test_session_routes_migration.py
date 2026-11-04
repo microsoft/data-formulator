@@ -74,6 +74,35 @@ class TestListSessionRoute:
         session = resp.get_json()["data"]["sessions"][0]
         assert session["source_ids"] == ["sample_datasets", "warehouse"]
 
+
+class TestUpdateMetaRoute:
+    def _post(self, client, manager, body):
+        with (
+            patch("data_formulator.routes.sessions.get_identity_id", return_value="browser:abc"),
+            patch("data_formulator.routes.sessions.get_workspace_manager", return_value=manager),
+        ):
+            return client.post("/api/sessions/update-meta", json=body)
+
+    def test_star_only_does_not_rename(self, client):
+        manager = MagicMock()
+        manager.workspace_exists.return_value = True
+
+        body = self._post(client, manager, {"id": "sales", "starred": True}).get_json()
+
+        assert body["status"] == "success"
+        manager.set_starred.assert_called_once_with("sales", True)
+        manager.update_display_name.assert_not_called()
+
+    def test_rejects_non_boolean_star(self, client):
+        manager = MagicMock()
+        manager.workspace_exists.return_value = True
+
+        body = self._post(client, manager, {"id": "sales", "starred": "yes"}).get_json()
+
+        assert body["status"] == "error"
+        manager.set_starred.assert_not_called()
+
+
 class TestMigrateRoute:
     def test_migrate_moves_and_cleans_source(self, client):
         source_mgr = MagicMock()

@@ -13,6 +13,7 @@ import { TerminalMessageContent } from '../components/TerminalApprovalDialog';
 import { CompactMarkdown, RunPlanChecklist } from './InteractionEntryCard';
 import { ConversationWorkLog, workEntriesOf } from './ConversationWorkLog';
 import { codeCallsOf } from '../app/toolCalls';
+import { conversationNodeIds } from '../app/threadGraph';
 import { DataFrameTable } from './DataFrameTable';
 import { HorizontalScrollFade } from '../components/ScrollFade';
 import { apiRequest } from '../app/apiClient';
@@ -91,7 +92,7 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label, anchorId }: {
     const selectedRef = useRef<HTMLDivElement>(null);
     // Rows load only once a result's rows are opened.
     const [rowsOpened, setRowsOpened] = useState<Set<string>>(new Set());
-    const path = nodeIds ?? [textTurnId];
+    const path = (nodeIds ? conversationNodeIds(graph, textTurnId, nodeIds) : undefined) ?? [textTurnId];
     const pathIds = new Set(path);
     const firstPromptId = path.find(id => turns.find(turn => turn.id === id)?.prompt);
     const branchOptions = nodeIds ? [] : turns.filter(turn => turn.parentNodeId === path[path.length - 1] && !pathIds.has(turn.id));
@@ -145,7 +146,7 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label, anchorId }: {
         const name = table.displayId || table.id;
         const rowCount = table.virtual?.rowCount ?? table.rows.length;
         const tableCharts = charts.filter(chart => chart.tableRef === table.id && !['Auto', '?', 'Table'].includes(chart.chartType));
-        return <Box key={table.id} ref={table.id === textTurnId ? selectedRef : undefined}
+        return <Box key={table.id} ref={table.id === (anchorId ?? textTurnId) ? selectedRef : undefined}
             data-conversation-entry={table.id} sx={{ my: 3, scrollMarginTop: 12 }}>
             <Box sx={{ ...cardSx, overflow: 'hidden' }}>
                 <ButtonBase onClick={() => dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }))}

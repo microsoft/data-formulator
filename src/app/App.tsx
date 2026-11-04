@@ -63,7 +63,7 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
 
 import { DataFormulatorFC } from '../views/DataFormulator';
-import { THEME_CHOICES, themeIconUrl } from '../views/ChartThemePicker';
+import { themeIconUrl, useThemeChoices } from '../views/ChartThemePicker';
 import { LayoutProvider, useLayout, type DensityPreference } from './LayoutProvider';
 import { createDfTheme } from './theme';
 import { MIN_SUPPORTED } from './layout';
@@ -786,6 +786,7 @@ const ConfigDialog: React.FC<{
     );
     const configChartThemeId = config.defaultChartThemeId ?? DEFAULT_CHART_THEME_ID;
     const [defaultChartThemeId, setDefaultChartThemeId] = useState(configChartThemeId);
+    const themeChoices = useThemeChoices();
     // UI size is a per-browser preference: Auto follows the window width, the others pin it.
     const { densityPreference, setDensityPreference } = useLayout();
     const [displaySize, setDisplaySize] = useState<DensityPreference>(densityPreference);
@@ -874,7 +875,7 @@ const ConfigDialog: React.FC<{
                                 sx={{ fontSize: textVar.md }}
                                 MenuProps={{ slotProps: { paper: { sx: { maxHeight: 320 } } } }}
                             >
-                                {THEME_CHOICES.map(choice => (
+                                {themeChoices.map(choice => (
                                     <MenuItem key={choice.id ?? FLINT_DEFAULT_THEME_VALUE} value={choice.id ?? FLINT_DEFAULT_THEME_VALUE}
                                         title={choice.description} sx={{ py: 0.5 }}>
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1607,6 +1608,10 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         {
             path: "/dev/maps",
             lazy: () => import('../maps/MapGallery').then(module => ({ Component: module.default })),
+        },
+        {
+            path: "/dev/samples",
+            lazy: () => import('../views/DevSamplesPage').then(module => ({ Component: module.default })),
         },
         {
             path: "/",

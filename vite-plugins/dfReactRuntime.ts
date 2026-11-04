@@ -17,7 +17,7 @@ import type { Plugin } from 'vite';
 const VIRTUAL_ID = 'virtual:df-react-runtime';
 const RESOLVED_ID = `\0${VIRTUAL_ID}`;
 /** Optional module bundles by virtual-id suffix. */
-const OPTIONAL_ENTRIES: Record<string, string> = { d3: 'd3.ts', lodash: 'lodash.ts', geo: 'geo.ts', 'flint-links': 'flintLinks.ts' };
+const OPTIONAL_ENTRIES: Record<string, string> = { d3: 'd3.ts', lodash: 'lodash.ts', geo: 'geo.ts', icons: 'icons.ts', 'flint-links': 'flintLinks.ts' };
 
 /** The frame loads vega and vega-lite as scripts before the runtime; Flint's renderer uses those globals. */
 const IFRAME_GLOBALS: Record<string, string> = { 'vega': 'vega', 'vega-lite': 'vegaLite' };
@@ -43,6 +43,19 @@ const flintRuntime: EsbuildPlugin = {
                 if (!links) throw new Error('Chart links did not load in this app. Reload the app to try again.');
                 return links.validateLinks(inputs, spec);
             }` }));
+    },
+};
+
+/** Shared with the core runtime: an optional bundle that renders React (MUI icons) uses the app's React and MUI, not copies. */
+const SHARED_MODULES = /^(react|react\/jsx-runtime|@mui\/material|@mui\/material\/utils)$/;
+const sharedRuntime: EsbuildPlugin = {
+    name: 'df-shared-runtime',
+    setup(context) {
+        context.onResolve({ filter: SHARED_MODULES }, args => ({ path: args.path, namespace: 'df-shared' }));
+        context.onLoad({ filter: /.*/, namespace: 'df-shared' }, args => ({ loader: 'js', contents:
+            `const shared = globalThis.__DF_SHARED_MODULES__;
+            if (!shared) throw new Error('The app runtime must load before its optional modules.');
+            module.exports = shared[${JSON.stringify(args.path === '@mui/material/utils' ? '@mui/material' : args.path)}];` }));
     },
 };
 
@@ -78,7 +91,7 @@ export function dfReactRuntime(options: { root: string; flintChartLocal?: string
                 legalComments: 'none',
                 metafile: true,
                 logLevel: 'silent',
-                plugins: [flintRuntime],
+                plugins: optional ? [flintRuntime, sharedRuntime] : [flintRuntime],
                 external: ['echarts', 'chart.js', 'chart.js/auto', 'plotly.js', 'plotly.js-dist-min'],
                 ...(options.flintChartLocal
                     ? { alias: { 'flint-chart': path.resolve(options.root, options.flintChartLocal) } }

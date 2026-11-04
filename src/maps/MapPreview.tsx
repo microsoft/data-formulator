@@ -24,6 +24,8 @@ import type { FieldAnnotation } from './semantics';
 import { mapTables, parseMapSpec, type DataSource, type MapSpec, type Row } from './spec';
 
 export const MAP_ROW_LIMIT = 50_000;
+/** The canvas's buttons at the top right (style, reload, more: three 30px pills, 20px from the edge), and a gap. */
+const HOST_BUTTONS_WIDTH = 140;
 
 const quote = (name: string) => `"${name.replace(/"/g, '""')}"`;
 
@@ -136,7 +138,7 @@ export const MapPreview: FC<{
         <Box sx={{ position: 'relative', flex: 1, minWidth: 0 }}>
             {inputs.loading && !Object.keys(inputs.geoSets).length
                 ? <Box sx={{ height: '100%', display: 'grid', placeItems: 'center' }}><Typography sx={{ fontSize: '0.8rem', color: 'text.secondary' }}>{t('map.loading')}</Typography></Box>
-                : <MapView spec={spec} data={inputs.data} geoSets={inputs.geoSets} reserveTopRight={styleOpen ? 0 : 260} reserveBottomRight={styleOpen ? 0 : 28} footer={footer}
+                : <MapView spec={spec} data={inputs.data} geoSets={inputs.geoSets} reserveTopRight={styleOpen ? 0 : HOST_BUTTONS_WIDTH} reserveBottomRight={styleOpen ? 0 : 28} footer={footer}
                     annotations={annotations} defaultTheme={defaultTheme} />}
             {parsed.warnings.length > 0 && !inputs.loading && <Alert severity="info" sx={{ position: 'absolute', top: 56, right: 16, maxWidth: 320, py: 0, fontSize: '0.75rem' }}>
                 {parsed.warnings[0]}</Alert>}

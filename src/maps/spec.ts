@@ -35,6 +35,10 @@ export const MAP_STYLES = ['light', 'muted', 'atlas', 'dark', 'minimal'] as cons
 export type MapStyleName = typeof MAP_STYLES[number];
 export type TileStyle = typeof TILES[number];
 
+/** Where the controls go (view.layout); auto picks the place that serves the map best. */
+export const MAP_LAYOUTS = ['auto', 'top', 'bottom', 'side'] as const;
+export type MapLayoutName = typeof MAP_LAYOUTS[number];
+
 /** Where a layer's region features come from. */
 export const GEO_SETS = ['countries', 'us-states', 'us-counties'] as const;
 export type GeoSetName = typeof GEO_SETS[number];
@@ -204,6 +208,11 @@ export interface MapView {
     theme?: string;
     /** Names of countries or states on the basemap (default on). */
     labels?: boolean;
+    /**
+     * Where the controls go: a row under the title (top), a row along the bottom, or a column at the left (side).
+     * Default auto: the place that leaves the map largest and least covered.
+     */
+    layout?: MapLayoutName;
 }
 
 export type DataSource =
@@ -292,6 +301,7 @@ export function parseMapSpec(text: string): ParsedMap {
     if (view.tiles !== undefined && !oneOf(TILES, view.tiles)) errors.push(`view.tiles must be one of ${TILES.join(', ')}.`);
     if (view.style !== undefined && !oneOf(MAP_STYLES, view.style)) errors.push(`view.style must be one of ${MAP_STYLES.join(', ')}.`);
     if (view.theme !== undefined && typeof view.theme !== 'string') errors.push('view.theme must be a chart theme id.');
+    if (view.layout !== undefined && !oneOf(MAP_LAYOUTS, view.layout)) errors.push(`view.layout must be one of ${MAP_LAYOUTS.join(', ')}.`);
     const fields: Record<string, FieldAnnotation> = {};
     if (raw.fields !== undefined && !isRecord(raw.fields)) errors.push('fields must map field names to annotations.');
     for (const [name, annotation] of Object.entries(isRecord(raw.fields) ? raw.fields : {})) {

@@ -22,6 +22,8 @@ import { ThreadDeck, ThreadOutput } from '../components/ThreadDeck';
 import { STARTER_HINTS, StarterHintMock } from './DevStarterHints';
 import { WorkspaceSummary } from './SourceTableShelf';
 import { ToolsChipFace } from '../components/ToolsAccess';
+import { AppComponentsGallery, AppDraftDemo } from './DevAppPieces';
+import { DevNav } from './DevNav';
 
 const FILES = [
     'a.py', 'a.ipynb', 'a.sql', 'a.md', 'a.r', 'a.ts', 'a.tsx', 'a.js', 'a.css', 'a.php', 'a.html', 'a.app.jsx',
@@ -49,8 +51,8 @@ const Cell: React.FC<{ label: string; children: (size: number) => React.ReactNod
         <Box sx={{ fontSize: 11, fontFamily: 'var(--df-font-mono, monospace)', color: 'text.secondary' }}>{label}</Box>
     </Box>;
 
-const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => <>
-    <Box sx={{ fontSize: 12, fontWeight: 600, mt: 2, mb: 1 }}>{title}</Box>
+const Section: React.FC<{ title: string; id?: string; children: React.ReactNode }> = ({ title, id, children }) => <>
+    <Box id={id} sx={{ fontSize: 12, fontWeight: 600, mt: 2, mb: 1, scrollMarginTop: 52 }}>{title}</Box>
     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>{children}</Box>
 </>;
 
@@ -165,8 +167,14 @@ const WORKSPACE_CASES: [string, string | null, string[], string[]][] = [
     ['one table, no title', null, ['weekly_us_fuel_prices'], []],
 ];
 
+const SECTIONS: [string, string][] = [
+    ['cards', 'cards'], ['thread-deck', 'thread deck'], ['icons', 'icons'], ['components', 'app components'], ['app-draft', 'app draft'],
+];
+
 export default function DevPage() {
-    return <Box sx={{ p: 2, height: '100vh', overflow: 'auto', boxSizing: 'border-box', bgcolor: 'background.default' }}>
+    return <Box sx={{ height: '100vh', overflow: 'auto', bgcolor: 'background.default' }}>
+        <DevNav sections={SECTIONS} />
+        <Box sx={{ p: 2, pt: 0 }}>
         <Section title="tools chip · count and mode">
             <Box sx={{ p: 1, border: 1, borderColor: 'divider', display: 'grid', gridTemplateColumns: 'auto auto auto', columnGap: 3, rowGap: 1.25, alignItems: 'center' }}>
                 {(['off', 'ask', 'auto'] as const).map(mode => <Box key={mode} sx={{ fontSize: 10, color: 'text.disabled', fontFamily: 'var(--df-font-mono, monospace)' }}>{mode}</Box>)}
@@ -200,12 +208,12 @@ export default function DevPage() {
                     sx={{ color: tone === 'active' ? undefined : iconTone[tone] }} />)}
             </Box>)}
         </Section>
-        <Section title="report & app cards">
+        <Section title="report & app cards" id="cards">
             {ARTIFACT_CARDS.map(([label, card]) => <Box key={label} sx={{ width: 230, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
                 <Box sx={{ fontSize: 11, fontFamily: 'var(--df-font-mono, monospace)', color: 'text.secondary' }}>{label}</Box>{card}
             </Box>)}
         </Section>
-        <Section title="thread deck">
+        <Section title="thread deck" id="thread-deck">
             {[0, 1, 2, 3, 4, 5, 6, 9].map(count => <Box key={count} sx={{ width: 270, p: 1.5, border: 1, borderColor: 'divider' }}>
                 <ThreadDeck outputs={deckOutputs(count)} heading="How have gas prices changed over the last two decades, and which grades moved most?"
                     onSelect={() => {}} />
@@ -219,7 +227,7 @@ export default function DevPage() {
         <Section title="thread rail">
             <Box sx={{ p: 1.5, border: 1, borderColor: 'divider' }}><MockThread /></Box>
         </Section>
-        <Section title="charts · rest, reserved colour">
+        <Section title="charts · rest, reserved colour" id="icons">
             {CHART_TYPES.map(type => { const { Icon, color } = chartFamily(type);
                 return <Swatch key={type} label={type}
                     proposed={(size, active) => <Icon sx={{ width: size, height: size, ...(active ? { color } : {}) }} />} />; })}
@@ -231,5 +239,8 @@ export default function DevPage() {
         </Section>
         <Section title="domain">{iconCells(DOMAIN)}</Section>
         <Section title="data types">{iconCells(DATA_TYPES)}</Section>
+        <Section title="app components · @df/chart" id="components"><AppComponentsGallery /></Section>
+        <Section title="app draft" id="app-draft"><AppDraftDemo /></Section>
+        </Box>
     </Box>;
 }

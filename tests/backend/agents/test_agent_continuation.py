@@ -317,6 +317,63 @@ def test_the_model_stream_reports_what_the_agent_is_doing(workspace, monkeypatch
     assert finished.value.value.choices[0].message.tool_calls[0].function.name == "visualize"
 
 
+def test_an_app_being_written_streams_as_masked_lines(workspace, monkeypatch) -> None:
+    from types import SimpleNamespace
+    from data_formulator.analyst import agent as agent_module
+
+    code = 'import React from "react";\n\nexport default function App() {\n\treturn <Box sx={{p: 2}}>Hi 你好</Box>;\n}\n'
+    arguments = json.dumps({"title": 'Sales "overview"', "tables": ["sales"], "code": code}, ensure_ascii=False)
+    # Small chunks split escapes (\n, \", \t) across deltas, as providers do.
+    pieces = [arguments[i:i + 7] for i in range(0, len(arguments), 7)]
+    calls = [SimpleNamespace(index=0, id="call_1", function=SimpleNamespace(name="write_app", arguments=None))]
+    calls += [SimpleNamespace(index=0, id=None, function=SimpleNamespace(name=None, arguments=piece)) for piece in pieces]
+    chunks = [SimpleNamespace(choices=[SimpleNamespace(finish_reason=None, delta=SimpleNamespace(
+        content=None, tool_calls=[call], provider_specific_fields=None))]) for call in calls]
+    monkeypatch.setattr(agent_module, "_DRAFT_INTERVAL", 0.0)
+    agent = AnalystAgent(client=MagicMock(), workspace=workspace)
+    monkeypatch.setattr(agent, "_open_stream", lambda messages, tools: iter(chunks))
+    tools = [{"type": "function", "function": {"name": "write_app", "parameters": {"type": "object"}}}]
+    stream, events = agent._stream_llm([], tools), []
+    with pytest.raises(StopIteration) as finished:
+        while True:
+            events.append(next(stream))
+    drafts = [event for event in events if event["type"] == "artifact_draft"]
+    assert len(drafts) > 3
+    # Spaces, tabs and line breaks keep their place; every other character is masked; only the last 5 lines go.
+    assert drafts[-1] == {"type": "artifact_draft", "tool": "write_app", "title": 'Sales "overview"', "line_count": 6, "lines": [
+        "", "xxxxxx xxxxxxx xxxxxxxx xxxxx x", "  xxxxxx xxxx xxxxxxx xxxxxx xxxxxxxxx", "x", ""]}
+    assert all(set("".join(event["lines"])) <= {"x", " "} for event in drafts)
+    assert [len(event["lines"]) for event in drafts] == sorted(len(event["lines"]) for event in drafts)
+    assert finished.value.value.choices[0].message.tool_calls[0].function.arguments == arguments
+    # Other tools stream no preview.
+    chunks[0].choices[0].delta.tool_calls[0].function.name = "create_file"
+    tools[0]["function"]["name"] = "create_file"
+    monkeypatch.setattr(agent, "_open_stream", lambda messages, tools: iter(chunks))
+    assert not any(event["type"] == "artifact_draft" for event in _drain(agent._stream_llm([], tools)))
+    # \uXXXX escapes split one character at a time are one masked character each.
+    preview = agent_module._ArtifactDraftPreview("code")
+    escaped = json.dumps({"code": "你好 x\n"})
+    for end in range(len(escaped) + 1):
+        preview.feed(escaped[:end])
+    assert list(preview.lines) == ["xx x", ""] and preview.line_count == 2
+    # A map shows its title only: its spec has no lines to show.
+    map_args = json.dumps({"title": "Storm tracks", "map": {"template": "tracks", "data": {"table": "storms"}}})
+    preview = agent_module._ArtifactDraftPreview(None)
+    for end in range(0, len(map_args) + 1, 5):
+        preview.feed(map_args[:end])
+    preview.feed(map_args)
+    assert [event["title"] for event in preview.event("write_map", force=True)] == ["Storm tracks"]
+    assert list(preview.lines) == [""]
+
+
+def _drain(stream):
+    events = []
+    with pytest.raises(StopIteration):
+        while True:
+            events.append(next(stream))
+    return events
+
+
 def test_the_answer_streams_as_it_is_written_and_a_note_does_not(workspace, monkeypatch) -> None:
     from types import SimpleNamespace
 
@@ -340,10 +397,37 @@ def test_the_answer_streams_as_it_is_written_and_a_note_does_not(workspace, monk
         {"type": "text_delta", "channel": "answer", "content": "**India** has "},
         {"type": "text_delta", "channel": "answer", "content": "the most."}]
     assert agent._answer_streamed and not any(event.get("phase") == "narrating" for event in answer)
-    # A note before a tool call, or a provider that does not mark phases, stays a status line.
+    # A note before a tool call, or a short note from a provider that does not mark phases, stays a status line.
     for phase in ("commentary", None):
         events = run([chunk("Let me check the coverage first.", phase)])
         assert not any(event["type"] == "text_delta" for event in events) and not agent._answer_streamed
+    # A provider that marks no phases: text becomes the answer once it reads as one, all of it so far, then as written.
+    answer = run([chunk("Filing pro se is allowed. "), chunk("It is more work.\n\nSo plan"), chunk(" ahead.")])
+    assert [event for event in answer if event["type"] == "text_delta"] == [
+        {"type": "text_delta", "channel": "answer", "content": "Filing pro se is allowed. It is more work.\n\nSo plan"},
+        {"type": "text_delta", "channel": "answer", "content": " ahead."}]
+    assert agent._answer_streamed
+    # A long note marked as commentary, and a plan, are never the answer.
+    for chunks in ([chunk("x" * 300, "commentary")], [chunk("Plan: compare\n- [ ] load\n- [ ] chart\n\nLet me start.")]):
+        events = run(chunks)
+        assert not any(event["type"] == "text_delta" for event in events) and not agent._answer_streamed
+
+
+def test_unmarked_text_after_a_tool_call_starts_is_not_the_answer(workspace, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    call = SimpleNamespace(index=0, id="call_1", function=SimpleNamespace(name="read_file", arguments="{}"))
+    chunks = [SimpleNamespace(choices=[SimpleNamespace(finish_reason=None, delta=SimpleNamespace(
+                  content=content, tool_calls=calls, provider_specific_fields=None))])
+              for content, calls in ((None, [call]), ("A long explanation that follows. " * 10, None))]
+    agent = AnalystAgent(client=MagicMock(), workspace=workspace)
+    monkeypatch.setattr(agent, "_open_stream", lambda messages, tools: iter(chunks))
+    tools = [{"type": "function", "function": {"name": "read_file", "parameters": {"type": "object"}}}]
+    stream, events = agent._stream_llm([], tools), []
+    with pytest.raises(StopIteration):
+        while True:
+            events.append(next(stream))
+    assert not any(event["type"] == "text_delta" for event in events) and not agent._answer_streamed
 
 
 def test_a_streamed_answer_is_retracted_when_a_tool_call_follows(workspace, monkeypatch) -> None:

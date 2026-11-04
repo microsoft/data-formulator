@@ -325,6 +325,9 @@ def _register_blueprints():
     from data_formulator.routes.knowledge import knowledge_bp
     app.register_blueprint(knowledge_bp)
 
+    from data_formulator.routes.themes import themes_bp
+    app.register_blueprint(themes_bp)
+
     from data_formulator.routes.workflows import workflow_bp
     app.register_blueprint(workflow_bp)
     from data_formulator.routes.tasks import task_bp

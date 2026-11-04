@@ -41,8 +41,11 @@ def chart_text(spec: dict[str, Any]) -> str:
     return json.dumps(spec, indent=2, ensure_ascii=False) + "\n"
 
 
-def validate_chart(text: str, previous: dict[str, Any], columns: list[str]) -> dict[str, Any]:
-    """The chart spec ``text`` describes, normalized; raises ``ValueError`` listing every problem."""
+def validate_chart(text: str, previous: dict[str, Any], columns: list[str], saved_themes: list[str] | None = None) -> dict[str, Any]:
+    """The chart spec ``text`` describes, normalized; raises ``ValueError`` listing every problem.
+
+    ``saved_themes`` are the ids of the user's saved themes, which charts use like presets.
+    """
     try:
         spec = json.loads(text)
     except json.JSONDecodeError as error:
@@ -123,8 +126,9 @@ def validate_chart(text: str, previous: dict[str, Any], columns: list[str]) -> d
             problems.append(f"config.{key} must be one of {', '.join(json.dumps(o) for o in option['options'])}")
 
     theme = spec.get("theme")
-    if theme is not None and theme not in catalog["themes"]:
-        problems.append(f"theme {theme!r} is not a theme{_close(str(theme), catalog['themes'])}; themes: {', '.join(catalog['themes'])}")
+    themes = [*catalog["themes"], *(saved_themes or [])]
+    if theme is not None and theme not in themes:
+        problems.append(f"theme {theme!r} is not a theme{_close(str(theme), themes)}; themes: {', '.join(themes)}")
     for key in ("title", "subtitle"):
         if spec.get(key) is not None and (not isinstance(spec[key], str) or len(spec[key]) > 300):
             problems.append(f"{key} must be text of at most 300 characters")
@@ -150,6 +154,17 @@ def validate_report(text: str, chart_ids: set[str]) -> None:
     if unknown:
         raise ValueError(f"Report not changed: it embeds charts that are not in the session: {', '.join(unknown)}. "
                          "Embed charts by id with ![caption](chart://<id>); list_files session/charts shows them.")
+
+
+def _saved_theme_ids(ctx: Any) -> list[str]:
+    user_home = getattr(getattr(ctx, "workspace", None), "user_home", None)
+    if not user_home:
+        return []
+    from data_formulator.knowledge.themes import ThemeStore
+    try:
+        return [theme["id"] for theme in ThemeStore(user_home).list()]
+    except Exception:
+        return []
 
 
 def edit_session_file(args: dict[str, Any], ctx: Any) -> dict[str, Any]:
@@ -182,7 +197,7 @@ def edit_session_file(args: dict[str, Any], ctx: Any) -> dict[str, Any]:
     if path.startswith("session/charts/"):
         chart_id = path[len("session/charts/"):-len(".json")]
         base = json.loads(current)
-        spec = validate_chart(text, base, [str(column) for column in entry.get("columns") or []])
+        spec = validate_chart(text, base, [str(column) for column in entry.get("columns") or []], _saved_theme_ids(ctx))
         text = chart_text(spec)
         # `base` is what the edit was made against: the application skips an edit to a chart changed meanwhile.
         update: dict[str, Any] = {"kind": "chart", "id": chart_id, "spec": spec,

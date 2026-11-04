@@ -328,27 +328,254 @@ def _import_entry(name: str, entry: dict[str, Any]) -> tuple[dict[str, Any], dic
 
 @mcp_bp.route("/packs", methods=["GET"])
 def list_tool_packs():
-    from data_formulator.tool_packs import list_packs
+    from data_formulator.tool_packs import PACKS, list_packs
+
+    identity = _identity()
+    return json_ok({"packs": [_pack_entry(identity, pack["id"]) for pack in list_packs()]})
+
+
+def _pack_server(pack_id: str) -> dict[str, Any] | None:
+    return next((server for server in mcp_config.read_config()["servers"].values() if server.get("pack") == pack_id), None)
+
+
+def _pack_entry(identity: str, pack_id: str) -> dict[str, Any]:
+    """A pack as the Tools dialog shows it: its definition, the server it was added as, and (added) its settings'
+    state and sign-in."""
+    from data_formulator.tool_packs import PACKS, list_packs, pack_values
+
+    pack = next(item for item in list_packs() if item["id"] == pack_id)
+    server = _pack_server(pack_id)
+    entry = {**pack, "server_id": server["id"] if server else None}
+    if server:
+        entry["values"] = pack_values(pack_id, server, mcp_config.read_secrets(identity, server["id"]))
+    if PACKS[pack_id].get("signin"):
+        entry["signin"] = {**pack["signin"], **_signin_state(identity, pack_id, entry["server_id"])}
+    return entry
+
+
+@mcp_bp.route("/packs/<pack_id>/tools", methods=["GET"])
+def list_pack_tools(pack_id: str):
+    """The tools a pack offers, to show before it is added."""
+    from data_formulator.tool_packs import PackError, pack_tools
 
     _identity()
-    installed = {server.get("pack"): server["id"] for server in mcp_config.read_config()["servers"].values() if server.get("pack")}
-    return json_ok({"packs": [{**pack, "server_id": installed.get(pack["id"])} for pack in list_packs()]})
+    try:
+        return json_ok({"tools": list(pack_tools(pack_id))})
+    except PackError as exc:
+        raise _invalid(exc) from None
+
+
+@mcp_bp.route("/packs/<pack_id>/settings", methods=["PUT"])
+def change_pack_settings(pack_id: str):
+    """Change an added pack's settings: a plain one rebuilds its server's arguments; a key is set (or, empty, removed)
+    in the vault. The server restarts with them."""
+    from data_formulator.tool_packs import PACKS, PackError, pack_secrets, pack_server, pack_values
+
+    identity = _mutation()
+    pack = PACKS.get(pack_id)
+    server = _pack_server(pack_id)
+    if pack is None or server is None:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Add the toolkit before changing its settings.")
+    body = _body()
+    changes = body.get("settings") if isinstance(body.get("settings"), dict) else {}
+    known = {setting["key"]: setting for setting in pack["settings"]}
+    unknown = [key for key in changes if key not in known]
+    if unknown:
+        raise AppError(ErrorCode.INVALID_REQUEST, f"This toolkit has no setting {', '.join(map(repr, unknown))}.")
+    secrets = mcp_config.read_secrets(identity, server["id"])
+    plain = {key: value["value"] for key, value in pack_values(pack_id, server, secrets).items() if "value" in value}
+    plain.update({key: str(value or "").strip() for key, value in changes.items() if not known[key].get("secret")})
+    keyed = {key: str(value or "").strip() for key, value in changes.items() if known[key].get("secret")}
+    try:
+        args = pack_server(pack_id, plain)["args"]
+        added = (pack_secrets(pack_id, {key: value for key, value in keyed.items() if value}).get("env") or {})
+    except PackError as exc:
+        raise _invalid(exc) from None
+    removed = {known[key]["env"] for key, value in keyed.items() if not value}
+
+    def update_definition(stored: dict[str, Any]) -> None:
+        stored["args"] = args
+
+    def update_keys(stored: dict[str, Any]) -> None:
+        env = {name: value for name, value in (stored.get("env") or {}).items() if name not in removed}
+        env.update(added)
+        if env:
+            stored["env"] = env
+        else:
+            stored.pop("env", None)
+    mcp_config.update_server(server["id"], update_definition)
+    if keyed:
+        mcp_config.update_secrets(identity, server["id"], update_keys)
+        token_setting = (pack.get("signin") or {}).get("token_setting")
+        if token_setting in keyed:
+            _note_pasted_token(identity, pack_id, server["id"])
+    _restart(server["id"])
+    return json_ok(_pack_entry(identity, pack_id))
+
+
+# -- click-to-sign-in for a pack (GitHub, Hugging Face: the user's own account, read-only) -------------------------
+
+def _signin_pack(pack_id: str) -> tuple[dict[str, Any], str]:
+    """The pack's sign-in settings and its added server's id."""
+    from data_formulator.tool_packs import PACKS
+
+    signin = (PACKS.get(pack_id) or {}).get("signin")
+    if not signin:
+        raise AppError(ErrorCode.INVALID_REQUEST, "This toolkit has no sign-in.")
+    server_id = next((server["id"] for server in mcp_config.read_config()["servers"].values() if server.get("pack") == pack_id), None)
+    if server_id is None:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Add the toolkit before signing in.")
+    return signin, server_id
+
+
+def _copilot_connection(identity: str) -> dict[str, Any] | None:
+    from data_formulator.auth.github_device_flow import connection_lock, connection_vault
+    from data_formulator.routes.model_endpoints import _COPILOT_CONNECTION_KEY
+
+    try:
+        with connection_lock():
+            stored = connection_vault().retrieve(identity, _COPILOT_CONNECTION_KEY)
+    except AppError:
+        return None
+    return stored if stored and stored.get("access_token") else None
+
+
+def _signin_state(identity: str, pack_id: str, server_id: str | None) -> dict[str, Any]:
+    from data_formulator.tool_packs import PACKS
+    from data_formulator.tool_packs import signin as pack_signin
+
+    secrets = mcp_config.read_secrets(identity, server_id) if server_id else {}
+    signin = PACKS[pack_id]["signin"]
+    signed_in = bool((secrets.get("env") or {}).get(signin["env"]))
+    # An account Data Formulator can already use (GitHub Copilot's; this computer's Hugging Face login), as it is.
+    reusable = None if signed_in else pack_signin.reusable(signin["provider"], identity)
+    return {"signed_in": signed_in, "login": secrets.get("signin_login") if signed_in else None,
+            "reusable_login": reusable["login"] if reusable else None}
+
+
+def _store_signin(identity: str, pack_id: str, server_id: str, token: str | None, login: str | None, **extra: Any) -> None:
+    """Keep (or, with no token, drop) the pack's token in its server's secrets. Restart the server after."""
+    from data_formulator.tool_packs import PACKS
+    from data_formulator.tool_packs import signin as pack_signin
+
+    env_name = PACKS[pack_id]["signin"]["env"]
+    mcp_config.update_secrets(identity, server_id, lambda stored: pack_signin.signed_in(env_name, stored, token, login, **extra))
+
+
+def _restart(server_id: str) -> None:
+    from data_formulator.mcp_servers.hub import get_hub
+
+    get_hub().close(server_id)  # it starts again with (or without) the token
+
+
+@mcp_bp.route("/packs/<pack_id>/signin/start", methods=["POST"])
+def start_pack_signin(pack_id: str):
+    from data_formulator.tool_packs import signin as pack_signin
+
+    identity = _mutation()
+    _signin_pack(pack_id)
+    return json_ok(pack_signin.flow(pack_id).start(identity))
+
+
+@mcp_bp.route("/packs/<pack_id>/signin/poll", methods=["POST"])
+def poll_pack_signin(pack_id: str):
+    from data_formulator.tool_packs import signin as pack_signin
+
+    identity = _mutation()
+    signin, server_id = _signin_pack(pack_id)
+    body = _body()
+    flow = pack_signin.flow(pack_id)
+
+    def exchange(token: str, response: dict[str, Any]) -> dict[str, Any]:
+        login = pack_signin.account(signin["provider"], token)
+        if not login:
+            raise AppError(ErrorCode.SERVICE_UNAVAILABLE, f"{flow.provider.name} did not accept the sign-in. Try again.")
+        return {"token": token, "login": login, "response": response}
+
+    def commit(made: dict[str, Any]) -> None:
+        # The client the token was issued to renews it.
+        _store_signin(identity, pack_id, server_id, made["token"], made["login"], response=made["response"],
+                      client_id=flow.client_id())
+
+    result = flow.poll(identity, body.get("flow_id"), exchange, commit)
+    if result["status"] == "connected":
+        _restart(server_id)
+    return json_ok({"flow": result, **_signin_state(identity, pack_id, server_id)})
+
+
+@mcp_bp.route("/packs/<pack_id>/signin/cancel", methods=["POST"])
+def cancel_pack_signin(pack_id: str):
+    from data_formulator.tool_packs import signin as pack_signin
+
+    identity = _mutation()
+    _signin_pack(pack_id)
+    pack_signin.flow(pack_id).cancel(identity, _body().get("flow_id"))
+    return json_ok({})
+
+
+@mcp_bp.route("/packs/<pack_id>/signin/reuse", methods=["POST"])
+def reuse_pack_signin(pack_id: str):
+    """Use an account Data Formulator can already use: GitHub Copilot's, or this computer's Hugging Face login."""
+    from data_formulator.tool_packs import signin as pack_signin
+
+    identity = _mutation()
+    signin, server_id = _signin_pack(pack_id)
+    found = pack_signin.reusable(signin["provider"], identity)
+    login = pack_signin.account(signin["provider"], found["token"]) if found else None
+    if not found or not login:
+        raise AppError(ErrorCode.INVALID_REQUEST, "There is no sign-in to use. Sign in instead.")
+    _store_signin(identity, pack_id, server_id, found["token"], login,
+                  source="local" if found["source"] == "local" else None)
+    _restart(server_id)
+    return json_ok(_signin_state(identity, pack_id, server_id))
+
+
+@mcp_bp.route("/packs/<pack_id>/signout", methods=["POST"])
+def sign_out_of_pack(pack_id: str):
+    identity = _mutation()
+    _, server_id = _signin_pack(pack_id)
+    _store_signin(identity, pack_id, server_id, None, None)
+    _restart(server_id)
+    return json_ok(_signin_state(identity, pack_id, server_id))
+
+
+def _note_pasted_token(identity: str, pack_id: str, server_id: str) -> None:
+    """A token the user pasted (the pack's ``token_setting``) is a sign-in too: name its account, and drop what
+    renewed an earlier sign-in."""
+    from data_formulator.tool_packs import PACKS
+    from data_formulator.tool_packs import signin as pack_signin
+
+    signin = PACKS[pack_id].get("signin")
+    if not signin or not signin.get("token_setting"):
+        return
+    token = (mcp_config.read_secrets(identity, server_id).get("env") or {}).get(signin["env"])
+    login = pack_signin.account(signin["provider"], token) if token else None
+    _store_signin(identity, pack_id, server_id, token, login)
 
 
 @mcp_bp.route("/packs/<pack_id>", methods=["POST"])
 def add_tool_pack(pack_id: str):
     """Add a tool pack as an MCP server (once); connecting it is the client's next step."""
-    from data_formulator.tool_packs import PackError, pack_server
+    from data_formulator.tool_packs import PackError, pack_secrets, pack_server
 
     identity = _mutation()
     body = _body()
     existing = next((server for server in mcp_config.read_config()["servers"].values() if server.get("pack") == pack_id), None)
     if existing is not None:
         return json_ok(_server_view(identity, existing))
+    settings = body.get("settings") if isinstance(body.get("settings"), dict) else {}
     try:
-        server = mcp_config.add_server(pack_server(pack_id, body.get("settings") if isinstance(body.get("settings"), dict) else {}))
+        definition, secrets = pack_server(pack_id, settings), pack_secrets(pack_id, settings)
+        server = mcp_config.add_server(definition)
     except (PackError, ValueError) as exc:
         raise _invalid(exc) from None
+    if secrets:
+        try:
+            mcp_config.write_secrets(identity, server["id"], secrets)
+        except mcp_config.McpConfigError as exc:
+            mcp_config.delete_server(server["id"])  # not added without the key the user gave
+            raise _invalid(exc) from None
+        _note_pasted_token(identity, pack_id, server["id"])
     return json_ok(_server_view(identity, server))
 
 

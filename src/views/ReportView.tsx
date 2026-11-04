@@ -11,9 +11,11 @@ import {
     MenuItem,
     Divider,
     Button,
+    ButtonBase,
     useTheme,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
+import { WritingIndicator } from '../components/FunComponents';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/EditOutlined';
 import CheckIcon from '@mui/icons-material/Check';
@@ -34,7 +36,7 @@ import { getCachedChart } from '../app/chartCache';
 import { floatingPillSx } from '../app/tokens';
 import { iconVar, textVar } from '../app/layout';
 import { useTranslation } from 'react-i18next';
-import { resolveCitations, splitFrontMatter } from './reportBlocks';
+import { resolveCitations, splitFrontMatter, streamingReportText } from './reportBlocks';
 import { requestSourceLocation } from '../app/sourceLocation';
 import {
     DEFAULT_REPORT_DENSITY, DEFAULT_REPORT_TYPEFACE, REPORT_COLUMN_WIDTH, ReportTypeface,
@@ -74,77 +76,41 @@ export const ReportView: FC = () => {
     const [downloadMenuAnchor, setDownloadMenuAnchor] = useState<null | HTMLElement>(null);
     const [themeMenuAnchor, setThemeMenuAnchor] = useState<null | HTMLElement>(null);
     const reportScrollRef = useRef<HTMLDivElement>(null);
-    const reportFrameRef = useRef<HTMLDivElement>(null);
     const reportContentRef = useRef<HTMLDivElement>(null);
-    const reportSpaceRef = useRef<HTMLDivElement>(null);
-    const resumeReportFollowRef = useRef(() => {});
-    const [reportFollowPaused, setReportFollowPaused] = useState(false);
+    // While a report is written the view stays where the reader put it; when newer text is below
+    // the view, a button jumps to it.
+    const [latestBelow, setLatestBelow] = useState(false);
 
     useEffect(() => {
         if (reportScrollRef.current) reportScrollRef.current.scrollTop = 0;
-        if (reportFrameRef.current) reportFrameRef.current.style.minHeight = '0px';
-        if (reportSpaceRef.current) reportSpaceRef.current.style.height = '0px';
-        setReportFollowPaused(false);
     }, [currentReportId]);
 
     useEffect(() => {
         const scroller = reportScrollRef.current;
-        const reportFrame = reportFrameRef.current;
         const content = reportContentRef.current;
-        const space = reportSpaceRef.current;
-        if (!isGenerating || !scroller || !reportFrame || !content || !space) return;
-        let following = true;
-        let lastScrollTop = scroller.scrollTop;
-        let frame: number | undefined;
-        setReportFollowPaused(false);
-
-        const advance = () => {
-            frame = undefined;
-            const height = scroller.clientHeight;
-            if (!height) return;
-            const step = Math.min(240, Math.max(96, height * 0.35));
-            space.style.height = `${step}px`;
-            reportFrame.style.minHeight = `${content.getBoundingClientRect().height}px`;
-            if (!following) return;
-            const bottom = content.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top;
-            if (bottom >= height - 24) {
-                scroller.scrollTop += bottom - height + step;
-                lastScrollTop = scroller.scrollTop;
-            }
+        if (!isGenerating || !scroller || !content) {
+            setLatestBelow(false);
+            return;
+        }
+        const check = () => {
+            const hidden = content.getBoundingClientRect().bottom - scroller.getBoundingClientRect().bottom;
+            setLatestBelow(hidden > 24);
         };
-        const schedule = () => {
-            if (frame === undefined) frame = requestAnimationFrame(advance);
-        };
-        const pause = () => {
-            following = false;
-            setReportFollowPaused(true);
-        };
-        const onScroll = () => {
-            if (scroller.scrollTop < lastScrollTop - 1) pause();
-            lastScrollTop = scroller.scrollTop;
-        };
-        const onWheel = (event: WheelEvent) => {
-            if (event.deltaY < 0) pause();
-        };
-        resumeReportFollowRef.current = () => {
-            following = true;
-            setReportFollowPaused(false);
-            schedule();
-        };
-        const observer = new ResizeObserver(schedule);
+        const observer = new ResizeObserver(check);
         observer.observe(content);
         observer.observe(scroller);
-        scroller.addEventListener('scroll', onScroll, { passive: true });
-        scroller.addEventListener('wheel', onWheel, { passive: true });
-        schedule();
+        scroller.addEventListener('scroll', check, { passive: true });
+        check();
         return () => {
             observer.disconnect();
-            if (frame !== undefined) cancelAnimationFrame(frame);
-            scroller.removeEventListener('scroll', onScroll);
-            scroller.removeEventListener('wheel', onWheel);
-            resumeReportFollowRef.current = () => {};
+            scroller.removeEventListener('scroll', check);
         };
     }, [currentReportId, isGenerating]);
+
+    const jumpToLatest = () => {
+        const scroller = reportScrollRef.current;
+        scroller?.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' });
+    };
 
     const updateCachedReportImages = (chartId: string, blobUrl: string, width: number, height: number) => {
         setCachedReportImages(prev => ({
@@ -705,10 +671,9 @@ ${styles}
     };
 
     let displayedReport = generatedReport;
-    displayedReport = processReport(displayedReport);
+    displayedReport = processReport(isGenerating ? streamingReportText(displayedReport) : displayedReport);
 
-    // Raw markdown (fence and front matter stripped) for the lightweight typewriter view while streaming.
-    const { body: rawReportMarkdown, style: frontMatterGenre } = (() => {
+    const { style: frontMatterGenre } = (() => {
         const m = generatedReport.match(/```markdown\n([\s\S]*?)(?:\n```)?$/);
         return splitFrontMatter(m ? m[1] : generatedReport);
     })();
@@ -870,7 +835,6 @@ ${styles}
                         height: '100%', overflow: 'auto', overflowAnchor: 'none',
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                     }}>
-                        <Box ref={reportFrameRef} sx={{ width: '100%', maxWidth: columnWidth, flexShrink: 0 }}>
                         <Box
                             ref={reportContentRef}
                             data-report-content
@@ -885,8 +849,6 @@ ${styles}
                         >
                             <TiptapReportEditor
                                 content={displayedReport}
-                                streamingText={rawReportMarkdown}
-                                resolveChartImage={(chartId) => cachedReportImages[chartId]}
                                 editable={isEditMode && !isGenerating}
                                 isGenerating={isGenerating}
                                 generatingPhase={currentReport?.generatingPhase}
@@ -905,19 +867,21 @@ ${styles}
                                 }}
                             />
                         </Box>
-                        </Box>
-                        <Box ref={reportSpaceRef} aria-hidden="true" sx={{ flexShrink: 0, width: '100%' }} />
                     </Box>
-                    {isGenerating && reportFollowPaused && (
-                        <Tooltip title={t('report.jumpToLatest')}>
-                            <IconButton
-                                aria-label={t('report.jumpToLatest')}
-                                onClick={() => resumeReportFollowRef.current()}
-                                sx={{ ...floatingPillSx, position: 'absolute', bottom: 20, left: 24 }}
-                            >
-                                <ArrowDownwardIcon sx={{ fontSize: iconVar.lg }} />
-                            </IconButton>
-                        </Tooltip>
+                    {/* While the report is written below the view: what is happening, and a way to it. */}
+                    {isGenerating && latestBelow && (
+                        <ButtonBase
+                            aria-label={t('report.jumpToLatest')}
+                            title={t('report.jumpToLatest')}
+                            onClick={jumpToLatest}
+                            data-report-writing-pill
+                            sx={{ ...floatingPillSx, position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+                                zIndex: 5, display: 'flex', alignItems: 'center', gap: 1, height: 34, pl: 1.5, pr: 1.25,
+                                borderRadius: '17px', whiteSpace: 'nowrap' }}
+                        >
+                            <WritingIndicator label={t('editor.writingReport')} fontSize="0.8rem" />
+                            <ArrowDownwardIcon sx={{ fontSize: iconVar.md }} />
+                        </ButtonBase>
                     )}
                 </Box>
             </Box>

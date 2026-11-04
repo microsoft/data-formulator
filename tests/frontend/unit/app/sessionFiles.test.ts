@@ -2,7 +2,8 @@ import { configureStore } from '@reduxjs/toolkit';
 import { describe, expect, it } from 'vitest';
 import { dataFormulatorReducer, dfActions } from '../../../../src/app/dfSlice';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { agentSessionState, applySessionUpdate, chartFileSpec } from '../../../../src/app/sessionFiles';
+import { agentSessionState, appChartSpecs, applySessionUpdate, chartFileSpec } from '../../../../src/app/sessionFiles';
+import { clearCache, setCachedChart } from '../../../../src/app/chartCache';
 
 const table = (id: string, extra: any = {}) => ({
     kind: 'table', id, displayId: id.toUpperCase(), names: ['region', 'sales', 'month'], metadata: {}, rows: [{ region: 'N', sales: 1, month: 1 }],
@@ -26,6 +27,24 @@ describe('session files', () => {
         expect(sent.activeWorkspace).toEqual({ id: 'w1', displayName: 'Sales study' });
         expect(sent).not.toHaveProperty('viewMode');
         expect(sent).not.toHaveProperty('models');
+    });
+
+    it('gives an app the charts on the tables it declares, as chart files', () => {
+        const tables = [table('by_region'), table('other')];
+        const charts = [chart, { ...chart, id: 'chart-2', tableRef: 'other' }, { ...chart, id: 'chart-3', chartType: 'Auto' }];
+        expect(appChartSpecs(charts, tables, fields, ['ws_by_region'])).toEqual({
+            'chart-1': { chart_type: 'Bar Chart', table: 'ws_by_region', title: 'Sales by region',
+                encodings: { x: { field: 'region' }, y: { field: 'sales', aggregate: 'sum' } }, config: { cornerRadius: 2 } },
+        });
+    });
+
+    it('tells the agent the size each chart draws at on the canvas', () => {
+        const state = { ...dataFormulatorReducer(undefined, { type: 'init' }), charts: [chart] } as any;
+        setCachedChart('chart-1', { svg: '', thumbnailDataUrl: '', fullPngDataUrl: '', specKey: 'k', naturalWidth: 300, naturalHeight: 300,
+            displayWidth: 300, displayHeight: 300, canvasWidth: 412, canvasHeight: 618 });
+        expect((agentSessionState(state).charts as any[])[0]).toMatchObject({ id: 'chart-1', drawnSize: { width: 412, height: 618 } });
+        clearCache();
+        expect((agentSessionState(state).charts as any[])[0]).not.toHaveProperty('drawnSize');
     });
 
     it('renders charts like the server does (shared fixture)', () => {

@@ -18,6 +18,19 @@ export const hash01 = (text: string): number => {
 
 const COUNTRIES = (countryTable as { a3: string; name: string; aliases: string[] }[]);
 
+/** Each country's continent (the UN geoscheme's regions), so a sample's region filter picks real places. */
+const CONTINENT_OF: Record<string, string> = Object.fromEntries(Object.entries({
+    Africa: 'AGO BDI BEN BFA BWA CAF CIV CMR COD COG COM CPV DJI DZA EGY ERI ESH ETH GAB GHA GIN GMB GNB GNQ IOT KEN LBR LBY LSO MAR MDG MLI '
+        + 'MOZ MRT MUS MWI MYT NAM NER NGA REU RWA SDN SEN SHN SLE SOM SSD STP SWZ SYC TCD TGO TUN TZA UGA ZAF ZMB ZWE ATF',
+    Americas: 'ABW AIA ARG ATG BES BHS BLM BLZ BMU BOL BRA BRB BVT CAN CHL COL CRI CUB CUW CYM DMA DOM ECU FLK GLP GRD GRL GTM GUF GUY HND HTI '
+        + 'JAM KNA LCA MAF MEX MSR MTQ NIC PAN PER PRI PRY SGS SLV SPM SUR SXM TCA TTO URY USA VCT VEN VGB VIR',
+    Asia: 'AFG ARE ARM AZE BGD BHR BRN BTN CHN CYP GEO HKG IDN IND IRN IRQ ISR JOR JPN KAZ KGZ KHM KOR KWT LAO LBN LKA MAC MDV MMR MNG MYS NPL '
+        + 'OMN PAK PHL PRK PSE QAT SAU SGP SYR THA TJK TKM TLS TUR TWN UZB VNM YEM',
+    Europe: 'ALA ALB AND AUT BEL BGR BIH BLR CHE CZE DEU DNK ESP EST FIN FRA FRO GBR GGY GIB GRC HRV HUN IMN IRL ISL ITA JEY LIE LTU LUX LVA MCO '
+        + 'MDA MKD MLT MNE NLD NOR POL PRT ROU RUS SJM SMR SRB SVK SVN SWE UKR VAT XKX',
+    Oceania: 'ASM AUS CCK COK CXR FJI FSM GUM HMD KIR MHL MNP NCL NFK NIU NRU NZL PCN PLW PNG PYF SLB TKL TON TUV UMI VUT WLF WSM',
+}).flatMap(([continent, codes]) => codes.split(' ').map(code => [code, continent])));
+
 export const CITIES: [string, string, number, number, number][] = [
     ['Tokyo', 'JPN', 139.69, 35.69, 37.4], ['Delhi', 'IND', 77.21, 28.61, 31.0], ['Shanghai', 'CHN', 121.47, 31.23, 27.1],
     ['São Paulo', 'BRA', -46.63, -23.55, 22.0], ['Mexico City', 'MEX', -99.13, 19.43, 21.8], ['Cairo', 'EGY', 31.24, 30.04, 20.9],
@@ -46,13 +59,6 @@ export const US_STATE_ROWS: [string, string][] = [
     ['Vermont', 'VT'], ['Virginia', 'VA'], ['Washington', 'WA'], ['West Virginia', 'WV'], ['Wisconsin', 'WI'], ['Wyoming', 'WY'],
 ];
 
-const US_CITIES: [string, string, number, number][] = [
-    ['Seattle', 'Washington', -122.33, 47.61], ['San Francisco', 'California', -122.42, 37.77], ['Los Angeles', 'California', -118.24, 34.05],
-    ['Phoenix', 'Arizona', -112.07, 33.45], ['Denver', 'Colorado', -104.99, 39.74], ['Dallas', 'Texas', -96.8, 32.78], ['Houston', 'Texas', -95.37, 29.76],
-    ['Chicago', 'Illinois', -87.63, 41.88], ['Atlanta', 'Georgia', -84.39, 33.75], ['Miami', 'Florida', -80.19, 25.76],
-    ['New York', 'New York', -74.01, 40.71], ['Boston', 'Massachusetts', -71.06, 42.36], ['Minneapolis', 'Minnesota', -93.27, 44.98],
-];
-
 const round = (value: number, digits = 1) => Math.round(value * 10 ** digits) / 10 ** digits;
 
 /** Country × year indicators, keyed by mixed codes and names (as real data is). */
@@ -68,7 +74,7 @@ export function worldIndicators(): Row[] {
                 iso3: country.a3, year,
                 life_expectancy: round(base + (year - 2000) * 0.25 * (0.5 + hash01(country.a3 + 'trend'))),
                 gdp_per_capita: Math.round(gdpBase * (1 + (year - 2000) * 0.02)),
-                region: ['Africa', 'Americas', 'Asia', 'Europe', 'Oceania'][Math.floor(hash01(country.a3 + 'r') * 5)],
+                region: CONTINENT_OF[country.a3],
             });
         }
     });
@@ -84,20 +90,6 @@ export function stateStats(): Row[] {
         poverty_rate: round(8 + 12 * hash01(state + 'pov')),
         margin: round(-40 + 80 * hash01(state + 'vote')),
     }));
-}
-
-export function cityPoints(count = 6000): Row[] {
-    const kinds = ['Taxi', 'Rideshare', 'Bike'];
-    const centers: [number, number][] = [[-73.985, 40.758], [-73.99, 40.73], [-73.95, 40.78], [-73.94, 40.71], [-73.87, 40.77]];
-    const rows: Row[] = [];
-    for (let index = 0; index < count; index++) {
-        const [cx, cy] = centers[Math.floor(hash01(`c${index}`) * centers.length)];
-        const r = 0.035 * Math.sqrt(-2 * Math.log(Math.max(1e-6, hash01(`r${index}`))));
-        const angle = 2 * Math.PI * hash01(`a${index}`);
-        rows.push({ lon: round(cx + r * Math.cos(angle) * 1.3, 5), lat: round(cy + r * Math.sin(angle), 5),
-            kind: kinds[Math.floor(hash01(`k${index}`) * 3)], fare: round(6 + 40 * hash01(`f${index}`) ** 2, 2) });
-    }
-    return rows;
 }
 
 export function quakes(): Row[] {
@@ -164,6 +156,14 @@ export function windField(): Row[] {
 
 export interface SampleMap { id: string; label: string; spec: Record<string, unknown> }
 
+/** Revenue at a store in each of 15 US cities. */
+export function storeRevenue(): Row[] {
+    return ([['Seattle', -122.33, 47.61], ['San Francisco', -122.42, 37.77], ['Los Angeles', -118.24, 34.05], ['Phoenix', -112.07, 33.45],
+        ['Denver', -104.99, 39.74], ['Dallas', -96.8, 32.78], ['Houston', -95.37, 29.76], ['Chicago', -87.63, 41.88], ['Atlanta', -84.39, 33.75],
+        ['Miami', -80.19, 25.76], ['New York', -74.01, 40.71], ['Boston', -71.06, 42.36], ['Minneapolis', -93.27, 44.98], ['Anchorage', -149.9, 61.22],
+        ['Honolulu', -157.86, 21.31]] as [string, number, number][]).map(([city, lon, lat]) => ({ city, lon, lat, revenue: Math.round(2e6 + 4e7 * hash01(city) ** 2) }));
+}
+
 /** County × year unemployment for the given county FIPS codes. */
 export function countyUnemployment(fips: string[]): Row[] {
     return fips.flatMap(id => [2010, 2015, 2020, 2023].map(year => ({
@@ -176,7 +176,7 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
     const states = stateStats();
     return [
         {
-            id: 'world-time', label: 'Template · choropleth over time', spec: {
+            id: 'world-time', label: 'Choropleth over time', spec: {
                 title: 'Life expectancy at birth', subtitle: 'By country, 2000–2020 (synthetic)', source: 'Sample data',
                 template: 'choropleth', data: { values: world },
                 encoding: { region: 'country', color: 'life_expectancy', time: 'year', filter: 'region', tooltip: ['life_expectancy', 'gdp_per_capita', 'region'] },
@@ -186,25 +186,23 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
             },
         },
         {
-            id: 'us-metric', label: 'US states · metric switch, labels, stats', spec: {
-                title: 'State profile', view: { basemap: 'us-states' }, data: { s: { values: states } },
+            id: 'us-metric', label: 'US states · measure switch, stats', spec: {
+                title: 'State profile', template: 'choropleth', data: { values: states },
+                encoding: { region: 'state', color: ['median_income', 'poverty_rate'], tooltip: ['population'] },
                 fields: { median_income: { semanticType: 'Price', unit: 'USD' }, poverty_rate: { semanticType: 'Percentage' }, population: { semanticType: 'Count' } },
-                layers: [{ id: 'states', type: 'regions', data: 's', key: 'state', keyType: 'us-state', name: 'States',
-                    color: { field: { param: 'metric' }, method: 'jenks' }, tooltip: ['population', 'median_income', 'poverty_rate'] }],
-                controls: [{ type: 'select', param: 'metric', label: 'Measure', options: [{ label: 'Median income', value: 'median_income' },
-                    { label: 'Poverty rate', value: 'poverty_rate' }, { label: 'Population', value: 'population' }] }, { type: 'stats', layer: 'states' }],
+                properties: { geography: 'us-states', method: 'jenks', stats: true },
             },
         },
         {
             id: 'us-diverging', label: 'US states · diverging margin', spec: {
-                title: 'Vote margin by state', subtitle: 'Positive = party A (synthetic)', view: { basemap: 'us-states', style: 'muted' }, data: { s: { values: states } },
+                title: 'Vote margin by state', subtitle: 'Positive = party A (synthetic)', view: { style: 'muted' },
+                template: 'choropleth', data: { values: states }, encoding: { region: 'abbr', color: 'margin' },
                 fields: { margin: { semanticType: 'PercentageChange', unit: 'pts', displayName: 'Margin' } },
-                // The margin is a signed change, so it diverges around 0 without saying so.
-                layers: [{ id: 'm', type: 'regions', data: 's', key: 'abbr', color: { field: 'margin' }, tooltip: ['margin'] }],
+                properties: { geography: 'us-states' },
             },
         },
         {
-            id: 'world-bubbles', label: 'Template · city bubbles', spec: {
+            id: 'world-bubbles', label: 'City bubbles', spec: {
                 title: 'Largest metropolitan areas', subtitle: 'Population (millions)', view: { basemap: 'world', projection: 'naturalEarth' },
                 template: 'bubbles',
                 data: { values: CITIES.map(([city, iso3, lon, lat, pop]) => ({ city, iso3, lon, lat, population: pop,
@@ -215,44 +213,30 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
             },
         },
         {
-            id: 'city-points', label: 'Street tiles · points, hexbin, layers', spec: {
-                title: 'Pickups in Manhattan', subtitle: '6,000 trips (synthetic)', view: { tiles: 'light' }, data: { t: { values: cityPoints() } },
-                layers: [{ id: 'hex', type: 'hexbin', data: 't', lon: 'lon', lat: 'lat', radius: 14, name: 'Trips per hexagon' },
-                    { id: 'pts', type: 'points', data: 't', lon: 'lon', lat: 'lat', name: 'Trips', color: { field: 'kind' }, size: { value: 2 }, visible: false,
-                        tooltip: ['kind', { field: 'fare', format: '$.2f' }] }],
-                controls: [{ type: 'layers' }, { type: 'checkboxes', field: 'kind', data: 't', label: 'Service' }, { type: 'range', field: 'fare', data: 't', label: 'Fare' }],
-            },
-        },
-        {
-            id: 'quakes', label: 'Density heatmap · year filter', spec: {
-                title: 'Earthquakes', subtitle: 'Magnitude 4+ (synthetic)', view: { basemap: 'world', projection: 'equalEarth', fit: 'basemap', graticule: true, style: 'dark' }, data: { q: { values: quakes() } },
-                layers: [{ id: 'heat', type: 'heatmap', data: 'q', lon: 'lon', lat: 'lat', weight: 'magnitude', radius: 12, name: 'Density', color: { scheme: 'ylOrRd' } },
-                    { id: 'big', type: 'points', data: 'q', lon: 'lon', lat: 'lat', filter: [{ field: 'magnitude', op: '>=', value: 7 }], name: 'M7+',
-                        size: { field: 'magnitude', max: 6 }, color: { value: '#b2182b' }, tooltip: ['magnitude', 'year'] }],
-                controls: [{ type: 'slider', field: 'year', play: true }, { type: 'layers' }],
+            id: 'quakes', label: 'Density heatmap · highlights, year', spec: {
+                title: 'Earthquakes', subtitle: 'Magnitude 4+ (synthetic)', view: { basemap: 'world', fit: 'basemap', graticule: true, style: 'dark' },
+                template: 'density', data: { values: quakes() }, encoding: { lat: 'lat', lon: 'lon', weight: 'magnitude', time: 'year' },
+                properties: { density: 'heatmap', radius: 12, scheme: 'ylOrRd', highlight: { field: 'magnitude', op: '>=', value: 7, label: 'M7+' } },
             },
         },
         {
             id: 'globe-flows', label: 'Globe · flows (arrows)', spec: {
-                title: 'Largest migration corridors', view: { projection: 'orthographic', spin: true, style: 'atlas' }, data: { m: { values: migration() } },
-                layers: [{ id: 'flows', type: 'flows', data: 'm', from: { key: 'origin' }, to: { key: 'destination' }, direction: 'arrow',
-                    size: { field: 'migrants', max: 8, format: '.2s' }, color: { value: '#e15759' }, tooltip: [{ field: 'migrants', format: ',' }] }],
-                controls: [{ type: 'stats', layer: 'flows' }],
+                title: 'Largest migration corridors', view: { projection: 'orthographic', spin: true, style: 'atlas' },
+                template: 'flows', data: { values: migration() }, encoding: { origin: 'origin', destination: 'destination', size: 'migrants' },
+                fields: { migrants: { semanticType: 'Count', displayName: 'Migrants' } },
+                properties: { geography: 'world', sizeMax: 8, color: '#e15759', stats: true },
             },
         },
         {
             id: 'spikes', label: 'US · spikes from coordinates', spec: {
-                title: 'Store revenue', view: { basemap: 'us-states' },
-                data: { s: { values: [['Seattle', -122.33, 47.61], ['San Francisco', -122.42, 37.77], ['Los Angeles', -118.24, 34.05], ['Phoenix', -112.07, 33.45],
-                    ['Denver', -104.99, 39.74], ['Dallas', -96.8, 32.78], ['Houston', -95.37, 29.76], ['Chicago', -87.63, 41.88], ['Atlanta', -84.39, 33.75],
-                    ['Miami', -80.19, 25.76], ['New York', -74.01, 40.71], ['Boston', -71.06, 42.36], ['Minneapolis', -93.27, 44.98], ['Anchorage', -149.9, 61.22],
-                    ['Honolulu', -157.86, 21.31]].map(([city, lon, lat]) => ({ city, lon, lat, revenue: Math.round(2e6 + 4e7 * hash01(String(city)) ** 2) })) } },
-                layers: [{ id: 'rev', type: 'spikes', data: 's', lon: 'lon', lat: 'lat', text: 'city', size: { field: 'revenue', max: 140, format: '$.2s' },
-                    color: { value: '#4e79a7' }, tooltip: [{ field: 'revenue', format: '$,.0f' }] }],
+                title: 'Store revenue', template: 'spikes', data: { values: storeRevenue() },
+                encoding: { lat: 'lat', lon: 'lon', size: 'revenue', label: 'city' },
+                fields: { revenue: { semanticType: 'Amount', unit: 'USD', displayName: 'Revenue' } },
+                properties: { geography: 'us-states', sizeMax: 140, color: '#4e79a7' },
             },
         },
         {
-            id: 'tracks', label: 'Template · storm tracks (arrows)', spec: {
+            id: 'tracks', label: 'Storm tracks (arrows)', spec: {
                 title: 'Hurricane tracks', subtitle: 'Synthetic: west in the trades, then recurving north-east',
                 template: 'tracks', data: { values: stormTracks() },
                 encoding: { lat: 'lat', lon: 'lon', group: 'storm', order: 'step', color: 'storm' },
@@ -260,7 +244,7 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
             },
         },
         {
-            id: 'counties', label: 'Template · US counties over time', spec: {
+            id: 'counties', label: 'US counties over time', spec: {
                 title: 'Unemployment rate by county', subtitle: 'Synthetic, 2010–2023', view: { style: 'minimal' },
                 template: 'choropleth', data: { values: countyUnemployment(countyIds) },
                 encoding: { region: 'fips', color: 'rate', time: 'year' },
@@ -269,7 +253,7 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
             },
         },
         {
-            id: 'bivariate', label: 'Template · bivariate', spec: {
+            id: 'bivariate', label: 'Bivariate', spec: {
                 title: 'Income and poverty', subtitle: 'Bivariate choropleth (synthetic)',
                 template: 'bivariate', data: { values: states }, encoding: { region: 'state', color: 'median_income', color2: 'poverty_rate' },
                 fields: { median_income: { semanticType: 'Price', unit: 'USD' }, poverty_rate: { semanticType: 'Percentage' } },
@@ -277,7 +261,7 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
             },
         },
         {
-            id: 'dorling', label: 'Template · cartogram', spec: {
+            id: 'dorling', label: 'Cartogram', spec: {
                 title: 'Population by state', subtitle: 'Circles sized by population, spread apart',
                 template: 'cartogram', data: { values: states }, encoding: { region: 'state', size: 'population', color: 'margin', label: 'abbr' },
                 fields: { population: 'Count', margin: { semanticType: 'PercentageChange', unit: 'pts' } },
@@ -285,21 +269,7 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
             },
         },
         {
-            id: 'linked', label: 'Linked · click a state, filter its cities', spec: {
-                title: 'Stores by state', subtitle: 'Click a state to show its stores; shift-drag to lasso', view: { basemap: 'us-states' },
-                data: { s: { values: states }, stores: { values: Array.from({ length: 300 }, (_, index) => {
-                    const [city, state, lon, lat] = US_CITIES[Math.floor(hash01(`st${index}`) * US_CITIES.length)];
-                    return { store: `${city} #${index + 1}`, city, state, lon: round(lon + (hash01(`x${index}`) - 0.5) * 1.6, 3),
-                        lat: round(lat + (hash01(`y${index}`) - 0.5) * 1.2, 3), revenue: Math.round(1e5 + 5e6 * hash01(`rv${index}`) ** 2) };
-                }) } },
-                layers: [{ id: 'states', type: 'regions', data: 's', key: 'state', color: { field: 'median_income', scheme: 'greens' }, tooltip: ['state'] },
-                    { id: 'stores', type: 'bubbles', data: 'stores', lon: 'lon', lat: 'lat', selectionFilter: { layer: 'states', field: 'state' },
-                        size: { field: 'revenue', max: 24, format: '$.2s' }, color: { value: '#f28e2b' }, tooltip: ['store', { field: 'revenue', format: '$,.0f' }] }],
-                controls: [{ type: 'stats', layer: 'stores', label: 'Store revenue' }],
-            },
-        },
-        {
-            id: 'flights', label: 'Template · flight routes from a hub', spec: {
+            id: 'flights', label: 'Flight routes from a hub', spec: {
                 title: 'Routes from Seattle', subtitle: 'Weekly nonstop flights by airline (synthetic)', view: { basemap: 'world', labels: false },
                 template: 'flows',
                 data: { values: CITIES.filter(city => city[0] !== 'Seattle').slice(0, 24).map(([city, , lon, lat], index) => ({
@@ -313,7 +283,7 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
             },
         },
         {
-            id: 'migration-arrows', label: 'Template · migration flows (arrows)', spec: {
+            id: 'migration-arrows', label: 'Migration flows (arrows)', spec: {
                 title: 'Largest migration corridors', subtitle: 'Arrows point to the destination; dots mark the places',
                 template: 'flows', data: { values: migration() },
                 encoding: { origin: 'origin', destination: 'destination', size: 'migrants' },
@@ -323,7 +293,7 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
             },
         },
         {
-            id: 'migration-taper', label: 'Template · migration flows (tapered)', spec: {
+            id: 'migration-taper', label: 'Migration flows (tapered)', spec: {
                 title: 'Largest migration corridors', subtitle: 'Each line narrows toward the destination',
                 template: 'flows', data: { values: migration() },
                 encoding: { origin: 'origin', destination: 'destination', size: 'migrants' },
@@ -332,12 +302,12 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
             },
         },
         {
-            id: 'wind', label: 'Template · wind vectors', spec: {
+            id: 'wind', label: 'Wind vectors', spec: {
                 title: 'Surface wind over the North Atlantic', subtitle: 'Synthetic: westerlies around a cyclone; arrows point downwind',
                 template: 'vectors', data: { values: windField() },
                 encoding: { lat: 'lat', lon: 'lon', u: 'u', v: 'v', size: 'speed', color: 'speed' },
                 fields: { speed: { semanticType: 'Quantity', unit: 'm/s', displayName: 'Wind speed' } },
-                properties: { geography: 'world', scheme: 'viridis', sizeMax: 22 },
+                properties: { geography: 'world', sizeMax: 22 },
             },
         },
     ];

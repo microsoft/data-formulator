@@ -18,19 +18,18 @@ cooldown, up to ``MAX_COOLDOWN``. One call never retries past ``CALL_BUDGET``.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import random
 import re
 import threading
 import time
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
 import httpx
 from mcp.server.mcpserver.exceptions import ToolError
+
+from data_formulator.tool_packs.cache import DiskCache, Response
 
 API_URL = "https://export.arxiv.org/api/query"
 ABS_URL = "https://arxiv.org/abs/{id}"
@@ -75,14 +74,6 @@ def normalize_id(value: str) -> str:
     return match.group("id")
 
 
-@dataclass
-class Response:
-    status: int
-    content: bytes
-    headers: dict[str, str] = field(default_factory=dict)
-    url: str = ""
-
-
 class Client:
     """One connection to arXiv, spaced, retried and cached."""
 
@@ -92,6 +83,7 @@ class Client:
         contact = f"; mailto:{email}" if email else ""
         self.user_agent = f"DataFormulator-Research/1.0 (+https://github.com/microsoft/data-formulator{contact})"
         self.cache_dir = cache_dir
+        self._cache = DiskCache(cache_dir)
         self.min_interval = min_interval
         self._sleep, self._clock = sleep, clock
         self._lock = threading.Lock()
@@ -100,37 +92,6 @@ class Client:
         self._cooldown = RATE_LIMIT_COOLDOWN
         self._http = httpx.Client(headers={"User-Agent": self.user_agent}, follow_redirects=True, transport=transport,
                                   timeout=httpx.Timeout(READ_TIMEOUT, connect=10.0), limits=httpx.Limits(max_connections=1))
-
-    # -- cache --
-
-    def _cache_path(self, url: str) -> Path | None:
-        if not self.cache_dir:
-            return None
-        return self.cache_dir / hashlib.sha256(url.encode()).hexdigest()[:40]
-
-    def _cached(self, url: str, ttl: float | None) -> Response | None:
-        path = self._cache_path(url)
-        if not path or not path.exists():
-            return None
-        try:
-            meta = json.loads(path.with_suffix(".json").read_text())
-            if ttl is not None and time.time() - meta["at"] > ttl:
-                return None
-            return Response(200, path.read_bytes(), meta.get("headers", {}), meta.get("url", url))
-        except (OSError, ValueError, KeyError):
-            return None
-
-    def _store(self, url: str, response: Response) -> None:
-        path = self._cache_path(url)
-        if not path:
-            return
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(response.content)
-            keep = {key: value for key, value in response.headers.items() if key.lower() == "content-type"}
-            path.with_suffix(".json").write_text(json.dumps({"at": time.time(), "url": response.url, "headers": keep}))
-        except OSError:
-            pass
 
     # -- requests --
 
@@ -143,7 +104,7 @@ class Client:
             accept: Callable[[Response], bool] | None = None, use_cache: bool = True) -> Response:
         """GET ``url`` politely. ``accept`` may reject a 200 response as a glitch worth retrying."""
         full = str(httpx.URL(url, params=params or {}))
-        if use_cache and (hit := self._cached(full, ttl)) is not None:
+        if use_cache and (hit := self._cache.get(full, ttl)) is not None:
             return hit
         last_error = "no response"
         with self._lock:
@@ -166,7 +127,7 @@ class Client:
                 if response is not None:
                     if response.status == 200 and (accept is None or accept(response)):
                         self._cooldown = RATE_LIMIT_COOLDOWN
-                        self._store(full, response)
+                        self._cache.put(full, response)
                         return response
                     if response.status == 200:
                         last_error = "arXiv returned an empty page"

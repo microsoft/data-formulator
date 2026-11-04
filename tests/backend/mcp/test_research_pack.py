@@ -12,7 +12,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from data_formulator.tool_packs.research import arxiv, server
+from data_formulator.tool_packs.research import arxiv, openalex, server
 
 pytestmark = [pytest.mark.backend]
 
@@ -136,7 +136,7 @@ def test_the_model_reads_why_a_tool_failed(monkeypatch):
     client, _, _ = make_client(lambda request, count: httpx.Response(429, content=b"Rate exceeded."))
     monkeypatch.setattr(server, "_client", client)
     with pytest.raises(ToolError) as raised:
-        asyncio.run(server.app.call_tool("search_papers", {"query": "charts"}))
+        asyncio.run(server.app.call_tool("search_papers", {"query": "charts", "category": "cs.HC"}))
     # Not masked as a crash ("Error executing tool search_papers" alone): the reason reaches the model.
     assert not isinstance(raised.value, UnexpectedToolError)
     assert "arXiv is rate-limiting" in str(raised.value)
@@ -214,7 +214,8 @@ def test_tools_return_tables_and_counts(monkeypatch):
     assert requests[0].url.params["max_results"] == "100" and requests[0].url.params["sortBy"] == "submittedDate"
     row = result["papers"][0]
     assert row["authors"] == "Author 0, Author 1, Author 2, Author 3, Author 4 et al. (7 authors)" and "abstract" not in row
-    assert "abstract" in server.search_papers(query="charts", include_abstracts=True)["papers"][0]
+    assert "abstract" in server.search_papers(query="charts", category="cs.HC", include_abstracts=True)["papers"][0]
+    assert result["source"] == "arxiv"
 
     counted = server.count_papers(date_from="2021", date_to="2023", category="cs.HC")
     assert counted["counts"] == [{"year": "2021", "papers": 30}, {"year": "2022", "papers": 40}, {"year": "2023", "papers": 50}]
@@ -251,6 +252,97 @@ def test_full_text_is_markdown_from_html_else_the_pdf(monkeypatch):
         server.get_full_text([f"2405.0000{index}" for index in range(6)])
 
 
+
+# -- OpenAlex search --
+
+def work(arxiv_url: str | None, title: str, cited: int = 3, **extra) -> dict:
+    return {"id": "https://openalex.org/W1", "doi": None, "title": title, "publication_date": "2024-05-02", "publication_year": 2024,
+            "cited_by_count": cited, "primary_topic": {"display_name": "Data Visualization"},
+            "authorships": [{"author": {"display_name": f"Author {index}"}} for index in range(6)],
+            "locations": [{"landing_page_url": arxiv_url}] if arxiv_url else [{"landing_page_url": "https://example.org/p"}],
+            "abstract_inverted_index": {"We": [0], "chart": [2], "study": [1]}, **extra}
+
+
+def make_openalex(handler, tmp_path: Path | None = None, key: str | None = None):
+    requests: list[httpx.Request] = []
+
+    def record(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return handler(request, len(requests))
+
+    return openalex.Client(tmp_path, key, transport=httpx.MockTransport(record), sleep=lambda seconds: None), requests
+
+
+def test_openalex_searches_arxiv_papers_by_title_and_abstract(tmp_path):
+    reply = {"meta": {"count": 42}, "results": [work("http://arxiv.org/abs/2309.10305v2", "Charts, talking"),
+                                               work(None, "Not on arXiv"),
+                                               work(None, "Only its DOI", doi="https://doi.org/10.48550/arxiv.2401.00001")]}
+    search, requests = make_openalex(lambda request, count: httpx.Response(200, json=reply), tmp_path, key="secret-key")
+    total, first, papers = search.search(query="llm, chart: grammar", author="Jeffrey Heer", date_from="2023", date_to="2024-02",
+                                         sort="cited", limit=50, offset=100)
+    params = requests[0].url.params
+    assert params["filter"] == ("locations.source.id:S4306400194,title_and_abstract.search:llm chart grammar,"
+                                "raw_author_name.search:Jeffrey Heer,from_publication_date:2023-01-01,to_publication_date:2024-02-29")
+    assert params["sort"] == "cited_by_count:desc" and params["per_page"] == "50" and params["page"] == "3"
+    # The key goes in a header, never in the URL (or the cache).
+    assert requests[0].headers["authorization"] == "Bearer secret-key" and "secret-key" not in str(requests[0].url)
+    assert (total, first) == (42, 100)
+    assert [(paper["id"], paper["cited_by"]) for paper in papers] == [("2309.10305", 3), ("2401.00001", 3)]
+    assert papers[0]["abstract"] == "We study chart" and papers[0]["url"] == "https://arxiv.org/abs/2309.10305"
+    again, more = make_openalex(lambda request, count: pytest.fail("should come from the cache"), tmp_path)
+    assert again.search(query="llm, chart: grammar", author="Jeffrey Heer", date_from="2023", date_to="2024-02", sort="cited",
+                        limit=50, offset=100)[0] == 42
+    assert not any("secret-key" in path.read_text() for path in tmp_path.glob("*.json"))
+
+
+def test_openalex_reports_a_spent_budget_retries_a_busy_second_and_sets_aside_an_inactive_key():
+    spent, _ = make_openalex(lambda request, count: httpx.Response(429, headers={"x-ratelimit-remaining-usd": "0"}, text="Daily budget exceeded"))
+    with pytest.raises(openalex.OpenAlexError, match="daily budget"):
+        spent.search(query="charts")
+    replies = [httpx.Response(429, headers={"x-ratelimit-remaining-usd": "0.05", "retry-after": "1"}),
+               httpx.Response(200, json={"meta": {"count": 0}, "results": []})]
+    busy, requests = make_openalex(lambda request, count: replies.pop(0))
+    assert busy.search(query="charts")[0] == 0 and len(requests) == 2
+    inactive, requests = make_openalex(lambda request, count: httpx.Response(403, text='{"error": "key_not_activated"}') if count == 1
+                                       else httpx.Response(200, json={"meta": {"count": 1}, "results": []}), key="pending")
+    assert inactive.search(query="charts")[0] == 1
+    assert "authorization" in requests[0].headers and "authorization" not in requests[1].headers
+
+
+def test_searches_and_counts_go_to_openalex_and_categories_to_arxiv(monkeypatch):
+    def openalex_reply(request: httpx.Request, count: int) -> httpx.Response:
+        if request.url.params.get("group_by") == "publication_year":
+            return httpx.Response(200, json={"meta": {"count": 9}, "group_by": [{"key": "2022", "count": 4}, {"key": "2023", "count": 5}]})
+        if request.url.params.get("per_page") == "1":
+            return httpx.Response(200, json={"meta": {"count": 7}, "results": []})
+        return httpx.Response(200, json={"meta": {"count": 1}, "results": [work("https://arxiv.org/abs/2405.00001", "Found")]})
+
+    search, searched = make_openalex(openalex_reply)
+    arxiv_client, asked, _ = make_client(lambda request, count: httpx.Response(200, content=feed([{"id": "2405.00002", "title": "From arXiv"}])),
+                                         min_interval=0)
+    monkeypatch.setattr(server, "_openalex", search)
+    monkeypatch.setattr(server, "_client", arxiv_client)
+
+    found = server.search_papers(query="charts", sort="cited")
+    assert found["source"] == "openalex" and found["papers"][0]["cited_by"] == 3 and "topic" in found["papers"][0]
+    assert not asked
+    # Only arXiv knows its categories and its own query syntax.
+    assert server.search_papers(query="charts", category="cs.HC")["source"] == "arxiv"
+    assert server.search_papers(query="ti:charts AND cat:cs.HC")["source"] == "arxiv"
+    yearly = server.count_papers(date_from="2021", date_to="2023", query="charts")
+    assert yearly["source"] == "openalex" and yearly["counts"] == [{"year": "2021", "papers": 0}, {"year": "2022", "papers": 4},
+                                                                   {"year": "2023", "papers": 5}]
+    assert server.count_papers(date_from="2024-01", date_to="2024-02", by="month", query="charts")["counts"] == [
+        {"month": "2024-01", "papers": 7}, {"month": "2024-02", "papers": 7}]
+
+    # OpenAlex out of budget: arXiv answers, and says why.
+    spent, _ = make_openalex(lambda request, count: httpx.Response(429, headers={"x-ratelimit-remaining-usd": "0"}))
+    monkeypatch.setattr(server, "_openalex", spent)
+    fallback = server.search_papers(query="charts")
+    assert fallback["source"] == "arxiv" and "daily budget" in fallback["note"] and fallback["papers"][0]["title"] == "From arXiv"
+    assert server.count_papers(date_from="2024", query="charts")["source"] == "arxiv"
+
+
 # -- adding the pack --
 
 HEADERS = {"Origin": "http://localhost", "X-DF-Configuration": "1"}
@@ -278,7 +370,7 @@ def test_the_research_pack_is_added_once_as_a_local_server(client):
     import sys
 
     packs = client.get("/api/mcp/packs").get_json()["data"]["packs"]
-    assert [pack["id"] for pack in packs] == ["research"] and packs[0]["server_id"] is None
+    assert [pack["id"] for pack in packs] == ["research", "github", "huggingface", "finance"] and packs[0]["server_id"] is None
     added = client.post("/api/mcp/packs/research", headers=HEADERS, json={"settings": {"email": "me@example.com"}}).get_json()["data"]
     assert added["pack"] == "research" and added["transport"] == "stdio" and added["command"] == sys.executable
     assert added["args"][:2] == ["-m", "data_formulator.tool_packs.research"] and added["args"][-2:] == ["--email", "me@example.com"]
@@ -291,9 +383,68 @@ def test_the_research_pack_is_added_once_as_a_local_server(client):
     assert client.post("/api/mcp/packs/research", json={}).status_code == 403
 
 
+def test_an_openalex_key_is_kept_in_the_vault_not_the_command_line(client):
+    packs = client.get("/api/mcp/packs").get_json()["data"]["packs"]
+    secret = next(setting for setting in packs[0]["settings"] if setting["key"] == "openalex_key")
+    assert secret["secret"] is True and "env" not in secret
+    added = client.post("/api/mcp/packs/research", headers=HEADERS, json={"settings": {"openalex_key": " abc123 "}}).get_json()["data"]
+    assert not any("abc123" in arg for arg in added["args"]) and added["secrets"]["env"] == ["OPENALEX_API_KEY"]
+    from data_formulator.mcp_servers import config as mcp_config
+    assert mcp_config.read_secrets("local:me", added["id"])["env"] == {"OPENALEX_API_KEY": "abc123"}
+
+
+def test_a_malformed_openalex_key_is_refused(client):
+    reply = client.post("/api/mcp/packs/research", headers=HEADERS, json={"settings": {"openalex_key": "two words"}}).get_json()
+    assert reply["error"]["code"] == "INVALID_REQUEST"
+    assert client.get("/api/mcp/packs").get_json()["data"]["packs"][0]["server_id"] is None
+
+
 def test_a_bad_contact_email_is_refused(client):
     reply = client.post("/api/mcp/packs/research", headers=HEADERS, json={"settings": {"email": "not-an-email"}}).get_json()
     assert reply["error"]["code"] == "INVALID_REQUEST" and "email" in reply["error"]["message"]
+
+
+def test_the_finance_pack_needs_an_email_and_keeps_its_keys_in_the_vault(client):
+    finance = next(pack for pack in client.get("/api/mcp/packs").get_json()["data"]["packs"] if pack["id"] == "finance")
+    assert next(setting for setting in finance["settings"] if setting["key"] == "email")["required"] is True
+    missing = client.post("/api/mcp/packs/finance", headers=HEADERS, json={"settings": {"twelvedata_key": "td1"}}).get_json()
+    assert missing["error"]["code"] == "INVALID_REQUEST" and "Contact email" in missing["error"]["message"]
+    added = client.post("/api/mcp/packs/finance", headers=HEADERS, json={"settings": {
+        "email": "me@example.com", "twelvedata_key": "td1", "fred_key": "fr1"}}).get_json()["data"]
+    assert added["args"][:2] == ["-m", "data_formulator.tool_packs.finance"] and added["args"][-2:] == ["--email", "me@example.com"]
+    assert not any(key in arg for arg in added["args"] for key in ("td1", "fr1"))
+    from data_formulator.mcp_servers import config as mcp_config
+    assert mcp_config.read_secrets("local:me", added["id"])["env"] == {"TWELVE_DATA_API_KEY": "td1", "FRED_API_KEY": "fr1"}
+
+
+def test_an_added_packs_settings_can_change_and_only_their_state_is_shown(client):
+    from data_formulator.mcp_servers import config as mcp_config
+
+    added = client.post("/api/mcp/packs/finance", headers=HEADERS, json={"settings": {
+        "email": "me@example.com", "twelvedata_key": "td1"}}).get_json()["data"]
+    finance = next(pack for pack in client.get("/api/mcp/packs").get_json()["data"]["packs"] if pack["id"] == "finance")
+    assert finance["values"] == {"email": {"value": "me@example.com"}, "twelvedata_key": {"set": True}, "fred_key": {"set": False}}
+    assert "td1" not in json.dumps(finance)
+
+    changed = client.put("/api/mcp/packs/finance/settings", headers=HEADERS, json={"settings": {
+        "email": "you@example.com", "fred_key": "fr2", "twelvedata_key": ""}}).get_json()["data"]
+    assert changed["values"] == {"email": {"value": "you@example.com"}, "twelvedata_key": {"set": False}, "fred_key": {"set": True}}
+    assert mcp_config.get_server(added["id"])["args"][-2:] == ["--email", "you@example.com"]
+    assert mcp_config.read_secrets("local:me", added["id"])["env"] == {"FRED_API_KEY": "fr2"}
+
+    for settings, problem in (({"email": ""}, "Contact email is required"), ({"fred_key": "two words"}, "without spaces"),
+                              ({"colour": "x"}, "no setting 'colour'")):
+        reply = client.put("/api/mcp/packs/finance/settings", headers=HEADERS, json={"settings": settings}).get_json()
+        assert reply["error"]["code"] == "INVALID_REQUEST" and problem in reply["error"]["message"]
+    assert client.put("/api/mcp/packs/huggingface/settings", headers=HEADERS, json={"settings": {}}).get_json()["error"]["code"] == "INVALID_REQUEST"
+
+
+def test_a_packs_tools_are_listed_before_it_is_added(client):
+    tools = client.get("/api/mcp/packs/finance/tools").get_json()["data"]["tools"]
+    assert [tool["name"] for tool in tools] == ["find_company", "company_financials", "list_filings", "economic_series",
+                                                "search_economic_series", "stock_prices"]
+    assert all(tool["read_only"] and tool["description"] for tool in tools)
+    assert client.get("/api/mcp/packs/unknown/tools").get_json()["error"]["code"] == "INVALID_REQUEST"
 
 
 def test_large_json_results_save_as_json(tmp_path):

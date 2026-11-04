@@ -219,6 +219,20 @@ def test_template_maps_validate_against_the_data(workspace) -> None:
     assert events[0]["type"] == "error" and '"nation" is not a column' in observation
 
 
+def test_template_highlight_marks_notable_rows() -> None:
+    from data_formulator.analyst.skills.map.templates import compile_template, template_errors
+    quakes = {"template": "density", "data": {"table": "q"}, "encoding": {"lat": "lat", "lon": "lon", "weight": "mag"},
+              "properties": {"highlight": {"field": "mag", "op": ">=", "value": 7, "label": "M7+"}}}
+    assert template_errors(quakes) == []
+    compiled = compile_template(quakes)
+    assert [layer["id"] for layer in compiled["layers"]] == ["main", "highlight"]
+    assert compiled["layers"][1]["filter"] == [{"field": "mag", "op": ">=", "value": 7}]
+    assert compiled["controls"][-1] == {"type": "layers"}
+    assert any("needs field and value" in error for error in template_errors({**quakes, "properties": {"highlight": {"field": "mag"}}}))
+    assert any("placed by lat and lon" in error for error in template_errors(
+        {"template": "choropleth", "data": {"table": "q"}, "encoding": {"region": "c", "color": "mag"}, "properties": quakes["properties"]}))
+
+
 def test_template_channels_offer_column_options(workspace) -> None:
     from data_formulator.analyst.skills.map.templates import compile_template, template_errors
     workspace.write_parquet(pd.DataFrame({

@@ -23,7 +23,7 @@ import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
 import TitleIcon from '@mui/icons-material/Title';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { iconVar, textVar } from '../app/layout';
-import { CalloutKind, StreamSegment, excerptCitation, quotedPassage, safeHttpUrl, segmentStreamingLines, sessionFileName } from './reportBlocks';
+import { quotedPassage, safeHttpUrl, sessionFileName } from './reportBlocks';
 import { ReportBlockLabels, reportBlockExtensions } from './reportBlockNodes';
 import type { SourceLocation } from '../app/sourceLocation';
 import { ReportLook, reportContentSx } from './reportThemes';
@@ -35,9 +35,7 @@ function formatStepDuration(ms: number): string {
 }
 
 export interface TiptapReportEditorProps {
-    content: string;           // HTML content (from processReport)
-    streamingText?: string;    // raw markdown, shown via typewriter while writing-phase streams
-    resolveChartImage?: (chartId: string) => { url: string; width: number; height: number } | undefined; // for streaming chart embeds
+    content: string;           // HTML content (from processReport); while writing, the text so far
     editable?: boolean;        // edit mode on/off (formatting toolbar visible, content editable)
     isGenerating?: boolean;    // report is still streaming; suppress export actions, show status
     generatingPhase?: 'inspecting' | 'writing'; // which phase the agent is in while generating
@@ -183,214 +181,12 @@ const InspectingStatus: FC<{ steps?: InspectStep[] }> = ({ steps }) => {
     );
 };
 
-/** Strip inline markdown emphasis markers for the lightweight streaming view. */
-function stripInlineMarkers(line: string): string {
-    return line
-        .replace(/\*\*(.+?)\*\*/g, '$1')
-        .replace(/(^|[^*])\*([^*]+)\*/g, '$1$2')
-        .replace(/`([^`]+)`/g, '$1');
-}
-
-/** Detect a chart-image line: ![caption](chart://id) or legacy [IMAGE(id)]. */
-function matchChartImageLine(line: string): { chartId: string; caption?: string } | null {
-    const md = line.match(/^!\[([^\]]*)\]\(chart:\/\/([^)]+)\)\s*$/);
-    if (md) return { caption: md[1] || undefined, chartId: md[2] };
-    const legacy = line.match(/^\[IMAGE\(([^)]+)\)\]\s*$/);
-    if (legacy) return { chartId: legacy[1] };
-    return null;
-}
-
 const DEFAULT_LOOK: ReportLook = { typeface: 'sans', density: 'compact' };
 
-/** Space above a report's first line, in the editor and the streaming view alike. */
+/** Space above a report's first line. */
 const REPORT_TOP_SPACE = '48px';
-
-type ResolveChartImage = (chartId: string) => { url: string; width: number; height: number } | undefined;
-
-/**
- * Lightweight, line-based render of the streamed markdown. Good enough to read
- * smoothly while text arrives; the real TipTap parse happens once on completion.
- * Report blocks are drawn as their boxes (open ones grow as they stream), with the
- * same class names as the editor's nodes so the report theme styles both alike.
- */
-const StreamingMarkdownLite: FC<{ text: string; caret?: React.ReactNode; resolveChartImage?: ResolveChartImage }> = ({ text, caret, resolveChartImage }) => {
-    const segments = useMemo(() => segmentStreamingLines(
-        text.split('\n').filter(line => !/^\[\^[^\]\s]+\]:/.test(line)).map(line => line.replace(/\[\^[^\]\s]+\]/g, '')),
-    ), [text]);
-    return <StreamingSegments segments={segments} caret={caret} resolveChartImage={resolveChartImage} />;
-};
-
-const StreamingSegments: FC<{ segments: StreamSegment[]; caret?: React.ReactNode; resolveChartImage?: ResolveChartImage }> = ({ segments, caret, resolveChartImage }) => {
-    const labels = useReportBlockLabels();
-    return (
-        <>
-            {segments.map((segment, i) => {
-                const tail = i === segments.length - 1 ? caret : null;
-                if (segment.type === 'lines') {
-                    return <StreamingLines key={i} lines={segment.lines} caret={tail} resolveChartImage={resolveChartImage} />;
-                }
-                const children = (
-                    <StreamingSegments segments={segment.children} caret={segment.closed ? null : tail} resolveChartImage={resolveChartImage} />
-                );
-                const body = <div className="report-block-body">{children}</div>;
-                let block: React.ReactNode;
-                switch (segment.block) {
-                    case 'excerpt': {
-                        const { label, locator } = excerptCitation(segment.attrs, labels.page);
-                        block = (
-                            <figure className="report-excerpt">
-                                {body}
-                                {(label || locator) && (
-                                    <figcaption>
-                                        {label && <span className="report-excerpt-source">{label}</span>}
-                                        {locator && <span className="report-excerpt-locator">{locator}</span>}
-                                    </figcaption>
-                                )}
-                            </figure>
-                        );
-                        break;
-                    }
-                    case 'callout': {
-                        const kind = segment.attrs.kind as CalloutKind;
-                        block = (
-                            <aside className="report-callout" data-kind={kind}>
-                                <div className="report-callout-title">{segment.attrs.title || labels.callout[kind]}</div>
-                                {body}
-                            </aside>
-                        );
-                        break;
-                    }
-                    case 'metrics':
-                        block = <div className="report-metrics">{children}</div>;
-                        break;
-                    case 'compare':
-                        block = <div className="report-compare">{children}</div>;
-                        break;
-                    case 'column':
-                        block = (
-                            <div className="report-column">
-                                {segment.attrs.title && <div className="report-column-title">{segment.attrs.title}</div>}
-                                {body}
-                            </div>
-                        );
-                        break;
-                    case 'details':
-                        block = (
-                            <div className="report-details is-open">
-                                <div className="report-details-title">{segment.attrs.title || labels.details}</div>
-                                {body}
-                            </div>
-                        );
-                        break;
-                    case 'references':
-                        block = (
-                            <section className="report-references">
-                                <div className="report-references-title">{labels.references}</div>
-                                {body}
-                            </section>
-                        );
-                        break;
-                }
-                return (
-                    <React.Fragment key={i}>
-                        {block}
-                        {segment.closed ? tail : null}
-                    </React.Fragment>
-                );
-            })}
-        </>
-    );
-};
-
-/** `**bold**` and `*italic*` as elements; other inline Markdown markers dropped. */
-function renderInline(text: string): React.ReactNode[] {
-    return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) => {
-        const bold = part.match(/^\*\*([^*]+)\*\*$/);
-        return bold ? <strong key={i}>{bold[1]}</strong> : <React.Fragment key={i}>{stripInlineMarkers(part)}</React.Fragment>;
-    });
-}
-
-const StreamingLines: FC<{ lines: string[]; caret?: React.ReactNode; resolveChartImage?: ResolveChartImage }> = ({ lines, caret, resolveChartImage }) => {
-    const lastIdx = lines.length - 1;
-    // Consecutive list items render as one list (so blocks like metrics can lay them out).
-    const groups: { start: number; items: string[]; ordered?: boolean }[] = [];
-    lines.forEach((line, i) => {
-        const item = line.match(/^\s*(?:([-*])|(\d+)[.)])\s+(.*)$/);
-        const last = groups[groups.length - 1];
-        if (item && last?.items.length && last.start + last.items.length === i && last.ordered === !item[1]) {
-            last.items.push(item[3]);
-        } else if (item) {
-            groups.push({ start: i, items: [item[3]], ordered: !item[1] });
-        } else {
-            groups.push({ start: i, items: [] });
-        }
-    });
-    return (
-        <>
-            {groups.map(group => {
-                const i = group.start;
-                if (group.items.length) {
-                    const end = group.start + group.items.length - 1;
-                    const List = group.ordered ? 'ol' : 'ul';
-                    return (
-                        <List key={i}>
-                            {group.items.map((item, j) => (
-                                <li key={j}><p>{renderInline(item)}{group.start + j === lastIdx && end === lastIdx ? caret : null}</p></li>
-                            ))}
-                        </List>
-                    );
-                }
-                const line = lines[i];
-                const tail = i === lastIdx ? caret : null;
-                const img = matchChartImageLine(line);
-                if (img) {
-                    const cached = resolveChartImage?.(img.chartId);
-                    if (cached) {
-                        return (
-                            <Box key={i} component="div" sx={{ textAlign: 'center', my: '0.5em' }}>
-                                <Box component="img" src={cached.url} alt={img.caption ?? ''}
-                                    width={cached.width} height={cached.height}
-                                    sx={{ maxWidth: '100%', height: 'auto', borderRadius: '4px' }} />
-                                {tail}
-                            </Box>
-                        );
-                    }
-                    return (
-                        <Box key={i} component="div" sx={{ textAlign: 'center', color: 'text.disabled', py: '16px' }}>
-                            📊 {img.caption || img.chartId}{tail}
-                        </Box>
-                    );
-                }
-                const h = line.match(/^(#{1,3})\s+(.*)$/);
-                if (h) {
-                    const Heading = `h${h[1].length}` as 'h1' | 'h2' | 'h3';
-                    return <Heading key={i} style={i === 0 ? { marginTop: 0 } : undefined}>{renderInline(h[2])}{tail}</Heading>;
-                }
-                if (line.trim() === '') {
-                    return tail ? <React.Fragment key={i}>{tail}</React.Fragment> : null;
-                }
-                return <p key={i}>{renderInline(line)}{tail}</p>;
-            })}
-        </>
-    );
-};
-
-const StreamingText: FC<{ text: string; reportLook: ReportLook; resolveChartImage?: ResolveChartImage }> = ({ text, reportLook, resolveChartImage }) => {
-    const { t } = useTranslation();
-    const theme = useTheme();
-
-    return (
-        <Box sx={{
-            ...reportContentSx(theme, reportLook),
-            px: '24px', pt: REPORT_TOP_SPACE, pb: '64px',
-        }}>
-            <StreamingMarkdownLite text={text} resolveChartImage={resolveChartImage} />
-            <Box sx={{ mt: text.length === 0 ? 1 : 2 }}>
-                <WritingIndicator label={t('editor.writingReport')} fontSize="0.85rem" />
-            </Box>
-        </Box>
-    );
-};
+/** While a report is written, the editor re-reads the text so far at most this often. */
+const STREAMING_PARSE_MS = 200;
 
 /** Resizable image node view — drag bottom-right corner to resize */
 const ResizableImageView: FC<NodeViewProps> = ({ node, updateAttributes, selected }) => {
@@ -528,8 +324,6 @@ const ToolbarButton: FC<{
 
 export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
     content,
-    streamingText,
-    resolveChartImage,
     editable = true,
     isGenerating = false,
     generatingPhase,
@@ -603,23 +397,32 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
 
     // Sync content when it changes externally (streaming or loading a different report)
     // Always sync if the content contains new images (img tags) that aren't in the editor yet
+    const lastParseAtRef = useRef(0);
+    const parseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     useEffect(() => {
         if (!editor) return;
-        // While the writing phase streams, the lightweight typewriter view owns the
-        // display — defer the (expensive) markdown parse until the stream completes.
-        if (isGenerating && generatingPhase === 'writing') return;
-        if (!isFocused.current) {
-            editor.commands.setContent(content, { emitUpdate: false });
-        } else {
-            // Even when focused, sync if new images arrived (user isn't typing image tags)
-            const currentHtml = editor.getHTML();
-            const newImgCount = (content.match(/<img /g) || []).length;
-            const currentImgCount = (currentHtml.match(/<img /g) || []).length;
-            if (newImgCount > currentImgCount) {
+        const sync = () => {
+            lastParseAtRef.current = Date.now();
+            if (!isFocused.current) {
                 editor.commands.setContent(content, { emitUpdate: false });
+            } else {
+                // Even when focused, sync if new images arrived (user isn't typing image tags)
+                const currentHtml = editor.getHTML();
+                const newImgCount = (content.match(/<img /g) || []).length;
+                const currentImgCount = (currentHtml.match(/<img /g) || []).length;
+                if (newImgCount > currentImgCount) {
+                    editor.commands.setContent(content, { emitUpdate: false });
+                }
             }
-        }
-    }, [editor, content, generatingPhase, isGenerating]);
+        };
+        if (parseTimerRef.current) { clearTimeout(parseTimerRef.current); parseTimerRef.current = null; }
+        // While a report is written it is formatted as it arrives, re-read at most every
+        // STREAMING_PARSE_MS (the latest text wins); otherwise at once.
+        const wait = isGenerating ? lastParseAtRef.current + STREAMING_PARSE_MS - Date.now() : 0;
+        if (wait <= 0) sync();
+        else parseTimerRef.current = setTimeout(() => { parseTimerRef.current = null; sync(); }, wait);
+    }, [editor, content, isGenerating]);
+    useEffect(() => () => { if (parseTimerRef.current) clearTimeout(parseTimerRef.current); }, []);
 
     // A citation number's reference entry (entry n of the references list).
     const contentRef = useRef<HTMLDivElement>(null);
@@ -800,15 +603,19 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
                     minHeight: '100%',
                 },
             }}>
-                {/* While inspecting, the report is still empty — show progress.
-                    While writing, a typewriter view reveals the streamed text
-                    smoothly; TipTap takes over (one parse) once it completes. */}
+                {/* While inspecting, the report is still empty — show progress. While writing,
+                    the editor shows the text so far, formatted, with a writing note after it. */}
                 {isGenerating && generatingPhase !== 'writing' ? (
                     <InspectingStatus steps={inspectionSteps} />
-                ) : isGenerating && generatingPhase === 'writing' ? (
-                    <StreamingText text={streamingText ?? ''} reportLook={reportLook} resolveChartImage={resolveChartImage} />
                 ) : (
-                    <EditorContent editor={editor} />
+                    <>
+                        <EditorContent editor={editor} />
+                        {isGenerating && (
+                            <Box sx={{ px: '24px', pb: '64px' }}>
+                                <WritingIndicator label={t('editor.writingReport')} fontSize="0.85rem" />
+                            </Box>
+                        )}
+                    </>
                 )}
             </Box>
             <Popper open={!!citePreview} anchorEl={citePreview?.anchor} placement="top" sx={{ zIndex: 1300, pointerEvents: 'none' }}

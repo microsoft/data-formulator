@@ -183,6 +183,8 @@ class WorkspaceManager:
             meta["scheduledRun"] = scheduled_run
         elif existing.get("scheduledRun"):
             meta["scheduledRun"] = existing["scheduledRun"]
+        if existing.get("starred"):
+            meta["starred"] = True
         meta_file.write_text(
             json.dumps(meta, ensure_ascii=False), encoding="utf-8",
         )
@@ -286,6 +288,7 @@ class WorkspaceManager:
                 "chart_count": cc,
                 "source_ids": meta.get("sourceIds", []),
                 "scheduled_run": meta.get("scheduledRun"),
+                "starred": meta.get("starred") is True,
             })
 
         workspaces.sort(key=lambda w: w.get("updated_at") or "", reverse=True)
@@ -547,6 +550,20 @@ class WorkspaceManager:
                     )
             except Exception:
                 pass  # best-effort; next auto-save will sync
+
+    def set_starred(self, workspace_id: str, starred: bool) -> None:
+        """Star or unstar a workspace in workspace_meta.json.
+
+        ``updatedAt`` is left alone so starring never reorders the
+        "recently modified" list.
+        """
+        meta = dict(self._ensure_meta(workspace_id))
+        if starred:
+            meta["starred"] = True
+        else:
+            meta.pop("starred", None)
+        meta_file = self._root / self._safe_id(workspace_id) / WORKSPACE_META_FILENAME
+        meta_file.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
 
     # ── Session state persistence ────────────────────────────────────
 

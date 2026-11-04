@@ -47,8 +47,6 @@ export interface RendererCallbacks {
     onInteract?: () => void;
     /** After a full draw: the projected width of 360° in pixels (picks the boundary detail). */
     onScale?: (worldWidth: number) => void;
-    /** After a fresh fit: the fitted map's width over its height (null for a set centre and zoom), for placing panels. */
-    onAspect?: (aspect: number | null) => void;
     /** A lasso (shift-drag, or drag in lasso mode) selected these marks; null when it caught none. */
     onLasso?: (selection: { layerId: string; keys: Set<string> } | null) => void;
 }
@@ -56,6 +54,30 @@ export interface RendererCallbacks {
 
 
 const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services';
+/**
+ * How far past its edges the map may be dragged, as a share of the panel on each side (in screen
+ * pixels, at any zoom): enough to bring what a floating panel covers into view, never enough to lose the map.
+ */
+export const PAN_SLACK = 0.5;
+/** How small the globe may zoom out, as a share of its fitted size. */
+export const GLOBE_MIN_ZOOM = 0.25;
+
+/**
+ * d3's pan rule, with the map's extent grown by PAN_SLACK of the panel in screen pixels (so in world units it
+ * shrinks as the map zooms in): the map's edge may come in from the panel's edge, as far as that.
+ */
+export function constrainPan(transform: d3.ZoomTransform, viewport: [[number, number], [number, number]],
+    extent: [[number, number], [number, number]], width: number, height: number): d3.ZoomTransform {
+    const sx = width * PAN_SLACK / transform.k;
+    const sy = height * PAN_SLACK / transform.k;
+    const dx0 = transform.invertX(viewport[0][0]) - (extent[0][0] - sx);
+    const dx1 = transform.invertX(viewport[1][0]) - (extent[1][0] + sx);
+    const dy0 = transform.invertY(viewport[0][1]) - (extent[0][1] - sy);
+    const dy1 = transform.invertY(viewport[1][1]) - (extent[1][1] + sy);
+    return transform.translate(
+        dx1 > dx0 ? (dx0 + dx1) / 2 : Math.min(0, dx0) || Math.max(0, dx1),
+        dy1 > dy0 ? (dy0 + dy1) / 2 : Math.min(0, dy0) || Math.max(0, dy1));
+}
 /** Online street tiles (keyless, with the attribution each provider requires). */
 export const TILE_STYLES: Record<string, { url: (z: number, x: number, y: number) => string; attribution: string; maxZoom: number }> = {
     light: { url: (z, x, y) => `${ESRI}/Canvas/World_Light_Gray_Base/MapServer/tile/${z}/${y}/${x}`, attribution: 'Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap contributors', maxZoom: 16 },
@@ -64,6 +86,22 @@ export const TILE_STYLES: Record<string, { url: (z: number, x: number, y: number
 };
 
 const CANVAS_THRESHOLD = 2500;
+/** A path of the triangles between nearby points (edges up to two grid steps), and a dot at each point. */
+function meshPath(delaunay: d3.Delaunay<unknown>, placed: { point: [number, number] }[], spacing: number): string {
+    const { triangles } = delaunay;
+    const near = (a: number, b: number) => Math.hypot(placed[a].point[0] - placed[b].point[0], placed[a].point[1] - placed[b].point[1]) <= 2 * spacing;
+    const parts: string[] = [];
+    for (let index = 0; index < triangles.length; index += 3) {
+        const [a, b, c] = [triangles[index], triangles[index + 1], triangles[index + 2]];
+        if (near(a, b) && near(b, c) && near(c, a)) parts.push(`M${placed[a].point}L${placed[b].point}L${placed[c].point}Z`);
+    }
+    // Isolated points: a short closed line, which the round stroke turns into a dot.
+    for (const { point: [x, y] } of placed) parts.push(`M${x},${y}h0.01`);
+    return parts.join('');
+}
+
+/** Ids for the SVG filters and clips each renderer defines. */
+let defsCounter = 0;
 
 let measureContext: CanvasRenderingContext2D | null | undefined;
 let measureFont: string | undefined;
@@ -88,6 +126,8 @@ interface Label {
     ink?: string;
     /** Bold, for the one place a map is about (a route map's hub). */
     strong?: boolean;
+    /** A second place to try when the first is taken (below a point instead of above it). */
+    alt?: { x: number; y: number };
 }
 
 const isDark = (color: string | undefined) => {
@@ -163,10 +203,9 @@ function arrowHead(points: [number, number][], width: number): string {
     const [bx, by] = [tip[0] - ux * length, tip[1] - uy * length];
     return `M${tip[0]},${tip[1]}L${bx - uy * half},${by + ux * half}L${bx + uy * half},${by - ux * half}Z`;
 }
-/** About 20,000 km² in steradians: land smaller than this does not stop a panel floating over the map. */
-const SMALL_LAND = 5e-4;
-/** A feature's area in steradians, whichever way its rings wind. */
-const landArea = (feature: d3.GeoPermissibleObjects) => { const area = d3.geoArea(feature); return Math.min(area, 4 * Math.PI - area); };
+
+/** A fitted map's collision outline and bounds, in units of its projection's scale from its translate. */
+interface FitShape { outline: [number, number][]; bounds: [number, number, number, number] }
 
 /** Text the renderer draws (legends, tooltips), translated by the host. */
 export interface RendererStrings {
@@ -185,6 +224,7 @@ const ENGLISH: RendererStrings = {
 
 export class MapRenderer {
     private svg: d3.Selection<SVGSVGElement, unknown, null, undefined>;
+    private fieldIds?: string;
     private canvas: HTMLCanvasElement;
     private root: d3.Selection<SVGGElement, unknown, null, undefined>;
     private width = 0;
@@ -208,6 +248,8 @@ export class MapRenderer {
     private positions = new Map<string, Map<string, [number, number]>>();
     /** Bubbles drawn this frame ([x0, y0, x1, y1]): place names stay off them. */
     private circleBoxes: [number, number, number, number][] = [];
+    /** Spikes' bodies: no label covers them. */
+    private spikeBoxes: [number, number, number, number][] = [];
     /** Mark states for the current draw, per layer. */
     private states = new Map<string, Map<string, { dim: boolean; selected: boolean; hidden: boolean }>>();
     /** The zoom the map was last fully drawn at; gestures on big maps transform that drawing until they end. */
@@ -222,11 +264,13 @@ export class MapRenderer {
         this.canvas = canvas;
         this.svg.selectAll('*').remove();
         this.root = this.svg.append('g').attr('class', 'df-map-root');
-        for (const name of ['ocean', 'tiles', 'graticule', 'land', 'layers', 'borders', 'labels']) this.root.append('g').attr('class', `df-map-${name}`);
+        // Area layers sit under the basemap's borders (which keep their edges crisp); marks stand over them.
+        for (const name of ['ocean', 'tiles', 'graticule', 'land', 'layers', 'borders', 'marks', 'labels']) this.root.append('g').attr('class', `df-map-${name}`);
         this.svg.append('path').attr('class', 'df-map-lasso').attr('fill', 'rgba(31,119,180,0.08)').attr('stroke', '#1f77b4')
             .attr('stroke-width', 1).attr('stroke-dasharray', '4 3').style('pointer-events', 'none');
         this.zoom = d3.zoom<SVGSVGElement, unknown>()
             .scaleExtent([1, 4096])
+            .constrain((transform, viewport, extent) => constrainPan(transform, viewport, extent, this.width, this.height))
             .filter(event => (!event.ctrlKey || event.type === 'wheel') && !event.button && event.type !== 'dblclick'
                 && (event.type === 'wheel' || (!event.shiftKey && !this.lassoMode)))
             .on('start', () => { this.stopSpin(); this.callbacks.onInteract?.(); this.callbacks.onHover(null, [0, 0]); })
@@ -416,15 +460,102 @@ export class MapRenderer {
         const scene = this.scene!;
         const view = scene.view;
         const name = viewProjection(view);
-        const projection = makeProjection(name);
         const obstacles = scene.obstacles ?? [];
         const key = JSON.stringify([name, view.center, view.zoom, view.rotate, view.fit, view.basemap, view.tiles, this.width, this.height, obstacles,
             scene.basemap?.name, scene.fitVersion ?? 0]);
         if (key === this.fitKey) {
+            const projection = makeProjection(name);
             projection.scale(this.base.scale).translate(this.base.translate);
             if (name !== 'albersUsa') projection.rotate(this.base.rotate);
             return projection;
         }
+        const { projection, fitted, collision } = this.prepareFit();
+        if (fitted && collision && obstacles.length) {
+            const shape = this.fitShape(projection, fitted, collision);
+            const placed = shape && this.placeAround(shape, obstacles);
+            if (placed) projection.scale(placed.scale).translate([placed.tx, placed.ty]);
+        }
+        this.base = {
+            scale: projection.scale(), translate: projection.translate() as [number, number],
+            rotate: name === 'albersUsa' ? [0, 0, 0] : projection.rotate() as [number, number, number],
+        };
+        this.fitKey = key;
+        this.transform = d3.zoomIdentity;
+        this.svg.property('__zoom', d3.zoomIdentity);
+        this.limitZoom(projection, name);
+        if (name === 'orthographic' && view.spin && this.scene?.interactive) this.startSpin();
+        return projection;
+    }
+
+    /**
+     * How the map would sit with panels in each of these arrangements, for choosing where the panels go (see
+     * layout.ts): the fitted scale, the share of the data's places the panels cover, and how far the map's centre
+     * is from the panel's (as a share of its size). Draws nothing and keeps the current view.
+     */
+    measureLayouts(scene: Scene, width: number, height: number, arrangements: [number, number, number, number][][]):
+        ({ scale: number; covered: number; offset: number } | null)[] {
+        const saved = { scene: this.scene, width: this.width, height: this.height, dataTarget: this.dataTarget, fittedToData: this.fittedToData };
+        this.scene = scene;
+        this.width = width;
+        this.height = height;
+        try {
+            const { projection, fitted, collision } = this.prepareFit();
+            const scale0 = projection.scale();
+            const [tx0, ty0] = projection.translate();
+            const shape = fitted && collision ? this.fitShape(projection, fitted, collision) : null;
+            const places = this.dataPlaces(projection);
+            return arrangements.map(boxes => {
+                const placed = shape && boxes.length ? this.placeAround(shape, boxes) : null;
+                // Panels the map cannot clear at any size it may take: it would sit under them, so score it as much smaller.
+                const { scale, tx, ty } = placed ?? { scale: shape && boxes.length ? scale0 * 0.5 : scale0, tx: tx0, ty: ty0 };
+                const k = scale / scale0;
+                const inside = ([x, y]: [number, number]) => {
+                    const px = (x - tx0) * k + tx;
+                    const py = (y - ty0) * k + ty;
+                    return boxes.some(([x0, y0, x1, y1]) => px >= x0 && px <= x1 && py >= y0 && py <= y1);
+                };
+                const covered = places.length ? places.filter(inside).length / places.length : 0;
+                let offset = 0;
+                if (shape) {
+                    const [bx0, by0, bx1, by1] = shape.bounds;
+                    offset = Math.hypot(((bx0 + bx1) / 2 * scale + tx - width / 2) / width, ((by0 + by1) / 2 * scale + ty - height / 2) / height);
+                }
+                return { scale, covered, offset };
+            });
+        } finally {
+            Object.assign(this, saved);
+        }
+    }
+
+    /** Where the data's places fall in a projection (a sample of them), for how much a panel would cover. */
+    private dataPlaces(projection: d3.GeoProjection): [number, number][] {
+        const globe = viewProjection(this.scene!.view) === 'orthographic';
+        const rotate = globe ? projection.rotate() : [0, 0];
+        const facing: LonLat = [-rotate[0], -rotate[1]];
+        const points: [number, number][] = [];
+        for (const model of this.scene!.models) {
+            if (model.layer.visible === false) continue;
+            for (const mark of model.marks.slice(0, 1500)) {
+                for (const place of [mark.at ?? (mark.feature ? featureAnchor(mark.feature) : mark.line?.[0]), mark.to]) {
+                    // The globe's far side is out of view.
+                    if (!place || (globe && d3.geoDistance(place, facing) > Math.PI / 2)) continue;
+                    const point = projection(place);
+                    if (point && Number.isFinite(point[0]) && Number.isFinite(point[1])) points.push(point as [number, number]);
+                }
+            }
+        }
+        return points;
+    }
+
+    /**
+     * The projection fitted to the whole panel, before the floating panels: what it frames (null for a set centre
+     * and zoom, which stays put), and what the panels must not cover.
+     */
+    private prepareFit(): { projection: d3.GeoProjection; fitted: d3.GeoPermissibleObjects | null; collision: [number, number][] | null } {
+        const scene = this.scene!;
+        const view = scene.view;
+        const name = viewProjection(view);
+        const projection = makeProjection(name);
         const pad = 16;
         // The map is centred in the whole panel, then shrunk just enough to clear the floating panels.
         const extent: [[number, number], [number, number]] = [[pad, pad], [Math.max(pad + 1, this.width - pad), Math.max(pad + 1, this.height - pad)]];
@@ -448,56 +579,101 @@ export class MapRenderer {
             // A flat world turns so its edge falls where the data leaves the most room (routes across the
             // Pacific stay whole instead of being cut at the date line), unless the spec sets a rotation.
             if (!view.rotate && name !== 'albersUsa' && scene.basemap?.name.startsWith('countries')) projection.rotate([this.edgeRotation(), 0, 0]);
-            const target = this.fitTarget(name);
+            let target = this.fitTarget(name);
             projection.fitExtent(extent, target);
+            // Flow arcs bow out on screen past their ends: frame the arcs as drawn, not just their ends.
+            const bulge = this.fittedToData ? this.flowBulge(projection) : [];
+            if (bulge.length) {
+                target = { type: 'FeatureCollection', features: [...(target as unknown as FeatureCollection).features,
+                    { type: 'Feature', properties: {}, geometry: { type: 'MultiPoint', coordinates: bulge } } as Feature] } as unknown as d3.GeoPermissibleObjects;
+                projection.fitExtent(extent, target);
+            }
             if (view.zoom && view.zoom !== 1) projection.scale(projection.scale() * view.zoom);
             else fitted = target;
         }
-        let aspect: number | null = null;
-        if (fitted) {
-            const [[x0, y0], [x1, y1]] = d3.geoPath(projection).bounds(fitted);
-            if ([x0, y0, x1, y1].every(Number.isFinite) && x1 > x0 && y1 > y0) aspect = Math.round((x1 - x0) / (y1 - y0) * 100) / 100;
-        }
-        this.callbacks.onAspect?.(aspect);
-        if (fitted && obstacles.length) {
-            // A flat world collides on its land: panels may float over open ocean, painted or not.
-            const world = (fitted === SPHERE || fitted === this.worldLandCache?.target) && name !== 'orthographic' && scene.basemap?.name.startsWith('countries');
-            // Small islands (Fiji, Samoa) on the map's rim may sit under a panel; only sizeable land collides.
-            const collision = world ? { type: 'FeatureCollection', features: scene.basemap!.features
-                .filter(item => item.properties.id !== 'ATA' && landArea(item) > SMALL_LAND) } as d3.GeoPermissibleObjects : fitted;
-            this.fitAroundObstacles(projection, fitted, collision, obstacles);
-        }
-        this.base = {
-            scale: projection.scale(), translate: projection.translate() as [number, number],
-            rotate: name === 'albersUsa' ? [0, 0, 0] : projection.rotate() as [number, number, number],
+        if (!fitted) return { projection, fitted: null, collision: null };
+        return { projection, fitted, collision: this.dataOutline(projection) };
+    }
+
+    /**
+     * What the floating panels must not cover, in the projection's pixels: the data as drawn (its regions' edges
+     * and middles, its points with their size, its routes and tracks along their curves). Basemap land and sea that
+     * carry no data may sit under a panel, so the map stays large rather than dodging every coastline.
+     */
+    private dataOutline(projection: d3.GeoProjection): [number, number][] {
+        const globe = viewProjection(this.scene!.view) === 'orthographic';
+        const rotate = globe ? projection.rotate() : [0, 0];
+        const facing: LonLat = [-rotate[0], -rotate[1]];
+        const points: [number, number][] = [];
+        const push = (point: [number, number] | null | undefined, radius = 0) => {
+            if (!point || !Number.isFinite(point[0]) || !Number.isFinite(point[1])) return;
+            points.push(point);
+            if (radius > 2) points.push([point[0] - radius, point[1]], [point[0] + radius, point[1]], [point[0], point[1] - radius], [point[0], point[1] + radius]);
         };
-        this.fitKey = key;
-        this.transform = d3.zoomIdentity;
-        this.svg.property('__zoom', d3.zoomIdentity);
-        this.limitZoom(projection, name);
-        if (name === 'orthographic' && view.spin && this.scene?.interactive) this.startSpin();
-        return projection;
+        // The globe's far side is out of view.
+        const at = (place: LonLat, radius = 0) => { if (!globe || d3.geoDistance(place, facing) < Math.PI / 2) push(projection(place) as [number, number] | null, radius); };
+        const collect = (x: number, y: number) => push([x, y]);
+        // Region edges, sampled as drawn (and clipped to the globe's near side).
+        const edges = d3.geoPath(projection, { moveTo: collect, lineTo: collect, arc: collect, closePath: () => {} } as never);
+        const steps = d3.range(0, 1.0001, 1 / 16);
+        for (const model of this.scene!.models) {
+            const type = model.layer.type;
+            if (model.layer.visible === false || type === 'labels') continue;
+            const curve = type === 'flows' ? model.layer.curve ?? (globe ? 'great-circle' : 'arc') : null;
+            for (const mark of model.marks.slice(0, 3000)) {
+                if (mark.feature && (type === 'regions' || type === 'shapes')) {
+                    edges(mark.feature);
+                    // A panel inside a large region touches none of its edges: its middle counts too.
+                    at(featureAnchor(mark.feature));
+                } else if (mark.line) {
+                    mark.line.forEach(place => at(place));
+                } else if (curve && mark.at && mark.to) {
+                    if (curve === 'great-circle') {
+                        const interpolate = d3.geoInterpolate(mark.at, mark.to);
+                        steps.forEach(t => at(interpolate(t) as LonLat));
+                        continue;
+                    }
+                    const from = projection(mark.at) as [number, number] | null;
+                    const to = projection(mark.to) as [number, number] | null;
+                    if (!from || !to) continue;
+                    const control = arcControl(from, to, curve);
+                    steps.forEach(t => push([(1 - t) ** 2 * from[0] + 2 * (1 - t) * t * control[0] + t * t * to[0],
+                        (1 - t) ** 2 * from[1] + 2 * (1 - t) * t * control[1] + t * t * to[1]]));
+                } else {
+                    const radius = type === 'bubbles' || type === 'points' ? model.size.size(mark.sizeValue) : 0;
+                    if (mark.at) at(mark.at, Number.isFinite(radius) ? radius : 0);
+                    if (mark.to) at(mark.to);
+                }
+            }
+        }
+        return points;
+    }
+
+    /**
+     * The fitted map's outline (where panels collide) and bounds, in units of the projection's scale from its
+     * translate: candidate fits differ only in scale and offset, so the outline is projected once and moved linearly.
+     */
+    private fitShape(projection: d3.GeoProjection, target: d3.GeoPermissibleObjects, collision: [number, number][]): FitShape | null {
+        const scale0 = projection.scale();
+        const [tx0, ty0] = projection.translate();
+        const toUnit = ([x, y]: [number, number]): [number, number] => [(x - tx0) / scale0, (y - ty0) / scale0];
+        const points = collision.map(toUnit);
+        const step = Math.max(1, Math.floor(points.length / 3000));
+        const outline = step > 1 ? points.filter((_, index) => index % step === 0) : points;
+        const [[bx0, by0], [bx1, by1]] = d3.geoPath(projection).bounds(target).map(point => toUnit(point as [number, number]));
+        if (![bx0, by0, bx1, by1].every(Number.isFinite) || bx1 <= bx0 || by1 <= by0) return null;
+        return { outline, bounds: [bx0, by0, bx1, by1] };
     }
 
     /**
      * Fit the map as large as the floating panels allow. Canvas panels are squarer than most maps, so
      * the map may sit in a free band (below the header, above the timeline, beside a side column)
-     * rather than the panel's centre. Collisions test the land, not empty ocean, so panels can float
-     * over the map's corners. Candidates differ only in scale and offset, so the outline is projected
-     * once and moved linearly.
+     * rather than the panel's centre. Collisions test the data, not the basemap, so panels can float
+     * over land and sea that carry none. Null when no fit clears the panels.
      */
-    private fitAroundObstacles(projection: d3.GeoProjection, target: d3.GeoPermissibleObjects, collision: d3.GeoPermissibleObjects,
-        obstacles: [number, number, number, number][]) {
-        const scale0 = projection.scale();
-        const [tx0, ty0] = projection.translate();
-        const toUnit = ([x, y]: [number, number]): [number, number] => [(x - tx0) / scale0, (y - ty0) / scale0];
-        const points: [number, number][] = [];
-        const collect = (x: number, y: number) => { points.push(toUnit([x, y])); };
-        d3.geoPath(projection, { moveTo: collect, lineTo: collect, arc: collect, closePath: () => {} } as never)(collision);
-        const step = Math.max(1, Math.floor(points.length / 3000));
-        const outline = step > 1 ? points.filter((_, index) => index % step === 0) : points;
-        const [[bx0, by0], [bx1, by1]] = d3.geoPath(projection).bounds(target).map(point => toUnit(point as [number, number]));
-        if (![bx0, by0, bx1, by1].every(Number.isFinite) || bx1 <= bx0 || by1 <= by0) return;
+    private placeAround(shape: FitShape, obstacles: [number, number, number, number][]): { scale: number; tx: number; ty: number } | null {
+        const { outline } = shape;
+        const [bx0, by0, bx1, by1] = shape.bounds;
 
         const pad = 16;
         const gap = 10;
@@ -541,7 +717,7 @@ export class MapRenderer {
             // Prefer the larger map; on a near tie, the more centred one.
             if (!best || candidate.scale > best.scale * 1.02) best = candidate;
         }
-        if (!best) return;
+        if (!best) return null;
         // A band beside a corner panel pushes the map off-centre; slide it back as far as the land stays
         // clear (a panel may float over open ocean).
         // Sliding never pushes the map past the panel's edges (a full-height globe stays whole).
@@ -578,17 +754,18 @@ export class MapRenderer {
             if (shrink === 1 && found) moved = found;
             if (found && distance <= this.width * 0.02) { moved = found; break; }
         }
-        projection.scale(moved.scale).translate([moved.tx, moved.ty]);
+        return moved;
     }
 
     /**
-     * Keep the map anchored: no zooming out past the whole map, and no panning past its edges (a map
-     * smaller than the panel stays centred). The globe only limits zoom; dragging rotates it.
+     * Keep the map anchored: no zooming out past the whole map, and no panning past its edges by more than
+     * PAN_SLACK of the panel (see the zoom's constrain). The globe only limits zoom, and may shrink below its
+     * fitted size (to see it whole beside the panels, or as a small globe); dragging rotates it.
      */
     private limitZoom(projection: d3.GeoProjection, name: ProjectionName) {
         const viewport: [[number, number], [number, number]] = [[0, 0], [this.width, this.height]];
         if (name === 'orthographic') {
-            this.zoom.scaleExtent([1, 64]).translateExtent([[-Infinity, -Infinity], [Infinity, Infinity]]);
+            this.zoom.scaleExtent([GLOBE_MIN_ZOOM, 64]).translateExtent([[-Infinity, -Infinity], [Infinity, Infinity]]);
             return;
         }
         const basemap = this.scene?.basemap;
@@ -648,8 +825,10 @@ export class MapRenderer {
         return cuts(PACIFIC_CENTRED) < cuts(0) ? PACIFIC_CENTRED : 0;
     }
 
+    /** The middle of the data's places: flows count both ends, so routes face the viewer whole. */
     private dataCenter(): LonLat | null {
-        const points = this.scene!.models.flatMap(model => model.marks.map(mark => mark.at).filter((point): point is LonLat => !!point));
+        const points = this.scene!.models.flatMap(model => model.layer.visible === false ? [] : model.marks.flatMap(mark => [mark.at, mark.to]))
+            .filter((point): point is LonLat => !!point);
         if (!points.length) return null;
         return d3.geoCentroid({ type: 'MultiPoint', coordinates: points } as unknown as d3.GeoPermissibleObjects) as LonLat;
     }
@@ -667,8 +846,51 @@ export class MapRenderer {
         return this.worldLandCache.target;
     }
 
+    /** Whether the last fit target was the data (not the basemap): only then do the flows' arcs widen the frame. */
+    private fittedToData = false;
+
+    /**
+     * Where flow lines leave the straight line between their ends, as places: each arc's apex (a screen-space
+     * curve, so its apex is an affine mix of the ends and stays put under the fit's scale and offset), or
+     * points along a great circle. Empty when no flows bow.
+     */
+    private flowBulge(projection: d3.GeoProjection): LonLat[] {
+        const points: LonLat[] = [];
+        for (const model of this.scene!.models) {
+            if (model.layer.visible === false || model.layer.type !== 'flows') continue;
+            const curve = model.layer.curve ?? (this.isGlobe ? 'great-circle' : 'arc');
+            if (curve === 'straight') continue;
+            for (const mark of model.marks.slice(0, 2000)) {
+                if (!mark.at || !mark.to) continue;
+                if (curve === 'great-circle') {
+                    const interpolate = d3.geoInterpolate(mark.at, mark.to);
+                    for (const t of [0.25, 0.5, 0.75]) points.push(interpolate(t) as LonLat);
+                    continue;
+                }
+                const from = projection(mark.at);
+                const to = projection(mark.to);
+                if (!from || !to) continue;
+                const control = arcControl(from as [number, number], to as [number, number], curve);
+                // The quadratic curve's point halfway along, where it is furthest from the chord.
+                const apex: [number, number] = [0.25 * from[0] + 0.5 * control[0] + 0.25 * to[0], 0.25 * from[1] + 0.5 * control[1] + 0.25 * to[1]];
+                const place = projection.invert?.(apex);
+                if (place && place.every(Number.isFinite)) points.push(place as LonLat);
+            }
+        }
+        return points;
+    }
+
     /** What the map frames: the data (default) or the basemap. */
     private fitTarget(name: ProjectionName): d3.GeoPermissibleObjects {
+        const target = this.chooseFitTarget(name);
+        this.fittedToData = target === this.dataTarget;
+        return target;
+    }
+
+    private dataTarget: d3.GeoPermissibleObjects | null = null;
+
+    private chooseFitTarget(name: ProjectionName): d3.GeoPermissibleObjects {
+        this.dataTarget = null;
         const scene = this.scene!;
         const basemapTarget = (): d3.GeoPermissibleObjects => {
             if (scene.basemap?.outline) {
@@ -712,7 +934,8 @@ export class MapRenderer {
             const [lon, lat] = points[0] ?? d3.geoCentroid(collection);
             return { type: 'Feature', properties: {}, geometry: { type: 'MultiPoint', coordinates: [[lon - 0.05, lat - 0.05], [lon + 0.05, lat + 0.05]] } } as d3.GeoPermissibleObjects;
         }
-        return collection as d3.GeoPermissibleObjects;
+        this.dataTarget = collection as d3.GeoPermissibleObjects;
+        return this.dataTarget;
     }
 
     /** Apply the zoom transform to the fitted projection: pan/scale on flat maps, rotate on the globe. */
@@ -777,6 +1000,10 @@ export class MapRenderer {
         graticule.selectAll<SVGPathElement, unknown>('path').data(scene.view.graticule && !tiles ? [d3.geoGraticule10()] : [])
             .join('path').attr('d', path as never).attr('fill', 'none').attr('stroke', style.graticule).attr('stroke-width', 0.5);
 
+        // Over a vector field (wind, currents) the field is the background, as on Windy: the basemap is only
+        // its outlines (no land fill for the field to fade into), drawn to read on any colour.
+        const overField = scene.models.some(model => model.layer.type === 'vectors' && model.layer.visible !== false && !!model.colorField);
+        const fieldLine = (alpha: number) => style.mode === 'dark' ? `rgba(255,255,255,${alpha})` : `rgba(30,30,30,${alpha})`;
         // Basemap regions (no data), then their borders on top of the data layers.
         const land = this.root.select<SVGGElement>('.df-map-land');
         const regionsLayerIds = new Set(scene.models.filter(model => model.layer.type === 'regions' && model.layer.visible !== false && model.geoSet === scene.basemap).map(model => model.layer.id));
@@ -784,7 +1011,7 @@ export class MapRenderer {
         const showsAntarctica = scene.models.some(model => model.marks.some(mark => mark.regionId === 'ATA'));
         const landFeatures = (scene.basemap?.features ?? []).filter(item => showsAntarctica || item.properties.id !== 'ATA');
         const landPaths = land.selectAll<SVGPathElement, Feature>('path').data(tiles ? [] : landFeatures, item => String(item.id))
-            .join('path').attr('fill', regionsLayerIds.size ? style.noData : style.land)
+            .join('path').attr('fill', overField ? 'none' : regionsLayerIds.size ? style.noData : style.land)
             .attr('stroke', 'none');
         this.setPath(landPaths, item => item, path);
         const borders = this.root.select<SVGGElement>('.df-map-borders');
@@ -799,29 +1026,39 @@ export class MapRenderer {
             .join('path').attr('fill', 'none').attr('vector-effect', 'non-scaling-stroke')
             // Disputed borders are dotted grey, as on Datawrapper's world maps: visible on any fill.
             .attr('stroke', item => item.kind === 'disputed' ? (style.mode === 'dark' ? '#8a939b' : '#888888')
-                : tiles ? 'rgba(80,80,80,0.35)' : item.kind === 'coast' ? style.coast : style.border)
+                : tiles ? 'rgba(80,80,80,0.35)' : overField ? fieldLine(item.kind === 'coast' ? 0.55 : 0.25) : item.kind === 'coast' ? style.coast : style.border)
             .attr('stroke-width', item => item.kind === 'disputed' ? 1.2 : item.kind === 'coast' ? 0.6 : tiles ? 0.6 : 0.7).attr('stroke-linejoin', 'round')
             .attr('stroke-linecap', item => item.kind === 'disputed' ? 'round' : null)
             .attr('stroke-dasharray', item => item.kind === 'disputed' ? '0.5,3' : null)
             .style('pointer-events', 'none');
         this.setPath(borderPaths, item => item.shape, path);
 
-        const layers = this.root.select<SVGGElement>('.df-map-layers');
         const visibleModels = scene.models.filter(model => model.layer.visible !== false);
-        const groups = layers.selectAll<SVGGElement, LayerModel>('g.df-map-layer').data(visibleModels, model => model.layer.id)
-            .join('g').attr('class', 'df-map-layer').attr('data-layer', model => model.layer.id)
-            .attr('opacity', model => model.layer.opacity ?? (model.layer.type === 'heatmap' ? 0.75 : 1));
-        groups.order();
+        // Regions, shapes and fields fill areas, so borders draw over them; spikes, points, flows and paths stand over the
+        // borders (a coastline must not cut through a spike).
+        const areaTypes = new Set(['regions', 'shapes', 'heatmap', 'hexbin', 'vectors']);
+        const layerGroups = (parent: string, models: LayerModel[]) => {
+            const joined = this.root.select<SVGGElement>(parent).selectAll<SVGGElement, LayerModel>('g.df-map-layer').data(models, model => model.layer.id)
+                .join('g').attr('class', 'df-map-layer').attr('data-layer', model => model.layer.id)
+                .attr('opacity', model => model.layer.opacity ?? (model.layer.type === 'heatmap' ? 0.75 : 1));
+            joined.order();
+            return joined;
+        };
+        const areaGroups = layerGroups('.df-map-layers', visibleModels.filter(model => areaTypes.has(model.layer.type)));
+        const markGroups = layerGroups('.df-map-marks', visibleModels.filter(model => !areaTypes.has(model.layer.type)));
         this.canvasMarks = [];
         this.positions.clear();
         this.circleBoxes = [];
+        this.spikeBoxes = [];
         const dynamicLegends: Record<string, LegendModel | null> = {};
         const labelCandidates: Label[] = [];
-        groups.each((model, index, nodes) => {
-            const group = d3.select<SVGGElement, LayerModel>(nodes[index]) as unknown as d3.Selection<SVGGElement, LayerModel, null, undefined>;
-            const legend = this.drawLayer(group, model, path, duration, labelCandidates);
-            if (legend !== undefined) dynamicLegends[model.layer.id] = legend;
-        });
+        for (const groups of [areaGroups, markGroups]) {
+            groups.each((model, index, nodes) => {
+                const group = d3.select<SVGGElement, LayerModel>(nodes[index]) as unknown as d3.Selection<SVGGElement, LayerModel, null, undefined>;
+                const legend = this.drawLayer(group, model, path, duration, labelCandidates);
+                if (legend !== undefined) dynamicLegends[model.layer.id] = legend;
+            });
+        }
         this.drawCanvas();
         if (scene.view.labels !== false && !tiles && scene.interactive) this.placeLabels(landFeatures, path, labelCandidates);
         this.drawLabels(labelCandidates);
@@ -897,6 +1134,56 @@ export class MapRenderer {
                 if (mark.feature && model.layer.zoomOnClick !== false) this.zoomTo(mark.feature);
                 else if (mark.at) this.zoomTo(mark.at);
             });
+    }
+
+    /**
+     * A vector layer's colour as a field under its arrows: each point colours the area nearest it
+     * (its Voronoi cell), kept within reach of the data and blurred so the field reads as continuous.
+     * Hovering the field describes the nearest point.
+     */
+    private drawVectorField(group: d3.Selection<SVGGElement, LayerModel, null, undefined>, model: LayerModel,
+        placed: { mark: Mark; point: [number, number] }[]) {
+        const layerGroup = group.selectAll<SVGGElement, number>('g.df-map-field').data(placed.length ? [0] : [])
+            .join(enter => enter.insert('g', ':first-child').attr('class', 'df-map-field'));
+        if (!placed.length) return;
+        const delaunay = d3.Delaunay.from(placed, item => item.point[0], item => item.point[1]);
+        // The grid's spacing: the typical distance to a point's nearest neighbour.
+        const gaps = placed.map((item, index) => d3.min(Array.from(delaunay.neighbors(index)), other =>
+            Math.hypot(placed[other].point[0] - item.point[0], placed[other].point[1] - item.point[1])) ?? Infinity).filter(Number.isFinite);
+        const spacing = Math.max(2, d3.median(gaps) ?? 10);
+        const [x0, x1] = d3.extent(placed, item => item.point[0]) as [number, number];
+        const [y0, y1] = d3.extent(placed, item => item.point[1]) as [number, number];
+        const voronoi = delaunay.voronoi([x0 - spacing, y0 - spacing, x1 + spacing, y1 + spacing]);
+
+        const ids = (this.fieldIds ??= `df-map-field-${++defsCounter}`);
+        const defs = this.svg.selectAll<SVGDefsElement, number>('defs.df-map-defs').data([0]).join('defs').attr('class', 'df-map-defs');
+        const id = `${ids}-${model.layer.id.replace(/[^\w-]/g, '_')}`;
+        defs.selectAll<SVGFilterElement, string>(`filter#${id}-blur`).data([id]).join(enter => enter.append('filter').attr('id', `${id}-blur`)
+            .attr('x', '-10%').attr('y', '-10%').attr('width', '120%').attr('height', '120%')
+            .call(filter => filter.append('feGaussianBlur')))
+            .select('feGaussianBlur').attr('stdDeviation', spacing * 0.35);
+        // Within reach of a point, so scattered stations do not colour the empty space between them; the
+        // mask is blurred a few pixels, so the edge is soft but short (a long fade would read as calm).
+        defs.selectAll<SVGFilterElement, string>(`filter#${id}-soft`).data([id]).join(enter => enter.append('filter').attr('id', `${id}-soft`)
+            .attr('x', '-20%').attr('y', '-20%').attr('width', '140%').attr('height', '140%')
+            .call(filter => filter.append('feGaussianBlur')))
+            .select('feGaussianBlur').attr('stdDeviation', Math.min(4, spacing * 0.2));
+        defs.selectAll<SVGMaskElement, string>(`mask#${id}-mask`).data([id]).join('mask').attr('id', `${id}-mask`)
+            .attr('maskUnits', 'userSpaceOnUse').attr('x', x0 - 3 * spacing).attr('y', y0 - 3 * spacing)
+            .attr('width', x1 - x0 + 6 * spacing).attr('height', y1 - y0 + 6 * spacing)
+            .selectAll<SVGGElement, number>('g').data([0]).join('g').attr('filter', `url(#${id}-soft)`)
+            // The data's triangles (not those bridging gaps), thickened by half a step: straight edges, round corners.
+            .selectAll('path').data([meshPath(delaunay, placed, spacing)]).join('path')
+            .attr('d', d => d).attr('fill', 'white').attr('stroke', 'white').attr('stroke-width', spacing).attr('stroke-linejoin', 'round');
+
+        layerGroup.attr('filter', `url(#${id}-blur)`).attr('mask', `url(#${id}-mask)`);
+        const cells = layerGroup.selectAll<SVGPathElement, Mark>('path.df-map-cell').data(placed.map(item => item.mark), mark => mark.key)
+            .join('path').attr('class', 'df-map-cell')
+            .attr('d', (_mark, index) => voronoi.renderCell(index))
+            .attr('fill', mark => model.color.color(mark.colorValue))
+            .attr('stroke', mark => model.color.color(mark.colorValue)).attr('stroke-width', 0.6)
+            .attr('opacity', mark => this.markState(model, mark).dim ? 0.25 : 1);
+        this.bindMarkEvents(cells, model);
     }
 
     /** Draw one layer; returns a legend for zoom-dependent layers (hexbin, heatmap). */
@@ -1113,8 +1400,12 @@ export class MapRenderer {
         // Point-like marks: bubbles, points, spikes, labels, vectors.
         const placed = model.marks.map(mark => ({ mark, point: project(mark.at) })).filter(item => item.point && !this.markState(model, item.mark).hidden) as { mark: Mark; point: [number, number] }[];
         if (type === 'vectors') {
+            // Coloured by a column, the colour fills the area as a smooth field and the arrows only show the way (as Windy draws wind).
+            const field = !!model.colorField && placed.length >= 3;
+            this.drawVectorField(group, model, field ? placed : []);
             const vectors = group.selectAll<SVGPathElement, Mark>('path.df-map-vector').data(placed.map(item => item.mark), mark => mark.key)
                 .join('path').attr('class', 'df-map-vector');
+            const arrowInk = this.style.mode === 'dark' ? 'rgba(255,255,255,0.85)' : 'rgba(30,30,30,0.6)';
             const points = new Map(placed.map(item => [item.mark.key, item.point]));
             vectors.attr('d', mark => {
                 const [x, y] = points.get(mark.key)!;
@@ -1123,8 +1414,9 @@ export class MapRenderer {
                 return arrowPath(x - ux * half, y - uy * half, x + ux * half, y + uy * half);
             })
                 .attr('fill', 'none').attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round')
-                .attr('stroke', mark => this.markState(model, mark).selected ? this.style.selection : model.color.color(mark.colorValue))
-                .attr('stroke-width', mark => this.markState(model, mark).selected ? 2 : 1.3)
+                .attr('stroke', mark => this.markState(model, mark).selected ? this.style.selection : field ? arrowInk : model.color.color(mark.colorValue))
+                .attr('stroke-width', mark => this.markState(model, mark).selected ? 2 : field ? 1.1 : 1.3)
+                .style('pointer-events', field ? 'none' : 'visiblePainted')
                 .attr('stroke-opacity', mark => this.markState(model, mark).dim ? 0.2 : 0.9);
             this.bindMarkEvents(vectors, model);
             return undefined;
@@ -1149,13 +1441,21 @@ export class MapRenderer {
             (duration ? spikes.transition().duration(duration) as unknown as typeof spikes : spikes).attr('d', mark => {
                 const [x, y] = points.get(mark.key)!;
                 const h = model.size.size(mark.sizeValue);
-                return `M${x - width / 2},${y}L${x},${y - h}L${x + width / 2},${y}`;
+                return `M${x - width / 2},${y}L${x},${y - h}L${x + width / 2},${y}Z`;
             });
-            spikes.attr('fill', mark => model.color.color(mark.colorValue)).attr('fill-opacity', mark => this.markState(model, mark).dim ? 0.15 : 0.65)
-                .attr('stroke', mark => this.markState(model, mark).selected ? this.style.selection : model.color.color(mark.colorValue))
-                .attr('stroke-width', mark => this.markState(model, mark).selected ? 1.5 : 0.8);
+            // Solid, so a thin spike does not split into two tones where land meets sea behind it; outlined in the map's
+            // halo, so spikes standing in front of one another (drawn back to front) stay apart.
+            spikes.attr('fill', mark => model.color.color(mark.colorValue)).attr('fill-opacity', mark => this.markState(model, mark).dim ? 0.15 : 1)
+                .attr('stroke', mark => this.markState(model, mark).selected ? this.style.selection : this.style.halo)
+                .attr('stroke-width', mark => this.markState(model, mark).selected ? 1.5 : 0.6).attr('stroke-linejoin', 'round');
             spikes.order();
             this.bindMarkEvents(spikes, model);
+            for (const { mark, point: [x, y] } of placed) {
+                const h = model.size.size(mark.sizeValue);
+                this.spikeBoxes.push([x - width / 2, y - h, x + width / 2, y]);
+                // A spike's name sits over its tip.
+                if (layer.text && mark.text) labels.push({ x, y: y - h - 7, text: mark.text, priority: h, model });
+            }
             return undefined;
         }
         const bubbles = type === 'bubbles';
@@ -1214,7 +1514,8 @@ export class MapRenderer {
                 const size = [11, 9].find(candidate => textWidth(item.mark.text!, candidate) + 4 <= 2 * radius * 0.9 && candidate + 2 <= 2 * radius * 0.8);
                 const inside = bubbles && size !== undefined;
                 labels.push({ x: item.point[0], y: inside ? item.point[1] : item.point[1] - radius - 7, text: item.mark.text, priority: radius, model,
-                    size: inside ? size : 11, fill: inside ? model.color.color(item.mark.colorValue) : undefined });
+                    size: inside ? size : 11, fill: inside ? model.color.color(item.mark.colorValue) : undefined,
+                    alt: inside ? undefined : { x: item.point[0], y: item.point[1] + radius + 8 } });
             }
         }
         return undefined;
@@ -1402,12 +1703,18 @@ export class MapRenderer {
             .sort((a, b) => b.priority - a.priority)
             .filter(item => {
                 const width = textWidth(item.text, item.size ?? (item.place ? 9.5 : 11)) + (item.place ? 16 : 4);
-                const box: [number, number, number, number] = [item.x - width / 2, item.y - 8, item.x + width / 2, item.y + 6];
-                const overlaps = (other: [number, number, number, number]) => box[0] < other[2] && box[2] > other[0] && box[1] < other[3] && box[3] > other[1];
-                if (placed.some(overlaps)) return false;
-                // Place names give way to bubbles; data labels belong on them.
-                if (item.place && this.circleBoxes.some(overlaps)) return false;
-                placed.push(box);
+                const fits = ({ x, y }: { x: number; y: number }) => {
+                    const box: [number, number, number, number] = [x - width / 2, y - 8, x + width / 2, y + 6];
+                    const overlaps = (other: [number, number, number, number]) => box[0] < other[2] && box[2] > other[0] && box[1] < other[3] && box[3] > other[1];
+                    // No label covers a spike; place names also give way to bubbles (data labels belong on them).
+                    if (placed.some(overlaps) || this.spikeBoxes.some(overlaps) || (item.place && this.circleBoxes.some(overlaps))) return null;
+                    return box;
+                };
+                const spot = fits(item) ? item : item.alt && fits(item.alt) ? item.alt : null;
+                if (!spot) return false;
+                item.x = spot.x;
+                item.y = spot.y;
+                placed.push(fits(spot)!);
                 return placed.length <= 300;
             });
         group.selectAll<SVGTextElement, typeof kept[number]>('text').data(kept)

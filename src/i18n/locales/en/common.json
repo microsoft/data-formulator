@@ -539,6 +539,7 @@
     "movingFile": "Moving",
     "movedFile": "Moved {{from}} to {{to}}",
     "editedChart": "Edited chart {{name}}",
+    "savedTheme": "Saved theme {{name}}",
     "editedReport": "Edited report {{name}}",
     "editSkippedChanged": "Did not apply the agent's edit to {{name}}: it changed while the agent was working",
     "jumpToThreadRange": "Jump to thread(s) {{label}}",
@@ -836,6 +837,11 @@
     "publishExample": "Publish as example",
     "publishedExample": "Published \"{{title}}\" as an example session.",
     "publishExampleFailed": "Unable to publish example session.",
+    "star": "Star",
+    "unstar": "Unstar",
+    "starred": "Starred",
+    "showAllStarred": "Show all starred ({{count}})",
+    "starFailed": "Couldn't update the star. Please try again.",
     "yourSchedules": "Your schedules",
     "yourWorkflows": "Your workflows",
     "importSession": "Import session",
@@ -1524,7 +1530,9 @@
     "created": "Created app: {{title}}",
     "updated": "Updated app: {{title}}",
     "backToApp": "Back to app",
-    "backToMap": "Back to map"
+    "backToMap": "Back to map",
+    "generating": "Generating app",
+    "generatingPage": "Generating page"
   },
   "mcp": {
     "connect": "Connect",
@@ -1537,9 +1545,8 @@
     "turnOff": "Turn off",
     "serverEnabled": "Use {{name}}",
     "toolEnabled": "Use {{name}}",
-    "showTools": "Show tools",
     "noTools": "Connect to list the server’s tools.",
-    "alwaysAllow": "Always allow",
+    "toolList": "Tools",
     "toolsChanged": "New or changed tools are held until you allow them: {{names}}",
     "approveChanges": "Allow",
     "headerValue": "{{header}} value",
@@ -1605,15 +1612,72 @@
     "removeNamed": "Remove {{name}}",
     "pack": {
       "builtIn": "Data Formulator toolkit",
-      "add": "Add",
-      "added": "Added",
+      "noSettings": "Nothing to set up: add it and it is ready.",
       "research": {
         "name": "Research",
-        "description": "Search arXiv, follow new papers in a field, chart publication trends and read full texts.",
+        "description": "Search arXiv papers with citation counts from OpenAlex, follow new papers in a field, chart publication trends and read full texts.",
         "email": "Contact email (optional)",
-        "emailHint": "Sent to arXiv with each request, as arXiv asks of automated clients."
+        "emailHint": "Sent to arXiv with each request, as arXiv asks of automated clients.",
+        "openalex_key": "OpenAlex API key (optional)",
+        "openalex_keyHint": "Searches go to OpenAlex. Without a key they share a small daily budget with your network; a free key (openalex.org/settings/api) gives 10 times more."
+      },
+      "github": {
+        "name": "GitHub",
+        "description": "Search public GitHub repositories, code and issues, and read their READMEs and files. Read-only."
+      },
+      "huggingface": {
+        "name": "Hugging Face datasets",
+        "description": "Find datasets on the Hugging Face Hub, check their cards and rows, and load them as tables.",
+        "hf_token": "Hugging Face token",
+        "hf_tokenHint": "A read token from huggingface.co/settings/tokens."
+      },
+      "finance": {
+        "name": "Finance",
+        "description": "Company financials and filings from SEC EDGAR, economic series from FRED, and stock prices (with a free Twelve Data key).",
+        "email": "Contact email",
+        "emailHint": "Sent to the SEC with each request, as it asks of automated clients.",
+        "twelvedata_key": "Twelve Data API key (optional)",
+        "twelvedata_keyHint": "For stock prices: a free key (twelvedata.com) allows 800 requests a day.",
+        "fred_key": "FRED API key (optional)",
+        "fred_keyHint": "For searching economic series by keyword; fetching a series by id needs no key. Free at fred.stlouisfed.org."
+      },
+      "notAdded": "not added yet",
+      "runsLocally": "It runs on this computer with Data Formulator; keys are kept in your credential store.",
+      "toolsPreview": "Each can be turned on or off once it is added."
+    },
+    "signin": {
+      "signedInAs": "Signed in to GitHub as @{{login}} · reads public repositories only",
+      "prompt": "Sign in with GitHub to search code and use your own rate limits. Read-only: public repositories only.",
+      "reuse": "Use @{{login}}",
+      "start": "Sign in with GitHub",
+      "signOut": "Sign out",
+      "cancel": "Cancel",
+      "enterCode": "Enter this code on GitHub, then approve. This waits for you.",
+      "code": "Sign-in code",
+      "open": "Copy code and open GitHub",
+      "failed": "GitHub sign-in did not finish. Try again.",
+      "paste": "Or paste a token",
+      "huggingface": {
+        "prompt": "Sign in with Hugging Face to open gated datasets you have accepted and use your own rate limits. Read-only.",
+        "signedInAs": "Signed in to Hugging Face as @{{login}} · reads public and accepted gated datasets",
+        "start": "Sign in with Hugging Face",
+        "enterCode": "Enter this code on Hugging Face, then approve. This waits for you.",
+        "open": "Copy code and open Hugging Face",
+        "failed": "Hugging Face sign-in did not finish. Try again."
       }
-    }
+    },
+    "section": {
+      "setup": "Setup"
+    },
+    "key": {
+      "set": "Set",
+      "notSet": "Not set",
+      "add": "Add key"
+    },
+    "signedIn": "Signed in",
+    "signInHint": "Sign in to connect (it opens the provider’s page).",
+    "alwaysAllowed": "Runs without asking",
+    "alwaysAllowedHint": "You chose \"Always allow this tool\" when the agent asked. Remove to be asked again."
   },
   "tools": {
     "chipDetails": "Tools the agent can use: the terminal and MCP servers",
@@ -1634,25 +1698,32 @@
     },
     "locked": "Set by the server environment variable DF_TERMINAL_MODE.",
     "close": "Close",
+    "back": "All tools",
     "terminal": {
       "name": "Terminal",
       "caption": "Run commands on this computer with your CLI logins",
       "off": "Off",
       "sandboxed": "Sandboxed",
       "unsandboxed": "No sandbox installed",
-      "details": "Terminal details",
       "use": "Use the terminal"
     },
     "count_one": "{{count}} tool",
     "count_other": "{{count}} tools",
     "chipLabel": "Tools: {{count}} on, {{mode}}",
     "add": {
-      "packs": "Data Formulator toolkits",
       "custom": "Custom MCP server",
-      "label": "Add",
-      "collapse": "Collapse"
+      "customAbout": "Any MCP server: a remote one by its URL, or a local command. It uses the same configuration format as VS Code, Claude and Cursor."
     },
-    "addTool": "+ Add tool"
+    "addTool": "+ Add tool",
+    "home": {
+      "yours": "Your tools",
+      "more": "Add more",
+      "setUp": "+ Set up and add",
+      "customAbout": "Any MCP server, from its configuration JSON.",
+      "paste": "+ Paste its configuration"
+    },
+    "addToolkit": "Add toolkit",
+    "done": "Done"
   },
   "map": {
     "style": "Style",
@@ -1702,6 +1773,10 @@
     "selectedCount": "{{count}} selected",
     "clearSelection": "Clear selection",
     "moreCount": "{{count}} more",
+    "changedCount": "{{count}} changed",
+    "showLess": "Show less",
+    "minimizeControls": "Minimize controls",
+    "showControls": "Show all controls",
     "summary": "Summary",
     "selection": "selection",
     "places": "Places",
@@ -1856,6 +1931,7 @@
       "arc": "Arcs",
       "great-circle": "Great circles",
       "straight": "Straight"
-    }
+    },
+    "generating": "Generating map"
   }
 }

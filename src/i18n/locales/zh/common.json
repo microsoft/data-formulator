@@ -539,6 +539,7 @@
     "movingFile": "正在移动",
     "movedFile": "已将 {{from}} 移动到 {{to}}",
     "editedChart": "已编辑图表 {{name}}",
+    "savedTheme": "已保存主题 {{name}}",
     "editedReport": "已编辑报告 {{name}}",
     "editSkippedChanged": "未应用智能体对 {{name}} 的编辑：它在智能体工作期间已被更改",
     "jumpToThreadRange": "跳转到线程 {{label}}",
@@ -836,6 +837,11 @@
     "publishExample": "发布为示例",
     "publishedExample": "已将“{{title}}”发布为示例会话。",
     "publishExampleFailed": "无法发布示例会话。",
+    "star": "加星标",
+    "unstar": "取消星标",
+    "starred": "已加星标",
+    "showAllStarred": "显示全部星标（{{count}}）",
+    "starFailed": "无法更新星标，请重试。",
     "yourSchedules": "你的定时任务",
     "yourWorkflows": "你的工作流",
     "importSession": "导入会话",
@@ -1524,7 +1530,9 @@
     "created": "已创建应用：{{title}}",
     "updated": "已更新应用：{{title}}",
     "backToApp": "返回应用",
-    "backToMap": "返回地图"
+    "backToMap": "返回地图",
+    "generating": "正在生成应用",
+    "generatingPage": "正在生成页面"
   },
   "mcp": {
     "connect": "连接",
@@ -1537,9 +1545,8 @@
     "turnOff": "关闭",
     "serverEnabled": "使用 {{name}}",
     "toolEnabled": "使用 {{name}}",
-    "showTools": "显示工具",
     "noTools": "连接后即可列出服务器的工具。",
-    "alwaysAllow": "始终允许",
+    "toolList": "工具",
     "toolsChanged": "新增或变更的工具在你允许之前不会使用：{{names}}",
     "approveChanges": "允许",
     "headerValue": "{{header}} 的值",
@@ -1605,15 +1612,72 @@
     "removeNamed": "移除 {{name}}",
     "pack": {
       "builtIn": "Data Formulator 工具包",
-      "add": "添加",
-      "added": "已添加",
+      "noSettings": "无需设置：添加后即可使用。",
       "research": {
         "name": "研究",
-        "description": "搜索 arXiv、关注某领域的新论文、绘制发表趋势图并阅读全文。",
+        "description": "借助 OpenAlex 搜索 arXiv 论文（含引用数）、关注某领域的新论文、绘制发表趋势图并阅读全文。",
         "email": "联系邮箱（可选）",
-        "emailHint": "按 arXiv 对自动化客户端的要求，随每次请求发送给 arXiv。"
+        "emailHint": "按 arXiv 对自动化客户端的要求，随每次请求发送给 arXiv。",
+        "openalex_key": "OpenAlex API 密钥（可选）",
+        "openalex_keyHint": "搜索通过 OpenAlex 进行。没有密钥时，与你所在网络共享较少的每日额度；免费密钥（openalex.org/settings/api）可提高到 10 倍。"
+      },
+      "github": {
+        "name": "GitHub",
+        "description": "搜索公开的 GitHub 仓库、代码和议题，并阅读其 README 和文件。只读。"
+      },
+      "huggingface": {
+        "name": "Hugging Face 数据集",
+        "description": "在 Hugging Face Hub 上查找数据集，查看其说明和数据行，并作为表格加载。",
+        "hf_token": "Hugging Face 令牌",
+        "hf_tokenHint": "来自 huggingface.co/settings/tokens 的读取令牌。"
+      },
+      "finance": {
+        "name": "金融",
+        "description": "来自 SEC EDGAR 的公司财务数据和申报文件、来自 FRED 的经济数据序列，以及股票价格（需免费的 Twelve Data 密钥）。",
+        "email": "联系邮箱",
+        "emailHint": "按 SEC 对自动化客户端的要求，随每个请求发送给 SEC。",
+        "twelvedata_key": "Twelve Data API 密钥（可选）",
+        "twelvedata_keyHint": "用于股票价格：免费密钥（twelvedata.com）每天可请求 800 次。",
+        "fred_key": "FRED API 密钥（可选）",
+        "fred_keyHint": "用于按关键词搜索经济数据序列；按 ID 获取序列无需密钥。可在 fred.stlouisfed.org 免费获取。"
+      },
+      "notAdded": "尚未添加",
+      "runsLocally": "它随 Data Formulator 在这台计算机上运行；密钥保存在你的凭据存储中。",
+      "toolsPreview": "添加后可分别开启或关闭每个工具。"
+    },
+    "signin": {
+      "signedInAs": "已以 @{{login}} 登录 GitHub · 只读取公开仓库",
+      "prompt": "使用 GitHub 登录即可搜索代码，并使用你自己的请求额度。只读：仅限公开仓库。",
+      "reuse": "使用 @{{login}}",
+      "start": "使用 GitHub 登录",
+      "signOut": "退出登录",
+      "cancel": "取消",
+      "enterCode": "在 GitHub 上输入此代码并批准。这里会等待。",
+      "code": "登录代码",
+      "open": "复制代码并打开 GitHub",
+      "failed": "GitHub 登录未完成。请重试。",
+      "paste": "或粘贴令牌",
+      "huggingface": {
+        "prompt": "登录 Hugging Face，即可打开你已同意条款的受限数据集，并使用你自己的速率限制。只读。",
+        "signedInAs": "已作为 @{{login}} 登录 Hugging Face · 读取公开数据集和已同意的受限数据集",
+        "start": "使用 Hugging Face 登录",
+        "enterCode": "在 Hugging Face 上输入此代码并批准。这里会等待你完成。",
+        "open": "复制代码并打开 Hugging Face",
+        "failed": "Hugging Face 登录未完成，请重试。"
       }
-    }
+    },
+    "section": {
+      "setup": "设置"
+    },
+    "key": {
+      "set": "已设置",
+      "notSet": "未设置",
+      "add": "添加密钥"
+    },
+    "signedIn": "已登录",
+    "signInHint": "登录后即可连接（会打开提供方的页面）。",
+    "alwaysAllowed": "无需询问即运行",
+    "alwaysAllowedHint": "你在智能体询问时选择了“始终允许此工具”。移除后会重新询问。"
   },
   "tools": {
     "chipDetails": "智能体可使用的工具：终端和 MCP 服务器",
@@ -1634,25 +1698,32 @@
     },
     "locked": "由服务器环境变量 DF_TERMINAL_MODE 设置。",
     "close": "关闭",
+    "back": "全部工具",
     "terminal": {
       "name": "终端",
       "caption": "使用你的 CLI 登录在这台计算机上运行命令",
       "off": "关闭",
       "sandboxed": "沙箱中运行",
       "unsandboxed": "未安装沙箱",
-      "details": "终端详情",
       "use": "使用终端"
     },
     "count_one": "{{count}} 个工具",
     "count_other": "{{count}} 个工具",
     "chipLabel": "工具：已开启 {{count}} 个，{{mode}}",
     "add": {
-      "packs": "Data Formulator 工具包",
       "custom": "自定义 MCP 服务器",
-      "label": "添加",
-      "collapse": "收起"
+      "customAbout": "任意 MCP 服务器：通过 URL 连接的远程服务器，或本地命令。配置格式与 VS Code、Claude 和 Cursor 相同。"
     },
-    "addTool": "+ 添加工具"
+    "addTool": "+ 添加工具",
+    "home": {
+      "yours": "你的工具",
+      "more": "添加更多",
+      "setUp": "+ 设置并添加",
+      "customAbout": "任意 MCP 服务器，通过其配置 JSON 添加。",
+      "paste": "+ 粘贴其配置"
+    },
+    "addToolkit": "添加工具包",
+    "done": "完成"
   },
   "map": {
     "style": "样式",
@@ -1702,6 +1773,10 @@
     "selectedCount": "已选 {{count}} 项",
     "clearSelection": "清除选择",
     "moreCount": "还有 {{count}} 项",
+    "changedCount": "已更改 {{count}} 项",
+    "showLess": "收起",
+    "minimizeControls": "最小化控件",
+    "showControls": "显示全部控件",
     "summary": "摘要",
     "selection": "选择",
     "places": "地点",
@@ -1856,6 +1931,7 @@
       "arc": "弧线",
       "great-circle": "大圆航线",
       "straight": "直线"
-    }
+    },
+    "generating": "正在生成地图"
   }
 }

@@ -187,7 +187,9 @@ function bivariateScale(encoding: ColorEncoding, values: unknown[], title: strin
     };
 }
 
-export function colorScale(encoding: ColorEncoding | undefined, values: unknown[], fieldName: string, fieldName2?: string, palette: Palette = {}): ColorScale {
+/** `floor`: where a sequential ramp starts (0–1), for marks whose lightest colour must not read as empty. */
+export function colorScale(encoding: ColorEncoding | undefined, values: unknown[], fieldName: string, fieldName2?: string, palette: Palette = {},
+    options: { floor?: number } = {}): ColorScale {
     const noData = palette.noData ?? NO_DATA_COLOR;
     if (encoding?.type === 'bivariate' && encoding.field !== undefined) {
         return bivariateScale(encoding, values, encoding.title ?? fieldName, fieldName2 ?? '', noData);
@@ -223,7 +225,8 @@ export function colorScale(encoding: ColorEncoding | undefined, values: unknown[
     const ramp = (t: number) => interpolate(encoding.reverse ? 1 - t : t);
     // Built-in sequential ramps skip their near-white start so light classes stay visible on the basemap.
     const trim = !diverging && !(themed && palette.designed);
-    const sequential = (t: number) => ramp(trim ? 0.12 + 0.88 * t : t);
+    const start = diverging ? 0 : Math.max(trim ? 0.12 : 0, options.floor ?? 0);
+    const sequential = (t: number) => ramp(start + (1 - start) * t);
     const [min, max] = encoding.domain && encoding.domain.length >= 2
         ? [Number(encoding.domain[0]), Number(encoding.domain[encoding.domain.length - 1])]
         : (d3.extent(numbers) as [number, number]);

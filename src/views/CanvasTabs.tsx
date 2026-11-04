@@ -10,13 +10,14 @@
  */
 
 import React, { FC, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Box, ButtonBase, IconButton, ListItemIcon, ListItemText, Menu, MenuItem } from '@mui/material';
+import { Box, ButtonBase, CircularProgress, IconButton, ListItemIcon, ListItemText, Menu, MenuItem } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import ArticleIcon from '@mui/icons-material/Article';
 import { chartFamilyIcon, FileTypeIcon, FormIcon, InsightIcon, isAppFile, TableIcon } from '../icons';
 import { WorkflowGears } from '../components/FunComponents';
 import { AgentToyIcon } from './AgentToyIcon';
+import { draftLabelKey } from './ArtifactDraft';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { arrangeCanvasTabs, CanvasTab, canvasTabKey, DataFormulatorState, dfActions, dfSelectors, FocusedId, isCanvasTabPinned, RECENT_CANVAS_TABS } from '../app/dfSlice';
@@ -41,7 +42,7 @@ type Target = CanvasTab['target'];
  */
 const tabTone = (target: Target): string => {
     if (target.type === 'chart' || target.type === 'table' || target.type === 'external-table') return 'primary.main';
-    if (target.type === 'report' || (target.type === 'file' && isAppFile(target.fileName))) return 'secondary.main';
+    if (target.type === 'report' || target.type === 'draft' || (target.type === 'file' && isAppFile(target.fileName))) return 'secondary.main';
     return 'text.secondary';
 };
 
@@ -59,6 +60,8 @@ const useTabLabel = () => {
     const reports = useSelector((state: DataFormulatorState) => state.generatedReports);
     const references = useSelector((state: DataFormulatorState) => state.externalTableReferences);
     const turns = useSelector((state: DataFormulatorState) => state.textTurns);
+    const drafts = useSelector((state: DataFormulatorState) => state.draftNodes);
+    const writingOf = (draftId: string) => drafts.find(item => item.id === draftId)?.derive.writing;
     /** Whether a tab still points at something; tabs of deleted items are dropped. */
     const exists = (target: Target): boolean => {
         switch (target.type) {
@@ -67,6 +70,8 @@ const useTabLabel = () => {
             case 'report': return reports.some(item => item.id === target.reportId);
             case 'external-table': return !!references?.some(item => item.id === target.referenceId);
             case 'text': return turns.some(item => item.id === target.textId);
+            // A run's open end has a tab only while it writes an app or map; the artifact's own tab follows.
+            case 'draft': return !!writingOf(target.draftId);
             default: return true;
         }
     };
@@ -105,6 +110,11 @@ const useTabLabel = () => {
                     ? <WorkflowGears running={turn.workflow?.status === 'running'} size={14} color="currentColor" showTooltip={false} />
                     : turn?.form ? <FormIcon sx={glyphSx} /> : <AgentToyIcon sx={glyphSx} />;
                 return { title: title || t('canvas.response', { defaultValue: 'Response' }), icon };
+            }
+            case 'draft': {
+                const writing = writingOf(target.draftId);
+                return { title: writing?.title || `${t(draftLabelKey(writing?.tool ?? ''))}…`,
+                    icon: <CircularProgress size={11} thickness={5} color="inherit" /> };
             }
             default: return { title: '', icon: <AgentToyIcon sx={glyphSx} /> };
         }

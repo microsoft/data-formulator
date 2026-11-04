@@ -23,6 +23,9 @@ CHOICE_CHANNELS = ("color", "color2", "size", "weight", "label", "time", "filter
 _SWITCH_CHANNELS = ("color", "size", "color2")
 
 _WHERE = ("region", "lat", "lon")
+# Templates whose marks sit at lat/lon, where a highlight can mark notable rows.
+HIGHLIGHT_TEMPLATES = ("density", "points", "bubbles", "spikes")
+_FILTER_OPS = ("==", "!=", ">", ">=", "<", "<=", "in", "between", "contains")
 # (requirements: each a tuple of alternatives, channels, layer type)
 TEMPLATE_DEFS: dict[str, tuple[tuple[tuple[str, ...], ...], tuple[str, ...], str]] = {
     "choropleth": ((("region",), ("color",)), ("region", "color", "label", "time", "filter"), "regions"),
@@ -125,6 +128,18 @@ def template_errors(spec: dict[str, Any]) -> list[str]:
     properties = spec.get("properties") if isinstance(spec.get("properties"), dict) else {}
     if "color" in properties and not _css_color(properties["color"]):
         errors.append('properties.color must be a CSS colour, such as "#4e79a7" or "darkslategray".')
+    highlight = properties.get("highlight")
+    if highlight is not None:
+        if not isinstance(highlight, dict) or not _text(highlight.get("field")) or "value" not in highlight:
+            errors.append('properties.highlight needs field and value (and op, default "=="), '
+                          'e.g. {"field": "magnitude", "op": ">=", "value": 7}.')
+        else:
+            if highlight.get("op", "==") not in _FILTER_OPS:
+                errors.append(f"properties.highlight.op must be one of {' '.join(_FILTER_OPS)}.")
+            if "color" in highlight and not _css_color(highlight["color"]):
+                errors.append("properties.highlight.color must be a CSS colour.")
+        if name not in HIGHLIGHT_TEMPLATES or not (has("lat") and has("lon")):
+            errors.append(f"properties.highlight works on maps placed by lat and lon: {', '.join(HIGHLIGHT_TEMPLATES)}.")
     if spec.get("layers") is not None:
         errors.append("Give template (with encoding) or layers, not both.")
     return errors
@@ -213,12 +228,20 @@ def compile_template(spec: dict[str, Any]) -> dict[str, Any]:
         controls.append({"type": "slider", "field": encoding["time"], "data": "main"})
     if encoding.get("filter"):
         controls.append({"type": "checkboxes", "field": encoding["filter"], "data": "main"})
+    layers = [layer]
+    highlight = properties.get("highlight")
+    if isinstance(highlight, dict) and _text(highlight.get("field")) and name in HIGHLIGHT_TEMPLATES and layer.get("lat") and layer.get("lon"):
+        size = encoding.get("weight") or encoding.get("size")
+        layers.append({"id": "highlight", "type": "points", "data": "main", "lon": layer["lon"], "lat": layer["lat"],
+                       "filter": [{"field": highlight["field"], "op": highlight.get("op", "=="), "value": highlight.get("value")}],
+                       "size": {"field": size} if size else {"value": 4}})
+        controls.append({"type": "layers"})
     geography = properties.get("geography")
     basemap = {"world": "world", "us-states": "us-states", "us-counties": "us-counties"}.get(geography or "")
     if isinstance(geography, str) and geography.startswith("files/"):
         basemap = "none"
     view = {**({"basemap": basemap} if basemap else {}), **(spec.get("view") or {})}
     compiled = {key: value for key, value in spec.items() if key not in ("template", "encoding", "properties")}
-    compiled.update({"view": view, "data": {"main": spec.get("data")}, "layers": [layer],
+    compiled.update({"view": view, "data": {"main": spec.get("data")}, "layers": layers,
                      "controls": controls + list(spec.get("controls") or [])})
     return compiled

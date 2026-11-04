@@ -117,11 +117,28 @@ def _json(value: Any) -> str:
 
 
 
-def _chart_note(table: str, columns: list[str]) -> str:
+def _drawn_size_note(drawn: Any) -> str:
+    """The chart's size on the canvas, and the room it wants in an app."""
+    if not isinstance(drawn, dict):
+        return ""
+    try:
+        width, height = round(float(drawn["width"])), round(float(drawn["height"]))
+    except (KeyError, TypeError, ValueError):
+        return ""
+    if width <= 0 or height <= 0:
+        return ""
+    aspect = width / height
+    shape = "wide" if aspect >= 1.6 else "tall" if aspect <= 0.8 else "about as tall as it is wide" if aspect <= 1.15 else "a little wider than tall"
+    return (f"On the canvas it draws at {width}×{height} px ({shape}, width:height {aspect:.2f}); in an app, give it room "
+            f"of the same shape: about {round(500 / aspect)} px tall in a 500 px card, or a full row if it is tall. ")
+
+
+def _chart_note(table: str, columns: list[str], drawn: Any = None) -> str:
     data = (f"Its data: session/tables/{table}.json (transformation code and sample rows); read it with this chart "
             "in one read_file call, or compute on it with Python. ") if table else ""
-    return (data + f"Edit chart_type, encodings (fields are columns of {table or 'its table'}: {', '.join(columns)}), "
-            "config, title, subtitle, or theme; the table cannot change. Invalid edits are rejected with the reasons.")
+    return (data + _drawn_size_note(drawn) + f"Edit chart_type, encodings (fields are columns of {table or 'its table'}: "
+            f"{', '.join(columns)}), config, title, subtitle, or theme; the table cannot change. Invalid edits are "
+            "rejected with the reasons.")
 
 class SessionLayer:
     def __init__(self, state: Any, workspace: Any = None):
@@ -462,7 +479,7 @@ class SessionLayer:
             table = self.table_by_id[chart["tableRef"]]
             columns = [column["name"] for column in self.table_columns(table)]
             return {"content": _json(spec), "editable": True, "name": self.chart_name(chart), "columns": columns,
-                    "note": _chart_note(spec["table"], columns)}
+                    "note": _chart_note(spec["table"], columns, chart.get("drawnSize"))}
         if folder == "reports" and leaf.endswith(".md"):
             report = next((report for report in self.reports if report["id"] == stem), None)
             return None if report is None else {"content": report.get("content") or "", "editable": True,

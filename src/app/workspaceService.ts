@@ -64,6 +64,7 @@ export interface WorkspaceSummary {
     source_ids?: string[];
     read_only?: boolean;
     scheduled_run?: ScheduledRunProvenance;
+    starred?: boolean;
 }
 
 export interface WorkspaceFile {
@@ -298,6 +299,16 @@ export async function updateWorkspaceMeta(id: string, displayName: string): Prom
         body: JSON.stringify({ id, display_name: displayName }),
     });
     if (await isEphemeralBackend()) await workspaceDB.updateDisplayName(id, displayName);
+    _notifyListChanged();
+}
+
+/** Star or unstar one of the user's sessions; starred sessions are listed first. */
+export async function setWorkspaceStarred(id: string, starred: boolean): Promise<void> {
+    await apiRequest(getUrls().SESSION_UPDATE_META, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, starred }),
+    });
     _notifyListChanged();
 }
 

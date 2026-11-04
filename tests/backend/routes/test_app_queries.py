@@ -48,6 +48,15 @@ def test_sql_joins_declared_tables_with_bound_parameters(workspace) -> None:
                       "columns": ["name", "total"], "truncated": False}
 
 
+def test_sql_returns_dates_as_dates_and_keeps_timestamps(workspace) -> None:
+    result = run_app_sql(workspace, ["sales"], """
+        select cast(timestamp '2005-05-01' as date) as month,
+               timestamp '2005-05-01 10:30:00' as at
+        from sales limit 1""")
+    assert result["rows"][0]["month"] == "2005-05-01"
+    assert result["rows"][0]["at"].startswith("2005-05-01T10:30")
+
+
 def test_sql_caps_rows_and_reports_truncation(workspace) -> None:
     result = run_app_sql(workspace, ["sales"], "select * from sales order by amount", limit=2)
     assert [row["amount"] for row in result["rows"]] == [1, 2] and result["truncated"] is True

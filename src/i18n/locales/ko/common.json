@@ -539,6 +539,7 @@
     "movingFile": "이동 중",
     "movedFile": "{{from}}을(를) {{to}}(으)로 이동함",
     "editedChart": "차트 {{name}} 편집됨",
+    "savedTheme": "테마 {{name}} 저장됨",
     "editedReport": "보고서 {{name}} 편집됨",
     "editSkippedChanged": "에이전트의 {{name}} 편집을 적용하지 않았습니다. 에이전트가 작업하는 동안 변경되었습니다",
     "jumpToThreadRange": "스레드 {{label}}로 이동",
@@ -836,6 +837,11 @@
     "publishExample": "예시로 게시",
     "publishedExample": "\"{{title}}\"을(를) 예시 세션으로 게시했습니다.",
     "publishExampleFailed": "예시 세션을 게시할 수 없습니다.",
+    "star": "별표",
+    "unstar": "별표 해제",
+    "starred": "별표 표시됨",
+    "showAllStarred": "별표 표시된 항목 모두 보기 ({{count}})",
+    "starFailed": "별표를 업데이트하지 못했습니다. 다시 시도하세요.",
     "yourSchedules": "내 스케줄",
     "yourWorkflows": "내 워크플로",
     "importSession": "세션 가져오기",
@@ -1524,7 +1530,9 @@
     "created": "앱을 만들었습니다: {{title}}",
     "updated": "앱을 업데이트했습니다: {{title}}",
     "backToApp": "앱으로 돌아가기",
-    "backToMap": "지도로 돌아가기"
+    "backToMap": "지도로 돌아가기",
+    "generating": "앱 생성 중",
+    "generatingPage": "페이지 생성 중"
   },
   "mcp": {
     "connect": "연결",
@@ -1537,9 +1545,8 @@
     "turnOff": "끄기",
     "serverEnabled": "{{name}} 사용",
     "toolEnabled": "{{name}} 사용",
-    "showTools": "도구 보기",
     "noTools": "연결하면 서버의 도구가 표시됩니다.",
-    "alwaysAllow": "항상 허용",
+    "toolList": "도구",
     "toolsChanged": "새로 추가되거나 변경된 도구는 허용할 때까지 보류됩니다: {{names}}",
     "approveChanges": "허용",
     "headerValue": "{{header}} 값",
@@ -1605,15 +1612,72 @@
     "removeNamed": "{{name}} 제거",
     "pack": {
       "builtIn": "Data Formulator 도구 키트",
-      "add": "추가",
-      "added": "추가됨",
+      "noSettings": "설정할 것이 없습니다. 추가하면 바로 사용할 수 있습니다.",
       "research": {
         "name": "연구",
-        "description": "arXiv를 검색하고, 분야의 새 논문을 따라가고, 출판 추세를 차트로 만들고, 전문을 읽습니다.",
+        "description": "OpenAlex의 인용 수와 함께 arXiv 논문을 검색하고, 분야의 새 논문을 따라가고, 출판 추세를 차트로 만들고, 전문을 읽습니다.",
         "email": "연락처 이메일(선택)",
-        "emailHint": "arXiv가 자동화 클라이언트에 요구하는 대로 각 요청과 함께 arXiv에 전송됩니다."
+        "emailHint": "arXiv가 자동화 클라이언트에 요구하는 대로 각 요청과 함께 arXiv에 전송됩니다.",
+        "openalex_key": "OpenAlex API 키(선택)",
+        "openalex_keyHint": "검색은 OpenAlex를 사용합니다. 키가 없으면 네트워크와 작은 일일 한도를 공유하며, 무료 키(openalex.org/settings/api)를 쓰면 10배가 됩니다."
+      },
+      "github": {
+        "name": "GitHub",
+        "description": "공개 GitHub 저장소, 코드, 이슈를 검색하고 README와 파일을 읽습니다. 읽기 전용."
+      },
+      "huggingface": {
+        "name": "Hugging Face 데이터셋",
+        "description": "Hugging Face Hub에서 데이터셋을 찾고, 설명과 행을 확인한 뒤 표로 불러옵니다.",
+        "hf_token": "Hugging Face 토큰",
+        "hf_tokenHint": "huggingface.co/settings/tokens의 읽기 토큰."
+      },
+      "finance": {
+        "name": "금융",
+        "description": "SEC EDGAR의 기업 재무 데이터와 공시, FRED의 경제 지표 시계열, 주가(무료 Twelve Data 키 필요).",
+        "email": "연락처 이메일",
+        "emailHint": "SEC가 자동화 클라이언트에 요구하는 대로 각 요청과 함께 SEC에 전송됩니다.",
+        "twelvedata_key": "Twelve Data API 키(선택)",
+        "twelvedata_keyHint": "주가용: 무료 키(twelvedata.com)로 하루 800회 요청할 수 있습니다.",
+        "fred_key": "FRED API 키(선택)",
+        "fred_keyHint": "키워드로 경제 지표 시계열을 검색할 때 필요합니다. ID로 시계열을 가져올 때는 키가 필요 없습니다. fred.stlouisfed.org에서 무료로 받을 수 있습니다."
+      },
+      "notAdded": "아직 추가되지 않음",
+      "runsLocally": "Data Formulator와 함께 이 컴퓨터에서 실행되며, 키는 자격 증명 저장소에 보관됩니다.",
+      "toolsPreview": "추가한 뒤 각각 켜거나 끌 수 있습니다."
+    },
+    "signin": {
+      "signedInAs": "GitHub에 @{{login}}(으)로 로그인됨 · 공개 저장소만 읽습니다",
+      "prompt": "GitHub로 로그인하면 코드를 검색하고 내 요청 한도를 사용할 수 있습니다. 읽기 전용: 공개 저장소만.",
+      "reuse": "@{{login}} 사용",
+      "start": "GitHub로 로그인",
+      "signOut": "로그아웃",
+      "cancel": "취소",
+      "enterCode": "GitHub에서 이 코드를 입력한 뒤 승인하세요. 여기서 기다립니다.",
+      "code": "로그인 코드",
+      "open": "코드 복사 후 GitHub 열기",
+      "failed": "GitHub 로그인이 완료되지 않았습니다. 다시 시도하세요.",
+      "paste": "또는 토큰 붙여넣기",
+      "huggingface": {
+        "prompt": "Hugging Face에 로그인하면 약관에 동의한 제한 데이터셋을 열고 내 요청 한도를 사용할 수 있습니다. 읽기 전용.",
+        "signedInAs": "Hugging Face에 @{{login}}(으)로 로그인됨 · 공개 및 동의한 제한 데이터셋 읽기",
+        "start": "Hugging Face로 로그인",
+        "enterCode": "Hugging Face에서 이 코드를 입력하고 승인하세요. 여기서 기다립니다.",
+        "open": "코드 복사 후 Hugging Face 열기",
+        "failed": "Hugging Face 로그인이 완료되지 않았습니다. 다시 시도하세요."
       }
-    }
+    },
+    "section": {
+      "setup": "설정"
+    },
+    "key": {
+      "set": "설정됨",
+      "notSet": "설정 안 됨",
+      "add": "키 추가"
+    },
+    "signedIn": "로그인됨",
+    "signInHint": "연결하려면 로그인하세요(제공자 페이지가 열립니다).",
+    "alwaysAllowed": "묻지 않고 실행",
+    "alwaysAllowedHint": "에이전트가 물었을 때 \"이 도구 항상 허용\"을 선택했습니다. 제거하면 다시 묻습니다."
   },
   "tools": {
     "chipDetails": "에이전트가 사용할 수 있는 도구: 터미널과 MCP 서버",
@@ -1634,25 +1698,32 @@
     },
     "locked": "서버 환경 변수 DF_TERMINAL_MODE로 설정되었습니다.",
     "close": "닫기",
+    "back": "모든 도구",
     "terminal": {
       "name": "터미널",
       "caption": "CLI 로그인으로 이 컴퓨터에서 명령 실행",
       "off": "꺼짐",
       "sandboxed": "샌드박스",
       "unsandboxed": "샌드박스 미설치",
-      "details": "터미널 세부 정보",
       "use": "터미널 사용"
     },
     "count_one": "도구 {{count}}개",
     "count_other": "도구 {{count}}개",
     "chipLabel": "도구: {{count}}개 켜짐, {{mode}}",
     "add": {
-      "packs": "Data Formulator 도구 키트",
       "custom": "사용자 지정 MCP 서버",
-      "label": "추가",
-      "collapse": "접기"
+      "customAbout": "모든 MCP 서버: URL로 연결하는 원격 서버 또는 로컬 명령. 구성 형식은 VS Code, Claude, Cursor와 같습니다."
     },
-    "addTool": "+ 도구 추가"
+    "addTool": "+ 도구 추가",
+    "home": {
+      "yours": "내 도구",
+      "more": "더 추가",
+      "setUp": "+ 설정하고 추가",
+      "customAbout": "구성 JSON으로 추가하는 모든 MCP 서버.",
+      "paste": "+ 구성 붙여넣기"
+    },
+    "addToolkit": "도구 키트 추가",
+    "done": "완료"
   },
   "map": {
     "style": "스타일",
@@ -1702,6 +1773,10 @@
     "selectedCount": "{{count}}개 선택됨",
     "clearSelection": "선택 해제",
     "moreCount": "{{count}}개 더",
+    "changedCount": "{{count}}개 변경됨",
+    "showLess": "접기",
+    "minimizeControls": "컨트롤 최소화",
+    "showControls": "모든 컨트롤 표시",
     "summary": "요약",
     "selection": "선택",
     "places": "장소",
@@ -1856,6 +1931,7 @@
       "arc": "호",
       "great-circle": "대권",
       "straight": "직선"
-    }
+    },
+    "generating": "지도 생성 중"
   }
 }

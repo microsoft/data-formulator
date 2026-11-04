@@ -170,6 +170,8 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
             meta["scheduledRun"] = scheduled_run
         elif existing.get("scheduledRun"):
             meta["scheduledRun"] = existing["scheduledRun"]
+        if existing.get("starred"):
+            meta["starred"] = True
         self._upload_blob(blob_name, json.dumps(meta, ensure_ascii=False))
 
     def _ensure_meta(self, workspace_id: str) -> dict:
@@ -227,6 +229,7 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
                 "scheduled_run": meta.get("scheduledRun"),
                 "chart_count": meta.get("chartCount"),
                 "source_ids": meta.get("sourceIds", []),
+                "starred": meta.get("starred") is True,
             })
 
         workspaces.sort(key=lambda w: w.get("updated_at") or "", reverse=True)
@@ -327,6 +330,16 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
         meta["displayName"] = display_name
         meta["updatedAt"] = datetime.now(tz=timezone.utc).isoformat()
         meta.setdefault("id", self._safe_id(workspace_id))
+        self._upload_blob(meta_blob, json.dumps(meta, ensure_ascii=False))
+
+    def set_starred(self, workspace_id: str, starred: bool) -> None:
+        """Star or unstar a workspace without touching ``updatedAt``."""
+        meta = dict(self._ensure_meta(workspace_id))
+        if starred:
+            meta["starred"] = True
+        else:
+            meta.pop("starred", None)
+        meta_blob = self._blob_name(workspace_id, WORKSPACE_META_FILENAME)
         self._upload_blob(meta_blob, json.dumps(meta, ensure_ascii=False))
 
     # ── Session state persistence ────────────────────────────────────

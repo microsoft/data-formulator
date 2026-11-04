@@ -217,6 +217,10 @@ const locate = (row: Row, location: Location, set: GeoSet | undefined): { at: Lo
     return at ? { at } : null;
 };
 
+/** `[-38, 46]` → "46°N, 38°W". */
+export const coordinateName = ([lon, lat]: [number, number]) =>
+    `${Math.abs(Math.round(lat * 10) / 10)}°${lat < 0 ? 'S' : 'N'}, ${Math.abs(Math.round(lon * 10) / 10)}°${lon < 0 ? 'W' : 'E'}`;
+
 const tooltipName = (layer: Layer, rows: Row[], fallback: string) => {
     // Without a text or key field, the first text-valued tooltip field names the mark.
     const named = Array.isArray(layer.tooltip) ? layer.tooltip.map(item => typeof item === 'string' ? item : item.field)
@@ -337,7 +341,9 @@ function buildMarks(spec: MapSpec, layer: Layer, rows: Row[], params: Params, ge
         if (layer.key) marks = grouped(placed);
         else {
             marks = placed.map((item, index) => ({
-                key: String(index), rows: [item.row], at: item.at, label: tooltipName(layer, [item.row], `#${index + 1}`),
+                key: String(index), rows: [item.row], at: item.at,
+                // Grid points (wind, currents) have no names: their place names them.
+                label: tooltipName(layer, [item.row], layer.type === 'vectors' && item.at ? coordinateName(item.at) : `#${index + 1}`),
                 colorValue: colorField ? colorOf([item.row]) : undefined,
                 sizeValue: sizeField ? item.row[sizeField] : undefined,
                 text: layer.text ? String(item.row[layer.text] ?? '') : undefined,
@@ -473,8 +479,12 @@ export function buildLayer(spec: MapSpec, sourceLayer: Layer, data: Record<strin
     };
     return {
         layer, marks, unplaced, undrawn, geoSet: set, colorField, colorField2, sizeField, describe,
-        color: colorScale(layer.color, frames?.colorValues ?? marks.map(mark => mark.colorValue), paramFieldLabel(spec, layer.color?.field, colorField) ?? colorField,
-            colorField2 ? paramFieldLabel(spec, layer.color?.field2, colorField2) ?? describe(colorField2).label : undefined, palette),
+        // Vectors colour a continuous field (wind speed, current strength): a smooth ramp, not classes.
+        color: colorScale(layer.type === 'vectors' && layer.color?.field && !layer.color.method && !layer.color.thresholds ? { ...layer.color, method: 'continuous' } : layer.color,
+            frames?.colorValues ?? marks.map(mark => mark.colorValue), paramFieldLabel(spec, layer.color?.field, colorField) ?? colorField,
+            colorField2 ? paramFieldLabel(spec, layer.color?.field2, colorField2) ?? describe(colorField2).label : undefined, palette,
+            // A vector field fades out at its edge: its calmest colour must not look like that fade.
+            layer.type === 'vectors' ? { floor: 0.3 } : {}),
         size: sizeScale(layer.size, frames?.sizeValues ?? marks.map(mark => mark.sizeValue), paramFieldLabel(spec, layer.size?.field, sizeField) ?? sizeField, shape, sizeDefaults),
     };
 }

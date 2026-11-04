@@ -11,10 +11,23 @@ const mocks = vi.hoisted(() => ({
     } as any,
     saveWorkspaceState: vi.fn(),
     handleApiError: vi.fn(),
+    listeners: new Set<() => void>(),
+    store: {
+        getState: () => mocks.state,
+        subscribe: (listener: () => void) => {
+            mocks.listeners.add(listener);
+            return () => { mocks.listeners.delete(listener); };
+        },
+    },
 }));
 
+function setState(state: any) {
+    mocks.state = state;
+    mocks.listeners.forEach(listener => listener());
+}
+
 vi.mock('react-redux', () => ({
-    useSelector: (selector: any) => selector(mocks.state),
+    useStore: () => mocks.store,
 }));
 
 vi.mock('../../../../src/app/workspaceService', () => ({
@@ -63,27 +76,47 @@ describe('useAutoSave', () => {
         expect(mocks.handleApiError).toHaveBeenCalledWith(err, 'Auto-save');
     });
 
+    it('debounces store changes without re-rendering its host', () => {
+        let renders = 0;
+        function CountingHarness() {
+            renders += 1;
+            useAutoSave();
+            return null;
+        }
+        render(<CountingHarness />);
+        const initialRenders = renders;
+
+        act(() => { vi.advanceTimersByTime(2000); });
+        act(() => setState({ ...mocks.state, dataSourceSidebarOpen: true }));
+        act(() => { vi.advanceTimersByTime(2000); });
+        expect(mocks.saveWorkspaceState).not.toHaveBeenCalled();
+        act(() => { vi.advanceTimersByTime(1000); });
+
+        expect(mocks.saveWorkspaceState).toHaveBeenCalledTimes(1);
+        expect(mocks.saveWorkspaceState.mock.calls[0][0]).toMatchObject({ dataSourceSidebarOpen: true });
+        expect(renders).toBe(initialRenders);
+    });
+
     it('saves the latest state when a change arrives during an in-flight save', async () => {
         let finishFirstSave!: () => void;
         mocks.saveWorkspaceState.mockImplementationOnce(() => new Promise<void>(resolve => {
             finishFirstSave = resolve;
         }));
 
-        const { rerender } = render(<AutoSaveHarness />);
+        render(<AutoSaveHarness />);
 
         act(() => {
             vi.advanceTimersByTime(3000);
         });
         expect(mocks.saveWorkspaceState).toHaveBeenCalledTimes(1);
 
-        mocks.state = {
+        act(() => setState({
             ...mocks.state,
             inputTables: [{
                 id: 'table-1',
                 source: { kind: 'connector', connectorId: 'kusto-prod' },
             }],
-        };
-        rerender(<AutoSaveHarness />);
+        }));
 
         act(() => {
             vi.advanceTimersByTime(3000);

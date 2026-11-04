@@ -1633,15 +1633,12 @@ describe('Workflow session publication', () => {
         expect(screen.getAllByRole('button', { name: /Streaming fuel review/ })).toHaveLength(1);
     });
 
-    it('advances streaming reports in stages, pauses for reading, and preserves the final position', () => {
+    it('leaves the view where the reader put it while a report streams, with a jump to newer text below', () => {
         let resize = () => {};
-        const frames: FrameRequestCallback[] = [];
         vi.stubGlobal('ResizeObserver', class {
             constructor(callback: () => void) { resize = callback; }
             observe() {} unobserve() {} disconnect() {}
         });
-        vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => frames.push(callback)));
-        vi.stubGlobal('cancelAnimationFrame', vi.fn());
         const report = { id: 'staged-report', title: 'Review', content: '# Writing', status: 'generating' as const,
             generatingPhase: 'writing' as const, selectedChartIds: [], createdAt: 1 };
         store.dispatch(dfActions.saveGeneratedReport(report));
@@ -1651,42 +1648,52 @@ describe('Workflow session publication', () => {
         </ThemeProvider></Provider>);
         const scroller = container.querySelector('[data-report-scroll]') as HTMLDivElement;
         const content = container.querySelector('[data-report-content]') as HTMLDivElement;
+        const scrollTo = vi.fn();
+        scroller.scrollTo = scrollTo as any;
         let contentHeight = 500;
-        Object.defineProperty(scroller, 'clientHeight', { value: 600 });
-        vi.spyOn(scroller, 'getBoundingClientRect').mockImplementation(() => ({ top: 0 } as DOMRect));
-        vi.spyOn(content, 'getBoundingClientRect').mockImplementation(() => ({ height: contentHeight, bottom: contentHeight - scroller.scrollTop } as DOMRect));
+        vi.spyOn(scroller, 'getBoundingClientRect').mockImplementation(() => ({ top: 0, bottom: 600 } as DOMRect));
+        vi.spyOn(content, 'getBoundingClientRect').mockImplementation(() => ({ bottom: contentHeight - scroller.scrollTop } as DOMRect));
         const grow = (height: number) => act(() => {
             contentHeight = height;
             resize();
-            frames.splice(0).forEach(callback => callback(0));
         });
         grow(500);
-        expect(scroller.scrollTop).toBe(0);
-        grow(580);
-        expect(scroller.scrollTop).toBe(190);
-        grow(650);
-        expect(scroller.scrollTop).toBe(190);
-        grow(780);
-        expect(scroller.scrollTop).toBe(390);
-        fireEvent.wheel(scroller, { deltaY: -60 });
-        scroller.scrollTop = 200;
-        fireEvent.scroll(scroller);
-        grow(1000);
-        expect(scroller.scrollTop).toBe(200);
-        expect(screen.getByRole('button', { name: 'Jump to latest' })).toHaveStyle({ left: '24px', bottom: '20px' });
-        fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }));
-        grow(1000);
-        expect(scroller.scrollTop).toBe(610);
         expect(screen.queryByRole('button', { name: 'Jump to latest' })).toBeNull();
-        const reportFrame = content.parentElement as HTMLElement;
-        const space = reportFrame.nextElementSibling as HTMLElement;
-        expect(space.style.height).toBe('210px');
-        expect(reportFrame.style.minHeight).toBe('1000px');
+        grow(900);
+        expect(scroller.scrollTop).toBe(0);
+        const pill = screen.getByRole('button', { name: 'Jump to latest' });
+        expect(pill).toHaveStyle({ left: '50%', bottom: '20px' });
+        expect(pill).toHaveTextContent('Writing your report');
+        fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }));
+        expect(scrollTo).toHaveBeenCalledWith({ top: scroller.scrollHeight, behavior: 'smooth' });
+        act(() => {
+            scroller.scrollTop = 320;
+            fireEvent.scroll(scroller);
+        });
+        expect(screen.queryByRole('button', { name: 'Jump to latest' })).toBeNull();
         act(() => store.dispatch(dfActions.updateGeneratedReportContent({ id: report.id, status: 'completed', content: '# Finished' })));
-        expect(scroller.scrollTop).toBe(610);
-        expect(space.style.height).toBe('210px');
-        expect(reportFrame.style.minHeight).toBe('1000px');
-        expect(content.contains(space)).toBe(false);
+        expect(scroller.scrollTop).toBe(320);
+        expect(screen.queryByRole('button', { name: 'Jump to latest' })).toBeNull();
+    });
+
+    it('formats a report as it streams', async () => {
+        vi.stubGlobal('requestAnimationFrame', vi.fn(() => 0));
+        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+        const report = { id: 'table-report', title: 'Review', content: '# Costs\n\n| Region | Cost |\n',
+            status: 'generating' as const, generatingPhase: 'writing' as const, selectedChartIds: [], createdAt: 1 };
+        store.dispatch(dfActions.saveGeneratedReport(report));
+        store.dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }));
+        const { container } = render(<Provider store={store}><ThemeProvider theme={createTheme()}>
+            <ReportView />
+        </ThemeProvider></Provider>);
+        await waitFor(() => expect(screen.getByRole('heading', { name: 'Costs' })).toBeTruthy());
+        // The header row waits for the delimiter row rather than showing as a line of pipes.
+        expect(container.textContent).not.toContain('| Region');
+        act(() => store.dispatch(dfActions.updateGeneratedReportContent({ id: report.id,
+            content: '# Costs\n\n| Region | Cost |\n|---|---|\n| North | 4 |\n' })));
+        await waitFor(() => expect(container.querySelector('table.report-table th')?.textContent).toBe('Region'));
+        expect(screen.getByRole('cell', { name: 'North' })).toBeTruthy();
+        expect(container.textContent).toContain('Writing your report');
     });
 
     it.each(['', '# Partial report'])('renders final report content read-only after a stream containing %j', async partial => {
@@ -1703,7 +1710,7 @@ describe('Workflow session publication', () => {
         act(() => {
             store.dispatch(dfActions.updateGeneratedReportContent({ id: report.id, content: '# Streaming text' }));
         });
-        expect(screen.getByText('Streaming text')).toBeVisible();
+        await waitFor(() => expect(screen.getByText('Streaming text')).toBeVisible());
         expect(container.querySelector('[contenteditable="true"]')).toBeNull();
         act(() => {
             store.dispatch(dfActions.saveGeneratedReport({ ...report, status: 'completed',

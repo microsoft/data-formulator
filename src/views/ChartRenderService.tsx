@@ -20,6 +20,7 @@
  */
 
 import { chartTitleFits } from '../components/ComponentType';
+import { chartThemeKey, refreshSavedThemes, useSavedThemes } from '../app/savedThemes';
 import { FC, useEffect, useRef, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
@@ -84,6 +85,17 @@ async function renderHeadless(
     return { svg, pngDataUrl, width, height };
 }
 
+/** The size a Vega-Lite spec lays out at (axes, legends and titles included), without drawing an image. */
+async function measureHeadless(vlSpec: any): Promise<{ width: number; height: number }> {
+    const view = new View(parse(compile(vlSpec as any).spec), { renderer: 'none' });
+    try {
+        await view.runAsync();
+        return extractSvgSize(await view.toSVG());
+    } finally {
+        view.finalize();
+    }
+}
+
 /**
  * Extract the intrinsic pixel dimensions from a Vega-rendered SVG string.
  * Vega emits `<svg ... width="W" height="H" ...>`; we read those so the
@@ -145,6 +157,11 @@ export const ChartRenderService: FC = () => {
     const tableSemantics = useSelector((state: DataFormulatorState) => state.tableSemantics);
     const chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
     const maxStretchFactor = useSelector((state: DataFormulatorState) => state.config.maxStretchFactor);
+    const canvasChartWidth = useSelector((state: DataFormulatorState) => state.config.defaultChartWidth);
+    const canvasChartHeight = useSelector((state: DataFormulatorState) => state.config.defaultChartHeight);
+    // A saved theme that changes redraws the charts that use it (their cache keys carry the theme).
+    const savedThemeList = useSavedThemes();
+    useEffect(() => { void refreshSavedThemes(); }, []);
     // Re-run when the focused canvas caches a fresh display-row sample so
     // thumbnails can use the same richer data the main chart is rendering.
     const displayRowsTick = useSelector((state: DataFormulatorState) => state.displayRowsTick);
@@ -208,6 +225,23 @@ export const ChartRenderService: FC = () => {
             const fullResult = await renderHeadless(fullSpec);
             const fit = containScale(fullResult, box);
 
+            // The size it draws at on the canvas, which lays charts out for the user's default size.
+            let canvasSize: { width: number; height: number } | undefined;
+            try {
+                const canvasSpec: any = assembleVegaChart(
+                    chart.chartType, chart.encodingMap, items, visTableRows, table.metadata,
+                    canvasChartWidth, canvasChartHeight, false, chart.config, 1, maxStretchFactor, undefined,
+                    fieldSemantics, titled ? chart.title : undefined, titled ? chart.subtitle : undefined, chart.themeId,
+                );
+                if (canvasSpec && canvasSpec !== 'Table') {
+                    const drawn = await measureHeadless(canvasSpec);
+                    const scale = containScale(drawn, chartCanvasBox(canvasSpec));
+                    canvasSize = { width: Math.round(drawn.width * scale), height: Math.round(drawn.height * scale) };
+                }
+            } catch (failure) {
+                console.warn(`ChartRenderService: could not measure chart ${chart.id} at canvas size`, failure);
+            }
+
             // Scale the full-size PNG down to thumbnail dimensions
             const thumbnailPng = await scalePngDown(
                 fullResult.pngDataUrl,
@@ -225,6 +259,7 @@ export const ChartRenderService: FC = () => {
                 naturalHeight: fullResult.height,
                 displayWidth: Math.round(fullResult.width * fit),
                 displayHeight: Math.round(fullResult.height * fit),
+                ...(canvasSize ? { canvasWidth: canvasSize.width, canvasHeight: canvasSize.height } : {}),
             };
             setCachedChart(chart.id, entry);
 
@@ -240,7 +275,7 @@ export const ChartRenderService: FC = () => {
         } finally {
             renderingRef.current.delete(chart.id);
         }
-    }, [dispatch, maxStretchFactor]);
+    }, [dispatch, maxStretchFactor, canvasChartWidth, canvasChartHeight]);
 
     useEffect(() => {
         // Clean up cache entries for deleted charts
@@ -289,8 +324,8 @@ export const ChartRenderService: FC = () => {
                 table.id,
                 table.metadata,
                 fieldSemantics,
-                `${chart.themeId || ''}|${chartTitleFits(chart) ? `${chart.title}|${chart.subtitle || ''}` : ''}`,
-                `stretch:${maxStretchFactor ?? ''}`,
+                `${chartThemeKey(chart.themeId)}|${chartTitleFits(chart) ? `${chart.title}|${chart.subtitle || ''}` : ''}`,
+                `stretch:${maxStretchFactor ?? ''}|canvas:${canvasChartWidth}x${canvasChartHeight}`,
             );
 
             const cached = getCachedChart(chart.id);
@@ -329,7 +364,7 @@ export const ChartRenderService: FC = () => {
 
             return () => { cancelled = true; };
         }
-    }, [charts, tables, conceptShelfItems, tableSemantics, chartSynthesisInProgress, displayRowsTick, maxStretchFactor, processChart, dispatch]);
+    }, [charts, tables, conceptShelfItems, tableSemantics, chartSynthesisInProgress, displayRowsTick, maxStretchFactor, canvasChartWidth, canvasChartHeight, processChart, dispatch, savedThemeList]);
 
     // This component renders nothing
     return null;

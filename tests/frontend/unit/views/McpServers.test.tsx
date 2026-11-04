@@ -43,9 +43,8 @@ it('explains how to add a server with examples', async () => {
     const { AddServerForm } = await import('../../../../src/components/McpServers');
     const onSubmit = vi.fn(async () => true);
     render(<AddServerForm busy={false} onSubmit={onSubmit} />);
-    const toggle = screen.getByRole('button', { name: 'How to add a server' });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    fireEvent.click(toggle);
+    // Shown under a blank form, without a toggle.
+    expect(screen.getByRole('region', { name: 'How to add a server' })).toBeInTheDocument();
     expect(screen.getByText(/Paste one server’s MCP configuration/)).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Remote server' })).toHaveAttribute('aria-selected', 'true');
     fireEvent.click(screen.getByRole('tab', { name: 'With an API key' }));
@@ -56,8 +55,6 @@ it('explains how to add a server with examples', async () => {
     fireEvent.change(editor, { target: { value: JSON.stringify({ mcpServers: { w: { url: 'https://w.example/mcp', headers: { Authorization: 'Bearer YOUR_KEY' } } } }) } });
     expect(screen.getByText('Fill in Authorization.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add and connect' })).toBeDisabled();
-    fireEvent.click(toggle);
-    await waitFor(() => expect(screen.queryByRole('region', { name: 'How to add a server' })).toBeNull());
 });
 
 it('adds one server at a time', async () => {
@@ -72,4 +69,13 @@ it('adds one server at a time', async () => {
     expect(screen.getByRole('button', { name: 'Add and connect' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onCancel).toHaveBeenCalled();
+});
+
+it('a toolkit is ready to add once its required settings are filled', async () => {
+    const { packReady } = await import('../../../../src/components/McpServers');
+    const pack = { id: 'finance', name: 'Finance', description: '', examples: [], server_id: null,
+        settings: [{ key: 'email', label: 'Contact email', required: true }, { key: 'fred_key', label: 'FRED key', secret: true }] };
+    expect(packReady(pack, {})).toBe(false);
+    expect(packReady(pack, { email: '  ' })).toBe(false);
+    expect(packReady(pack, { email: 'me@example.com' })).toBe(true);
 });

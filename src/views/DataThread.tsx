@@ -52,6 +52,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import { AppMiniature, ReportMiniature } from '../components/ArtifactMiniatures';
+import { ArtifactDraftCard } from './ArtifactDraft';
 import { THREAD_DECK_HEIGHT, ThreadDeck, ThreadOutput } from '../components/ThreadDeck';
 import { keyframes } from '@mui/system';
 import { TableIcon, InsightIcon, StreamIcon, AgentIcon, chartFamilyIcon, FileTypeIcon, FormIcon, isAppFile } from '../icons';
@@ -78,7 +79,6 @@ import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
 import CheckIcon from '@mui/icons-material/Check';
 import KeyboardDoubleArrowUpIcon from '@mui/icons-material/KeyboardDoubleArrowUp';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import SubdirectoryArrowRightIcon from '@mui/icons-material/SubdirectoryArrowRight';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import CodeIcon from '@mui/icons-material/Code';
 
@@ -1045,8 +1045,10 @@ let SingleThreadGroupView: FC<{
     // `open` replaces what selecting the message does (e.g. a step's message opens its tool calls).
     const buildTextTurnTimelineItem = (turn: TextTurn, highlighted: boolean, open?: { onSelect: () => void; selected: boolean }) => {
         const workflow = turn.workflow;
-        // An open tool call is the selection; the focused message gives way to it.
-        const isFocused = open ? open.selected : !toolSelection && focusedId?.type === 'text' && focusedId.textId === turn.id;
+        // An open tool call is the selection; the focused message gives way to it. With the chat open, the
+        // message it was brought to is the one selected.
+        const isFocused = open ? open.selected : !toolSelection && ((focusedId?.type === 'text' && focusedId.textId === turn.id)
+            || (focusedId?.type === 'conversation' && focusedId.anchorId === turn.id));
         const openTurn = open?.onSelect ?? (turn.form?.kind === 'mcp'
             // MCP setup lives in the Tools dialog: reopen the proposal there (or just the dialog once it is done).
             ? () => requestToolsDialog(turn.form?.kind === 'mcp' && !mcpFormDone(turn.form.mcp) ? turn.id : undefined)
@@ -1236,6 +1238,15 @@ let SingleThreadGroupView: FC<{
             // A report being written shows its own live card.
             const parent = threadGraph.parentOf(draft.id);
             if (generatedReports.some(report => report.id === parent && report.status === 'generating')) return;
+            // So does an app or map being written: the draft stands for it until it lands.
+            if (draft.derive.writing) {
+                timelineItems.push({
+                    key: `artifact-draft-${draft.id}`, type: 'artifact', highlighted, isRunning: true,
+                    gutterIcon: <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.secondary.main }} />,
+                    element: <ArtifactDraftCard draftId={draft.id} />,
+                });
+                return;
+            }
             const steps: (ProgressStep | string)[] = draft.derive.progressSteps?.length ? draft.derive.progressSteps
                 : (draft.derive.runningPlan || '').split('\x1E').filter((line: string) => line.trim());
             // Steps and calls the message before the draft already lists are not repeated here.
@@ -1948,15 +1959,21 @@ let SingleThreadGroupView: FC<{
             {historyCollapsed ? t('dataThread.expand', { defaultValue: 'expand' }) : t('dataThread.collapse', { defaultValue: 'collapse' })}</Box>
     </ButtonBase>;
     // A part of a long thread ends by naming the part that continues it, quietly; a click goes there.
+    // Its elbow is the timeline itself turning toward the label.
     const continuation = continuesIn && <ButtonBase data-thread-continues onClick={onContinue}
         sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', width: '100%', pr: 0.75, borderRadius: '4px',
             fontSize: textVar.xxs, fontStyle: 'italic', color: 'text.disabled', transition: transition.fast,
             '&:hover': { color: 'primary.main' },
             '&.Mui-focusVisible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1 } }}>
-        <Box component="span" aria-hidden="true" sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
-            <SubdirectoryArrowRightIcon sx={{ fontSize: 14 }} />
+        <Box component="span" aria-hidden="true" data-thread-continues-elbow sx={{ width: TIMELINE_WIDTH, flexShrink: 0,
+            alignSelf: 'stretch', position: 'relative', minHeight: 18 }}>
+            <Box component="span" sx={{ position: 'absolute', left: (TIMELINE_WIDTH - 2) / 2, top: 0, height: '50%', width: 8,
+                borderLeft: rail(lineHL), borderBottom: rail(lineHL), borderBottomLeftRadius: '4px' }} />
+            <Box component="span" sx={{ position: 'absolute', left: (TIMELINE_WIDTH - 2) / 2 + 3, top: 'calc(50% - 2.5px)',
+                width: 5, height: 5, borderTop: `2px solid ${lineTone}`, borderRight: `2px solid ${lineTone}`,
+                transform: 'rotate(45deg)' }} />
         </Box>
-        <Box component="span" sx={{ ml: '4px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <Box component="span" sx={{ ml: '6px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {t('dataThread.continuesIn', { defaultValue: 'Continues in {{label}}', label: continuesIn })}</Box>
     </ButtonBase>;
 
@@ -2056,8 +2073,8 @@ let SingleThreadGroupView: FC<{
                             .map((index, position, shown) => renderTimelineItem({ ...timelineItems[index], highlighted: lineHL },
                                 index, false, lineHL && position < shown.length - 1))}
                     </Box>}
-                    {threadEndToggle(lineColor)}
                     {continuation}
+                    {threadEndToggle(lineColor)}
                 </>;
             })()}
             {!historyCollapsed && flowRuns.map((run, runIndex) => runIndex < runRange[0] || runIndex >= runRange[1] ? null
@@ -2095,8 +2112,8 @@ let SingleThreadGroupView: FC<{
                     })}
                 </Box>)}
             </Box>)}
-            {!historyCollapsed && rangeBlocks.length > 0 && threadEndToggle(lineTone)}
             {!historyCollapsed && continuation}
+            {!historyCollapsed && rangeBlocks.length > 0 && threadEndToggle(lineTone)}
         </div>
     </Box>
     }
@@ -2934,7 +2951,8 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         update: updateThreadScrollFade,
     } = useScrollFade(threadScrollRef, allThreadEntries.length);
 
-    let renderThreadEntry = (entry: ThreadEntry) => {
+    // `next` is the entry below this one in its column: a part continued right there needs no link to it.
+    let renderThreadEntry = (entry: ThreadEntry, next?: ThreadEntry) => {
         const entrySx = {
             backgroundColor: 'white',
             borderRadius: radius.md,
@@ -2967,6 +2985,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
                 sx={{ ...entrySx, breakInside: 'avoid' }} />;
         }
 
+        const continuesIn = entry.continuesIn && next?.key !== entry.continuesIn.key ? entry.continuesIn : undefined;
         return <SingleThreadGroupView
             key={entry.key}
             thread={entry.thread!}
@@ -2985,8 +3004,8 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             layoutKey={entryLayoutKey(entry)}
             blockStarts={entry.blockStarts}
             segment={entry.segment}
-            continuesIn={entry.continuesIn?.label}
-            onContinue={entry.continuesIn && (() => goToThreadPart(entry.continuesIn!))}
+            continuesIn={continuesIn?.label}
+            onContinue={continuesIn && (() => goToThreadPart(continuesIn))}
             chartElements={chartElements}
             highlightedNodeIds={highlightedNodeIds}
             sx={entrySx} />;
@@ -3014,7 +3033,10 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             const key = element.dataset.threadEntry!;
             if (element.offsetHeight <= 0 || (!relayout && key in measuredEntryHeights)) continue;
             const style = getComputedStyle(element);
-            const height = Math.ceil((element.offsetHeight + parseFloat(style.marginTop || '0') + parseFloat(style.marginBottom || '0')) / 24) * 24;
+            // Packed without its "continues in" link, which shows only when the next part is not right below:
+            // counting it would let hiding the link move the next part, and showing it move it back.
+            const link = element.querySelector<HTMLElement>('[data-thread-continues]')?.offsetHeight ?? 0;
+            const height = Math.ceil((element.offsetHeight - link + parseFloat(style.marginTop || '0') + parseFloat(style.marginBottom || '0')) / 24) * 24;
             if (measuredEntryHeights[key] !== height) entryHeightUpdates[key] = height;
         }
         if (Object.keys(entryHeightUpdates).length) setMeasuredEntryHeights(previous => ({ ...previous, ...entryHeightUpdates }));
@@ -3087,7 +3109,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             }}>
                 {entrySegments.map((entries, index) => <Box key={index}
                     data-thread-segment={index} data-thread-column={index} sx={{ minWidth: 0 }}>
-                    {entries.map(entry => renderThreadEntry(entry))}
+                    {entries.map((entry, entryIndex) => renderThreadEntry(entry, entries[entryIndex + 1]))}
                 </Box>)}
             </Box>
         </Box>

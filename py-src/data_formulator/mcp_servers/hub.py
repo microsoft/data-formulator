@@ -465,8 +465,17 @@ class McpHub:
 
     # -- thread-safe API --
 
+    @staticmethod
+    def _prepare(identity: str, server: dict[str, Any]) -> None:
+        """A tool pack's sign-in is renewed (or its local login re-read) before use; a changed token restarts it."""
+        if server.get("pack"):
+            from data_formulator.tool_packs.signin import prepare
+
+            prepare(identity, server)
+
     def connect(self, identity: str, server: dict[str, Any], *, redirect_uri: str | None) -> dict[str, Any]:
         """Connect from the settings view. Returns tools, or an authorization URL to open."""
+        self._prepare(identity, server)
         return self._run(self._connect(identity, server, redirect_uri, False), CONNECT_TIMEOUT * 2 + 5)
 
     def finish_sign_in(self, identity: str, server: dict[str, Any]) -> dict[str, Any]:
@@ -474,10 +483,12 @@ class McpHub:
         return self._run(self._connect(identity, server, None, True), CONNECT_TIMEOUT * 2 + 5)
 
     def refresh(self, identity: str, server: dict[str, Any]) -> dict[str, Any]:
+        self._prepare(identity, server)
         return self._run(self._status(identity, server), CONNECT_TIMEOUT * 2 + 5)
 
     def call_tool(self, identity: str, server: dict[str, Any], tool: str, arguments: dict[str, Any], *,
                   timeout: float = CALL_TIMEOUT, cancel: threading.Event | None = None) -> Any:
+        self._prepare(identity, server)
         return self._run(self._call(identity, server, tool, arguments, timeout),
                          timeout + CONNECT_TIMEOUT * 2 + 5, cancel)
 
