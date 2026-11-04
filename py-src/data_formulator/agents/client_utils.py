@@ -32,6 +32,7 @@ GATEWAY_DEFAULT_API_BASES = {
     "openrouter": "https://openrouter.ai/api/v1",
     "orcarouter": "https://api.orcarouter.ai/v1",
     "cheaperinference": "https://api.cheaperinference.com/v1",
+    "runcrate": "https://api.runcrate.ai/v1",
 }
 
 
@@ -303,7 +304,7 @@ def _set_reasoning(params: dict, effort: str | None) -> None:
 class Client(object):
     """
     Returns a LiteLLM client configured for the specified endpoint and model.
-    Supports OpenAI, Azure, Ollama, OrcaRouter, Cheaper Inference, and other providers via LiteLLM.
+    Supports OpenAI, Azure, Ollama, OrcaRouter, Cheaper Inference, Runcrate, and other providers via LiteLLM.
     """
     def __init__(self, endpoint, model, api_key=None,  api_base=None, api_version=None,
                  *, api_type=None, chatgpt_account_id=None, managed_identity=False, managed_identity_client_id=None):
@@ -406,6 +407,13 @@ class Client(object):
             # model ids (e.g. ``gpt-5.4-mini``, ``claude-sonnet-5``), so route
             # the model unchanged through LiteLLM's openai provider against
             # the Cheaper Inference base URL.
+            self.params["api_base"] = effective_api_base(endpoint, api_base).rstrip("/")
+            self.params["custom_llm_provider"] = "openai"
+        elif self.endpoint == "runcrate":
+            # Runcrate exposes an OpenAI-compatible API whose model ids carry
+            # a vendor prefix (e.g. ``deepseek-ai/DeepSeek-V4.1-Flash``); the
+            # id is sent unchanged through LiteLLM's openai provider against
+            # the Runcrate base URL.
             self.params["api_base"] = effective_api_base(endpoint, api_base).rstrip("/")
             self.params["custom_llm_provider"] = "openai"
 
