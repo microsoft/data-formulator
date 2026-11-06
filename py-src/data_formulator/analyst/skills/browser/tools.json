@@ -1,0 +1,69 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "browser_open",
+      "description": "Open a web page in the browser (http/https) and wait for it to load. Returns the tab id, title, final URL, how much text/tables/links the page has, an excerpt, and whether it waits for the user (sign-in or human verification). Pass `tab` to load the address in an existing tab instead of a new one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {"type": "string", "description": "The http(s) address to open."},
+          "tab": {"type": "string", "description": "Optional tab id (e.g. t1) to reuse instead of opening a new tab."},
+          "wait_for": {"type": "string", "description": "Optional CSS selector to wait for, for pages that draw their content after loading."},
+          "timeout_seconds": {"type": "integer", "minimum": 5, "maximum": 120, "description": "How long to wait for the page (default 30)."}
+        },
+        "required": ["url"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "browser_read",
+      "description": "Read an open tab's current content and save it under scratch/browser/. `tables` saves each HTML or ARIA table as a CSV (headers detected) and reports their shapes; `markdown` gives the main content with headings, lists, links and tables; `text` the visible text; `links` every link (text and URL) as JSON; `html` the full DOM.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tab": {"type": "string", "description": "The tab id from browser_open."},
+          "as": {"type": "string", "enum": ["markdown", "tables", "text", "links", "html"], "description": "What to extract (default markdown)."}
+        },
+        "required": ["tab"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "browser_eval",
+      "description": "Run JavaScript in an open tab and return its JSON-serializable result: page-specific extraction, clicking a 'load more' or next-page button, choosing a filter, scrolling, or reading data the page already fetched. `script` is either one expression or the body of an async function that uses `return` (await is allowed). Results larger than a few thousand characters are saved to scratch/browser/.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tab": {"type": "string", "description": "The tab id from browser_open."},
+          "script": {"type": "string", "description": "An expression, or an async function body ending in `return value`."},
+          "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 120, "description": "How long the script may run (default 30)."}
+        },
+        "required": ["tab", "script"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "browser_tabs",
+      "description": "Manage the browser's tabs: `list` the open tabs; `check` a tab again (its URL, title, and whether it still waits for the user) after the user signed in or finished a verification; `show` brings a tab to the front for the user; `close` closes a tab you no longer need.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {"type": "string", "enum": ["list", "check", "show", "close"]},
+          "tab": {"type": "string", "description": "The tab id, for check, show and close."}
+        },
+        "required": ["action"],
+        "additionalProperties": false
+      }
+    }
+  }
+]

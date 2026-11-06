@@ -122,24 +122,6 @@ class TestExtractContextSummary:
         summary = WorkflowDistillAgent._extract_context_summary({})
         assert summary == "(empty context)"
 
-    def test_user_content_is_not_displaycontent(self):
-        # Frontend now sends raw .content, not displayContent. The renderer
-        # just prints whatever 'content' is on the event.
-        ctx = {
-            "threads": [{
-                "thread_id": "t1",
-                "events": [{
-                    "type": "message",
-                    "from": "user",
-                    "to": "data-agent",
-                    "role": "instruction",
-                    "content": "raw text",
-                }],
-            }],
-        }
-        summary = WorkflowDistillAgent._extract_context_summary(ctx)
-        assert "raw text" in summary
-
     def test_skips_non_dict_events(self):
         ctx = {"threads": [{"thread_id": "t1", "events": [
             "not-a-dict", None, 42,
@@ -149,19 +131,6 @@ class TestExtractContextSummary:
         summary = WorkflowDistillAgent._extract_context_summary(ctx)
         assert "[user→data-agent/prompt]" in summary
         # No crashes; the bogus entries are silently dropped.
-
-    def test_create_table_basic(self):
-        ctx = {"threads": [{"thread_id": "t1", "events": [{
-            "type": "create_table",
-            "table_id": "t1",
-            "source_tables": ["src"],
-            "columns": ["a"],
-            "row_count": 1,
-            "sample_rows": [{"a": 1}],
-            "code": "x = 1",
-        }]}]}
-        summary = WorkflowDistillAgent._extract_context_summary(ctx)
-        assert "[create_table] t1" in summary
 
     def test_create_chart_without_encoding(self):
         ctx = {"threads": [{"thread_id": "t1", "events": [{

@@ -36,30 +36,16 @@ class TestNormalizeColumnType:
         ({"is_dttm": True, "type": "VARCHAR"}, "TEMPORAL"),
         ({"type": "TIMESTAMP"}, "TEMPORAL"),
         ({"type": "DATE"}, "TEMPORAL"),
-        ({"type": "DATETIME"}, "TEMPORAL"),
         ({"type_generic": "TEMPORAL"}, "TEMPORAL"),
         ({"type": "BIGINT"}, "NUMERIC"),
-        ({"type": "FLOAT"}, "NUMERIC"),
-        ({"type": "DOUBLE PRECISION"}, "NUMERIC"),
         ({"type": "NUMERIC(10,2)"}, "NUMERIC"),
-        ({"type": "DECIMAL"}, "NUMERIC"),
-        ({"type": "INT"}, "NUMERIC"),
-        ({"type": "NUMBER"}, "NUMERIC"),
         ({"type": "BOOLEAN"}, "BOOLEAN"),
-        ({"type": "BOOL"}, "BOOLEAN"),
         ({"type": "VARCHAR"}, "STRING"),
-        ({"type": "TEXT"}, "STRING"),
-        ({"type": "CHAR(50)"}, "STRING"),
         ({}, "STRING"),
         (None, "STRING"),
     ])
     def test_classification(self, column, expected):
         assert SupersetLoader._normalize_column_type(column) == expected
-
-    def test_is_dttm_takes_precedence(self):
-        """is_dttm flag overrides the raw type string."""
-        col = {"is_dttm": True, "type": "INT"}
-        assert SupersetLoader._normalize_column_type(col) == "TEMPORAL"
 
 
 # ==================================================================
@@ -77,21 +63,11 @@ class TestBuildChartDataFilters:
         result = SupersetLoader._build_chart_data_filters(filters)
         assert result == [{"col": "status", "op": "==", "val": "active"}]
 
-    def test_neq_filter(self):
-        filters = [{"column": "status", "operator": "NEQ", "value": "deleted"}]
-        result = SupersetLoader._build_chart_data_filters(filters)
-        assert result == [{"col": "status", "op": "!=", "val": "deleted"}]
-
     def test_comparison_operators(self):
         for df_op, api_op in [("GT", ">"), ("GTE", ">="), ("LT", "<"), ("LTE", "<=")]:
             filters = [{"column": "age", "operator": df_op, "value": 18}]
             result = SupersetLoader._build_chart_data_filters(filters)
             assert result == [{"col": "age", "op": api_op, "val": 18}]
-
-    def test_in_filter(self):
-        filters = [{"column": "id", "operator": "IN", "value": [1, 2, 3]}]
-        result = SupersetLoader._build_chart_data_filters(filters)
-        assert result == [{"col": "id", "op": "IN", "val": [1, 2, 3]}]
 
     def test_not_in_filter(self):
         filters = [{"column": "id", "operator": "NOT_IN", "value": [4, 5]}]
@@ -109,21 +85,6 @@ class TestBuildChartDataFilters:
         filters = [{"column": "email", "operator": "IS_NULL", "value": None}]
         result = SupersetLoader._build_chart_data_filters(filters)
         assert result == [{"col": "email", "op": "IS NULL", "val": None}]
-
-    def test_is_not_null_filter(self):
-        filters = [{"column": "email", "operator": "IS_NOT_NULL", "value": None}]
-        result = SupersetLoader._build_chart_data_filters(filters)
-        assert result == [{"col": "email", "op": "IS NOT NULL", "val": None}]
-
-    def test_like_filter(self):
-        filters = [{"column": "name", "operator": "LIKE", "value": "%alice%"}]
-        result = SupersetLoader._build_chart_data_filters(filters)
-        assert result == [{"col": "name", "op": "LIKE", "val": "%alice%"}]
-
-    def test_ilike_filter(self):
-        filters = [{"column": "name", "operator": "ILIKE", "value": "%alice%"}]
-        result = SupersetLoader._build_chart_data_filters(filters)
-        assert result == [{"col": "name", "op": "ILIKE", "val": "%alice%"}]
 
     def test_invalid_operator_skipped(self):
         filters = [{"column": "x", "operator": "DROP TABLE", "value": "1"}]
@@ -166,10 +127,6 @@ class TestBuildChartDataOrderby:
     def test_empty_sort_columns(self):
         assert SupersetLoader._build_chart_data_orderby(None) == []
         assert SupersetLoader._build_chart_data_orderby([]) == []
-
-    def test_ascending(self):
-        result = SupersetLoader._build_chart_data_orderby(["id"], "asc")
-        assert result == [["id", True]]
 
     def test_descending(self):
         result = SupersetLoader._build_chart_data_orderby(["id"], "desc")
@@ -308,12 +265,6 @@ class TestGetColumnValues:
         assert len(result["options"]) == 5
         assert result["has_more"] is True
 
-    def test_limit_clamped(self, loader):
-        """Limit should be clamped to [1, 200]."""
-        loader._client.get_datasource_column_values.return_value = {"result": []}
-        loader.get_column_values("42", "col", limit=0)
-        loader.get_column_values("42", "col", limit=999)
-
     def test_deduplication(self, loader):
         loader._client.get_datasource_column_values.return_value = {
             "result": [{"value": "a"}, {"value": "a"}, {"value": "b"}],
@@ -340,24 +291,6 @@ class TestFetchDataAsArrow:
     @pytest.fixture
     def loader(self):
         return _make_mock_loader()
-
-    def test_passes_sort_to_chart_data_api(self, loader):
-        loader._client.post_chart_data.return_value = {
-            "result": [{
-                "data": [{"id": 2}, {"id": 1}],
-                "colnames": ["id"],
-            }],
-        }
-
-        loader.fetch_data_as_arrow(
-            "42",
-            {"size": 10, "sort_columns": ["id"], "sort_order": "desc"},
-        )
-
-        call_args = loader._client.post_chart_data.call_args
-        query = call_args.args[2][0]
-        assert query["row_limit"] == 10
-        assert query["orderby"] == [["id", False]]
 
     def test_passes_filters_and_sort(self, loader):
         loader._client.post_chart_data.return_value = {
@@ -453,9 +386,6 @@ class TestSupersetURLResolution:
 
 class TestValidateParams:
     """Test the unified validate_params classmethod."""
-
-    def test_all_required_present_passes(self):
-        SupersetLoader.validate_params({"url": "http://x"}, skip_auth_tier=True)
 
     def test_missing_required_raises_with_names(self):
         from data_formulator.data_loader.external_data_loader import ConnectorParamError

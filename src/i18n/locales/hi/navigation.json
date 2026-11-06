@@ -1,0 +1,18 @@
+{
+  "navigation": {
+    "startExploration": "अन्वेषण शुरू करें",
+    "installLocally": "स्थानीय रूप से इंस्टॉल करें",
+    "tryOnlineDemo": "ऑनलाइन डेमो आज़माएं",
+    "video": "वीडियो",
+    "github": "GitHub",
+    "contactUs": "संपर्क करें",
+    "termsOfUse": "उपयोग की शर्तें",
+    "about": "परिचय",
+    "home": "होम",
+    "data": "डेटा",
+    "visualization": "विज़ुअलाइज़ेशन",
+    "report": "रिपोर्ट",
+    "chat": "चैट",
+    "agentRules": "एजेंट नियम"
+  }
+}

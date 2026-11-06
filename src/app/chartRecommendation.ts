@@ -13,6 +13,15 @@ import { Channel, Chart, DictTable, FieldItem } from '../components/ComponentTyp
 import { generateFreshChart } from './dfSlice';
 import { vlGetTemplateDef } from 'flint-chart';
 
+type AgentChartEncoding = string | {
+    field?: unknown;
+    type?: unknown;
+    aggregate?: unknown;
+    sortOrder?: unknown;
+    sortBy?: unknown;
+    scheme?: unknown;
+};
+
 /** Map from agent short names to display chart type names. */
 const AGENT_CHART_TYPE_MAP: Record<string, string> = {
     scatter: 'Scatter Plot',
@@ -77,13 +86,11 @@ export const resolveRecommendedChart = (refinedGoal: any, allFields: FieldItem[]
     return newChart;
 };
 
-/**
- * Populate a chart's encodingMap from a plain { channel: fieldName } object.
- */
+/** Populate the app's field-ID encoding map from Flint-compatible encodings. */
 export const resolveChartFields = (
     chart: Chart,
     allFields: FieldItem[],
-    chartEncodings: { [key: string]: string },
+    chartEncodings: Record<string, AgentChartEncoding>,
     table: DictTable,
 ): Chart => {
     // Get the keys that should be present after this update
@@ -102,9 +109,28 @@ export const resolveChartFields = (
             key = 'column';
         }
 
-        const field = allFields.find(c => c.name === value);
+        const fieldName = typeof value === 'string'
+            ? value
+            : (value && typeof value.field === 'string' ? value.field : undefined);
+        const field = allFields.find(c => c.name === fieldName);
         if (field) {
-            chart.encodingMap[key as Channel] = { fieldID: field.id };
+            const encoding = typeof value === 'string' ? undefined : value;
+            const dtype = encoding?.type;
+            const aggregate = encoding?.aggregate === 'mean' ? 'average' : encoding?.aggregate;
+            chart.encodingMap[key as Channel] = {
+                fieldID: field.id,
+                ...(['quantitative', 'nominal', 'ordinal', 'temporal'].includes(String(dtype))
+                    ? { dtype: dtype as 'quantitative' | 'nominal' | 'ordinal' | 'temporal' }
+                    : {}),
+                ...(['count', 'sum', 'average'].includes(String(aggregate))
+                    ? { aggregate: aggregate as 'count' | 'sum' | 'average' }
+                    : {}),
+                ...(['ascending', 'descending'].includes(String(encoding?.sortOrder))
+                    ? { sortOrder: encoding?.sortOrder as 'ascending' | 'descending' }
+                    : {}),
+                ...(typeof encoding?.sortBy === 'string' ? { sortBy: encoding.sortBy } : {}),
+                ...(typeof encoding?.scheme === 'string' ? { scheme: encoding.scheme } : {}),
+            };
         }
     }
 

@@ -53,6 +53,7 @@ class BigQueryDataLoader(ExternalDataLoader):
         return "service_account_file" if params.get("credentials_path") else "default_credentials"
 
     AUTH_GUIDE = "bigquery.md"
+    QUERY_EXECUTION = "server_query"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params
@@ -184,7 +185,10 @@ class BigQueryDataLoader(ExternalDataLoader):
         order_by_clause = ""
         if sort_columns and len(sort_columns) > 0:
             order_direction = "DESC" if sort_order == 'desc' else "ASC"
-            sanitized_cols = [f'`{col}` {order_direction}' for col in sort_columns]
+            sanitized_cols = [
+                f'{probe_utils.quote_ident(str(col), probe_utils.BIGQUERY)} {order_direction}'
+                for col in sort_columns
+            ]
             order_by_clause = f" ORDER BY {', '.join(sanitized_cols)}"
         
         query = f"{base_query}{order_by_clause} LIMIT {size}"
@@ -199,6 +203,16 @@ class BigQueryDataLoader(ExternalDataLoader):
         
         return arrow_table
     
+    def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
+        """Run a structured filter/group/aggregate load on BigQuery."""
+        if not source_table:
+            raise ValueError("source_table must be provided")
+        # BigQuery quotes the whole `project.dataset.table` path as one unit.
+        return probe_utils.query_via_native_sql(
+            query, limit, relation=probe_utils.quote_ident(source_table, probe_utils.BIGQUERY),
+            dialect=probe_utils.BIGQUERY, execute=lambda sql: self.client.query(sql).to_arrow(),
+        )
+
     def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
         """Compile the SPJQ to BigQuery Standard SQL and run it server-side."""
         if not path:

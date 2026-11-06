@@ -18,6 +18,7 @@
     "chatHintExample": "What data do we have here?",
     "placeholder": "Describe data to extract, upload, or generate...",
     "attachTooltip": "Attach file or image",
+    "dropToAttach": "Drop file to attach",
     "stopTooltip": "Stop generation",
     "sendTooltip": "Send  (Enter)",
     "shiftEnterHint": "Shift+Enter for new line",
@@ -72,6 +73,7 @@
       "fromSource": "from"
     },
     "operation": {
+      "virtualSource": "{{name}}: Virtual source (rows remain remote)",
       "title": "Data loading options",
       "previewHeading": "Tables to load",
       "previewGuide": "A preview of each table before it is added to your workspace.",
@@ -92,10 +94,11 @@
       "listingFiles": "Listing files",
       "runningPython": "Running Python",
       "preparingPreview": "Preparing preview",
-      "browsingCatalog": "Browsing catalog",
-      "searchingData": "Searching data",
-      "describingData": "Reading table metadata",
-      "probingData": "Probing data",
+      "summarizingSources": "Summarizing connected data",
+      "browsingCatalog": "Browsing",
+      "searchingData": "Searching",
+      "describingData": "Reading table",
+      "probingData": "Probing",
       "proposingLoadPlan": "Proposing load plan"
     },
     "examples": {

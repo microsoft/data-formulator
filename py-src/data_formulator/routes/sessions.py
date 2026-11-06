@@ -14,7 +14,7 @@ Routes:
   POST /api/sessions/delete      — delete a workspace
   POST /api/sessions/create      — create a new workspace
   POST /api/sessions/rename      — rename a workspace
-  POST /api/sessions/update-meta — update display name (lightweight, no full state)
+  POST /api/sessions/update-meta — update display name and/or starred flag (lightweight, no full state)
   POST /api/sessions/export      — export active workspace as zip
   POST /api/sessions/import      — import workspace from zip
 
@@ -22,6 +22,7 @@ Note: URL prefix kept as /api/sessions for frontend compatibility.
 """
 
 import errno
+import json
 import io
 import logging
 from datetime import datetime
@@ -29,7 +30,7 @@ from typing import NoReturn
 
 from flask import Blueprint, request, send_file
 
-from data_formulator.auth.identity import get_identity_id
+from data_formulator.auth.identity import get_identity_id, is_local_mode
 from data_formulator.error_handler import json_ok
 from data_formulator.errors import AppError, ErrorCode
 from data_formulator.workspace_factory import (
@@ -41,6 +42,99 @@ from data_formulator.workspace_factory import (
 logger = logging.getLogger(__name__)
 
 session_bp = Blueprint("sessions", __name__, url_prefix="/api/sessions")
+
+
+def scheduled_checkpoint(manager, workspace_id: str, identity_id: str) -> dict | None:
+    from data_formulator.routes.workflows import run_path
+    from data_formulator.workflows.agent import public_run
+    try:
+        workspace = manager.open_workspace(workspace_id, identity_id)
+        path = run_path(workspace, workspace_id.removeprefix("scheduled-"))
+        return public_run(json.loads(path.read_text(encoding="utf-8"))) if path.exists() else None
+    except (OSError, ValueError, AppError):
+        logger.warning("Scheduled checkpoint unavailable for %s", workspace_id)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Published example sessions: administrators publish a session; opening one
+# imports a copy into the user's sessions, like the built-in demos.
+# ---------------------------------------------------------------------------
+
+def _examples_dir():
+    from data_formulator.configuration import configuration_path
+    directory = configuration_path().parent / "examples"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def _published_examples() -> list[dict]:
+    index = _examples_dir() / "index.json"
+    return json.loads(index.read_text(encoding="utf-8")) if index.exists() else []
+
+
+def _write_examples(examples: list[dict]) -> None:
+    index = _examples_dir() / "index.json"
+    temporary = index.with_suffix(".tmp")
+    temporary.write_text(json.dumps(examples, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(index)
+
+
+def _published_example(identifier: str) -> dict:
+    example = next((item for item in _published_examples() if item["id"] == identifier), None)
+    if example is None:
+        raise AppError(ErrorCode.TABLE_NOT_FOUND, "Example session not found.")
+    return example
+
+
+def _require_example_admin() -> None:
+    from data_formulator.routes.configurations import can_configure
+    if not can_configure():
+        raise AppError(ErrorCode.ACCESS_DENIED, "Only administrators can publish example sessions.")
+    if request.headers.get("Sec-Fetch-Site") == "cross-site":
+        raise AppError(ErrorCode.ACCESS_DENIED, "Example sessions must be managed from the application.")
+
+
+@session_bp.route("/examples", methods=["GET"])
+def list_examples():
+    return json_ok({"examples": _published_examples()})
+
+
+@session_bp.route("/examples/<identifier>", methods=["GET"])
+def download_example(identifier: str):
+    example = _published_example(identifier)
+    return send_file(_examples_dir() / f"{example['id']}.zip", mimetype="application/zip")
+
+
+@session_bp.route("/examples", methods=["POST"])
+def publish_example():
+    from uuid import uuid4
+    from data_formulator.datalake.workspace_manager import _strip_sensitive
+
+    _require_example_admin()
+    data = request.get_json(force=True) or {}
+    workspace_id = str(data.get("workspace_id") or "").strip()
+    identity_id = get_identity_id()
+    mgr = get_workspace_manager(identity_id)
+    if not workspace_id or not mgr.workspace_exists(workspace_id):
+        raise AppError(ErrorCode.TABLE_NOT_FOUND, "Session not found.")
+    state = mgr.load_session_state(workspace_id) or {}
+    title = str(data.get("title") or (state.get("activeWorkspace") or {}).get("displayName") or "Example session").strip()[:200]
+    archive = mgr.open_workspace(workspace_id, identity_id).export_session_zip(_strip_sensitive(state))
+    example = {"id": uuid4().hex, "title": title, "description": str(data.get("description") or "").strip()[:500],
+               "published_at": datetime.utcnow().isoformat() + "Z"}
+    (_examples_dir() / f"{example['id']}.zip").write_bytes(archive.getvalue())
+    _write_examples([example, *_published_examples()])
+    return json_ok({"example": example})
+
+
+@session_bp.route("/examples/<identifier>", methods=["DELETE"])
+def unpublish_example(identifier: str):
+    _require_example_admin()
+    example = _published_example(identifier)
+    _write_examples([item for item in _published_examples() if item["id"] != example["id"]])
+    (_examples_dir() / f"{example['id']}.zip").unlink(missing_ok=True)
+    return json_ok({"id": example["id"]})
 
 
 def _raise_if_storage_full(exc: OSError) -> NoReturn:
@@ -61,13 +155,22 @@ def _raise_if_storage_full(exc: OSError) -> NoReturn:
 
 @session_bp.route("/save", methods=["POST"])
 def save_session():
-    """Auto-persist frontend state to the active workspace."""
+    """Auto-persist frontend state to the active workspace.
+
+    ``base_revision`` (optional) is the revision the client's copy came from; a save based on an older one
+    than the stored state is refused with SESSION_CONFLICT, so a stale copy cannot overwrite newer work.
+    """
+    from data_formulator.datalake.workspace_manager import SessionConflictError
+
     data = request.get_json(force=True)
     state: dict = data.get("state")
     workspace_id: str = data.get("id", "").strip() or data.get("name", "").strip()
+    base_revision = data.get("base_revision")
 
     if state is None:
         raise AppError(ErrorCode.INVALID_REQUEST, "State payload is required")
+    if base_revision is not None and (not isinstance(base_revision, int) or isinstance(base_revision, bool)):
+        raise AppError(ErrorCode.INVALID_REQUEST, "base_revision must be an integer")
 
     identity_id = get_identity_id()
     ws_id = workspace_id or get_active_workspace_id()
@@ -86,11 +189,17 @@ def save_session():
                 )
             mgr.create_workspace(ws_id)
 
-        mgr.save_session_state(ws_id, state)
+        revision = mgr.save_session_state(ws_id, state, base_revision=base_revision)
+    except SessionConflictError as exc:
+        raise AppError(
+            "SESSION_CONFLICT",
+            "This session was saved from another tab or window since this copy was loaded.",
+            detail=f"stored revision {exc.revision}, client revision {base_revision}",
+        ) from exc
     except OSError as exc:
         _raise_if_storage_full(exc)
 
-    return json_ok({"id": ws_id, "saved_at": datetime.utcnow().isoformat()})
+    return json_ok({"id": ws_id, "saved_at": datetime.utcnow().isoformat(), "revision": revision})
 
 
 @session_bp.route("/list", methods=["GET"])
@@ -126,7 +235,13 @@ def list_sessions():
             entry["table_count"] = w["table_count"]
         if w.get("chart_count") is not None:
             entry["chart_count"] = w["chart_count"]
+        entry["source_ids"] = w.get("source_ids", [])
+        if w.get("scheduled_run"):
+            entry["scheduled_run"] = w["scheduled_run"]
+        if w.get("starred"):
+            entry["starred"] = True
         sessions.append(entry)
+    sessions.sort(key=lambda item: item.get("saved_at") or "", reverse=True)
     return json_ok({"sessions": sessions})
 
 
@@ -153,8 +268,12 @@ def load_session():
     state = mgr.load_session_state(workspace_id)
     if state is None:
         state = {}
+    revision = mgr.state_revision(workspace_id)
 
-    return json_ok({"id": workspace_id, "state": state})
+    if workspace_id.startswith("scheduled-") and state.get("activeWorkspace", {}).get("scheduledRun"):
+        return json_ok({"id": workspace_id, "state": state, "revision": revision,
+                        "workflow_run": scheduled_checkpoint(mgr, workspace_id, identity_id)})
+    return json_ok({"id": workspace_id, "state": state, "revision": revision})
 
 
 @session_bp.route("/delete", methods=["POST"])
@@ -170,6 +289,10 @@ def delete_session():
 
     if not mgr.delete_workspace(workspace_id):
         raise AppError(ErrorCode.TABLE_NOT_FOUND, f"Workspace '{workspace_id}' not found")
+    if workspace_id.startswith("scheduled-") and is_local_mode():
+        from data_formulator.workflows.scheduler import schedule_store, scheduling_available
+        if scheduling_available():
+            schedule_store().forget(workspace_id.removeprefix("scheduled-"))
 
     return json_ok({"id": workspace_id})
 
@@ -215,14 +338,17 @@ def rename_workspace_route():
 
 @session_bp.route("/update-meta", methods=["POST"])
 def update_workspace_meta():
-    """Update workspace display name without writing full session state."""
+    """Update a workspace's display name and/or starred flag without writing full session state."""
     data = request.get_json(force=True)
     workspace_id: str = (data.get("id") or "").strip()
     display_name: str = (data.get("display_name") or "").strip()
+    starred = data.get("starred")
     if not workspace_id:
         raise AppError(ErrorCode.INVALID_REQUEST, "Workspace id is required")
-    if not display_name:
-        raise AppError(ErrorCode.INVALID_REQUEST, "display_name is required")
+    if starred is not None and not isinstance(starred, bool):
+        raise AppError(ErrorCode.INVALID_REQUEST, "starred must be a boolean")
+    if not display_name and starred is None:
+        raise AppError(ErrorCode.INVALID_REQUEST, "display_name or starred is required")
 
     identity_id = get_identity_id()
     mgr = get_workspace_manager(identity_id)
@@ -230,8 +356,14 @@ def update_workspace_meta():
     if not mgr.workspace_exists(workspace_id):
         raise AppError(ErrorCode.TABLE_NOT_FOUND, "Workspace not found")
 
-    mgr.update_display_name(workspace_id, display_name)
-    return json_ok({"id": workspace_id, "display_name": display_name})
+    result: dict = {"id": workspace_id}
+    if display_name:
+        mgr.update_display_name(workspace_id, display_name)
+        result["display_name"] = display_name
+    if starred is not None:
+        mgr.set_starred(workspace_id, starred)
+        result["starred"] = starred
+    return json_ok(result)
 
 
 @session_bp.route("/export", methods=["POST"])
@@ -295,6 +427,11 @@ def import_session():
             ws = get_workspace(identity_id)
 
         state = ws.import_session_zip(io.BytesIO(file.read()))
+        # The archive's snapshot carries its own (old) timestamps; an expiring
+        # backend must not mistake the freshly imported workspace for an idle one.
+        imported_id = workspace_id or get_active_workspace_id()
+        if imported_id:
+            mgr.mark_accessed(imported_id)
         return json_ok({"state": state})
     except ValueError:
         raise AppError(ErrorCode.INVALID_REQUEST, "Invalid session file")

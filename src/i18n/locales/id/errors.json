@@ -1,0 +1,38 @@
+{
+  "errors": {
+    "authRequired": "Autentikasi diperlukan",
+    "authExpired": "Sesi kedaluwarsa — silakan masuk kembali",
+    "accessDenied": "Akses ditolak",
+
+    "invalidRequest": "Permintaan tidak valid",
+    "tableNotFound": "Tabel tidak ditemukan",
+    "fileParseError": "Gagal mengurai berkas yang diunggah",
+    "fileTooLarge": "Berkas terlalu besar",
+    "validationError": "Kesalahan validasi",
+
+    "llmAuthFailed": "Autentikasi gagal — silakan periksa kunci API Anda",
+    "llmRateLimit": "Batas laju terlampaui — silakan tunggu dan coba lagi",
+    "llmContextTooLong": "Masukan terlalu panjang — silakan kurangi ukuran data atau panjang perintah",
+    "llmModelNotFound": "Model tidak ditemukan — silakan periksa nama model",
+    "llmTimeout": "Permintaan kedaluwarsa — silakan periksa konektivitas dan coba lagi",
+    "llmServiceError": "Layanan model mengembalikan kesalahan — silakan coba lagi nanti",
+    "llmContentFiltered": "Permintaan diblokir oleh filter keamanan konten",
+    "llmUnknownError": "Permintaan model gagal",
+
+    "connectorAuthFailed": "Autentikasi sumber data gagal",
+    "dbConnectionFailed": "Koneksi sumber data gagal",
+    "dbQueryError": "Kesalahan kueri basis data",
+    "dataLoadError": "Gagal memuat data",
+    "connectorError": "Kesalahan konektor data",
+
+    "codeExecutionError": "Terjadi kesalahan saat eksekusi kode",
+    "agentError": "Agen mengalami kesalahan",
+
+    "catalogSyncTimeout": "Sinkronisasi katalog kedaluwarsa — silakan coba lagi",
+    "catalogNotFound": "Konektor tidak ditemukan atau belum terhubung",
+
+    "internalError": "Terjadi kesalahan tak terduga",
+    "serviceUnavailable": "Layanan sementara tidak tersedia",
+    "storageFull": "Penyimpanan ruang kerja penuh. Kosongkan ruang disk dan coba lagi."
+  }
+}

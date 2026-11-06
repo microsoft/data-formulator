@@ -10,7 +10,7 @@
  * Exports:
  *   - buildSessionWorkflowContext(workspace, threads): state-independent
  *     payload builder (with size budgeting, see §3.5 of the design doc).
- *   - collectSessionThreads(tables, charts, fields): leaf discovery + per-leaf
+ *   - collectSessionThreads(tables, conversationOf, charts, fields): leaf discovery + per-leaf
  *     event walk against live DataFormulator state.
  *   - SessionDistillDialog: the dialog used by KnowledgePanel for both
  *     create and update modes.
@@ -59,7 +59,9 @@ import {
     buildLeafEvents,
     buildDistillModelConfig,
     isLeafDerivedTable,
+    threadConversationOf,
     TOOL_USES_CODE_FONT,
+    type ConversationOf,
 } from './workflowContext';
 import { iconVar, textVar } from '../app/layout';
 
@@ -137,6 +139,7 @@ export function findSessionWorkflow(
  */
 export function collectSessionThreads(
     tables: DictTable[],
+    conversationOf: ConversationOf,
     charts: Chart[],
     conceptShelfItems: FieldItem[],
 ): SessionThread[] {
@@ -150,7 +153,7 @@ export function collectSessionThreads(
 
     const threads: SessionThread[] = [];
     for (const leaf of leaves) {
-        const events = buildLeafEvents(leaf, tables, charts, conceptShelfItems);
+        const events = buildLeafEvents(leaf, tables, conversationOf, charts, conceptShelfItems);
         if (!events || events.length === 0) continue;
         threads.push({
             thread_id: leaf.id,
@@ -298,6 +301,8 @@ export const SessionDistillDialog: React.FC<SessionDistillDialogProps> = ({
     const tables = useSelector(dfSelectors.getAllTables);
     const charts = useSelector((s: DataFormulatorState) => s.charts);
     const conceptShelfItems = useSelector((s: DataFormulatorState) => s.conceptShelfItems);
+    const threadGraph = useSelector(dfSelectors.getThreadGraph);
+    const textTurns = useSelector((s: DataFormulatorState) => s.textTurns);
     const activeWorkspace = useSelector((s: DataFormulatorState) => s.activeWorkspace);
     const selectedModelId = useSelector((s: DataFormulatorState) => s.selectedModelId);
     const allModels = useSelector(
@@ -307,9 +312,9 @@ export const SessionDistillDialog: React.FC<SessionDistillDialogProps> = ({
 
     const built = useMemo(() => {
         if (!open || !activeWorkspace) return null;
-        const threads = collectSessionThreads(tables, charts, conceptShelfItems);
+        const threads = collectSessionThreads(tables, threadConversationOf(threadGraph, textTurns), charts, conceptShelfItems);
         return buildSessionWorkflowContext(activeWorkspace, threads);
-    }, [open, activeWorkspace, tables, charts, conceptShelfItems]);
+    }, [open, activeWorkspace, tables, threadGraph, textTurns, charts, conceptShelfItems]);
 
     const [userInstruction, setUserInstruction] = useState('');
     const [status, setStatus] = useState<DistillStatus>('idle');

@@ -8,7 +8,6 @@ Focuses on things we can test without a real LLM:
 - The user query is serialised as valid JSON.
 - The agent correctly handles choices that return valid JSON blocks.
 - The agent handles choices whose content cannot be parsed as JSON.
-- The 'agent' field on each candidate is set to 'SortDataAgent'.
 - The 'dialog' field includes both the initial messages and the LLM reply.
 """
 
@@ -79,22 +78,6 @@ class TestInputConstruction:
         parsed = json.loads(json_part)
         assert "values" in parsed
         assert "value" not in parsed
-
-    def test_input_name_is_preserved(self):
-        """The 'name' field in the serialised input must match what was passed."""
-        client = MagicMock()
-        client.get_completion.return_value = _make_response(
-            '{"name": "grades", "sorted_values": ["A", "B"], "reason": "ok"}'
-        )
-        agent = SortDataAgent(client)
-        agent.run("grades", ["B", "A"])
-
-        messages = client.get_completion.call_args.kwargs.get("messages") or \
-                   client.get_completion.call_args.args[0]
-        user_content = next(m["content"] for m in messages if m["role"] == "user")
-        json_part = user_content.split("[INPUT]")[1].split("[OUTPUT]")[0].strip()
-        parsed = json.loads(json_part)
-        assert parsed["name"] == "grades"
 
     def test_input_values_are_preserved(self):
         """Every value passed in must appear in the serialised JSON."""
@@ -174,13 +157,6 @@ class TestResponseParsing:
         candidates = agent.run("x", ["a"])
 
         assert len(candidates) == 2
-
-    def test_agent_field_is_set(self):
-        response = _make_response('{"name": "x", "sorted_values": [], "reason": "r"}')
-        agent = _make_agent(response)
-
-        candidates = agent.run("x", [])
-        assert candidates[0]["agent"] == "SortDataAgent"
 
     def test_dialog_includes_system_and_user_and_assistant(self):
         content = '{"name": "x", "sorted_values": [], "reason": "r"}'

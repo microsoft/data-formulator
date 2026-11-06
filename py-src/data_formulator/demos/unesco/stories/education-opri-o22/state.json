@@ -1,0 +1,250 @@
+{
+ "__stateVersion": 14,
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "d_output",
+   "displayId": "Adults lacking basic literacy worldwide",
+   "names": [
+    "sex",
+    "millions",
+    "year"
+   ],
+   "rows": [
+    {
+     "sex": "Women",
+     "millions": 466.257152,
+     "year": 2024
+    },
+    {
+     "sex": "Men",
+     "millions": 272.882592,
+     "year": 2024
+    }
+   ],
+   "metadata": {
+    "sex": {
+     "type": "string",
+     "levels": []
+    },
+    "millions": {
+     "type": "number",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\noutput=duckdb.sql(\"SELECT CASE WHEN indicator_id='ILLPOP.AG15T99.F' THEN 'Women' ELSE 'Men' END AS sex, value / 1000000 AS millions, year FROM read_parquet('data/opri_regional.parquet') WHERE region='UIS: World' AND year=2024 AND indicator_id IN ('ILLPOP.AG15T99.F','ILLPOP.AG15T99.M')\").df()",
+    "codeSignature": "9752ea254f1c5424a04fbe03229bb113960076a02a3899219b9c21a709652df5",
+    "outputVariable": "output",
+    "source": [
+     "opri_regional"
+    ],
+    "inputSources": [
+     {
+      "id": "data:c275a3c42b97f9083f172fae6919994f:opri_regional",
+      "kind": "data",
+      "displayName": "opri_regional"
+     }
+    ],
+    "trigger": {
+     "tableId": "opri_regional",
+     "resultTableId": "d_output",
+     "chart": {
+      "id": "chart-1792310936268",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "opri_regional",
+      "source": "trigger"
+     }
+    },
+    "explanation": {
+     "status": "ok",
+     "concepts": [
+      {
+       "field": "sex",
+       "explanation": "`sex = 'Women' if indicator_id = 'ILLPOP.AG15T99.F'; otherwise 'Men'`"
+      },
+      {
+       "field": "millions",
+       "explanation": "`millions = value / 1000000`"
+      }
+     ],
+     "agent": "CodeExplanationAgent"
+    }
+   },
+   "virtual": {
+    "tableId": "d_output",
+    "rowCount": 2
+   },
+   "description": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792310909066_step_1",
+   "createdAt": 1792310941439
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-99f7f6ce4266",
+   "chartType": "Bar Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-millions-1792310941439-0.843127852224928",
+     "dtype": "quantitative"
+    },
+    "y": {
+     "fieldID": "concept-sex-1792310941439-0.2971027740663783",
+     "dtype": "nominal",
+     "sortOrder": "descending",
+     "sortBy": "x"
+    },
+    "color": {
+     "channel": "color",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "d_output",
+   "source": "user",
+   "title": "Adults lacking basic literacy worldwide",
+   "subtitle": "Ages 15 and older, 2024 · UIS, February 2026 release",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-millions-1792310941439-0.843127852224928:|y:concept-sex-1792310941439-0.2971027740663783:",
+   "unread": false,
+   "themeId": "datawrapper"
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-sex-1792310941439-0.2971027740663783",
+   "name": "sex",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-millions-1792310941439-0.843127852224928",
+   "name": "millions",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792310909066_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1792310909066_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "How many adults can't read?",
+   "parentNodeId": "conversation-root:7bea1e09-e58b-4b83-8018-2d8dc02f06e8",
+   "actionId": "exploreDataFromNL_1792310909066",
+   "createdAt": 1792310909066
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792310909066_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1792310909066_step_1",
+   "textKind": "explain",
+   "content": "Find the adult illiteracy indicator and latest official world estimates.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792310909066_prompt",
+   "actionId": "exploreDataFromNL_1792310909066",
+   "createdAt": 1792310934121,
+   "startedAt": 1792310909067,
+   "codeExecutions": [
+    {
+     "id": "code_exploreDataFromNL_1792310909066_1",
+     "tool": "execute_python_script",
+     "purpose": "Find the adult illiteracy indicator and latest official world estimates.",
+     "code": "import pandas as pd, duckdb\nx=pd.read_parquet('data/opri_indicators.parquet')\nm=x[x.indicator.str.contains('Adult illiterate population, 15',case=False)]\nprint(m.to_string(index=False))\nids=m.indicator_id.tolist()\nr=duckdb.sql(\"SELECT * FROM read_parquet('data/opri_regional.parquet') WHERE indicator_id IN (\"+','.join(\"'\"+i+\"'\" for i in ids)+\") AND region LIKE '%World%' ORDER BY year DESC\").df()\nprint(r.head(25).to_string(index=False))",
+     "status": "completed",
+     "createdAt": 1792310934121,
+     "output": "        indicator_id                                                          indicator  countries  first_year  last_year  value_count\n      ILLPOP.AG15T99        Adult illiterate population, 15+ years, both sexes (number)        156        1990       2024          748\n    ILLPOP.AG15T99.F            Adult illiterate population, 15+ years, female (number)        156        1990       2024          748\n    ILLPOP.AG15T99.M              Adult illiterate population, 15+ years, male (number)        156        1990       2024          748\n  ILLPOP.AG15T99.RUR Adult illiterate population, 15+ years, rural, both sexes (number)        122        1990       2024          543\nILLPOP.AG15T99.RUR.F     Adult illiterate population, 15+ years, rural, female (number)        122        1990       2024          543\nILLPOP.AG15T99.RUR.M       Adult illiterate population, 15+ years, rural, male (number)        122        1990       2024          543\n  ILLPOP.AG15T99.URB Adult illiterate population, 15+ years, urban, both sexes (number)        122        1990       2024          543\nILLPOP.AG15T99.URB.F     Adult illiterate population, 15+ years, urban, female (number)        122        1990       2024          543\nILLPOP.AG15T99.URB.M       Adult illiterate population, 15+ years, urban, male (number)        122        1990       2024          543\n     ILLPOPF.AG15T99                   Adult illiterate population, 15+ years, % female        156        1990       2024          748\n ILLPOPF.AG15T99.RUR            Adult illiterate population, 15+ years, rural, % female        122        1990       2024          543\n ILLPOPF.AG15T99.URB            Adult illiterate population, 15+ years, urban, % female        122        1990       2024          543\n    indicator_id region_group         region  year       value magnitude qualifier\nILLPOP.AG15T99.M           WB WB: Arab World  2024  24650374.0      None      None\n ILLPOPF.AG15T99          UIS     UIS: World  2024        63.0      None      None\n  ILLPOP.AG15T99           WB      WB: World  2024 739137216.0      None      None\n ILLPOPF.AG15T99           WB      WB: World  2024        63.0      None      None\nILLPOP.AG15T99.F          UIS     UIS: World  2024 466257152.0      None      None\nILLPOP.AG15T99.M          UIS     UIS: World  2024 272882592.0      None      None\n  ILLPOP.AG15T99          MDG     MDG: World  2024 739138944.0      None      None\n  ILLPOP.AG15T99       UNICEF  UNICEF: World  2024 738500416.0      None      None\nILLPOP.AG15T99.F           WB      WB: World  2024 466255744.0      None      None\n ILLPOPF.AG15T99       UNICEF  UNICEF: World  2024        63.0      None      None\nILLPOP.AG15T99.F       UNICEF  UNICEF: World  2024 465863936.0      None      None\n  ILLPOP.AG15T99          SDG     SDG: World  2024 739139712.0      None      None\n ILLPOPF.AG15T99          MDG     MDG: World  2024        63.0      None      None\nILLPOP.AG15T99.F          MDG     MDG: World  2024 466256672.0      None      None\nILLPOP.AG15T99.M          MDG     MDG: World  2024 272882272.0      None      None\nILLPOP.AG15T99.M       UNICEF  UNICEF: World  2024 272636512.0      None      None\nILLPOP.AG15T99.M           WB      WB: World  2024 272881472.0      None      None\n  ILLPOP.AG15T99           WB WB: Arab World  2024  68404152.0      None      None\nILLPOP.AG15T99.F          SDG     SDG: World  2024 466257152.0      None      None\n  ILLPOP.AG15T99          UIS     UIS: World  2024 739139712.0      None      None\n ILLPOPF.AG15T99          SDG     SDG: World  2024        63.0      None      None\nILLPOP.AG15T99.M          SDG     SDG: World  2024 272882592.0      None      None\nILLPOP.AG15T99.F           WB WB: Arab World  2024  43753776.0      None      None\n ILLPOPF.AG15T99           WB WB: Arab World  2024        64.0      None      None\n ILLPOPF.AG15T99          UIS     UIS: World  2023        63.0      None      None\n"
+    }
+   ],
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1792310909066-1",
+     "kind": "tool",
+     "label": "Reading: session/tables/opri_indicators.json, session/tables/opr…",
+     "status": "completed",
+     "tool": "read_file",
+     "toolCallId": "call_qNNXaeUcdr35Fgj9bNNc5zJP"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792310909066-2",
+     "kind": "tool",
+     "label": "running code... Find the adult illiteracy indicator and latest official world estimates.",
+     "status": "completed",
+     "tool": "execute_python_script",
+     "toolCallId": "call_aaBzMfBPL12ZfrfT7z9mPMcM",
+     "executionId": "code_exploreDataFromNL_1792310909066_1"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792310909066-3",
+     "kind": "chart",
+     "label": "creating chart...",
+     "status": "completed"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792310909066_1792310965504",
+   "displayId": "textTurn_exploreDataFromNL_1792310909066_closing",
+   "textKind": "explain",
+   "content": "**About 739 million adults worldwide could not read and write a simple statement in 2024.** Nearly two-thirds were women: about **466 million women** and **273 million men**.\n\nAdults means people aged 15 and older. Source: UIS, February 2026 release.",
+   "parentNodeId": "d_output",
+   "actionId": "exploreDataFromNL_1792310909066",
+   "createdAt": 1792310965505,
+   "startedAt": 1792310909067,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "d_output",
+   "fields": {
+    "sex": {
+     "semanticType": "Category",
+     "displayName": "Adults",
+     "authored": {
+      "displayName": "Adults"
+     }
+    },
+    "millions": {
+     "semanticType": "Quantity",
+     "unit": "million people",
+     "displayName": "Millions of people",
+     "authored": {
+      "semanticType": "Quantity",
+      "unit": "million people",
+      "displayName": "Millions of people"
+     }
+    },
+    "year": {
+     "semanticType": "Year"
+    }
+   }
+  }
+ ],
+ "activeWorkspace": {
+  "id": "education-opri-o22",
+  "displayName": "739 million adults still cannot read"
+ },
+ "focusedId": {
+  "type": "chart",
+  "chartId": "chart-99f7f6ce4266"
+ }
+}

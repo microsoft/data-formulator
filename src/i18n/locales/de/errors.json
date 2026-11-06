@@ -1,0 +1,32 @@
+{
+  "errors": {
+    "authRequired": "Authentifizierung erforderlich",
+    "authExpired": "Sitzung abgelaufen — bitte melden Sie sich erneut an",
+    "accessDenied": "Zugriff verweigert",
+    "invalidRequest": "Ungültige Anfrage",
+    "tableNotFound": "Tabelle nicht gefunden",
+    "fileParseError": "Hochgeladene Datei konnte nicht geparst werden",
+    "fileTooLarge": "Datei zu groß",
+    "validationError": "Validierungsfehler",
+    "llmAuthFailed": "Authentifizierung fehlgeschlagen — bitte API-Schlüssel prüfen",
+    "llmRateLimit": "Rate-Limit überschritten — bitte warten und erneut versuchen",
+    "llmContextTooLong": "Eingabe zu lang — bitte Datenmenge oder Prompt-Länge reduzieren",
+    "llmModelNotFound": "Modell nicht gefunden — bitte Modellnamen prüfen",
+    "llmTimeout": "Zeitüberschreitung bei der Anfrage — bitte Konnektivität prüfen und erneut versuchen",
+    "llmServiceError": "Der Modelldienst hat einen Fehler zurückgegeben — bitte später erneut versuchen",
+    "llmContentFiltered": "Die Anfrage wurde vom Inhaltsfilter blockiert",
+    "llmUnknownError": "Modellanfrage fehlgeschlagen",
+    "connectorAuthFailed": "Authentifizierung der Datenquelle fehlgeschlagen",
+    "dbConnectionFailed": "Verbindung zur Datenquelle fehlgeschlagen",
+    "dbQueryError": "Datenbankabfragefehler",
+    "dataLoadError": "Laden der Daten fehlgeschlagen",
+    "connectorError": "Fehler im Daten-Connector",
+    "codeExecutionError": "Bei der Codeausführung ist ein Fehler aufgetreten",
+    "agentError": "Agent hat einen Fehler festgestellt",
+    "catalogSyncTimeout": "Zeitüberschreitung bei der Katalogsynchronisierung — bitte erneut versuchen",
+    "catalogNotFound": "Daten-Connector nicht gefunden oder nicht verbunden",
+    "internalError": "Ein unerwarteter Fehler ist aufgetreten",
+    "serviceUnavailable": "Dienst vorübergehend nicht verfügbar",
+    "storageFull": "Arbeitsbereichsspeicher ist voll. Bitte Speicherplatz freigeben und erneut versuchen."
+  }
+}

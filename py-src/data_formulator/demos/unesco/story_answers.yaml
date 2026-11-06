@@ -1,0 +1,130 @@
+# Shortened answers for the story seeds (see make_seeds.py): story id -> the answer a seed
+# shows in place of the AI analyst's own. Each keeps the analyst's main finding and figures and
+# one short note on coverage, so a first-time visitor sees a clear, simple insight.
+
+education-sdg4-e20: |
+  **South Sudan has the lowest high school completion rate: just 2% in 2025.** The lowest rates are concentrated in sub-Saharan Africa:
+
+  - **South Sudan:** 2.1%
+  - **Niger:** 4.9%
+  - **Central African Republic:** 5.6%
+  - **Chad:** 6.6%
+  - **Zimbabwe:** 8.1%
+
+  "High school" means upper secondary education. Blank countries have no recent estimate. Source: UIS, February 2026 release.
+
+education-sdg4-e21: |
+  **Nigeria has the biggest gap among the 87 countries compared:** 90% of children from the richest fifth of families finished upper secondary school, versus 16% from the poorest fifth, a **74-point gap** (2021).
+
+  Laos (71 points), Ghana (68), Lesotho (66) and Zambia (64) come next.
+
+  The map uses each country's latest data from 2018–2024; blank countries have no recent data. Source: UIS, February 2026 release.
+
+education-sdg4-e22: |
+  **Nearly all students reach that level in Canada and several European countries, as well as Singapore and Hong Kong.** In their 2021 assessments, **99% in Canada**, **98% in Russia and Croatia**, and **97% in Poland, Italy, the UK and Singapore** met minimum reading proficiency by the end of primary school.
+
+  The map uses each country's latest assessment from 2018–2023; blank countries have no recent data. Source: UIS, February 2026 release.
+
+education-sdg4-e23: |
+  **Schools without power are concentrated in sub-Saharan Africa.** Share of primary schools without electricity:
+
+  - **Chad:** 99% (2024)
+  - **Niger:** 92% (2024)
+  - **DR Congo:** 90% (2023)
+  - **Madagascar:** 88% (2024)
+  - **Sierra Leone:** 83% (2024)
+
+  The map uses each country's latest figure from 2020–2025; blank countries have no recent data. Source: UIS, February 2026 release.
+
+education-opri-o20: |
+  **India, Pakistan and Ethiopia have the most out-of-school children and young people:** about **50 million**, **23 million** and **15 million**.
+
+  The map shows numbers, not shares, for primary to upper secondary ages, using each country's latest figure from 2020–2025. Blank countries, such as Nigeria, have no complete recent figure. Source: UIS, February 2026 release.
+
+education-opri-o21: |
+  **The US and UK host the most students from abroad.** International students in higher education, 2023:
+
+  | Destination | International students |
+  |---|---:|
+  | US | 957,000 |
+  | UK | 748,000 |
+  | Australia | 467,000 |
+  | Germany | 423,000 |
+  | Canada | 389,000 |
+
+  The map uses each country's latest report from 2021–2023; blank countries have no recent data. Source: UIS, February 2026 release.
+
+education-opri-o22: |
+  **About 739 million adults worldwide could not read and write a simple statement in 2024.** Nearly two-thirds were women: about **466 million women** and **273 million men**.
+
+  Adults means people aged 15 and older. Source: UIS, February 2026 release.
+
+education-opri-o23: |
+  **Adults' schooling ranges from about 2 years in some countries to 14 in others.** The latest figures show **14.0 years in the US (2024)**, **8.0 in China (2020)**, **7.3 in India (2023)** and **1.6 in Mali (2020)**.
+
+  This counts completed schooling for people aged 25 and over, using each country's latest figure from 2020–2024. Source: UIS, February 2026 release.
+
+science-s20: |
+  **Israel spends the most on research relative to its economy: 6.35% of GDP**, followed by **South Korea at 4.94%**. Sweden (3.60%), the US (3.45%) and Japan (3.44%) come next. All five figures are for 2023.
+
+  This compares shares of GDP, not total dollars. Blank countries have no recent data. Source: UIS, February 2026 release.
+
+science-s21: |
+  **Women are at least half of researchers in 23 countries.** Myanmar has the highest share at **76.5%**, followed by Kyrgyzstan (**61.4%**) and Azerbaijan (**60.6%**). Eleven of the 23 are in Eastern Europe, the Caucasus and Central Asia, and five in Latin America.
+
+  The map uses each country's latest figure from 2019–2024; unshaded countries are below half or have no recent data. Source: UIS, February 2026 release.
+
+science-s22: |
+  **South Korea ranks second in the world in research spending relative to its economy, and first in researchers per person.**
+
+  - **Research spending:** 4.94% of GDP in 2023, behind Israel's 6.35%.
+  - **Researchers:** 9,472 per million people in 2023, ahead of Sweden and Denmark.
+
+  Rankings use each country's latest figure from 2021–2024 and leave out countries with fewer than 100,000 people. Source: UIS, February 2026 release.
+
+science-s23: |
+  **China is catching up, but the US still leads in research.**
+
+  | Measure | China | US |
+  |---|---:|---:|
+  | Research spending, 2023 | **2.58% of GDP** | **3.45% of GDP** |
+  | Researchers per million people, 2022 | **1,849** | **4,937** |
+
+  China's research spending, as a share of GDP, rose from **34% of the US level in 2000 to 75% in 2023**. Its researchers per million people rose from 15% to 37% of the US level. Source: UIS, February 2026 release.
+
+culture-c20: |
+  **The typical reporting country's government spends about $21 per person a year on its heritage**, cultural and natural, using each country's latest figure from 2020–2024.
+
+  Spending ranges widely: Belgium reported **$369 per person** (2023), Canada **$212** (2024) and Kenya **$4.18** (2024). Thirteen countries spent less than $1.
+
+  Only 74 countries report, so this is not a world average. Dollars are adjusted for price differences between countries. Source: UIS, February 2026 release.
+
+culture-c21: |
+  **National governments usually spend more on heritage, but local governments lead in some countries.** National spending was higher in **30 of 37 countries** with figures for both.
+
+  Local governments supplied **88%** of the combined spending in Belgium, **75%** in Belarus and **68%** in Serbia, but only **5%** in Sweden and **3%** in Malta.
+
+  Latest matched year from 2020–2024; regional governments and private money are not included. Source: UIS, February 2026 release.
+
+culture-c22: |
+  **Nature gets the bigger share of heritage spending in only four countries:**
+
+  - **Colombia:** 90% (2023)
+  - **Estonia:** 72% (2021)
+  - **Georgia:** 69% (2021)
+  - **Ecuador:** 52% (2024)
+
+  In the other 14 of the 18 countries with comparable data, cultural heritage gets more. Blank countries have no comparable data. Source: UIS, February 2026 release.
+
+culture-c23: |
+  **Finland added the most heritage spending per person since before the pandemic, followed by Switzerland.**
+
+  | Country | Added per person | Years compared |
+  |---|---:|---|
+  | Finland | $88.41 | 2019 → 2023 |
+  | Switzerland | $55.67 | 2019 → 2022 |
+  | Slovakia | $27.76 | 2018 → 2024 |
+  | Ecuador | $25.09 | 2019 → 2024 |
+  | Canada | $24.59 | 2019 → 2024 |
+
+  Public spending on cultural and natural heritage, adjusted for inflation, among the 31 countries with figures for both periods. Source: UIS, February 2026 release.

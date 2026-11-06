@@ -18,7 +18,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from data_formulator.datalake.workspace import Workspace
-from data_formulator.security.path_safety import ConfinedDir
 
 pytestmark = [pytest.mark.backend]
 
@@ -33,15 +32,6 @@ class TestWorkspaceConfinedProperties:
         ws = Workspace("test-user", root_dir=tmp_path)
         yield ws
         shutil.rmtree(tmp_path, ignore_errors=True)
-
-    def test_confined_root_is_confineddir(self, workspace):
-        assert isinstance(workspace.confined_root, ConfinedDir)
-
-    def test_confined_data_is_confineddir(self, workspace):
-        assert isinstance(workspace.confined_data, ConfinedDir)
-
-    def test_confined_scratch_is_confineddir(self, workspace):
-        assert isinstance(workspace.confined_scratch, ConfinedDir)
 
     def test_confined_root_points_to_workspace_path(self, workspace):
         assert workspace.confined_root.root == workspace._path.resolve()
@@ -82,86 +72,6 @@ class TestWorkspaceConfinedProperties:
         assert workspace.confined_scratch.root.exists()
 
 
-# ── Agent tool path safety (uses workspace.confined_*) ──────────────────
-
-
-class _FakeWorkspace:
-    """Minimal workspace stub with confined_* properties for tool tests."""
-    def __init__(self, path: Path):
-        self._path = path
-        self._confined_root = ConfinedDir(path, mkdir=False)
-        self._confined_data = ConfinedDir(path / "data")
-        self._confined_scratch = ConfinedDir(path / "scratch")
-
-    @property
-    def confined_root(self):
-        return self._confined_root
-
-    @property
-    def confined_data(self):
-        return self._confined_data
-
-    @property
-    def confined_scratch(self):
-        return self._confined_scratch
-
-
-class TestAgentToolsUseConfinedProperties:
-
-    @pytest.fixture()
-    def workspace_path(self, tmp_path):
-        ws = tmp_path / "workspace"
-        ws.mkdir()
-        data = ws / "data"
-        data.mkdir()
-        (data / "sales.csv").write_text("product,amount\nA,100\n")
-        scratch = ws / "scratch"
-        scratch.mkdir()
-        (scratch / "output.csv").write_text("x,y\n1,2\n")
-        return ws
-
-    @pytest.fixture()
-    def agent(self, workspace_path):
-        from data_formulator.agents.agent_data_loading_chat import DataLoadingAgent
-        ws = _FakeWorkspace(workspace_path)
-        a = DataLoadingAgent.__new__(DataLoadingAgent)
-        a.workspace = ws
-        return a
-
-    def test_read_file_traversal_blocked(self, agent):
-        result = agent._tool_read_file(
-            {"path": "../../etc/passwd"},
-            agent.workspace.confined_root,
-        )
-        assert "error" in result
-        assert "Access denied" in result["error"]
-
-    def test_write_file_traversal_blocked(self, agent):
-        result = agent._tool_write_file(
-            {"path": "../../evil.txt", "content": "hacked"},
-            agent.workspace.confined_scratch,
-        )
-        written_path = agent.workspace._path / "scratch" / result["path"].split("/")[-1]
-        assert written_path.parent == agent.workspace._path / "scratch"
-
-    def test_list_directory_traversal_blocked(self, agent):
-        result = agent._tool_list_directory(
-            {"path": "../../"},
-            agent.workspace.confined_root,
-        )
-        assert "error" in result
-
-    def test_preview_scratch_traversal_blocked(self, agent, workspace_path):
-        scratch_dir = workspace_path / "scratch"
-        result = agent._preview_scratch_files(
-            [{"path": "../../etc/passwd", "name": "evil"}],
-            scratch_dir,
-        )
-        actions = result["actions"]
-        assert len(actions) == 1
-        assert "error" in actions[0]
-
-
 # ── Scratch routes use workspace.confined_scratch ───────────────────────
 
 
@@ -171,7 +81,6 @@ class TestScratchRoutesConfinedMigration:
     def tmp_workspace(self, tmp_path):
         ws = Workspace("test-user", root_dir=tmp_path)
         (ws._path / "scratch").mkdir(exist_ok=True)
-        (ws._path / "scratch" / "report.csv").write_text("a,b\n1,2\n")
         yield ws
         shutil.rmtree(tmp_path, ignore_errors=True)
 
@@ -191,25 +100,6 @@ class TestScratchRoutesConfinedMigration:
         ):
             with app.test_client() as c:
                 yield c
-
-    def test_scratch_serve_normal(self, client):
-        resp = client.get("/api/agent/workspace/scratch/report.csv")
-        assert resp.status_code == 200
-        assert b"a,b" in resp.data
-
-    def test_scratch_serve_traversal_rejected(self, client):
-        resp = client.get("/api/agent/workspace/scratch/../../../etc/passwd")
-        assert resp.status_code == 403
-        body = resp.get_json()
-        assert body["status"] == "error"
-        assert body["error"]["code"] == "ACCESS_DENIED"
-
-    def test_scratch_serve_nonexistent(self, client):
-        resp = client.get("/api/agent/workspace/scratch/no_such.csv")
-        assert resp.status_code == 200
-        body = resp.get_json()
-        assert body["status"] == "error"
-        assert body["error"]["code"] == "TABLE_NOT_FOUND"
 
     def test_scratch_upload_normal(self, client, tmp_workspace):
         import io

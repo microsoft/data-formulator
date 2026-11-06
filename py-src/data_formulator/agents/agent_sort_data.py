@@ -3,7 +3,7 @@
 
 import json
 from data_formulator.agent_config import reasoning_effort_for
-from data_formulator.agents.agent_utils import extract_json_objects
+from data_formulator.agents.agent_utils import extract_json_objects, json_response_format
 from data_formulator.agents.agent_language import inject_language_instruction
 
 import logging
@@ -11,6 +11,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 _AGENT_ID = "sort_data"
+_RESPONSE_FORMAT = json_response_format("sorted_values", {
+    "type": "object", "additionalProperties": False, "required": ["name", "sorted_values", "reason"],
+    "properties": {"name": {"type": "string"}, "sorted_values": {"type": "array", "items": {"type": "string"}},
+                   "reason": {"type": "string"}},
+})
 
 
 SYSTEM_PROMPT = '''You are a data scientist to help user to sort data.
@@ -93,7 +98,8 @@ class SortDataAgent(object):
                     {"role":"user","content": user_query}]
         
         ###### the part that calls open_ai
-        response = self.client.get_completion(messages = messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
+        response = self.client.get_completion(messages = messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model),
+                                              response_format=_RESPONSE_FORMAT)
 
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
 

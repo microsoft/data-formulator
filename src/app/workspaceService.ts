@@ -8,13 +8,51 @@
  * manager is active. All backends expose the same API contract.
  */
 
-import { fetchWithIdentity, getUrls } from './utils';
+import { CONNECTOR_ACTION_URLS, currentStore, fetchWithIdentity, getUrls } from './utils';
 import { apiRequest, ApiRequestError, assertDownloadResponseOk } from './apiClient';
 import { workspaceDB, TableIndexEntry } from './workspaceDB';
 import { INPUT_TABLE_PREVIEW_ROW_LIMIT, replaceInputTablePreviews } from './inputTablePreviewCache';
 import { migrateState } from './stateMigrations';
 import { workspaceTableIdOf } from './tableResolution';
-import type { InputTable } from '../components/ComponentType';
+import type { InputTable, ExternalTableReference } from '../components/ComponentType';
+import type { ServerConfig } from './dfSlice';
+
+export interface ScheduledRunProvenance {
+    scheduleId: string;
+    scheduleName: string;
+    scheduledFor: string;
+    forked?: boolean;
+}
+
+export function createExternalTableReference(reference: Omit<ExternalTableReference, 'id'>): ExternalTableReference {
+    return { ...reference, id: `external:${encodeURIComponent(reference.connectorId)}:${encodeURIComponent(reference.tableKey)}` };
+}
+
+export function externalReferenceTitle(reference: ExternalTableReference): string {
+    let title = reference.displayName || reference.sourceTable.name;
+    if (title === reference.sourceTable.name) {
+        try { title = new URL(title).pathname || title; } catch {}
+        title = title.split(/[\\/]/).filter(Boolean).pop() || reference.sourceTable.name;
+    }
+    return title;
+}
+
+export function isLargeConnectorTable(metadata?: Record<string, any> | null,
+    config?: Pick<ServerConfig, 'EXTERNAL_TABLE_MAX_ROWS' | 'EXTERNAL_TABLE_MAX_BYTES'>): boolean {
+    return Number(metadata?.row_count) > (config?.EXTERNAL_TABLE_MAX_ROWS ?? 1_000_000)
+        || ['original_size_bytes', 'size_bytes', 'file_size'].some(key =>
+            Number(metadata?.[key]) > (config?.EXTERNAL_TABLE_MAX_BYTES ?? 512 * 1024 * 1024));
+}
+
+export function isSemanticConnectorTable(metadata?: Record<string, any> | null): boolean {
+    return metadata?.query_model === 'semantic';
+}
+
+/** Semantic models and large tables are added as references; the agent queries them. */
+export function loadsAsConnectorReference(metadata?: Record<string, any> | null,
+    config?: Pick<ServerConfig, 'EXTERNAL_TABLE_MAX_ROWS' | 'EXTERNAL_TABLE_MAX_BYTES'>): boolean {
+    return isSemanticConnectorTable(metadata) || isLargeConnectorTable(metadata, config);
+}
 
 export interface WorkspaceSummary {
     id: string;
@@ -23,12 +61,35 @@ export interface WorkspaceSummary {
     saved_at: string | null;
     table_count?: number | null;
     chart_count?: number | null;
+    source_ids?: string[];
     read_only?: boolean;
+    scheduled_run?: ScheduledRunProvenance;
+    starred?: boolean;
+}
+
+export interface WorkspaceFile {
+    temporary?: boolean;
+    display_name?: string;
+    name: string;
+    filename: string;
+    created_at: string;
+    content_hash: string;
+    file_size: number;
+    media_type: string | null;
+}
+
+export interface WorkspaceFilePreview {
+    name: string;
+    kind: 'text' | 'table';
+    content: string;
+    truncated: boolean;
+    columns?: string[];
+    rows?: Record<string, unknown>[];
+    row_count?: number;
 }
 
 async function isEphemeralBackend(): Promise<boolean> {
-    const { store } = await import('./store');
-    return store.getState().serverConfig?.WORKSPACE_BACKEND === 'ephemeral';
+    return (await currentStore()).getState().serverConfig?.WORKSPACE_BACKEND === 'ephemeral';
 }
 
 function createRecoveryState(state: Record<string, unknown>): Record<string, unknown> {
@@ -70,6 +131,7 @@ function createTableIndex(state: Record<string, any>): TableIndexEntry[] {
 // list consumers can refresh without coupling to each other.
 
 const WORKSPACE_LIST_CHANGED = 'df:workspace-list-changed';
+const WORKSPACE_FILES_CHANGED = 'df:workspace-files-changed';
 
 export function onWorkspaceListChanged(cb: () => void): () => void {
     window.addEventListener(WORKSPACE_LIST_CHANGED, cb);
@@ -80,12 +142,41 @@ function _notifyListChanged(): void {
     window.dispatchEvent(new Event(WORKSPACE_LIST_CHANGED));
 }
 
+/** Listen for changes to the session's files; `added` are files known to exist already, before a re-list. */
+export function onWorkspaceFilesChanged(cb: (added: WorkspaceFile[]) => void): () => void {
+    const listener = (event: Event) => cb((event as CustomEvent<WorkspaceFile[] | undefined>).detail ?? []);
+    window.addEventListener(WORKSPACE_FILES_CHANGED, listener);
+    return () => window.removeEventListener(WORKSPACE_FILES_CHANGED, listener);
+}
+
+/**
+ * Tell file lists the session's files changed. Pass the files a result just added, so lists show them at once:
+ * right after a load the browser's few connections are busy with per-table requests, and a re-list can wait seconds.
+ */
+export function notifyWorkspaceFilesChanged(added: WorkspaceFile[] = []): void {
+    window.dispatchEvent(new CustomEvent<WorkspaceFile[]>(WORKSPACE_FILES_CHANGED, { detail: added }));
+}
+
 type PreparedInputTablePreview = {
     table: InputTable;
     rows: Record<string, unknown>[];
 };
 
 let workspaceLoadGeneration = 0;
+
+// The server's revision of each session's saved state that this tab's copy is based on: set by a load and by each
+// save. A save sends it, and the server refuses one older than what it holds (another tab or window saved since).
+// Kept out of the store on purpose: copies restored from browser storage never carry one, and recording it in state
+// would itself trigger an auto-save.
+const stateRevisions = new Map<string, number>();
+
+/** The server refused a save: this copy of the session is older than the saved one. */
+export class SessionConflictError extends Error {
+    readonly name = 'SessionConflictError';
+    constructor(readonly sessionId: string) {
+        super('This session was saved from another tab or window since this copy was loaded.');
+    }
+}
 
 export class WorkspaceLoadSupersededError extends Error {
     readonly name = 'WorkspaceLoadSupersededError';
@@ -145,8 +236,8 @@ export async function listWorkspaces(): Promise<WorkspaceSummary[]> {
         .sort((left, right) => (right.saved_at || '').localeCompare(left.saved_at || ''));
 }
 
-/** Load a workspace's saved state. Returns null if not found. */
-export async function loadWorkspace(id: string): Promise<{ state: Record<string, any>; displayName: string; readOnly: boolean } | null> {
+/** Load a workspace's saved state. Returns null if not found. A scheduled run's checkpoint comes back as `workflowRun`. */
+export async function loadWorkspace(id: string): Promise<{ state: Record<string, any>; displayName: string; readOnly: boolean; workflowRun?: any } | null> {
     const generation = ++workspaceLoadGeneration;
     const ephemeral = await isEphemeralBackend();
     assertCurrentWorkspaceLoad(generation);
@@ -157,7 +248,19 @@ export async function loadWorkspace(id: string): Promise<{ state: Record<string,
             body: JSON.stringify({ id }),
         });
         if (!data.state) return null;
+        if (typeof data.revision === 'number') stateRevisions.set(id, data.revision);
         const state = migrateState(data.state);
+        if (data.workflow_run) {
+            const workflowPanel = await import('../views/WorkflowPanel');
+            const run = data.workflow_run;
+            const turn = workflowPanel.workflowTextTurn(run, state.textTurns?.find((item: any) => item.workflow?.runId === run.id));
+            const summaryId = `scheduled-summary-${run.id}`;
+            state.textTurns = [...(state.textTurns || []).filter((item: any) => item.id !== summaryId && item.id !== turn.id), turn];
+            if (run.status !== 'completed' || !state.focusedId) {
+                state.focusedId = { type: 'text', textId: turn.id };
+                state.viewMode = 'editor';
+            }
+        }
         const previews = await prepareInputTablePreviews(state, id);
         assertCurrentWorkspaceLoad(generation);
         replaceInputTablePreviews(previews);
@@ -166,7 +269,8 @@ export async function loadWorkspace(id: string): Promise<{ state: Record<string,
         if (ephemeral) {
             await workspaceDB.save(id, displayName, createRecoveryState(state), createTableIndex(state));
         }
-        return { state, displayName, readOnly: false };
+        return { state, displayName, readOnly: data.read_only === true || state.activeWorkspace?.readOnly === true,
+            ...(data.workflow_run ? { workflowRun: data.workflow_run } : {}) };
     } catch (error) {
         if (error instanceof WorkspaceLoadSupersededError) throw error;
         assertCurrentWorkspaceLoad(generation);
@@ -213,18 +317,46 @@ export async function updateWorkspaceMeta(id: string, displayName: string): Prom
     _notifyListChanged();
 }
 
-/** Save current workspace state (called by auto-save). */
+/** Star or unstar one of the user's sessions; starred sessions are listed first. */
+export async function setWorkspaceStarred(id: string, starred: boolean): Promise<void> {
+    await apiRequest(getUrls().SESSION_UPDATE_META, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, starred }),
+    });
+    _notifyListChanged();
+}
+
+// Saves from this tab go one at a time, so each is based on the revision the previous one returned.
+let saveQueue: Promise<unknown> = Promise.resolve();
+
+/** Save current workspace state (called by auto-save). Throws SessionConflictError when the server holds a newer copy. */
 export async function saveWorkspaceState(state: Record<string, unknown>): Promise<void> {
-    const { store } = await import('./store');
-    const fullState = store.getState();
+    const fullState = (await currentStore()).getState();
     const ws = fullState.activeWorkspace;
     if (!ws || isWorkspaceReadOnly(ws)) return;
 
-    await apiRequest(getUrls().SESSION_SAVE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: ws.id, state }),
-    });
+    const previous = saveQueue;
+    let done!: () => void;
+    saveQueue = new Promise<void>(resolve => { done = resolve; });
+    try {
+        await previous.catch(() => undefined);
+        const baseRevision = stateRevisions.get(ws.id);
+        let data: { revision?: number };
+        try {
+            ({ data } = await apiRequest<{ revision?: number }>(getUrls().SESSION_SAVE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: ws.id, state, ...(baseRevision !== undefined ? { base_revision: baseRevision } : {}) }),
+            }));
+        } catch (error) {
+            if (error instanceof ApiRequestError && error.apiError.code === 'SESSION_CONFLICT') throw new SessionConflictError(ws.id);
+            throw error;
+        }
+        if (typeof data?.revision === 'number') stateRevisions.set(ws.id, data.revision);
+    } finally {
+        done();
+    }
     if (fullState.serverConfig?.WORKSPACE_BACKEND === 'ephemeral') {
         await workspaceDB.save(
             ws.id,
@@ -270,7 +402,10 @@ export async function importWorkspace(
         method: 'POST',
         body: formData,
     });
-    return migrateState(data.state);
+    const state = migrateState(data.state);
+    // Input tables keep their preview rows outside the state, so load them as opening a session does.
+    replaceInputTablePreviews(await prepareInputTablePreviews(state, workspaceId));
+    return state;
 }
 
 // ── Table operations ────────────────────────────────────────────────────
@@ -295,4 +430,111 @@ export function deleteTablesFromWorkspace(tableIds: string[]): void {
 
 export function isWorkspaceReadOnly(workspace: { readOnly?: boolean } | null | undefined): boolean {
     return workspace?.readOnly === true;
+}
+
+/** Whether a workspace file name is invalid; names may sit in folders (`notes/plan.md`), up to 4 levels. */
+export function isInvalidWorkspaceFileName(name: string): boolean {
+    const segments = name.split('/');
+    return !name || name.includes('\\') || name.length > 255 || segments.length > 4
+        || segments.some(segment => !segment || segment !== segment.trim() || segment === '.' || segment === '..'
+            || segment.startsWith('.write-') || Array.from(segment).some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127));
+}
+
+export async function listWorkspaceFiles(): Promise<WorkspaceFile[]> {
+    const { data } = await apiRequest<{ files: WorkspaceFile[] }>('/api/workspace/files');
+    return data.files;
+}
+
+export async function previewConnectorFile(connectorId: string, sourcePath: string, signal?: AbortSignal): Promise<File> {
+    const response = await fetchWithIdentity('/api/connectors/preview-file', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
+        body: JSON.stringify({ connector_id: connectorId, source_path: sourcePath }),
+    });
+    await assertDownloadResponseOk(response, 'File preview failed');
+    const blob = await response.blob();
+    return new File([blob], sourcePath.split('/').pop() || sourcePath, { type: blob.type });
+}
+
+export async function importConnectorFile(connectorId: string, sourcePath: string): Promise<WorkspaceFile> {
+    const { data } = await apiRequest<WorkspaceFile>(CONNECTOR_ACTION_URLS.IMPORT_FILE, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connector_id: connectorId, source_path: sourcePath }),
+    });
+    notifyWorkspaceFilesChanged();
+    return data;
+}
+
+export async function uploadWorkspaceFile(file: File): Promise<WorkspaceFile> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await apiRequest<WorkspaceFile>('/api/workspace/files', {
+        method: 'POST',
+        body: formData,
+    });
+    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
+    return data;
+}
+
+export async function deleteWorkspaceFile(name: string): Promise<void> {
+    await apiRequest(`/api/workspace/files/${encodeURIComponent(name)}`, {
+        method: 'DELETE',
+    });
+    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
+}
+
+export async function renameWorkspaceFile(name: string, newName: string): Promise<WorkspaceFile> {
+    const { data } = await apiRequest<WorkspaceFile>(`/api/workspace/files/${encodeURIComponent(name)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName }),
+    });
+    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
+    return data;
+}
+
+export async function createWorkspaceTextFile(name: string): Promise<WorkspaceFile> {
+    const { data } = await apiRequest<WorkspaceFile>('/api/workspace/files/text', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+    });
+    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
+    return data;
+}
+
+export async function readWorkspaceTextFile(name: string): Promise<WorkspaceFile & { content: string }> {
+    const { data } = await apiRequest<WorkspaceFile & { content: string }>(
+        `/api/workspace/files/${encodeURIComponent(name)}/text`,
+    );
+    return data;
+}
+
+export async function saveWorkspaceTextFile(name: string, content: string, contentHash: string): Promise<WorkspaceFile & { content: string }> {
+    const { data } = await apiRequest<WorkspaceFile & { content: string }>(
+        `/api/workspace/files/${encodeURIComponent(name)}/text`,
+        { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content, content_hash: contentHash }) },
+    );
+    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
+    return data;
+}
+
+export async function previewWorkspaceFile(name: string): Promise<WorkspaceFilePreview> {
+    const { data } = await apiRequest<WorkspaceFilePreview>(
+        `/api/workspace/files/${encodeURIComponent(name)}/preview`,
+    );
+    return data;
+}
+
+export async function previewUploadedWorkspaceFile(file: File): Promise<WorkspaceFilePreview> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await apiRequest<WorkspaceFilePreview>('/api/workspace/files/preview', {
+        method: 'POST',
+        body: formData,
+    });
+    return data;
+}
+
+export async function downloadWorkspaceFile(name: string): Promise<Blob> {
+    const response = await fetchWithIdentity(`/api/workspace/files/${encodeURIComponent(name)}`);
+    await assertDownloadResponseOk(response, 'File download failed');
+    return response.blob();
 }

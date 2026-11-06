@@ -61,6 +61,7 @@ class MongoDBDataLoader(ExternalDataLoader):
         return "none"
 
     AUTH_GUIDE = "mongodb.md"
+    QUERY_EXECUTION = "server_query"
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

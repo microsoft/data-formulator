@@ -1,5 +1,7 @@
 import {
+    CLARIFICATION_OPTION_ICONS,
     ClarificationOption,
+    ClarificationOptionIcon,
     ClarificationQuestion,
     ClarificationResponse,
 } from '../components/ComponentType';
@@ -11,7 +13,7 @@ export interface NormalizedClarification {
 }
 
 /** Resolve an option's user-visible label.
- *  Accepts a bare string or a `{label, label_code?}` dict; returns null
+ *  Accepts a bare string or a `{label, label_code?, value?, icon?}` dict; returns null
  *  if no usable label can be produced. The `label_code` is a backend i18n
  *  key consumed by `translateBackend`; we don't keep it on the normalized
  *  output because nothing downstream reads it. */
@@ -29,13 +31,17 @@ function normalizeOption(raw: any): ClarificationOption | null {
     const value = typeof raw.value === 'string' && raw.value.trim()
         ? raw.value.trim()
         : undefined;
-    return label ? { label, ...(value ? { value } : {}) } : null;
+    const icon = (CLARIFICATION_OPTION_ICONS as readonly unknown[]).includes(raw.icon)
+        ? raw.icon as ClarificationOptionIcon
+        : undefined;
+    return label ? { label, ...(value ? { value } : {}), ...(icon ? { icon } : {}) } : null;
 }
 
 /** Resolve a question's translated text + its options. The `*_code` /
  *  `text_params` keys are i18n inputs only — they're not preserved on the
  *  normalized output. `responseType` defaults to `single_choice` when
- *  options exist, else `free_text` (mirrors the backend default). */
+ *  options exist, else `free_text` (mirrors the backend default); a
+ *  `multi_choice` without options also falls back to `free_text`. */
 function normalizeQuestion(raw: any): ClarificationQuestion | null {
     if (!raw || typeof raw !== 'object') return null;
 
@@ -52,6 +58,7 @@ function normalizeQuestion(raw: any): ClarificationQuestion | null {
         .filter((option: ClarificationOption | null): option is ClarificationOption => option !== null);
 
     const responseType = raw.responseType === 'free_text' || raw.responseType === 'single_choice'
+        || (raw.responseType === 'multi_choice' && options.length > 0)
         ? raw.responseType
         : (options.length > 0 ? 'single_choice' : 'free_text');
 

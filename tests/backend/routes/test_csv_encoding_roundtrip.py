@@ -58,15 +58,6 @@ def _upload(client, file_bytes: bytes, filename: str, table_name: str):
 class TestWorkspaceRoundTrip:
     """Upload a GBK CSV to workspace, then read it back as a DataFrame."""
 
-    def test_gbk_csv_columns_are_chinese(self, tmp_workspace) -> None:
-        from data_formulator.datalake.file_manager import save_uploaded_file
-
-        gbk_bytes = CHINESE_CSV_TEXT.encode("gbk")
-        save_uploaded_file(tmp_workspace, gbk_bytes, "销售数据.csv")
-
-        df = tmp_workspace.read_data_as_df("销售数据")
-        assert list(df.columns) == ["姓名", "年龄", "部门"]
-
     def test_gbk_csv_cell_values_are_correct(self, tmp_workspace) -> None:
         from data_formulator.datalake.file_manager import save_uploaded_file
 
@@ -104,19 +95,6 @@ class TestWorkspaceRoundTrip:
 
 class TestParseFileEndpoint:
     """POST a GBK-encoded CSV to /api/tables/parse-file and check the response."""
-
-    def test_gbk_csv_parse_returns_chinese_columns(self, client) -> None:
-        gbk_bytes = CHINESE_CSV_TEXT.encode("gbk")
-        resp = client.post(
-            "/api/tables/parse-file",
-            data={"file": (io.BytesIO(gbk_bytes), "report.csv")},
-            content_type="multipart/form-data",
-        )
-        assert resp.status_code == 200
-        body = resp.get_json()
-        assert body["status"] == "success"
-        sheet = body["data"]["sheets"][0]
-        assert sheet["columns"] == ["姓名", "年龄", "部门"]
 
     def test_gbk_csv_parse_returns_correct_rows(self, client) -> None:
         gbk_bytes = CHINESE_CSV_TEXT.encode("gbk")

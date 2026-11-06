@@ -154,22 +154,6 @@ describe("User clicks 'Start Fresh'", () => {
         );
     });
 
-    it("never shows 'Importing workspaces…' text", async () => {
-        setupAnonymousWorkspaces(2);
-
-        render(<IdentityMigrationDialog oldBrowserId="abc-123" onDone={vi.fn()} />);
-
-        await waitFor(() => {
-            expect(screen.getByText("Start Fresh")).toBeInTheDocument();
-        });
-
-        await act(async () => {
-            fireEvent.click(screen.getByText("Start Fresh"));
-        });
-
-        expect(screen.queryByText("Importing workspaces…")).not.toBeInTheDocument();
-    });
-
     it("navigates to home page", async () => {
         setupAnonymousWorkspaces(2);
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 import re
 
 _logger = logging.getLogger(__name__)
@@ -77,7 +78,24 @@ def attach_reasoning_content(msg: dict, choice_message) -> dict:
     rc = getattr(choice_message, "reasoning_content", None)
     if rc is not None:
         msg["reasoning_content"] = rc
+    items = accumulate_reasoning_items([], choice_message)
+    if items:
+        msg["reasoning_items"] = items
     return msg
+
+
+def accumulate_reasoning_items(accumulated: list[dict], delta) -> list[dict]:
+    """Retain complete opaque reasoning items for replay, replacing repeated snapshots by ID."""
+    items = list(accumulated)
+    for incoming in getattr(delta, "reasoning_items", None) or []:
+        item = incoming.model_dump(exclude_none=True) if hasattr(incoming, "model_dump") else dict(incoming)
+        existing = next((index for index, previous in enumerate(items)
+                         if item.get("id") and previous.get("id") == item["id"]), None)
+        if existing is None:
+            items.append(item)
+        else:
+            items[existing] = item
+    return items
 
 
 def accumulate_reasoning_content(
@@ -385,6 +403,11 @@ def _lenient_json_loads(json_str: str):
         return json.loads(cleaned)
 
 
+def json_response_format(name: str, schema: dict, strict: bool = True) -> dict:
+    """Ask for JSON matching ``schema``; use ``strict=False`` for open-ended shapes (strict needs fixed keys)."""
+    return {"type": "json_schema", "json_schema": {"name": name, "schema": schema, "strict": strict}}
+
+
 def extract_json_objects(text):  
     """Extracts JSON objects and arrays from a text string.  
     Returns a list of parsed JSON objects and arrays.  
@@ -467,7 +490,7 @@ def supplement_missing_block(client, messages, assistant_content,
             *messages,
             {"role": "assistant", "content": assistant_content},
             {"role": "user", "content": prompt},
-        ])
+        ], reasoning_effort="low")
         elapsed = time.time() - t0
         supp_text = supp_resp.choices[0].message.content
 
@@ -507,10 +530,22 @@ def get_field_summary(field_name, df, field_sample_size, max_val_chars=100,
             return str(val)
         return val
     
+    # Missing values (None, NaN, NaT) are not shown as values.
+    present = df[field_name].dropna().values
     try:
-        values = sorted([make_hashable(x) for x in list(set([make_hashable(x) for x in df[field_name].values])) if x is not None])
-    except Exception:
-        values = [make_hashable(x) for x in list(set([make_hashable(x) for x in df[field_name].values])) if x is not None]
+        # Vectorized: a Python pass over every cell takes seconds on large tables, and this runs
+        # for each table in the context of every agent request.
+        distinct = pd.unique(present)
+    except TypeError:
+        # Unhashable cells (dynamic/JSON columns) are de-duplicated as strings.
+        distinct = list({make_hashable(x) for x in present})
+    if isinstance(distinct, np.ndarray) and distinct.dtype.kind in "biufcmM":
+        values = list(np.sort(distinct))
+    else:
+        try:
+            values = sorted(distinct)
+        except TypeError:
+            values = list(distinct)
 
     val_sample = ""
 
@@ -552,7 +587,10 @@ def _format_import_options(opts: dict | None) -> str:
     parts: list[str] = []
     sf = opts.get("source_filters")
     if sf and isinstance(sf, list) and len(sf) > 0:
-        parts.append(f"{len(sf)} filter(s)")
+        parts.append("filters " + json.dumps(sf, ensure_ascii=False, default=str))
+    columns = opts.get("columns")
+    if isinstance(columns, list) and columns:
+        parts.append("selected columns " + json.dumps(columns, ensure_ascii=False, default=str))
     sc = opts.get("sort_columns")
     so = opts.get("sort_order", "asc")
     if sc and isinstance(sc, list) and len(sc) > 0:
@@ -583,8 +621,8 @@ def generate_data_summary(
     Use WorkspaceWithTempData context manager to mount temp tables to workspace.
 
     When ``primary_tables`` is provided, the output is structured into tiered sections:
-    - **[PRIMARY TABLE]** / **[PRIMARY TABLES]**: Full detail for the tables the user is focused on.
-    - **[OTHER AVAILABLE TABLES]**: Full detail for the remaining tables.
+    - **[PRIMARY ANALYSIS INPUTS]**: Full detail for the input tables the user is focused on.
+    - **[OTHER ANALYSIS INPUTS]**: Full detail for the remaining input tables.
     Sections are omitted when empty.
 
     Args:
@@ -629,7 +667,8 @@ def generate_data_summary(
         workspace,
     )
     col_meta_cache: dict[str, dict[str, dict]] = {}
-    table_desc_cache.update(catalog_table_descs)
+    for table_name, description in catalog_table_descs.items():
+        table_desc_cache.setdefault(table_name, description)
     for tname, col_descs in catalog_col_descs.items():
         col_desc_cache.setdefault(tname, {}).update(col_descs)
     table_extra_cache.update(catalog_extras)
@@ -737,10 +776,9 @@ def generate_data_summary(
 
         sections = []
         if primary_parts:
-            header = "[PRIMARY TABLE]" if len(primary_parts) == 1 else "[PRIMARY TABLES]"
-            sections.append(header + "\n\n" + separator.join(primary_parts))
+            sections.append("[PRIMARY ANALYSIS INPUTS]\n\n" + separator.join(primary_parts))
         if other_parts:
-            sections.append("[OTHER AVAILABLE TABLES]\n\n" + separator.join(other_parts))
+            sections.append("[OTHER ANALYSIS INPUTS]\n\n" + separator.join(other_parts))
         return "\n\n".join(sections)
 
     # Join with visual separators (no tiering)

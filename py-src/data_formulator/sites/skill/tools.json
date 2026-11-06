@@ -1,0 +1,25 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "load_datasets",
+      "description": "Load whole datasets of this demo into the session: their tables (with descriptions) and their data guide and docs. Shared tables load once; datasets already loaded are skipped. The run continues after loading.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "datasets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Dataset ids from the demo skill's list, e.g. [\"science\"]; several when the question spans them."
+          }
+        },
+        "required": [
+          "datasets"
+        ]
+      }
+    }
+  }
+]

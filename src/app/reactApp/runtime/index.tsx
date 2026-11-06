@@ -1,0 +1,152 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+/**
+ * DF React app runtime, bundled into one script and injected into the sandboxed
+ * app frame after the DF bridge (dfAppRuntime.js). The host compiles the app to
+ * CommonJS (Sucrase) and calls `__DF_REACT__.mount(factory)`; `require` resolves
+ * only the modules listed here.
+ */
+
+import React from 'react';
+import * as ReactJsxRuntime from 'react/jsx-runtime';
+import { createRoot } from 'react-dom/client';
+import * as MUI from '@mui/material';
+import GlobalStyles from '@mui/material/GlobalStyles';
+import { ThemeProvider } from '@mui/material/styles';
+
+import { createDfTheme } from '../../theme';
+import { appConfig, bridge, errorMessage, reportError } from './bridge';
+import * as chart from './chart';
+import * as data from './data';
+import * as icons from './icons';
+import { AppThemeProvider } from './appTheme';
+import { DEFAULT_DENSITY, densityTheme } from './density';
+import { DataTable } from './table';
+import * as controls from './controls';
+import { optionalModule } from './optional/register';
+import { ErrorState } from './states';
+
+export const MODULES: Record<string, unknown> = {
+    'react': React,
+    'react/jsx-runtime': ReactJsxRuntime,
+    '@df/data': { useQuery: data.useQuery, useDistinct: data.useDistinct, useTable: data.useTable,
+        useSql: data.useSql, useSourceQuery: data.useSourceQuery },
+    '@df/chart': { ...chart, ...controls, DataTable, AppTheme: AppThemeProvider },
+    '@df/format': {
+        get format() { return bridge().format; },
+        ...Object.fromEntries(['number', 'compact', 'percent', 'delta', 'date'].map(name =>
+            [name, (...args: unknown[]) => (bridge().format as any)[name](...args)])),
+    },
+    '@df/icons': icons,
+    '@mui/material': MUI,
+};
+
+/** Modules in their own bundles, injected only into apps that import them (see optional/). */
+export const OPTIONAL_MODULES = ['d3', 'lodash', '@df/geo', '@mui/icons-material'];
+
+export const ALLOWED_MODULES = [...Object.keys(MODULES), ...OPTIONAL_MODULES];
+
+/** `@mui/material/Box`, `@mui/material/styles`: a path into MUI, as its docs write imports. */
+const MUI_PATH = /^@mui\/material\/([A-Za-z]+)$/;
+
+function muiPath(name: string): unknown {
+    const part = MUI_PATH.exec(name)?.[1];
+    if (!part) return undefined;
+    // `styles`, `colors` and the like are the root's named exports; a component path is its default export.
+    if (/^[a-z]/.test(part)) return MUI;
+    const component = (MUI as Record<string, unknown>)[part];
+    return component === undefined ? undefined : { __esModule: true, default: component };
+}
+
+export function requireModule(name: string): unknown {
+    if (Object.prototype.hasOwnProperty.call(MODULES, name)) return MODULES[name];
+    const fromMui = muiPath(name);
+    if (fromMui !== undefined) return fromMui;
+    // `@mui/icons-material/TrendingUp`: one icon, as the default export of its path.
+    const icon = /^@mui\/icons-material\/([A-Za-z0-9]+)$/.exec(name)?.[1];
+    if (icon) {
+        const icons = optionalModule('@mui/icons-material') as Record<string, unknown> | undefined;
+        if (icons?.[icon]) return { __esModule: true, default: icons[icon] };
+        if (!icons) throw new Error('"@mui/icons-material" did not load in this app. Reload the app to try again.');
+        throw new Error(`"${name}" is not an MUI icon.`);
+    }
+    if (OPTIONAL_MODULES.includes(name)) {
+        const module = optionalModule(name);
+        if (module !== undefined) return module;
+        throw new Error(`"${name}" did not load in this app. Reload the app to try again.`);
+    }
+    throw new Error(`Cannot import "${name}". Apps can import only: ${ALLOWED_MODULES.join(', ')}.`);
+}
+
+class ErrorBoundary extends React.Component<{ children?: React.ReactNode }, { error: string | null }> {
+    state = { error: null as string | null };
+    static getDerivedStateFromError(error: unknown) { return { error: errorMessage(error) }; }
+    componentDidCatch(error: unknown) { reportError(`App crashed: ${errorMessage(error)}`, true); }
+    render() {
+        if (this.state.error) return <MUI.Box sx={{ p: 2 }}><ErrorState error={this.state.error} /></MUI.Box>;
+        return this.props.children;
+    }
+}
+
+const isComponent = (value: unknown) => typeof value === 'function'
+    || (typeof value === 'object' && value !== null && '$$typeof' in value);
+
+/** Evaluate the compiled app module and render its default export. */
+export function mount(factory: (require: (name: string) => unknown, module: { exports: any }, exports: any) => void,
+    container?: Element | null) {
+    // Runtime scripts run in <head>, before the app root in <body> exists.
+    if (container === undefined && document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => mount(factory), { once: true });
+        return undefined;
+    }
+    const target = container === undefined ? document.getElementById('df-app-root') : container;
+    if (!target) throw new Error('App root element is missing.');
+    const module = { exports: {} as any };
+    let App: unknown;
+    try {
+        factory(requireModule, module, module.exports);
+        App = module.exports.default ?? module.exports.App;
+        if (!isComponent(App)) throw new Error('The app must `export default` a React component.');
+    } catch (error) {
+        reportError(errorMessage(error), true);
+        App = () => <MUI.Box sx={{ p: 2 }}><ErrorState error={errorMessage(error)} /></MUI.Box>;
+    }
+    const AppComponent = App as React.ComponentType;
+    const root = createRoot(target);
+    root.render(
+        <ThemeProvider theme={densityTheme(createDfTheme(appConfig().paletteKey ?? ''), appConfig().density ?? DEFAULT_DENSITY)}>
+            <GlobalStyles styles={theme => ({
+                // The scrollbar's colors; a dark AppTheme page sets its own (appTheme.tsx).
+                ':root': { '--df-scrollbar': 'rgba(0, 0, 0, 0.14)', '--df-scrollbar-hover': 'rgba(0, 0, 0, 0.28)' },
+                'html, body': {
+                    margin: 0, background: '#f6f7f9', color: theme.palette.text.primary,
+                    fontFamily: theme.typography.fontFamily, lineHeight: 1.5,
+                    WebkitFontSmoothing: 'antialiased', MozOsxFontSmoothing: 'grayscale',
+                },
+                // MUI sizes its type in rem against a 16 px root; a smaller root shrinks every heading, caption, and label.
+                html: { fontSize: 16 },
+                body: { fontSize: 'var(--df-text-sm, 13px)' },
+                'button, input, select, textarea': { font: 'inherit' },
+                '*, *::before, *::after': { boxSizing: 'border-box' },
+                // Thin, muted scrollbars everywhere (a table, a menu, the page), always shown so more is findable.
+                // Chrome and Firefox take the standard properties; Safari the -webkit- ones.
+                '*': { scrollbarWidth: 'thin', scrollbarColor: 'var(--df-scrollbar) transparent' },
+                '*::-webkit-scrollbar': { width: 8, height: 8 },
+                '*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner': { background: 'transparent' },
+                '*::-webkit-scrollbar-thumb': {
+                    background: 'var(--df-scrollbar)', borderRadius: 4, border: '2px solid transparent', backgroundClip: 'content-box',
+                },
+                '*::-webkit-scrollbar-thumb:hover': { background: 'var(--df-scrollbar-hover)', backgroundClip: 'content-box' },
+            })} />
+            <ErrorBoundary><AppComponent /></ErrorBoundary>
+        </ThemeProvider>,
+    );
+    return root;
+}
+
+(window as unknown as { __DF_REACT__?: unknown }).__DF_REACT__ = Object.freeze({ mount, modules: ALLOWED_MODULES });
+// Optional bundles that render React (MUI icons) use these, so the app has one React and one MUI.
+(window as unknown as { __DF_SHARED_MODULES__?: unknown }).__DF_SHARED_MODULES__ = Object.freeze({
+    'react': React, 'react/jsx-runtime': ReactJsxRuntime, '@mui/material': MUI,
+});

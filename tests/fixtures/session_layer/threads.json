@@ -1,0 +1,344 @@
+{
+  "cases": [
+    {
+      "name": "thread with a branch and a legacy derived table",
+      "input": {
+        "tables": [
+          {
+            "id": "s1",
+            "createdAt": 0
+          },
+          {
+            "id": "d1",
+            "parentNodeId": "t1",
+            "createdAt": 2,
+            "derive": {
+              "trigger": {
+                "tableId": "s1"
+              }
+            }
+          },
+          {
+            "id": "d2",
+            "createdAt": 5,
+            "derive": {
+              "trigger": {
+                "tableId": "d1"
+              }
+            }
+          }
+        ],
+        "turns": [
+          {
+            "id": "t1",
+            "parentNodeId": "s1",
+            "createdAt": 1
+          },
+          {
+            "id": "t2",
+            "parentNodeId": "d1",
+            "createdAt": 3
+          },
+          {
+            "id": "t3",
+            "parentNodeId": "d1",
+            "createdAt": 4
+          }
+        ]
+      },
+      "queries": [
+        "t2",
+        "t3",
+        "d2"
+      ],
+      "expected": {
+        "threads": [
+          {
+            "key": "thread-s1",
+            "rootId": "s1",
+            "branchFromId": null,
+            "nodeIds": [
+              "s1",
+              "t1",
+              "d1",
+              "t2"
+            ]
+          },
+          {
+            "key": "thread-t3",
+            "rootId": "s1",
+            "branchFromId": "d1",
+            "nodeIds": [
+              "t3"
+            ]
+          },
+          {
+            "key": "thread-d2",
+            "rootId": "s1",
+            "branchFromId": "d1",
+            "nodeIds": [
+              "d2"
+            ]
+          }
+        ],
+        "queries": {
+          "t2": {
+            "ancestors": [
+              "d1",
+              "t1",
+              "s1"
+            ],
+            "tableOf": "d1",
+            "nearestItem": "d1"
+          },
+          "t3": {
+            "ancestors": [
+              "d1",
+              "t1",
+              "s1"
+            ],
+            "tableOf": "d1",
+            "nearestItem": "d1"
+          },
+          "d2": {
+            "ancestors": [
+              "d1",
+              "t1",
+              "s1"
+            ],
+            "tableOf": "d2",
+            "nearestItem": "d2"
+          }
+        }
+      }
+    },
+    {
+      "name": "conversations on roots, sets, reports, drafts, and workflow definitions",
+      "input": {
+        "tables": [
+          {
+            "id": "s1",
+            "createdAt": 0
+          }
+        ],
+        "turns": [
+          {
+            "id": "a1",
+            "parentNodeId": "conversation-root:a",
+            "createdAt": 1
+          },
+          {
+            "id": "a2",
+            "parentNodeId": "conversation-root:a",
+            "createdAt": 6
+          },
+          {
+            "id": "w1",
+            "parentNodeId": "a1",
+            "createdAt": 2,
+            "form": {
+              "kind": "workflow"
+            }
+          },
+          {
+            "id": "after",
+            "parentNodeId": "set1",
+            "createdAt": 8
+          }
+        ],
+        "drafts": [
+          {
+            "id": "draft1",
+            "parentNodeId": "after",
+            "createdAt": 9
+          }
+        ],
+        "loadedNodes": [
+          {
+            "id": "l1",
+            "parentNodeId": "w1",
+            "createdAt": 3,
+            "tableId": "s1"
+          }
+        ],
+        "fileNodes": [
+          {
+            "id": "f1",
+            "parentNodeId": "w1",
+            "createdAt": 3
+          }
+        ],
+        "reports": [
+          {
+            "id": "r1",
+            "parentNodeId": "a2",
+            "createdAt": 7
+          }
+        ],
+        "artifactSets": [
+          {
+            "id": "set1",
+            "parentNodeId": "w1",
+            "createdAt": 4,
+            "memberIds": [
+              "l1",
+              "f1",
+              "missing"
+            ]
+          }
+        ]
+      },
+      "queries": [
+        "after",
+        "f1",
+        "r1",
+        "draft1"
+      ],
+      "expected": {
+        "threads": [
+          {
+            "key": "thread-s1",
+            "rootId": "s1",
+            "branchFromId": null,
+            "nodeIds": [
+              "s1"
+            ]
+          },
+          {
+            "key": "thread-a1",
+            "rootId": "conversation-root:a",
+            "branchFromId": null,
+            "nodeIds": [
+              "a1",
+              "w1",
+              "set1",
+              "after",
+              "draft1"
+            ]
+          },
+          {
+            "key": "thread-a2",
+            "rootId": "conversation-root:a",
+            "branchFromId": null,
+            "nodeIds": [
+              "a2",
+              "r1"
+            ]
+          }
+        ],
+        "queries": {
+          "after": {
+            "ancestors": [
+              "set1",
+              "w1",
+              "a1",
+              "conversation-root:a"
+            ],
+            "tableOf": "s1",
+            "nearestItem": "set1"
+          },
+          "f1": {
+            "ancestors": [
+              "set1",
+              "w1",
+              "a1",
+              "conversation-root:a"
+            ],
+            "tableOf": "s1",
+            "nearestItem": "f1"
+          },
+          "r1": {
+            "ancestors": [
+              "a2",
+              "conversation-root:a"
+            ],
+            "tableOf": null,
+            "nearestItem": "r1"
+          },
+          "draft1": {
+            "ancestors": [
+              "after",
+              "set1",
+              "w1",
+              "a1",
+              "conversation-root:a"
+            ],
+            "tableOf": "s1",
+            "nearestItem": "set1"
+          }
+        }
+      }
+    },
+    {
+      "name": "a parent cycle and a deleted parent",
+      "input": {
+        "turns": [
+          {
+            "id": "x",
+            "parentNodeId": "y",
+            "createdAt": 2
+          },
+          {
+            "id": "y",
+            "parentNodeId": "x",
+            "createdAt": 1
+          },
+          {
+            "id": "z",
+            "parentNodeId": "x",
+            "createdAt": 3
+          },
+          {
+            "id": "orphan",
+            "parentNodeId": "gone",
+            "createdAt": 0
+          }
+        ]
+      },
+      "queries": [
+        "z",
+        "orphan"
+      ],
+      "expected": {
+        "threads": [
+          {
+            "key": "thread-orphan",
+            "rootId": "gone",
+            "branchFromId": null,
+            "nodeIds": [
+              "orphan"
+            ]
+          },
+          {
+            "key": "thread-y",
+            "rootId": "conversation-root:y",
+            "branchFromId": null,
+            "nodeIds": [
+              "y",
+              "x",
+              "z"
+            ]
+          }
+        ],
+        "queries": {
+          "z": {
+            "ancestors": [
+              "x",
+              "y",
+              "conversation-root:y"
+            ],
+            "tableOf": null,
+            "nearestItem": null
+          },
+          "orphan": {
+            "ancestors": [
+              "gone"
+            ],
+            "tableOf": null,
+            "nearestItem": null
+          }
+        }
+      }
+    }
+  ]
+}

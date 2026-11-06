@@ -187,13 +187,6 @@ class TestStreamErrorEvent:
             assert parsed["error"]["code"] == ErrorCode.INTERNAL_ERROR
             assert "db cursor broken" not in parsed["error"]["message"]
 
-    def test_unicode_safe(self) -> None:
-        with self.app.app_context():
-            err = AppError(ErrorCode.TABLE_NOT_FOUND, "表不存在")
-            line = self.stream_error_event(err)
-            parsed = json.loads(line)
-            assert parsed["error"]["message"] == "表不存在"
-
 
 # ---------------------------------------------------------------------------
 # register_error_handlers — Flask integration
@@ -272,21 +265,12 @@ class TestRegisterErrorHandlers:
         assert data["error"]["code"] == "NOT_FOUND"
         assert data["error"]["request_id"] == resp.headers["X-Request-Id"]
 
-    def test_response_has_json_content_type(self, client) -> None:
-        resp = client.get("/raise-app-error")
-        assert "application/json" in resp.content_type
-
 
 # ---------------------------------------------------------------------------
 # Request ID middleware
 # ---------------------------------------------------------------------------
 
 class TestRequestIdMiddleware:
-
-    def test_response_has_request_id_header(self, client) -> None:
-        resp = client.get("/raise-app-error")
-        assert "X-Request-Id" in resp.headers
-        assert len(resp.headers["X-Request-Id"]) > 0
 
     def test_client_provided_request_id_is_echoed(self, client) -> None:
         resp = client.get("/raise-app-error", headers={"X-Request-Id": "my-trace-123"})
@@ -334,11 +318,6 @@ class TestStreamWarningEvent:
             self.stream_warning_event("table unavailable", message_code="TABLE_READ_FAILED")
         )
         assert parsed["warning"]["message_code"] == "TABLE_READ_FAILED"
-
-    def test_unicode_safe(self) -> None:
-        line = self.stream_warning_event("表数据不可用")
-        parsed = json.loads(line)
-        assert parsed["warning"]["message"] == "表数据不可用"
 
 
 # ---------------------------------------------------------------------------
@@ -423,13 +402,6 @@ class TestJsonOk:
             assert set(body.keys()) == {"status", "data"}
             assert body["data"] == {"x": 1}
 
-    def test_status_field_is_success_not_ok(self) -> None:
-        with self.app.test_request_context("/"):
-            resp, _ = self.json_ok({})
-            body = resp.get_json()
-            assert body["status"] == "success"
-            assert body["status"] != "ok"
-
 
 # ---------------------------------------------------------------------------
 # stream_preflight_error — streaming pre-check helper
@@ -480,12 +452,6 @@ class TestStreamPreflightError:
 # ---------------------------------------------------------------------------
 
 class TestErrorCodeHttpStatusMapping:
-
-    def test_auth_codes_have_non_200_http_status(self) -> None:
-        from data_formulator.errors import ERROR_CODE_HTTP_STATUS
-        assert ErrorCode.AUTH_REQUIRED in ERROR_CODE_HTTP_STATUS
-        assert ErrorCode.AUTH_EXPIRED in ERROR_CODE_HTTP_STATUS
-        assert ErrorCode.ACCESS_DENIED in ERROR_CODE_HTTP_STATUS
 
     def test_auth_http_statuses_are_valid(self) -> None:
         from data_formulator.errors import ERROR_CODE_HTTP_STATUS

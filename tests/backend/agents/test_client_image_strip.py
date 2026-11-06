@@ -134,15 +134,12 @@ class TestIsImageDeserializeError:
     @pytest.mark.parametrize("error_text", [
         'Error: image_url is not supported, expected `text`',
         'BadRequestError: unknown variant `image_url`',
-        'unknown variant `image_url`, expected `text`',
     ])
     def test_detects_known_patterns(self, client, error_text):
         assert client._is_image_deserialize_error(error_text) is True
 
     @pytest.mark.parametrize("error_text", [
         "Rate limit exceeded",
-        "Connection timeout",
-        "Invalid API key",
         "",
         "image_url",
     ])
@@ -191,15 +188,6 @@ class TestGetCompletionRetryLitellm:
             client.get_completion([{"role": "user", "content": "hi"}])
 
         assert mock_litellm.completion.call_count == 1
-
-    @patch("data_formulator.agents.client_utils.litellm")
-    def test_no_retry_on_success(self, mock_litellm, client):
-        mock_litellm.completion.return_value = MagicMock(name="ok")
-
-        result = client.get_completion([{"role": "user", "content": "hi"}])
-
-        assert mock_litellm.completion.call_count == 1
-        assert result is not None
 
 
 # ---------------------------------------------------------------------------

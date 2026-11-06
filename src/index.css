@@ -1,3 +1,4 @@
+@import '@fontsource-variable/inter/index.css';
 @import '@fontsource/roboto/300.css';
 @import '@fontsource/roboto/400.css';
 @import '@fontsource/roboto/500.css';
@@ -85,6 +86,12 @@ body {
     z-index: 1;
     pointer-events: none;
     box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .window-wipe::before {
+        display: none;
+    }
 }
 
 

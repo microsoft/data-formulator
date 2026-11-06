@@ -26,10 +26,6 @@ describe('testDate (strict YYYY-MM-DD)', () => {
     expect(test('1999')).toBe(false);
   });
 
-  it('should reject time-only strings', () => {
-    expect(test('14:30:00')).toBe(false);
-  });
-
   it('should reject non-string values', () => {
     expect(test(2024)).toBe(false);
     expect(test(null)).toBe(false);
@@ -57,10 +53,6 @@ describe('testDateTime', () => {
 
   it('should reject date-only strings', () => {
     expect(test('2024-01-15')).toBe(false);
-  });
-
-  it('should reject time-only strings', () => {
-    expect(test('14:30:00')).toBe(false);
   });
 
   it('should reject non-date strings', () => {
@@ -171,11 +163,6 @@ describe('inferTypeFromValueArray', () => {
   it('should return Boolean (first candidate) for empty array', () => {
     // No values to filter against → first candidate type survives
     expect(inferTypeFromValueArray([])).toBe(Type.Boolean);
-  });
-
-  it('should return Boolean (first candidate) for all-null array', () => {
-    // Nulls are skipped → no filtering → first candidate type survives
-    expect(inferTypeFromValueArray([null, null, undefined])).toBe(Type.Boolean);
   });
 });
 

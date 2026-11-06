@@ -67,7 +67,7 @@
     "msgEncodingEmpty": "把数据字段放入图表构建器，或描述你的需求！",
     "msgUnavailable": "请先整理数据再创建可视化！",
     "msgSynthesizing": "生成中...",
-    "msgWarning": "AI 生成结果可能不准确，请自行核查！",
+    "aiDisclaimer": "AI 可能会出错，请核查重要结果。",
     "templateGroups": {
       "table": "表格",
       "scatter": "散点",

@@ -1,18 +1,16 @@
-**Authentication**
-
 **Example**
 
-Project `my-gcp-project`, dataset `analytics`, location `US`
+project_id: `my-gcp-project` · dataset_id: `analytics` · location: `US`
 
 **Sign in**
 
-- **Application Default Credentials:** Recommended locally. Install the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install), run `gcloud auth application-default login`, and leave `credentials_path` empty.
-- **Service account:** Enter the full path to its JSON key file, or set `GOOGLE_APPLICATION_CREDENTIALS` and leave the field empty.
+- **Application default credentials:** recommended. Install the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) and run `gcloud auth application-default login`, or set `GOOGLE_APPLICATION_CREDENTIALS`.
+- **Service account file:** enter the path to the account's JSON key file.
 
 **Access**
 
-The identity needs **BigQuery Data Viewer** for the datasets and **BigQuery Job User** for the project.
+The identity needs **BigQuery Data Viewer** on the datasets and **BigQuery Job User** on the project.
 
 **Scope**
 
-Leave `dataset_id` empty to browse datasets, or enter one or more comma-separated dataset IDs. Set `location` to the datasets' BigQuery location; `US` is only the default.
+Leave `dataset_id` empty to browse every dataset, or enter IDs separated by commas. Set `location` to where the datasets live.

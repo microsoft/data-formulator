@@ -18,10 +18,8 @@ pytestmark = [pytest.mark.backend]
 
 
 SAMPLE_ENV = {
-    "OPENAI_ENABLED": "true",
     "OPENAI_API_KEY": "sk-secret-key-12345",
     "OPENAI_MODELS": "gpt-4o,gpt-4o-mini",
-    "ANTHROPIC_ENABLED": "true",
     "ANTHROPIC_API_KEY": "sk-ant-secret",
     "ANTHROPIC_MODELS": "claude-sonnet-4-20250514",
 }

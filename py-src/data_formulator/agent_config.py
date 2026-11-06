@@ -2,7 +2,7 @@
 # Licensed under the MIT License.
 
 """
-Single source of truth for per-agent LLM call configuration.
+Single source of truth for per-agent execution and LLM call configuration.
 
 Edit values here to tune latency vs. quality for each agent.
 
@@ -32,44 +32,93 @@ because the client is invoked with ``drop_params=True``.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
+from math import isfinite
 from typing import Literal
 
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high"]
+# Thinking levels a model setup may choose; unset means the per-agent defaults below.
+MODEL_REASONING_LEVELS: tuple[str, ...] = ("low", "medium", "high")
+
+
+@dataclass(frozen=True)
+class AnalystExecutionConfig:
+    """Provider retry configuration with legacy execution-count settings.
+
+    Action, tool-round, and outer-iteration settings are retained for caller
+    compatibility but no longer limit execution. Provider retries remain bounded.
+    """
+
+    max_actions: int = 10
+    max_tool_rounds_per_action: int = 12
+    empty_response_retries: int = 2
+    empty_response_backoff_seconds: float = 3.0
+    stream_open_retries: int = 2
+    stream_open_backoff_seconds: float = 1.0
+    # A provider's token rate limit resets per minute; short retries cannot outlast it.
+    rate_limit_retries: int = 3
+    rate_limit_backoff_seconds: float = 10.0
+    outer_iteration_multiplier: int = 3
+    min_outer_iterations: int = 12
+
+    def __post_init__(self) -> None:
+        for name in ("max_actions", "max_tool_rounds_per_action", "outer_iteration_multiplier", "min_outer_iterations"):
+            value = getattr(self, name)
+            if type(value) is not int or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        for name in ("empty_response_retries", "stream_open_retries", "rate_limit_retries"):
+            value = getattr(self, name)
+            if type(value) is not int or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        for name in ("empty_response_backoff_seconds", "stream_open_backoff_seconds", "rate_limit_backoff_seconds"):
+            value = getattr(self, name)
+            if type(value) not in (int, float) or not isfinite(value) or value < 0:
+                raise ValueError(f"{name} must be a finite non-negative number")
+
+    @property
+    def max_outer_iterations(self) -> int:
+        return max(self.max_actions * self.outer_iteration_multiplier, self.min_outer_iterations)
+
+
+ANALYST_EXECUTION_DEFAULTS = AnalystExecutionConfig()
 
 # ---------------------------------------------------------------------------
 # Per-agent reasoning effort
 # ---------------------------------------------------------------------------
 #
-# Pick the lowest tier that produces acceptable quality. Heavy code-generation
-# and multi-step agents stay at ``"low"``; trivial single-turn extractors and
+# Heavy code-generation and multi-step agents send nothing (``None``): the model
+# reasons at its own default, so they benefit from what each model is tuned for,
+# unless the model setup picks a level. Trivial single-turn extractors and
 # classifiers run at ``"minimal"`` (GPT-5) / ``"low"`` (everything else).
 
-AGENT_REASONING_EFFORT: dict[str, ReasoningEffort] = {
-    # ── Heavy: code-gen, multi-step, tool-using ─────────────────────────────
-    "data_transform":      "low",      # generates Python transform scripts
-    "data_rec":            "low",      # chart / transformation recommendation
-    "analyst":             "low",      # unified multi-step exploration + report agent
-    "interactive_explore": "low",      # exploration idea agent
-    "data_loading_chat":   "low",      # conversational data loading w/ tools
+AGENT_REASONING_EFFORT: dict[str, ReasoningEffort | None] = {
+    # ── Heavy: code-gen, multi-step, tool-using (the model's own default) ───
+    "data_transform":      None,       # generates Python transform scripts
+    "data_rec":            None,       # chart / transformation recommendation
+    "analyst":             None,       # unified multi-step exploration + report agent
+    "interactive_explore": None,       # exploration idea agent
 
     # ── Light: single-turn extractors / classifiers / formatters ────────────
     "data_load":           "minimal",  # one-shot type inference
     "data_clean":          "minimal",  # extract tables from text
     "workflow_distill":  "minimal",  # summarise an analysis context
     "chart_insight":       "minimal",  # title + 1–3 takeaways from a chart
-    "chart_restyle":       "minimal",  # apply style edits to a Vega-Lite spec
     "code_explanation":    "minimal",  # describe derived fields
     "sort_data":           "minimal",  # natural-order sort a small list
-    "simple":              "minimal",  # nl_to_filter / workspace_name / intent
+    "simple":              "minimal",  # workspace_name
+    "starter_questions":   "low",      # a few suggested questions
 }
 
-DEFAULT_REASONING_EFFORT: ReasoningEffort = "low"
+# Agents not listed reason at the model's own default.
+DEFAULT_REASONING_EFFORT: ReasoningEffort | None = None
 
 _VALID_TIERS: frozenset[str] = frozenset(("none", "minimal", "low", "medium", "high"))
 
 
-def get_reasoning_effort(agent_id: str | None) -> ReasoningEffort:
-    """Return the *configured* tier for ``agent_id``.
+def get_reasoning_effort(agent_id: str | None) -> ReasoningEffort | None:
+    """Return the *configured* tier for ``agent_id`` (``None``: the model's own default).
+
+    ``DF_REASONING_EFFORT_<AGENT_ID>=default`` asks for the model's own default too.
 
     Resolution order:
         1. ``DF_REASONING_EFFORT_<AGENT_ID>`` env var
@@ -85,6 +134,8 @@ def get_reasoning_effort(agent_id: str | None) -> ReasoningEffort:
         env_val = (os.environ.get(env_key) or "").strip().lower()
         if env_val in _VALID_TIERS:
             return env_val  # type: ignore[return-value]
+        if env_val == "default":
+            return None
         if agent_id in AGENT_REASONING_EFFORT:
             return AGENT_REASONING_EFFORT[agent_id]
     return DEFAULT_REASONING_EFFORT
@@ -127,9 +178,10 @@ def _supports_none(model: str | None) -> bool:
     return "codex" in m or "-pro" in m or "/pro" in m
 
 
-def reasoning_effort_for(agent_id: str | None, model: str | None) -> ReasoningEffort:
-    """Resolve the reasoning_effort to actually send to LiteLLM.
+def reasoning_effort_for(agent_id: str | None, model: str | None, preference: str | None = None) -> ReasoningEffort | None:
+    """Resolve the reasoning_effort to actually send to LiteLLM (``None``: send none, the model's default).
 
+    - A model setup's thinking level (*preference*) wins when the caller passes it.
     - Reads the configured tier via :func:`get_reasoning_effort`.
     - For configured ``"minimal"``:
         * keep ``"minimal"`` on GPT-5 base / mini / nano / 5.x;
@@ -140,6 +192,10 @@ def reasoning_effort_for(agent_id: str | None, model: str | None) -> ReasoningEf
       ``"low"``.
     """
     effort = get_reasoning_effort(agent_id)
+    if preference in MODEL_REASONING_LEVELS:
+        return preference  # type: ignore[return-value]
+    if effort is None:
+        return None
     if effort == "minimal":
         if _supports_minimal(model):
             return "minimal"

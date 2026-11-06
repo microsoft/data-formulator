@@ -2,32 +2,19 @@
   {
     "type": "function",
     "function": {
-      "name": "inspect_chart",
-      "description": "Read one or more charts. Returns each chart's encodings, a sample of its data, and the transformation code that created it so you can reason about what it shows (use execute_python_script on the backing table for the full data). A rendered PNG is included only when one is available.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "chart_ids": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "List of chart IDs from [AVAILABLE CHARTS] to inspect."
-          }
-        },
-        "required": ["chart_ids"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "write_report",
-      "description": "Deliver a Markdown report and end the run. `report` is the full report text (embed charts with ![caption](chart://chart_id)).",
+      "description": "Deliver a Markdown report and return an observation. `report` is the full report text; embed verified charts with ![caption](chart://chart_id). Follow the baseline completion rules after delivery.",
       "parameters": {
         "type": "object",
         "properties": {
+          "plan_step": {"type": "integer", "minimum": 1, "description": "When working through a checklist plan: the number (1-based) of the plan step this result serves. Several results can serve one step; a step is checked off once you move on to a later step or finish."},
+          "replaces": {
+            "type": "string",
+            "description": "Id of the report to replace, from [REPLACEABLE ARTIFACTS]. Only to fix an artifact the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the old one is deleted and this takes its place after the latest request. Never when exploring something new; a new artifact keeps the analysis history."
+          },
           "report": {
             "type": "string",
-            "description": "The full Markdown report text. Embed charts with ![caption](chart://chart_id) referencing IDs from [AVAILABLE CHARTS]."
+            "description": "The full Markdown report text, starting with front matter naming its genre (---\\nstyle: notes|analysis|research|search|brief\\n---). Embed charts with ![caption](chart://chart_id) using IDs of session charts (session/charts/<id>.json) or successful visualize results. Blocks (see the report skill): :::excerpt{source=\"<session path>\" page=… title=\"…\" url=\"…\"} quotes a source verbatim; :::summary / :::finding / :::caveat / :::definition / :::note callouts; :::metrics (a bullet list of bold numbers); :::compare with :::column{title=\"…\"} blocks; :::details{title=\"…\"} (collapsed); footnote citations [^key] with [^key]: definitions. Close each block with :::."
           }
         },
         "required": ["report"]

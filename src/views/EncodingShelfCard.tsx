@@ -22,24 +22,19 @@ import {
     Tooltip,
     TextField,
     Card,
-    Chip,
     Autocomplete,
     Menu,
     Divider,
     alpha,
     useTheme,
-    SxProps,
-    Theme,
     Slider,
-    CircularProgress,
     LinearProgress,
     Collapse,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
-import React from 'react';
 import { WritingPencil } from '../components/FunComponents';
-import { Channel, Chart, FieldItem, Trigger, duplicateChart, ChartStyleVariant, computeEncodingFingerprint, isVariantStale } from "../components/ComponentType";
+import { Channel, Chart, Trigger, duplicateChart } from "../components/ComponentType";
 
 import _ from 'lodash';
 
@@ -79,8 +74,6 @@ import '../scss/EncodingShelf.scss';
 import { DictTable } from "../components/ComponentType";
 
 import { resolveChartFields, assembleVegaChart, resolveRecommendedChart } from '../app/utils';
-import { buildSpecForRestyle, buildDataContext, callRestyleAgent, makeVariant } from '../app/restyle';
-import { classifyChartIntent } from '../app/intentClassifier';
 import { downscaleImageForAgent } from '../app/chartCache';
 import { EncodingBox } from './EncodingBox';
 
@@ -116,9 +109,6 @@ const chartCategoryToI18nKey: Record<string, string> = {
 };
 
 import { AppDispatch } from '../app/store';
-import { borderColor, radius, transition } from '../app/tokens';
-
-import CloseIcon from '@mui/icons-material/Close';
 
 import { iconVar, textVar } from '../app/layout';
 
@@ -135,211 +125,6 @@ export interface EncodingShelfCardProps {
     hideChat?: boolean;
 }
 
-
-
-// Add this utility function before the TriggerCard component
-export const renderTextWithEmphasis = (text: string | any, highlightChipSx?: SxProps<Theme>) => {
-    
-    if (typeof text !== 'string') {
-        text = text == null ? '' : String(text);
-    }
-    text = text.replace(/_/g, '_\u200B');
-    // Split the prompt by ** patterns and create an array of text and highlighted segments
-    const parts = text.split(/(\*\*.*?\*\*)/g);
-    
-    return parts.map((part: string, index: number) => {
-        if (part.startsWith('**') && part.endsWith('**')) {
-            // This is a highlighted part - remove the ** and wrap with styled component
-            const content = part.slice(2, -2).replaceAll('_', ' ');
-            return (
-                <Typography
-                    key={index}
-                    component="span"
-                    sx={{
-                        color: 'inherit',
-                        padding: '0px 2px',
-                        borderRadius: radius.sm,
-                        ...highlightChipSx
-                    }}
-                >
-                    {content}
-                </Typography>
-            );
-        }
-        return part;
-    });
-};
-
-export const TriggerCard: FC<{
-    className?: string, 
-    trigger: Trigger, 
-    hideFields?: boolean, 
-    mini?: boolean,
-    highlighted?: boolean,
-    sx?: SxProps<Theme>}> = function ({ className, trigger, hideFields, mini = false, highlighted = false, sx }) {
-
-    const { t } = useTranslation();
-    let theme = useTheme();
-
-    let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-    let charts = useSelector((state: DataFormulatorState) => state.charts);
-    let tables = useSelector(dfSelectors.getAllTables);
-
-    const dispatch = useDispatch<AppDispatch>();
-
-    let handleClick = () => {
-        // Find the actual chart for the table that owns this trigger
-        const ownerTable = tables.find(t => t.derive?.trigger === trigger);
-        const realChart = ownerTable ? charts.find(c => c.tableRef === ownerTable.id && c.source === 'user') : null;
-        if (realChart) {
-            dispatch(dfActions.setFocused({ type: 'chart', chartId: realChart.id }));
-        } else if (trigger.chart) {
-            dispatch(dfActions.setFocused({ type: 'chart', chartId: trigger.chart.id }));
-        }
-    }
-
-    let encodingComp : any = '';
-    let encFields = [];
-
-    if (trigger.chart) {
-
-        let chart = trigger.chart;
-        let encodingMap = chart?.encodingMap;
-
-        encFields = Object.entries(encodingMap)
-            .filter(([channel, encoding]) => {
-                return encoding.fieldID != undefined;
-            })
-            .map(([channel, encoding], index) => {
-                let field = fieldItems.find(f => f.id == encoding.fieldID) as FieldItem;
-                return field.name;
-            });
-
-        encodingComp = <Typography component="span" key="enc-fields" sx={{ fontSize: 'inherit', color: 'inherit' }}>
-            {Object.entries(encodingMap)
-                .filter(([channel, encoding]) => encoding.fieldID != undefined)
-                .map(([channel, encoding], index) => {
-                    let field = fieldItems.find(f => f.id == encoding.fieldID) as FieldItem;
-                    return <React.Fragment key={`trigger-${channel}-${field?.id}`}>
-                        {index > 0 ? <span style={{ margin: '0 2px', opacity: 0.5 }}> × </span> : ''}
-                        <span>{field?.name}</span>
-                    </React.Fragment>;
-                })}
-        </Typography>
-    }
-
-    // Derive prompt text from interaction log — show user's own entry
-    let prompt: string = '';
-    const interaction = trigger.interaction;
-    if (interaction && interaction.length > 0) {
-        // For user-initiated (single entry: user→subagent instruction), use that entry
-        // For agent sessions, this card is rendered for the user prompt entry
-        const userEntry = interaction.find(e => e.from === 'user');
-        prompt = userEntry?.content || '';
-    }
-
-    // Card always uses custom (orange) palette — only user entries are rendered as cards
-    const triggerPalette = theme.palette.custom;
-
-    // Process the prompt to highlight content in ** **
-    const processedPrompt = renderTextWithEmphasis(prompt, {
-        fontSize: mini ? 10 : 11, padding: '1px 4px',
-        borderRadius: radius.sm,
-        background: alpha(triggerPalette.main, 0.08), 
-    });
-
-    if (mini) {
-        return <Typography component="div" sx={{
-            fontSize: textVar.xxs, color: theme.palette.text.secondary,
-            my: '2px', textWrap: 'balance',
-            '&:hover': {
-                cursor: 'pointer',
-                color: theme.palette.text.primary,
-            },
-            '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
-            ...sx,
-        }} onClick={handleClick}>
-            {processedPrompt}{hideFields ? "" : encodingComp}
-        </Typography> 
-    }
-
-    return  <Typography component="div" className={`${className}`}
-        sx={{
-            cursor: 'pointer', 
-            fontSize: textVar.xs,
-            color: 'text.primary',
-            textAlign: 'left',
-            py: 0.5,
-            px: 1,
-            borderRadius: radius.sm,
-            backgroundColor: triggerPalette.bgcolor,
-            border: `1px solid ${borderColor.component}`,
-            ...(highlighted ? { borderLeft: `2px solid ${triggerPalette.main}` } : {}),
-            '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
-            ...sx,
-        }} 
-        onClick={handleClick}>
-            {processedPrompt}{hideFields ? "" : <>{" "}{encodingComp}</>}
-    </Typography>
-}
-
-
-/**
- * One-click style presets surfaced in the bottom-left palette menu of the
- * follow-up speech bubble. Each entry maps to a detailed natural-language
- * instruction that is fed directly to the chart restyle agent (bypassing the
- * intent classifier — we already know this is a style change).
- *
- * Labels are short so the menu stays compact; descriptions are one-liners
- * shown as secondary text. Keep the instructions self-contained (they replace
- * whatever the user has typed) and concrete enough that the agent can map
- * them to specific Vega-Lite config blocks (typography, color, gridlines,
- * background, title alignment, etc.).
- */
-export interface StylePreset {
-    key: string;
-    label: string;
-    description: string;
-    instruction: string;
-}
-
-export const STYLE_PRESETS: StylePreset[] = [
-    {
-        key: 'nyt',
-        label: 'New York Times',
-        description: 'Editorial newsroom look',
-        instruction:
-            'Restyle this chart in the New York Times editorial style.',
-    },
-    {
-        key: 'economist',
-        label: 'The Economist',
-        description: 'Magazine print look',
-        instruction:
-            'Restyle this chart in The Economist style.',
-    },
-    {
-        key: 'fivethirtyeight',
-        label: 'FiveThirtyEight',
-        description: 'Analytical blog look',
-        instruction:
-            'Restyle this chart in the FiveThirtyEight (538) blog style.',
-    },
-    {
-        key: 'presentation',
-        label: 'Presentation',
-        description: 'Optimized for slides',
-        instruction:
-            'Restyle this chart for a slide-deck presentation, optimized for being viewed at a distance.',
-    },
-    {
-        key: 'comic',
-        label: 'Comic',
-        description: 'Hand-drawn comic book look',
-        instruction:
-            'Restyle this chart in a comic style.',
-    },
-];
 
 
 export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId, chatOnly, hideChat }) {
@@ -373,15 +158,16 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     })();
 
     let chart = allCharts.find(c => c.id == chartId) as Chart;
-    let trigger = chart.source == "trigger" ? tables.find(t => t.derive?.trigger?.chart?.id == chartId)?.derive?.trigger : undefined;
+    const triggerTable = chart.source == "trigger" ? tables.find(t => t.derive?.trigger?.chart?.id == chartId) : undefined;
+    let trigger = triggerTable?.derive?.trigger;
 
-    const triggerPrompt = trigger?.interaction?.find(e => e.role === 'instruction')?.content || '';
+    // The instruction that made a trigger chart's table is the agent message right before it (design-docs/58).
+    const threadGraph = useSelector(dfSelectors.getThreadGraph);
+    const textTurns = useSelector((state: DataFormulatorState) => state.textTurns);
+    const instructionId = triggerTable ? threadGraph.edgeInto(triggerTable.id).at(-1) : undefined;
+    const triggerPrompt = textTurns.find(turn => turn.id === instructionId && !turn.prompt)?.content || '';
     let [prompt, setPrompt] = useState<string>(triggerPrompt);
 
-    // Restyle (chart style refinement agent) — see design-docs/28-chart-style-refinement-agent.md
-    const [isRestyling, setIsRestyling] = useState<boolean>(false);
-    // Per-variant refresh in progress (variantId being refreshed, or null).
-    const [refreshingVariantId, setRefreshingVariantId] = useState<string | null>(null);
     const chartSynthesisInProgress = useSelector(
         (state: DataFormulatorState) => state.chartSynthesisInProgress,
     );
@@ -438,373 +224,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             </Box>
             return component;
         });
-
-    // --- Style variants (see design-docs/28-chart-style-refinement-agent.md) ---
-    // Chip strip for navigating user-authored "skins" of the current chart's
-    // Vega-Lite spec. The active variant is rendered both in the focused
-    // canvas (VisualizationView) and in the data-thread thumbnail
-    // (ChartRenderService) so the preview matches what the user is editing.
-    // This UI is the only surface that manages variants for now.
-    const variants: ChartStyleVariant[] = chart.styleVariants ?? [];
-    const activeVariantId = chart.activeVariantId;
-
-    /**
-     * Build the spec to send to the restyle agent.
-     *
-     * If a style variant is currently active, we use ITS stored vlSpec as the
-     * starting point — that's the "stacking edits" path (e.g. `v2 = v1 + new
-     * tweak`). Otherwise we assemble the default spec from the chart's
-     * encodingMap. In both cases we strip the data block before sending; the
-     * agent never sees row content (we re-attach live data on render).
-     */
-
-    /**
-     * Choose a chip label for a new variant.
-     *
-     * The agent is asked to return a concise two-word label (e.g. "dark
-     * theme", "rotated labels"). We prefer that, falling back to a sequential
-     * `v1`, `v2`, ... if the agent didn't supply one. If the suggested label
-     * collides with an existing variant on the same chart, append a small
-     * suffix to keep chips unique.
-     */
-    const pickVariantLabel = (
-        suggested: string | undefined,
-        existing: ChartStyleVariant[],
-    ): string => {
-        const taken = new Set(existing.map(v => (v.label || v.id).toLowerCase()));
-        const cleaned = (suggested || '').trim().replace(/^["']+|["']+$/g, '').slice(0, 24);
-        const base = cleaned || `v${existing.length + 1}`;
-        if (!taken.has(base.toLowerCase())) return base;
-        for (let i = 2; i < 100; i++) {
-            const candidate = `${base} ${i}`;
-            if (!taken.has(candidate.toLowerCase())) return candidate;
-        }
-        return base;
-    };
-
-    /**
-     * Send the prompt to the chart restyle agent.
-     *
-     * Returns:
-     *   - 'success'      → variant added & activated
-     *   - 'out_of_scope' → restyle agent refused (data change in disguise);
-     *                      caller may chain to deriveNewData()
-     *   - 'error'        → infra failure (model not configured, transport, etc.)
-     *
-     * Either way the appropriate user-facing message is dispatched here, so
-     * the caller usually doesn't need to add its own. Exception: callers
-     * doing automatic style→data fallback typically want to *suppress* the
-     * out_of_scope toast since the system is already escalating.
-     */
-    const handleRestyleSubmit = async (
-        opts: {
-            suppressOutOfScopeMessage?: boolean;
-            instructionOverride?: string;
-        } = {},
-    ): Promise<'success' | 'out_of_scope' | 'error'> => {
-        // When `instructionOverride` is provided (e.g. a one-click style
-        // preset from the bottom-left menu) we use that as the instruction
-        // instead of the textbox, and we leave the textbox untouched on
-        // success so the user's draft isn't destroyed.
-        const usingOverride = typeof opts.instructionOverride === 'string'
-            && opts.instructionOverride.trim().length > 0;
-        const text = usingOverride
-            ? (opts.instructionOverride as string).trim()
-            : prompt.trim();
-        if (!text || isRestyling) return 'error';
-        if (!activeModel) {
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                component: 'chart restyle',
-                type: 'error',
-                value: 'No model is configured. Please select a model before restyling.',
-            }));
-            return 'error';
-        }
-        const activeVariant = activeVariantId
-            ? variants.find(v => v.id === activeVariantId)
-            : undefined;
-        const prepared = buildSpecForRestyle(chart, currentTable, conceptShelfItems, activeVariant);
-        if (!prepared) {
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                component: 'chart restyle',
-                type: 'error',
-                value: 'Cannot restyle this chart yet — make sure all required fields are encoded first.',
-            }));
-            return 'error';
-        }
-
-        // Sample from the spec-embedded data (already converted by
-        // assembleVegaChart) instead of raw table rows so the agent sees the
-        // same string forms the renderer will plug back in.
-        const { dataSample } = buildDataContext(currentTable, prepared.embeddedData);
-
-        setIsRestyling(true);
-        // Standard "chart agent working" signal — the visualization panel
-        // overlays a progress bar, the data thread shows a running indicator,
-        // and any duplicate triggers are blocked.
-        dispatch(dfActions.changeChartRunningStatus({ chartId, status: true }));
-        try {
-            const result = await callRestyleAgent({
-                instruction: text,
-                vlSpec: prepared.spec,
-                chartType: chart.chartType,
-                dataSample,
-                model: activeModel,
-            });
-
-            if (result.kind === 'out_of_scope') {
-                if (!opts.suppressOutOfScopeMessage) {
-                    dispatch(dfActions.addMessages({
-                        timestamp: Date.now(),
-                        component: 'chart restyle',
-                        type: 'info',
-                        value: result.rationale
-                            ? `Style agent: "${result.rationale}" — try the formulate button instead for data changes.`
-                            : 'This looks like a data change. Use the formulate button instead.',
-                    }));
-                }
-                return 'out_of_scope';
-            }
-
-            const variant = makeVariant({
-                chart,
-                prompt: text,
-                vlSpec: result.vlSpec,
-                rationale: result.rationale,
-                // Prefer the agent-suggested two-word label; fall back to a
-                // sequential vN if the agent didn't supply one or it's empty.
-                // Disambiguate against existing labels so chips never collide.
-                label: pickVariantLabel(result.label, variants),
-                basedOnVariantId: prepared.basedOnVariantId,
-            });
-            dispatch(dfActions.addStyleVariant({ chartId, variant, activate: true }));
-            if (!usingOverride) {
-                setPrompt('');
-            }
-            return 'success';
-        } catch (err: any) {
-            console.warn('[chart-restyle] failed', err);
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                component: 'chart restyle',
-                type: 'error',
-                value: `Restyle failed: ${err?.message || String(err)}`,
-            }));
-            return 'error';
-        } finally {
-            setIsRestyling(false);
-            dispatch(dfActions.changeChartRunningStatus({ chartId, status: false }));
-        }
-    };
-
-
-    /**
-     * Refresh a stale variant: re-run its stored prompt against the
-     * freshly-assembled current default spec, then replace the variant in
-    /**
-     * Refresh a stale variant: re-run its stored prompt against the
-     * freshly-assembled current default spec, then replace the variant in
-     * place (same id, new vlSpec, fresh fingerprint). The OLD variant spec
-     * is sent as a `styleReferenceSpec` so the agent preserves the visual
-     * choices the user originally made — refresh should feel like
-     * "re-apply this style with the new encoding", not "re-roll from
-     * scratch".
-     *
-     * Triggered automatically by clicking a stale chip.
-     */
-    const handleRefreshVariant = async (variant: ChartStyleVariant) => {
-        if (refreshingVariantId) return;
-        if (!activeModel) {
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                component: 'chart restyle',
-                type: 'error',
-                value: 'No model is configured. Please select a model before refreshing.',
-            }));
-            return;
-        }
-        // Refresh always starts from the current default spec (NOT the stale
-        // variant's spec) so we don't compound staleness. We re-run the
-        // variant's original prompt against the freshly-assembled spec, with
-        // the previous variant spec as a STYLE REFERENCE so visual choices
-        // carry forward.
-        const prepared = buildSpecForRestyle(chart, currentTable, conceptShelfItems);
-        if (!prepared) {
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                component: 'chart restyle',
-                type: 'error',
-                value: 'Cannot refresh — chart is not currently renderable.',
-            }));
-            return;
-        }
-        const { dataSample } = buildDataContext(currentTable, prepared.embeddedData);
-
-        setRefreshingVariantId(variant.id);
-        // Surface the standard "chart agent working" signal in the canvas
-        // (LinearProgress overlay) while the refresh request is in flight.
-        dispatch(dfActions.changeChartRunningStatus({ chartId, status: true }));
-        try {
-            const result = await callRestyleAgent({
-                instruction: variant.prompt,
-                vlSpec: prepared.spec,
-                chartType: chart.chartType,
-                dataSample,
-                model: activeModel,
-                styleReferenceSpec: variant.vlSpec,
-            });
-            if (result.kind === 'out_of_scope') {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    component: 'chart restyle',
-                    type: 'info',
-                    value: result.rationale
-                        ? `Style agent: "${result.rationale}"`
-                        : 'Could not refresh this variant against the current encoding.',
-                }));
-                return;
-            }
-            dispatch(dfActions.updateStyleVariant({
-                chartId,
-                variantId: variant.id,
-                vlSpec: result.vlSpec,
-                rationale: result.rationale,
-                encodingFingerprint: computeEncodingFingerprint(chart),
-            }));
-        } catch (err: any) {
-            console.warn('[chart-restyle] refresh failed', err);
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                component: 'chart restyle',
-                type: 'error',
-                value: `Refresh failed: ${err?.message || String(err)}`,
-            }));
-        } finally {
-            setRefreshingVariantId(null);
-            dispatch(dfActions.changeChartRunningStatus({ chartId, status: false }));
-        }
-    };
-
-    const renderVariantChip = (label: string, opts: {
-        active: boolean,
-        stale?: boolean,
-        refreshing?: boolean,
-        tooltip?: string,
-        onClick: () => void,
-        onDelete?: () => void,
-    }) => {
-        // Match the project's quiet-pill idiom (see IdeaChip in ChartRecBox.tsx):
-        // outlined, low-alpha border, neutral text color, very subtle hover.
-        // Active state is conveyed by a slightly stronger border + bg, not a
-        // saturated primary fill.
-        const accent = theme.palette.text.primary;
-        return (
-            <Box
-                key={label}
-                component="span"
-                onClick={opts.onClick}
-                title={opts.tooltip}
-                sx={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    height: 20,
-                    px: '6px',
-                    fontSize: textVar.xs,
-                    fontWeight: 400,
-                    lineHeight: 1.4,
-                    color: accent,
-                    fontFamily: theme.typography.fontFamily,
-                    borderRadius: '6px',
-                    border: `1px solid ${alpha(accent, opts.active ? 0.45 : 0.12)}`,
-                    borderStyle: opts.stale ? 'dashed' : 'solid',
-                    backgroundColor: opts.active ? alpha(accent, 0.1) : theme.palette.background.paper,
-                    cursor: 'pointer',
-                    opacity: opts.stale ? 0.65 : 1,
-                    transition: transition.fast,
-                    '&:hover': {
-                        backgroundColor: alpha(accent, opts.active ? 0.13 : 0.04),
-                    },
-                }}
-            >
-                {opts.refreshing && (
-                    <CircularProgress size={10} sx={{ color: alpha(accent, 0.5), mr: '-1px' }} />
-                )}
-                <span>{label}</span>
-                {opts.onDelete && (
-                    <Box
-                        component="span"
-                        role="button"
-                        aria-label="delete variant"
-                        onClick={(e) => { e.stopPropagation(); opts.onDelete?.(); }}
-                        sx={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: 12,
-                            height: 12,
-                            borderRadius: '50%',
-                            color: alpha(accent, 0.4),
-                            cursor: 'pointer',
-                            '&:hover': {
-                                color: accent,
-                                backgroundColor: alpha(accent, 0.08),
-                            },
-                        }}
-                    >
-                        <CloseIcon sx={{ fontSize: textVar.xs }} />
-                    </Box>
-                )}
-            </Box>
-        );
-    };
-
-    let variantChipStrip = (variants.length > 0) ? (
-        <Box key='variant-chip-strip' sx={{
-            display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5,
-            px: 0.5, mb: 0.5,
-        }}>
-            <Typography sx={{ fontSize: textVar.xxs, color: 'text.secondary', mr: 0.25 }}>
-                style:
-            </Typography>
-            {renderVariantChip('default', {
-                active: !activeVariantId,
-                tooltip: 'Render the chart from its current encoding (no style refinement applied).',
-                onClick: () => dispatch(dfActions.setActiveVariant({ chartId, variantId: undefined })),
-            })}
-            {variants.map(v => {
-                const stale = isVariantStale(chart, v);
-                const refreshing = refreshingVariantId === v.id;
-                return renderVariantChip(v.label || v.id, {
-                    active: v.id === activeVariantId,
-                    stale,
-                    refreshing,
-                    tooltip: stale
-                        ? `Encoding has changed since this variant was created. Clicking will re-run the style agent against the current encoding.\n\nPrompt: ${v.prompt}`
-                        : (v.rationale ? `${v.rationale}\n\nPrompt: ${v.prompt}` : `Prompt: ${v.prompt}`),
-                    onClick: () => {
-                        // Activate immediately so the canvas shows what's
-                        // being refreshed; the spinner on the chip indicates
-                        // the agent call is in flight. On success the variant
-                        // is replaced in place and re-renders fresh.
-                        if (v.id !== activeVariantId) {
-                            dispatch(dfActions.setActiveVariant({ chartId, variantId: v.id }));
-                        }
-                        if (stale && !refreshing) {
-                            handleRefreshVariant(v);
-                        }
-                    },
-                    onDelete: () => dispatch(dfActions.deleteStyleVariant({ chartId, variantId: v.id })),
-                });
-            })}
-        </Box>
-    ) : null;
-
-
-
-
 
     let channelComponent = (
         <Box sx={{ width: "100%", minWidth: "220px", height: '100%', display: "flex", flexDirection: "column", gap: '4px' }}>
@@ -1072,10 +491,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             display: 'flex', 
             flexDirection: 'column', 
         }}>
-            {/* Opaque agent-working overlay — blocks the encoding shelf +
-                chat box while any agent phase runs (intent classify, restyle,
-                or the data agent), showing the live status text, instead of
-                dimming the chart canvas. */}
+            {/* Opaque agent-working overlay blocks the encoding shelf while
+                the data agent runs, without dimming the chart canvas. */}
             {isAgentWorking && (
                 <Box sx={{
                     position: 'absolute',
