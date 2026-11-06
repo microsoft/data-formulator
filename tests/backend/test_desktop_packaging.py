@@ -331,3 +331,16 @@ if (@(Get-ChildItem $env:CANDIDATE -Filter '*.sha256').Count) { throw 'Assembly 
         assert {file["path"] for file in manifest["files"]} == {"Data Formulator.exe", ".data-formulator-payload"}
         assert len(list(output.glob("*.sha256"))) == 1
         assert (payload / "Data Formulator.exe").read_bytes() == b"application"
+
+def test_macos_app_may_ask_to_control_the_users_browser():
+    """The browser tool drives Edge/Chrome/Safari through Apple Events. A notarized (hardened-runtime) app is
+    blocked from sending them without this entitlement, and macOS never asks without the usage text."""
+    import plistlib
+
+    entitlements = plistlib.loads((PROJECT_ROOT / "packaging/macos/entitlements.plist").read_bytes())
+    assert entitlements == {"com.apple.security.automation.apple-events": True}
+    spec_text = (PROJECT_ROOT / "packaging/data_formulator_desktop.spec").read_text()
+    assert '"packaging" / "macos" / "entitlements.plist"' in spec_text
+    for key in ("NSAppleEventsUsageDescription", "NSDocumentsFolderUsageDescription", "NSDesktopFolderUsageDescription",
+                "NSDownloadsFolderUsageDescription", "NSRemovableVolumesUsageDescription", "NSNetworkVolumesUsageDescription"):
+        assert f'"{key}"' in spec_text

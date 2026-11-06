@@ -1614,6 +1614,10 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             lazy: () => import('../views/DevSamplesPage').then(module => ({ Component: module.default })),
         },
         {
+            path: "/dev/design",
+            lazy: () => import('../views/DevDesignPage').then(module => ({ Component: module.default })),
+        },
+        {
             path: "/",
             element: <AppShell />,
             errorElement: <ErrorBoundaryFallback />,

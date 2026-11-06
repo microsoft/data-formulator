@@ -164,6 +164,20 @@ type PreparedInputTablePreview = {
 
 let workspaceLoadGeneration = 0;
 
+// The server's revision of each session's saved state that this tab's copy is based on: set by a load and by each
+// save. A save sends it, and the server refuses one older than what it holds (another tab or window saved since).
+// Kept out of the store on purpose: copies restored from browser storage never carry one, and recording it in state
+// would itself trigger an auto-save.
+const stateRevisions = new Map<string, number>();
+
+/** The server refused a save: this copy of the session is older than the saved one. */
+export class SessionConflictError extends Error {
+    readonly name = 'SessionConflictError';
+    constructor(readonly sessionId: string) {
+        super('This session was saved from another tab or window since this copy was loaded.');
+    }
+}
+
 export class WorkspaceLoadSupersededError extends Error {
     readonly name = 'WorkspaceLoadSupersededError';
 }
@@ -234,6 +248,7 @@ export async function loadWorkspace(id: string): Promise<{ state: Record<string,
             body: JSON.stringify({ id }),
         });
         if (!data.state) return null;
+        if (typeof data.revision === 'number') stateRevisions.set(id, data.revision);
         const state = migrateState(data.state);
         if (data.workflow_run) {
             const workflowPanel = await import('../views/WorkflowPanel');
@@ -312,17 +327,36 @@ export async function setWorkspaceStarred(id: string, starred: boolean): Promise
     _notifyListChanged();
 }
 
-/** Save current workspace state (called by auto-save). */
+// Saves from this tab go one at a time, so each is based on the revision the previous one returned.
+let saveQueue: Promise<unknown> = Promise.resolve();
+
+/** Save current workspace state (called by auto-save). Throws SessionConflictError when the server holds a newer copy. */
 export async function saveWorkspaceState(state: Record<string, unknown>): Promise<void> {
     const fullState = (await currentStore()).getState();
     const ws = fullState.activeWorkspace;
     if (!ws || isWorkspaceReadOnly(ws)) return;
 
-    await apiRequest(getUrls().SESSION_SAVE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: ws.id, state }),
-    });
+    const previous = saveQueue;
+    let done!: () => void;
+    saveQueue = new Promise<void>(resolve => { done = resolve; });
+    try {
+        await previous.catch(() => undefined);
+        const baseRevision = stateRevisions.get(ws.id);
+        let data: { revision?: number };
+        try {
+            ({ data } = await apiRequest<{ revision?: number }>(getUrls().SESSION_SAVE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: ws.id, state, ...(baseRevision !== undefined ? { base_revision: baseRevision } : {}) }),
+            }));
+        } catch (error) {
+            if (error instanceof ApiRequestError && error.apiError.code === 'SESSION_CONFLICT') throw new SessionConflictError(ws.id);
+            throw error;
+        }
+        if (typeof data?.revision === 'number') stateRevisions.set(ws.id, data.revision);
+    } finally {
+        done();
+    }
     if (fullState.serverConfig?.WORKSPACE_BACKEND === 'ephemeral') {
         await workspaceDB.save(
             ws.id,

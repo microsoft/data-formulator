@@ -3,8 +3,8 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 import { useStore } from 'react-redux';
-import { DataFormulatorState, dfSelectors } from './dfSlice';
-import { saveWorkspaceState } from './workspaceService';
+import { DataFormulatorState, dfActions, dfSelectors } from './dfSlice';
+import { saveWorkspaceState, SessionConflictError } from './workspaceService';
 import { handleApiError } from './errorHandler';
 import { DF_STATE_VERSION } from './stateMigrations';
 import { stripConnectorPrefillFromEntries } from './connectorFormPersistence';
@@ -86,6 +86,13 @@ export function useAutoSave() {
                 try {
                     await saveWorkspaceState(getSerializableState(latestStateRef.current));
                 } catch (err) {
+                    if (err instanceof SessionConflictError) {
+                        // Another tab or window saved a newer copy: stop saving this one and offer "Edit here",
+                        // which loads the saved copy.
+                        store.dispatch(dfActions.markSessionOpenElsewhere({ id: err.sessionId }));
+                        pendingRef.current = false;
+                        break;
+                    }
                     const now = Date.now();
                     if (now - lastErrorNotifyRef.current >= AUTO_SAVE_ERROR_NOTIFY_MS) {
                         lastErrorNotifyRef.current = now;
@@ -98,7 +105,7 @@ export function useAutoSave() {
         } finally {
             isSavingRef.current = false;
         }
-    }, []);
+    }, [store]);
 
     useEffect(() => {
         let previous: DataFormulatorState | undefined;

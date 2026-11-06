@@ -21,13 +21,13 @@ import {
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import CloseIcon from '@mui/icons-material/Close';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import StopIcon from '@mui/icons-material/Stop';
 import { useTranslation } from 'react-i18next';
-import { borderColor, transition, radius } from '../app/tokens';
+import { borderColor, transition } from '../app/tokens';
 import { iconVar, textVar } from '../app/layout';
 import { pastedTextFile } from '../app/pastedText';
+import { FileDropOverlay, useFileDrop } from '../components/FileDrop';
 
 export interface AgentChatInputProps {
     value: string;
@@ -190,36 +190,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
         });
     };
 
-    const [isDragActive, setIsDragActive] = useState(false);
-
-    const dragHasFiles = (e: React.DragEvent) =>
-        Array.from(e.dataTransfer?.types ?? []).includes('Files');
-
-    const handleDragOver = (e: React.DragEvent) => {
-        if (!dragHasFiles(e) || inProgress || disabled) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'copy';
-    };
-
-    const handleDragEnter = (e: React.DragEvent) => {
-        if (!dragHasFiles(e) || inProgress || disabled) return;
-        e.preventDefault();
-        setIsDragActive(true);
-    };
-
-    const handleDragLeave = (e: React.DragEvent) => {
-        // Ignore leaves that bubble up from child elements.
-        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-        setIsDragActive(false);
-    };
-
-    const handleDrop = (e: React.DragEvent) => {
-        if (!dragHasFiles(e) || inProgress || disabled) return;
-        e.preventDefault();
-        setIsDragActive(false);
-        const files = e.dataTransfer?.files;
-        if (files && files.length > 0) processFiles(Array.from(files));
-    };
+    const { active: isDragActive, handlers: dropHandlers } = useFileDrop({ enabled: !inProgress && !disabled, onFiles: processFiles });
 
     const pasteCount = useRef(0);
     const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
@@ -353,10 +324,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
     return (
         <Box sx={{ position: 'relative', width: '100%' }}>
             <Box
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
+                {...dropHandlers}
                 sx={{
                     position: 'relative',
                     border: `1px solid ${borderColor.divider}`,
@@ -377,36 +345,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                     ...sx,
                 }}
             >
-                {/* Drag-and-drop overlay — shown while a file is dragged over
-                    the composer. Uses the Data Formulator drop-zone language
-                    (2px dashed primary, tinted fill) inset from the container
-                    edge so it nests cleanly inside the border. Pointer events
-                    are disabled so the drop still lands on the container. */}
-                {isDragActive && (
-                    <Box sx={{
-                        position: 'absolute',
-                        inset: 4,
-                        zIndex: 2,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 1,
-                        pointerEvents: 'none',
-                        border: `2px dashed ${theme.palette.primary.main}`,
-                        borderRadius: radius.md,
-                        // Opaque paper base with a primary wash on top, so the
-                        // placeholder text underneath is fully masked while the
-                        // tint identity is preserved.
-                        bgcolor: theme.palette.background.paper,
-                        backgroundImage: `linear-gradient(${alpha(theme.palette.primary.main, 0.08)}, ${alpha(theme.palette.primary.main, 0.08)})`,
-                        transition: transition.normal,
-                    }}>
-                        <UploadFileIcon sx={{ fontSize: 22, color: 'primary.main' }} />
-                        <Typography variant="body2" sx={{ fontWeight: 500, color: 'primary.main' }}>
-                            {t('dataLoading.dropToAttach', { defaultValue: 'Drop file to attach' })}
-                        </Typography>
-                    </Box>
-                )}
+                <FileDropOverlay active={isDragActive} />
                 {/* Top slot (e.g. data-source chip bar) sits flush with the
                     input area below — no divider, same background. */}
                 {topSlot && (

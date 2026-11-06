@@ -1680,9 +1680,9 @@
     "alwaysAllowedHint": "Vous avez choisi « Toujours autoriser cet outil » quand l’agent l’a demandé. Retirez-le pour être de nouveau sollicité."
   },
   "tools": {
-    "chipDetails": "Outils utilisables par l’agent : le terminal et les serveurs MCP",
+    "chipDetails": "Outils que l’agent peut utiliser : le terminal, le navigateur et les serveurs MCP",
     "title": "Outils",
-    "intro": "Les outils permettent à l’agent d’aller au-delà de votre espace de travail : exécuter des commandes sur cet ordinateur ou appeler des serveurs MCP pour des données et des documents.",
+    "intro": "Les outils permettent à l’agent d’aller au-delà de votre espace de travail : exécuter des commandes sur cet ordinateur, naviguer sur le web ou appeler des serveurs MCP pour des données et des documents.",
     "blocked": "La politique de déploiement désactive les connexions utilisateur et les outils.",
     "localOnly": "Les outils sont disponibles dans l’application locale mono-utilisateur.",
     "modeLabel": "Approbation",
@@ -1933,5 +1933,57 @@
       "straight": "Droites"
     },
     "generating": "Génération de la carte"
+  },
+  "browser": {
+    "about": "Laissez l’agent lire le web dans un vrai navigateur : pages construites en JavaScript, sites qui bloquent les téléchargements simples et sites auxquels vous êtes connecté. Les pages s’ouvrent dans une fenêtre à part ; l’agent n’utilise jamais vos autres onglets.",
+    "allowAlways": "Toujours autoriser {{site}}",
+    "allowChat": "Autoriser dans cette conversation",
+    "approvalNote": "Ce que l’agent y lit est envoyé à votre fournisseur de modèle.",
+    "approvalTitle": "Laisser l’agent utiliser {{site}} dans votre navigateur ?",
+    "caption": "Lire des pages web dans un vrai navigateur, y compris les sites auxquels vous êtes connecté",
+    "check": "Vérifier",
+    "checkAgain": "Vérifier à nouveau",
+    "checkHint": "Vérifier que l’agent peut utiliser le navigateur. Une fenêtre de navigateur s’ouvre puis se ferme.",
+    "checkHintMac": "Vérifier que l’agent peut utiliser le navigateur. macOS peut demander si Data Formulator peut le contrôler ; choisissez OK.",
+    "choice": {
+      "auto": "Votre navigateur par défaut",
+      "profile": "Une fenêtre Edge séparée (connexions propres)"
+    },
+    "choiceLabel": "Navigateur à utiliser",
+    "copyScript": "Copier le script",
+    "fix": {
+      "automation": "macOS demande l’accord avant qu’une app en contrôle une autre. Autorisez l’app qui exécute Data Formulator (Terminal, VS Code ou Data Formulator lui-même) à contrôler {{name}} : dans Réglages Système → Confidentialité et sécurité → Automatisation, activez {{name}} sous cette app. Si l’app n’apparaît pas encore, cliquez sur « Vérifier à nouveau » et choisissez OK quand macOS le demande.",
+      "chromium": "Dans la barre de menus de {{name}}, choisissez View → Developer → Allow JavaScript from Apple Events pour qu’une coche apparaisse. Data Formulator peut alors lire les pages qu’il ouvre.",
+      "installBrowser": "Installez Microsoft Edge ou Google Chrome, ou utilisez Safari, puis vérifiez à nouveau.",
+      "launch": "Edge n’a pas pu être démarré pour Data Formulator. Sur un ordinateur professionnel, votre organisation l’a peut-être désactivé (stratégie Edge RemoteDebuggingAllowed) ; contactez votre administrateur informatique ou choisissez Google Chrome ci-dessus.",
+      "openAutomation": "Ouvrir les réglages d’automatisation",
+      "playwright": "Data Formulator pilote le Microsoft Edge déjà installé, ce qui nécessite son module de prise en charge du navigateur. Installez-le dans l’environnement Python qui exécute Data Formulator, puis redémarrez Data Formulator :",
+      "safari": "Dans Safari, ouvrez Réglages → Avancés et activez « Afficher les fonctionnalités pour les développeurs web ». Puis, dans Réglages → Développeur, activez « Autoriser JavaScript depuis les Apple Events ».",
+      "safariLegacy": "Dans Safari, ouvrez Réglages (Préférences sur les anciennes versions de macOS) → Avancés et activez « Afficher le menu Développement dans la barre des menus ». Puis, dans la barre des menus, choisissez Développement → Autoriser JavaScript depuis les Apple Events.",
+      "systemSettings": "Confidentialité et sécurité › Automatisation"
+    },
+    "name": "Navigateur",
+    "open": "Ouvrir",
+    "ownProfile": "Utilise {{name}} avec son propre profil : vos connexions habituelles n’y sont pas. Quand un site demande de vous connecter, connectez-vous une fois dans cette fenêtre et ce sera mémorisé.",
+    "ready": "Prêt. Demandez à l’agent de récupérer des données d’une page web.",
+    "scriptLabel": "Script exécuté dans la page",
+    "setup": "Configuration",
+    "signInHint": "Ouvrez un site dans la fenêtre du navigateur de l’agent pour vous connecter à l’avance. L’agent vous demande aussi quand il arrive sur une page de connexion.",
+    "signInTitle": "Se connecter à un site",
+    "status": {
+      "needsSetup": "À configurer",
+      "off": "Désactivé",
+      "on": "Activé",
+      "ready": "Prêt · {{name}}"
+    },
+    "step": {
+      "automation": "macOS autorise Data Formulator à contrôler {{name}}",
+      "installed": "{{name}} est disponible",
+      "javascript": "{{name}} autorise Data Formulator à lire les pages",
+      "launch": "{{name}} démarre pour Data Formulator"
+    },
+    "tabGone": "Cet onglet n’est plus ouvert.",
+    "use": "Utiliser le navigateur",
+    "userProfile": "Utilise votre propre {{name}}, connecté en votre nom : les sites auxquels vous êtes connecté fonctionnent comme pour vous."
   }
 }

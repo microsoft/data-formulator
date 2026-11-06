@@ -405,3 +405,30 @@ it('signs in to Hugging Face with its own words, or takes a pasted token', async
     expect(screen.getByText(/Signed in to Hugging Face as @grace/)).toBeTruthy();
     expect(screen.queryByLabelText('Hugging Face token')).toBeNull();
 });
+
+it('does not show the browser as on while its last check failed', async () => {
+    const calls: Call[] = [];
+    const state = policy();
+    serve(state, calls);
+    const fallback = vi.mocked(apiRequest).getMockImplementation()!;
+    const failed = { revision: 2, available: true, enabled: true, choice: 'safari', mode: 'off', platform: 'darwin',
+        browser: 'safari', label: 'Safari', user_profile: true, driver: 'applescript', ready: false,
+        steps: [{ step: 'installed', ok: true }, { step: 'automation', ok: true },
+            { step: 'javascript', ok: false, detail: 'Safari does not allow JavaScript from Apple Events.' }] };
+    vi.mocked(apiRequest).mockImplementation(async (url: string, init?: any) =>
+        url === '/api/browser' ? { data: failed } as any : fallback(url, init));
+    const { unmount } = open({ BROWSER_AVAILABLE: true, BROWSER_ENABLED: true });
+    const dialog = screen.getByRole('dialog', { name: 'Tools' });
+
+    await within(dialog).findByText('Needs setup');
+    // The card's switch is off and the chip counts only the terminal and Docs.
+    expect(within(dialog).getByLabelText('Use the browser')).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Tools: 2 on, Ask every time', hidden: true })).toBeTruthy();
+    expect(store.getState().serverConfig.BROWSER_ENABLED).toBe(false);
+    // Its page keeps the user's switch on, in warning orange, beside the fix.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Browser' }));
+    const detailSwitch = await within(dialog).findByLabelText('Use the browser');
+    expect(detailSwitch).toBeChecked();
+    expect(detailSwitch.closest('.MuiSwitch-root')!.querySelector('.MuiSwitch-colorWarning')).toBeTruthy();
+    unmount();
+});

@@ -16,6 +16,7 @@ Users can create, list, open, delete, and switch workspaces.
 import json
 import logging
 import shutil
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -28,6 +29,24 @@ logger = logging.getLogger(__name__)
 
 SESSION_STATE_FILENAME = "session_state.json"
 WORKSPACE_META_FILENAME = "workspace_meta.json"
+
+
+class SessionConflictError(Exception):
+    """A save was based on an older copy of the session than the one stored (another tab or window saved since)."""
+
+    def __init__(self, revision: int) -> None:
+        super().__init__(f"The session was saved elsewhere (revision {revision}).")
+        self.revision = revision
+
+
+_state_locks: dict[str, threading.Lock] = {}
+_state_locks_guard = threading.Lock()
+
+
+def state_lock(key: str) -> threading.Lock:
+    """One lock per stored session, so a save checks its revision and writes without another save in between."""
+    with _state_locks_guard:
+        return _state_locks.setdefault(key, threading.Lock())
 
 # Fields that must never be persisted (contain secrets / ephemeral info)
 _SENSITIVE_FIELDS = frozenset([
@@ -133,6 +152,7 @@ class WorkspaceManager:
         source_ids: Optional[list[str]] = None,
         provisional: Optional[bool] = None,
         scheduled_run: Optional[dict] = None,
+        state_revision: Optional[int] = None,
     ) -> None:
         """Write a lightweight ``workspace_meta.json`` used by list_workspaces.
 
@@ -185,6 +205,10 @@ class WorkspaceManager:
             meta["scheduledRun"] = existing["scheduledRun"]
         if existing.get("starred"):
             meta["starred"] = True
+        if state_revision is not None:
+            meta["stateRevision"] = state_revision
+        elif isinstance(existing.get("stateRevision"), int):
+            meta["stateRevision"] = existing["stateRevision"]
         meta_file.write_text(
             json.dumps(meta, ensure_ascii=False), encoding="utf-8",
         )
@@ -567,18 +591,38 @@ class WorkspaceManager:
 
     # ── Session state persistence ────────────────────────────────────
 
-    def save_session_state(self, workspace_id: str, state: dict) -> None:
+    def state_revision(self, workspace_id: str) -> int:
+        """How many times the session's state has been saved; a save based on an older count is refused."""
+        meta_file = self._root / self._safe_id(workspace_id) / WORKSPACE_META_FILENAME
+        try:
+            revision = json.loads(meta_file.read_text(encoding="utf-8")).get("stateRevision", 0)
+        except (OSError, ValueError):
+            return 0
+        return revision if isinstance(revision, int) else 0
+
+    def save_session_state(self, workspace_id: str, state: dict, base_revision: Optional[int] = None) -> int:
         """
-        Save frontend state to session_state.json in a workspace.
+        Save frontend state to session_state.json in a workspace and return its new revision.
 
         Sensitive fields are automatically stripped.  Also updates the
         lightweight ``workspace_meta.json`` used by :meth:`list_workspaces`.
+        With ``base_revision`` (the revision the caller loaded or last saved), a save is refused with
+        :class:`SessionConflictError` once another save has landed since, so an out-of-date copy of the
+        session (a stale tab, or state restored from browser storage) cannot overwrite newer work.
         """
         safe = self._safe_id(workspace_id)
         ws_dir = self._root / safe
         if not ws_dir.exists():
             raise ValueError(f"Workspace '{workspace_id}' does not exist")
 
+        with state_lock(str(ws_dir)):
+            current = self.state_revision(workspace_id)
+            if base_revision is not None and base_revision < current:
+                raise SessionConflictError(current)
+            self._write_session_state(workspace_id, ws_dir, state, current + 1)
+        return current + 1
+
+    def _write_session_state(self, workspace_id: str, ws_dir: Path, state: dict, revision: int) -> None:
         clean_state = _strip_sensitive(state)
         state_file = ws_dir / SESSION_STATE_FILENAME
         state_file.write_text(
@@ -602,6 +646,7 @@ class WorkspaceManager:
             chart_count=cc,
             source_ids=_session_source_ids(clean_state),
             scheduled_run=aw.get("scheduledRun") if isinstance(aw, dict) else None,
+            state_revision=revision,
         )
 
         logger.debug(f"Saved session state to {state_file}")

@@ -3,6 +3,7 @@ import { Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogConten
     IconButton, Switch, TextField, Tooltip, Typography, alpha } from '@mui/material';
 import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
 import BlockIcon from '@mui/icons-material/Block';
+import LanguageIcon from '@mui/icons-material/Language';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -91,6 +92,9 @@ export interface McpProposal {
     annotations: McpTool['annotations'];
     arguments: Record<string, unknown>;
     purpose: string;
+    /** A call of the agent's browser (the same approval path): its approval is per site. */
+    kind?: 'browser';
+    site?: string;
 }
 
 /** The tool name MCP calls are recorded under on a message. */
@@ -116,17 +120,19 @@ const errorText = (reason: unknown) => reason instanceof Error ? reason.message 
  * A tool's on/off switch, on its card and in its details. Hovering it says what a click does (a halo and
  * "Turn on"/"Turn off"), and its card stays still meanwhile, so toggling never looks like opening the card.
  */
-export const ToolSwitch = ({ checked, disabled, label, onChange }: {
+export const ToolSwitch = ({ checked, disabled, label, onChange, color = 'primary' }: {
     checked: boolean; disabled?: boolean; label: string; onChange: (checked: boolean) => void;
+    /** `warning` for a tool switched on that cannot run yet, e.g. one whose setup check failed. */
+    color?: 'primary' | 'warning';
 }) => {
     const { t } = useTranslation();
     return <Tooltip title={checked ? t('mcp.turnOff', { defaultValue: 'Turn off' }) : t('mcp.turnOn', { defaultValue: 'Turn on' })}>
         <Box component="span" className="tool-switch" onClick={event => event.stopPropagation()}
             sx={{ display: 'inline-flex', borderRadius: 999, cursor: disabled ? 'default' : 'pointer',
                 '&:hover .MuiSwitch-switchBase:not(.Mui-disabled)': {
-                    bgcolor: theme => checked ? alpha(theme.palette.primary.main, 0.18) : alpha(theme.palette.text.primary, 0.12) },
+                    bgcolor: theme => checked ? alpha(theme.palette[color].main, 0.18) : alpha(theme.palette.text.primary, 0.12) },
                 '&:hover .MuiSwitch-track': { opacity: checked ? 0.7 : 0.55 } }}>
-            <Switch size="small" checked={checked} disabled={disabled} slotProps={{ input: { 'aria-label': label } }}
+            <Switch size="small" color={color} checked={checked} disabled={disabled} slotProps={{ input: { 'aria-label': label } }}
                 onChange={(_, value) => onChange(value)} />
         </Box>
     </Tooltip>;
@@ -776,6 +782,38 @@ export const useMcpSettings = (active: boolean) => {
 
 export type McpDecision = 'approve' | 'always' | 'reject';
 
+/** The agent's browser asks before it opens, reads or scripts a site the user has not allowed. */
+const BrowserApprovalDialog = ({ proposal, decide }: { proposal: McpProposal; decide: (decision: McpDecision) => void }) => {
+    const { t } = useTranslation();
+    const site = proposal.site || '';
+    const script = typeof proposal.arguments.script === 'string' ? proposal.arguments.script : '';
+    return <Dialog open maxWidth="sm" fullWidth aria-labelledby="browser-approval-title" onClose={() => decide('reject')}>
+        <DialogTitle id="browser-approval-title" sx={{ display: 'flex', alignItems: 'center', gap: 1, fontSize: textVar.lg, overflowWrap: 'anywhere' }}>
+            <LanguageIcon sx={{ flexShrink: 0 }} />
+            {t('browser.approvalTitle', { defaultValue: 'Let the agent use {{site}} in your browser?', site })}
+        </DialogTitle>
+        <DialogContent sx={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            {proposal.purpose && <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{proposal.purpose}</Typography>}
+            <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+                <Box component="span" sx={{ fontWeight: 600 }}>{proposal.title}</Box>
+                {typeof proposal.arguments.url === 'string' && <Box component="span" sx={{ color: 'text.secondary' }}> · {proposal.arguments.url}</Box>}
+            </Typography>
+            {script && <ExecutionCodeBlock code={script} language="javascript"
+                label={t('browser.scriptLabel', { defaultValue: 'Script run in the page' })}
+                copyLabel={t('browser.copyScript', { defaultValue: 'Copy script' })} />}
+            <Typography variant="caption" color="text.secondary">
+                {proposal.description} {t('browser.approvalNote', { defaultValue: 'What the agent reads there goes to your model provider.' })}
+            </Typography>
+        </DialogContent>
+        <DialogActions disableSpacing sx={{ flexWrap: 'wrap', gap: 1, p: 2 }}>
+            <Button autoFocus startIcon={<BlockIcon />} onClick={() => decide('reject')}>{t('mcp.reject', { defaultValue: 'Reject' })}</Button>
+            <Box sx={{ flex: 1 }} />
+            <Button onClick={() => decide('always')}>{t('browser.allowAlways', { defaultValue: 'Always allow {{site}}', site })}</Button>
+            <Button variant="contained" onClick={() => decide('approve')}>{t('browser.allowChat', { defaultValue: 'Allow in this chat' })}</Button>
+        </DialogActions>
+    </Dialog>;
+};
+
 export const McpApprovalDialog = ({ proposal, onDecision }: {
     proposal: McpProposal;
     onDecision: (decision: McpDecision) => void;
@@ -787,6 +825,7 @@ export const McpApprovalDialog = ({ proposal, onDecision }: {
         submitted.current = true;
         onDecision(decision);
     };
+    if (proposal.kind === 'browser') return <BrowserApprovalDialog proposal={proposal} decide={decide} />;
     return <Dialog open maxWidth="sm" fullWidth aria-labelledby="mcp-approval-title" onClose={() => decide('reject')}>
         <DialogTitle id="mcp-approval-title" sx={{ display: 'flex', alignItems: 'center', gap: 1, fontSize: textVar.lg, overflowWrap: 'anywhere' }}>
             <ExtensionOutlinedIcon sx={{ flexShrink: 0 }} />

@@ -26,8 +26,10 @@ from data_formulator.datalake.workspace_manager import (
     WorkspaceManager,
     SESSION_STATE_FILENAME,
     WORKSPACE_META_FILENAME,
+    SessionConflictError,
     _session_source_ids,
     _strip_sensitive,
+    state_lock,
 )
 
 if TYPE_CHECKING:
@@ -124,6 +126,7 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
         chart_count: Optional[int] = None,
         source_ids: Optional[list[str]] = None,
         scheduled_run: Optional[dict] = None,
+        state_revision: Optional[int] = None,
     ) -> None:
         """Upload a lightweight ``workspace_meta.json`` blob for fast listing.
 
@@ -172,6 +175,10 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
             meta["scheduledRun"] = existing["scheduledRun"]
         if existing.get("starred"):
             meta["starred"] = True
+        if state_revision is not None:
+            meta["stateRevision"] = state_revision
+        elif isinstance(existing.get("stateRevision"), int):
+            meta["stateRevision"] = existing["stateRevision"]
         self._upload_blob(blob_name, json.dumps(meta, ensure_ascii=False))
 
     def _ensure_meta(self, workspace_id: str) -> dict:
@@ -344,15 +351,34 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
 
     # ── Session state persistence ────────────────────────────────────
 
-    def save_session_state(self, workspace_id: str, state: dict) -> None:
-        """Save frontend state to session_state.json blob.
+    def state_revision(self, workspace_id: str) -> int:
+        meta_blob = self._blob_name(workspace_id, WORKSPACE_META_FILENAME)
+        if not self._blob_exists(meta_blob):
+            return 0
+        try:
+            revision = json.loads(self._download_blob(meta_blob)).get("stateRevision", 0)
+        except Exception:  # noqa: BLE001
+            return 0
+        return revision if isinstance(revision, int) else 0
+
+    def save_session_state(self, workspace_id: str, state: dict, base_revision: Optional[int] = None) -> int:
+        """Save frontend state to session_state.json blob and return its new revision.
 
         Also updates the lightweight ``workspace_meta.json`` blob used by
-        :meth:`list_workspaces`.
+        :meth:`list_workspaces`. A save based on an older revision than the stored one raises
+        :class:`SessionConflictError` (checked per server process; blob storage has no cross-process lock).
         """
         if not self.workspace_exists(workspace_id):
             raise ValueError(f"Workspace '{workspace_id}' does not exist")
 
+        with state_lock(self._blob_name(workspace_id, SESSION_STATE_FILENAME)):
+            current = self.state_revision(workspace_id)
+            if base_revision is not None and base_revision < current:
+                raise SessionConflictError(current)
+            self._write_session_state_blob(workspace_id, state, current + 1)
+        return current + 1
+
+    def _write_session_state_blob(self, workspace_id: str, state: dict, revision: int) -> None:
         clean_state = _strip_sensitive(state)
         blob_name = self._blob_name(workspace_id, SESSION_STATE_FILENAME)
         self._upload_blob(
@@ -375,6 +401,7 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
             chart_count=cc,
             source_ids=_session_source_ids(clean_state),
             scheduled_run=aw.get("scheduledRun") if isinstance(aw, dict) else None,
+            state_revision=revision,
         )
 
         logger.debug(f"Saved session state to blob {blob_name}")

@@ -45,6 +45,24 @@ describe('clarification helpers', () => {
     expect(normalized.summary).toBe('Translated exhausted prompt');
   });
 
+  it('keeps known option icons and drops unknown ones', () => {
+    const normalized = normalizeClarifyEvent({
+      questions: [{
+        text: 'Where should the data come from?',
+        options: [
+          { label: 'Find CPI data online', icon: 'search_web' },
+          { label: 'Upload a file', icon: 'upload' },
+          { label: 'Connect', icon: 'rocket' },
+        ],
+      }],
+    });
+    expect(normalized.questions[0].options).toEqual([
+      { label: 'Find CPI data online', icon: 'search_web' },
+      { label: 'Upload a file', icon: 'upload' },
+      { label: 'Connect' },
+    ]);
+  });
+
   it('defaults responseType to free_text when no options are provided', () => {
     const normalized = normalizeClarifyEvent({
       type: 'clarify',

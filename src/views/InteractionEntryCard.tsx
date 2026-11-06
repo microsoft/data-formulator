@@ -35,6 +35,8 @@ import { useDispatch, useSelector } from 'react-redux';
 import { dfActions, dfSelectors } from '../app/dfSlice';
 import { ThreadReferenceChips } from '../components/ThreadReferenceIcon';
 import { getCachedChart } from '../app/chartCache';
+import { BrowserTabLink } from '../components/BrowserAccess';
+import { browserTabFromHref } from '../app/browserSettings';
 
 export const workspaceFileFromHref = (href: string): string | null => {
     const prefixes = ['/api/workspace/files/', '/api/agent/workspace/scratch/', '/api/workspace/scratch/', 'scratch/', './scratch/'];
@@ -261,13 +263,15 @@ export const CompactMarkdown: React.FC<{
     }}>
         <Markdown
             remarkPlugins={[remarkGfm]}
-            urlTransform={(url, key, node) => key === 'src' && node.tagName === 'img' && url.startsWith('chart://')
-                ? url : defaultUrlTransform(url)}
+            urlTransform={(url, key, node) => (key === 'src' && node.tagName === 'img' && url.startsWith('chart://'))
+                || (key === 'href' && browserTabFromHref(url)) ? url : defaultUrlTransform(url)}
             components={{
                 img: ({ src, alt }) => src?.startsWith('chart://')
                     ? <MarkdownChartImage chartId={src.slice('chart://'.length)} alt={alt} />
                     : src ? <Box component="img" src={src} alt={alt} sx={markdownImageSx} /> : null,
                 a: ({ href, children }) => {
+                    const browserTab = browserTabFromHref(href || '');
+                    if (browserTab) return <BrowserTabLink tab={browserTab}>{children}</BrowserTabLink>;
                     const fileName = workspaceFileFromHref(href || '');
                     return fileName
                         ? <WorkspaceArtifactLink href={href!} fileName={fileName}>{children}</WorkspaceArtifactLink>

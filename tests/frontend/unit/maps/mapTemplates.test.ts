@@ -32,6 +32,14 @@ describe('map templates', () => {
             .toContain('Give template (with encoding) or layers, not both.');
     });
 
+    it('pins category colours from properties.colors', () => {
+        const colors = { Republican: '#d62728', Democratic: '#1f5fbf' };
+        const base = { template: 'choropleth', data: { table: 't' }, encoding: { region: 'state', color: 'winner' } };
+        expect(compileTemplate({ ...base, properties: { colors } }).layers[0].color).toMatchObject({ field: 'winner', colors });
+        expect(templateErrors({ ...base, properties: { colors: { Republican: 'not a colour!' } } })).toEqual([
+            'properties.colors must map category values to CSS colours, such as {"Republican": "#d62728"}.']);
+    });
+
     it('parses a template map and keeps it for editing', () => {
         const parsed = parseMapSpec(JSON.stringify({ title: 'T', template: 'bubbles', data: { values: [{ x: 1, y: 2, n: 3 }] },
             encoding: { lat: 'y', lon: 'x', size: 'n' }, view: { style: 'dark' }, controls: [{ type: 'stats', layer: 'main' }] }));

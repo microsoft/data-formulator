@@ -39,9 +39,13 @@ import TerminalIcon from '@mui/icons-material/Terminal';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import OpenInFullIcon from '@mui/icons-material/OpenInFull';
+import TravelExploreRoundedIcon from '@mui/icons-material/TravelExploreRounded';
+import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
+import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import { useTranslation } from 'react-i18next';
 import { AgentToyIcon } from './AgentToyIcon';
 import {
+    ClarificationOptionIcon,
     ClarificationQuestion,
     ClarificationResponse,
 } from '../components/ComponentType';
@@ -327,6 +331,12 @@ export const ResponseOptionButton: FC<ResponseOptionButtonProps> = ({
 
 /** Options shown before a long list collapses behind "+N more". */
 const OPTION_PREVIEW_COUNT = 8;
+
+const OPTION_ICONS: Record<ClarificationOptionIcon, typeof LinkRoundedIcon> = {
+    search_web: TravelExploreRoundedIcon,
+    connect: LinkRoundedIcon,
+    upload: UploadFileRoundedIcon,
+};
 
 interface ClarificationPanelProps {
     questions: ClarificationQuestion[];
@@ -809,6 +819,10 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                                                         })}
                                                 >
                                                     {isMulti && isOptionSelected(option) && <CheckRoundedIcon sx={{ fontSize: iconVar.xs }} />}
+                                                    {option.icon && (() => {
+                                                        const OptionIcon = OPTION_ICONS[option.icon];
+                                                        return <OptionIcon aria-hidden sx={{ fontSize: iconVar.xs, color: theme.palette.text.secondary }} />;
+                                                    })()}
                                                     {renderFieldHighlights(option.label, accentColor)}
                                                 </ResponseOptionButton>
                                             ))}

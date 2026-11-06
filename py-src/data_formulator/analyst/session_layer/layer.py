@@ -190,7 +190,8 @@ class SessionLayer:
             columns = [{"name": name, "type": (metadata.get(name) or {}).get("type")} for name in table.get("names") or []]
         for column in columns:
             meaning = semantics.get(column["name"]) or {}
-            for source, target in (("semanticType", "semantic_type"), ("displayName", "display_name"), ("unit", "unit")):
+            for source, target in (("semanticType", "semantic_type"), ("displayName", "display_name"), ("unit", "unit"),
+                                   ("colors", "colors")):
                 if meaning.get(source):
                     column[target] = meaning[source]
         return [{key: value for key, value in column.items() if value not in (None, "")} for column in columns]

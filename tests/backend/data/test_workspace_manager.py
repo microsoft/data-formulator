@@ -196,6 +196,27 @@ class TestSessionState:
         )
         assert meta["displayName"] == "Some Name"
 
+    def test_save_refuses_a_copy_older_than_the_stored_state(self, manager):
+        from data_formulator.datalake.workspace_manager import SessionConflictError
+
+        manager.create_workspace("ws")
+        assert manager.state_revision("ws") == 0
+        first = manager.save_session_state("ws", {"textTurns": [1]}, base_revision=0)
+        second = manager.save_session_state("ws", {"textTurns": [1, 2]}, base_revision=first)
+        assert (first, second) == (1, 2)
+
+        # A tab still holding revision 1 (or a copy restored from browser storage) cannot overwrite revision 2.
+        with pytest.raises(SessionConflictError) as conflict:
+            manager.save_session_state("ws", {"textTurns": [1]}, base_revision=first)
+        assert conflict.value.revision == 2
+        assert manager.load_session_state("ws")["textTurns"] == [1, 2]
+        # Saves without a base revision (server-side writers, first save of a new session) still land.
+        assert manager.save_session_state("ws", {"textTurns": [1, 2, 3]}) == 3
+        # Renaming and starring keep the revision.
+        manager.update_display_name("ws", "Renamed")
+        manager.set_starred("ws", True)
+        assert manager.state_revision("ws") == 3
+
     def test_set_starred_survives_saves_without_bumping_updated_at(self, manager):
         manager.create_workspace("ws")
         manager.save_session_state("ws", {"tables": [], "activeWorkspace": {"id": "ws", "displayName": "Sales"}})

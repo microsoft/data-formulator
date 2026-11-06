@@ -62,6 +62,11 @@ export default defineConfig({
         target: `http://localhost:${apiPort}`,
         changeOrigin: false,
       },
+      // The browser's settings and tab focus check for the app's own origin too.
+      '/api/browser': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: false,
+      },
       '/api': {
         target: `http://localhost:${apiPort}`,
         changeOrigin: true,

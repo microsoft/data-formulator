@@ -1680,9 +1680,9 @@
     "alwaysAllowedHint": "你在智能体询问时选择了“始终允许此工具”。移除后会重新询问。"
   },
   "tools": {
-    "chipDetails": "智能体可使用的工具：终端和 MCP 服务器",
+    "chipDetails": "智能体可使用的工具：终端、浏览器和 MCP 服务器",
     "title": "工具",
-    "intro": "工具让智能体超越工作区：在这台计算机上运行命令，或调用 MCP 服务器获取数据和文档。",
+    "intro": "工具让智能体超越你的工作区：在这台电脑上运行命令、浏览网页，或调用 MCP 服务器获取数据和文档。",
     "blocked": "部署策略已关闭用户连接和工具。",
     "localOnly": "工具仅在单用户本地应用中可用。",
     "modeLabel": "审批",
@@ -1933,5 +1933,57 @@
       "straight": "直线"
     },
     "generating": "正在生成地图"
+  },
+  "browser": {
+    "about": "让智能体在真实浏览器中读取网页：由 JavaScript 绘制的页面、拦截简单下载的网站，以及你已登录的网站。页面在单独的窗口中打开；智能体绝不会使用你的其他标签页。",
+    "allowAlways": "始终允许 {{site}}",
+    "allowChat": "在此对话中允许",
+    "approvalNote": "智能体在该网站读取的内容会发送给你的模型提供商。",
+    "approvalTitle": "允许智能体在你的浏览器中使用 {{site}}？",
+    "caption": "在真实浏览器中读取网页，包括你已登录的网站",
+    "check": "检查",
+    "checkAgain": "重新检查",
+    "checkHint": "检查智能体能否使用浏览器。浏览器窗口会打开然后关闭。",
+    "checkHintMac": "检查智能体能否使用浏览器。macOS 可能会询问是否允许 Data Formulator 控制它；请选择“好”。",
+    "choice": {
+      "auto": "你的默认浏览器",
+      "profile": "单独的 Edge 窗口（独立的登录）"
+    },
+    "choiceLabel": "使用的浏览器",
+    "copyScript": "复制脚本",
+    "fix": {
+      "automation": "macOS 在一个应用控制另一个应用前会先征求同意。请允许运行 Data Formulator 的应用（终端、VS Code 或 Data Formulator 本身）控制 {{name}}：在“系统设置 → 隐私与安全性 → 自动化”中，在该应用下打开 {{name}}。如果该应用尚未列出，请点击“重新检查”，并在 macOS 询问时选择“好”。",
+      "chromium": "在 {{name}} 的菜单栏中选择 View → Developer → Allow JavaScript from Apple Events，使其旁边显示勾号。这样 Data Formulator 才能读取它打开的页面。",
+      "installBrowser": "请安装 Microsoft Edge 或 Google Chrome，或使用 Safari，然后重新检查。",
+      "launch": "无法为 Data Formulator 启动 Edge。在工作电脑上，你的组织可能关闭了此功能（Edge 策略 RemoteDebuggingAllowed）；请联系 IT 管理员，或在上方选择 Google Chrome。",
+      "openAutomation": "打开自动化设置",
+      "playwright": "Data Formulator 会驱动这台电脑上已安装的 Microsoft Edge，这需要浏览器支持包。请将其安装到运行 Data Formulator 的 Python 环境中，然后重启 Data Formulator：",
+      "safari": "在 Safari 中，打开“设置 → 高级”，打开“显示网页开发者功能”。然后在“设置 → 开发者”中，打开“允许来自 Apple 事件的 JavaScript”。",
+      "safariLegacy": "在 Safari 中，打开“设置”（较旧的 macOS 上为“偏好设置”）→“高级”，打开“在菜单栏中显示‘开发’菜单”。然后在菜单栏中选择“开发”→“允许来自 Apple 事件的 JavaScript”。",
+      "systemSettings": "隐私与安全性 › 自动化"
+    },
+    "name": "浏览器",
+    "open": "打开",
+    "ownProfile": "使用拥有独立配置文件的 {{name}}，因此其中没有你平时的登录。当网站需要登录时，在该窗口中登录一次即可被记住。",
+    "ready": "已就绪。让智能体从网页获取数据吧。",
+    "scriptLabel": "在页面中运行的脚本",
+    "setup": "设置",
+    "signInHint": "在智能体的浏览器窗口中打开网站，提前登录。智能体遇到登录页面时也会询问你。",
+    "signInTitle": "登录网站",
+    "status": {
+      "needsSetup": "需要设置",
+      "off": "关闭",
+      "on": "开启",
+      "ready": "已就绪 · {{name}}"
+    },
+    "step": {
+      "automation": "macOS 允许 Data Formulator 控制 {{name}}",
+      "installed": "{{name}} 可用",
+      "javascript": "{{name}} 允许 Data Formulator 读取页面",
+      "launch": "{{name}} 可为 Data Formulator 启动"
+    },
+    "tabGone": "该标签页已关闭。",
+    "use": "使用浏览器",
+    "userProfile": "使用你自己的 {{name}}，以你的身份登录：你已登录的网站会像平时一样工作。"
   }
 }

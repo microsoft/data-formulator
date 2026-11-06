@@ -95,6 +95,12 @@ export interface ServerConfig {
     MCP_AVAILABLE?: boolean;
     /** How many of the user's MCP servers are switched on. */
     MCP_SERVERS_ON?: number;
+    /** The agent's browser can run here (single-user local mode). */
+    BROWSER_AVAILABLE?: boolean;
+    /** The user opted in to the browser (off by default). */
+    BROWSER_ENABLED?: boolean;
+    /** The browser's effective mode: off when unavailable or switched off, else TOOLS_MODE. */
+    BROWSER_MODE?: 'off' | 'ask' | 'auto';
     DISABLE_DISPLAY_KEYS: boolean;
     DISABLE_DATA_CONNECTORS: boolean;
     DISABLE_CUSTOM_MODELS: boolean;

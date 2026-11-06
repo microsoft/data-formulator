@@ -48,7 +48,7 @@ export function clearAppDraftLines(draftId?: string) {
 }
 
 /** The masked shape of code, as the agent sends it (`_ArtifactDraftPreview`): visible characters as `x`, the last lines. */
-export function maskAppCode(code: string, lastLines = 5, width = 96): { lines: string[]; lineCount: number } {
+export function maskAppCode(code: string, lastLines = 12, width = 96): { lines: string[]; lineCount: number } {
     const all = code.replace(/\r/g, '').split('\n');
     const lines = all.slice(-lastLines).map(line => line.replace(/\t/g, '  ').replace(/\S/g, 'x').replace(/\s/g, ' ').slice(0, width));
     return { lines, lineCount: all.length };

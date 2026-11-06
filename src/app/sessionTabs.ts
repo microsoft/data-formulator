@@ -6,7 +6,9 @@
  * (`/app?session=<id>`), so sessions can be opened side by side, reloaded, and
  * bookmarked. The backend scopes every request by the signed-in (or local)
  * identity and the tab's `X-Workspace-Id`, so tabs share connectors, models,
- * workflows, and schedules while editing different sessions.
+ * workflows, and schedules while editing different sessions. A tab opened
+ * without a session in its URL starts on the landing page; it does not pick up
+ * the session another tab left in shared browser storage.
  *
  * One session is edited by one tab at a time: a tab that opens a session
  * `claim`s it over a BroadcastChannel; a tab holding it saves its latest state

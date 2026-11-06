@@ -155,13 +155,22 @@ def _raise_if_storage_full(exc: OSError) -> NoReturn:
 
 @session_bp.route("/save", methods=["POST"])
 def save_session():
-    """Auto-persist frontend state to the active workspace."""
+    """Auto-persist frontend state to the active workspace.
+
+    ``base_revision`` (optional) is the revision the client's copy came from; a save based on an older one
+    than the stored state is refused with SESSION_CONFLICT, so a stale copy cannot overwrite newer work.
+    """
+    from data_formulator.datalake.workspace_manager import SessionConflictError
+
     data = request.get_json(force=True)
     state: dict = data.get("state")
     workspace_id: str = data.get("id", "").strip() or data.get("name", "").strip()
+    base_revision = data.get("base_revision")
 
     if state is None:
         raise AppError(ErrorCode.INVALID_REQUEST, "State payload is required")
+    if base_revision is not None and (not isinstance(base_revision, int) or isinstance(base_revision, bool)):
+        raise AppError(ErrorCode.INVALID_REQUEST, "base_revision must be an integer")
 
     identity_id = get_identity_id()
     ws_id = workspace_id or get_active_workspace_id()
@@ -180,11 +189,17 @@ def save_session():
                 )
             mgr.create_workspace(ws_id)
 
-        mgr.save_session_state(ws_id, state)
+        revision = mgr.save_session_state(ws_id, state, base_revision=base_revision)
+    except SessionConflictError as exc:
+        raise AppError(
+            "SESSION_CONFLICT",
+            "This session was saved from another tab or window since this copy was loaded.",
+            detail=f"stored revision {exc.revision}, client revision {base_revision}",
+        ) from exc
     except OSError as exc:
         _raise_if_storage_full(exc)
 
-    return json_ok({"id": ws_id, "saved_at": datetime.utcnow().isoformat()})
+    return json_ok({"id": ws_id, "saved_at": datetime.utcnow().isoformat(), "revision": revision})
 
 
 @session_bp.route("/list", methods=["GET"])
@@ -253,11 +268,12 @@ def load_session():
     state = mgr.load_session_state(workspace_id)
     if state is None:
         state = {}
+    revision = mgr.state_revision(workspace_id)
 
     if workspace_id.startswith("scheduled-") and state.get("activeWorkspace", {}).get("scheduledRun"):
-        return json_ok({"id": workspace_id, "state": state,
+        return json_ok({"id": workspace_id, "state": state, "revision": revision,
                         "workflow_run": scheduled_checkpoint(mgr, workspace_id, identity_id)})
-    return json_ok({"id": workspace_id, "state": state})
+    return json_ok({"id": workspace_id, "state": state, "revision": revision})
 
 
 @session_bp.route("/delete", methods=["POST"])

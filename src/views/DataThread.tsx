@@ -1249,13 +1249,16 @@ let SingleThreadGroupView: FC<{
             }
             const steps: (ProgressStep | string)[] = draft.derive.progressSteps?.length ? draft.derive.progressSteps
                 : (draft.derive.runningPlan || '').split('\x1E').filter((line: string) => line.trim());
-            // Steps and calls the message before the draft already lists are not repeated here.
+            // Steps and calls the message before the draft already lists are not repeated here, and nothing
+            // older than the latest of them is current (a failed call's warning gives way to the calls after it).
             const parentTurn = turnById.get(parent || '');
             const parentCalls = [...(parentTurn?.executions || []), ...codeCallsOf(parentTurn)];
             const parentStepIds = new Set((parentTurn?.progressSteps || []).map(step => step.id));
             const shownOnParent = (step: ProgressStep | string) => typeof step !== 'string' && (parentStepIds.has(step.id)
                 || (!!step.executionId && parentCalls.some(call => call.id === step.executionId)));
-            const planLines = steps.filter(step => !shownOnParent(step));
+            let latestOnParent = steps.length - 1;
+            while (latestOnParent >= 0 && !shownOnParent(steps[latestOnParent])) latestOnParent--;
+            const planLines = steps.slice(latestOnParent + 1);
             const animated = status === 'running';
             const live: LiveStatus = status === 'clarifying' ? 'waiting' : 'running';
             // A run with a plan shows it here as its one live row (like a workflow run's card):

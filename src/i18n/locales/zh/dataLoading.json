@@ -18,6 +18,7 @@
     "chatHintExample": "这里有什么数据？",
     "placeholder": "描述要提取、上传或生成的数据...",
     "attachTooltip": "附加文件或图片",
+    "dropToAttach": "拖放文件以附加",
     "stopTooltip": "停止生成",
     "sendTooltip": "发送（Enter）",
     "shiftEnterHint": "Shift+Enter 换行",

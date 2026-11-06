@@ -63,6 +63,14 @@ const orderOf = (value: unknown): (string | number)[] | undefined => {
     return levels.length >= 2 ? levels : undefined;
 };
 
+const colorsOf = (value: unknown): Record<string, string> | undefined => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const entries = Object.entries(value as Record<string, unknown>)
+        .filter((entry): entry is [string, string] => entry[0].trim() !== '' && typeof entry[1] === 'string' && entry[1].trim() !== '')
+        .map(([key, color]) => [key, color.trim()]);
+    return entries.length ? Object.fromEntries(entries) : undefined;
+};
+
 /**
  * Normalize one field annotation (a bare type name or an object with snake_case
  * or camelCase keys) to DF's stored shape. Returns undefined when nothing usable
@@ -78,6 +86,7 @@ export function normalizeFieldAnnotation(raw: unknown): FieldSemanticsInfo | und
     const intrinsicDomain = domainOf(firstDefined(source, ['intrinsicDomain', 'intrinsic_domain', 'domain']));
     const sortOrder = orderOf(firstDefined(source, ['sortOrder', 'sort_order', 'ordinal_order', 'order']));
     const divergingMidpoint = finiteNumber(firstDefined(source, ['divergingMidpoint', 'diverging_midpoint', 'baseline']));
+    const colors = colorsOf(source.colors);
     const displayValue = firstDefined(source, ['displayName', 'display_name']);
     const displayName = typeof displayValue === 'string' && displayValue.trim() ? displayValue.trim() : undefined;
     const info: FieldSemanticsInfo = {
@@ -86,6 +95,7 @@ export function normalizeFieldAnnotation(raw: unknown): FieldSemanticsInfo | und
         ...(intrinsicDomain ? { intrinsicDomain } : {}),
         ...(sortOrder ? { sortOrder } : {}),
         ...(divergingMidpoint !== undefined ? { divergingMidpoint } : {}),
+        ...(colors ? { colors } : {}),
         ...(displayName ? { displayName } : {}),
     };
     return Object.keys(info).length > 0 ? info : undefined;

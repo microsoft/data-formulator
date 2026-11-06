@@ -104,7 +104,7 @@ export const formatTerminalCommand = (argv: string[]) => argv.map(quoteShellArgu
 
 export const ExecutionCodeBlock = ({ code, language, label, copyLabel, result, compact = false, flush = false, children }: {
     code?: string;
-    language: 'python' | 'bash' | 'json';
+    language: 'python' | 'bash' | 'json' | 'javascript';
     label: string;
     copyLabel: string;
     result?: Record<string, unknown>;

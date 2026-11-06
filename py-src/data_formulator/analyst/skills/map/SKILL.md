@@ -118,7 +118,7 @@ Where marks go (region, lat/lon, origin/destination, group, order) takes one
 column. Properties (all
 optional): `geography` (`world`, `us-states`, `us-counties`, or a
 `files/…` GeoJSON with `featureKey`), `keyType`, `classes`, `method`,
-`scheme`, `color`, `sizeMax`, `opacity`, `density` (`hexbin` or `heatmap`), `radius`,
+`scheme`, `colors`, `color`, `sizeMax`, `opacity`, `density` (`hexbin` or `heatmap`), `radius`,
 `curve` (flows), `direction` (flows and tracks: `taper`, `arrow`, `animate`,
 `none`), `play` (false: no play button), `search`, `details`
 (default on), `stats` (default off), `highlight` (below). `fields`, `view`, `title`-level text
@@ -134,6 +134,16 @@ orange, rain and water blue — or to keep a map consistent with related
 charts; leave it unset otherwise. `properties.scheme` picks the ramp for a
 colour column, or for density (hexbins and heatmaps). In a layer spec, use
 `color: {"value": "#…"}` or `color: {"field", "scheme"}`.
+
+Values with a conventional colour are pinned, not left to the theme (Color in
+the visualization guidance). Categories: `properties.colors` on a template, or
+`colors` in a layer's `color`, keyed by the values as they appear in the data:
+`{"Republican": "#d62728", "Democratic": "#1f5fbf", "No race": "#d9d9d9"}`.
+Colours a column already stores (from its charts) apply on their own; keep them.
+A diverging measure with meaningful sides is set by its scheme and sign: `rdBu`
+is red for low values and blue for high, so map a Democratic-minus-Republican
+margin with `rdBu` (or set `"reverse": true` on a layer's colour), and state the
+sign in the subtitle.
 
 Highlight (`density`, `points`, `bubbles`, `spikes` placed by lat/lon): rows
 meeting one condition are drawn as points above the map, with checkboxes to
@@ -271,7 +281,7 @@ defaults to `mean`, `size.aggregate` to `sum`; set `sum`, `mean`, `median`,
 `min`, `max`, `count`, or `first` to match the measure.
 
 Encodings:
-- `color`: `{"field", "type", "scheme", "method", "classes", "thresholds",
+- `color`: `{"field", "type", "scheme", "colors", "method", "classes", "thresholds",
   "domain", "midpoint", "reverse", "aggregate", "format", "title"}` or
   `{"value": "#hex"}`. Numbers default to 5 quantile classes; `method`:
   `quantile`, `equal`, `jenks` (natural breaks), `threshold` (with

@@ -73,10 +73,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Headless-browser rendering for the data-loading agent's fetch_url(render=true).
-# Needed for JavaScript single-page apps and pages behind a browser-verification
-# challenge that a plain HTTP fetch cannot pass. After installing, also run:
-#   python -m playwright install chromium
+# The agent's browser outside macOS (and its "separate Edge window" option): drives the
+# Microsoft Edge or Google Chrome already installed, so no browser download is needed.
 browser = ["playwright>=1.40"]
 desktop = [
   "pyinstaller>=6.0",

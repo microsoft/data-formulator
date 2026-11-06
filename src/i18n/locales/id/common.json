@@ -1680,9 +1680,9 @@
     "alwaysAllowedHint": "Anda memilih \"Selalu izinkan alat ini\" saat agen bertanya. Hapus agar ditanya lagi."
   },
   "tools": {
-    "chipDetails": "Alat yang dapat digunakan agen: terminal dan server MCP",
+    "chipDetails": "Alat yang dapat digunakan agen: terminal, browser, dan server MCP",
     "title": "Alat",
-    "intro": "Alat memungkinkan agen menjangkau di luar ruang kerja Anda: menjalankan perintah di komputer ini, atau memanggil server MCP untuk data dan dokumen.",
+    "intro": "Alat memungkinkan agen menjangkau di luar ruang kerja Anda: menjalankan perintah di komputer ini, menjelajahi web, atau memanggil server MCP untuk data dan dokumen.",
     "blocked": "Kebijakan penerapan menonaktifkan koneksi pengguna dan alat.",
     "localOnly": "Alat tersedia di aplikasi lokal pengguna tunggal.",
     "modeLabel": "Persetujuan",
@@ -1933,5 +1933,57 @@
       "straight": "Lurus"
     },
     "generating": "Membuat peta"
+  },
+  "browser": {
+    "about": "Biarkan agen membaca web di browser sungguhan: halaman yang dibangun dengan JavaScript, situs yang memblokir unduhan sederhana, dan situs tempat Anda masuk. Halaman terbuka di jendela tersendiri; agen tidak pernah memakai tab Anda yang lain.",
+    "allowAlways": "Selalu izinkan {{site}}",
+    "allowChat": "Izinkan di obrolan ini",
+    "approvalNote": "Apa yang dibaca agen di sana dikirim ke penyedia model Anda.",
+    "approvalTitle": "Izinkan agen menggunakan {{site}} di browser Anda?",
+    "caption": "Membaca halaman web di browser sungguhan, termasuk situs tempat Anda masuk",
+    "check": "Periksa",
+    "checkAgain": "Periksa lagi",
+    "checkHint": "Periksa apakah agen dapat menggunakan browser. Jendela browser akan terbuka lalu tertutup.",
+    "checkHintMac": "Periksa apakah agen dapat menggunakan browser. macOS mungkin menanyakan apakah Data Formulator boleh mengendalikannya; pilih OK.",
+    "choice": {
+      "auto": "Browser default Anda",
+      "profile": "Jendela Edge terpisah (login sendiri)"
+    },
+    "choiceLabel": "Browser yang digunakan",
+    "copyScript": "Salin skrip",
+    "fix": {
+      "automation": "macOS meminta izin sebelum satu aplikasi mengendalikan aplikasi lain. Izinkan aplikasi yang menjalankan Data Formulator (Terminal, VS Code, atau Data Formulator sendiri) mengendalikan {{name}}: di Pengaturan Sistem → Privasi & Keamanan → Otomatisasi, aktifkan {{name}} di bawah aplikasi itu. Jika aplikasi belum tercantum, klik Periksa lagi dan pilih OK saat macOS bertanya.",
+      "chromium": "Di bilah menu {{name}}, pilih View → Developer → Allow JavaScript from Apple Events hingga muncul tanda centang. Dengan begitu Data Formulator dapat membaca halaman yang dibukanya.",
+      "installBrowser": "Pasang Microsoft Edge atau Google Chrome, atau gunakan Safari, lalu periksa lagi.",
+      "launch": "Edge tidak dapat dijalankan untuk Data Formulator. Di komputer kantor, organisasi Anda mungkin menonaktifkannya (kebijakan Edge RemoteDebuggingAllowed); hubungi administrator TI Anda, atau pilih Google Chrome di atas.",
+      "openAutomation": "Buka pengaturan Otomatisasi",
+      "playwright": "Data Formulator mengendalikan Microsoft Edge yang sudah ada di komputer ini, yang memerlukan paket dukungan browser. Pasang paket itu ke lingkungan Python yang menjalankan Data Formulator, lalu mulai ulang Data Formulator:",
+      "safari": "Di Safari, buka Pengaturan → Lanjutan dan aktifkan “Tampilkan fitur untuk pengembang web”. Lalu, di Pengaturan → Pengembang, aktifkan “Izinkan JavaScript dari Apple Events”.",
+      "safariLegacy": "Di Safari, buka Pengaturan (Preferensi di macOS lama) → Lanjutan dan aktifkan “Tampilkan menu Kembangkan di bar menu”. Lalu, di bar menu, pilih Kembangkan → Izinkan JavaScript dari Apple Events.",
+      "systemSettings": "Privasi & Keamanan › Otomatisasi"
+    },
+    "name": "Browser",
+    "open": "Buka",
+    "ownProfile": "Menggunakan {{name}} dengan profilnya sendiri, jadi login sehari-hari Anda tidak ada di sana. Saat situs meminta Anda masuk, masuklah sekali di jendela itu dan akan diingat.",
+    "ready": "Siap. Minta agen mengambil data dari halaman web.",
+    "scriptLabel": "Skrip yang dijalankan di halaman",
+    "setup": "Penyiapan",
+    "signInHint": "Buka situs di jendela browser agen untuk masuk lebih dulu. Agen juga akan bertanya saat mencapai halaman masuk.",
+    "signInTitle": "Masuk ke situs",
+    "status": {
+      "needsSetup": "Perlu penyiapan",
+      "off": "Mati",
+      "on": "Aktif",
+      "ready": "Siap · {{name}}"
+    },
+    "step": {
+      "automation": "macOS mengizinkan Data Formulator mengendalikan {{name}}",
+      "installed": "{{name}} tersedia",
+      "javascript": "{{name}} mengizinkan Data Formulator membaca halaman",
+      "launch": "{{name}} dapat dijalankan untuk Data Formulator"
+    },
+    "tabGone": "Tab itu sudah tidak terbuka.",
+    "use": "Gunakan browser",
+    "userProfile": "Menggunakan {{name}} milik Anda sendiri, masuk sebagai Anda: situs tempat Anda masuk berfungsi seperti biasa."
   }
 }

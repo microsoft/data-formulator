@@ -23,6 +23,10 @@ const storeWithDraft = () => {
     return store;
 };
 
+/** The columns of a masked line's muted dots, from its SVG path (the cursor is drawn separately). */
+const dotColumns = (row: Element) =>
+    [...(row.querySelector('path')?.getAttribute('d') ?? '').matchAll(/M(\d+) /g)].map(match => Number(match[1]) / 4);
+
 it('shows the code of the app being written masked, with spaces kept, and how long it has taken', () => {
     vi.useFakeTimers({ now: 1_000_000, toFake: ['Date', 'setInterval', 'clearInterval'] });
     try {
@@ -32,15 +36,28 @@ it('shows the code of the app being written masked, with spaces kept, and how lo
         expect(screen.getByText('Generating app… (0s) · Stock risk')).toBeVisible();
         act(() => { vi.advanceTimersByTime(4000); });
         expect(screen.getByText('Generating app… (4s) · Stock risk')).toBeVisible();
-        // Only the last five lines: every character a glyph, indentation kept, the last glyph colored (the cursor).
-        const rows = screen.getByTestId('app-draft-lines').children;
-        expect(rows).toHaveLength(5);
-        expect(rows[1].textContent).toBe('  ■■■ ■');
-        expect(rows[4].textContent).toBe('■■');
-        expect(rows[4].children[0].textContent).toBe('■');
+        // The last lines: every character a dot, indentation kept, the last dot colored (the cursor).
+        const rows = screen.getByTestId('app-draft-lines').querySelectorAll('[data-draft-line]');
+        expect(rows).toHaveLength(6);
+        expect(dotColumns(rows[2])).toEqual([2, 3, 4, 6]);
+        expect(dotColumns(rows[5])).toEqual([0]);
+        expect(rows[5].querySelector('[data-caret]')).toHaveAttribute('x', String(1 * 4));
+        expect(rows[1].querySelector('path')).toHaveAttribute('d', '');
     } finally {
         vi.useRealTimers();
     }
+});
+
+it('shows only the last twelve lines of a long app', () => {
+    const lines = Array.from({ length: 20 }, () => 'xx');
+    render(<ArtifactDraftView tool="write_app" startedAt={Date.now()} lineCount={20} lines={lines} />);
+    expect(screen.getByTestId('app-draft-lines').querySelectorAll('[data-draft-line]')).toHaveLength(12);
+    // After spaces, the cursor waits one dot past them.
+    cleanup();
+    render(<ArtifactDraftView tool="write_app" startedAt={Date.now()} lineCount={1} lines={['xx  ']} />);
+    const row = screen.getByTestId('app-draft-lines').querySelector('[data-draft-line]')!;
+    expect(dotColumns(row)).toEqual([0, 1]);
+    expect(row.querySelector('[data-caret]')).toHaveAttribute('x', String(4 * 4));
 });
 
 it('shows a muted placeholder for a map being written', () => {
@@ -64,10 +81,12 @@ it('lets a run\'s draft own the canvas only while it writes an app or map', () =
     render(<Provider store={store}><ArtifactDraftCanvas draftId="draft-1" /></Provider>);
     act(() => updateAppDraftLines('draft-1', { lines: ['xx'], line_count: 1 }));
     expect(screen.getByRole('status', { name: 'Generating app' })).toBeVisible();
-    expect(screen.getByTestId('app-draft-lines').textContent).toBe('■■');
+    const draftLines = () => screen.getByTestId('app-draft-lines').querySelectorAll('[data-draft-line]');
+    expect(draftLines()).toHaveLength(1);
+    expect(draftLines()[0].querySelector('[data-caret]')).toHaveAttribute('x', '4');
     // Lines of another draft are not this one's.
     act(() => updateAppDraftLines('draft-2', { lines: ['xxxx'], line_count: 1 }));
-    expect(screen.getByTestId('app-draft-lines').textContent).toBe('');
+    expect(draftLines()).toHaveLength(0);
     // The writing stops (the app landed, or the run stopped): the draft no longer owns the canvas.
     act(() => { store.dispatch(dfActions.setDraftWriting({ draftId: 'draft-1' })); });
     expect(canvas()?.type).not.toBe('draft');

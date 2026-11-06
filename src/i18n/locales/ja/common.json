@@ -1680,9 +1680,9 @@
     "alwaysAllowedHint": "エージェントの確認時に「このツールを常に許可」を選びました。削除すると再び確認されます。"
   },
   "tools": {
-    "chipDetails": "エージェントが使えるツール：ターミナルと MCP サーバー",
+    "chipDetails": "エージェントが使えるツール：ターミナル、ブラウザー、MCP サーバー",
     "title": "ツール",
-    "intro": "ツールでエージェントはワークスペースの外に手が届きます。このコンピューターでコマンドを実行したり、MCP サーバーからデータやドキュメントを取得したりできます。",
+    "intro": "ツールを使うと、エージェントはワークスペースの外へ手を伸ばせます：このコンピューターでコマンドを実行し、Web を閲覧し、MCP サーバーからデータやドキュメントを取得します。",
     "blocked": "デプロイポリシーにより、ユーザー接続とツールはオフになっています。",
     "localOnly": "ツールはシングルユーザーのローカルアプリでのみ使えます。",
     "modeLabel": "承認",
@@ -1933,5 +1933,57 @@
       "straight": "直線"
     },
     "generating": "地図を生成中"
+  },
+  "browser": {
+    "about": "実際のブラウザーでエージェントに Web を読ませます：JavaScript で描画されるページ、単純なダウンロードをブロックするサイト、サインイン済みのサイト。ページは専用のウィンドウで開き、ほかのタブは使いません。",
+    "allowAlways": "{{site}} を常に許可",
+    "allowChat": "このチャットで許可",
+    "approvalNote": "エージェントがそこで読んだ内容はモデル プロバイダーに送信されます。",
+    "approvalTitle": "エージェントにブラウザーで {{site}} を使わせますか？",
+    "caption": "実際のブラウザーで Web ページを読みます（サインイン済みのサイトも含む）",
+    "check": "確認",
+    "checkAgain": "再確認",
+    "checkHint": "エージェントがブラウザーを使えるか確認します。ブラウザーのウィンドウが開いて閉じます。",
+    "checkHintMac": "エージェントがブラウザーを使えるか確認します。macOS が Data Formulator による操作を許可するか尋ねることがあります。「OK」を選んでください。",
+    "choice": {
+      "auto": "既定のブラウザー",
+      "profile": "別の Edge ウィンドウ（独自のサインイン）"
+    },
+    "choiceLabel": "使用するブラウザー",
+    "copyScript": "スクリプトをコピー",
+    "fix": {
+      "automation": "macOS では、アプリが別のアプリを操作する前に確認が必要です。Data Formulator を実行しているアプリ（ターミナル、VS Code、または Data Formulator 自体）に {{name}} の操作を許可してください：「システム設定 → プライバシーとセキュリティ → オートメーション」で、そのアプリの下にある {{name}} をオンにします。アプリがまだ一覧にない場合は「再確認」をクリックし、macOS に尋ねられたら「OK」を選んでください。",
+      "chromium": "{{name}} のメニューバーで View → Developer → Allow JavaScript from Apple Events を選び、チェックマークを付けます。これで Data Formulator が開いたページを読めるようになります。",
+      "installBrowser": "Microsoft Edge か Google Chrome をインストールするか Safari を使い、もう一度確認してください。",
+      "launch": "Data Formulator 用に Edge を起動できませんでした。職場のコンピューターでは、組織がこれを無効にしている場合があります（Edge のポリシー RemoteDebuggingAllowed）。IT 管理者に問い合わせるか、上で Google Chrome を選んでください。",
+      "openAutomation": "オートメーション設定を開く",
+      "playwright": "Data Formulator はこのコンピューターにある Microsoft Edge を操作します。そのためのブラウザー サポート パッケージが必要です。Data Formulator を実行している Python 環境にインストールし、Data Formulator を再起動してください：",
+      "safari": "Safari で「設定 → 詳細」を開き、「Web 開発者向けの機能を表示」をオンにします。次に「設定 → デベロッパ」で「Apple Events からの JavaScript を許可」をオンにします。",
+      "safariLegacy": "Safari で「設定」（古い macOS では「環境設定」）→「詳細」を開き、「メニューバーに“開発”メニューを表示」をオンにします。次に、メニューバーで「開発」→「Apple Events からの JavaScript を許可」を選びます。",
+      "systemSettings": "プライバシーとセキュリティ › オートメーション"
+    },
+    "name": "ブラウザー",
+    "open": "開く",
+    "ownProfile": "独自のプロファイルの {{name}} を使うため、普段のサインインはありません。サイトでサインインが必要になったら、そのウィンドウで一度サインインすれば記憶されます。",
+    "ready": "準備完了です。エージェントに Web ページからデータを取得するよう依頼してください。",
+    "scriptLabel": "ページで実行するスクリプト",
+    "setup": "セットアップ",
+    "signInHint": "エージェントのブラウザー ウィンドウでサイトを開き、事前にサインインします。エージェントもサインイン ページに着いたら確認します。",
+    "signInTitle": "サイトにサインイン",
+    "status": {
+      "needsSetup": "セットアップが必要",
+      "off": "オフ",
+      "on": "オン",
+      "ready": "準備完了 · {{name}}"
+    },
+    "step": {
+      "automation": "macOS が Data Formulator に {{name}} の操作を許可している",
+      "installed": "{{name}} を利用できる",
+      "javascript": "{{name}} が Data Formulator にページの読み取りを許可している",
+      "launch": "{{name}} を Data Formulator 用に起動できる"
+    },
+    "tabGone": "そのタブはもう開いていません。",
+    "use": "ブラウザーを使う",
+    "userProfile": "あなた自身の {{name}} を、あなたとしてサインインした状態で使います。サインイン済みのサイトは普段どおり動作します。"
   }
 }

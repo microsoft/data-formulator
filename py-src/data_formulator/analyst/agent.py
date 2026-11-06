@@ -440,7 +440,7 @@ class _ArtifactDraftPreview:
     character becomes ``x`` (the frontend draws each as a glyph).
     """
 
-    LINES = 5
+    LINES = 12
     WIDTH = 96
 
     def __init__(self, field: str | None):
@@ -621,11 +621,13 @@ class AnalystAgent:
         self.workspace = workspace
         self.identity_id = identity_id
         self.workspace_id = workspace_id
-        from data_formulator.configuration import terminal_mode
+        from data_formulator.configuration import browser_mode, terminal_mode
         # The demo the request came from (its X-DF-Demo header), or None for the standard app; only then is
         # the demo skill in the registry (design-docs/69).
         self.demo = demo
-        self.registry = (skill_registry or build_registry()).with_terminal_policy(terminal_mode()).with_demo(demo)
+        # The browser, like MCP tools, needs a person at hand (approvals, signing in): interactive chats only.
+        self.registry = ((skill_registry or build_registry()).with_terminal_policy(terminal_mode())
+                         .with_browser_policy(browser_mode() if mcp and not demo else "off").with_demo(demo))
         if mcp and not demo:
             # The user's MCP servers, each a skill the agent loads when it needs it (local mode only).
             from data_formulator.mcp_servers.skill import usable_servers

@@ -561,6 +561,33 @@ it('does not repeat a finished call on the live draft after its step', () => {
   expect(screen.getByText(/thinking/i)).toBeVisible();
 });
 
+it('drops a failed call\'s warning from the live draft once a later call finishes', () => {
+  const initialState = dataFormulatorReducer(undefined, { type: 'init' });
+  const store = configureStore({ reducer: dataFormulatorReducer, preloadedState: {
+    ...initialState,
+    draftNodes: [{ kind: 'draft', id: 'live-draft', displayId: 'Draft', parentNodeId: 'step', createdAt: 3,
+      derive: { source: [], code: '', dialog: [], status: 'running',
+        progressSteps: [
+          { id: 'denied', kind: 'tool', tool: 'run_terminal', executionId: 'cmd-1', label: 'Running command Fetch feed', status: 'failed' },
+          { id: 'warning', kind: 'warning', label: 'The command reported an access denial.', status: 'completed' },
+          { id: 'retry', kind: 'tool', tool: 'run_terminal', executionId: 'cmd-2', label: 'Running command Retry feed', status: 'completed' },
+        ], trigger: {
+        tableId: CONVERSATION_ROOT_ID, resultTableId: 'live-draft', instruction: '', interaction: [],
+      } },
+    } as any],
+  } });
+  store.dispatch(userMessage('ask', 'Track satellites', CONVERSATION_ROOT_ID, 0, { actionId: 'one-run' }));
+  store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'step', displayId: 'Step', textKind: 'explain',
+    content: 'Fetch feed', createdAt: 1, parentNodeId: 'ask', actionId: 'one-run',
+    executions: [
+      { id: 'cmd-1', argv: ['curl'], cwd: '.', purpose: 'Fetch feed', createdAt: 1, status: 'failed' as const },
+      { id: 'cmd-2', argv: ['curl'], cwd: '.', purpose: 'Retry feed', createdAt: 2, status: 'completed' as const },
+    ] }));
+  renderDataThread(store);
+  expect(screen.queryByText(/access denial/)).toBeNull();
+  expect(screen.getByText(/thinking/i)).toBeVisible();
+});
+
 it('shows one live activity spinner and opens the execution step directly', async () => {
   const initialState = dataFormulatorReducer(undefined, { type: 'init' });
   const store = configureStore({ reducer: dataFormulatorReducer, preloadedState: {

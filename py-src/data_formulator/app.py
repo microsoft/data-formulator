@@ -339,6 +339,8 @@ def _register_blueprints():
     app.register_blueprint(configuration_bp)
     from data_formulator.mcp_servers.routes import mcp_bp
     app.register_blueprint(mcp_bp)
+    from data_formulator.routes.browser import browser_bp
+    app.register_blueprint(browser_bp)
 
     with spinner("Loading data connectors"):
         from data_formulator.data_connector import register_data_connectors
@@ -440,7 +442,8 @@ def get_auth_info():
 @app.route('/api/app-config', methods=['GET'])
 def get_app_config():
     """Provide frontend configuration settings from CLI arguments"""
-    from data_formulator.configuration import effective_limit, is_managed_mode, read_configuration, terminal_available, terminal_enabled, terminal_mode, tools_mode, user_connectors_disabled, user_models_disabled
+    from data_formulator.configuration import browser_available, browser_enabled, browser_mode, effective_limit, is_managed_mode, read_configuration, terminal_available, terminal_enabled, terminal_mode, tools_mode, user_connectors_disabled, user_models_disabled
+    from data_formulator.browser.service import browser_ready as _browser_ready
     from data_formulator.mcp_servers.config import mcp_available, mcp_servers_on
     args = app.config['CLI_ARGS']
     
@@ -458,6 +461,9 @@ def get_app_config():
         "TERMINAL_CONFIG_LOCKED": 'DF_TERMINAL_MODE' in os.environ,
         "TERMINAL_ENABLED": terminal_enabled(),
         "TOOLS_MODE": tools_mode(),
+        "BROWSER_AVAILABLE": browser_available(),
+        "BROWSER_ENABLED": browser_enabled() and _browser_ready() is not False,
+        "BROWSER_MODE": browser_mode(),
         "MCP_AVAILABLE": mcp_available(),
         "MCP_SERVERS_ON": mcp_servers_on(),
         "DISABLE_CUSTOM_MODELS": user_models_disabled(),

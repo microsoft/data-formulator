@@ -1,13 +1,13 @@
 ---
 name: terminal
 description: >-
-   Acquire data from local files, installed clients, public endpoints, and cloud
-   sources using existing CLI logins, register a reusable workspace input, then analyze it.
-   Also discover sources and diagnose connections under the application's policy.
+   Acquire data from local files, installed clients, public datasets and APIs on the web,
+   and cloud sources using existing CLI logins, register a reusable workspace input, then
+   analyze it. Also discover sources and diagnose connections under the application's policy.
 when_to_use: >-
-   Use when local files, command-line clients, or existing authenticated access
-   can retrieve data needed for the user's task, without requiring a connector.
-   Only available in single-user local mode on macOS, Linux and Windows.
+   Use when local files, command-line clients, public data on the web (downloadable files,
+   open APIs), or existing authenticated access can retrieve data needed for the user's task,
+   without requiring a connector. Only available in single-user local mode on macOS, Linux and Windows.
 always_on: false
 tools: [wait_tasks, stop_task]
 actions: [run_terminal, start_task]
@@ -95,7 +95,10 @@ before installing. To add one for this session, install it with Data Formulator'
 Python into `DF_SITE_PACKAGES` (in scratch), which sandboxed Python imports from:
 `["sh", "-c", "uv pip install --python \"$DF_PYTHON\" --target \"$DF_SITE_PACKAGES\" <package>"]`
 (or `"$DF_PYTHON" -m pip install --target "$DF_SITE_PACKAGES" <package>` where pip is
-available). Without `DF_PYTHON` (the desktop app), session packages are unavailable.
+available). Without `DF_PYTHON` (the desktop app), session packages are unavailable,
+and `python3` in a command is the user's own Python (if any), which usually lacks
+pandas and Data Formulator's other packages: use terminal commands to fetch data into
+scratch files, and do the analysis in sandboxed Python.
 Sandboxed Python still has no network, no subprocesses, and no writes; a package
 that needs them will not work there. The Docker sandbox does not see session packages.
 

@@ -288,3 +288,15 @@ def test_template_colour_property_is_checked() -> None:
     assert template_errors({**base, "properties": {"color": "darkslategray"}}) == []
     assert template_errors({**base, "properties": {"color": "not a colour!"}}) == [
         'properties.color must be a CSS colour, such as "#4e79a7" or "darkslategray".']
+
+
+def test_pinned_category_colours_are_checked() -> None:
+    from data_formulator.analyst.skills.map.templates import template_errors
+    from data_formulator.analyst.skills.map.validate import check_structure
+    base = {"template": "choropleth", "data": {"table": "t"}, "encoding": {"region": "state", "color": "winner"}}
+    assert template_errors({**base, "properties": {"colors": {"Republican": "#d62728", "Democratic": "#1f5fbf"}}}) == []
+    assert template_errors({**base, "properties": {"colors": ["#d62728"]}}) == [
+        'properties.colors must map category values to CSS colours, such as {"Republican": "#d62728"}.']
+    errors, _ = check_structure({"data": {"t": {"table": "t"}}, "layers": [
+        {"type": "regions", "data": "t", "key": "state", "color": {"field": "winner", "colors": {"Republican": 3}}}]})
+    assert any("color.colors must map category values" in error for error in errors)

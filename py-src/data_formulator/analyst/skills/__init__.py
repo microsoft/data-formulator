@@ -114,6 +114,7 @@ class SkillRegistry:
     # Passages of a skill's body this registry replaces, as (old, new) pairs (a demo's, see with_demo).
     _body_edits: dict[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)
     terminal_mode: str = "ask"
+    browser_mode: str = "off"
     # Actions whose arguments are a third party's schema (MCP tools): passed through untouched.
     external_actions: frozenset[str] = frozenset()
 
@@ -169,6 +170,24 @@ class SkillRegistry:
                 )
         return registry
 
+    def with_browser_policy(self, mode: str) -> SkillRegistry:
+        """Expose the browser skill only when the user turned the browser on (``mode`` off, ask or auto)."""
+        registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
+                           _bodies=dict(self._bodies), _body_edits=dict(self._body_edits), browser_mode=mode)
+        if mode == "off":
+            for collection in (registry.metas, registry.skills, registry.tool_specs, registry._doc_paths):
+                collection.pop("browser", None)
+        elif "browser" in registry.metas:
+            for spec in registry.tool_specs.get("browser", []):
+                if spec["function"]["name"] == "browser_tabs":
+                    continue
+                spec["function"]["description"] += (
+                    " The first call on a site the user has not allowed pauses for their approval." if mode == "ask" else
+                    " Runs without asking; do not ask for routine approval."
+                )
+        return registry
+
     def with_demo(self, site_id: str | None) -> SkillRegistry:
         """This registry for a request on the demo ``site_id`` (design-docs/69); unchanged without one.
 
@@ -188,7 +207,7 @@ class SkillRegistry:
         registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
                            tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
                            _bodies=dict(self._bodies), _body_edits=dict(self._body_edits))
-        for name in ("connected_data", "terminal", "configure", "html_app"):
+        for name in ("connected_data", "terminal", "browser", "configure", "html_app"):
             for collection in (registry.metas, registry.skills, registry.tool_specs, registry._doc_paths):
                 collection.pop(name, None)
         registry = registry.without_tools(DEMO_WITHOUT_TOOLS)
@@ -330,14 +349,22 @@ class SkillRegistry:
                 body = re.sub(r"^\|[^\n]*`propose_mcp_changes`[^\n]*\n", "", body, flags=re.M)
             if expanded_name == "connected_data":
                 terminal_route = (
-                    "| Existing CLI access or local files | Use `run_terminal` to acquire a bounded dataset "
-                    "into scratch without requiring a new connector. Register the working dataset with "
-                    "`create_data` and acquisition metadata, then use its returned input ID and path for "
-                    "analysis and visualization or report tools. Follow the terminal skill's approval "
-                    "and execution contract. |\n"
+                    "| Existing CLI access, local files, or public files and APIs on the web | Use `run_terminal` "
+                    "(the `terminal` skill) to acquire a bounded dataset into scratch without requiring a new "
+                    "connector. Register the working dataset with `create_data` and acquisition metadata, then use "
+                    "its returned input ID and path for analysis and visualization or report tools. Follow the "
+                    "terminal skill's approval and execution contract. |\n"
                     if self.has("terminal") else ""
                 )
+                browser_route = (
+                    "| Data on the web: finding a source with a search engine, or pages that need JavaScript, "
+                    "the user's sign-in, or interaction | Load the `browser` skill to search, open and read pages, "
+                    "then register the collected data with `create_data` like any acquired dataset. |\n"
+                    if self.has("browser") else ""
+                )
                 body = body.replace("{terminal_acquisition_route}\n", terminal_route)
+                body = body.replace("{browser_acquisition_route}\n", browser_route)
+                body = body.replace("{missing_data_options}", self._missing_data_options())
             if expanded_name == "terminal":
                 policy = (
                     "The application pauses for approval of each exact invocation. Submit the tool call directly; "
@@ -367,9 +394,35 @@ class SkillRegistry:
                                    "for that reason alone. Keep commands minimal and their side effects clear.")
                     body = body.replace(policy, f"{policy} {policy_note}", 1)
                 body = body.replace("{terminal_filesystem_policy}", json.dumps(sandbox_filesystem_policy()))
+            if expanded_name == "browser":
+                body = body.replace("{browser_status}", _browser_status_note())
+                body = body.replace("{browser_policy}", (
+                    "Ask mode: the first open, read or script on a site the user has not allowed pauses for their "
+                    "approval (for this chat or always). Submit the call directly; a pending call has not run."
+                    if self.browser_mode == "ask" else
+                    "Auto mode: browser calls run without asking."))
             if body.strip():
                 bodies.append(body.strip())
         return "\n\n".join(bodies)
+
+    def _missing_data_options(self) -> str:
+        """The ``ask_user`` options connected_data offers when no session or connected data has a subject."""
+        terminal, browser = self.has("terminal"), self.has("browser")
+        options: list[str] = []
+        if terminal or browser:
+            how = ("search with the browser and download files or APIs with the terminal" if terminal and browser
+                   else "search and read pages with the browser" if browser
+                   else "download a public dataset or API with the terminal")
+            options.append(
+                f"- Find it online (labelled with the subject, e.g. \"Find <subject> online\"): {how}, preferring an authoritative "
+                "public source (a government agency, statistics office, or research group). Offer this first when "
+                "the subject is public data. Icon: search_web.")
+        if self.has("configure"):
+            options.append(
+                "- Connect a data source: load `configure` and open a connector form with `propose_connection` "
+                "(the user enters credentials and clicks Connect). Icon: connect.")
+        options.append("- Upload a file: the user adds a CSV or Excel file, or pastes the data. Icon: upload.")
+        return "\n".join(options)
 
     def get_skill(self, name: str) -> Skill | None:
         """Return the (eagerly-instantiated) skill code module, or ``None`` for
@@ -459,6 +512,21 @@ class SkillRegistry:
                 field, channel = spec[action]
                 return (str(field), str(channel))
         return None
+
+
+def _browser_status_note() -> str:
+    """Which browser the agent drives, and whether pages see the user's own sign-ins."""
+    try:
+        from data_formulator.browser.service import get_service
+
+        driver = get_service().driver
+    except Exception:  # noqa: BLE001 - described to the agent instead
+        return "The browser could not be prepared on this computer; calls will report what is missing."
+    if driver.uses_user_profile:
+        return (f"Browser: the user's own {driver.label}, signed in as them. Pages open in a separate window, so the "
+                "user's other tabs are not touched; sites the user is signed in to work without signing in again.")
+    return (f"Browser: {driver.label}, a separate browser window with its own profile. The user's everyday sign-ins "
+            "are not there: when a site needs sign-in, the user signs in once in that window and it is remembered.")
 
 
 def _instantiate_skill(name: str) -> Skill | None:

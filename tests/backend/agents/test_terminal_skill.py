@@ -61,14 +61,18 @@ def test_terminal_policy_controls_first_turn_prompt_and_tools(tmp_path, monkeypa
                            + agent.registry.action_tools_for(["configure"])} if kind == "analyst" else set()
         assert "terminal" not in json.dumps([spec for spec in tools
                                              if spec["function"]["name"] not in configure_tools]).lower()
-        assert "Existing CLI access or local files" not in workspace_guidance
+        assert "Existing CLI access, local files" not in workspace_guidance
+        assert "Find it online" not in workspace_guidance
+        assert "- Upload a file" in workspace_guidance
         assert not agent.registry.has("terminal")
         assert not agent._build_skill_body_message("terminal")[0]
     else:
         assert "run_terminal" in names
         assert "terminal" in agent._loaded_skills
         assert "Use it proactively" in prompt
-        assert "Existing CLI access or local files" in workspace_guidance
+        assert "Existing CLI access, local files" in workspace_guidance
+        assert "- Find it online" in workspace_guidance
+        assert "{missing_data_options}" not in workspace_guidance
         assert "without requiring a new connector" in workspace_guidance
         assert "CLI acquisition -> scratch dataset -> workspace input" in prompt
         assert "`create_data` and acquisition metadata" in workspace_guidance
@@ -95,7 +99,7 @@ def test_terminal_policy_controls_first_turn_prompt_and_tools(tmp_path, monkeypa
     assert "Old Ask-only" not in history[0]["content"]
     assert "Old connector-only" not in history[1]["content"]
     assert "{terminal_acquisition_route}" not in history[1]["content"]
-    assert ("Existing CLI access or local files" in history[1]["content"]) == (mode != "off")
+    assert ("Existing CLI access, local files" in history[1]["content"]) == (mode != "off")
     assert ("terminal" in agent._loaded_skills) == (mode != "off")
 
 

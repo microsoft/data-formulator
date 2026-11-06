@@ -63,10 +63,15 @@ export interface Trigger {
 
 export type Actor = 'user' | 'data-agent' | 'datarec-agent' | 'datatransform-agent';
 
+/** Icons the agent may attach to a data-acquisition option (mirrors OPTION_ICONS in the meta skill). */
+export const CLARIFICATION_OPTION_ICONS = ['search_web', 'connect', 'upload'] as const;
+export type ClarificationOptionIcon = typeof CLARIFICATION_OPTION_ICONS[number];
+
 export interface ClarificationOption {
     label: string;
     /** Opaque backend-owned identifier submitted separately from the label. */
     value?: string;
+    icon?: ClarificationOptionIcon;
 }
 
 export interface ClarificationQuestion {
@@ -642,6 +647,8 @@ export interface FieldSemanticsInfo {
     sortOrder?: any[];
     /** Value a diverging color scale pivots on (Flint `divergingMidpoint`). */
     divergingMidpoint?: number;
+    /** Colours pinned to values of the field wherever it is drawn (Flint `colors`): `{ "Republican": "#d62728" }`. */
+    colors?: Record<string, string>;
     displayName?: string;
     /** What the agent authored; layered over every inference result. Not sent to Flint. */
     authored?: Omit<FieldSemanticsInfo, 'authored'>;

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { loadGeoSet } from '../../../../src/maps/geography';
 import { buildLayer } from '../../../../src/maps/model';
-import { formatter } from '../../../../src/maps/scales';
-import { annotateField, humanize, resolveField } from '../../../../src/maps/semantics';
+import { colorScale, formatter } from '../../../../src/maps/scales';
+import { annotateField, colorDefaults, humanize, resolveField } from '../../../../src/maps/semantics';
 import { parseMapSpec, type MapSpec } from '../../../../src/maps/spec';
 import { mapStyle, themeInk } from '../../../../src/maps/styles';
 
@@ -40,6 +40,19 @@ describe('field semantics', () => {
     it('formats with a currency before the sign', () => {
         expect(formatter(undefined, '$')(-1234567)).toBe('−$1.23M');
         expect(formatter(undefined, '', ' kt')(42)).toBe('42 kt');
+    });
+
+    it('pins colours to category values; the rest take the palette without reusing them', () => {
+        const values = ['Democratic', 'Republican', 'No race', 'Not called'];
+        const scale = colorScale({ field: 'winner', type: 'categorical', colors: { republican: '#d62728', ' Democratic ': '#1f5fbf' } },
+            values, 'Winner', undefined, { categorical: ['#1f5fbf', '#ff7f0e', '#2ca02c'] });
+        expect(scale.color('Republican')).toBe('#d62728');
+        expect(scale.color('Democratic')).toBe('#1f5fbf');
+        expect(['#ff7f0e', '#2ca02c']).toContain(scale.color('No race'));
+        expect(scale.color('No race')).not.toBe(scale.color('Not called'));
+        // A field's stored colours reach the map's colour encoding.
+        const resolved = resolveField('winner', values, { semanticType: 'Category', colors: { Republican: '#d62728' } });
+        expect(colorDefaults({ field: 'winner' }, resolved).colors).toEqual({ Republican: '#d62728' });
     });
 });
 

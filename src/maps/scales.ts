@@ -31,6 +31,17 @@ const schemeKey = (scheme: string | undefined) => {
     return all.find(name => name.toLowerCase() === scheme.toLowerCase());
 };
 
+/** Pins `colors` (value → colour) over a categorical domain; the rest take `palette` in order, skipping pinned colours. */
+function pinnedOrdinal(domain: string[], palette: readonly string[], colors: Record<string, string> | undefined) {
+    const pinned = new Map(Object.entries(colors ?? {}).filter(([, color]) => d3.color(color))
+        .map(([value, color]) => [value.trim().toLowerCase(), color]));
+    const taken = new Set([...pinned.values()].map(color => d3.color(color)!.formatHex()));
+    const free = palette.filter(color => !taken.has(d3.color(color)?.formatHex() ?? color));
+    const rest = d3.scaleOrdinal<string, string>().range(free.length ? free : palette as string[]);
+    for (const value of domain) if (!pinned.has(value.trim().toLowerCase())) rest(value);
+    return (value: string) => pinned.get(value.trim().toLowerCase()) ?? rest(value);
+}
+
 export const NO_DATA_COLOR = '#e3e3e3';
 export const DEFAULT_MARK_COLOR = '#4e79a7';
 
@@ -206,7 +217,7 @@ export function colorScale(encoding: ColorEncoding | undefined, values: unknown[
         const domain = (encoding.domain?.map(String) ?? Array.from(new Set(values.filter(value => value !== null && value !== undefined && value !== '').map(String)))
             .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
         const colors = scheme && scheme in CATEGORICAL_SCHEMES ? CATEGORICAL_SCHEMES[scheme] : palette.categorical ?? CATEGORICAL_SCHEMES.tableau10;
-        const ordinal = d3.scaleOrdinal<string, string>().domain(domain).range(colors as string[]);
+        const ordinal = pinnedOrdinal(domain, colors, encoding.colors);
         return {
             color: value => value === null || value === undefined || value === '' ? noData : ordinal(String(value)),
             legend: { kind: 'categories', title, items: domain.slice(0, 24).map(value => ({ value, label: value, color: ordinal(value) })) },

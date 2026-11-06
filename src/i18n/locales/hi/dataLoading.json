@@ -18,6 +18,7 @@
     "chatHintExample": "यहां हमारे पास कौन सा डेटा है?",
     "placeholder": "निकालने, अपलोड करने, या बनाने के लिए डेटा का वर्णन करें...",
     "attachTooltip": "फ़ाइल या छवि संलग्न करें",
+    "dropToAttach": "संलग्न करने के लिए फ़ाइल छोड़ें",
     "stopTooltip": "उत्पादन रोकें",
     "sendTooltip": "भेजें (Enter)",
     "shiftEnterHint": "नई पंक्ति के लिए Shift+Enter",

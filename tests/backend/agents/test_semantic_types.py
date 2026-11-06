@@ -253,7 +253,7 @@ class TestSemanticGuidanceConsistency:
         assert schema[0]["enum"] == ALL_SEMANTIC_TYPES
         assert schema[1]["properties"]["semantic_type"]["enum"] == ALL_SEMANTIC_TYPES
         assert set(schema[1]["properties"]) == {
-            "semantic_type", "unit", "intrinsic_domain", "sort_order", "diverging_midpoint",
+            "semantic_type", "unit", "intrinsic_domain", "sort_order", "diverging_midpoint", "colors",
         }
 
     def test_prompt_recommends_no_unregistered_types(self):

@@ -106,7 +106,7 @@ export const MapPreview: FC<{
             for (const [name, field] of Object.entries(info.fields ?? {})) {
                 const merged = { ...field, ...field.authored };
                 if (merged.semanticType) fields[name] = { semanticType: merged.semanticType, unit: merged.unit, intrinsicDomain: merged.intrinsicDomain,
-                    divergingMidpoint: merged.divergingMidpoint, displayName: merged.displayName };
+                    divergingMidpoint: merged.divergingMidpoint, colors: merged.colors, displayName: merged.displayName };
             }
         }
         return fields;

@@ -403,7 +403,10 @@ the default look; a **data story** uses `maxWidth="lg"` with an editorial
   `Country`, `State`, or `City`; `{semanticType, unit: "USD"}` adds a unit when
   the data establishes it. A share or rate held as 0–1 takes `{semanticType:
   "Percentage", intrinsicDomain: [0, 1]}` so it reads as 16% rather than 0.16. A year column takes `Year` and no `type`: a
-  `type: "quantitative"` year is drawn as a number ("2,020").
+  `type: "quantitative"` year is drawn as a number ("2,020"). Categories with a
+  conventional colour (parties, win/loss) take `{semanticType: "Category",
+  colors: {Republican: "#d62728", Democratic: "#1f5fbf"}}`; a `table` column's
+  stored colours apply on their own (Color in the visualization guidance).
 - Keep it legible: about 12 categories on an axis and 8 colours at most; cut
   the rest in the query (`orderBy` with `limit`). One measure per chart.
 - Give a chart room of its shape. A chart's file (`session/charts/<id>.json`)

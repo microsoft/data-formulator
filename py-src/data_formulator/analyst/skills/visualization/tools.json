@@ -114,7 +114,7 @@
           },
           "field_metadata": {
             "type": "object",
-            "description": "Semantic annotations for encoded output columns: a SemanticType name (Year, Amount, Category, …; not quantitative or nominal), or an object with semantic_type and optional unit, intrinsic_domain, sort_order for ordered categories, and diverging_midpoint for a baseline. Never invent a unit.",
+            "description": "Semantic annotations for encoded output columns: a SemanticType name (Year, Amount, Category, …; not quantitative or nominal), or an object with semantic_type and optional unit, intrinsic_domain, sort_order for ordered categories, diverging_midpoint for a baseline, and colors for values with conventional colors. Never invent a unit.",
             "additionalProperties": {
               "oneOf": [
                 {"type": "string", "enum": ["DateTime", "Date", "Time", "Timestamp", "Year", "Quarter", "Month", "Week", "Day", "Hour", "YearMonth", "YearQuarter", "YearWeek", "Decade", "Duration", "Amount", "Price", "Quantity", "Temperature", "Percentage", "Profit", "PercentageChange", "Sentiment", "Correlation", "Count", "Number", "Rank", "Score", "ID", "Latitude", "Longitude", "Country", "State", "City", "Region", "Address", "ZipCode", "Category", "Name", "Status", "Boolean", "Direction", "Range", "Unknown"]},
@@ -125,7 +125,8 @@
                     "unit": {"type": "string", "description": "Unit or currency code, e.g. USD, kg, °C."},
                     "intrinsic_domain": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2, "description": "[min, max] of a bounded scale, e.g. [1, 5] for a 5-point rating."},
                     "sort_order": {"type": "array", "items": {"type": "string"}, "description": "Natural order of ordered categories, e.g. [\"Low\", \"Medium\", \"High\"]."},
-                    "diverging_midpoint": {"type": "number", "description": "Baseline a diverging color scale pivots on, e.g. 100 for an index."}
+                    "diverging_midpoint": {"type": "number", "description": "Baseline a diverging color scale pivots on, e.g. 100 for an index."},
+                    "colors": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Hex colors pinned to category values that have a conventional color, e.g. {\"Republican\": \"#d62728\", \"Democratic\": \"#1f5fbf\", \"No race\": \"#d9d9d9\"}. Stored with the table, so later charts and maps of the column agree. Omit for categories without one."}
                   },
                   "required": ["semantic_type"],
                   "additionalProperties": false

@@ -94,6 +94,41 @@ def terminal_mode() -> str:
     return tools_mode()
 
 
+# auto picks the user's default browser on macOS (Edge, Chrome or Safari, with their sign-ins) and
+# Edge elsewhere; profile drives the installed Edge with Data Formulator's own browser profile.
+BROWSER_CHOICES = ('auto', 'edge', 'chrome', 'safari', 'profile')
+
+
+def browser_available() -> bool:
+    """The agent can use a browser on this computer: local mode on macOS or Windows (Linux through Playwright)."""
+    return terminal_available()
+
+
+def browser_enabled() -> bool:
+    """The browser's own switch; off until the user opts in."""
+    return read_configuration()['overrides'].get('browser_enabled', False) is True
+
+
+def browser_choice() -> str:
+    choice = read_configuration()['overrides'].get('browser_name', 'auto')
+    return choice if choice in BROWSER_CHOICES else 'auto'
+
+
+def browser_allowed_sites() -> list[str]:
+    return list(read_configuration()['overrides'].get('browser_allowed_sites', []))
+
+
+def browser_mode() -> str:
+    """The browser's approval mode for the agent; off while its switch is off or its last check failed."""
+    if not browser_available() or not browser_enabled():
+        return 'off'
+    from data_formulator.browser.service import browser_ready
+
+    if browser_ready() is False:
+        return 'off'
+    return tools_mode()
+
+
 def user_models_locked() -> bool:
     args = current_app.config.get('CLI_ARGS', {}) if has_app_context() else {}
     return bool(args.get('disable_custom_models') or args.get('disable_database') or any(
@@ -109,7 +144,8 @@ def resource_enabled(section: str, identifier: str) -> bool:
 
 
 def validate_overrides(overrides: dict) -> None:
-    if not isinstance(overrides, dict) or set(overrides) - {'models', 'connectors', 'workflows', 'default_model', 'limits', 'allowed_api_bases', 'connections', 'disable_user_connectors', 'disable_user_models', 'app_name', 'app_tagline', 'terminal_mode', 'terminal_enabled', 'sandbox'}:
+    if not isinstance(overrides, dict) or set(overrides) - {'models', 'connectors', 'workflows', 'default_model', 'limits', 'allowed_api_bases', 'connections', 'disable_user_connectors', 'disable_user_models', 'app_name', 'app_tagline', 'terminal_mode', 'terminal_enabled', 'sandbox',
+                                                             'browser_enabled', 'browser_name', 'browser_allowed_sites'}:
         raise ValueError('Unknown configuration fields.')
     if 'sandbox' in overrides:
         sandbox = overrides['sandbox']
@@ -133,6 +169,15 @@ def validate_overrides(overrides: dict) -> None:
         raise ValueError('Terminal mode must be off, ask, or auto.')
     if 'terminal_enabled' in overrides and not isinstance(overrides['terminal_enabled'], bool):
         raise ValueError('terminal_enabled must be true or false.')
+    if 'browser_enabled' in overrides and not isinstance(overrides['browser_enabled'], bool):
+        raise ValueError('browser_enabled must be true or false.')
+    if 'browser_name' in overrides and overrides['browser_name'] not in BROWSER_CHOICES:
+        raise ValueError(f'browser_name must be one of: {", ".join(BROWSER_CHOICES)}.')
+    if 'browser_allowed_sites' in overrides:
+        sites = overrides['browser_allowed_sites']
+        if (not isinstance(sites, list) or len(sites) > 500
+                or any(not isinstance(site, str) or not site or len(site) > 253 or site != site.strip().lower() for site in sites)):
+            raise ValueError('browser_allowed_sites must list lower-case host names.')
     for name, maximum in (('app_name', 80), ('app_tagline', 300)):
         if name in overrides and (not isinstance(overrides[name], str) or len(overrides[name]) > maximum):
             raise ValueError(f'{name} must be text of at most {maximum} characters.')

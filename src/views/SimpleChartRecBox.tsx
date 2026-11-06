@@ -34,6 +34,7 @@ import { resolveRecommendedChart, getUrls, translateBackend } from '../app/utils
 import { authoredFieldSemantics } from '../app/fieldSemantics';
 import { streamRequest, apiRequest } from '../app/apiClient';
 import { pastedTextFile } from '../app/pastedText';
+import { FileDropOverlay, useFileDrop } from '../components/FileDrop';
 import { getErrorMessage } from '../app/errorCodes';
 import { Chart, ClarificationResponse, ComputationInputSource, DictTable, DraftNode, FieldItem, createDictTable, computeInsightKey, TextTurn, TerminalExecution, CodeExecution, ToolCall, createConversationRootId, ProgressStep, PlanItem, ThreadReference } from "../components/ComponentType";
 import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clarification';
@@ -716,6 +717,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         e.preventDefault();
         handleAttachFiles(files);
     }, [handleAttachFiles, isDemo]);
+
+    // Files dropped on the chat box attach like the "+" button and paste; refused while a reply runs, as the button is.
+    const { active: fileDragActive, handlers: fileDropHandlers } = useFileDrop({
+        enabled: !workspaceReadOnly && !isChatFormulating,
+        onFiles: handleAttachFiles,
+    });
 
     // A run belongs to the focused thread when it continues an item on the focused node's
     // chain (a table, an app, a report…), or, with no item there, when it shares its start.
@@ -1581,7 +1588,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             }
             if (result.type === 'mcp_started' || result.type === 'mcp_result' || (result.type === 'interact' && result.mcp_request)) {
                 const proposal = (result.mcp_request || result.request) as McpProposal;
-                const label = t('dataThread.callingMcp', { defaultValue: 'Calling {{server}} · {{tool}}',
+                const label = proposal.kind === 'browser' ? proposal.title : t('dataThread.callingMcp', { defaultValue: 'Calling {{server}} · {{tool}}',
                     server: proposal.server_name, tool: proposal.tool });
                 const outcome = result.type === 'mcp_result' ? (result.result || {}) : undefined;
                 const finalStatus = outcome?.rejected ? 'rejected' as const : outcome?.error ? 'failed' as const : 'completed' as const;
@@ -2949,7 +2956,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
     const inputBox = (
         <>
-        <Card ref={inputCardRef} variant="outlined" sx={{
+        <Card ref={inputCardRef} variant="outlined" {...fileDropHandlers} sx={{
             display: 'flex', flexDirection: 'column',
             mx: 1, mb: 1, mt: 0.5,
             px: 1.25, pt: 1, pb: 0.5,
@@ -2976,6 +2983,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             },
         }}
         >
+            <FileDropOverlay active={fileDragActive} zIndex={5} />
             {viewingToolActivity && selectedExecution && <ToolActivityPanel key={`${viewingToolActivity.nodeId}-${selectedExecution.id}`}
                 execution={selectedExecution}
                 calls={viewingStepCalls}

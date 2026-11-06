@@ -18,6 +18,7 @@
     "chatHintExample": "Welche Daten haben wir hier?",
     "placeholder": "Beschreiben Sie Daten zum Extrahieren, Hochladen oder Generieren...",
     "attachTooltip": "Datei oder Bild anhängen",
+    "dropToAttach": "Datei zum Anhängen ablegen",
     "stopTooltip": "Generierung stoppen",
     "sendTooltip": "Senden (Enter)",
     "shiftEnterHint": "Umschalt+Enter für neue Zeile",

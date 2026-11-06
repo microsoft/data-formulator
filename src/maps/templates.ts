@@ -73,6 +73,8 @@ export interface TemplateProperties {
     classes?: number;
     method?: NonNullable<Layer['color']>['method'];
     scheme?: string;
+    /** Categorical colour column: colours pinned to its values (`{"Republican": "#d62728"}`); others take the scheme. */
+    colors?: Record<string, string>;
     /** One colour (any CSS colour) for every mark when no colour column is bound; else the theme's. */
     color?: string;
     /** Largest bubble radius, spike height, or flow width. */
@@ -202,6 +204,10 @@ export function templateErrors(raw: Record<string, unknown>): string[] {
     if (properties.color !== undefined && !(typeof properties.color === 'string' && d3.color(properties.color))) {
         errors.push('properties.color must be a CSS colour, such as "#4e79a7" or "darkslategray".');
     }
+    if (properties.colors !== undefined && !(isRecord(properties.colors)
+        && Object.values(properties.colors).every(color => typeof color === 'string' && d3.color(color)))) {
+        errors.push('properties.colors must map category values to CSS colours, such as {"Republican": "#d62728"}.');
+    }
     errors.push(...highlightErrors(properties.highlight));
     if (name === 'flows') {
         if (has('originLat') !== has('originLon')) errors.push('encoding.originLat and originLon go together.');
@@ -281,6 +287,7 @@ export function compileTemplate(spec: TemplateSpec): { data: Record<string, Data
             ...(properties.classes ? { classes: properties.classes } : {}),
             ...(properties.method ? { method: properties.method } : {}),
             ...(properties.scheme ? { scheme: properties.scheme } : {}),
+            ...(properties.colors ? { colors: properties.colors } : {}),
         };
     } else if (properties.color && template !== 'density') {
         layer.color = { value: properties.color };

@@ -72,6 +72,8 @@ export interface ColorEncoding {
     value?: string;
     type?: 'quantitative' | 'categorical' | 'diverging' | 'bivariate';
     scheme?: string;
+    /** Categorical: colours pinned to values (trimmed, case-insensitive); other values take the palette. */
+    colors?: Record<string, string>;
     method?: ClassMethod;
     classes?: number;
     thresholds?: number[];

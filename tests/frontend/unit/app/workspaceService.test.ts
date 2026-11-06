@@ -23,7 +23,7 @@ vi.mock('../../../../src/app/stateMigrations', () => ({
 
 import { ApiRequestError } from '../../../../src/app/apiClient';
 import { workspaceDB } from '../../../../src/app/workspaceDB';
-import { importWorkspace, listWorkspaceFiles, listWorkspaces, loadWorkspace, saveWorkspaceState, WorkspaceLoadSupersededError, isLargeConnectorTable, loadsAsConnectorReference, createExternalTableReference } from '../../../../src/app/workspaceService';
+import { importWorkspace, listWorkspaceFiles, listWorkspaces, loadWorkspace, saveWorkspaceState, SessionConflictError, WorkspaceLoadSupersededError, isLargeConnectorTable, loadsAsConnectorReference, createExternalTableReference } from '../../../../src/app/workspaceService';
 import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
 import { getInputTablePreview } from '../../../../src/app/inputTablePreviewCache';
 
@@ -202,6 +202,29 @@ describe('local workspace parity', () => {
 
         expect(requestSpy).toHaveBeenCalledOnce();
         expect(recoverySaveSpy).not.toHaveBeenCalled();
+    });
+
+    it('saves against the revision it loaded and reports a newer saved copy as a conflict', async () => {
+        mockState.serverConfig.WORKSPACE_BACKEND = 'local';
+        mockState.activeWorkspace = { id: 'revisioned', displayName: 'Revisioned' };
+        const bodies: any[] = [];
+        vi.spyOn(await import('../../../../src/app/apiClient'), 'apiRequest').mockImplementation(async (url: string, init?: any) => {
+            if (url.endsWith('/load')) return { data: { state: { inputTables: [] }, revision: 4 } } as any;
+            const body = JSON.parse(init.body);
+            bodies.push(body);
+            if (body.base_revision === 5) {
+                throw new ApiRequestError({ code: 'SESSION_CONFLICT', message: 'saved elsewhere' }, 200);
+            }
+            return { data: { revision: body.base_revision + 1 } } as any;
+        });
+
+        await loadWorkspace('revisioned');
+        await saveWorkspaceState({ a: 1 });
+        // The next save is based on the revision the first one returned; here the server has moved on.
+        const conflict = await saveWorkspaceState({ a: 2 }).catch(error => error);
+        expect(conflict).toBeInstanceOf(SessionConflictError);
+        expect(conflict.sessionId).toBe('revisioned');
+        expect(bodies.map(body => body.base_revision)).toEqual([4, 5]);
     });
 
     it('hydrates previews against the workspace being loaded', async () => {

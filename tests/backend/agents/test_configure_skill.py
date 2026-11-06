@@ -171,6 +171,25 @@ def test_ask_user_keeps_multi_choice_only_with_options() -> None:
     assert [question["responseType"] for question in questions] == ["multi_choice", "free_text"]
 
 
+def test_ask_user_keeps_known_option_icons_only() -> None:
+    from data_formulator.analyst.skills.meta.skill import MetaSkill
+
+    options = MetaSkill._normalize_interact_action({"questions": [
+        {"text": "Where should the data come from?", "options": [
+            {"label": "Find CPI data online", "icon": "search_web"},
+            {"label": "Connect a data source", "icon": "connect"},
+            {"label": "Upload a file", "icon": "rocket"},
+            "Something else",
+        ]},
+    ]})["questions"][0]["options"]
+    assert options == [
+        {"label": "Find CPI data online", "icon": "search_web"},
+        {"label": "Connect a data source", "icon": "connect"},
+        {"label": "Upload a file"},
+        {"label": "Something else"},
+    ]
+
+
 def test_schedule_edits_merge_existing_config(scheduling) -> None:
     saved = scheduling.save(IDENTITY, {"name": "Fuel", "workflow": "demo/gas-price-review.yaml", "model_id": "server-model",
                                        "time": "08:00", "timezone": "UTC", "weekdays": [0]})

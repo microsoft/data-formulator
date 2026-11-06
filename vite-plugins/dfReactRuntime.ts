@@ -93,8 +93,14 @@ export function dfReactRuntime(options: { root: string; flintChartLocal?: string
                 logLevel: 'silent',
                 plugins: optional ? [flintRuntime, sharedRuntime] : [flintRuntime],
                 external: ['echarts', 'chart.js', 'chart.js/auto', 'plotly.js', 'plotly.js-dist-min'],
+                // A local Flint checkout would otherwise bundle its own node_modules/react
+                // alongside the app's (hooks fail with "reading 'useRef'"); esbuild has no dedupe.
                 ...(options.flintChartLocal
-                    ? { alias: { 'flint-chart': path.resolve(options.root, options.flintChartLocal) } }
+                    ? { alias: {
+                        'flint-chart': path.resolve(options.root, options.flintChartLocal),
+                        'react': path.resolve(options.root, 'node_modules/react'),
+                        'react-dom': path.resolve(options.root, 'node_modules/react-dom'),
+                    } }
                     : {}),
             });
             for (const input of Object.keys(result.metafile.inputs)) {

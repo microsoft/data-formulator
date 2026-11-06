@@ -601,6 +601,53 @@ the app's own origin.
 uv run pytest tests/backend/mcp
 ```
 
+### Agent Browser (Local Mode)
+
+In single-user local mode the analyst agent can read the web in a real browser:
+pages drawn by JavaScript, sites that block plain downloads (e.g. `bls.gov` answers
+`curl` with 403), and sites the user is signed in to. It is off until the user turns
+on **Browser** in the Tools dialog (`overrides.browser_enabled`), and it shares the
+tools' approval mode. Only interactive chats get it (not workflows or demos).
+
+- **Drivers** (`py-src/data_formulator/browser/`). On macOS, `applescript.py` drives
+  the user's own Microsoft Edge, Google Chrome or Safari through Apple Events (JXA),
+  with their sign-ins; pages open in a window of their own. Elsewhere, or with the
+  browser choice *A separate Edge window* (`browser_name: profile`),
+  `playwright_driver.py` drives the installed Edge (or Chrome) over a private pipe with
+  a persistent profile under `DATA_FORMULATOR_HOME/browser-profile/`; no browser is
+  downloaded, but the `browser` extra (`pip install "data_formulator[browser]"`) is
+  needed. Apple Events cannot be sent from inside the terminal's sandbox, so the
+  browser runs in the server, not through `run_terminal`.
+- **Setup.** The user must allow the app running Data Formulator to control the
+  browser (macOS Automation prompt) and turn on *Allow JavaScript from Apple Events*
+  (Edge/Chrome: View → Developer; Safari: Settings → Developer). Turning the browser
+  on, changing the browser, or **Check** runs `POST /api/browser/check`, whose steps
+  (`installed`, `automation`, `javascript`, `launch`) drive the setup guide with
+  illustrations in `BrowserAccess.tsx`. Managed Windows PCs may block the Playwright
+  route with the Edge policy `RemoteDebuggingAllowed`.
+- **Skill** (`analyst/skills/browser/`). Actions `browser_open`, `browser_read`
+  (`markdown`, `tables` as CSV, `text`, `links`, `html`, all saved under
+  `scratch/browser/`) and `browser_eval` (page JavaScript), plus the `browser_tabs`
+  tool (`list`, `check`, `show`, `close`). Page scripts (`page_scripts.py`) read the
+  rendered page including shadow DOM, and lay table cells out with row and column spans.
+  Only http(s) addresses open, never Data Formulator's own server.
+- **Approval.** In *Ask every time*, the first call on a site the user has not allowed
+  pauses through the MCP approval channel (`mcp_request` with `kind: "browser"`):
+  **Allow in this chat** or **Always allow <site>** (`overrides.browser_allowed_sites`).
+  *Auto* runs without asking.
+- **Sign-in hand-off.** A page with a visible password field, a known sign-in host or a
+  visible human-verification check comes back as `needs_user`; the window is brought
+  forward and the agent asks the user with `ask_user`, linking the tab as
+  `[Show the page](df-browser://tab/t1)` (rendered as a button that calls
+  `POST /api/browser/focus`), then re-checks it with `browser_tabs`.
+
+Routes live under `/api/browser` (`py-src/data_formulator/routes/browser.py`); they
+need a same-origin local request, and the Vite dev proxy preserves Host for them.
+
+```bash
+uv run pytest tests/backend/browser
+```
+
 ### Azure CLI Deployment Discovery
 
 In local mode, choose **Add Model > Azure > Azure CLI**, sign in, and select

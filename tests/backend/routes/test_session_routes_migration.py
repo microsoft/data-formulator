@@ -75,6 +75,27 @@ class TestListSessionRoute:
         assert session["source_ids"] == ["sample_datasets", "warehouse"]
 
 
+class TestSaveConflictRoute:
+    def test_save_reports_a_stale_copy_as_session_conflict(self, client, tmp_path):
+        from data_formulator.datalake.workspace_manager import WorkspaceManager
+
+        manager = WorkspaceManager(tmp_path / "workspaces")
+        manager.create_workspace("ws")
+        with (
+            patch("data_formulator.routes.sessions.get_identity_id", return_value="local:me"),
+            patch("data_formulator.routes.sessions.get_workspace_manager", return_value=manager),
+        ):
+            saved = client.post("/api/sessions/save", json={"id": "ws", "state": {"textTurns": [1]}}).get_json()
+            assert saved["data"]["revision"] == 1
+            assert client.post("/api/sessions/load", json={"id": "ws"}).get_json()["data"]["revision"] == 1
+            client.post("/api/sessions/save", json={"id": "ws", "state": {"textTurns": [1, 2]}, "base_revision": 1})
+
+            stale = client.post("/api/sessions/save", json={"id": "ws", "state": {"textTurns": [1]}, "base_revision": 1}).get_json()
+
+        assert stale["status"] == "error" and stale["error"]["code"] == "SESSION_CONFLICT"
+        assert manager.load_session_state("ws")["textTurns"] == [1, 2]
+
+
 class TestUpdateMetaRoute:
     def _post(self, client, manager, body):
         with (

@@ -51,3 +51,24 @@ CDF. Regression computes its trend line; do not calculate predictions in code.
 Pie Chart uses `size` for wedge values. Grouped Bar Chart uses `group`. Map uses
 longitude/latitude; Choropleth uses region `id` and quantitative `color`.
 All encoded fields must exist in the output DataFrame.
+
+## Color
+
+Leave colors to the theme unless the values carry a meaning readers already tie
+to a color; then pin them, so a meaningful color never lands on the wrong value.
+
+- Categories with conventional colors: political parties (US Republican red,
+  Democratic blue), outcomes (win/loss, pass/fail, yes/no: green and red),
+  traffic-light status, energy sources (coal dark grey, solar yellow, wind light
+  blue), a brand's or team's own color. Set `colors` on the field in
+  `field_metadata`, keyed by the values as they appear in the data:
+  `{"party": {"semantic_type": "Category", "colors": {"Republican": "#d62728",
+  "Democratic": "#1f5fbf", "Independent": "#8c8c8c"}}}`. Give non-answers (no
+  race, not called, unknown, other) neutral greys so they do not read as a side.
+  The colors stay with the table, so later charts, maps and apps of the field
+  agree; when a column already lists `colors`, keep them.
+- A diverging measure whose sides mean something (a party margin, surplus versus
+  deficit): match each side's color. A diverging scheme runs from the low end:
+  `redblue` is red for low values and blue for high. Orient the measure so the
+  sides land right (a Democratic-minus-Republican margin with `redblue`: negative
+  is Republican and red), set the scheme, and state the sign in the subtitle.

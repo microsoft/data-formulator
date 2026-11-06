@@ -19,6 +19,8 @@ export interface FieldAnnotation {
     unit?: string;
     intrinsicDomain?: [number, number];
     divergingMidpoint?: number;
+    /** Colours pinned to category values (Flint `colors`). */
+    colors?: Record<string, string>;
     displayName?: string;
 }
 
@@ -75,6 +77,8 @@ export interface ResolvedField {
     scheme?: string;
     /** Additive measures (counts, amounts) make misleading choropleths; rates do not. */
     additive: boolean;
+    /** Colours pinned to category values. */
+    colors?: Record<string, string>;
 }
 
 const UNIT_LABELS: Record<string, string> = { USD: 'US$', EUR: '€', GBP: '£' };
@@ -112,6 +116,7 @@ export function resolveField(field: string, values: unknown[], declared?: FieldA
         aggregate: aggregation === 'sum' ? 'sum' : aggregation === 'average' ? 'mean' : undefined,
         colorType, midpoint, scheme,
         additive: entry?.aggRole === 'additive' || entry?.aggRole === 'signed-additive',
+        ...(annotation.colors ? { colors: annotation.colors } : {}),
     };
 }
 
@@ -146,6 +151,7 @@ export function colorDefaults(encoding: ColorEncoding, resolved: ResolvedField):
         ...(encoding.type === undefined && resolved.colorType === 'categorical' ? { type: 'categorical' as const } : {}),
         aggregate: encoding.aggregate ?? resolved.aggregate,
         title: encoding.title ?? resolved.label,
+        ...(resolved.colors && !encoding.colors ? { colors: resolved.colors } : {}),
         ...(encoding.format === undefined ? semanticFormat(encoding, resolved) : {}),
     };
 }

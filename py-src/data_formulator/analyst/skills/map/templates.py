@@ -54,6 +54,11 @@ def _css_color(value: Any) -> bool:
     return isinstance(value, str) and bool(_CSS_COLOR.match(value.strip()))
 
 
+def colors_ok(value: Any) -> bool:
+    """Colours pinned to category values: ``{"Republican": "#d62728"}``."""
+    return isinstance(value, dict) and all(isinstance(key, str) and _css_color(color) for key, color in value.items())
+
+
 def channel_binding(value: Any) -> tuple[str | None, list[str]]:
     """A channel's shown column and the columns offered for it.
 
@@ -128,6 +133,8 @@ def template_errors(spec: dict[str, Any]) -> list[str]:
     properties = spec.get("properties") if isinstance(spec.get("properties"), dict) else {}
     if "color" in properties and not _css_color(properties["color"]):
         errors.append('properties.color must be a CSS colour, such as "#4e79a7" or "darkslategray".')
+    if "colors" in properties and not colors_ok(properties["colors"]):
+        errors.append('properties.colors must map category values to CSS colours, such as {"Republican": "#d62728"}.')
     highlight = properties.get("highlight")
     if highlight is not None:
         if not isinstance(highlight, dict) or not _text(highlight.get("field")) or "value" not in highlight:

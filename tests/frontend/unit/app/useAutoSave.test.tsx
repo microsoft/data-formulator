@@ -11,9 +11,11 @@ const mocks = vi.hoisted(() => ({
     } as any,
     saveWorkspaceState: vi.fn(),
     handleApiError: vi.fn(),
+    dispatch: vi.fn(),
     listeners: new Set<() => void>(),
     store: {
         getState: () => mocks.state,
+        dispatch: (action: any) => mocks.dispatch(action),
         subscribe: (listener: () => void) => {
             mocks.listeners.add(listener);
             return () => { mocks.listeners.delete(listener); };
@@ -32,6 +34,9 @@ vi.mock('react-redux', () => ({
 
 vi.mock('../../../../src/app/workspaceService', () => ({
     saveWorkspaceState: (...args: any[]) => mocks.saveWorkspaceState(...args),
+    SessionConflictError: class SessionConflictError extends Error {
+        constructor(readonly sessionId: string) { super('conflict'); }
+    },
 }));
 
 vi.mock('../../../../src/app/errorHandler', () => ({
@@ -56,6 +61,7 @@ describe('useAutoSave', () => {
         };
         mocks.saveWorkspaceState.mockReset();
         mocks.handleApiError.mockReset();
+        mocks.dispatch.mockReset();
     });
 
     afterEach(() => {
@@ -74,6 +80,20 @@ describe('useAutoSave', () => {
         });
 
         expect(mocks.handleApiError).toHaveBeenCalledWith(err, 'Auto-save');
+    });
+
+    it('stops saving and steps back when the server holds a newer copy', async () => {
+        const { SessionConflictError } = await import('../../../../src/app/workspaceService');
+        mocks.saveWorkspaceState.mockRejectedValueOnce(new SessionConflictError('ws-1'));
+
+        render(<AutoSaveHarness />);
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(3000);
+        });
+
+        expect(mocks.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+            type: expect.stringMatching(/markSessionOpenElsewhere$/), payload: { id: 'ws-1' } }));
+        expect(mocks.handleApiError).not.toHaveBeenCalled();
     });
 
     it('debounces store changes without re-rendering its host', () => {

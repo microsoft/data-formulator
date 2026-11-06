@@ -1680,9 +1680,9 @@
     "alwaysAllowedHint": "Sie haben „Dieses Werkzeug immer erlauben“ gewählt, als der Agent fragte. Entfernen, um wieder gefragt zu werden."
   },
   "tools": {
-    "chipDetails": "Tools, die der Agent nutzen kann: Terminal und MCP-Server",
+    "chipDetails": "Tools, die der Agent nutzen kann: das Terminal, der Browser und MCP-Server",
     "title": "Tools",
-    "intro": "Mit Tools reicht der Agent über Ihren Arbeitsbereich hinaus: Befehle auf diesem Computer ausführen oder MCP-Server für Daten und Dokumente aufrufen.",
+    "intro": "Mit Tools reicht der Agent über Ihren Arbeitsbereich hinaus: Befehle auf diesem Computer ausführen, im Web browsen oder MCP-Server für Daten und Dokumente aufrufen.",
     "blocked": "Die Bereitstellungsrichtlinie schaltet Benutzerverbindungen und Tools aus.",
     "localOnly": "Tools sind in der lokalen Einzelbenutzer-App verfügbar.",
     "modeLabel": "Freigabe",
@@ -1933,5 +1933,57 @@
       "straight": "Gerade"
     },
     "generating": "Karte wird erstellt"
+  },
+  "browser": {
+    "about": "Lassen Sie den Agenten das Web in einem echten Browser lesen: Seiten, die mit JavaScript aufgebaut werden, Websites, die einfache Downloads blockieren, und Websites, bei denen Sie angemeldet sind. Seiten öffnen sich in einem eigenen Fenster; der Agent nutzt nie Ihre anderen Tabs.",
+    "allowAlways": "{{site}} immer erlauben",
+    "allowChat": "In diesem Chat erlauben",
+    "approvalNote": "Was der Agent dort liest, geht an Ihren Modellanbieter.",
+    "approvalTitle": "Dem Agenten erlauben, {{site}} in Ihrem Browser zu verwenden?",
+    "caption": "Webseiten in einem echten Browser lesen, auch Websites, bei denen Sie angemeldet sind",
+    "check": "Prüfen",
+    "checkAgain": "Erneut prüfen",
+    "checkHint": "Prüfen, ob der Agent den Browser verwenden kann. Ein Browserfenster öffnet und schließt sich.",
+    "checkHintMac": "Prüfen, ob der Agent den Browser verwenden kann. macOS fragt eventuell, ob Data Formulator ihn steuern darf; wählen Sie OK.",
+    "choice": {
+      "auto": "Ihr Standardbrowser",
+      "profile": "Ein separates Edge-Fenster (eigene Anmeldungen)"
+    },
+    "choiceLabel": "Zu verwendender Browser",
+    "copyScript": "Skript kopieren",
+    "fix": {
+      "automation": "macOS fragt, bevor eine App eine andere steuert. Erlauben Sie der App, die Data Formulator ausführt (Terminal, VS Code oder Data Formulator selbst), {{name}} zu steuern: Aktivieren Sie unter Systemeinstellungen → Datenschutz & Sicherheit → Automation {{name}} unter dieser App. Wenn die App noch nicht aufgeführt ist, klicken Sie auf „Erneut prüfen“ und wählen Sie OK, wenn macOS fragt.",
+      "chromium": "Wählen Sie in der Menüleiste von {{name}} View → Developer → Allow JavaScript from Apple Events, sodass ein Häkchen daneben erscheint. So kann Data Formulator die geöffneten Seiten lesen.",
+      "installBrowser": "Installieren Sie Microsoft Edge oder Google Chrome, oder verwenden Sie Safari, und prüfen Sie dann erneut.",
+      "launch": "Edge konnte für Data Formulator nicht gestartet werden. Auf einem Arbeitscomputer hat Ihre Organisation dies eventuell deaktiviert (Edge-Richtlinie RemoteDebuggingAllowed); wenden Sie sich an Ihre IT oder wählen Sie oben Google Chrome.",
+      "openAutomation": "Automation-Einstellungen öffnen",
+      "playwright": "Data Formulator steuert das bereits installierte Microsoft Edge und benötigt dafür sein Browser-Unterstützungspaket. Installieren Sie es in der Python-Umgebung, in der Data Formulator läuft, und starten Sie Data Formulator neu:",
+      "safari": "Öffnen Sie in Safari Einstellungen → Erweitert und aktivieren Sie „Funktionen für Webentwickler anzeigen“. Aktivieren Sie dann unter Einstellungen → Entwickler „JavaScript von Apple Events erlauben“.",
+      "safariLegacy": "Öffnen Sie in Safari Einstellungen → Erweitert und aktivieren Sie „Menü ‚Entwickler‘ in der Menüleiste anzeigen“. Wählen Sie dann in der Menüleiste Entwickler → „JavaScript von Apple Events erlauben“.",
+      "systemSettings": "Datenschutz & Sicherheit › Automation"
+    },
+    "name": "Browser",
+    "open": "Öffnen",
+    "ownProfile": "Verwendet {{name}} mit einem eigenen Profil, Ihre üblichen Anmeldungen sind dort also nicht vorhanden. Wenn eine Website eine Anmeldung verlangt, melden Sie sich einmal in diesem Fenster an; das wird gespeichert.",
+    "ready": "Bereit. Bitten Sie den Agenten, Daten von einer Webseite zu holen.",
+    "scriptLabel": "In der Seite ausgeführtes Skript",
+    "setup": "Einrichtung",
+    "signInHint": "Öffnen Sie eine Website im Browserfenster des Agenten, um sich vorab anzumelden. Der Agent fragt Sie auch, wenn er eine Anmeldeseite erreicht.",
+    "signInTitle": "Bei einer Website anmelden",
+    "status": {
+      "needsSetup": "Einrichtung nötig",
+      "off": "Aus",
+      "on": "An",
+      "ready": "Bereit · {{name}}"
+    },
+    "step": {
+      "automation": "macOS erlaubt Data Formulator, {{name}} zu steuern",
+      "installed": "{{name}} ist verfügbar",
+      "javascript": "{{name}} erlaubt Data Formulator, Seiten zu lesen",
+      "launch": "{{name}} startet für Data Formulator"
+    },
+    "tabGone": "Dieser Tab ist nicht mehr geöffnet.",
+    "use": "Browser verwenden",
+    "userProfile": "Verwendet Ihr eigenes {{name}}, mit Ihnen angemeldet: Websites, bei denen Sie angemeldet sind, funktionieren wie gewohnt."
   }
 }

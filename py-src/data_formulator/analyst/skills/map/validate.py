@@ -16,7 +16,7 @@ import logging
 from typing import Any
 
 from data_formulator.analyst.skills.map.geo import layer_geo_set, normalize_key, region_id
-from data_formulator.analyst.skills.map.templates import compile_template, offered_columns, template_errors
+from data_formulator.analyst.skills.map.templates import colors_ok, compile_template, offered_columns, template_errors
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +86,8 @@ def check_structure(spec: Any) -> tuple[list[str], list[str]]:
             errors.append(f"fields.{name} must be a semantic type or {{\"semanticType\", \"unit\", \"displayName\", ...}}.")
         elif "divergingMidpoint" in annotation and not isinstance(annotation["divergingMidpoint"], (int, float)):
             errors.append(f"fields.{name}.divergingMidpoint must be a number.")
+        elif "colors" in annotation and not colors_ok(annotation["colors"]):
+            errors.append(f"fields.{name}.colors must map category values to colours, e.g. {{\"Republican\": \"#d62728\"}}.")
     if view.get("tiles") not in (None, "none") and view.get("projection") not in (None, "mercator"):
         warnings.append("Street tiles draw only in the Mercator projection; the map uses Mercator.")
 
@@ -167,6 +169,8 @@ def check_structure(spec: Any) -> tuple[list[str], list[str]]:
                 errors.append(f"{where}.color: the threshold method needs thresholds.")
             if color.get("type") == "bivariate" and (not color.get("field") or not color.get("field2")):
                 errors.append(f"{where}.color: a bivariate colour needs field and field2.")
+            if "colors" in color and not colors_ok(color["colors"]):
+                errors.append(f"{where}.color.colors must map category values to CSS colours, such as {{\"Republican\": \"#d62728\"}}.")
         if "curve" in layer and layer["curve"] not in ("arc", "great-circle", "straight"):
             errors.append(f"{where}.curve must be arc, great-circle, or straight.")
         if "layout" in layer and layer["layout"] != "dorling":

@@ -18,6 +18,7 @@
     "chatHintExample": "Data apa yang kita miliki di sini?",
     "placeholder": "Jelaskan data untuk diekstrak, diunggah, atau dibuat...",
     "attachTooltip": "Lampirkan berkas atau gambar",
+    "dropToAttach": "Lepaskan berkas untuk melampirkan",
     "stopTooltip": "Hentikan pembuatan",
     "sendTooltip": "Kirim (Enter)",
     "shiftEnterHint": "Shift+Enter untuk baris baru",

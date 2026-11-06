@@ -339,9 +339,9 @@ def test_an_app_being_written_streams_as_masked_lines(workspace, monkeypatch) ->
             events.append(next(stream))
     drafts = [event for event in events if event["type"] == "artifact_draft"]
     assert len(drafts) > 3
-    # Spaces, tabs and line breaks keep their place; every other character is masked; only the last 5 lines go.
+    # Spaces, tabs and line breaks keep their place; every other character is masked; the last 12 lines go (here all 6).
     assert drafts[-1] == {"type": "artifact_draft", "tool": "write_app", "title": 'Sales "overview"', "line_count": 6, "lines": [
-        "", "xxxxxx xxxxxxx xxxxxxxx xxxxx x", "  xxxxxx xxxx xxxxxxx xxxxxx xxxxxxxxx", "x", ""]}
+        "xxxxxx xxxxx xxxx xxxxxxxx", "", "xxxxxx xxxxxxx xxxxxxxx xxxxx x", "  xxxxxx xxxx xxxxxxx xxxxxx xxxxxxxxx", "x", ""]}
     assert all(set("".join(event["lines"])) <= {"x", " "} for event in drafts)
     assert [len(event["lines"]) for event in drafts] == sorted(len(event["lines"]) for event in drafts)
     assert finished.value.value.choices[0].message.tool_calls[0].function.arguments == arguments

@@ -1680,9 +1680,9 @@
     "alwaysAllowedHint": "You chose \"Always allow this tool\" when the agent asked. Remove to be asked again."
   },
   "tools": {
-    "chipDetails": "Tools the agent can use: the terminal and MCP servers",
+    "chipDetails": "Tools the agent can use: the terminal, the browser and MCP servers",
     "title": "Tools",
-    "intro": "Tools let the agent reach beyond your workspace: run commands on this computer, or call MCP servers for data and documents.",
+    "intro": "Tools let the agent reach beyond your workspace: run commands on this computer, browse the web, or call MCP servers for data and documents.",
     "blocked": "The deployment policy turns off user connections and tools.",
     "localOnly": "Tools are available in the single-user local app.",
     "modeLabel": "Approval",
@@ -1933,5 +1933,57 @@
       "straight": "Straight"
     },
     "generating": "Generating map"
+  },
+  "browser": {
+    "status": {
+      "off": "Off",
+      "needsSetup": "Needs setup",
+      "ready": "Ready · {{name}}",
+      "on": "On"
+    },
+    "fix": {
+      "automation": "macOS asks before one app controls another. Allow the app that runs Data Formulator (Terminal, VS Code, or Data Formulator itself) to control {{name}}: in System Settings → Privacy & Security → Automation, turn on {{name}} under that app. If the app is not listed yet, click Check again and choose OK when macOS asks.",
+      "systemSettings": "Privacy & Security › Automation",
+      "openAutomation": "Open Automation settings",
+      "safari": "In Safari, open Settings → Advanced and turn on “Show features for web developers”. Then, in Settings → Developer, turn on “Allow JavaScript from Apple Events”.",
+      "safariLegacy": "In Safari, open Settings (Preferences on older macOS) → Advanced and turn on “Show Develop menu in menu bar”. Then, in the menu bar, choose Develop → Allow JavaScript from Apple Events.",
+      "chromium": "In {{name}}’s menu bar, choose View → Developer → Allow JavaScript from Apple Events, so a check mark shows next to it. It lets Data Formulator read the pages it opens.",
+      "playwright": "Data Formulator drives the Microsoft Edge already on this computer, which needs its browser support package. Install it into the Python environment that runs Data Formulator, then restart Data Formulator:",
+      "installBrowser": "Install Microsoft Edge, Google Chrome, or use Safari, then check again.",
+      "launch": "Edge could not be started for Data Formulator. On a work computer, your organization may turn this off (the Edge policy RemoteDebuggingAllowed); ask your IT administrator, or choose Google Chrome above."
+    },
+    "step": {
+      "installed": "{{name}} is available",
+      "automation": "macOS lets Data Formulator control {{name}}",
+      "javascript": "{{name}} lets Data Formulator read pages",
+      "launch": "{{name}} starts for Data Formulator"
+    },
+    "name": "Browser",
+    "choice": {
+      "auto": "Your default browser",
+      "profile": "A separate Edge window (its own sign-ins)"
+    },
+    "use": "Use the browser",
+    "about": "Let the agent read the web in a real browser: pages drawn by JavaScript, sites that block simple downloads, and sites you are signed in to. Pages open in a window of their own; the agent never uses your other tabs.",
+    "choiceLabel": "Browser to use",
+    "userProfile": "Uses your own {{name}}, signed in as you: sites you are signed in to work as they do for you.",
+    "ownProfile": "Uses {{name}} with a profile of its own, so your everyday sign-ins are not there. When a site needs you to sign in, sign in once in that window and it is remembered.",
+    "setup": "Setup",
+    "checkAgain": "Check again",
+    "check": "Check",
+    "checkHintMac": "Check that the agent can use the browser. macOS may ask whether Data Formulator can control it; choose OK.",
+    "checkHint": "Check that the agent can use the browser. A browser window opens and closes.",
+    "ready": "Ready. Ask the agent to get data from a web page.",
+    "signInTitle": "Sign in to a site",
+    "signInHint": "Open a site in the agent’s browser window to sign in ahead of time. The agent also asks you when it reaches a sign-in page.",
+    "open": "Open",
+    "tabGone": "That tab is no longer open.",
+    "approvalTitle": "Let the agent use {{site}} in your browser?",
+    "scriptLabel": "Script run in the page",
+    "copyScript": "Copy script",
+    "approvalNote": "What the agent reads there goes to your model provider.",
+    "allowAlways": "Always allow {{site}}",
+    "allowChat": "Allow in this chat",
+    "caption": "Read web pages in a real browser, including sites you are signed in to"
   }
 }

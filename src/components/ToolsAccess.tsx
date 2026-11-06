@@ -15,6 +15,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import LanguageIcon from '@mui/icons-material/Language';
 import BoltIcon from '@mui/icons-material/Bolt';
 import BlockIcon from '@mui/icons-material/Block';
 import EditIcon from '@mui/icons-material/Edit';
@@ -27,6 +28,8 @@ import { AddServerForm, setupPanelSx, StatusLine, ToolPage, ToolSwitch, toolkitI
 import { ItemCard, itemCardGridSx } from './ItemCard';
 import { mcpFormDone, McpProposalPanel, useMcpProposal } from './McpProposal';
 import { TerminalFilesystemSummary } from './TerminalApprovalDialog';
+import { BrowserDetails, BrowserStatusLabel } from './BrowserAccess';
+import { browserConfig, browserOn, checkBrowser, loadBrowserStatus, saveBrowserSettings, type BrowserChoice, type BrowserStatus } from '../app/browserSettings';
 
 const errorText = (reason: unknown) => reason instanceof Error ? reason.message : String(reason);
 
@@ -133,7 +136,7 @@ const HomeHeading = ({ children }: { children: React.ReactNode }) =>
  * The page the dialog shows instead of the home page: the terminal, a toolkit (added or not), a custom server, adding
  * a custom server, or an agent's suggestion to review.
  */
-type Page = 'terminal' | 'custom' | 'proposal' | `pack:${string}` | `server:${string}`;
+type Page = 'terminal' | 'browser' | 'custom' | 'proposal' | `pack:${string}` | `server:${string}`;
 
 /** The composer's Tools chip: the shared approval mode, the terminal, and the user's MCP servers. */
 export const ToolsAccessButton = () => {
@@ -149,6 +152,7 @@ export const ToolsAccessButton = () => {
     const [policy, setPolicy] = useState<ToolsPolicy>();
     const [saving, setSaving] = useState(false);
     const [policyError, setPolicyError] = useState('');
+    const [browser, setBrowser] = useState<BrowserStatus>();
     const mcp = useMcpSettings(open && !!config.MCP_AVAILABLE);
     // An agent's MCP proposal under review (its text turn).
     const [proposalTurnId, setProposalTurnId] = useState<string>();
@@ -170,10 +174,29 @@ export const ToolsAccessButton = () => {
         catch (reason) { setPolicyError(errorText(reason)); return false; }
         finally { setSaving(false); }
     };
+    const applyBrowser = (next: BrowserStatus) => {
+        // A saved change returns no check; keep the last one while the browser stays the same.
+        setBrowser(current => next.steps || !current?.steps || current.browser !== next.browser || current.choice !== next.choice
+            || !next.enabled ? next : { ...next, steps: current.steps, ready: current.ready });
+        dispatch(dfActions.setServerConfig({ ...reduxStore.getState().serverConfig, ...browserConfig(next) }));
+    };
+    const runBrowser = async (task: () => Promise<BrowserStatus>) => {
+        setSaving(true); setPolicyError('');
+        try { const next = await task(); applyBrowser(next); return next; }
+        catch (reason) { setPolicyError(errorText(reason)); return undefined; }
+        finally { setSaving(false); }
+    };
+    const changeBrowser = async (next: { enabled?: boolean; browser?: BrowserChoice }) => {
+        const saved = await runBrowser(() => saveBrowserSettings(next));
+        // Turning it on (or picking another browser) checks it right away, from the user's click.
+        if (saved?.enabled && (next.enabled || next.browser)) await runBrowser(checkBrowser);
+        return !!saved;
+    };
     const go = (next?: Page) => { setPage(next); setDraft({}); mcp.setNotice(''); };
     const show = (turnId?: string) => {
         setOpen(true); go(turnId ? 'proposal' : undefined); setProposalTurnId(turnId);
         void loadPolicy();
+        if (config.BROWSER_AVAILABLE) void loadBrowserStatus().then(applyBrowser).catch(() => undefined);
         if (config.MCP_AVAILABLE) { void mcp.load(); void mcp.loadPacks(); }
     };
     useEffect(() => onToolsDialogRequest(turnId => show(turnId)), [config.MCP_AVAILABLE]);
@@ -196,6 +219,7 @@ export const ToolsAccessButton = () => {
     const packs = mcp.packs ?? [];
     // Tools that are on: the terminal (when it can run here) and the MCP servers switched on.
     const toolCount = (config.TERMINAL_AVAILABLE && (policy?.enabled ?? config.TERMINAL_ENABLED ?? true) ? 1 : 0)
+        + (config.BROWSER_AVAILABLE && (browser ? browserOn(browser) : config.BROWSER_ENABLED) ? 1 : 0)
         + (config.MCP_AVAILABLE ? (mcp.snapshot ? servers.filter(server => server.enabled).length : config.MCP_SERVERS_ON ?? 0) : 0);
     const error = policyError || mcp.error;
     const modes: [ToolsMode, string][] = [['off', 'Off'], ['ask', 'Ask every time'], ['auto', 'Auto when safe']];
@@ -208,10 +232,12 @@ export const ToolsAccessButton = () => {
     const shownServer = page?.startsWith('server:') ? servers.find(server => `server:${server.id}` === page)
         : shownPack ? packServer(shownPack.id) : undefined;
     const shown = page === 'terminal' ? (policy?.available ? page : undefined)
+        : page === 'browser' ? (browser?.available ? page : undefined)
         : page === 'custom' ? (canAdd ? page : undefined)
         : page === 'proposal' ? (reviewing ? page : undefined)
         : shownPack || shownServer ? page : undefined;
     const pageTitle = shown === 'terminal' ? t('tools.terminal.name', { defaultValue: 'Terminal' })
+        : shown === 'browser' ? t('browser.name', { defaultValue: 'Browser' })
         : shown === 'custom' ? t('tools.add.custom', { defaultValue: 'Custom MCP server' })
         : shown === 'proposal' ? proposal?.form.title
         : shownServer?.name ?? (shownPack ? t(`mcp.pack.${shownPack.id}.name`, { defaultValue: shownPack.name }) : undefined);
@@ -229,7 +255,7 @@ export const ToolsAccessButton = () => {
     });
     const textButton = { textTransform: 'none' } as const;
     return <>
-        <Tooltip describeChild title={t('tools.chipDetails', { defaultValue: 'Tools the agent can use: the terminal and MCP servers' })}>
+        <Tooltip describeChild title={t('tools.chipDetails', { defaultValue: 'Tools the agent can use: the terminal, the browser and MCP servers' })}>
             <Button size="small" aria-haspopup="dialog" onClick={() => show()}
                 aria-label={t('tools.chipLabel', { defaultValue: 'Tools: {{count}} on, {{mode}}', count: toolCount,
                     mode: t(`tools.mode.${mode}`, { defaultValue: { off: 'Off', ask: 'Ask every time', auto: 'Auto when safe' }[mode] }) })}
@@ -257,6 +283,8 @@ export const ToolsAccessButton = () => {
                     sx={{ overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}>{error}</Alert>}
                 {mcp.notice && <Alert severity="info" onClose={() => mcp.setNotice('')} sx={{ whiteSpace: 'pre-wrap' }}>{mcp.notice}</Alert>}
                 {shown === 'terminal' && policy && <TerminalDetails policy={policy} busy={busy} onChange={change} />}
+                {shown === 'browser' && browser && <BrowserDetails status={browser} busy={busy} onChange={changeBrowser}
+                    onCheck={async () => { await runBrowser(checkBrowser); }} />}
                 {shown === 'proposal' && <McpProposalPanel turnId={proposalTurnId!} settings={mcp} onDismiss={() => { setProposalTurnId(undefined); go(undefined); }} />}
                 {(shownPack || (shown?.startsWith('server:') && shownServer)) && <ToolPage key={shownPack ? `pack:${shownPack.id}` : shown}
                     server={shownServer} pack={shownPack} previewTools={shownPack ? mcp.packTools[shownPack.id] : undefined}
@@ -279,7 +307,7 @@ export const ToolsAccessButton = () => {
                 </Box>}
                 {!shown && <>
                     <Typography variant="body2">
-                        {t('tools.intro', { defaultValue: 'Tools let the agent reach beyond your workspace: run commands on this computer, or call MCP servers for data and documents.' })}
+                        {t('tools.intro', { defaultValue: 'Tools let the agent reach beyond your workspace: run commands on this computer, browse the web, or call MCP servers for data and documents.' })}
                     </Typography>
                     {!available && <Alert severity="info">{config.IS_LOCAL_MODE && config.DISABLE_DATA_CONNECTORS
                         ? t('tools.blocked', { defaultValue: 'The deployment policy turns off user connections and tools.' })
@@ -311,6 +339,13 @@ export const ToolsAccessButton = () => {
                                 status={<TerminalStatus policy={policy} />} onOpen={() => go('terminal')}
                                 toggle={<ToolSwitch checked={policy.enabled} disabled={busy} onChange={enabled => void change({ enabled })}
                                     label={t('tools.terminal.use', { defaultValue: 'Use the terminal' })} />} />}
+                            {browser?.available && <ToolCard icon={<LanguageIcon />} name={t('browser.name', { defaultValue: 'Browser' })}
+                                about={t('browser.caption', { defaultValue: 'Read web pages in a real browser, including sites you are signed in to' })}
+                                status={<BrowserStatusLabel status={browser} />} onOpen={() => go('browser')}
+                                // On only once its check passes; turning it on again from here re-runs the check.
+                                toggle={<ToolSwitch checked={browserOn(browser)} disabled={busy}
+                                    onChange={enabled => { if (enabled) go('browser'); void changeBrowser({ enabled }); }}
+                                    label={t('browser.use', { defaultValue: 'Use the browser' })} />} />}
                             {servers.map(server => {
                                 const pack = server.pack ? packs.find(item => item.id === server.pack) : undefined;
                                 return <ToolCard key={server.id} icon={toolkitIcon(server.pack)} name={server.name}
