@@ -200,6 +200,9 @@ const LANGUAGE_LABELS: Record<string, string> = {
     ko: '한국어',
     fr: 'FR',
     de: 'DE',
+    es: 'ES',
+    pt: 'PT',
+    ru: 'RU',
 };
 
 const LanguageSwitcher: React.FC = () => {
