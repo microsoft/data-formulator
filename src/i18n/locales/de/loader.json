@@ -91,6 +91,19 @@
       "access_token": "dapi…",
       "authInstructions": "**Beispiel**\n\nserver_hostname: `dbc-a1b2c3d4-e5f6.cloud.databricks.com` · http_path: `/sql/1.0/warehouses/abc123`\n\n**Verbindung**\n\nÖffnen Sie in Databricks **SQL Warehouses**, wählen Sie Ihr Warehouse und kopieren Sie `server_hostname` und `http_path` aus **Connection details**.\n\n**Anmeldeinformationen**\n\nErstellen Sie ein persönliches Zugriffstoken unter **Settings → Developer → Access tokens**. Es beginnt mit `dapi`.\n\n**Zugriff**\n\nDer Benutzer des Tokens benötigt `USE CATALOG`, `USE SCHEMA` und `SELECT` für die Tabellen, die Sie lesen möchten.\n\n**Bereich**\n\nLassen Sie `catalog` und `schema` leer, um alles zu durchsuchen, oder legen Sie sie fest, um direkt ein Schema zu öffnen."
     },
+    "snowflake": {
+      "account": "myorg-myaccount",
+      "user": "Snowflake-Benutzername",
+      "password": "Passwort oder programmgesteuertes Zugriffstoken",
+      "warehouse": "COMPUTE_WH",
+      "database": "Datenbankname",
+      "database_hint": "Leer lassen, um alle Datenbanken zu durchsuchen.",
+      "schema": "Schemaname",
+      "schema_hint": "Leer lassen, um alle Schemas in der Datenbank zu durchsuchen.",
+      "role": "Rollenname",
+      "role_hint": "Leer lassen, um Ihre Standardrolle zu verwenden.",
+      "authInstructions": "**Beispiel**\n\naccount: `myorg-myaccount` · warehouse: `COMPUTE_WH` · user: `ANALYST`\n\n**Verbindung**\n\nÖffnen Sie in Snowsight Ihr Benutzermenü und wählen Sie **Connect a tool to Snowflake**, um den Kontobezeichner zu kopieren (`<org>-<account>`, ohne `.snowflakecomputing.com`). Verwenden Sie ein Warehouse, auf dem Ihre Rolle Abfragen ausführen kann.\n\n**Anmeldeinformationen**\n\nSnowflake blockiert Ein-Faktor-Anmeldungen per Passwort. Geben Sie daher im Passwortfeld ein programmgesteuertes Zugriffstoken (PAT) ein. Erstellen Sie eines unter **Settings → Authentication → Programmatic access tokens**. Möglicherweise muss Ihr Administrator Ihr Netzwerk freigeben, bevor Sie sich mit einem PAT anmelden können.\n\n**Zugriff**\n\nDie Rolle benötigt `USAGE` für das Warehouse, die Datenbank und das Schema sowie `SELECT` für die Tabellen oder Ansichten, die Sie lesen möchten. Legen Sie `role` fest, um eine andere Rolle als Ihre Standardrolle zu verwenden.\n\n**Bereich**\n\nLassen Sie `database` und `schema` leer, um alle Datenbanken zu durchsuchen, geben Sie eine Datenbank ein, um ihre Schemas zu öffnen, oder geben Sie beides ein, um direkt ein Schema zu öffnen."
+    },
     "superset": {
       "url": "https://bi.company.com",
       "username": "Benutzername",

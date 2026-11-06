@@ -151,8 +151,9 @@ registration is input preparation, not a computed deliverable.
 Loads with `group_by` or `aggregates` call the connector's `query_data_as_arrow`,
 and `query_capabilities.aggregate_loading` is `supported` only when a connector
 implements it. Kusto, S3, Azure Blob, and local folders support it, as do the SQL
-connectors PostgreSQL, MySQL, SQL Server, BigQuery, ClickHouse, and Athena. The
-SQL connectors reuse the probe compiler (`probe_utils.query_via_native_sql`) and
+connectors PostgreSQL, MySQL, SQL Server, BigQuery, ClickHouse, Athena, and
+Snowflake. The SQL connectors reuse the probe compiler
+(`probe_utils.query_via_native_sql`) and
 run one generated SELECT on the source. It emits only quoted identifiers, escaped
 literals, and the fixed aggregate vocabulary; agent-written SQL is never executed.
 Each connector resolves the table as its ordinary load does (PostgreSQL database

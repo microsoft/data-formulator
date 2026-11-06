@@ -154,6 +154,7 @@
       "cosmosdb": "Kueri kontainer Cosmos DB",
       "mongodb": "Kueri koleksi MongoDB",
       "bigquery": "Kueri kumpulan data BigQuery",
+      "snowflake": "Kueri tabel Snowflake",
       "athena": "Kueri Amazon Athena",
       "kusto": "Kueri Azure Data Explorer",
       "superset": "Jelajahi kumpulan data Superset",

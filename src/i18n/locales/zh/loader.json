@@ -91,6 +91,19 @@
       "access_token": "dapi…",
       "authInstructions": "**示例**\n\nserver_hostname: `dbc-a1b2c3d4-e5f6.cloud.databricks.com` · http_path: `/sql/1.0/warehouses/abc123`\n\n**连接**\n\n在 Databricks 中打开 **SQL Warehouses**，选择你的仓库，然后从 **Connection details** 复制 `server_hostname` 和 `http_path`。\n\n**凭据**\n\n在 **Settings → Developer → Access tokens** 中创建个人访问令牌，令牌以 `dapi` 开头。\n\n**访问权限**\n\n令牌所属用户需要对要读取的表拥有 `USE CATALOG`、`USE SCHEMA` 和 `SELECT` 权限。\n\n**范围**\n\n将 `catalog` 和 `schema` 留空可浏览全部内容，或填写它们以直接打开某个架构。"
     },
+    "snowflake": {
+      "account": "myorg-myaccount",
+      "user": "Snowflake 用户名",
+      "password": "密码或编程访问令牌",
+      "warehouse": "COMPUTE_WH",
+      "database": "数据库名称",
+      "database_hint": "留空可浏览所有数据库。",
+      "schema": "架构名称",
+      "schema_hint": "留空可浏览该数据库中的所有架构。",
+      "role": "角色名称",
+      "role_hint": "留空将使用你的默认角色。",
+      "authInstructions": "**示例**\n\naccount: `myorg-myaccount` · warehouse: `COMPUTE_WH` · user: `ANALYST`\n\n**连接**\n\n在 Snowsight 中打开用户菜单，选择 **Connect a tool to Snowflake**，复制账户标识符（`<org>-<account>`，不含 `.snowflakecomputing.com`）。请使用你的角色有权运行查询的仓库。\n\n**凭据**\n\nSnowflake 会阻止单因素密码登录，因此请在密码字段中输入编程访问令牌（PAT）。可在 **Settings → Authentication → Programmatic access tokens** 中创建。管理员可能需要先允许你的网络，PAT 才能登录。\n\n**访问权限**\n\n角色需要对仓库、数据库和架构拥有 `USAGE` 权限，并对要读取的表或视图拥有 `SELECT` 权限。如需使用默认角色以外的角色，请设置 `role`。\n\n**范围**\n\n将 `database` 和 `schema` 留空可浏览所有数据库，填写数据库可打开其中的架构，同时填写两者可直接打开某个架构。"
+    },
     "superset": {
       "url": "https://bi.company.com",
       "username": "用户名",

@@ -82,6 +82,18 @@
       "schema_hint": "Leave empty to browse all schemas in the catalog.",
       "access_token": "dapi…"
     },
+    "snowflake": {
+      "account": "myorg-myaccount",
+      "user": "Snowflake user name",
+      "password": "Password or programmatic access token",
+      "warehouse": "COMPUTE_WH",
+      "database": "Database name",
+      "database_hint": "Leave empty to browse all databases.",
+      "schema": "Schema name",
+      "schema_hint": "Leave empty to browse all schemas in the database.",
+      "role": "Role name",
+      "role_hint": "Leave empty to use your default role."
+    },
     "superset": {
       "url": "https://bi.company.com",
       "username": "Username",

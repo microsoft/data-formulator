@@ -267,7 +267,7 @@ export const CONNECTOR_ICON_MAP: Record<string, React.FC<SvgIconProps>> = {
     powerbi: DashboardIcon,
     // Local
     local_folder: FolderOpenIconMui,
-    // Brands: mysql, postgresql, mongodb, clickhouse, sqlite, databricks, bigquery, superset
+    // Brands: mysql, postgresql, mongodb, clickhouse, sqlite, databricks, bigquery, snowflake, superset
     ...Object.fromEntries(Object.entries(CONNECTOR_BRANDS).map(([type, brand]) => [type, brandIcon(brand)])),
 };
 
@@ -300,6 +300,7 @@ const CONNECTOR_CATEGORY_ORDER: Record<string, number> = {
     kusto: 3, KustoDataLoader: 3,
     athena: 3, AthenaDataLoader: 3,
     databricks: 3, DatabricksDataLoader: 3,
+    snowflake: 3, SnowflakeDataLoader: 3,
     // Dashboard / semantic layer
     superset: 4, SupersetLoader: 4,
     cube: 4, CubeDataLoader: 4,

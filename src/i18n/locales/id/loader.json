@@ -91,6 +91,19 @@
       "access_token": "dapi…",
       "authInstructions": "**Contoh**\n\nserver_hostname: `dbc-a1b2c3d4-e5f6.cloud.databricks.com` · http_path: `/sql/1.0/warehouses/abc123`\n\n**Koneksi**\n\nDi Databricks, buka **SQL Warehouses**, pilih warehouse Anda, lalu salin `server_hostname` dan `http_path` dari **Connection details**.\n\n**Kredensial**\n\nBuat token akses pribadi di **Settings → Developer → Access tokens**. Token diawali dengan `dapi`.\n\n**Akses**\n\nPengguna token memerlukan `USE CATALOG`, `USE SCHEMA`, dan `SELECT` pada tabel yang ingin Anda baca.\n\n**Cakupan**\n\nKosongkan `catalog` dan `schema` untuk menelusuri semuanya, atau isi untuk langsung membuka satu skema."
     },
+    "snowflake": {
+      "account": "myorg-myaccount",
+      "user": "Nama pengguna Snowflake",
+      "password": "Kata sandi atau token akses terprogram",
+      "warehouse": "COMPUTE_WH",
+      "database": "Nama basis data",
+      "database_hint": "Kosongkan untuk menelusuri semua basis data.",
+      "schema": "Nama skema",
+      "schema_hint": "Kosongkan untuk menelusuri semua skema dalam basis data.",
+      "role": "Nama peran",
+      "role_hint": "Kosongkan untuk menggunakan peran default Anda.",
+      "authInstructions": "**Contoh**\n\naccount: `myorg-myaccount` · warehouse: `COMPUTE_WH` · user: `ANALYST`\n\n**Koneksi**\n\nDi Snowsight, buka menu pengguna Anda dan pilih **Connect a tool to Snowflake** untuk menyalin pengidentifikasi akun (`<org>-<account>`, tanpa `.snowflakecomputing.com`). Gunakan warehouse tempat peran Anda dapat menjalankan kueri.\n\n**Kredensial**\n\nSnowflake memblokir masuk dengan kata sandi faktor tunggal, jadi masukkan token akses terprogram (PAT) di kolom kata sandi. Buat token di **Settings → Authentication → Programmatic access tokens**. Administrator Anda mungkin perlu mengizinkan jaringan Anda sebelum PAT dapat digunakan untuk masuk.\n\n**Akses**\n\nPeran memerlukan `USAGE` pada warehouse, basis data, dan skema, serta `SELECT` pada tabel atau tampilan yang ingin Anda baca. Atur `role` untuk menggunakan peran selain peran default Anda.\n\n**Cakupan**\n\nKosongkan `database` dan `schema` untuk menelusuri semua basis data, masukkan basis data untuk membuka skemanya, atau isi keduanya untuk langsung membuka satu skema."
+    },
     "superset": {
       "url": "https://bi.company.com",
       "username": "Nama pengguna",

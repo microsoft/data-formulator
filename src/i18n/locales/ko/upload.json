@@ -154,6 +154,7 @@
       "cosmosdb": "Cosmos DB 컨테이너 조회",
       "mongodb": "MongoDB 컬렉션 조회",
       "bigquery": "BigQuery 데이터 세트 조회",
+      "snowflake": "Snowflake 테이블 조회",
       "athena": "Amazon Athena 조회",
       "kusto": "Azure Data Explorer 조회",
       "superset": "Superset 데이터 세트 찾아보기",

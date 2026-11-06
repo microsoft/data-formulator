@@ -91,6 +91,19 @@
       "access_token": "dapi…",
       "authInstructions": "**例**\n\nserver_hostname: `dbc-a1b2c3d4-e5f6.cloud.databricks.com` · http_path: `/sql/1.0/warehouses/abc123`\n\n**接続**\n\nDatabricks で **SQL Warehouses** を開き、ウェアハウスを選択して、**Connection details** から `server_hostname` と `http_path` をコピーします。\n\n**資格情報**\n\n**Settings → Developer → Access tokens** で個人用アクセストークンを作成します。トークンは `dapi` で始まります。\n\n**アクセス権**\n\nトークンのユーザーには、読み取るテーブルに対する `USE CATALOG`、`USE SCHEMA`、`SELECT` が必要です。\n\n**範囲**\n\n`catalog` と `schema` を空にするとすべてを参照でき、設定すると特定のスキーマを直接開きます。"
     },
+    "snowflake": {
+      "account": "myorg-myaccount",
+      "user": "Snowflakeユーザー名",
+      "password": "パスワードまたはプログラムによるアクセストークン",
+      "warehouse": "COMPUTE_WH",
+      "database": "データベース名",
+      "database_hint": "空にするとすべてのデータベースを参照できます。",
+      "schema": "スキーマ名",
+      "schema_hint": "空にするとデータベース内のすべてのスキーマを参照できます。",
+      "role": "ロール名",
+      "role_hint": "空にするとデフォルトのロールを使用します。",
+      "authInstructions": "**例**\n\naccount: `myorg-myaccount` · warehouse: `COMPUTE_WH` · user: `ANALYST`\n\n**接続**\n\nSnowsight でユーザーメニューを開き、**Connect a tool to Snowflake** を選択してアカウント識別子（`<org>-<account>`、`.snowflakecomputing.com` は含めない）をコピーします。ロールでクエリを実行できるウェアハウスを使用してください。\n\n**資格情報**\n\nSnowflake は単一要素のパスワードによるサインインをブロックするため、パスワード欄にはプログラムによるアクセストークン（PAT）を入力します。トークンは **Settings → Authentication → Programmatic access tokens** で作成します。PAT でサインインするには、管理者がネットワークを許可する必要がある場合があります。\n\n**アクセス権**\n\nロールには、ウェアハウス、データベース、スキーマに対する `USAGE` と、読み取るテーブルまたはビューに対する `SELECT` が必要です。デフォルト以外のロールを使用するには `role` を設定します。\n\n**範囲**\n\n`database` と `schema` を空にするとすべてのデータベースを参照でき、データベースを入力するとそのスキーマを開き、両方を入力すると特定のスキーマを直接開きます。"
+    },
     "superset": {
       "url": "https://bi.company.com",
       "username": "ユーザー名",

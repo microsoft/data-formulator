@@ -169,6 +169,7 @@ BIGQUERY = SqlDialect(
     name="bigquery", open_quote="`", close_quote="`", ilike="lower_like",
 )
 ATHENA = SqlDialect(name="athena", ilike="lower_like")  # Trino: "…" quoting, LIMIT
+SNOWFLAKE = SqlDialect(name="snowflake")  # "…" quoting, LIMIT, native ILIKE
 
 
 # ---------------------------------------------------------------------------

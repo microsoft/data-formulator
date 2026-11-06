@@ -154,6 +154,7 @@
       "cosmosdb": "Cosmos DB कंटेनर क्वेरी करें",
       "mongodb": "MongoDB संग्रह क्वेरी करें",
       "bigquery": "BigQuery डेटासेट क्वेरी करें",
+      "snowflake": "Snowflake तालिकाओं को क्वेरी करें",
       "athena": "Amazon Athena क्वेरी करें",
       "kusto": "Azure Data Explorer क्वेरी करें",
       "superset": "Superset डेटासेट ब्राउज़ करें",

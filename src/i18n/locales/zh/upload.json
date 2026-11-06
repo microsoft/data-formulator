@@ -154,6 +154,7 @@
       "cosmosdb": "查询 Cosmos DB 容器",
       "mongodb": "查询 MongoDB 集合",
       "bigquery": "查询 BigQuery 数据集",
+      "snowflake": "查询 Snowflake 表",
       "athena": "查询 Amazon Athena",
       "kusto": "查询 Azure Data Explorer",
       "superset": "浏览 Superset 数据集",

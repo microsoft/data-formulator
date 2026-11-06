@@ -154,6 +154,7 @@
       "cosmosdb": "Interroger les conteneurs Cosmos DB",
       "mongodb": "Interroger les collections MongoDB",
       "bigquery": "Interroger les ensembles de données BigQuery",
+      "snowflake": "Interroger les tables Snowflake",
       "athena": "Interroger Amazon Athena",
       "kusto": "Interroger Azure Data Explorer",
       "superset": "Parcourir les jeux de données Superset",

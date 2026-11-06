@@ -439,6 +439,7 @@ const CONNECTOR_TYPE_KEY_MAP: Record<string, string> = {
     CosmosDBDataLoader: 'cosmosdb',
     MongoDBDataLoader: 'mongodb',
     BigQueryDataLoader: 'bigquery',
+    SnowflakeDataLoader: 'snowflake',
     AthenaDataLoader: 'athena',
     KustoDataLoader: 'kusto',
     SupersetLoader: 'superset',

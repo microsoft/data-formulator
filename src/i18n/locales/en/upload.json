@@ -154,6 +154,7 @@
       "cosmosdb": "Query Cosmos DB containers",
       "mongodb": "Query MongoDB collections",
       "bigquery": "Query BigQuery datasets",
+      "snowflake": "Query Snowflake tables",
       "athena": "Query Amazon Athena",
       "kusto": "Query Azure Data Explorer",
       "superset": "Browse Superset datasets",

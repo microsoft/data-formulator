@@ -6,7 +6,7 @@ import pyarrow as pa
 import pytest
 
 from data_formulator.data_loader.external_data_loader import ConnectorParamError
-from data_formulator.data_loader.snowflake_data_loader import SnowflakeDataLoader
+from data_formulator.data_loader.snowflake_data_loader import SnowflakeDataLoader, _normalize_ident
 
 pytestmark = [pytest.mark.backend]
 
@@ -88,6 +88,68 @@ def test_fetch_builds_projection_filter_sort_and_limit(monkeypatch) -> None:
     assert 'WHERE "ID" > 1' in query
     assert 'ORDER BY "ID" DESC' in query
     assert query.endswith("LIMIT 25")
+
+
+def test_fetch_pushes_source_filters(monkeypatch) -> None:
+    loader = _bare_loader(database="ANALYTICS", schema="PUBLIC")
+    captured: dict[str, str] = {}
+
+    def fake_query_arrow(query: str) -> pa.Table:
+        captured["query"] = query
+        return pa.table({})
+
+    monkeypatch.setattr(loader, "_query_arrow", fake_query_arrow)
+
+    loader.fetch_data_as_arrow(
+        "ORDERS",
+        {
+            "size": 10,
+            "source_filters": [
+                {"column": "REGION", "operator": "EQ", "value": "West"},
+                {"column": "NAME", "operator": "ILIKE", "value": "acme"},
+            ],
+        },
+    )
+
+    assert "WHERE \"REGION\" = 'West' AND \"NAME\" ILIKE '%acme%'" in captured["query"]
+
+
+def test_typed_scope_resolves_like_snowflake_identifiers() -> None:
+    assert _normalize_ident("analytics") == "ANALYTICS"
+    assert _normalize_ident(' "MixedCase" ') == "MixedCase"
+    assert _normalize_ident("my-db") == "my-db"
+
+    loader = _bare_loader(database=_normalize_ident("analytics"), schema=_normalize_ident("public"))
+    assert loader.pinned_scope() == {"database": "ANALYTICS", "schema": "PUBLIC"}
+
+
+def test_structured_query_and_probe_run_in_snowflake(monkeypatch) -> None:
+    loader = _bare_loader(database="ANALYTICS", schema="PUBLIC")
+    queries: list[str] = []
+
+    def fake_query_arrow(query: str) -> pa.Table:
+        queries.append(query)
+        return pa.table({"REGION": ["West"], "TOTAL": [3]})
+
+    monkeypatch.setattr(loader, "_query_arrow", fake_query_arrow)
+    query = {
+        "filters": [{"column": "STATUS", "op": "EQ", "value": "open"}],
+        "group_by": ["REGION"],
+        "aggregates": [{"op": "count", "as": "TOTAL"}],
+    }
+
+    loader.query_data_as_arrow("ORDERS", query, 11)
+    assert 'FROM "ANALYTICS"."PUBLIC"."ORDERS"' in queries[-1]
+    assert 'GROUP BY "REGION"' in queries[-1]
+    assert queries[-1].endswith("LIMIT 11")
+
+    result = loader.probe(["ORDERS"], query)
+    assert "error" not in result
+    assert result["exact"] is True
+
+    capabilities = SnowflakeDataLoader.query_capabilities()
+    assert capabilities["execution_model"] == "server_query"
+    assert capabilities["aggregate_loading"] == "supported"
 
 
 _LIVE_ENV = (

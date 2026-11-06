@@ -154,6 +154,7 @@
       "cosmosdb": "Cosmos DBコンテナーをクエリ",
       "mongodb": "MongoDBコレクションをクエリ",
       "bigquery": "BigQueryデータセットをクエリ",
+      "snowflake": "Snowflakeテーブルをクエリ",
       "athena": "Amazon Athenaをクエリ",
       "kusto": "Azure Data Explorerをクエリ",
       "superset": "Supersetデータセットを参照",

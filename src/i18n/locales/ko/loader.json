@@ -91,6 +91,19 @@
       "access_token": "dapi…",
       "authInstructions": "**예시**\n\nserver_hostname: `dbc-a1b2c3d4-e5f6.cloud.databricks.com` · http_path: `/sql/1.0/warehouses/abc123`\n\n**연결**\n\nDatabricks에서 **SQL Warehouses**를 열고 웨어하우스를 선택한 다음 **Connection details**에서 `server_hostname`과 `http_path`를 복사하세요.\n\n**자격 증명**\n\n**Settings → Developer → Access tokens**에서 개인용 액세스 토큰을 만드세요. 토큰은 `dapi`로 시작합니다.\n\n**액세스 권한**\n\n토큰 사용자에게는 읽으려는 테이블에 대한 `USE CATALOG`, `USE SCHEMA`, `SELECT` 권한이 필요합니다.\n\n**범위**\n\n`catalog`와 `schema`를 비워 두면 전체를 탐색하고, 설정하면 특정 스키마를 바로 엽니다."
     },
+    "snowflake": {
+      "account": "myorg-myaccount",
+      "user": "Snowflake 사용자 이름",
+      "password": "비밀번호 또는 프로그래밍 방식 액세스 토큰",
+      "warehouse": "COMPUTE_WH",
+      "database": "데이터베이스 이름",
+      "database_hint": "비워 두면 모든 데이터베이스를 탐색합니다.",
+      "schema": "스키마 이름",
+      "schema_hint": "비워 두면 데이터베이스의 모든 스키마를 탐색합니다.",
+      "role": "역할 이름",
+      "role_hint": "비워 두면 기본 역할을 사용합니다.",
+      "authInstructions": "**예시**\n\naccount: `myorg-myaccount` · warehouse: `COMPUTE_WH` · user: `ANALYST`\n\n**연결**\n\nSnowsight에서 사용자 메뉴를 열고 **Connect a tool to Snowflake**를 선택해 계정 식별자(`<org>-<account>`, `.snowflakecomputing.com` 제외)를 복사하세요. 역할로 쿼리를 실행할 수 있는 웨어하우스를 사용하세요.\n\n**자격 증명**\n\nSnowflake는 단일 요소 비밀번호 로그인을 차단하므로 비밀번호 필드에 프로그래밍 방식 액세스 토큰(PAT)을 입력하세요. 토큰은 **Settings → Authentication → Programmatic access tokens**에서 만들 수 있습니다. PAT로 로그인하려면 관리자가 네트워크를 허용해야 할 수 있습니다.\n\n**액세스 권한**\n\n역할에는 웨어하우스, 데이터베이스, 스키마에 대한 `USAGE` 권한과 읽으려는 테이블 또는 뷰에 대한 `SELECT` 권한이 필요합니다. 기본 역할이 아닌 다른 역할을 사용하려면 `role`을 설정하세요.\n\n**범위**\n\n`database`와 `schema`를 비워 두면 모든 데이터베이스를 탐색하고, 데이터베이스를 입력하면 해당 스키마를 열며, 둘 다 입력하면 특정 스키마를 바로 엽니다."
+    },
     "superset": {
       "url": "https://bi.company.com",
       "username": "사용자 이름",

@@ -91,6 +91,19 @@
       "access_token": "dapi…",
       "authInstructions": "**Exemple**\n\nserver_hostname: `dbc-a1b2c3d4-e5f6.cloud.databricks.com` · http_path: `/sql/1.0/warehouses/abc123`\n\n**Connexion**\n\nDans Databricks, ouvrez **SQL Warehouses**, choisissez votre entrepôt et copiez `server_hostname` et `http_path` depuis **Connection details**.\n\n**Identifiants**\n\nCréez un jeton d'accès personnel sous **Settings → Developer → Access tokens**. Il commence par `dapi`.\n\n**Accès**\n\nL'utilisateur du jeton a besoin de `USE CATALOG`, `USE SCHEMA` et `SELECT` sur les tables à lire.\n\n**Portée**\n\nLaissez `catalog` et `schema` vides pour tout parcourir, ou renseignez-les pour ouvrir directement un schéma."
     },
+    "snowflake": {
+      "account": "myorg-myaccount",
+      "user": "Nom d’utilisateur Snowflake",
+      "password": "Mot de passe ou jeton d’accès programmatique",
+      "warehouse": "COMPUTE_WH",
+      "database": "Nom de la base de données",
+      "database_hint": "Laissez vide pour parcourir toutes les bases de données.",
+      "schema": "Nom du schéma",
+      "schema_hint": "Laissez vide pour parcourir tous les schémas de la base de données.",
+      "role": "Nom du rôle",
+      "role_hint": "Laissez vide pour utiliser votre rôle par défaut.",
+      "authInstructions": "**Exemple**\n\naccount: `myorg-myaccount` · warehouse: `COMPUTE_WH` · user: `ANALYST`\n\n**Connexion**\n\nDans Snowsight, ouvrez votre menu utilisateur et choisissez **Connect a tool to Snowflake** pour copier l'identifiant de compte (`<org>-<account>`, sans `.snowflakecomputing.com`). Utilisez un entrepôt sur lequel votre rôle peut exécuter des requêtes.\n\n**Identifiants**\n\nSnowflake bloque les connexions par mot de passe à facteur unique : saisissez donc un jeton d'accès programmatique (PAT) dans le champ du mot de passe. Créez-en un sous **Settings → Authentication → Programmatic access tokens**. Votre administrateur devra peut-être autoriser votre réseau avant qu'un PAT puisse se connecter.\n\n**Accès**\n\nLe rôle a besoin de `USAGE` sur l'entrepôt, la base de données et le schéma, et de `SELECT` sur les tables ou vues à lire. Définissez `role` pour utiliser un rôle autre que votre rôle par défaut.\n\n**Portée**\n\nLaissez `database` et `schema` vides pour parcourir toutes les bases de données, saisissez une base de données pour ouvrir ses schémas, ou renseignez les deux pour ouvrir directement un schéma."
+    },
     "superset": {
       "url": "https://bi.company.com",
       "username": "Nom d'utilisateur",

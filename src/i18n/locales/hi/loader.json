@@ -91,6 +91,19 @@
       "access_token": "dapi…",
       "authInstructions": "**उदाहरण**\n\nserver_hostname: `dbc-a1b2c3d4-e5f6.cloud.databricks.com` · http_path: `/sql/1.0/warehouses/abc123`\n\n**कनेक्शन**\n\nDatabricks में **SQL Warehouses** खोलें, अपना warehouse चुनें, और **Connection details** से `server_hostname` और `http_path` कॉपी करें।\n\n**क्रेडेंशियल**\n\n**Settings → Developer → Access tokens** में एक personal access token बनाएं। यह `dapi` से शुरू होता है।\n\n**पहुंच**\n\nटोकन के उपयोगकर्ता को उन टेबल पर `USE CATALOG`, `USE SCHEMA` और `SELECT` चाहिए जिन्हें आप पढ़ना चाहते हैं।\n\n**दायरा**\n\nसब कुछ ब्राउज़ करने के लिए `catalog` और `schema` खाली छोड़ें, या किसी एक schema को सीधे खोलने के लिए उन्हें सेट करें।"
     },
+    "snowflake": {
+      "account": "myorg-myaccount",
+      "user": "Snowflake उपयोगकर्ता नाम",
+      "password": "पासवर्ड या प्रोग्रामेटिक एक्सेस टोकन",
+      "warehouse": "COMPUTE_WH",
+      "database": "डेटाबेस का नाम",
+      "database_hint": "सभी डेटाबेस ब्राउज़ करने के लिए खाली छोड़ें।",
+      "schema": "Schema का नाम",
+      "schema_hint": "डेटाबेस के सभी schemas ब्राउज़ करने के लिए खाली छोड़ें।",
+      "role": "भूमिका का नाम",
+      "role_hint": "अपनी डिफ़ॉल्ट भूमिका का उपयोग करने के लिए खाली छोड़ें।",
+      "authInstructions": "**उदाहरण**\n\naccount: `myorg-myaccount` · warehouse: `COMPUTE_WH` · user: `ANALYST`\n\n**कनेक्शन**\n\nSnowsight में अपना उपयोगकर्ता मेनू खोलें और खाता पहचानकर्ता (`<org>-<account>`, `.snowflakecomputing.com` के बिना) कॉपी करने के लिए **Connect a tool to Snowflake** चुनें। ऐसे warehouse का उपयोग करें जिस पर आपकी भूमिका क्वेरी चला सकती है।\n\n**क्रेडेंशियल**\n\nSnowflake एकल-कारक पासवर्ड साइन-इन को ब्लॉक करता है, इसलिए पासवर्ड फ़ील्ड में एक प्रोग्रामेटिक एक्सेस टोकन (PAT) दर्ज करें। इसे **Settings → Authentication → Programmatic access tokens** में बनाएं। PAT से साइन इन करने से पहले आपके व्यवस्थापक को आपके नेटवर्क को अनुमति देनी पड़ सकती है।\n\n**पहुंच**\n\nभूमिका को warehouse, डेटाबेस और schema पर `USAGE` तथा उन टेबल या व्यू पर `SELECT` चाहिए जिन्हें आप पढ़ना चाहते हैं। अपनी डिफ़ॉल्ट भूमिका के बजाय कोई अन्य भूमिका उपयोग करने के लिए `role` सेट करें।\n\n**दायरा**\n\nहर डेटाबेस ब्राउज़ करने के लिए `database` और `schema` खाली छोड़ें, किसी डेटाबेस के schemas खोलने के लिए उसे दर्ज करें, या किसी एक schema को सीधे खोलने के लिए दोनों दर्ज करें।"
+    },
     "superset": {
       "url": "https://bi.company.com",
       "username": "उपयोगकर्ता नाम",

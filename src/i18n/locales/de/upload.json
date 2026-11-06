@@ -154,6 +154,7 @@
       "cosmosdb": "Cosmos DB-Container abfragen",
       "mongodb": "MongoDB-Sammlungen abfragen",
       "bigquery": "BigQuery-Datensätze abfragen",
+      "snowflake": "Snowflake-Tabellen abfragen",
       "athena": "Amazon Athena abfragen",
       "kusto": "Azure Data Explorer abfragen",
       "superset": "Superset-Datensätze durchsuchen",

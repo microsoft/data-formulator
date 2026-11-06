@@ -1,15 +1,18 @@
 import logging
+import re
 from typing import Any
 
 import pyarrow as pa
 import snowflake.connector
 
+from data_formulator.data_loader import probe_utils
 from data_formulator.data_loader.external_data_loader import (
     CatalogNode,
     ExternalDataLoader,
     MAX_IMPORT_ROWS,
     _esc_id,
     _esc_str,
+    build_source_filter_where_clause_inline,
     build_where_clause_inline,
 )
 
@@ -18,11 +21,25 @@ logger = logging.getLogger(__name__)
 _HIDDEN_SCHEMAS = {"INFORMATION_SCHEMA"}
 _MAX_DATABASES = 10
 _MAX_TABLES = 500
+_UNQUOTED_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
 
 
 def _dq(name: str) -> str:
     """Double-quote a Snowflake identifier."""
     return _esc_id(name, '"')
+
+
+def _normalize_ident(name: str) -> str:
+    """Resolve a user-typed identifier the way Snowflake SQL would.
+
+    Unquoted identifiers are stored upper-case, so ``analytics`` names
+    ``ANALYTICS``; a double-quoted name keeps its exact case. Everything this
+    loader emits is double-quoted, so typed scope values must be resolved first.
+    """
+    name = (name or "").strip()
+    if len(name) >= 2 and name[0] == name[-1] == '"':
+        return name[1:-1].replace('""', '"')
+    return name.upper() if _UNQUOTED_IDENT.match(name) else name
 
 
 def _row_value(row: dict[str, Any], key: str) -> Any:
@@ -39,6 +56,7 @@ class SnowflakeDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "Snowflake"
     DESCRIPTION = "Query Snowflake databases, schemas, tables, and views with SQL."
     AUTH_GUIDE = "snowflake.md"
+    QUERY_EXECUTION = "server_query"
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
@@ -63,7 +81,7 @@ class SnowflakeDataLoader(ExternalDataLoader):
                 "required": True,
                 "sensitive": True,
                 "tier": "auth",
-                "description": "Snowflake password",
+                "description": "Snowflake password or programmatic access token (PAT)",
             },
             {
                 "name": "warehouse",
@@ -102,8 +120,8 @@ class SnowflakeDataLoader(ExternalDataLoader):
         self.user = (params.get("user") or "").strip()
         self.password = params.get("password") or ""
         self.warehouse = (params.get("warehouse") or "").strip()
-        self.database = (params.get("database") or "").strip()
-        self.schema = (params.get("schema") or "").strip()
+        self.database = _normalize_ident(params.get("database") or "")
+        self.schema = _normalize_ident(params.get("schema") or "")
         self.role = (params.get("role") or "").strip()
 
         if not self.account:
@@ -125,9 +143,9 @@ class SnowflakeDataLoader(ExternalDataLoader):
             "application": "DataFormulator",
         }
         if self.database:
-            connect_args["database"] = self.database
+            connect_args["database"] = _dq(self.database)
         if self.schema:
-            connect_args["schema"] = self.schema
+            connect_args["schema"] = _dq(self.schema)
         if self.role:
             connect_args["role"] = self.role
 
@@ -146,6 +164,13 @@ class SnowflakeDataLoader(ExternalDataLoader):
             {"key": "schema", "label": "Schema"},
             {"key": "table", "label": "Table"},
         ]
+
+    def pinned_scope(self) -> dict[str, str]:
+        return {
+            key: value
+            for key, value in (("database", self.database), ("schema", self.schema))
+            if value
+        }
 
     def _query_rows(self, query: str) -> list[dict[str, Any]]:
         cur = self._conn.cursor()
@@ -169,7 +194,7 @@ class SnowflakeDataLoader(ExternalDataLoader):
         finally:
             cur.close()
 
-    def _databases(self) -> list[str]:
+    def _databases(self, limit: int | None = _MAX_DATABASES) -> list[str]:
         if self.database:
             return [self.database]
         try:
@@ -178,7 +203,7 @@ class SnowflakeDataLoader(ExternalDataLoader):
             logger.warning("SHOW DATABASES failed: %s", exc)
             return []
         names = [str(_row_value(row, "name") or "") for row in rows]
-        return [name for name in names if name][:_MAX_DATABASES]
+        return [name for name in names if name][:limit]
 
     def _schemas(self, database: str) -> list[str]:
         rows = self._query_rows(
@@ -305,7 +330,10 @@ class SnowflakeDataLoader(ExternalDataLoader):
         return results[:_MAX_TABLES]
 
     def _resolve_source_table(self, source_table: str) -> tuple[str, str, str]:
-        parts = source_table.split(".")
+        return self._resolve_parts(source_table.split("."))
+
+    def _resolve_parts(self, parts: list[str]) -> tuple[str, str, str]:
+        parts = [str(part) for part in parts if part not in (None, "")]
         if len(parts) >= 3:
             return parts[0], parts[1], ".".join(parts[2:])
         if len(parts) == 2 and self.database:
@@ -338,7 +366,9 @@ class SnowflakeDataLoader(ExternalDataLoader):
         query = f"SELECT {select_list} FROM {qualified}"
 
         conditions = opts.get("conditions") or opts.get("filters") or []
-        where_clause = build_where_clause_inline(conditions, quote_char='"')
+        where_clause = build_source_filter_where_clause_inline(
+            opts.get("source_filters"), quote_char='"', dialect="snowflake"
+        ) or build_where_clause_inline(conditions, quote_char='"')
         if where_clause:
             query = f"{query} {where_clause}"
 
@@ -351,6 +381,33 @@ class SnowflakeDataLoader(ExternalDataLoader):
         query = f"{query} LIMIT {size}"
         logger.info("Executing Snowflake query: %s...", query[:200])
         return self._query_arrow(query)
+
+    def _relation(self, parts: list[str]) -> str:
+        database, schema, table = self._resolve_parts(parts)
+        return ".".join(
+            probe_utils.quote_ident(name, probe_utils.SNOWFLAKE) for name in (database, schema, table)
+        )
+
+    def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
+        """Run a structured filter/group/aggregate load on Snowflake."""
+        return probe_utils.query_via_native_sql(
+            query, limit,
+            relation=self._relation(source_table.split(".")),
+            dialect=probe_utils.SNOWFLAKE,
+            execute=self._query_arrow,
+        )
+
+    def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
+        """Compile the SPJQ to Snowflake SQL and run it in the warehouse."""
+        if not path:
+            return {"error": "probe requires a non-empty table path"}
+        try:
+            relation = self._relation(list(path))
+        except ValueError as exc:
+            return {"error": f"invalid table identifier: {exc}"}
+        return probe_utils.probe_via_native_sql(
+            query, relation=relation, dialect=probe_utils.SNOWFLAKE, execute=self._query_arrow,
+        )
 
     def get_column_types(self, source_table: str) -> dict[str, Any]:
         try:
@@ -400,7 +457,7 @@ class SnowflakeDataLoader(ExternalDataLoader):
         if level_key == "database":
             return [
                 CatalogNode(name=name, node_type="namespace", path=path + [name])
-                for name in self._databases()
+                for name in self._databases(limit=None)
                 if not filter or filter.lower() in name.lower()
             ]
 
