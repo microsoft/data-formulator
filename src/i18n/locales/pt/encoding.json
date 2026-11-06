@@ -75,9 +75,6 @@
     "autoSortServerError": "Não foi possível executar a ordenação automática devido a um problema no servidor.",
     "followUpChartPlaceholder": "atualizar o estilo do gráfico ou continuar a análise",
     "refreshIdeas": "Atualizar ideias",
-    "stylePresetsTooltip": "Alterar o estilo do gráfico para…",
-    "stylePresetsHeader": "Alterar o estilo do gráfico para",
-    "stylePresetsHint": "Ou descreva um estilo na caixa de entrada — por exemplo, \"utilizar uma paleta verde-azulada\", \"colocar o título a negrito\", \"rodar os rótulos dos eixos\" ou \"anotar o pico\".",
     "formulationSucceeded": "A formulação dos dados para {{fields}} foi bem-sucedida.",
     "formulationFailed": "Falha na formulação dos dados."
   }

@@ -6,6 +6,15 @@ Notable changes to Data Formulator are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Snowflake connector: browse databases, schemas, tables and views, and load
+  them with filters, sorting and aggregates run in the warehouse. Sign in with
+  a programmatic access token (PAT), since Snowflake blocks single-factor
+  passwords. Contributed by @syedataiba12311-coder (#503).
+- Spanish, Portuguese and Russian interface languages. Contributed by
+  @fazelllyyy (#502).
+
 ### Changed
 
 - The agent finds and reads session content with three path-based tools:

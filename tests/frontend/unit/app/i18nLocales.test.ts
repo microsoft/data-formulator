@@ -39,6 +39,9 @@ function collectKeys(value: TranslationMap, prefix = ""): Set<string> {
 const GUIDE_KEY = /^loader\.[^.]+\.authInstructions$/;
 const withoutGuides = (keys: Set<string>) => new Set([...keys].filter(key => !GUIDE_KEY.test(key)));
 const guideKeys = (keys: Set<string>) => [...keys].filter(key => GUIDE_KEY.test(key)).sort();
+// Russian plurals need _few and _many besides English's _one/_other.
+const withoutRussianPluralForms = (keys: Set<string>) =>
+  new Set([...keys].filter(key => !/_(few|many)$/.test(key)));
 const GUIDE_DIR = join(__dirname, "../../../../py-src/data_formulator/data_loader/guides");
 const MARKDOWN_GUIDES = readdirSync(GUIDE_DIR).filter(file => file.endsWith(".md"))
   .map(file => `loader.${file.slice(0, -3)}.authInstructions`).sort();
@@ -72,21 +75,31 @@ describe("i18n locale bundles", () => {
     expect(withoutGuides(collectKeys(ko))).toEqual(collectKeys(en));
   });
 
-  it("translates every connector setup guide in each locale", () => {
-    for (const locale of [zh, hi, id, ja, de, fr, ko]) {
-      expect(guideKeys(collectKeys(locale))).toEqual(MARKDOWN_GUIDES);
-    }
-  });
-
   it("keeps Spanish translation keys aligned with English", () => {
-    expect(collectKeys(es)).toEqual(collectKeys(en));
+    expect(withoutGuides(collectKeys(es))).toEqual(collectKeys(en));
   });
 
   it("keeps Portuguese translation keys aligned with English", () => {
-    expect(collectKeys(pt)).toEqual(collectKeys(en));
+    expect(withoutGuides(collectKeys(pt))).toEqual(collectKeys(en));
   });
 
   it("keeps Russian translation keys aligned with English", () => {
-    expect(collectKeys(ru)).toEqual(collectKeys(en));
+    expect(withoutRussianPluralForms(withoutGuides(collectKeys(ru)))).toEqual(collectKeys(en));
+  });
+
+  it("gives Russian every plural form i18next selects", () => {
+    const keys = collectKeys(ru);
+    for (const key of [...collectKeys(en)].filter(key => key.endsWith("_one"))) {
+      const base = key.slice(0, -"_one".length);
+      for (const form of ["_one", "_few", "_many", "_other"]) {
+        expect(keys.has(base + form), base + form).toBe(true);
+      }
+    }
+  });
+
+  it("translates every connector setup guide in each locale", () => {
+    for (const locale of [zh, hi, id, ja, de, fr, ko, es, pt, ru]) {
+      expect(guideKeys(collectKeys(locale))).toEqual(MARKDOWN_GUIDES);
+    }
   });
 });

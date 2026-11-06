@@ -154,6 +154,7 @@
       "cosmosdb": "Выполнять запросы к контейнерам Cosmos DB",
       "mongodb": "Выполнять запросы к коллекциям MongoDB",
       "bigquery": "Выполнять запросы к наборам данных BigQuery",
+      "snowflake": "Выполнять запросы к таблицам Snowflake",
       "athena": "Выполнять запросы к Amazon Athena",
       "kusto": "Выполнять запросы к Azure Data Explorer",
       "superset": "Просматривать наборы данных Superset",

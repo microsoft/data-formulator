@@ -75,9 +75,6 @@
     "autoSortServerError": "No se puede realizar la ordenación automática por un problema del servidor.",
     "followUpChartPlaceholder": "actualizar el estilo del gráfico o realizar un análisis de seguimiento",
     "refreshIdeas": "Actualizar ideas",
-    "stylePresetsTooltip": "Cambiar el estilo del gráfico a…",
-    "stylePresetsHeader": "Cambiar el estilo del gráfico a",
-    "stylePresetsHint": "O describe un estilo en el cuadro de entrada; por ejemplo: «usa una paleta verde azulado», «pon el título en negrita», «gira las etiquetas de los ejes» o «anota el valor máximo».",
     "formulationSucceeded": "La formulación de datos para {{fields}} se completó correctamente.",
     "formulationFailed": "No se pudo formular los datos."
   }

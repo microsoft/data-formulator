@@ -18,6 +18,7 @@
     "chatHintExample": "¿Qué datos tenemos aquí?",
     "placeholder": "Describe los datos que quieres extraer, cargar o generar...",
     "attachTooltip": "Adjuntar archivo o imagen",
+    "dropToAttach": "Suelta el archivo para adjuntarlo",
     "stopTooltip": "Detener la generación",
     "sendTooltip": "Enviar (Intro)",
     "shiftEnterHint": "Mayús+Intro para insertar una nueva línea",

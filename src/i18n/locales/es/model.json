@@ -32,8 +32,8 @@
     "smallModelOptional": "Modelo pequeño (opcional)",
     "sameAsModel": "Igual que el modelo",
     "thinking": "Razonamiento",
-    "thinkingHint": "Lo usan los agentes de análisis y de flujo de trabajo. Bajo es el más rápido; Medio ayuda con flujos de trabajo e informes largos; Alto es el más lento y costoso. Las tareas auxiliares rápidas siempre usan un nivel de razonamiento ligero.",
-    "thinkingLow": "Bajo (predeterminado)",
+    "thinkingHint": "Lo usan los agentes de análisis y de flujos de trabajo. Predeterminado del modelo usa la configuración para la que está ajustado el modelo; Bajo es más rápido y económico; Medio y Alto razonan durante más tiempo y cuestan más. Las tareas auxiliares rápidas siempre usan un razonamiento ligero.",
+    "thinkingLow": "Bajo",
     "thinkingMedium": "Medio",
     "thinkingHigh": "Alto",
     "apiBase": "URL base",
@@ -145,6 +145,7 @@
     "disconnectOpenRouterTitle": "¿Desconectar OpenRouter?",
     "disconnectOpenRouterMessage": "Esto elimina de Data Formulator la clave guardada. Será necesario volver a conectar todos los modelos que usen esta conexión. Para revocar también la clave en OpenRouter, elimínala de tus claves de OpenRouter.",
     "manageOpenRouterKeys": "Administrar claves de OpenRouter",
-    "configuredMessage": "Configurado en el servidor; haz clic para verificar la conectividad"
+    "configuredMessage": "Configurado en el servidor; haz clic para verificar la conectividad",
+    "thinkingDefault": "Predeterminado del modelo"
   }
 }

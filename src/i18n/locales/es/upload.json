@@ -154,6 +154,7 @@
       "cosmosdb": "Consultar contenedores de Cosmos DB",
       "mongodb": "Consultar colecciones de MongoDB",
       "bigquery": "Consultar conjuntos de datos de BigQuery",
+      "snowflake": "Consultar tablas de Snowflake",
       "athena": "Consultar Amazon Athena",
       "kusto": "Consultar Azure Data Explorer",
       "superset": "Explorar conjuntos de datos de Superset",

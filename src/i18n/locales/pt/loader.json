@@ -5,27 +5,30 @@
       "password": "deixe em branco se não existir palavra-passe",
       "host": "endereço do servidor",
       "port": "porta do servidor",
-      "database": "Nome da base de dados (deixe vazio para explorar todas as bases de dados)",
-      "authInstructions": "**Exemplo:** user: `root` · host: `localhost` · port: `3306` · database: `mydb`\n\n**Configuração local:** Certifique-se de que o MySQL está em execução — `brew services list` (macOS) ou `systemctl status mysql` (Linux). Deixe a palavra-passe em branco se não tiver sido definida.\n\n**Configuração remota:** Obtenha o host, a porta, o nome de utilizador e a palavra-passe junto do administrador da base de dados. Certifique-se de que o servidor permite ligações remotas e de que o seu endereço IP está na lista de permissões.\n\n**Âmbito:** Deixe *database* vazio para explorar todas as bases de dados do servidor ou preencha-o para aceder diretamente às tabelas dessa base de dados.\n\n**Resolução de problemas:** Teste com `mysql -u <user> -p -h <host> -P <port> <database>`"
+      "database": "Nome da base de dados",
+      "database_hint": "Deixe vazio para navegar em todas as bases de dados.",
+      "authInstructions": "**Exemplo**\n\nhost: `localhost` · port: `3306` · user: `root` · database: `mydb`\n\n**Credenciais**\n\nUtilize uma conta que consiga ler as tabelas de que precisa. Um servidor local pode não ter palavra-passe. Para um servidor remoto, obtenha os detalhes junto do administrador da base de dados e certifique-se de que o seu IP tem permissão para ligar.\n\n**Âmbito**\n\nDeixe `database` vazio para navegar em todas as bases de dados ou introduza uma para abrir diretamente as respetivas tabelas.\n\n**Verificação**\n\nTeste os mesmos detalhes com `mysql -u <user> -p -h <host> -P <port>`."
     },
     "mssql": {
-      "server": "Endereço do host ou nome da instância do SQL Server",
-      "database": "Nome da base de dados (deixe vazio para explorar todas as bases de dados)",
-      "user": "Nome de utilizador (deixe vazio para autenticação Entra ID / Windows)",
-      "password": "Palavra-passe (deixe vazia para autenticação Entra ID / Windows)",
-      "port": "Porta do SQL Server (predefinição: 1433)",
-      "encrypt": "Ativar encriptação (sim/não)",
-      "trust_server_certificate": "Confiar no certificado do servidor (sim/não)",
+      "server": "Nome do host ou instância",
+      "database": "Nome da base de dados",
+      "database_hint": "Deixe vazio para navegar em todas as bases de dados.",
+      "user": "Nome de utilizador",
+      "password": "Palavra-passe",
+      "port": "1433",
+      "encrypt": "yes ou no",
+      "trust_server_certificate": "yes ou no",
       "connection_timeout": "Tempo limite da ligação em segundos",
-      "authInstructions": "**Microsoft Entra ID (recomendado):** Execute `az login` uma vez no terminal e, em seguida, inicie o Data Formulator. Escolha *Microsoft Entra ID*, preencha apenas `server` e, opcionalmente, `database`, e deixe o nome de utilizador e a palavra-passe em branco — serão utilizadas automaticamente as credenciais da Azure CLI. Também são suportadas a Managed Identity, as credenciais do VS Code e as credenciais do ambiente através de `DefaultAzureCredential`.\n\n> A identidade Entra tem de receber acesso à base de dados. Por exemplo, um administrador pode executar `CREATE USER [you@contoso.com] FROM EXTERNAL PROVIDER;` e atribuir as funções necessárias.\n\n**Exemplo (Entra ID):** server: `myserver.database.windows.net` · database: `mydb` (nome de utilizador e palavra-passe vazios)\n\n**Autenticação do SQL Server:** Escolha *SQL Server authentication* e indique o nome de utilizador e a palavra-passe.\n\n**Exemplo (autenticação SQL):** server: `localhost` · database: `mydb` · user: `sa` · password: `MyP@ss` · port: `1433`\n\n**Autenticação do Windows (apenas Windows):** Escolha *Windows authentication* e deixe o nome de utilizador e a palavra-passe em branco.\n\n**Controlador:** O controlador do Microsoft SQL Server está incluído no Data Formulator; não é necessária uma instalação ODBC separada. Para utilizar o Entra ID, instale a Azure CLI e execute `az login`.\n\n**Resolução de problemas:** Confirme que tem sessão iniciada através de `az account show`. Certifique-se de que o serviço SQL Server está em execução e de que o TCP/IP está ativado. Teste a autenticação SQL com `sqlcmd -S <server> -d <database> -U <user> -P <password>`."
+      "authInstructions": "**Exemplo**\n\nserver: `myserver.database.windows.net` · database: `mydb`\n\n**Iniciar sessão**\n\n- **Microsoft Entra ID:** recomendado para o Azure SQL. Execute [`az login`](https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively) e deixe o utilizador e a palavra-passe vazios.\n- **SQL Server authentication:** introduza um início de sessão SQL e a palavra-passe.\n- **Windows authentication:** apenas Windows; utiliza a sua conta Windows.\n\n**Acesso**\n\nUm administrador tem de conceder à sua identidade acesso à base de dados. Para o Entra ID, por exemplo: `CREATE USER [you@contoso.com] FROM EXTERNAL PROVIDER;`\n\n**Verificação**\n\n`az account show` mostra a conta que o Entra ID irá utilizar. Para um servidor local, certifique-se de que o SQL Server está em execução com TCP/IP ativado."
     },
     "postgresql": {
       "user": "Nome de utilizador do PostgreSQL",
       "password": "deixe em branco se não existir palavra-passe",
       "host": "Host do PostgreSQL",
       "port": "Porta do PostgreSQL",
-      "database": "Nome da base de dados (deixe vazio para explorar todas as bases de dados)",
-      "authInstructions": "**Exemplo:** user: `postgres` · host: `localhost` · port: `5432` · database: `mydb`\n\n**Configuração local:** Certifique-se de que o PostgreSQL está em execução — `brew services list` (macOS) ou `systemctl status postgresql` (Linux). Deixe a palavra-passe em branco se não tiver sido definida.\n\n**Configuração remota:** Obtenha o host, a porta, o nome de utilizador e a palavra-passe junto do administrador da base de dados. O utilizador tem de ter permissões SELECT nas tabelas a que pretende aceder.\n\n**Âmbito:** Deixe *database* vazio para explorar todas as bases de dados do servidor ou preencha-o para aceder diretamente aos esquemas/tabelas dessa base de dados.\n\n**Resolução de problemas:** Teste com `psql -U <user> -h <host> -p <port> -d <database>`"
+      "database": "Nome da base de dados",
+      "database_hint": "Deixe vazio para navegar em todas as bases de dados.",
+      "authInstructions": "**Exemplo**\n\nhost: `localhost` · port: `5432` · user: `postgres` · database: `mydb`\n\n**Credenciais**\n\nUtilize uma conta com acesso `SELECT` às tabelas de que precisa. Um servidor local pode não ter palavra-passe. Para um servidor remoto, obtenha os detalhes junto do administrador da base de dados.\n\n**Âmbito**\n\nDeixe `database` vazio para navegar em todas as bases de dados ou introduza uma para abrir diretamente os respetivos esquemas.\n\n**Verificação**\n\nTeste os mesmos detalhes com `psql -U <user> -h <host> -p <port> -d <database>`."
     },
     "mongodb": {
       "host": "endereço do servidor",
@@ -33,84 +36,121 @@
       "username": "deixe em branco se a autenticação não estiver ativada",
       "password": "deixe em branco se a autenticação não estiver ativada",
       "database": "nome da base de dados",
-      "collection": "deixe vazio para listar todas as coleções",
-      "authSource": "base de dados de autenticação (por predefinição, a base de dados de destino)",
-      "authInstructions": "**Exemplo:** host: `localhost` · port: `27017` · database: `mydb` · collection: `users`\n\n**Configuração local:** Certifique-se de que o MongoDB está em execução. Deixe o nome de utilizador e a palavra-passe em branco se a autenticação não estiver ativada.\n\n**Configuração remota:** Obtenha o host, a porta, o nome de utilizador e a palavra-passe junto do administrador da base de dados.\n\n**Resolução de problemas:** Teste com `mongosh --host <host> --port <port>`"
+      "collection": "Nome da coleção",
+      "collection_hint": "Deixe vazio para listar todas as coleções.",
+      "authSource": "admin",
+      "authSource_hint": "Apenas se o utilizador estiver definido noutra base de dados.",
+      "authInstructions": "**Exemplo**\n\nhost: `localhost` · port: `27017` · database: `mydb`\n\n**Iniciar sessão**\n\nEscolha **No authentication** para um servidor local sem controlo de acesso. Caso contrário, introduza um utilizador que consiga ler a base de dados e defina `authSource` apenas se esse utilizador estiver definido noutra base de dados (muitas vezes `admin`).\n\n**Âmbito**\n\nDeixe `collection` vazio para navegar em todas as coleções da base de dados.\n\n**Verificação**\n\nTeste o servidor com `mongosh --host <host> --port <port>`."
     },
     "cosmosdb": {
       "endpoint": "URL do endpoint da conta Cosmos DB",
       "key": "chave da conta ou chave do emulador",
       "database": "nome da base de dados",
       "container": "deixe vazio para listar todos os contentores",
-      "authInstructions": "**Exemplo:** endpoint: `https://myaccount.documents.azure.com:443/` · database: `mydb`\n\n**Configuração do Azure:** Encontre o endpoint e a chave no Azure Portal, na secção *Keys* da conta Cosmos DB.\n\n**Emulador local:** Utilize o endpoint `https://localhost:8081` com a chave de emulador conhecida.\n\n**Resolução de problemas:** Certifique-se de que a firewall da conta permite o seu endereço IP ou utilize uma ligação a partir de uma rede autorizada."
+      "authInstructions": "**Exemplo**\n\nendpoint: `https://myaccount.documents.azure.com:443/` · database: `mydb`\n\n**Credenciais**\n\nCopie o endpoint e uma chave só de leitura da página **Keys** da conta no portal do Azure. Para o emulador local, utilize `https://localhost:8081` e a chave do emulador.\n\n**Âmbito**\n\nDeixe `container` vazio para navegar em todos os contentores da base de dados.\n\n**Verificação**\n\nSe a ligação for recusada, certifique-se de que a firewall da conta permite o seu IP."
     },
     "bigquery": {
       "project_id": "ID do projeto Google Cloud",
-      "dataset_id": "ID(s) do conjunto de dados — deixe vazio para todos ou indique um ou vários, separados por vírgulas",
-      "credentials_path": "Caminho para o ficheiro JSON da conta de serviço (opcional)",
-      "location": "Localização do BigQuery (predefinição: US)",
-      "authInstructions": "**Exemplo:** project_id: `my-gcp-project` · dataset_id: `analytics` · credentials_path: `/path/to/key.json` · location: `US`\n\n**Opção 1 — Application Default Credentials (recomendado):**\nInstale o [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) e execute `gcloud auth application-default login`. Deixe `credentials_path` vazio.\n\n**Opção 2 — Ficheiro de chave da conta de serviço:**\nCrie uma conta de serviço na Google Cloud Console, transfira a chave JSON e introduza o caminho completo em `credentials_path`. Atribua à conta as funções **BigQuery Data Viewer** e **BigQuery Job User**.\n\n**Opção 3 — Variável de ambiente:**\nDefina `GOOGLE_APPLICATION_CREDENTIALS` com o caminho para o ficheiro JSON da conta de serviço. Deixe `credentials_path` vazio."
+      "dataset_id": "analytics",
+      "dataset_id_hint": "Deixe vazio para todos os conjuntos de dados; separe vários com vírgulas.",
+      "credentials_path": "/path/to/key.json",
+      "location": "US",
+      "authInstructions": "**Exemplo**\n\nproject_id: `my-gcp-project` · dataset_id: `analytics` · location: `US`\n\n**Iniciar sessão**\n\n- **Application default credentials:** recomendado. Instale a [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) e execute `gcloud auth application-default login`, ou defina `GOOGLE_APPLICATION_CREDENTIALS`.\n- **Service account file:** introduza o caminho para o ficheiro de chave JSON da conta.\n\n**Acesso**\n\nA identidade precisa de **BigQuery Data Viewer** nos conjuntos de dados e de **BigQuery Job User** no projeto.\n\n**Âmbito**\n\nDeixe `dataset_id` vazio para navegar em todos os conjuntos de dados ou introduza IDs separados por vírgulas. Defina `location` para a localização dos conjuntos de dados."
     },
     "athena": {
-      "aws_profile": "Nome do perfil AWS em ~/.aws/credentials (se estiver definido, a chave de acesso e o segredo não são necessários)",
-      "aws_access_key_id": "ID da chave de acesso AWS (não necessário se utilizar aws_profile)",
-      "aws_secret_access_key": "Chave de acesso secreta AWS (não necessária se utilizar aws_profile)",
-      "aws_session_token": "Token de sessão AWS (obrigatório para credenciais temporárias)",
+      "aws_profile": "default",
+      "aws_access_key_id": "ID da chave de acesso",
+      "aws_secret_access_key": "Chave de acesso secreta",
+      "aws_session_token": "Token de sessão",
+      "aws_session_token_hint": "Apenas para credenciais temporárias.",
       "region_name": "Nome da região AWS",
-      "workgroup": "Nome do grupo de trabalho Athena (a localização de saída é obtida a partir da configuração do grupo)",
-      "output_location": "Localização de saída no S3 para os resultados da consulta (por exemplo, s3://bucket/path/). Se estiver vazia, é utilizada a configuração do grupo de trabalho.",
-      "database": "Base de dados/catálogo predefinido a utilizar nas consultas",
-      "query_timeout": "Tempo limite de execução da consulta em segundos (predefinição: 300 = 5 minutos)",
-      "authInstructions": "**Exemplo (perfil):** aws_profile: `default` · region_name: `us-east-1` · workgroup: `primary` · database: `my_database`\n\n**Exemplo (chaves):** aws_access_key_id: `AKIA...` · aws_secret_access_key: `wJalr...` · region_name: `us-east-1`\n\n**Opção 1 — Perfil AWS (recomendado):**\nDefina `aws_profile` com o nome de um perfil de `~/.aws/credentials`. Configure-o com `aws configure --profile <name>`. Não é necessária nenhuma chave de acesso nem segredo.\n\n**Opção 2 — Credenciais explícitas:**\nIntroduza diretamente `aws_access_key_id` e `aws_secret_access_key`. Adicione `aws_session_token` para credenciais temporárias.\n\n**Permissões IAM necessárias:** `athena:StartQueryExecution`, `athena:GetQueryExecution`, `athena:GetQueryResults`, `athena:GetWorkGroup`, `athena:ListDatabases`, `athena:ListTableMetadata`, além das permissões S3 e Glue nos seus buckets de dados/resultados."
+      "workgroup": "primary",
+      "output_location": "s3://bucket/path/",
+      "output_location_hint": "Deixe vazio para utilizar a localização de resultados do grupo de trabalho.",
+      "database": "Nome da base de dados",
+      "database_hint": "Deixe vazio para navegar em todas as bases de dados.",
+      "query_timeout": "300",
+      "query_timeout_hint": "Em segundos.",
+      "authInstructions": "**Exemplo**\n\nregion_name: `us-east-1` · workgroup: `primary` · aws_profile: `default`\n\n**Iniciar sessão**\n\n- **AWS profile:** recomendado. Introduza um perfil de `~/.aws/credentials`; crie um com `aws configure --profile <name>`.\n- **Access keys:** introduza um ID de chave de acesso e o segredo. As credenciais temporárias também precisam do token de sessão.\n\n**Acesso**\n\nA identidade precisa de executar consultas Athena, ler o catálogo Glue e ler e escrever nas localizações S3 dos seus dados e dos resultados das consultas.\n\n**Âmbito**\n\nDeixe `database` vazio para navegar em todas as bases de dados. Os resultados são guardados na localização do grupo de trabalho, a menos que defina `output_location` nas Definições avançadas."
     },
     "kusto": {
-      "kusto_cluster": "por exemplo, https://mycluster.region.kusto.windows.net",
-      "kusto_database": "Nome da base de dados (obrigatório)",
+      "kusto_cluster": "https://mycluster.region.kusto.windows.net",
+      "kusto_database": "Nome da base de dados",
       "client_id": "Apenas para entidades de serviço",
       "client_secret": "Apenas para entidades de serviço",
       "tenant_id": "Apenas para entidades de serviço",
-      "authInstructions": "**Opção 1 — Iniciar sessão com a Microsoft (recomendado):** inicie sessão com a sua conta e utilize as permissões Kusto existentes. Esta opção é apresentada quando o servidor tem `KUSTO_OAUTH_CLIENT_ID` configurado.\n\n**Opção 2 — Identidade predefinida do Azure:** utilize a sessão iniciada na CLI do Azure (`az login`), uma Identidade Gerida, credenciais do VS Code ou credenciais do ambiente.\n\n**Opção 3 — Entidade de serviço:** forneça `client_id`, `client_secret` e `tenant_id` de uma entidade de serviço com acesso ao cluster.\n\nTodas as identidades têm de ter acesso ao plano de dados da base de dados Kusto selecionada."
+      "authInstructions": "**Exemplo**\n\nkusto_cluster: `https://help.kusto.windows.net` · kusto_database: `Samples`\n\n**Iniciar sessão**\n\n- **Microsoft sign-in:** inicie sessão com a sua própria conta. Apresentado quando o servidor está configurado para isso.\n- **Azure default identity:** utiliza a sua sessão [`az login`](https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively) localmente ou uma [identidade gerida](https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/overview) no Azure. Depois de iniciar sessão, pode escolher a subscrição, o cluster e a base de dados a partir de listas.\n- **Service principal:** introduza o `client_id`, o `client_secret` e o `tenant_id` da aplicação.\n\n**Acesso**\n\nA identidade precisa, pelo menos, de acesso de visualizador à base de dados; iniciar sessão, por si só, não o concede.\n\n**Verificação**\n\n`az account show` mostra a conta e o inquilino ativos."
     },
     "databricks": {
-      "server_hostname": "por exemplo, adb-1234567890.11.azuredatabricks.net",
-      "http_path": "Caminho HTTP do armazém SQL, por exemplo, /sql/1.0/warehouses/abc123",
-      "catalog": "Nome do Unity Catalog (deixe em branco para explorar todos os catálogos)",
-      "schema": "Nome do esquema (deixe em branco para explorar todos os esquemas do catálogo)",
-      "access_token": "Token de acesso pessoal do Databricks (dapi...)",
-      "authInstructions": "**Onde encontrar estes dados:** na área de trabalho do Databricks, abra **SQL → SQL Warehouses** (barra lateral esquerda), clique no seu armazém e abra o separador **Connection details** — copie daí **Server hostname** e **HTTP path**.\n\n**Token de acesso:** clique no seu avatar (canto superior direito) → **Settings → Developer → Access tokens → Generate new token**. O token começa por `dapi` e só é apresentado uma vez.\n\n**Permissões:** o utilizador do token precisa das permissões `USE CATALOG` / `USE SCHEMA` e `SELECT` nos objetos do Unity Catalog que pretende ler.\n\n**Âmbito:** deixe *catalog* e *schema* em branco para explorar tudo a que tem acesso ou preencha-os para abrir diretamente um catálogo/esquema específico — por exemplo, experimente o catálogo integrado `samples` → `nyctaxi` → `trips`.\n\n**Não tem conta?** O Databricks Free Edition é gratuito, sem servidor, e inclui o catálogo `samples` — não é necessário configurar um cluster nem um armazém."
+      "server_hostname": "adb-1234567890.11.azuredatabricks.net",
+      "http_path": "/sql/1.0/warehouses/abc123",
+      "catalog": "Nome do catálogo",
+      "catalog_hint": "Deixe vazio para navegar em todos os catálogos.",
+      "schema": "Nome do esquema",
+      "schema_hint": "Deixe vazio para navegar em todos os esquemas do catálogo.",
+      "access_token": "dapi…",
+      "authInstructions": "**Exemplo**\n\nserver_hostname: `dbc-a1b2c3d4-e5f6.cloud.databricks.com` · http_path: `/sql/1.0/warehouses/abc123`\n\n**Ligação**\n\nNo Databricks, abra **SQL Warehouses**, escolha o seu warehouse e copie `server_hostname` e `http_path` de **Connection details**.\n\n**Credenciais**\n\nCrie um token de acesso pessoal em **Settings → Developer → Access tokens**. Começa por `dapi`.\n\n**Acesso**\n\nO utilizador do token precisa de `USE CATALOG`, `USE SCHEMA` e `SELECT` nas tabelas que pretende ler.\n\n**Âmbito**\n\nDeixe `catalog` e `schema` vazios para navegar em tudo ou defina-os para abrir diretamente um esquema."
+    },
+    "snowflake": {
+      "account": "myorg-myaccount",
+      "user": "Nome de utilizador do Snowflake",
+      "password": "Palavra-passe ou token de acesso programático",
+      "warehouse": "COMPUTE_WH",
+      "database": "Nome da base de dados",
+      "database_hint": "Deixe vazio para navegar em todas as bases de dados.",
+      "schema": "Nome do esquema",
+      "schema_hint": "Deixe vazio para navegar em todos os esquemas da base de dados.",
+      "role": "Nome da função",
+      "role_hint": "Deixe vazio para utilizar a sua função predefinida.",
+      "authInstructions": "**Exemplo**\n\naccount: `myorg-myaccount` · warehouse: `COMPUTE_WH` · user: `ANALYST`\n\n**Ligação**\n\nNo Snowsight, abra o menu do utilizador e escolha **Connect a tool to Snowflake** para copiar o identificador da conta (`<org>-<account>`, sem `.snowflakecomputing.com`). Utilize um warehouse no qual a sua função possa executar consultas.\n\n**Credenciais**\n\nO Snowflake bloqueia inícios de sessão por palavra-passe de fator único, pelo que deve introduzir um token de acesso programático (PAT) no campo da palavra-passe. Crie um em **Settings → Authentication → Programmatic access tokens**. O administrador poderá ter de permitir a sua rede antes de um PAT conseguir iniciar sessão.\n\n**Acesso**\n\nA função precisa de `USAGE` no warehouse, na base de dados e no esquema, e de `SELECT` nas tabelas ou vistas que pretende ler. Defina `role` para utilizar uma função diferente da predefinida.\n\n**Âmbito**\n\nDeixe `database` e `schema` vazios para navegar em todas as bases de dados, introduza uma base de dados para abrir os respetivos esquemas ou introduza ambos para abrir diretamente um esquema."
     },
     "superset": {
-      "url": "URL base do Superset (por exemplo, https://bi.company.com)",
-      "username": "Nome de utilizador do Superset (opcional se utilizar SSO)",
-      "password": "Palavra-passe do Superset (opcional se utilizar SSO)",
-      "authInstructions": "**Exemplo:** url: `https://bi.company.com` · username: `admin` · password: `***`\n\n**Configuração:** forneça o URL base da sua instância do Superset e as credenciais de um utilizador com, pelo menos, a função **Gamma** (acesso de leitura aos conjuntos de dados).\n\n**SSO:** se o seu Superset utilizar SSO, use o fluxo de ligação SSO em vez da autenticação por palavra-passe (configure através de `PLG_SUPERSET_SSO_LOGIN_URL`)."
+      "url": "https://bi.company.com",
+      "username": "Nome de utilizador",
+      "password": "Palavra-passe",
+      "authInstructions": "**Exemplo**\n\nurl: `https://bi.company.com`\n\n**Credenciais**\n\nUtilize uma conta com, pelo menos, a função **Gamma** e acesso de leitura aos conjuntos de dados de que precisa. Se o seu Superset utilizar SSO, inicie sessão com SSO; essa opção é apresentada quando o servidor define `PLG_SUPERSET_SSO_LOGIN_URL`.\n\n**Verificação**\n\nUtilize o URL base, não uma ligação para um painel ou gráfico."
     },
     "azure_blob": {
       "account_name": "Nome da conta de armazenamento do Azure",
       "container_name": "Nome do contentor de blobs do Azure",
-      "connection_string": "Cadeia de ligação do armazenamento do Azure (alternativa a account_name + credenciais)",
-      "credential_chain": "Lista ordenada de fornecedores de credenciais do Azure (cli;managed_identity;env)",
+      "connection_string": "DefaultEndpointsProtocol=https;AccountName=…",
+      "credential_chain": "cli;managed_identity;env",
+      "credential_chain_hint": "Fornecedores de credenciais do Azure a experimentar, por ordem.",
       "account_key": "Chave da conta de armazenamento do Azure",
       "sas_token": "Token SAS do Azure",
       "endpoint": "Substituição do ponto final do Azure",
-      "authInstructions": "**Exemplo (cadeia de ligação):** connection_string: `DefaultEndpointsProtocol=https;AccountName=...` · container_name: `mydata`\n\n**Exemplo (chave da conta):** account_name: `mystorageacct` · container_name: `mydata` · account_key: `abc123...`\n\n**Opção 1 — Cadeia de ligação (mais simples):**\nObtenha-a no Portal do Azure → Storage Account → Access keys. Introduza-a em `connection_string`; pode omitir `account_name`.\n\n**Opção 2 — Chave da conta:**\nObtenha-a no Portal do Azure → Storage Account → Access keys. Utilize `account_name` + `account_key`.\n\n**Opção 3 — Token SAS (recomendado para acesso limitado):**\nGere-o no Portal do Azure → Storage Account → Shared access signature. Utilize `account_name` + `sas_token`. Pode ter um prazo de validade e permissões limitadas.\n\n**Opção 4 — CLI do Azure / Identidade Gerida (mais segura):**\nBasta fornecer `account_name` + `container_name`. É necessário executar `az login` ou utilizar uma Identidade Gerida.\n\n**Formatos suportados:** CSV, Parquet, JSON, JSONL"
+      "authInstructions": "**Exemplo**\n\naccount_name: `mystorageacct` · container_name: `mydata`\n\n**Iniciar sessão**\n\n- **Azure identity:** recomendado. Utiliza a sua sessão [`az login`](https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively) localmente ou uma [identidade gerida](https://learn.microsoft.com/azure/storage/blobs/authorize-managed-identity) no Azure.\n- **SAS token:** um token com tempo limitado que permite listar e ler o contentor.\n- **Connection string** ou **Account key:** em **Storage account → Access keys** no portal do Azure.\n\n**Acesso**\n\nA identidade do Azure precisa da função [Storage Blob Data Reader](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/storage#storage-blob-data-reader) no contentor.\n\n**Ficheiros**\n\nCSV, TSV, Parquet, JSON e JSONL.\n\n<!-- agent-notes -->\n\n**Comportamento das consultas**\n\nAs consultas Parquet utilizam o leitor Azure nativo do DuckDB para selecionar colunas e ignorar\ngrupos de linhas irrelevantes quando as estatísticas do ficheiro o permitem. Os resultados são devolvidos\ncomo tabelas Arrow para importação no espaço de trabalho; as importações completas sem filtros continuam a ler\ntodos os dados pedidos. CSV, TSV, JSON e JSONL também utilizam leitores nativos do DuckDB, com\nfiltros, ordenação e seleção de colunas aplicados antes do limite de resultados.\nOs esquemas de texto são inferidos pelo DuckDB e podem diferir dos tipos Arrow anteriores.\nA deteção de esquema e o armazenamento em buffer podem ler muito além da pré-visualização pedida;\nos ficheiros de texto não oferecem a eliminação de grupos de linhas do Parquet. As agregações podem percorrer\ntoda a origem. Os totais da pré-visualização permanecem desconhecidos, salvo se disponíveis de forma independente.\n\nA inspeção de metadados lê apenas o rodapé Parquet para obter o esquema e a contagem exata\nde linhas. A inspeção de texto reutiliza uma amostra limitada para o esquema inferido e exemplos,\nsem uma leitura de contagem. As pré-visualizações na interface devolvem até 50 linhas e 20 colunas; a inspeção\ndo agente utiliza até cinco linhas com valores mais curtos. As colunas omitidas, os valores encurtados\ne os esquemas inferidos são indicados explicitamente. A inferência da pré-visualização utiliza\n2048 linhas CSV/TSV ou 256 registos JSON; não se trata de um limite de bytes nem de tempo.\n\nO DuckDB instala automaticamente a sua extensão oficial `azure` na primeira utilização.\nAs implementações offline têm de pré-instalar a extensão para a respetiva versão do DuckDB e\nplataforma no diretório de extensões do utilizador de runtime (`INSTALL azure` a partir do DuckDB).\nAs credenciais do conector permanecem em segredos temporários e locais da ligação, não em\nsegredos persistentes do DuckDB.\n\nPara a identidade do Azure, o Azure Identity SDK do Python obtém um token de acesso ao Storage\npor consulta, utilizando a ordem configurada em `credential_chain`. Os fornecedores suportados são\n`cli`, `managed_identity`, `env`, `workload_identity` e `default`. Os fornecedores indisponíveis\npassam para o fornecedor seguinte; as falhas de autenticação interrompem a\ncadeia. A CLI utiliza a cloud configurada na Azure CLI; as credenciais de ambiente/carga de trabalho\nutilizam a configuração de autoridade do Azure Identity SDK, incluindo `AZURE_AUTHORITY_HOST`.\nO token é passado como parâmetro para um segredo temporário do DuckDB com âmbito no contentor\ne não é guardado em cache no carregador nem partilhado entre consultas. A autenticação por chave, SAS e cadeia\nde ligação não é alterada.\n\nOs tokens têm de ter mais de cinco minutos de validade restante quando uma consulta começa.\nO DuckDB não consegue renovar um token injetado a meio de uma consulta. Uma leitura que ultrapasse o token\npode falhar a autenticação e tem de ser repetida com uma nova consulta; não é reiniciada silenciosamente.\nEsta otimização não altera as leituras do catálogo do SDK nem do rodapé PyArrow."
     },
     "s3": {
       "aws_access_key_id": "ID da chave de acesso AWS",
       "aws_secret_access_key": "Chave de acesso secreta AWS",
-      "aws_session_token": "Token de sessão AWS (obrigatório para credenciais temporárias)",
+      "aws_session_token": "Token de sessão",
+      "aws_session_token_hint": "Apenas para credenciais temporárias.",
       "region_name": "Nome da região AWS",
       "bucket": "Nome do bucket S3",
-      "authInstructions": "**Exemplo:** aws_access_key_id: `AKIA...` · aws_secret_access_key: `wJalr...` · region_name: `us-east-1` · bucket: `my-data-bucket`\n\n**Obter credenciais:** AWS Console → IAM → Users → Security credentials → Create access key → selecione \"Application running outside AWS\".\n\n**Permissões necessárias:** `s3:GetObject` e `s3:ListBucket` no seu bucket.\n\n**Formatos suportados:** CSV, Parquet, JSON, JSONL"
+      "authInstructions": "**Exemplo**\n\nregion_name: `us-east-1` · bucket: `my-data-bucket`\n\n**Iniciar sessão**\n\n- **Access keys:** crie uma em **IAM → Users → Security credentials → Create access key**. As credenciais temporárias também precisam do token de sessão.\n- **AWS default credentials:** utiliza a sua configuração AWS local, como `aws configure`, variáveis de ambiente ou uma função de instância.\n\n**Acesso**\n\nA identidade precisa de `s3:ListBucket` no bucket e de `s3:GetObject` nos ficheiros.\n\n**Ficheiros**\n\nCSV, TSV, Parquet, JSON e JSONL.\n\n<!-- agent-notes -->\n\n**Comportamento das consultas**\n\nA descoberta lista os metadados dos objetos sem ler o conteúdo dos ficheiros. Todos os formatos\nsuportados utilizam os leitores S3 nativos do DuckDB e devolvem tabelas Arrow. Os filtros, a ordenação\ne a seleção de colunas são aplicados antes do limite de resultados. As agregações operam\nsobre a origem e não sobre uma pré-visualização limitada, pelo que consultas amplas podem continuar a ser dispendiosas.\n\nOs esquemas de texto são inferidos pelo DuckDB e podem diferir dos tipos Arrow anteriores.\nA deteção de esquema e o armazenamento em buffer podem ler muito além da pré-visualização pedida;\nos ficheiros de texto não oferecem a eliminação de grupos de linhas do Parquet. Os totais da pré-visualização permanecem\ndesconhecidos, salvo se disponíveis de forma independente.\n\nOs metadados Parquet provêm do rodapé, sem amostragem de linhas de dados. A inspeção\nde texto reutiliza uma amostra limitada para o esquema e exemplos, sem contar as linhas\ndo ficheiro. As pré-visualizações na interface devolvem até 50 linhas e 20 colunas; os agentes recebem até\ncinco linhas com valores mais curtos. As respostas identificam esquemas inferidos, colunas\nomitidas e valores encurtados. A inferência da pré-visualização de texto utiliza 2048 linhas CSV/TSV\nou 256 registos JSON; a leitura antecipada pode exceder estes limites de saída.\n\nO DuckDB instala automaticamente as suas extensões oficiais na primeira utilização. As implementações\noffline têm de pré-instalar `httpfs` e, para as credenciais AWS predefinidas, `aws` para\na respetiva versão do DuckDB e plataforma no diretório de extensões do utilizador de runtime.\nAs credenciais estão limitadas ao bucket ligado em segredos temporários do DuckDB."
     },
     "local_folder": {
-      "root_dir": "Caminho absoluto para o diretório local a explorar",
+      "root_dir": "/path/to/folder",
       "recursive": "Incluir ficheiros em subdiretórios",
-      "file_pattern": "Padrão glob para filtrar ficheiros (por exemplo, '*.csv')",
-      "authInstructions": "Defina `root_dir` como o caminho para um diretório local que contenha ficheiros de dados.\n\n**Formatos suportados:** CSV, TSV, Parquet, JSON, JSONL, Excel (.xlsx/.xls)\n\nClique em **Browse** para abrir o seletor de pastas ou cole um caminho de diretório."
+      "file_pattern": "*.csv",
+      "authInstructions": "**Pasta**\n\nEscolha uma pasta com **Procurar** ou cole o respetivo caminho completo. Ative a pesquisa recursiva para incluir subpastas e utilize o padrão de ficheiros nas Definições avançadas para restringir os ficheiros, por exemplo `*.csv`.\n\n**Ficheiros**\n\nCSV, TSV, Parquet, JSON e JSONL são carregados como tabelas. Ficheiros Excel, Markdown, PDF e outros podem ser pré-visualizados e copiados para o espaço de trabalho como ficheiros.\n\n<!-- agent-notes -->\n\n**Comportamento das consultas**\n\nAs consultas de tabelas CSV, TSV, Parquet, JSON e JSONL utilizam os leitores nativos do DuckDB\ndentro do diretório ligado e devolvem tabelas Arrow.\nOs filtros, a ordenação e a seleção de colunas são aplicados antes do limite de resultados.\nAs agregações operam sobre a origem e não sobre uma pré-visualização limitada. Os esquemas de texto\nsão inferidos pelo DuckDB e podem diferir dos tipos Arrow anteriores. A deteção\nde esquema e o armazenamento em buffer podem ler além da pré-visualização pedida; os ficheiros de texto\nnão oferecem a eliminação de grupos de linhas do Parquet. Os totais da pré-visualização de texto permanecem desconhecidos\nsem uma contagem separada. O Excel é um artefacto de ficheiro e é rejeitado pelos métodos de\npré-visualização/importação de tabelas.\n\nAs listagens de ficheiros de texto utilizam apenas os metadados dos ficheiros. A inspeção explícita reutiliza uma\namostra limitada para o esquema inferido e exemplos; a inspeção Parquet lê apenas o rodapé.\nAs pré-visualizações de tabelas na interface devolvem até 50 linhas e 20 colunas, enquanto os agentes recebem até\ncinco linhas com valores mais curtos. As colunas omitidas, os esquemas inferidos e os valores\nencurtados são identificados no resultado da inspeção.\n\nSelecione um ficheiro para o pré-visualizar sem o importar. Os livros do Excel abrem num visualizador de livros só de leitura com separadores de folhas, posições de células, células unidas e formatação, sem tratar a primeira linha como cabeçalhos de coluna. A fidelidade da pré-visualização depende das funcionalidades do livro suportadas pelo renderizador.\n\nEscolha **Carregar ficheiro** para copiar um ficheiro para o espaço de trabalho e abri-lo no mesmo visualizador de ficheiros. O ficheiro original não é alterado. As pré-visualizações estão limitadas a 20 MB; os formatos sem pré-visualização suportada podem ainda ser transferidos após a importação. As importações de ficheiros estão limitadas a 128 MB.\n\nOs ficheiros ocultos e os caminhos fora do diretório ligado são excluídos. As ligações a pastas locais só estão disponíveis no modo de implementação local."
     },
     "_common": {
-      "table_filter": "Filtrar a tabela por palavras-chave (por exemplo, 'sales')"
+      "table_filter": "p. ex. sales",
+      "table_filter_hint": "Listar apenas as tabelas cujos nomes contenham estas palavras-chave."
+    },
+    "clickhouse": {
+      "authInstructions": "**Exemplo**\n\nhost: `localhost` · port: `8123` · username: `default`\n\n**Ligação**\n\nO ClickHouse Cloud utiliza a porta `8443` com `secure` ativado. Os servidores autoalojados utilizam normalmente a porta HTTP `8123`.\n\n**Credenciais**\n\nUtilize uma conta que consiga ler as bases de dados de que precisa. Numa instalação local, `default` muitas vezes não tem palavra-passe.\n\n**Âmbito**\n\nDeixe `database` vazio para navegar em todas as bases de dados ou introduza uma para abrir diretamente as respetivas tabelas."
+    },
+    "cube": {
+      "authInstructions": "**Exemplo**\n\napi_url: `http://localhost:4000`\n\n**Credenciais**\n\nIntroduza um token de API: um JWT assinado com o `CUBEJS_API_SECRET` da implementação. O respetivo contexto de segurança determina os dados que pode consultar. Um servidor local em modo de desenvolvimento (`CUBEJS_DEV_MODE=true`) não precisa de token.\n\n**Verificação**\n\nUtilize o URL da API REST, não a página do Playground; `/cubejs-api` é acrescentado quando o URL não tem caminho. Só são listados cubes e views públicos."
+    },
+    "powerbi": {
+      "authInstructions": "**Exemplo**\n\nworkspace: `Sales Analytics`\n\n**Área de trabalho**\n\nIntroduza o nome da área de trabalho ou o ID que consta no respetivo URL (`.../groups/<id>/...`).\n\n**Iniciar sessão**\n\n- **Azure default identity:** recomendado. Execute `az login` com uma conta que consiga abrir os modelos; aplicam-se as suas permissões e a segurança ao nível da linha.\n- **Service principal:** o ID de cliente, o segredo e o ID de inquilino de uma aplicação Entra adicionada à área de trabalho. Não pode consultar modelos que utilizem segurança ao nível da linha ou SSO.\n\n**Acesso**\n\nPrecisa de **Read** e **Build** em cada modelo semântico. Um administrador do Power BI tem de ativar *Dataset Execute Queries REST API* e, para entidades de serviço, também *Allow service principals to use Power BI APIs*.\n\n**Limites**\n\n120 consultas por minuto por utilizador e até 10 000 linhas por resultado. Os modelos no Azure Analysis Services não são suportados."
+    },
+    "sample_datasets": {
+      "authInstructions": "Os conjuntos de dados de exemplo integrados não precisam de configuração nem de credenciais. Abra o conector para navegar nos exemplos e importar uma tabela."
     }
   }
 }

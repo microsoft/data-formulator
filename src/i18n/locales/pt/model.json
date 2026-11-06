@@ -32,8 +32,8 @@
     "smallModelOptional": "Modelo pequeno (opcional)",
     "sameAsModel": "Igual ao modelo",
     "thinking": "Raciocínio",
-    "thinkingHint": "Utilizado pelos agentes de análise e de fluxos de trabalho. O nível Baixo é o mais rápido; o Médio é adequado a fluxos de trabalho e relatórios longos; o Alto é o mais lento e dispendioso. As tarefas auxiliares rápidas utilizam sempre um nível de raciocínio ligeiro.",
-    "thinkingLow": "Baixo (predefinição)",
+    "thinkingHint": "Utilizado pelos agentes de análise e de fluxos de trabalho. A predefinição do modelo utiliza aquilo para que o modelo está otimizado; Baixo é mais rápido e mais barato; Médio e Alto pensam durante mais tempo e custam mais. As tarefas auxiliares rápidas utilizam sempre raciocínio ligeiro.",
+    "thinkingLow": "Baixo",
     "thinkingMedium": "Médio",
     "thinkingHigh": "Alto",
     "apiBase": "URL base",
@@ -145,6 +145,7 @@
     "disconnectOpenRouterTitle": "Desligar o OpenRouter?",
     "disconnectOpenRouterMessage": "Esta ação remove a chave guardada no Data Formulator. Todos os modelos que utilizam esta ligação terão de ser ligados novamente. Para revogar também a chave no OpenRouter, remova-a das suas chaves do OpenRouter.",
     "manageOpenRouterKeys": "Gerir chaves OpenRouter",
-    "configuredMessage": "Configurado no servidor; clique para verificar a conectividade"
+    "configuredMessage": "Configurado no servidor; clique para verificar a conectividade",
+    "thinkingDefault": "Predefinição do modelo"
   }
 }

@@ -112,7 +112,7 @@
     "msgEncodingEmpty": "Adicione campos de dados ao criador de gráficos ou descreva o que pretende!",
     "msgUnavailable": "Formule os dados para criar a visualização!",
     "msgSynthesizing": "Síntese em curso...",
-    "msgWarning": "Os resultados gerados por IA podem estar incorretos; verifique-os!",
+    "aiDisclaimer": "A IA pode cometer erros. Verifique os resultados importantes.",
     "templateGroups": {
       "table": "Tabela",
       "scatter": "Dispersão",
