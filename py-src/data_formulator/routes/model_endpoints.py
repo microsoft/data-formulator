@@ -733,7 +733,8 @@ def openrouter_connection_callback():
         vault.store(identity, _FLOW_KEY, flow)
     message = "OpenRouter connected. Returning to Data Formulator..." if api_key else "OpenRouter authorization failed. Return to Select Model and try again."
     nonce = secrets.token_urlsafe(16)
-    channel_name = json.dumps(f"df-model-auth:{flow_id}").replace("<", "\\u003c")
+    # The stored flow's id (equal to the request's state, checked above), so no request text reaches the page.
+    channel_name = json.dumps(f"df-model-auth:{flow['id']}").replace("<", "\\u003c")
     script = f"""
 history.replaceState(null, '', location.pathname);
 try {{

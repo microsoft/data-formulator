@@ -14,6 +14,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Iterator
 
@@ -67,12 +68,23 @@ class ConfinedDir:
         if ".." in parts:
             raise ValueError(f"Path traversal segment '..' in: {relative!r}")
 
-        candidate = (self._root / relative).resolve()
-        if not candidate.is_relative_to(self._root):
-            raise ValueError(
-                f"Path escapes confined directory: {relative!r} "
-                f"resolves to {candidate}"
-            )
+        # String prefix checks on a normalised path, the form static analysis recognises as confinement: first
+        # lexically, then again after symlinks are resolved.
+        root = str(self._root)
+        prefix = root if root.endswith(os.sep) else root + os.sep
+        joined = os.path.normpath(os.path.join(root, relative))
+        if joined == root:
+            candidate = self._root
+        elif not joined.startswith(prefix):
+            raise ValueError(f"Path escapes confined directory: {relative!r}")
+        else:
+            resolved = os.path.realpath(joined)
+            if resolved != root and not resolved.startswith(prefix):
+                raise ValueError(
+                    f"Path escapes confined directory: {relative!r} "
+                    f"resolves to {resolved}"
+                )
+            candidate = Path(resolved)
 
         if mkdir_parents:
             candidate.parent.mkdir(parents=True, exist_ok=True)

@@ -172,9 +172,9 @@ def _try_oauth(identity: str, server: dict[str, Any]) -> dict[str, Any] | None:
 
     if server.get("transport") == "stdio" or server.get("auth", {}).get("type") != "none":
         return None
-    oauth = mcp_config.update_server(server["id"], lambda stored: stored.update(auth={"type": "oauth"}))
+    with_sign_in = mcp_config.update_server(server["id"], lambda stored: stored.update(auth={"type": "oauth"}))
     try:
-        return get_hub().connect(identity, oauth, redirect_uri=_redirect_uri())
+        return get_hub().connect(identity, with_sign_in, redirect_uri=_redirect_uri())
     except Exception:  # noqa: BLE001 - no OAuth here; report the original refusal
         logger.info("MCP server %s refused access and offers no OAuth sign-in", server["id"], exc_info=True)
         mcp_config.update_server(server["id"], lambda stored: stored.update(auth={"type": "none"}))

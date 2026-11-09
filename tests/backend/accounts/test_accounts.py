@@ -468,7 +468,9 @@ def test_a_spec_cannot_take_a_route_name(spec_id):
 def test_routes_refuse_a_spec_that_sends_keys_elsewhere(client):
     response = client.post("/api/accounts/custom", headers=HEADERS, json={
         "spec": {**KAGGLE, "send_to": ["api.evil.com"]}, "secret": {"username": "a", "key": "k"}}).get_json()
-    assert response["error"]["code"] == "INVALID_REQUEST" and "evil.com" in response["error"]["message"]
+    message = response["error"]["message"]
+    assert response["error"]["code"] == "INVALID_REQUEST" and "the site the secret is sent to" in message
+    assert message.startswith("get_token must be an https page on evil.com,")
 
 
 @pytest.mark.parametrize("headers", [{"X-DF-Configuration": "1"}, {"Origin": "http://evil.example", "X-DF-Configuration": "1"},

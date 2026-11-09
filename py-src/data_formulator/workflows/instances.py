@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from copy import deepcopy
 from pathlib import Path
@@ -10,6 +11,8 @@ import yaml
 from jsonschema import Draft202012Validator
 
 from data_formulator.security.path_safety import ConfinedDir
+
+logger = logging.getLogger(__name__)
 
 
 _TEXT_SCHEMA = {"type": "string", "minLength": 1, "pattern": r"\S"}
@@ -240,7 +243,8 @@ class WorkflowStore:
 
     @staticmethod
     def validate_name(name: str) -> None:
-        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*(?:\.workflow)?\.ya?ml", name):
+        if (not isinstance(name, str) or len(name) > 200
+                or not re.match(r"\A[A-Za-z0-9][A-Za-z0-9_-]*(?:\.workflow)?\.ya?ml\Z", name)):
             raise ValueError("Use a simple .yaml filename.")
 
     def save(self, name: str, content: str) -> None:
@@ -269,6 +273,10 @@ class WorkflowStore:
                 workflow = localize_definition(parse_definition(self.read(name)), language)
                 items.append({"path": name, "name": workflow["name"], "overview": workflow["overview"], "origin": origin,
                               "parameters": workflow.get("parameters", [])})
-            except (ValueError, OSError) as exc:
+            except ValueError as exc:
                 items.append({"path": name, "name": path.stem, "error": str(exc), "origin": origin})
+            except OSError:
+                # An OSError names the file; server workflows may live anywhere on the server.
+                logger.warning("Could not read workflow %s", name, exc_info=True)
+                items.append({"path": name, "name": path.stem, "error": "Could not read this workflow file.", "origin": origin})
         return items

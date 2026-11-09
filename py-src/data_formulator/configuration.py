@@ -157,12 +157,12 @@ def validate_overrides(overrides: dict) -> None:
         paths = filesystem['allowWrite']
         if (not isinstance(paths, list) or len(paths) > 64
                 or any(not isinstance(path, str) or not path or len(path) > 2000 or '\0' in path
-                       or not Path(path).expanduser().is_absolute() for path in paths)):
+                       or not os.path.isabs(os.path.expanduser(path)) for path in paths)):
             raise ValueError('sandbox.filesystem.allowWrite must contain at most 64 absolute paths (or ~/ paths).')
         home = Path.home().resolve()
         protected = configuration_path().parent.resolve()
         for path in paths:
-            resolved = Path(path).expanduser().resolve()
+            resolved = Path(os.path.realpath(os.path.expanduser(path)))
             if resolved == home or resolved in home.parents or protected.is_relative_to(resolved):
                 raise ValueError('Sandbox write paths cannot cover the home, filesystem root, or application configuration.')
     if 'terminal_mode' in overrides and overrides['terminal_mode'] not in ('off', 'ask', 'auto'):
