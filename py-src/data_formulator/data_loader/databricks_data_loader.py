@@ -43,6 +43,9 @@ class DatabricksDataLoader(ExternalDataLoader):
     DISPLAY_NAME = "Databricks"
     DESCRIPTION = "Query Databricks Unity Catalog tables through a SQL warehouse."
 
+    # http_path routes to a warehouse; the workspace host is what names the instance.
+    IDENTITY_PARAMS = ("server_hostname",)
+
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         return [

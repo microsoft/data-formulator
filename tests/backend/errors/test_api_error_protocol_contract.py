@@ -57,6 +57,7 @@ class TestTablesErrorProtocol:
             (Exception("Catalog Error: missing table"), ErrorCode.TABLE_NOT_FOUND),
             (Exception("Binder Error: bad column"), ErrorCode.INVALID_REQUEST),
             (Exception("syntax error at or near SELECT"), ErrorCode.INVALID_REQUEST),
+            (FileNotFoundError("Table not found: shows"), ErrorCode.TABLE_NOT_FOUND),
         ],
     )
     def test_db_error_classification_defaults_to_http_200(self, raw_error, expected_code):

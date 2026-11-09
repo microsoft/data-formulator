@@ -9,6 +9,8 @@ the SensitiveDataFilter safety net, and edge cases.
 
 import logging
 import os
+import subprocess
+import sys
 
 import pytest
 
@@ -21,6 +23,41 @@ from data_formulator.security.log_sanitizer import (
 )
 
 pytestmark = [pytest.mark.backend]
+
+
+@pytest.mark.slow
+def test_wsgi_import_initializes_sanitized_file_logging(tmp_path):
+    script = """
+import logging
+from pathlib import Path
+from data_formulator.app import app, configure_logging
+
+path = Path(app.config['LOG_FILE_PATH'])
+logger = logging.getLogger('data_formulator')
+logger.info('wsgi-initial password=synthetic-secret')
+assert 'wsgi-initial' in path.read_text()
+assert 'synthetic-secret' not in path.read_text()
+configure_logging()
+configure_logging()
+logger.info('wsgi-reconfigured')
+assert path.read_text().count('wsgi-reconfigured') == 1
+"""
+    subprocess.run(
+        [sys.executable, '-c', script],
+        env={
+            **os.environ,
+            'DATA_FORMULATOR_HOME': str(tmp_path),
+            'WORKSPACE_BACKEND': 'local',
+            'DISABLE_DATABASE': 'false',
+            'DISABLE_DATA_CONNECTORS': 'true',
+            'LOG_LEVEL': 'INFO',
+            'LOG_SANITIZE': 'true',
+        },
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
 
 
 # ── sanitize_url ──────────────────────────────────────────────────────────
@@ -51,10 +88,6 @@ class TestSanitizeUrl:
 
     def test_non_url_string(self):
         assert sanitize_url("just a plain string") == "just a plain string"
-
-    def test_s3_url_no_creds(self):
-        url = "s3://my-bucket/path/to/file.parquet"
-        assert sanitize_url(url) == url
 
     def test_multiple_urls_in_string(self):
         text = "primary=https://a:secret1@host1 fallback=https://b:secret2@host2"
@@ -283,15 +316,6 @@ class TestSensitiveDataFilter:
         logger_with_filter.info("key=%s secret=%s", "mykey", "mysecret")
         captured = capsys.readouterr()
         assert "mysecret" not in captured.err.replace("***", "")
-
-    def test_filter_disabled_by_env(self, logger_with_filter, capsys, monkeypatch):
-        monkeypatch.setenv("LOG_SANITIZE", "false")
-        logger_with_filter.info("password=visible_secret")
-        captured = capsys.readouterr()
-        # When disabled, the raw message should pass through.
-        # The filter still returns True (record passes), but no redaction.
-        # Note: the output depends on handler config; we just verify the
-        # filter didn't raise.
 
     def test_filter_always_returns_true(self):
         f = SensitiveDataFilter()

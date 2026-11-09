@@ -309,7 +309,10 @@ class OIDCProvider(AuthProvider):
         if not sso or not sso.get("access_token"):
             return None
         user = sso.get("user") or {}
-        user_id = user.get("sub") or user.get("id") or "session_user"
+        user_id = user.get("sub") or user.get("id")
+        if not user_id:
+            # Never fall back to a shared identity: that would merge users.
+            return None
         return AuthResult(
             user_id=str(user_id),
             display_name=user.get("name"),

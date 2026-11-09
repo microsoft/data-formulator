@@ -1,0 +1,149 @@
+[
+ {
+  "id": "storms-dash",
+  "workspace": "sample_storms_dash",
+  "file": "storm_monitor.app.jsx",
+  "style": "Monitoring dashboard",
+  "dataset": "storms",
+  "prompt": "build a monitoring dashboard of storm events: damage, injuries and deaths by state and event type, with a month filter",
+  "model": "gpt-6.1-sol",
+  "seconds": 37.7,
+  "tokens": 88913,
+  "failed": [
+   "tablesFit"
+  ],
+  "notes": "Regenerated: rankings in half-width tiles; tick labels can still be 8–9 px (Flint issue 7)."
+ },
+ {
+  "id": "movies-explore",
+  "workspace": "sample_movies_explore",
+  "file": "movies.app.jsx",
+  "style": "Explorer with filters",
+  "dataset": "movies",
+  "prompt": "make an explorer for movies: filter by genre, rating and budget range, a budget vs worldwide gross scatter, and a sortable list of the most profitable films",
+  "model": "gpt-6.1-sol",
+  "seconds": 32.4,
+  "tokens": 81889,
+  "failed": [],
+  "notes": "Regenerated after the width rule: the scatter is 643 px with the film list beside it."
+ },
+ {
+  "id": "energy-story",
+  "workspace": "sample_energy_story",
+  "file": "electricity_transition.app.jsx",
+  "style": "Scrolling story (NYT)",
+  "dataset": "energy",
+  "prompt": "tell the story of how the electricity mix changed, as a scrolling news graphic in the style of the New York Times",
+  "model": "gpt-6.1-sol",
+  "seconds": 62.9,
+  "tokens": 155308,
+  "failed": [
+   "noLooseGaps"
+  ],
+  "notes": "Regenerated after the story rules: normal density (16 px text), text centred beside 340 px charts."
+ },
+ {
+  "id": "space-slides",
+  "workspace": "sample_space_slides",
+  "file": "space_launch_history.app.jsx",
+  "style": "Slide deck",
+  "dataset": "space",
+  "prompt": "create a 5-slide deck that presents the history of space launches, one finding per slide",
+  "model": "gpt-6.1-sol",
+  "seconds": 76.6,
+  "tokens": 343356,
+  "failed": [],
+  "notes": "Draws a session chart by id (needs the session's charts). Action titles per slide."
+ },
+ {
+  "id": "lifeexp-panel",
+  "workspace": "sample_lifeexp_panel",
+  "file": "life_expectancy_one_page.app.jsx",
+  "style": "One-page panel (Economist)",
+  "dataset": "lifeexp",
+  "prompt": "put the key charts about life expectancy together on one page, in the style of The Economist",
+  "model": "gpt-6.1-sol",
+  "seconds": 47.6,
+  "tokens": 124193,
+  "failed": [
+   "noTextOverlap"
+  ],
+  "notes": "Economist look and finding titles. Text overlap flagged in a chart; small multiples are tight."
+ },
+ {
+  "id": "stocks-compare",
+  "workspace": "sample_stocks_compare",
+  "file": "stock_compare.app.jsx",
+  "style": "Side-by-side comparison",
+  "dataset": "stocks",
+  "prompt": "build an app to compare two stocks side by side: pick any two tickers and a period, and show their indexed performance and drawdowns",
+  "model": "gpt-6.1-sol",
+  "seconds": 34.7,
+  "tokens": 80211,
+  "failed": [],
+  "notes": "Indexed comparison and drawdowns side by side; good structure."
+ },
+ {
+  "id": "cpi-report",
+  "workspace": "sample_cpi_report",
+  "file": "household_prices.app.jsx",
+  "style": "Illustrated report (中文)",
+  "dataset": "cpi",
+  "prompt": "做一个图文并茂的互动报告应用：用文字和图表解释家庭日常商品价格在过去二十年里的变化，以及涨幅最大的商品",
+  "model": "gpt-6.1-sol",
+  "seconds": 60.1,
+  "tokens": 136104,
+  "failed": [
+   "noLooseGaps",
+   "filterBarUsed",
+   "readableLines"
+  ],
+  "notes": "Chinese report with a finding as its title. A one-control filter bar and loose gaps were flagged."
+ },
+ {
+  "id": "quakes-map",
+  "workspace": "sample_quakes_map",
+  "file": "earthquake_review.app.jsx",
+  "style": "Map explorer",
+  "dataset": "quakes",
+  "prompt": "make a map-centred explorer of earthquakes with a magnitude filter, a timeline below the map, and a list of the strongest events",
+  "model": "gpt-6.1-sol",
+  "seconds": 51.2,
+  "tokens": 113194,
+  "failed": [
+   "readableType"
+  ],
+  "notes": "Map with points and a strongest-events list. Smallest map labels are below 8 px."
+ },
+ {
+  "id": "netflix-linked",
+  "workspace": "sample_netflix_linked",
+  "file": "netflix_watch_patterns.app.jsx",
+  "style": "Linked dashboard",
+  "dataset": "netflix",
+  "prompt": "build a linked dashboard of what people watch on Netflix: selecting a title type or a month in one chart highlights it everywhere",
+  "model": "gpt-6.1-sol",
+  "seconds": 79.2,
+  "tokens": 147436,
+  "failed": [
+   "narrowNoCrushedText"
+  ],
+  "notes": "Linked charts with a heatmap. Tight at 600 px; the leading titles chart is left untitled."
+ },
+ {
+  "id": "sakila-exec",
+  "workspace": "sample_sakila_exec",
+  "file": "rental_executive.app.jsx",
+  "style": "Dark executive KPIs",
+  "dataset": "sakila",
+  "prompt": "make a dark-themed executive KPI dashboard for the rental business: revenue, rentals, customers, with trends and the top films",
+  "model": "gpt-6.1-sol",
+  "seconds": 70.9,
+  "tokens": 218155,
+  "failed": [
+   "balancedTiles",
+   "narrowNoCrushedText"
+  ],
+  "notes": "Dark theme. Month axis shows raw timestamps (\"2005-05-01T00:00:00.000\"); one tile shows an error state as content; revenue lacks a currency."
+ }
+]

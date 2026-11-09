@@ -16,6 +16,7 @@ Users can create, list, open, delete, and switch workspaces.
 import json
 import logging
 import shutil
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -28,6 +29,24 @@ logger = logging.getLogger(__name__)
 
 SESSION_STATE_FILENAME = "session_state.json"
 WORKSPACE_META_FILENAME = "workspace_meta.json"
+
+
+class SessionConflictError(Exception):
+    """A save was based on an older copy of the session than the one stored (another tab or window saved since)."""
+
+    def __init__(self, revision: int) -> None:
+        super().__init__(f"The session was saved elsewhere (revision {revision}).")
+        self.revision = revision
+
+
+_state_locks: dict[str, threading.Lock] = {}
+_state_locks_guard = threading.Lock()
+
+
+def state_lock(key: str) -> threading.Lock:
+    """One lock per stored session, so a save checks its revision and writes without another save in between."""
+    with _state_locks_guard:
+        return _state_locks.setdefault(key, threading.Lock())
 
 # Fields that must never be persisted (contain secrets / ephemeral info)
 _SENSITIVE_FIELDS = frozenset([
@@ -44,6 +63,49 @@ _SENSITIVE_FIELDS = frozenset([
 def _strip_sensitive(state: dict) -> dict:
     """Return a copy of *state* with sensitive / ephemeral fields removed."""
     return {k: v for k, v in state.items() if k not in _SENSITIVE_FIELDS}
+
+
+def _session_source_ids(state: dict) -> list[str]:
+    """Summarize input-table origins for lightweight session grouping."""
+    tables = state.get("inputTables")
+    if not isinstance(tables, list):
+        tables = state.get("tables")
+    if not isinstance(tables, list):
+        return []
+
+    source_ids: set[str] = set()
+    for table in tables:
+        if not isinstance(table, dict):
+            continue
+        source = table.get("source")
+        source_config = table.get("sourceConfig")
+
+        if isinstance(source, dict) and source.get("kind") == "connector":
+            connector_id = source.get("connectorId") or source.get("connector_id")
+            if isinstance(connector_id, str) and connector_id:
+                source_ids.add(connector_id)
+                continue
+
+        config = source_config if isinstance(source_config, dict) else source
+        if not isinstance(config, dict):
+            continue
+        connector_id = (
+            config.get("connectorId")
+            or config.get("connector_id")
+            or config.get("sourceId")
+            or config.get("source_id")
+        )
+        if isinstance(connector_id, str) and connector_id:
+            source_ids.add(connector_id)
+            continue
+
+        source_type = config.get("type")
+        if source_type == "example":
+            source_ids.add("sample_datasets")
+        elif source_type in {"file", "paste", "url", "stream", "extract"}:
+            source_ids.add("upload")
+
+    return sorted(source_ids)
 
 
 class WorkspaceManager:
@@ -87,7 +149,10 @@ class WorkspaceManager:
         *,
         table_count: Optional[int] = None,
         chart_count: Optional[int] = None,
+        source_ids: Optional[list[str]] = None,
         provisional: Optional[bool] = None,
+        scheduled_run: Optional[dict] = None,
+        state_revision: Optional[int] = None,
     ) -> None:
         """Write a lightweight ``workspace_meta.json`` used by list_workspaces.
 
@@ -101,6 +166,7 @@ class WorkspaceManager:
 
         # Preserve createdAt if the meta file already exists.
         created_at = now_iso
+        existing: dict = {}
         if meta_file.exists():
             try:
                 existing = json.loads(meta_file.read_text(encoding="utf-8"))
@@ -121,10 +187,28 @@ class WorkspaceManager:
         }
         if table_count is not None:
             meta["tableCount"] = table_count
+        elif existing.get("tableCount") is not None:
+            meta["tableCount"] = existing["tableCount"]
         if chart_count is not None:
             meta["chartCount"] = chart_count
+        elif existing.get("chartCount") is not None:
+            meta["chartCount"] = existing["chartCount"]
+        if source_ids is not None:
+            meta["sourceIds"] = source_ids
+        elif isinstance(existing.get("sourceIds"), list):
+            meta["sourceIds"] = existing["sourceIds"]
         if provisional:
             meta["provisional"] = True
+        if scheduled_run is not None:
+            meta["scheduledRun"] = scheduled_run
+        elif existing.get("scheduledRun"):
+            meta["scheduledRun"] = existing["scheduledRun"]
+        if existing.get("starred"):
+            meta["starred"] = True
+        if state_revision is not None:
+            meta["stateRevision"] = state_revision
+        elif isinstance(existing.get("stateRevision"), int):
+            meta["stateRevision"] = existing["stateRevision"]
         meta_file.write_text(
             json.dumps(meta, ensure_ascii=False), encoding="utf-8",
         )
@@ -172,8 +256,17 @@ class WorkspaceManager:
         """
         if (ws_dir / SESSION_STATE_FILENAME).exists():
             return True
-        if (ws_dir / "workspace.yaml").exists():
-            return True
+        yaml_file = ws_dir / "workspace.yaml"
+        if yaml_file.exists():
+            # Opening a Workspace writes an empty workspace.yaml, so only
+            # registered tables or files count as work.
+            try:
+                import yaml
+                metadata = yaml.safe_load(yaml_file.read_text(encoding="utf-8")) or {}
+            except Exception:
+                return True
+            if not isinstance(metadata, dict) or metadata.get("tables") or metadata.get("files"):
+                return True
         data_dir = ws_dir / "data"
         return data_dir.is_dir() and any(data_dir.iterdir())
 
@@ -217,6 +310,9 @@ class WorkspaceManager:
                 "updated_at": meta.get("updatedAt"),
                 "table_count": tc,
                 "chart_count": cc,
+                "source_ids": meta.get("sourceIds", []),
+                "scheduled_run": meta.get("scheduledRun"),
+                "starred": meta.get("starred") is True,
             })
 
         workspaces.sort(key=lambda w: w.get("updated_at") or "", reverse=True)
@@ -233,6 +329,9 @@ class WorkspaceManager:
     def get_workspace_path(self, workspace_id: str) -> Path:
         """Get the filesystem path for a workspace."""
         return self._root / self._safe_id(workspace_id)
+
+    def mark_accessed(self, workspace_id: str) -> None:
+        """Record that *workspace_id* was just used (retention-managed backends only)."""
 
     def move_workspaces_from(self, source_root: Path) -> list[str]:
         """Copy all workspaces from *source_root* into this manager's root.
@@ -381,7 +480,9 @@ class WorkspaceManager:
         if not ws_dir.exists():
             raise ValueError(f"Workspace '{workspace_id}' does not exist")
 
-        return Workspace(identity_id, workspace_path=ws_dir)
+        workspace = Workspace(identity_id, workspace_path=ws_dir)
+        workspace.repair_legacy_file_names()
+        return workspace
 
     def create_and_open_workspace(self, workspace_id: str, identity_id: str) -> Workspace:
         """Create a new workspace and return an open Workspace instance."""
@@ -474,20 +575,54 @@ class WorkspaceManager:
             except Exception:
                 pass  # best-effort; next auto-save will sync
 
+    def set_starred(self, workspace_id: str, starred: bool) -> None:
+        """Star or unstar a workspace in workspace_meta.json.
+
+        ``updatedAt`` is left alone so starring never reorders the
+        "recently modified" list.
+        """
+        meta = dict(self._ensure_meta(workspace_id))
+        if starred:
+            meta["starred"] = True
+        else:
+            meta.pop("starred", None)
+        meta_file = self._root / self._safe_id(workspace_id) / WORKSPACE_META_FILENAME
+        meta_file.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+
     # ── Session state persistence ────────────────────────────────────
 
-    def save_session_state(self, workspace_id: str, state: dict) -> None:
+    def state_revision(self, workspace_id: str) -> int:
+        """How many times the session's state has been saved; a save based on an older count is refused."""
+        meta_file = self._root / self._safe_id(workspace_id) / WORKSPACE_META_FILENAME
+        try:
+            revision = json.loads(meta_file.read_text(encoding="utf-8")).get("stateRevision", 0)
+        except (OSError, ValueError):
+            return 0
+        return revision if isinstance(revision, int) else 0
+
+    def save_session_state(self, workspace_id: str, state: dict, base_revision: Optional[int] = None) -> int:
         """
-        Save frontend state to session_state.json in a workspace.
+        Save frontend state to session_state.json in a workspace and return its new revision.
 
         Sensitive fields are automatically stripped.  Also updates the
         lightweight ``workspace_meta.json`` used by :meth:`list_workspaces`.
+        With ``base_revision`` (the revision the caller loaded or last saved), a save is refused with
+        :class:`SessionConflictError` once another save has landed since, so an out-of-date copy of the
+        session (a stale tab, or state restored from browser storage) cannot overwrite newer work.
         """
         safe = self._safe_id(workspace_id)
         ws_dir = self._root / safe
         if not ws_dir.exists():
             raise ValueError(f"Workspace '{workspace_id}' does not exist")
 
+        with state_lock(str(ws_dir)):
+            current = self.state_revision(workspace_id)
+            if base_revision is not None and base_revision < current:
+                raise SessionConflictError(current)
+            self._write_session_state(workspace_id, ws_dir, state, current + 1)
+        return current + 1
+
+    def _write_session_state(self, workspace_id: str, ws_dir: Path, state: dict, revision: int) -> None:
         clean_state = _strip_sensitive(state)
         state_file = ws_dir / SESSION_STATE_FILENAME
         state_file.write_text(
@@ -497,12 +632,22 @@ class WorkspaceManager:
 
         aw = clean_state.get("activeWorkspace")
         dn = aw["displayName"] if isinstance(aw, dict) and aw.get("displayName") else workspace_id
-        tables = clean_state.get("tables")
+        tables = clean_state.get("inputTables")
+        if not isinstance(tables, list):
+            tables = clean_state.get("tables")
         tc = len(tables) if isinstance(tables, list) else None
         charts = clean_state.get("charts")
         cc = len(charts) if isinstance(charts, list) else None
         # Saving state is the moment a session stops being provisional.
-        self._write_meta(workspace_id, dn, table_count=tc, chart_count=cc)
+        self._write_meta(
+            workspace_id,
+            dn,
+            table_count=tc,
+            chart_count=cc,
+            source_ids=_session_source_ids(clean_state),
+            scheduled_run=aw.get("scheduledRun") if isinstance(aw, dict) else None,
+            state_revision=revision,
+        )
 
         logger.debug(f"Saved session state to {state_file}")
 

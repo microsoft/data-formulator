@@ -126,7 +126,7 @@ describe('buildSessionWorkflowContext', () => {
 describe('findSessionWorkflow', () => {
     function item(path: string, sourceWorkspaceId?: string): KnowledgeItem {
         return {
-            title: path, tags: [], path, source: 'distill', created: '2026-05-06',
+            title: path, path, source: 'distill', created: '2026-05-06',
             sourceWorkspaceId,
         };
     }

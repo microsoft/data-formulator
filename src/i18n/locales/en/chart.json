@@ -67,7 +67,7 @@
     "msgEncodingEmpty": "Put data fields to chart builder or describe what you want!",
     "msgUnavailable": "Formulate data to create the visualization!",
     "msgSynthesizing": "Synthesis in progress...",
-    "msgWarning": "AI generated results can be inaccurate, inspect it!",
+    "aiDisclaimer": "AI can make mistakes. Check important results.",
     "templateGroups": {
       "table": "Table",
       "scatter": "Scatter",

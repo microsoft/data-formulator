@@ -166,6 +166,7 @@ class ClickHouseDataLoader(ExternalDataLoader):
         ]
 
     AUTH_GUIDE = "clickhouse.md"
+    QUERY_EXECUTION = "server_query"
 
     def __init__(self, params: dict[str, Any]):
         self.params = dict(params)
@@ -517,6 +518,18 @@ class ClickHouseDataLoader(ExternalDataLoader):
 
         logger.info("Executing bounded ClickHouse table query against %s", relation)
         return self._read_sql(sql, parameters)
+
+    def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
+        """Run a structured filter/group/aggregate load on ClickHouse.
+
+        Resolves the table like ``fetch_data_as_arrow``, so a configured
+        database confines queries to it.
+        """
+        _, _, relation = self._resolve_source_table(source_table)
+        return probe_utils.query_via_native_sql(
+            query, limit, relation=relation, dialect=probe_utils.CLICKHOUSE,
+            execute=self._read_sql,
+        )
 
     def probe(self, path: list[str], query: dict[str, Any]) -> dict[str, Any]:
         if not path:

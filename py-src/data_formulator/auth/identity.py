@@ -8,7 +8,8 @@ Pluggable single-provider model with anonymous fallback::
     AUTH_PROVIDER=oidc            → OIDCProvider   → user:<sub>
     AUTH_PROVIDER=azure_easyauth  → AzureEasyAuth  → user:<principal>
     (not set, localhost)          → single-user     → local:<os_username>
-    (not set, 0.0.0.0)           → anonymous only  → browser:<uuid>
+    (not set, DF_SINGLE_USER=1)   → single-user     → local:<os_username>
+    (not set, 0.0.0.0 / unknown)  → anonymous only  → browser:<uuid>
 
 Security Model:
 - Local users: Fixed OS-derived identity (single-user localhost only)
@@ -21,6 +22,7 @@ import getpass
 import logging
 import os
 import re
+from contextvars import ContextVar
 from typing import Optional
 
 from flask import Flask, g, request
@@ -54,6 +56,7 @@ _allow_anonymous: bool = True
 # Single-user localhost mode: use fixed OS-derived identity instead of
 # trusting the client-provided X-Identity-Id header.
 _localhost_identity: Optional[str] = None
+_scheduled_identity: ContextVar[str | None] = ContextVar("scheduled_identity", default=None)
 
 
 def is_local_mode() -> bool:
@@ -88,6 +91,45 @@ def _validate_identity_value(value: str, source: str) -> str:
     return value
 
 
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def single_user_requested() -> bool:
+    """``DF_SINGLE_USER=1``: the operator vouches that only they can reach the server."""
+    return os.environ.get("DF_SINGLE_USER", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def configure_local_mode(app: Flask) -> None:
+    """Choose single-user localhost mode or anonymous mode when no AUTH_PROVIDER is set.
+
+    Single-user mode treats every request as the machine's owner, so it applies
+    only when the server listens on a loopback address, or when
+    ``DF_SINGLE_USER=1`` says access is restricted some other way (e.g. a
+    container port published only on 127.0.0.1). The CLI calls this again once
+    ``--host`` is known; under a WSGI server the listening address is unknown,
+    so ``HOST`` must name a loopback address explicitly.
+    """
+    global _localhost_identity
+    _localhost_identity = None
+    host = app.config.get('CLI_ARGS', {}).get('host') or os.environ.get('HOST')
+    if host not in _LOOPBACK_HOSTS and not single_user_requested():
+        logger.info("Auth mode: anonymous only (no AUTH_PROVIDER configured)")
+        return
+    try:
+        validated = _validate_identity_value(getpass.getuser(), "os_username")
+    except Exception:
+        logger.warning("Could not determine OS username; falling back to anonymous mode")
+        return
+    _localhost_identity = f"local:{validated}"
+    if host in _LOOPBACK_HOSTS:
+        logger.info("Auth mode: single-user localhost (identity=%s)", _localhost_identity)
+    else:
+        logger.warning(
+            "DF_SINGLE_USER is set and the server listens on %s: every client that can reach it "
+            "acts as the local user %s, with no login.", host or "an unknown address", _localhost_identity,
+        )
+
+
 def init_auth(app: Flask) -> None:
     """Initialise the authentication subsystem.  Call once after app creation.
 
@@ -107,25 +149,9 @@ def init_auth(app: Flask) -> None:
 
     provider_name = os.environ.get("AUTH_PROVIDER", "").strip().lower()
 
+    _localhost_identity = None
     if not provider_name or provider_name == "anonymous":
-        # Determine if single-user localhost mode applies.
-        host = app.config.get('CLI_ARGS', {}).get('host', os.environ.get('HOST', '127.0.0.1'))
-        if host in ('127.0.0.1', 'localhost', '::1'):
-            try:
-                username = getpass.getuser()
-                validated = _validate_identity_value(username, "os_username")
-                _localhost_identity = f"local:{validated}"
-                logger.info(
-                    "Auth mode: single-user localhost (identity=%s)",
-                    _localhost_identity,
-                )
-            except Exception:
-                logger.warning(
-                    "Could not determine OS username; falling back to anonymous mode"
-                )
-                logger.info("Auth mode: anonymous only (no AUTH_PROVIDER configured)")
-        else:
-            logger.info("Auth mode: anonymous only (no AUTH_PROVIDER configured)")
+        configure_local_mode(app)
         return
 
     provider_cls = get_provider_class(provider_name)
@@ -178,6 +204,9 @@ def get_identity_id() -> str:
     Raises:
         ValueError: when no identity can be determined.
     """
+    scheduled = _scheduled_identity.get()
+    if scheduled is not None:
+        return scheduled
     # --- try the configured provider -----------------------------------
     if _provider:
         try:

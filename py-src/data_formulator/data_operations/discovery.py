@@ -44,39 +44,14 @@ STANDALONE_PROBE_GUIDANCE = ProbeGuidance(
 )
 
 
-def ensure_catalogs_current(user_home: Any) -> dict[str, Any]:
-    """Apply source policies and return current snapshots, including stale ones."""
-    if not user_home:
-        return {}
-    snapshots: dict[str, Any] = {}
+def _source_is_discoverable(source_id: str) -> bool:
+    """Hide sources known to be disconnected; keep unknown status compatible."""
     try:
-        from data_formulator.data_connector import _ADMIN_CONNECTOR_IDS
-        from data_formulator.datalake.catalog_cache import list_cached_sources
-        from data_formulator.datalake.catalog_refresh import ensure_catalog_freshness
-
-        source_ids = set(list_cached_sources(user_home)) | set(_ADMIN_CONNECTOR_IDS)
-        for source_id in source_ids:
-            snapshot = ensure_catalog_freshness(Path(user_home), source_id)
-            if snapshot is not None:
-                snapshots[source_id] = snapshot
+        from data_formulator.data_connector import connector_is_available
+        return connector_is_available(source_id) is not False
     except Exception:
-        logger.debug("Catalog freshness setup failed", exc_info=True)
-    return snapshots
-
-
-def ensure_no_auth_catalogs_cached(user_home: Any) -> None:
-    """Backward-compatible alias for callers migrated from catalog bootstrap."""
-    ensure_catalogs_current(user_home)
-
-
-def _freshness_payload(snapshot: Any) -> dict[str, Any]:
-    return {
-        "listing": snapshot.listing_freshness,
-        "metadata": snapshot.metadata_freshness,
-        "listing_age_seconds": snapshot.listing_age_seconds,
-        "metadata_age_seconds": snapshot.metadata_age_seconds,
-        "last_refresh_error": snapshot.last_refresh_error,
-    }
+        logger.debug("Connector availability unavailable for %s", source_id, exc_info=True)
+        return True
 
 
 class DataDiscoveryService:
@@ -84,186 +59,6 @@ class DataDiscoveryService:
 
     def __init__(self, workspace: Any):
         self.workspace = workspace
-
-    def list_data(self, args: dict[str, Any]) -> dict[str, Any]:
-        from data_formulator.datalake.catalog_cache import (
-            list_path_children,
-            list_sources_summary,
-        )
-
-        user_home = getattr(self.workspace, "user_home", None)
-        if not user_home:
-            return {"sources": []}
-        snapshots = ensure_catalogs_current(user_home)
-
-        source_id = (args.get("source_id") or "").strip()
-        if not source_id:
-            try:
-                sources = list_sources_summary(user_home)
-            except Exception:
-                logger.debug("list_data: list_sources_summary failed", exc_info=True)
-                return {"sources": []}
-            # Mark unreachable sources so the agent steers around them instead
-            # of proposing a load that can only fail.
-            try:
-                from data_formulator.data_connector import connector_is_available
-                for source in sources:
-                    sid = source.get("source_id") or source.get("id")
-                    if sid in snapshots and (
-                        snapshots[sid].listing_freshness != "fresh"
-                        or snapshots[sid].metadata_freshness != "fresh"
-                        or snapshots[sid].last_refresh_error
-                    ):
-                        source["freshness"] = _freshness_payload(snapshots[sid])
-                    if sid and connector_is_available(sid) is False:
-                        source["connected"] = False
-            except Exception:
-                logger.debug("list_data: availability check failed", exc_info=True)
-            return {"sources": sources}
-
-        path = args.get("path") or []
-        if not isinstance(path, list):
-            return {"error": "path must be an array of strings"}
-
-        try:
-            result = list_path_children(
-                user_home,
-                source_id,
-                path=path,
-                filter=args.get("filter"),
-            )
-            if source_id in snapshots:
-                result["freshness"] = _freshness_payload(snapshots[source_id])
-            return result
-        except Exception as exc:
-            logger.debug("list_data: list_path_children failed", exc_info=True)
-            return {"error": f"list_data failed: {exc}"}
-
-    def find_data(self, args: dict[str, Any]) -> dict[str, Any]:
-        from data_formulator.datalake.catalog_cache import (
-            CatalogSearchError,
-            list_cached_sources,
-            search_catalog_cache,
-        )
-
-        query = (args.get("query") or "").strip()
-        if not query:
-            return {"error": "query is required"}
-
-        scope_raw = (args.get("scope") or "all").strip()
-        exclude = args.get("exclude") or None
-        fields = args.get("fields") or None
-        limit = args.get("limit")
-        try:
-            limit = max(1, min(int(limit), 200)) if limit else 50
-        except (TypeError, ValueError):
-            limit = 50
-
-        search_workspace = False
-        source_ids: list[str] | None = None
-        path_prefix: list[str] | None = None
-
-        if scope_raw == "all":
-            search_workspace = True
-        elif scope_raw == "workspace":
-            search_workspace = True
-            source_ids = []
-        elif scope_raw == "connected":
-            pass
-        elif ":" in scope_raw:
-            source_id, _, path_str = scope_raw.partition(":")
-            source_ids = [source_id.strip()] if source_id.strip() else []
-            path_prefix = [segment for segment in path_str.split("/") if segment]
-        else:
-            source_ids = [scope_raw]
-
-        user_home = getattr(self.workspace, "user_home", None)
-        snapshots = ensure_catalogs_current(user_home)
-        results: list[dict[str, Any]] = []
-
-        if search_workspace:
-            try:
-                metadata = self.workspace.get_metadata()
-                if metadata:
-                    for hit in metadata.search_tables(query, limit=min(limit, 50)):
-                        results.append({
-                            "source": "workspace",
-                            "name": hit["name"],
-                            "description": (hit.get("description") or "")[:120],
-                            "matched_columns": hit.get("matched_columns", []),
-                            "status": "imported",
-                        })
-            except Exception:
-                logger.debug("find_data: workspace search failed", exc_info=True)
-
-        if source_ids != [] and user_home:
-            try:
-                imported_names = {result["name"] for result in results}
-                cache_hits = search_catalog_cache(
-                    user_home,
-                    query,
-                    source_ids=source_ids,
-                    limit_per_source=min(limit, 50),
-                    exclude_tables=imported_names,
-                    exclude_pattern=exclude,
-                    fields=fields,
-                    path_prefix=path_prefix,
-                )
-                for hit in cache_hits[:limit]:
-                    results.append({
-                        "source": hit.get("source_id", "connected"),
-                        "source_id": hit.get("source_id", ""),
-                        "table_key": hit.get("table_key", ""),
-                        "name": hit["name"],
-                        "description": (hit.get("description") or "")[:120],
-                        "matched_columns": hit.get("matched_columns", []),
-                        "status": "not imported",
-                    })
-            except CatalogSearchError as exc:
-                return {"error": str(exc)}
-            except Exception:
-                logger.debug("find_data: catalog search failed", exc_info=True)
-
-        if not results:
-            try:
-                known = sorted(list_cached_sources(user_home) or []) if user_home else []
-            except Exception:
-                known = []
-            return {
-                "results": [],
-                "valid_source_ids": known,
-                "catalog_freshness": {
-                    source_id: _freshness_payload(snapshot)
-                    for source_id, snapshot in snapshots.items()
-                },
-                "note": (
-                    f"No tables matched query={query!r} scope={scope_raw!r}. "
-                    "Try a broader pattern, alternation (a|b), or list_data to browse."
-                ),
-            }
-
-        return {
-            "results": results[:limit],
-            "query": query,
-            "scope": scope_raw,
-            "catalog_freshness": {
-                source_id: _freshness_payload(snapshot)
-                for source_id, snapshot in snapshots.items()
-            },
-        }
-
-    def describe_data(self, args: dict[str, Any]) -> dict[str, Any]:
-        from data_formulator.agents.context import handle_read_catalog_metadata
-
-        source_id = args.get("source_id", "")
-        table_key = args.get("table_key", "")
-        return {
-            "result": handle_read_catalog_metadata(
-                source_id,
-                table_key,
-                self.workspace,
-            )
-        }
 
     def resolve_catalog_path(self, source_id: str, table_key: str) -> list[str] | None:
         from data_formulator.datalake.catalog_cache import load_catalog
@@ -323,6 +118,7 @@ class DataDiscoveryService:
                 "source_table": str(source_table),
                 "source_table_name": str(source_table_name),
                 "row_count": metadata.get("row_count"),
+                "metadata": metadata,
             }
         return None
 
@@ -341,6 +137,8 @@ class DataDiscoveryService:
             return {"error": "source_id and table_key are required"}
         if not isinstance(query, dict):
             return {"error": "query must be an object"}
+        if isinstance(query.get("order_by"), dict):
+            query = {**query, "order_by": [query["order_by"]]}
         if budget.remaining <= 0:
             return {"error": guidance.exhausted}
 
@@ -359,7 +157,11 @@ class DataDiscoveryService:
 
         budget.consume()
         try:
-            result = loader.probe(path, query)
+            from data_formulator.data_loader.query_runtime import execute_source_query
+            if query.get("native") is not None:
+                result = self._probe_native(loader, source_id, table_key, query)
+            else:
+                result = execute_source_query(loader, "probe", path, query)
         except Exception as exc:
             logger.debug("probe_data failed", exc_info=True)
             return {"error": f"probe failed: {exc}"}
@@ -371,3 +173,22 @@ class DataDiscoveryService:
                 f"{guidance.success}",
             )
         return result
+
+    def _probe_native(self, loader: Any, source_id: str, table_key: str, query: dict[str, Any]) -> dict[str, Any]:
+        from data_formulator.data_loader import probe_utils
+        from data_formulator.data_loader.query_runtime import execute_source_query
+        from .models import LoadQuery
+
+        parsed = LoadQuery.from_dict(query)
+        loader.check_native_query(parsed.native)
+        resolved = self.resolve_load_table(source_id, table_key)
+        if resolved is None:
+            return {"error": f"table_key '{table_key}' not found in source '{source_id}'."}
+        out_limit = probe_utils.clamp_probe_limit(parsed.limit)
+        table = execute_source_query(
+            loader, "query_data_as_arrow", source_table=resolved["source_table"],
+            query=parsed.to_dict(), limit=out_limit + 1,
+        )
+        return probe_utils.shape_probe_payload(
+            table.slice(0, out_limit), out_limit, exact=True, extra_note="native query",
+        )

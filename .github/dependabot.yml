@@ -39,11 +39,6 @@ updates:
        update-types:
          - minor
          - patch
-   ignore:
-     # LiteLLM 1.92+ no longer provides portable Windows/macOS wheels.
-     - dependency-name: "litellm"
-       versions:
-         - ">=1.92"
 
  # GitHub Actions workflow dependencies
  - package-ecosystem: "github-actions"

@@ -17,11 +17,21 @@ datas += collect_data_files(
     includes=[
         "analyst/skills/**/SKILL.md",
         "analyst/skills/**/tools.json",
+        "analyst/chart_catalog.json",
         "data_loader/guides/*.md",
     ],
 )
+# Shipped demos: profile, images, story seeds and the build.py the app runs to install them.
+datas += collect_data_files("data_formulator", includes=["demos/**/*"], excludes=["**/__pycache__/**"],
+                            include_py_files=True)
 binaries = []
 hiddenimports = collect_submodules("data_formulator")
+# Session sharing (design-docs/71): Twisted, autobahn and txaio choose their backends at runtime.
+hiddenimports += collect_submodules("wormhole", filter=lambda name: ".test" not in name)
+hiddenimports += collect_submodules("txaio") + collect_submodules("autobahn.twisted")
+# autobahn's cffi validators read their C sources at import and load top-level extension modules.
+datas += collect_data_files("autobahn", includes=["nvx/*.c"])
+hiddenimports += ["_nvx_utf8validator", "_nvx_xormasker"]
 
 for package in (
     "azure.identity",
@@ -35,9 +45,15 @@ for package in (
     "pyarrow",
     "tiktoken",
     "tiktoken_ext",
+    # The Public Suffix List snapshot sign-in specs are checked against (accounts/specs.py).
+    "tldextract",
     "webview",
 ):
-    package_datas, package_binaries, package_hiddenimports = collect_all(package)
+    package_datas, package_binaries, package_hiddenimports = collect_all(
+        package,
+        include_py_files=False,
+        exclude_datas=["include/**", "includes/**", "src/**", "tests/**"] if package == "pyarrow" else None,
+    )
     datas += package_datas
     binaries += package_binaries
     hiddenimports += package_hiddenimports
@@ -98,7 +114,7 @@ def _configure_windows_runtime(a):
 
 def _verify_windows_runtime():
     """Post-build check: the bundled assembly must exist and be byte-identical."""
-    bundle = project_root / "dist" / "Data Formulator" / "_internal" / "pythonnet" / "runtime" / "Python.Runtime.dll"
+    bundle = Path(DISTPATH) / "Data Formulator" / "_internal" / "pythonnet" / "runtime" / "Python.Runtime.dll"
     if not bundle.exists():
         raise SystemExit(f"Windows bundle is missing {bundle}; the WinForms backend will fail at startup")
     if hashlib.sha256(bundle.read_bytes()).digest() != hashlib.sha256(_pythonnet_runtime_dll().read_bytes()).digest():
@@ -127,6 +143,7 @@ exe = EXE(
     name="Data Formulator",
     console=False,
     icon=str(icon_path),
+    entitlements_file=str(project_root / "packaging" / "macos" / "entitlements.plist") if sys.platform == "darwin" else None,
 )
 coll = COLLECT(
     exe,
@@ -146,4 +163,21 @@ if sys.platform == "darwin":
         name="Data Formulator.app",
         bundle_identifier="com.microsoft.data-formulator",
         icon=str(icon_path),
+        # macOS asks before an app sends Apple Events or opens these folders, showing these strings; without the Apple
+        # Events one it refuses outright. The browser tool drives the user's Edge, Chrome or Safari through Apple Events
+        # (data_formulator/browser/applescript.py), and the agent's terminal commands and file loads read the user's files.
+        info_plist={
+            "NSAppleEventsUsageDescription":
+                "Data Formulator opens and reads web pages in your browser when you ask the agent to.",
+            "NSDocumentsFolderUsageDescription":
+                "Data Formulator reads files in your Documents folder when you load them or ask the agent to.",
+            "NSDesktopFolderUsageDescription":
+                "Data Formulator reads files on your Desktop when you load them or ask the agent to.",
+            "NSDownloadsFolderUsageDescription":
+                "Data Formulator reads files in your Downloads folder when you load them or ask the agent to.",
+            "NSRemovableVolumesUsageDescription":
+                "Data Formulator reads files on external drives when you load them or ask the agent to.",
+            "NSNetworkVolumesUsageDescription":
+                "Data Formulator reads files on network drives when you load them or ask the agent to.",
+        },
     )

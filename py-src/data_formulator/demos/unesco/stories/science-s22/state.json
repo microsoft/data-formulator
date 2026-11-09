@@ -1,0 +1,351 @@
+{
+ "__stateVersion": 14,
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "d_result_3",
+   "displayId": "Leading countries by recent research spending share",
+   "names": [
+    "indicator_id",
+    "COUNTRY_ID",
+    "country",
+    "year",
+    "value",
+    "magnitude",
+    "qualifier",
+    "rank"
+   ],
+   "rows": [
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "ISR",
+     "country": "Israel",
+     "year": 2023,
+     "value": 6.34589,
+     "magnitude": null,
+     "qualifier": null,
+     "rank": 1
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "KOR",
+     "country": "South Korea",
+     "year": 2023,
+     "value": 4.94352,
+     "magnitude": null,
+     "qualifier": null,
+     "rank": 2
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "SWE",
+     "country": "Sweden",
+     "year": 2023,
+     "value": 3.59978,
+     "magnitude": null,
+     "qualifier": null,
+     "rank": 3
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "USA",
+     "country": "US",
+     "year": 2023,
+     "value": 3.44716,
+     "magnitude": null,
+     "qualifier": null,
+     "rank": 4
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "JPN",
+     "country": "Japan",
+     "year": 2023,
+     "value": 3.44125,
+     "magnitude": null,
+     "qualifier": null,
+     "rank": 5
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "BEL",
+     "country": "Belgium",
+     "year": 2023,
+     "value": 3.27235,
+     "magnitude": null,
+     "qualifier": null,
+     "rank": 6
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "AUT",
+     "country": "Austria",
+     "year": 2023,
+     "value": 3.25517,
+     "magnitude": null,
+     "qualifier": null,
+     "rank": 7
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "CHE",
+     "country": "Switzerland",
+     "year": 2023,
+     "value": 3.22178,
+     "magnitude": null,
+     "qualifier": null,
+     "rank": 8
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "DEU",
+     "country": "Germany",
+     "year": 2023,
+     "value": 3.1539,
+     "magnitude": null,
+     "qualifier": null,
+     "rank": 9
+    },
+    {
+     "indicator_id": "EXPGDP.TOT",
+     "COUNTRY_ID": "FIN",
+     "country": "Finland",
+     "year": 2023,
+     "value": 3.0938,
+     "magnitude": null,
+     "qualifier": null,
+     "rank": 10
+    }
+   ],
+   "metadata": {
+    "indicator_id": {
+     "type": "string",
+     "levels": []
+    },
+    "COUNTRY_ID": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "value": {
+     "type": "number",
+     "levels": []
+    },
+    "magnitude": {
+     "type": "boolean",
+     "levels": []
+    },
+    "qualifier": {
+     "type": "boolean",
+     "levels": []
+    },
+    "rank": {
+     "type": "integer",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import pandas as pd\nd=pd.read_parquet('data/rd_sdg_national.parquet')\nresult=d[(d.indicator_id=='EXPGDP.TOT') & d.year.between(2021,2024) & (d.COUNTRY_ID!='LIE')].sort_values('year').groupby('COUNTRY_ID').tail(1).nlargest(10,'value').copy()\nresult['country']=result.country.replace({'Republic of Korea':'South Korea','United States of America':'US'})\nresult['rank']=range(1,len(result)+1)",
+    "codeSignature": "186b4f17ed4c8819638deae0fa9cbba79100689aa622f08b9fb613bb4a41372a",
+    "outputVariable": "result",
+    "source": [
+     "rd_sdg_national"
+    ],
+    "inputSources": [
+     {
+      "id": "data:e2d392aa9fac7f3712262b0e9ae08869:rd_sdg_national",
+      "kind": "data",
+      "displayName": "rd_sdg_national"
+     }
+    ],
+    "trigger": {
+     "tableId": "rd_sdg_national",
+     "resultTableId": "d_result_3",
+     "chart": {
+      "id": "chart-1792308626882",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "rd_sdg_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "d_result_3",
+    "rowCount": 10
+   },
+   "description": "",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792308617801_step_1",
+   "createdAt": 1792308635637
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-c805e810a395",
+   "chartType": "Bar Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-value-1792308546075-0.028224717727207138",
+     "dtype": "quantitative"
+    },
+    "y": {
+     "fieldID": "concept-country-1792308546075-0.3624084484355673",
+     "dtype": "nominal",
+     "sortOrder": "descending",
+     "sortBy": "value"
+    },
+    "color": {
+     "channel": "color",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "d_result_3",
+   "source": "user",
+   "title": "Research spending leaders",
+   "subtitle": "Latest reported values, 2021–2024; excludes Liechtenstein, whose population is below 100,000",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-value-1792308546075-0.028224717727207138:|y:concept-country-1792308546075-0.3624084484355673:",
+   "unread": false,
+   "themeId": "datawrapper"
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-country-1792308546075-0.3624084484355673",
+   "name": "country",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-value-1792308546075-0.028224717727207138",
+   "name": "value",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308617801_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1792308617801_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Where does South Korea rank in research today?",
+   "parentNodeId": "conversation-root:0a780cf2-59a6-49c2-839a-5af91396f395",
+   "actionId": "exploreDataFromNL_1792308617801",
+   "createdAt": 1792308617801
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308617801_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1792308617801_step_1",
+   "textKind": "explain",
+   "content": "Verify South Korea’s latest research rankings and identify small-country exceptions.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1792308617801_prompt",
+   "actionId": "exploreDataFromNL_1792308617801",
+   "createdAt": 1792308626022,
+   "startedAt": 1792308617802,
+   "codeExecutions": [
+    {
+     "id": "code_exploreDataFromNL_1792308617801_1",
+     "tool": "execute_python_script",
+     "purpose": "Verify South Korea’s latest research rankings and identify small-country exceptions.",
+     "code": "import pandas as pd\nd=pd.read_parquet('data/rd_sdg_national.parquet')\nfor ind in d.indicator_id.unique():\n t=d[(d.indicator_id==ind)&d.year.between(2021,2024)].sort_values('year').groupby('COUNTRY_ID').tail(1).sort_values('value',ascending=False)\n print(ind,len(t)); print(t.head(5)[['country','year','value']].to_string(index=False))",
+     "status": "completed",
+     "createdAt": 1792308626022,
+     "output": "EXPGDP.TOT 104\n                 country  year   value\n                  Israel  2023 6.34589\n           Liechtenstein  2023 6.00984\n       Republic of Korea  2023 4.94352\n                  Sweden  2023 3.59978\nUnited States of America  2023 3.44716\nRESDEN.INHAB.TFTE 99\n          country  year       value\n    Liechtenstein  2023 18129.75165\nRepublic of Korea  2023  9471.82543\n           Sweden  2023  8910.73864\n          Denmark  2023  8837.51688\n        Singapore  2022  8781.74332\n"
+    }
+   ],
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1792308617801-1",
+     "kind": "tool",
+     "label": "running code... Verify South Korea’s latest research rankings and identify small-country exceptions.",
+     "status": "completed",
+     "tool": "execute_python_script",
+     "toolCallId": "call_b9TQxV0caAJ99D4qtKQjU0K6",
+     "executionId": "code_exploreDataFromNL_1792308617801_1"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1792308617801-2",
+     "kind": "chart",
+     "label": "creating chart...",
+     "status": "completed"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1792308617801_1792308641164",
+   "displayId": "textTurn_exploreDataFromNL_1792308617801_closing",
+   "textKind": "explain",
+   "content": "**South Korea ranks second in the world in research spending relative to its economy, and first in researchers per person.**\n\n- **Research spending:** 4.94% of GDP in 2023, behind Israel's 6.35%.\n- **Researchers:** 9,472 per million people in 2023, ahead of Sweden and Denmark.\n\nRankings use each country's latest figure from 2021–2024 and leave out countries with fewer than 100,000 people. Source: UIS, February 2026 release.",
+   "parentNodeId": "d_result_3",
+   "actionId": "exploreDataFromNL_1792308617801",
+   "createdAt": 1792308641164,
+   "startedAt": 1792308617802,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "d_result_3",
+   "fields": {
+    "country": {
+     "displayName": "Country",
+     "authored": {
+      "displayName": "Country"
+     }
+    },
+    "year": {
+     "displayName": "Year",
+     "authored": {
+      "displayName": "Year"
+     }
+    },
+    "value": {
+     "semanticType": "Percentage",
+     "unit": "% of GDP",
+     "displayName": "Research spending (% of GDP)",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "% of GDP",
+      "displayName": "Research spending (% of GDP)"
+     }
+    },
+    "rank": {
+     "displayName": "Rank",
+     "authored": {
+      "displayName": "Rank"
+     }
+    }
+   }
+  }
+ ],
+ "activeWorkspace": {
+  "id": "science-s22",
+  "displayName": "South Korea: second in research spending, first in researchers"
+ },
+ "focusedId": {
+  "type": "chart",
+  "chartId": "chart-c805e810a395"
+ }
+}

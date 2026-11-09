@@ -1,0 +1,1517 @@
+{
+  "chart_types": {
+    "Scatter Plot": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "size",
+        "shape",
+        "detail",
+        "opacity",
+        "column",
+        "row"
+      ],
+      "options": {
+        "opacity": {
+          "type": "continuous",
+          "min": 0.1,
+          "max": 1
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "logScale_x": {
+          "type": "binary"
+        },
+        "logScale_y": {
+          "type": "binary"
+        },
+        "includeZero_x": {
+          "type": "binary"
+        },
+        "includeZero_y": {
+          "type": "binary"
+        }
+      }
+    },
+    "Marginal Plot": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "size",
+        "shape",
+        "opacity"
+      ],
+      "options": {
+        "marginal": {
+          "type": "discrete",
+          "options": [
+            null,
+            "histogram",
+            "boxplot"
+          ]
+        },
+        "opacity": {
+          "type": "continuous",
+          "min": 0.1,
+          "max": 1
+        },
+        "stackMode": {
+          "type": "discrete",
+          "options": [
+            null,
+            "stacked"
+          ]
+        },
+        "bandwidth": {
+          "type": "continuous",
+          "min": 0.05,
+          "max": 2
+        },
+        "binCount": {
+          "type": "continuous",
+          "min": 5,
+          "max": 50
+        },
+        "whiskerMethod": {
+          "type": "discrete",
+          "options": [
+            "iqr",
+            "minmax"
+          ]
+        },
+        "showOutliers": {
+          "type": "binary"
+        },
+        "logScale_x": {
+          "type": "binary"
+        },
+        "logScale_y": {
+          "type": "binary"
+        },
+        "includeZero_x": {
+          "type": "binary"
+        },
+        "includeZero_y": {
+          "type": "binary"
+        }
+      }
+    },
+    "Regression": {
+      "channels": [
+        "x",
+        "y",
+        "size",
+        "color",
+        "column",
+        "row"
+      ],
+      "options": {
+        "regressionMethod": {
+          "type": "discrete",
+          "options": [
+            "linear",
+            "log",
+            "exp",
+            "pow",
+            "quad",
+            "poly"
+          ]
+        },
+        "polyOrder": {
+          "type": "continuous",
+          "min": 2,
+          "max": 10
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "logScale_x": {
+          "type": "binary"
+        },
+        "logScale_y": {
+          "type": "binary"
+        },
+        "includeZero_x": {
+          "type": "binary"
+        },
+        "includeZero_y": {
+          "type": "binary"
+        }
+      }
+    },
+    "Connected Scatter Plot": {
+      "channels": [
+        "x",
+        "y",
+        "order",
+        "color",
+        "detail",
+        "column",
+        "row"
+      ],
+      "options": {
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "logScale_x": {
+          "type": "binary"
+        },
+        "logScale_y": {
+          "type": "binary"
+        },
+        "includeZero_x": {
+          "type": "binary"
+        },
+        "includeZero_y": {
+          "type": "binary"
+        }
+      }
+    },
+    "Ranged Dot Plot": {
+      "channels": [
+        "x",
+        "y",
+        "color"
+      ],
+      "options": {
+        "logScale_x": {
+          "type": "binary"
+        },
+        "logScale_y": {
+          "type": "binary"
+        },
+        "includeZero_x": {
+          "type": "binary"
+        },
+        "includeZero_y": {
+          "type": "binary"
+        }
+      }
+    },
+    "Strip Plot": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "size",
+        "column",
+        "row"
+      ],
+      "options": {
+        "stepWidth": {
+          "type": "continuous",
+          "min": 10,
+          "max": 100
+        },
+        "pointSize": {
+          "type": "continuous",
+          "min": 0,
+          "max": 150
+        },
+        "opacity": {
+          "type": "continuous",
+          "min": 0,
+          "max": 1
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "logScale_x": {
+          "type": "binary"
+        },
+        "logScale_y": {
+          "type": "binary"
+        },
+        "includeZero_x": {
+          "type": "binary"
+        },
+        "includeZero_y": {
+          "type": "binary"
+        }
+      }
+    },
+    "Bar Chart": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "opacity",
+        "column",
+        "row"
+      ],
+      "options": {
+        "cornerRadius": {
+          "type": "continuous",
+          "min": 0,
+          "max": 15
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "xAxisType": {
+          "type": "discrete",
+          "options": [
+            "temporal",
+            "nominal"
+          ]
+        },
+        "yAxisType": {
+          "type": "discrete",
+          "options": [
+            "temporal",
+            "nominal"
+          ]
+        },
+        "showValueLabels": {
+          "type": "binary"
+        }
+      }
+    },
+    "Grouped Bar Chart": {
+      "channels": [
+        "x",
+        "y",
+        "group",
+        "color",
+        "column",
+        "row"
+      ],
+      "options": {
+        "dodge": {
+          "type": "discrete",
+          "options": [
+            "auto",
+            "local",
+            "global"
+          ]
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "showValueLabels": {
+          "type": "binary"
+        }
+      }
+    },
+    "Stacked Bar Chart": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "column",
+        "row"
+      ],
+      "options": {
+        "stackMode": {
+          "type": "discrete",
+          "options": [
+            null,
+            "normalize",
+            "center"
+          ]
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "showValueLabels": {
+          "type": "binary"
+        }
+      }
+    },
+    "Lollipop Chart": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "column",
+        "row"
+      ],
+      "options": {
+        "dotSize": {
+          "type": "continuous",
+          "min": 20,
+          "max": 300
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "xAxisType": {
+          "type": "discrete",
+          "options": [
+            "temporal",
+            "nominal"
+          ]
+        },
+        "yAxisType": {
+          "type": "discrete",
+          "options": [
+            "temporal",
+            "nominal"
+          ]
+        },
+        "showValueLabels": {
+          "type": "binary"
+        }
+      }
+    },
+    "Waterfall Chart": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "column",
+        "row"
+      ],
+      "options": {
+        "cornerRadius": {
+          "type": "continuous",
+          "min": 0,
+          "max": 8
+        },
+        "totals": {
+          "type": "discrete",
+          "options": [
+            "auto",
+            "none",
+            "first",
+            "last",
+            "both"
+          ]
+        },
+        "showValueLabels": {
+          "type": "binary"
+        },
+        "independentYAxis": {
+          "type": "binary"
+        }
+      }
+    },
+    "Gantt Chart": {
+      "channels": [
+        "y",
+        "x",
+        "x2",
+        "color",
+        "detail",
+        "column",
+        "row"
+      ],
+      "options": {
+        "taskHeight": {
+          "type": "continuous",
+          "min": 40,
+          "max": 90
+        },
+        "cornerRadius": {
+          "type": "continuous",
+          "min": 0,
+          "max": 8
+        },
+        "intervalLabels": {
+          "type": "binary"
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "logScale_x": {
+          "type": "binary"
+        },
+        "logScale_y": {
+          "type": "binary"
+        },
+        "includeZero_x": {
+          "type": "binary"
+        },
+        "includeZero_y": {
+          "type": "binary"
+        }
+      }
+    },
+    "Bullet Chart": {
+      "channels": [
+        "y",
+        "x",
+        "goal",
+        "color",
+        "column",
+        "row"
+      ],
+      "options": {
+        "independentYAxis": {
+          "type": "binary"
+        }
+      }
+    },
+    "Histogram": {
+      "channels": [
+        "x",
+        "color",
+        "column",
+        "row"
+      ],
+      "options": {
+        "binCount": {
+          "type": "continuous",
+          "min": 5,
+          "max": 50
+        },
+        "independentYAxis": {
+          "type": "binary"
+        }
+      }
+    },
+    "Density Plot": {
+      "channels": [
+        "x",
+        "color",
+        "column",
+        "row"
+      ],
+      "options": {
+        "bandwidth": {
+          "type": "continuous",
+          "min": 0.05,
+          "max": 2
+        },
+        "opacity": {
+          "type": "continuous",
+          "min": 0.1,
+          "max": 1
+        },
+        "stackMode": {
+          "type": "discrete",
+          "options": [
+            null,
+            "normalize",
+            "layered"
+          ]
+        },
+        "independentYAxis": {
+          "type": "binary"
+        }
+      }
+    },
+    "Ridgeline Plot": {
+      "channels": [
+        "x",
+        "y",
+        "color"
+      ],
+      "options": {
+        "overlap": {
+          "type": "continuous",
+          "min": 0.5,
+          "max": 4
+        },
+        "interpolate": {
+          "type": "discrete",
+          "options": [
+            null,
+            "linear",
+            "monotone",
+            "step",
+            "step-before",
+            "step-after",
+            "basis"
+          ]
+        },
+        "opacity": {
+          "type": "continuous",
+          "min": 0.1,
+          "max": 1
+        },
+        "order": {
+          "type": "discrete",
+          "options": [
+            null,
+            "mean",
+            "reverse"
+          ]
+        },
+        "tailCut": {
+          "type": "continuous",
+          "min": 0,
+          "max": 0.2
+        },
+        "colorBy": {
+          "type": "discrete",
+          "options": [
+            null,
+            "series",
+            "x"
+          ]
+        },
+        "perspective": {
+          "type": "binary"
+        },
+        "skew": {
+          "type": "continuous",
+          "min": 0,
+          "max": 0.4
+        },
+        "tilt": {
+          "type": "continuous",
+          "min": 0,
+          "max": 6
+        },
+        "markAt": {
+          "type": "binary"
+        },
+        "valueMax": {
+          "type": "continuous",
+          "min": 0,
+          "max": 1000
+        },
+        "bandwidth": {
+          "type": "continuous",
+          "min": 0.05,
+          "max": 2
+        }
+      }
+    },
+    "ECDF Plot": {
+      "channels": [
+        "x",
+        "color",
+        "detail",
+        "column",
+        "row"
+      ],
+      "options": {
+        "showPoints": {
+          "type": "binary"
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "logScale_x": {
+          "type": "binary"
+        },
+        "logScale_y": {
+          "type": "binary"
+        },
+        "includeZero_x": {
+          "type": "binary"
+        },
+        "includeZero_y": {
+          "type": "binary"
+        }
+      }
+    },
+    "Violin Plot": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "row"
+      ],
+      "options": {
+        "bandwidth": {
+          "type": "continuous",
+          "min": 0.05,
+          "max": 2
+        },
+        "showPoints": {
+          "type": "binary"
+        },
+        "showMedian": {
+          "type": "binary"
+        },
+        "showContour": {
+          "type": "binary"
+        },
+        "widths": {
+          "type": "discrete",
+          "options": [
+            "auto",
+            "area",
+            "band"
+          ]
+        },
+        "medianWidth": {
+          "type": "continuous",
+          "min": 0.2,
+          "max": 1
+        },
+        "independentYAxis": {
+          "type": "binary"
+        }
+      }
+    },
+    "Boxplot": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "opacity",
+        "column",
+        "row"
+      ],
+      "options": {
+        "whiskerMethod": {
+          "type": "discrete",
+          "options": [
+            "iqr",
+            "minmax"
+          ]
+        },
+        "showPoints": {
+          "type": "binary"
+        },
+        "showOutliers": {
+          "type": "binary"
+        },
+        "dodge": {
+          "type": "discrete",
+          "options": [
+            "auto",
+            "local",
+            "global"
+          ]
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "logScale_x": {
+          "type": "binary"
+        },
+        "logScale_y": {
+          "type": "binary"
+        },
+        "includeZero_x": {
+          "type": "binary"
+        },
+        "includeZero_y": {
+          "type": "binary"
+        }
+      }
+    },
+    "Pyramid Chart": {
+      "channels": [
+        "x",
+        "y",
+        "color"
+      ],
+      "options": {
+        "showValueLabels": {
+          "type": "binary"
+        }
+      }
+    },
+    "Candlestick Chart": {
+      "channels": [
+        "x",
+        "open",
+        "high",
+        "low",
+        "close",
+        "column",
+        "row"
+      ],
+      "options": {
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "logScale_x": {
+          "type": "binary"
+        },
+        "logScale_y": {
+          "type": "binary"
+        },
+        "includeZero_x": {
+          "type": "binary"
+        },
+        "includeZero_y": {
+          "type": "binary"
+        }
+      }
+    },
+    "Line Chart": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "strokeDash",
+        "detail",
+        "opacity",
+        "column",
+        "row"
+      ],
+      "options": {
+        "interpolate": {
+          "type": "discrete",
+          "options": [
+            null,
+            "linear",
+            "monotone",
+            "step",
+            "step-before",
+            "step-after",
+            "basis",
+            "cardinal",
+            "catmull-rom"
+          ]
+        },
+        "showPoints": {
+          "type": "binary"
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "logScale_x": {
+          "type": "binary"
+        },
+        "logScale_y": {
+          "type": "binary"
+        },
+        "includeZero_x": {
+          "type": "binary"
+        },
+        "includeZero_y": {
+          "type": "binary"
+        },
+        "xAxisType": {
+          "type": "discrete",
+          "options": [
+            "temporal",
+            "nominal"
+          ]
+        },
+        "yAxisType": {
+          "type": "discrete",
+          "options": [
+            "temporal",
+            "nominal"
+          ]
+        }
+      }
+    },
+    "Sparkline": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "detail",
+        "row",
+        "column"
+      ],
+      "options": {
+        "interpolate": {
+          "type": "discrete",
+          "options": [
+            null,
+            "linear",
+            "monotone",
+            "step",
+            "step-before",
+            "step-after",
+            "basis",
+            "cardinal",
+            "catmull-rom"
+          ]
+        },
+        "baseline": {
+          "type": "discrete",
+          "options": [
+            "mean",
+            "zero",
+            "median",
+            "none"
+          ]
+        },
+        "trendWidth": {
+          "type": "continuous",
+          "min": 80,
+          "max": 600
+        },
+        "logScale_x": {
+          "type": "binary"
+        },
+        "logScale_y": {
+          "type": "binary"
+        },
+        "includeZero_x": {
+          "type": "binary"
+        },
+        "includeZero_y": {
+          "type": "binary"
+        }
+      }
+    },
+    "Bump Chart": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "detail",
+        "column",
+        "row"
+      ],
+      "options": {
+        "interpolate": {
+          "type": "discrete",
+          "options": [
+            null,
+            "linear",
+            "monotone",
+            "step",
+            "step-before",
+            "step-after",
+            "basis",
+            "cardinal",
+            "catmull-rom"
+          ]
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "logScale_x": {
+          "type": "binary"
+        },
+        "logScale_y": {
+          "type": "binary"
+        },
+        "includeZero_x": {
+          "type": "binary"
+        },
+        "includeZero_y": {
+          "type": "binary"
+        }
+      }
+    },
+    "Slope Chart": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "detail",
+        "column",
+        "row"
+      ],
+      "options": {
+        "showText": {
+          "type": "binary"
+        },
+        "showSeriesInLabel": {
+          "type": "binary"
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "logScale_x": {
+          "type": "binary"
+        },
+        "logScale_y": {
+          "type": "binary"
+        },
+        "includeZero_x": {
+          "type": "binary"
+        },
+        "includeZero_y": {
+          "type": "binary"
+        }
+      }
+    },
+    "Area Chart": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "opacity",
+        "column",
+        "row"
+      ],
+      "options": {
+        "interpolate": {
+          "type": "discrete",
+          "options": [
+            null,
+            "linear",
+            "monotone",
+            "step",
+            "step-before",
+            "step-after",
+            "basis",
+            "cardinal",
+            "catmull-rom"
+          ]
+        },
+        "opacity": {
+          "type": "continuous",
+          "min": 0.1,
+          "max": 1
+        },
+        "stackMode": {
+          "type": "discrete",
+          "options": [
+            null,
+            "normalize",
+            "center",
+            "layered"
+          ]
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "xAxisType": {
+          "type": "discrete",
+          "options": [
+            "temporal",
+            "nominal"
+          ]
+        },
+        "yAxisType": {
+          "type": "discrete",
+          "options": [
+            "temporal",
+            "nominal"
+          ]
+        }
+      }
+    },
+    "Streamgraph": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "column",
+        "row"
+      ],
+      "options": {
+        "interpolate": {
+          "type": "discrete",
+          "options": [
+            null,
+            "linear",
+            "monotone",
+            "step",
+            "step-before",
+            "step-after",
+            "basis",
+            "cardinal",
+            "catmull-rom"
+          ]
+        },
+        "independentYAxis": {
+          "type": "binary"
+        }
+      }
+    },
+    "Range Area Chart": {
+      "channels": [
+        "x",
+        "y",
+        "y2",
+        "color",
+        "column",
+        "row"
+      ],
+      "options": {
+        "interpolate": {
+          "type": "discrete",
+          "options": [
+            null,
+            "linear",
+            "monotone",
+            "step",
+            "step-before",
+            "step-after",
+            "basis"
+          ]
+        },
+        "opacity": {
+          "type": "continuous",
+          "min": 0.1,
+          "max": 1
+        },
+        "independentYAxis": {
+          "type": "binary"
+        }
+      }
+    },
+    "Pie Chart": {
+      "channels": [
+        "size",
+        "color",
+        "column",
+        "row"
+      ],
+      "options": {
+        "innerRadius": {
+          "type": "continuous",
+          "min": 0,
+          "max": 100
+        },
+        "sortSlices": {
+          "type": "discrete",
+          "options": [
+            "none",
+            "descending",
+            "ascending"
+          ]
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "showValueLabels": {
+          "type": "binary"
+        }
+      }
+    },
+    "Donut Chart": {
+      "channels": [
+        "size",
+        "color",
+        "column",
+        "row"
+      ],
+      "options": {
+        "innerRadius": {
+          "type": "continuous",
+          "min": 0,
+          "max": 100
+        },
+        "sortSlices": {
+          "type": "discrete",
+          "options": [
+            "none",
+            "descending",
+            "ascending"
+          ]
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "showValueLabels": {
+          "type": "binary"
+        }
+      }
+    },
+    "Rose Chart": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "column",
+        "row"
+      ],
+      "options": {
+        "padAngle": {
+          "type": "continuous",
+          "min": 0,
+          "max": 0.1
+        },
+        "alignment": {
+          "type": "discrete",
+          "options": [
+            "left",
+            "center"
+          ]
+        },
+        "sortSlices": {
+          "type": "discrete",
+          "options": [
+            "none",
+            "descending",
+            "ascending"
+          ]
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "showValueLabels": {
+          "type": "binary"
+        }
+      }
+    },
+    "Radar Chart": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "column",
+        "row"
+      ],
+      "options": {
+        "filled": {
+          "type": "binary"
+        },
+        "fillOpacity": {
+          "type": "continuous",
+          "min": 0,
+          "max": 0.5
+        },
+        "strokeWidth": {
+          "type": "continuous",
+          "min": 0.5,
+          "max": 4
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "logScale_x": {
+          "type": "binary"
+        },
+        "logScale_y": {
+          "type": "binary"
+        },
+        "includeZero_x": {
+          "type": "binary"
+        },
+        "includeZero_y": {
+          "type": "binary"
+        }
+      }
+    },
+    "Heatmap": {
+      "channels": [
+        "x",
+        "y",
+        "color",
+        "column",
+        "row"
+      ],
+      "options": {
+        "showValueLabels": {
+          "type": "binary"
+        },
+        "independentYAxis": {
+          "type": "binary"
+        },
+        "xAxisType": {
+          "type": "discrete",
+          "options": [
+            "temporal",
+            "nominal"
+          ]
+        },
+        "yAxisType": {
+          "type": "discrete",
+          "options": [
+            "temporal",
+            "nominal"
+          ]
+        }
+      }
+    },
+    "Calendar Heatmap": {
+      "channels": [
+        "x",
+        "color"
+      ],
+      "options": {
+        "cornerRadius": {
+          "type": "continuous",
+          "min": 0,
+          "max": 8
+        }
+      }
+    },
+    "Bar Table": {
+      "channels": [
+        "y",
+        "x",
+        "color",
+        "column",
+        "row"
+      ],
+      "options": {
+        "maxRows": {
+          "type": "continuous",
+          "min": 5,
+          "max": 100
+        },
+        "showPercent": {
+          "type": "binary"
+        },
+        "independentYAxis": {
+          "type": "binary"
+        }
+      }
+    },
+    "KPI Card": {
+      "channels": [
+        "metric",
+        "value",
+        "goal"
+      ],
+      "options": {
+        "layout": {
+          "type": "discrete",
+          "options": [
+            "horizontal",
+            "vertical",
+            "grid"
+          ]
+        },
+        "style": {
+          "type": "binary"
+        },
+        "behindThreshold": {
+          "type": "continuous",
+          "min": 0,
+          "max": 1
+        }
+      }
+    },
+    "Table": {
+      "channels": [],
+      "options": {}
+    },
+    "Map": {
+      "channels": [
+        "longitude",
+        "latitude",
+        "color",
+        "size",
+        "opacity"
+      ],
+      "options": {
+        "region": {
+          "type": "discrete",
+          "options": [
+            "auto",
+            "us",
+            "world"
+          ]
+        },
+        "projection": {
+          "type": "discrete",
+          "options": [
+            "default",
+            "mercator",
+            "equalEarth",
+            "orthographic",
+            "stereographic",
+            "conicEqualArea",
+            "conicEquidistant",
+            "azimuthalEquidistant",
+            "mollweide"
+          ]
+        },
+        "projectionCenter": {
+          "type": "discrete",
+          "options": [
+            null,
+            [
+              0,
+              0
+            ],
+            [
+              150,
+              0
+            ],
+            [
+              105,
+              35
+            ],
+            [
+              -98,
+              39
+            ],
+            [
+              10,
+              50
+            ],
+            [
+              138,
+              36
+            ],
+            [
+              78,
+              22
+            ],
+            [
+              -52,
+              -14
+            ],
+            [
+              134,
+              -25
+            ],
+            [
+              100,
+              60
+            ],
+            [
+              20,
+              0
+            ],
+            [
+              45,
+              28
+            ],
+            [
+              115,
+              5
+            ],
+            [
+              -60,
+              -15
+            ],
+            [
+              -100,
+              45
+            ],
+            [
+              -2,
+              54
+            ],
+            [
+              10,
+              51
+            ],
+            [
+              2,
+              47
+            ],
+            [
+              128,
+              36
+            ]
+          ]
+        }
+      }
+    },
+    "Choropleth": {
+      "channels": [
+        "id",
+        "color",
+        "detail"
+      ],
+      "options": {
+        "region": {
+          "type": "discrete",
+          "options": [
+            "auto",
+            "us",
+            "world"
+          ]
+        },
+        "level": {
+          "type": "discrete",
+          "options": [
+            "state",
+            "county",
+            "auto"
+          ]
+        },
+        "projection": {
+          "type": "discrete",
+          "options": [
+            "default",
+            "mercator",
+            "equalEarth",
+            "orthographic",
+            "stereographic",
+            "conicEqualArea",
+            "conicEquidistant",
+            "azimuthalEquidistant",
+            "mollweide"
+          ]
+        },
+        "projectionCenter": {
+          "type": "discrete",
+          "options": [
+            null,
+            [
+              0,
+              0
+            ],
+            [
+              150,
+              0
+            ],
+            [
+              105,
+              35
+            ],
+            [
+              -98,
+              39
+            ],
+            [
+              10,
+              50
+            ],
+            [
+              138,
+              36
+            ],
+            [
+              78,
+              22
+            ],
+            [
+              -52,
+              -14
+            ],
+            [
+              134,
+              -25
+            ],
+            [
+              100,
+              60
+            ],
+            [
+              20,
+              0
+            ],
+            [
+              45,
+              28
+            ],
+            [
+              115,
+              5
+            ],
+            [
+              -60,
+              -15
+            ],
+            [
+              -100,
+              45
+            ],
+            [
+              -2,
+              54
+            ],
+            [
+              10,
+              51
+            ],
+            [
+              2,
+              47
+            ],
+            [
+              128,
+              36
+            ]
+          ]
+        }
+      }
+    }
+  },
+  "themes": [
+    "nyt",
+    "economist",
+    "swiss",
+    "nature",
+    "mckinsey",
+    "datawrapper",
+    "powerbi",
+    "powerbi-light",
+    "pop",
+    "cartoon",
+    "apple",
+    "de-stijl",
+    "bbc",
+    "material"
+  ]
+}

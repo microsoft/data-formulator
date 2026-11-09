@@ -59,3 +59,46 @@ def test_deleting_azure_workspace_removes_local_scratch(
 
     assert manager.delete_workspace("w") is True
     assert not scratch.exists()
+
+
+def test_azure_runtime_includes_visible_scratch_and_promotion_is_additive(tmp_path):
+    import io
+    from types import SimpleNamespace
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    from data_formulator.datalake.azure_blob_workspace import AzureBlobWorkspace
+    from data_formulator.datalake.workspace_metadata import WorkspaceMetadata
+
+    workspace = object.__new__(AzureBlobWorkspace)
+    workspace._prefix = "workspace/"
+    workspace._confined_scratch = ConfinedDir(tmp_path / "scratch")
+    workspace.confined_scratch.write("nested/factor.txt", b"4")
+    workspace.confined_scratch.write("_explore_ns/private.txt", b"private")
+    blobs = {"files/source.txt": b"user source"}
+    workspace._container = SimpleNamespace(
+        list_blobs=lambda **kwargs: [SimpleNamespace(name="workspace/" + name) for name in blobs],
+        download_blob=lambda name: SimpleNamespace(readall=lambda: blobs[name.removeprefix("workspace/")]),
+    )
+    workspace._blob_exists = lambda name: name in blobs
+    workspace._upload_bytes = lambda name, content: blobs.__setitem__(name, content)
+    workspace._download_bytes = lambda name: blobs[name]
+    metadata = WorkspaceMetadata.create_new()
+    workspace._atomic_update_metadata = lambda update: update(metadata)
+    generated = workspace.save_workspace_file(b"first", "generated.txt", agent_managed=True)
+    revised = workspace.save_workspace_file(b"revised", "generated.txt", agent_managed=True,
+                                            expected_content_hash=generated.content_hash)
+    assert revised.origin == "agent"
+    assert revised.edit_policy == "agent_editable"
+    assert blobs["files/generated.txt"] == b"revised"
+    assert not workspace.confined_scratch.exists("generated.txt")
+    first = workspace.add_parquet_from_arrow(pa.table({"value": [1]}), "computed")
+    second = workspace.add_parquet_from_arrow(pa.table({"value": [2]}), "computed")
+    assert first.name == "computed"
+    assert second.name == "computed_2"
+    assert pq.read_table(io.BytesIO(blobs["data/computed.parquet"])).to_pylist() == [{"value": 1}]
+    with workspace.local_dir() as directory:
+        assert (directory / "files/source.txt").read_bytes() == b"user source"
+        assert (directory / "files/generated.txt").read_bytes() == b"revised"
+        assert (directory / "scratch/nested/factor.txt").read_bytes() == b"4"
+        assert not (directory / "scratch/_explore_ns/private.txt").exists()
+        assert pq.read_table(directory / "data/computed_2.parquet").to_pylist() == [{"value": 2}]

@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { useEffect, useRef } from 'react';
-import { useSelector } from 'react-redux';
-import { DataFormulatorState, dfSelectors } from './dfSlice';
-import { saveWorkspaceState } from './workspaceService';
+import { useCallback, useEffect, useRef } from 'react';
+import { useStore } from 'react-redux';
+import { DataFormulatorState, dfActions, dfSelectors } from './dfSlice';
+import { saveWorkspaceState, SessionConflictError } from './workspaceService';
 import { handleApiError } from './errorHandler';
 import { DF_STATE_VERSION } from './stateMigrations';
 import { stripConnectorPrefillFromEntries } from './connectorFormPersistence';
@@ -20,13 +20,17 @@ const EXCLUDED_FIELDS = new Set([
     // Transient fields that shouldn't trigger or be included in saves
     'chartSynthesisInProgress',
     'tableLoadsInFlight',
-    'cleanInProgress', 'sessionLoading', 'sessionLoadingLabel',
+    'workflowStarting',
+    'pendingTableLoads',
+    'tablesMissingData',
+    'cleanInProgress', 'sessionLoading', 'sessionLoadingLabel', 'exampleFollowUps',
     // Starter-questions status is transient (loading/error); the questions
     // themselves are persisted, but the fetch status should reset on reload.
     'starterQuestionsStatus',
     // Thumbnails are derived from chart specs + table data; re-rendered
     // from the module cache on reload, so don't waste bandwidth saving them.
     'chartThumbnails',
+    'canvasFollow',
 ]);
 
 /** Debounce interval in milliseconds. */
@@ -40,7 +44,7 @@ export function getSerializableState(state: DataFormulatorState): Record<string,
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(state)) {
         if (!EXCLUDED_FIELDS.has(key)) {
-            result[key] = key === 'dataLoadingChatMessages' || key === 'textTurns'
+            result[key] = key === 'textTurns'
                 ? stripConnectorPrefillFromEntries(value)
                 : value;
         }
@@ -58,63 +62,84 @@ export function getSerializableState(state: DataFormulatorState): Record<string,
  * flood the server. Sensitive fields are stripped before sending.
  *
  * The backend writes the state to `session_state.json` in the active workspace.
+ * It subscribes to the store directly: selecting the whole state would
+ * re-render its host (the app shell) on every action.
  */
 export function useAutoSave() {
-    const state = useSelector((s: DataFormulatorState) => s);
+    const store = useStore<DataFormulatorState>();
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const isSavingRef = useRef(false);
     const pendingRef = useRef(false);
     const lastErrorNotifyRef = useRef(0);
+    const latestStateRef = useRef(store.getState());
 
-    useEffect(() => {
-        // Nothing to save while a session is loading, read-only, workspace-less,
-        // or still empty. A conversation with no tables yet IS worth saving.
-        if (state.sessionLoading || !state.activeWorkspace || state.activeWorkspace.readOnly
-            || dfSelectors.selectSessionEmpty(state)) {
+    const saveLatestState = useCallback(async () => {
+        if (isSavingRef.current) {
+            pendingRef.current = true;
             return;
         }
 
-        // Debounce: reset timer on every state change
-        if (timerRef.current) {
-            clearTimeout(timerRef.current);
+        isSavingRef.current = true;
+        try {
+            do {
+                pendingRef.current = false;
+                try {
+                    await saveWorkspaceState(getSerializableState(latestStateRef.current));
+                } catch (err) {
+                    if (err instanceof SessionConflictError) {
+                        // Another tab or window saved a newer copy: stop saving this one and offer "Edit here",
+                        // which loads the saved copy.
+                        store.dispatch(dfActions.markSessionOpenElsewhere({ id: err.sessionId }));
+                        pendingRef.current = false;
+                        break;
+                    }
+                    const now = Date.now();
+                    if (now - lastErrorNotifyRef.current >= AUTO_SAVE_ERROR_NOTIFY_MS) {
+                        lastErrorNotifyRef.current = now;
+                        handleApiError(err, 'Auto-save');
+                    } else {
+                        console.warn('[auto-save] failed:', err);
+                    }
+                }
+            } while (pendingRef.current);
+        } finally {
+            isSavingRef.current = false;
         }
+    }, [store]);
 
-        timerRef.current = setTimeout(async () => {
-            // Skip if a save is already in flight
-            if (isSavingRef.current) {
-                pendingRef.current = true;
+    useEffect(() => {
+        let previous: DataFormulatorState | undefined;
+        const onChange = () => {
+            const state = store.getState();
+            if (state === previous) return;
+            previous = state;
+            latestStateRef.current = state;
+
+            // Debounce: every state change restarts the timer
+            if (timerRef.current) {
+                clearTimeout(timerRef.current);
+                timerRef.current = null;
+            }
+
+            // Nothing to save while a session is loading, read-only, workspace-less,
+            // or still empty. A conversation with no tables yet IS worth saving.
+            if (state.sessionLoading || !state.activeWorkspace || state.activeWorkspace.readOnly
+                || dfSelectors.selectSessionEmpty(state)) {
                 return;
             }
 
-            isSavingRef.current = true;
-            try {
-                const serializable = getSerializableState(state);
-                await saveWorkspaceState(serializable);
-            } catch (err) {
-                const now = Date.now();
-                if (now - lastErrorNotifyRef.current >= AUTO_SAVE_ERROR_NOTIFY_MS) {
-                    lastErrorNotifyRef.current = now;
-                    handleApiError(err, 'Auto-save');
-                } else {
-                    console.warn('[auto-save] failed:', err);
-                }
-            } finally {
-                isSavingRef.current = false;
-                // If state changed while we were saving, trigger another save
-                if (pendingRef.current) {
-                    pendingRef.current = false;
-                    // Re-trigger by scheduling another timeout
-                    timerRef.current = setTimeout(() => {
-                        // This will be picked up by the next effect cycle
-                    }, AUTO_SAVE_DEBOUNCE_MS);
-                }
-            }
-        }, AUTO_SAVE_DEBOUNCE_MS);
+            timerRef.current = setTimeout(() => {
+                void saveLatestState();
+            }, AUTO_SAVE_DEBOUNCE_MS);
+        };
+        onChange();
+        const unsubscribe = store.subscribe(onChange);
 
         return () => {
+            unsubscribe();
             if (timerRef.current) {
                 clearTimeout(timerRef.current);
             }
         };
-    }, [state]);
+    }, [saveLatestState, store]);
 }

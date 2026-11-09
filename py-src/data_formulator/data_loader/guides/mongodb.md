@@ -1,21 +1,15 @@
 **Example**
 
-`localhost:27017`, database `mydb`, collection `users`
+host: `localhost` · port: `27017` · database: `mydb`
 
-**Credentials**
+**Sign in**
 
-Leave username and password empty when authentication is disabled. For a managed or remote MongoDB server, use credentials that can read the target database.
-
-Set `authSource` only when the user is authenticated by a database other than the target database.
+Choose **No authentication** for a local server without access control. Otherwise, enter a user that can read the database, and set `authSource` only if that user is defined in another database (often `admin`).
 
 **Scope**
 
-Leave `collection` empty to browse all collections in the database.
+Leave `collection` empty to browse every collection in the database.
 
 **Check**
 
-Confirm that MongoDB is running, then test the server with:
-
-```bash
-mongosh --host <host> --port <port>
-```
+Test the server with `mongosh --host <host> --port <port>`.

@@ -30,6 +30,20 @@ def _reset_vault_singleton():
 
 class TestExplicitKey:
 
+    def test_configured_only_connectors_keep_the_vault_available(self, tmp_path, monkeypatch):
+        from flask import Flask
+        from data_formulator.auth.vault import get_credential_vault
+        monkeypatch.setenv('CREDENTIAL_VAULT_KEY', Fernet.generate_key().decode())
+        monkeypatch.setenv('CREDENTIAL_VAULT', 'local')
+        monkeypatch.setattr('data_formulator.auth.vault.get_data_formulator_home', lambda: tmp_path)
+        app = Flask(__name__)
+        app.config['CLI_ARGS'] = {'disable_data_connectors': True}
+        with app.app_context():
+            vault = get_credential_vault()
+            assert vault is not None
+            vault.store('installation:configuration', 'admin', {'password': 'configured-secret'})
+            assert vault.retrieve('installation:configuration', 'admin') == {'password': 'configured-secret'}
+
     def test_env_key_takes_priority(self, tmp_path, monkeypatch):
         key = Fernet.generate_key().decode()
         monkeypatch.setenv("CREDENTIAL_VAULT_KEY", key)
@@ -154,17 +168,49 @@ class TestSingleton:
         v2 = get_credential_vault()
         assert v1 is v2
 
-    def test_singleton_is_cached(self, tmp_path, monkeypatch):
+
+class TestVaultDisabled:
+
+    @pytest.mark.parametrize("value", ["off", "none", "disabled", "OFF"])
+    def test_off_creates_no_key_or_database(self, tmp_path, monkeypatch, value):
         monkeypatch.delenv("CREDENTIAL_VAULT_KEY", raising=False)
-        monkeypatch.setattr(
-            "data_formulator.auth.vault.get_data_formulator_home",
-            lambda: tmp_path,
-        )
+        monkeypatch.setenv("CREDENTIAL_VAULT", value)
+        monkeypatch.setattr("data_formulator.auth.vault.get_data_formulator_home", lambda: tmp_path)
 
         from data_formulator.auth.vault import get_credential_vault
-        import data_formulator.auth.vault as vault_mod
 
-        v1 = get_credential_vault()
-        assert vault_mod._initialized is True
-        v2 = get_credential_vault()
-        assert v1 is v2
+        assert get_credential_vault() is None
+        assert not (tmp_path / ".vault_key").exists()
+        assert not (tmp_path / "credentials.db").exists()
+
+
+class TestDemoPreset:
+    """DISABLE_DATABASE (a public demo) turns the vault off unless CREDENTIAL_VAULT is set."""
+
+    @pytest.fixture(autouse=True)
+    def _home(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CREDENTIAL_VAULT_KEY", raising=False)
+        monkeypatch.delenv("CREDENTIAL_VAULT", raising=False)
+        monkeypatch.delenv("DISABLE_DATABASE", raising=False)
+        monkeypatch.setattr("data_formulator.auth.vault.get_data_formulator_home", lambda: tmp_path)
+
+    def test_env_preset_disables_the_vault(self, tmp_path, monkeypatch):
+        from data_formulator.auth.vault import get_credential_vault
+        monkeypatch.setenv("DISABLE_DATABASE", "true")
+        assert get_credential_vault() is None
+        assert not (tmp_path / ".vault_key").exists()
+
+    def test_cli_preset_disables_the_vault(self, tmp_path):
+        from flask import Flask
+        from data_formulator.auth.vault import get_credential_vault
+        app = Flask(__name__)
+        app.config["CLI_ARGS"] = {"disable_database": True}
+        with app.app_context():
+            assert get_credential_vault() is None
+        assert not (tmp_path / ".vault_key").exists()
+
+    def test_explicit_setting_keeps_the_vault(self, monkeypatch):
+        from data_formulator.auth.vault import get_credential_vault
+        monkeypatch.setenv("DISABLE_DATABASE", "true")
+        monkeypatch.setenv("CREDENTIAL_VAULT", "local")
+        assert get_credential_vault() is not None

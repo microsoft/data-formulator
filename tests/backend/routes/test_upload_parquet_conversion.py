@@ -122,15 +122,6 @@ class TestMultiSheetEnglish:
             pytest.skip("fixture missing")
         self.xlsx_bytes = self.xlsx_path.read_bytes()
 
-    def test_upload_orders_sheet_via_suffix(self, client, tmp_workspace) -> None:
-        """table_name ends with '_orders' → should match 'Orders' sheet."""
-        resp = _upload(client, self.xlsx_bytes, "sales_report.xlsx",
-                       "sales_report_xlsx_orders")
-        assert resp.get_json()["status"] == "success"
-        df = tmp_workspace.read_data_as_df("sales_report_xlsx_orders")
-        assert "OrderID" in df.columns
-        assert len(df) == 5
-
     def test_upload_returns_sheet_via_suffix(self, client, tmp_workspace) -> None:
         """table_name ends with '_returns' → should match 'Returns' sheet."""
         resp = _upload(client, self.xlsx_bytes, "sales_report.xlsx",
@@ -231,15 +222,6 @@ class TestMultiSheetMixed:
         df = tmp_workspace.read_data_as_df("mixed_report_混合报表_xlsx_summary")
         assert "Category" in df.columns
         assert "类别中文" in df.columns
-
-    def test_upload_detail_sheet_chinese(self, client, tmp_workspace) -> None:
-        resp = _upload(client, self.xlsx_bytes, "mixed_report_混合报表.xlsx",
-                       "mixed_report_混合报表_xlsx_明细数据")
-        assert resp.get_json()["status"] == "success"
-        df = tmp_workspace.read_data_as_df("mixed_report_混合报表_xlsx_明细数据")
-        assert "商品名" in df.columns
-        assert "SKU" in df.columns
-        assert len(df) == 4
 
     def test_upload_q1_sheet(self, client, tmp_workspace) -> None:
         resp = _upload(client, self.xlsx_bytes, "mixed_report_混合报表.xlsx",

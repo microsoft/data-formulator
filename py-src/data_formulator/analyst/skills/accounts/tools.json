@@ -1,0 +1,118 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "api_fetch",
+      "description": "GET one https URL from a service the user signed in to, or a built-in one (Hugging Face), as the signed-in user when they are. The app attaches their secret; you never see it. Saves the body under scratch/api/<service>/ and returns status, type, size, the saved path and a short preview. A refusal that signing in would fix returns needs_signin. Hosts no sign-in covers are refused: fetch public data with the terminal.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The full https URL, with its query."
+          },
+          "save_as": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Optional file name for the saved body, e.g. 'train.parquet'."
+          }
+        },
+        "required": ["url"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "propose_signin",
+      "description": "Pause the run on a sign-in card when a service needs the user's sign-in for data they asked for: a built-in service by `provider`, or any other service by a `spec` you write from its API documentation. The app shows the spec (where the secret will be sent), draws the sign-in controls and checks the key; you give only the explanation and any steps the user takes on the service's site first. The run resumes once the user signs in or continues without.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": ["huggingface"],
+            "description": "A built-in service. Use spec instead for any other."
+          },
+          "spec": {
+            "type": "object",
+            "description": "Any other service's sign-in, from its API documentation. Everything stays on one site: send_to hosts, get_token and check.",
+            "properties": {
+              "id": {"type": "string", "description": "Short lowercase id, e.g. 'kaggle'."},
+              "name": {"type": "string", "maxLength": 60, "description": "The service's name, e.g. 'Kaggle'."},
+              "send_to": {
+                "type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 5,
+                "description": "Exact API hosts the secret is sent to, e.g. ['www.kaggle.com']. No wildcards, ports or paths."
+              },
+              "auth": {
+                "type": "object",
+                "properties": {
+                  "type": {"type": "string", "enum": ["bearer", "header", "query", "basic"],
+                           "description": "bearer: 'Authorization: Bearer <token>'; header: a named header; query: a named URL parameter; basic: HTTP basic with a username and key."},
+                  "name": {"type": "string", "description": "The header (header) or query parameter (query) that carries the secret."},
+                  "username_label": {"type": "string", "maxLength": 40, "description": "basic: what the user types as the username, e.g. 'Account name'."},
+                  "secret_label": {"type": "string", "maxLength": 40, "description": "What the user pastes, e.g. 'API key'."}
+                },
+                "required": ["type"],
+                "additionalProperties": false
+              },
+              "get_token": {"type": "string", "description": "The https page on the service's site where the user gets the secret."},
+              "instructions": {"type": "string", "maxLength": 400, "description": "What to do on that page, in a sentence or two."},
+              "check": {"type": "string", "description": "Optional https URL on a send_to host that answers 2xx with a working secret; the app tries it before keeping the key."},
+              "local": {
+                "type": "object",
+                "description": "Optional: how to read a login the user already has on this computer (e.g. from the service's CLI), offered on the card next to pasting a key. The card shows it as written; it runs only if the user picks it, then each time the sign-in is used. One of command, file or env.",
+                "properties": {
+                  "command": {"type": "array", "items": {"type": "string"}, "maxItems": 12, "description": "Arguments, run without a shell; its output is the secret, e.g. ['gh', 'auth', 'token']."},
+                  "file": {"type": "string", "description": "A file holding the secret, e.g. '~/.kaggle/access_token'."},
+                  "env": {"type": "string", "description": "An environment variable holding the secret."},
+                  "fields": {"type": "object", "additionalProperties": {"type": "string"}, "description": "When what is read is JSON: the secret's parts (token; or username and key for basic) mapped to their JSON keys, e.g. {'username': 'username', 'key': 'key'} for kaggle.json."}
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": ["id", "name", "send_to", "auth", "get_token"],
+            "additionalProperties": false
+          },
+          "reason": {
+            "type": "string",
+            "enum": ["gated", "private", "rate_limit", "terms", "rejected", "unauthorized", "other"],
+            "description": "Why: from needs_signin, or 'unauthorized' when the service requires a key, or 'other' when the user asked to sign in."
+          },
+          "explanation": {
+            "type": "string",
+            "maxLength": 400,
+            "description": "One or two sentences to the user: what you were doing and why the service refused or needs a sign-in."
+          },
+          "unlocks": {
+            "type": "string",
+            "maxLength": 160,
+            "description": "What signing in lets you do next, e.g. 'Download the Titanic competition's train.csv'."
+          },
+          "steps": {
+            "type": "array",
+            "maxItems": 3,
+            "description": "Steps on the service's own site, such as accepting a dataset's terms or a competition's rules.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {"type": "string", "maxLength": 200},
+                "url": {"type": "string", "description": "A page on the service's own site (https)."}
+              },
+              "required": ["text"],
+              "additionalProperties": false
+            }
+          },
+          "prefer": {
+            "type": "string",
+            "enum": ["reuse", "device", "token"],
+            "description": "Built-in services: the sign-in method to put first, if available."
+          }
+        },
+        "required": ["reason", "explanation"],
+        "additionalProperties": false
+      }
+    }
+  }
+]

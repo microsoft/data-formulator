@@ -23,6 +23,8 @@ import { Box, alpha } from '@mui/material';
 export const SCROLL_FADE = {
     /** Height of the faded band. */
     height: 56,
+    /** Width of the band at a left/right edge, where it covers columns rather than lines. */
+    width: 40,
     /** Opacity the gradient reaches at its far edge. */
     endOpacity: 0.96,
     /** Where the gradient becomes effectively opaque. */
@@ -31,27 +33,32 @@ export const SCROLL_FADE = {
     threshold: 8,
 } as const;
 
-/** Tracks whether a scroll element has content past its top/bottom edges. */
+/** Tracks whether a scroll element has content past each of its edges. */
 export function useScrollFade<T extends HTMLElement>(
     ref: React.RefObject<T | null>,
     /** Recompute when this changes (e.g. the surface swaps its content). */
     resetKey?: unknown,
 ) {
-    const [edges, setEdges] = useState({ moreAbove: false, moreBelow: false });
+    const [edges, setEdges] = useState({ moreAbove: false, moreBelow: false, moreLeft: false, moreRight: false });
 
     const update = useCallback(() => {
         const el = ref.current;
         if (!el) return;
-        setEdges({
+        const next = {
             moreAbove: el.scrollTop > SCROLL_FADE.threshold,
             moreBelow: el.scrollHeight - el.scrollTop - el.clientHeight > SCROLL_FADE.threshold,
-        });
+            moreLeft: el.scrollLeft > SCROLL_FADE.threshold,
+            moreRight: el.scrollWidth - el.scrollLeft - el.clientWidth > SCROLL_FADE.threshold,
+        };
+        setEdges(previous => Object.keys(next).every(key => previous[key as keyof typeof next] === next[key as keyof typeof next])
+            ? previous : next);
     }, [ref]);
 
     useEffect(() => {
         const el = ref.current;
         if (!el) return;
         update();
+        if (typeof ResizeObserver === 'undefined') return;
         // Content that grows (streaming text, expanding previews) moves the
         // edge without a scroll event, so observe the children too.
         const observer = new ResizeObserver(update);
@@ -69,24 +76,24 @@ export function useScrollFade<T extends HTMLElement>(
  */
 export const ScrollFadeEdge: React.FC<{
     visible: boolean;
-    edge?: 'top' | 'bottom';
+    edge?: 'top' | 'bottom' | 'left' | 'right';
 }> = ({ visible, edge = 'bottom' }) => (
     <Box
         sx={{
             position: 'absolute',
-            left: 0,
-            right: 0,
             [edge]: 0,
-            height: SCROLL_FADE.height,
+            ...(edge === 'left' || edge === 'right'
+                ? { top: 0, bottom: 0, width: SCROLL_FADE.width }
+                : { left: 0, right: 0, height: SCROLL_FADE.height }),
             pointerEvents: 'none',
+            // Outlined input labels sit at z-index 1; the fade must cover them too.
+            zIndex: 2,
             opacity: visible ? 1 : 0,
             transition: 'opacity 0.2s ease',
             background: (theme) => {
                 const from = alpha(theme.palette.background.paper, 0);
                 const to = alpha(theme.palette.background.paper, SCROLL_FADE.endOpacity);
-                return edge === 'bottom'
-                    ? `linear-gradient(to bottom, ${from}, ${to} ${SCROLL_FADE.stop})`
-                    : `linear-gradient(to top, ${from}, ${to} ${SCROLL_FADE.stop})`;
+                return `linear-gradient(to ${edge}, ${from}, ${to} ${SCROLL_FADE.stop})`;
             },
         }}
     />
@@ -108,6 +115,21 @@ export const ScrollFadeContainer: React.FC<{
             </Box>
             <ScrollFadeEdge visible={moreAbove} edge="top" />
             <ScrollFadeEdge visible={moreBelow} />
+        </Box>
+    );
+};
+
+/** A sideways scroller (a wide table) that fades its left and right edges while there is more. */
+export const HorizontalScrollFade: React.FC<{ children: React.ReactNode; sx?: object }> = ({ children, sx }) => {
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const { moreLeft, moreRight, update } = useScrollFade(scrollRef);
+    return (
+        <Box sx={{ position: 'relative', minWidth: 0 }}>
+            <Box ref={scrollRef} onScroll={update} sx={{ overflowX: 'auto', ...sx }}>
+                {children}
+            </Box>
+            <ScrollFadeEdge visible={moreLeft} edge="left" />
+            <ScrollFadeEdge visible={moreRight} edge="right" />
         </Box>
     );
 };

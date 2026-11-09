@@ -241,9 +241,12 @@ class TokenStore:
         if not exchange_url:
             return None
         try:
+            secret = os.environ.get("PLG_SUPERSET_EXCHANGE_SECRET", "").strip()
+            headers = {"X-DF-Exchange-Secret": secret} if secret else {}
             resp = http.post(
                 exchange_url,
                 json={"sso_access_token": sso_token},
+                headers=headers,
                 timeout=config.get("timeout", 10),
             )
             resp.raise_for_status()
@@ -257,7 +260,7 @@ class TokenStore:
             )
             return data["access_token"]
         except Exception as exc:
-            logger.debug("SSO exchange failed for %s: %s", system_id, exc)
+            logger.warning("SSO exchange failed for %s: %s", system_id, exc)
             return None
 
     # ── Internal: vault ───────────────────────────────────────

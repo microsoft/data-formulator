@@ -109,7 +109,8 @@ def get_workspace_manager(identity_id: str) -> WorkspaceManager:
         )
         client = _build_azure_container_client(cfg)
         safe_id = Workspace._sanitize_identity_id(identity_id)
-        blob_prefix = f"users/{safe_id}/workspaces"
+        from data_formulator.sites import blob_site_prefix
+        blob_prefix = f"{blob_site_prefix()}users/{safe_id}/workspaces"
         return AzureBlobWorkspaceManager(client, blob_prefix)
 
     # Default: local filesystem
@@ -143,6 +144,10 @@ def get_workspace(identity_id: str) -> Workspace:
                 "WORKSPACE_EXPIRED",
                 "This temporary workspace has expired.",
             )
-        mgr.create_workspace(ws_id)
+        try:
+            mgr.create_workspace(ws_id)
+        except ValueError:
+            if not mgr.workspace_exists(ws_id):
+                raise
 
     return mgr.open_workspace(ws_id, identity_id)

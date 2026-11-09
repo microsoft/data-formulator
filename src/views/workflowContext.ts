@@ -13,8 +13,9 @@
  * design-docs/24-session-scoped-distillation.md.
  */
 
-import type { Chart, DictTable, FieldItem } from '../components/ComponentType';
+import type { Chart, DictTable, FieldItem, InteractionEntry, TextTurn } from '../components/ComponentType';
 import type { ModelConfig } from '../app/dfSlice';
+import type { ThreadGraph } from '../app/threadGraph';
 
 // ---------------------------------------------------------------------------
 // Public limits — keep in sync with backend `_truncate` defaults.
@@ -64,6 +65,32 @@ function walkVisibleChain(leaf: DictTable, tables: DictTable[]): DictTable[] {
     }
     chain.reverse();
     return chain;
+}
+
+/** The conversation that led to a table, oldest first. */
+export type ConversationOf = (tableId: string) => InteractionEntry[];
+
+/**
+ * Reads a table's conversation from the thread (design-docs/58): the messages
+ * before it, back to the previous table. Items in between (loaded data, files,
+ * reports) are passed over, so a run's request is found even when the run
+ * loaded data first. The message right before the table is its instruction.
+ */
+export function threadConversationOf(graph: ThreadGraph, textTurns: TextTurn[]): ConversationOf {
+    const turnById = new Map(textTurns.map(turn => [turn.id, turn]));
+    return tableId => {
+        const entries: InteractionEntry[] = [];
+        for (const nodeId of graph.ancestors(tableId)) {
+            if (graph.kindOf(nodeId) === 'table') break;
+            const turn = turnById.get(nodeId);
+            if (!turn) continue;
+            if (turn.content) entries.unshift({ from: 'data-agent', to: 'user',
+                role: turn.textKind === 'clarify' ? 'clarify' : nodeId === graph.parentOf(tableId) ? 'instruction' : 'explain',
+                content: turn.content });
+            if (turn.prompt) entries.unshift({ from: 'user', to: 'data-agent', role: 'prompt', content: turn.prompt });
+        }
+        return entries;
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +238,7 @@ function chartEncodingSummary(
 export function buildLeafEvents(
     leaf: DictTable,
     tables: DictTable[],
+    conversationOf: ConversationOf,
     charts: Chart[] = [],
     conceptShelfItems: FieldItem[] = [],
 ): Array<Record<string, any>> | null {
@@ -229,7 +257,7 @@ export function buildLeafEvents(
         const stepDerive = step.derive;
         if (!stepDerive) continue; // root, no events to emit
 
-        const interaction = stepDerive.trigger.interaction || [];
+        const interaction = conversationOf(step.id);
         const userEntries = interaction.filter(e => e.from === 'user' && e.role !== 'error');
         const agentEntries = interaction.filter(e => e.from !== 'user' && e.role !== 'error');
 
@@ -313,6 +341,9 @@ export function buildDistillModelConfig(selectedModel: ModelConfig): Record<stri
         api_base: selectedModel.api_base,
         api_version: selectedModel.api_version,
         model: selectedModel.model,
+        small_model: selectedModel.small_model,
         is_global: selectedModel.is_global,
+        connection_id: selectedModel.connection_id,
+        auth_mode: selectedModel.auth_mode,
     };
 }

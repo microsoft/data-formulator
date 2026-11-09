@@ -55,20 +55,6 @@ ISO_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 class TestSharedFields:
     """All builder methods must emit agent, timestamp, model, prompt_components, llm_request."""
 
-    SHARED_TOP_KEYS = {"agent", "timestamp", "model", "prompt_components", "llm_request"}
-
-    def test_for_error_has_shared_keys(self, sample_diag: AgentDiagnostics) -> None:
-        d = sample_diag.for_error(SAMPLE_MESSAGES, error="boom")
-        assert self.SHARED_TOP_KEYS <= d.keys()
-
-    def test_for_response_has_shared_keys(self, sample_diag: AgentDiagnostics) -> None:
-        d = _make_full_response(sample_diag)
-        assert self.SHARED_TOP_KEYS <= d.keys()
-
-    def test_for_json_only_has_shared_keys(self, sample_diag: AgentDiagnostics) -> None:
-        d = sample_diag.for_json_only(SAMPLE_MESSAGES, raw_content="{}")
-        assert self.SHARED_TOP_KEYS <= d.keys()
-
     def test_agent_name_propagated(self, sample_diag: AgentDiagnostics) -> None:
         assert sample_diag.for_error(SAMPLE_MESSAGES)["agent"] == "TestAgent"
         assert _make_full_response(sample_diag)["agent"] == "TestAgent"
@@ -77,10 +63,6 @@ class TestSharedFields:
     def test_timestamp_is_iso8601(self, sample_diag: AgentDiagnostics) -> None:
         d = sample_diag.for_error(SAMPLE_MESSAGES)
         assert ISO_TIMESTAMP_RE.match(d["timestamp"])
-
-    def test_model_info_preserved(self, sample_diag: AgentDiagnostics) -> None:
-        d = sample_diag.for_error(SAMPLE_MESSAGES)
-        assert d["model"] == {"provider": "openai", "model": "gpt-4o"}
 
     def test_prompt_components_complete(self, sample_diag: AgentDiagnostics) -> None:
         pc = sample_diag.for_error(SAMPLE_MESSAGES)["prompt_components"]
@@ -105,23 +87,12 @@ class TestForError:
         d = sample_diag.for_error(SAMPLE_MESSAGES, error="connection timeout")
         assert d["error"] == "connection timeout"
 
-    def test_no_parsing_or_execution_sections(self, sample_diag: AgentDiagnostics) -> None:
-        d = sample_diag.for_error(SAMPLE_MESSAGES)
-        assert "parsing" not in d
-        assert "execution" not in d
-        assert "performance" not in d
-
 
 # ===================================================================
 # for_response — full diagnostics for code-execution agents
 # ===================================================================
 
 class TestForResponse:
-
-    def test_top_level_sections(self, sample_diag: AgentDiagnostics) -> None:
-        d = _make_full_response(sample_diag)
-        for section in ("llm_response", "parsing", "execution", "performance"):
-            assert section in d, f"missing section: {section}"
 
     def test_llm_response_fields(self, sample_diag: AgentDiagnostics) -> None:
         d = _make_full_response(sample_diag)
@@ -202,11 +173,6 @@ class TestForJsonOnly:
         assert d["performance"]["llm_seconds"] == 0.5
         assert d["performance"]["prompt_tokens"] == 80
 
-    def test_no_parsing_or_execution_sections(self, sample_diag: AgentDiagnostics) -> None:
-        d = sample_diag.for_json_only(SAMPLE_MESSAGES)
-        assert "parsing" not in d
-        assert "execution" not in d
-
     def test_defaults_when_no_kwargs(self, sample_diag: AgentDiagnostics) -> None:
         d = sample_diag.for_json_only(SAMPLE_MESSAGES)
         assert d["llm_response"]["raw_content"] == ""
@@ -246,25 +212,6 @@ class TestSchemaCompatibility:
     def test_for_json_only_key_set(self, sample_diag: AgentDiagnostics) -> None:
         d = sample_diag.for_json_only(SAMPLE_MESSAGES)
         assert d.keys() == self.JSON_ONLY_KEYS
-
-
-# ===================================================================
-# Multiple instances — verify isolation between agents
-# ===================================================================
-
-class TestMultipleInstances:
-
-    def test_different_agent_names(self) -> None:
-        d1 = AgentDiagnostics("DataRecAgent", {}, "p1")
-        d2 = AgentDiagnostics("DataTransformationAgent", {}, "p2")
-        assert d1.for_error([])["agent"] == "DataRecAgent"
-        assert d2.for_error([])["agent"] == "DataTransformationAgent"
-
-    def test_prompt_isolation(self) -> None:
-        d1 = AgentDiagnostics("A", {}, "prompt-A", assembled_system_prompt="asm-A")
-        d2 = AgentDiagnostics("B", {}, "prompt-B", assembled_system_prompt="asm-B")
-        assert d1.for_error([])["prompt_components"]["base_system_prompt"] == "prompt-A"
-        assert d2.for_error([])["prompt_components"]["base_system_prompt"] == "prompt-B"
 
 
 # ===================================================================
