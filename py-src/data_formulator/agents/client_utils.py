@@ -32,6 +32,7 @@ GATEWAY_DEFAULT_API_BASES = {
     "openrouter": "https://openrouter.ai/api/v1",
     "orcarouter": "https://api.orcarouter.ai/v1",
     "cheaperinference": "https://api.cheaperinference.com/v1",
+    "standardcompute": "https://api.stdcmpt.com/v1",
 }
 
 
@@ -303,7 +304,7 @@ def _set_reasoning(params: dict, effort: str | None) -> None:
 class Client(object):
     """
     Returns a LiteLLM client configured for the specified endpoint and model.
-    Supports OpenAI, Azure, Ollama, OrcaRouter, Cheaper Inference, and other providers via LiteLLM.
+    Supports OpenAI, Azure, Ollama, OrcaRouter, Cheaper Inference, Standard Compute, and other providers via LiteLLM.
     """
     def __init__(self, endpoint, model, api_key=None,  api_base=None, api_version=None,
                  *, api_type=None, chatgpt_account_id=None, managed_identity=False, managed_identity_client_id=None):
@@ -408,6 +409,17 @@ class Client(object):
             # the Cheaper Inference base URL.
             self.params["api_base"] = effective_api_base(endpoint, api_base).rstrip("/")
             self.params["custom_llm_provider"] = "openai"
+        elif self.endpoint == "standardcompute":
+            # Standard Compute exposes an OpenAI-compatible API. Its default
+            # model ``StandardCompute`` is routed by the gateway; pinned ids
+            # look like ``anthropic/claude-sonnet-5.5``. LiteLLM's openai
+            # provider strips a leading ``openai/``, so ids such as
+            # ``openai/gpt-5.6-sol`` get one extra prefix to reach the
+            # gateway unchanged.
+            self.params["api_base"] = effective_api_base(endpoint, api_base).rstrip("/")
+            self.params["custom_llm_provider"] = "openai"
+            if model.startswith("openai/"):
+                self.model = f"openai/{model}"
 
         host = (urlparse(self.params.get("api_base") or "https://api.openai.com").hostname or "").lower()
         self._first_party = any(host == suffix or host.endswith(suffix) for suffix in _RESPONSES_HOSTS.get(self.endpoint, ()))
