@@ -14,8 +14,7 @@ class ModelRegistry:
 
     Supports both built-in providers (openai / azure / anthropic / gemini /
     ollama / orcarouter / cheaperinference / standardcompute) and arbitrary
-    custom providers
-    (e.g. DEEPSEEK, QWEN).
+    custom providers (e.g. DEEPSEEK, QWEN).
 
     A provider is enabled when {PROVIDER}_MODELS is set together with
     {PROVIDER}_API_KEY and/or {PROVIDER}_API_BASE. For a custom provider, set:
