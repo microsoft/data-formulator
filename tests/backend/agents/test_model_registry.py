@@ -57,6 +57,11 @@ SAMPLE_ENV = _make_env({
         "api_base": "https://api.cheaperinference.com/v1",
         "models": "gpt-5.4-mini",
     },
+    "runcrate": {
+        "api_key": "rc-secret-key",
+        "api_base": "https://api.runcrate.ai/v1",
+        "models": "deepseek-ai/DeepSeek-V4.1-Flash",
+    },
 })
 
 
@@ -77,11 +82,12 @@ class TestModelDiscovery:
         assert "global-deepseek-deepseek-chat" in ids
         assert "global-orcarouter-auto" in ids
         assert "global-cheaperinference-gpt-5.4-mini" in ids
+        assert "global-runcrate-deepseek-ai/DeepSeek-V4.1-Flash" in ids
 
     @patch.dict(os.environ, SAMPLE_ENV, clear=True)
     def test_total_model_count(self):
         registry = ModelRegistry()
-        assert len(registry.list_public()) == 6  # 2 openai + 1 ollama + 1 deepseek + 1 orcarouter + 1 cheaperinference
+        assert len(registry.list_public()) == 7  # 2 openai + 1 ollama + 1 deepseek + 1 orcarouter + 1 cheaperinference + 1 runcrate
 
     @patch.dict(os.environ, {}, clear=True)
     def test_empty_env_yields_no_models(self):
