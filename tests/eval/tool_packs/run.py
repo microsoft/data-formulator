@@ -83,7 +83,8 @@ class Question:
 
 def _kaggle_spec(form: dict) -> tuple[bool, str]:
     spec = form.get("spec") or {}
-    ok = (spec.get("verified") is False and any(host.endswith("kaggle.com") for host in spec.get("send_to") or [])
+    ok = (spec.get("verified") is False
+          and any(host == "kaggle.com" or host.endswith(".kaggle.com") for host in spec.get("send_to") or [])
           and (spec.get("auth") or {}).get("type") == "bearer")
     return ok, "" if ok else f"unexpected Kaggle spec: {json.dumps(spec)[:200]}"
 

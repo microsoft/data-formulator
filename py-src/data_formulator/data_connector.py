@@ -1744,8 +1744,9 @@ def delete_connector(connector_id: str):
         from data_formulator.auth.identity import get_identity_id
         from data_formulator.datalake.workspace import get_user_home
         user_home = get_user_home(get_identity_id())
-        cancel_catalog_discovery(user_home, connector_id)
-        delete_catalog(user_home, connector_id)
+        # The registered connector's id, not the URL's: the same key catalog discovery used.
+        cancel_catalog_discovery(user_home, connector._source_id)
+        delete_catalog(user_home, connector._source_id)
     except Exception:
         logger.debug("Failed to delete catalog cache for '%s'", connector_id, exc_info=True)
 

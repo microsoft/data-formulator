@@ -74,7 +74,9 @@ from data_formulator.analyst.history import SessionHistory
 from data_formulator.analyst.plan import RunPlan, read_plan, split_plan
 
 # The agent's request to move a referenced request to a thread of its own (see AnalystAgent._reference_note).
-_NEW_THREAD_LINE = re.compile(r"^[ \t>*_#]*New thread:\**[ \t]*(.*?)[ \t*_]*$\n?", re.MULTILINE | re.IGNORECASE)
+# The title is taken greedily and its trailing markup stripped in Python: a lazy group before a trailing run
+# backtracks quadratically on a long line.
+_NEW_THREAD_LINE = re.compile(r"^[ \t>*_#]*New thread:\**[ \t]*(.*)$\n?", re.MULTILINE | re.IGNORECASE)
 from data_formulator.analyst.session_files import render_session_context, render_turn_context
 from data_formulator.analyst.session_layer import SessionLayer, load_saved_state
 from data_formulator.analyst.session_layer.layer import seen_versions
@@ -112,7 +114,7 @@ _STATUS_MIN_CHARS = 24   # a line still being written shows once it has a few wo
 # Providers that don't mark a message as the final answer (Anthropic, Chat Completions): text with no tool call
 # yet streams as the answer once it is clearly more than a note before a tool call. A tool call after it retracts it.
 _ANSWER_MIN_CHARS = 200
-_PLAN_ROW = re.compile(r"^[ \t>]*(?:[-*+]|\d+[.)])?[ \t]*\[[ xX]?\]|^[ \t>*_#]*plan\b", re.MULTILINE | re.IGNORECASE)
+_PLAN_ROW = re.compile(r"^[ \t>]*+(?:[-*+]|\d+[.)])?[ \t]*\[[ xX]?\]|^[ \t>*_#]*plan\b", re.MULTILINE | re.IGNORECASE)
 
 
 def _looks_like_answer(text: str) -> bool:
@@ -1962,7 +1964,7 @@ class AnalystAgent:
         match = _NEW_THREAD_LINE.search(content or "")
         if not match:
             return content
-        yield {"type": "placement", "new_thread": True, "title": match.group(1).strip()}
+        yield {"type": "placement", "new_thread": True, "title": match.group(1).rstrip(" \t*_").strip()}
         return (content[:match.start()] + content[match.end():]).strip()
 
     def _read_plan(self, content: str) -> Generator[Event, None, str]:
