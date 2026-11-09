@@ -153,7 +153,7 @@ your operating system:
   docker run --rm -p 127.0.0.1:5567:5567 -e DF_SINGLE_USER=1 --env-file .env -v data_formulator_home:/home/appuser/.data_formulator data-formulator:dev
   ```
 
-  Or from source (requires Node.js 20, yarn, and [uv](https://docs.astral.sh/uv/)):
+  Or from source (requires Node.js 22.12+, yarn, and [uv](https://docs.astral.sh/uv/)):
 
   ```bash
   git clone -b dev https://github.com/microsoft/data-formulator.git && cd data-formulator
