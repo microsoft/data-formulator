@@ -173,6 +173,8 @@ def check_structure(spec: Any) -> tuple[list[str], list[str]]:
                 errors.append(f"{where}.color.colors must map category values to CSS colours, such as {{\"Republican\": \"#d62728\"}}.")
         if "curve" in layer and layer["curve"] not in ("arc", "great-circle", "straight"):
             errors.append(f"{where}.curve must be arc, great-circle, or straight.")
+        if "legs" in layer and not isinstance(layer["legs"], bool):
+            errors.append(f"{where}.legs must be true or false.")
         if "layout" in layer and layer["layout"] != "dorling":
             errors.append(f"{where}.layout must be dorling.")
         if "direction" in layer and layer["direction"] not in FLOW_DIRECTIONS:

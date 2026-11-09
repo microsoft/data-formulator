@@ -7,7 +7,8 @@
  * states, the same ids Flint's Map and Choropleth charts join on. Names are in
  * `properties.name`. The same topologies back Flint's basemaps (see chart.tsx).
  *
- * Sources: world-atlas (Natural Earth 1:110m) and us-atlas (US Census 1:10m).
+ * Sources: world-atlas (Natural Earth 1:110m) and us-atlas (US Census 1:10m); Flint's World Bank
+ * basemaps in `./basemaps` (see its NOTICE.md).
  */
 
 import { feature, merge, mesh, neighbors } from 'topojson-client';
@@ -16,6 +17,8 @@ import { assembleVegaLite } from 'flint-chart/vegalite';
 import countries110m from 'world-atlas/countries-110m.json';
 import states10m from 'us-atlas/states-10m.json';
 import countiesAlbers10m from 'us-atlas/counties-albers-10m.json';
+import worldBankCoarse from './basemaps/world-bank-coarse.json';
+import worldBankMedium from './basemaps/world-bank-medium.json';
 
 import { registerOptionalModule } from './register';
 
@@ -54,6 +57,18 @@ export const stateBorders = () => mesh(us, us.objects.states, (a, b) => a !== b)
 const geo = { world, us, usAlbers, countries, land, countryBorders, states, nation, stateBorders, feature, mesh, merge, neighbors };
 
 registerOptionalModule('@df/geo', geo);
+/**
+ * The boundary files Flint's maps name by URL, by file name (Flint 1.0's and its published `geo/v1`
+ * names): `resolveBasemaps` in chart.tsx answers those URLs with these, since the sandbox has no network.
+ */
+registerOptionalModule('@df/geo/basemaps', {
+    'world-110m': world,
+    'us-10m': us,
+    'states-10m': states10m,
+    'counties-albers-10m': usAlbers,
+    'world-bank-coarse': worldBankCoarse,
+    'world-bank-medium': worldBankMedium,
+});
 // Choropleths draw through Flint's static compiler, so places without data keep their shape (see
 // chartMaps.keepUnmatchedRegions); it rides with the boundaries every map app loads.
 registerOptionalModule('@df/geo/flint', { assembleVegaLite });

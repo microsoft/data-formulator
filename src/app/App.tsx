@@ -50,7 +50,6 @@ import {
     InputLabel,
     ListItemIcon,
     ListItemText,
-    CircularProgress,
     LinearProgress,
     GlobalStyles,
 } from '@mui/material';
@@ -87,6 +86,7 @@ import {
 } from "react-router-dom";
 import { ConfigurationView } from '../views/ConfigurationView';
 import { MessageSnackbar } from '../views/MessageSnackbar';
+import { SessionWormhole } from '../views/SessionWormhole';
 import { ChartRenderService } from '../views/ChartRenderService';
 import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from './store';
@@ -95,17 +95,18 @@ import { AnvilLoader } from '../components/AnvilLoader';
 import { ModelSelectionButton } from '../views/ModelSelectionDialog';
 import { LogViewerDialog } from '../views/LogViewerDialog';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import { WormholeIcon, WormholeReceiveIcon, WormholeSendIcon } from '../icons';
+import { requestWormholeDialog } from './wormholeService';
+import { AllSessions } from '../views/AllSessions';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
 import SaveIcon from '@mui/icons-material/Save';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import { getUrls } from './utils';
 import { APP_PATH, DEMO_ID } from './demo';
 import { AppSwitcher, destinationItems, useAppDestinations, type AppDestination } from './AppSwitcher';
 import { apiRequest } from './apiClient';
-import { listWorkspaces, deleteWorkspace, onWorkspaceListChanged } from './workspaceService';
-import { leaveSession, openSession } from './sessionThunks';
+import { leaveSession } from './sessionThunks';
 import store, { persistor } from './store';
 import { useSessionTabs } from './useSessionTabs';
 import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
@@ -506,146 +507,47 @@ const TableMenu: React.FC = () => {
 };
 
 
-const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({open, onClose}) => {
-    const [workspaces, setWorkspaces] = useState<{id: string, display_name: string, saved_at: string}[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [listLoading, setListLoading] = useState(false);
-    const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-    const dispatch = useDispatch<AppDispatch>();
+// The wormhole button: quiet until hovered, when its icon takes Portal's two colours (see WormholeIcon).
+const wormholeButtonSx = {
+    flexShrink: 0,
+    color: 'text.disabled',
+    '&:hover': { color: 'text.secondary' },
+} as const;
+
+/** Wormhole: one button next to the session's name, with a menu to share the open session or receive one. */
+const WormholeMenuButton: React.FC = () => {
+    const available = useSelector((state: DataFormulatorState) => state.serverConfig?.SESSION_WORMHOLE_AVAILABLE);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const { t } = useTranslation();
-
-    const fetchWsList = useCallback(async () => {
-        setListLoading(true);
-        try {
-            const sessions = await listWorkspaces();
-            setWorkspaces(sessions as any);
-        } catch (e) { /* ignore */ }
-        setListLoading(false);
-    }, []);
-
-    useEffect(() => {
-        if (!open) return;
-        fetchWsList();
-    }, [open, fetchWsList]);
-
-    useEffect(() => {
-        if (!open) return;
-        return onWorkspaceListChanged(fetchWsList);
-    }, [open, fetchWsList]);
-
-    const handleOpen = async (wsId: string) => {
-        if (activeWorkspace?.id === wsId) { onClose(); return; }
-        const wsEntry = workspaces.find(w => w.id === wsId);
-        setLoading(true);
-        onClose();
-        if (await dispatch(openSession(wsId, wsEntry?.display_name))) {
-            const displayName = store.getState().activeWorkspace?.displayName || wsId;
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: t('workspace.openedSession', { name: displayName }) }));
-        }
-        setLoading(false);
-    };
-
-    const handleCreate = () => {
-        onClose();
-        void dispatch(leaveSession());
-    };
-
-    const handleDelete = async (workspaceId: string) => {
-        try {
-            await deleteWorkspace(workspaceId);
-            setWorkspaces(prev => prev.filter(s => s.id !== workspaceId));
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: t('workspace.deletedSession', { name: workspaceId }) }));
-        } catch (e) { /* ignore */ }
-        setConfirmDelete(null);
-    };
-
-    return (
-        <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                {t('workspace.sessions')}
-                <Tooltip title={t('workspace.refreshList')}>
-                    <IconButton size="small" onClick={fetchWsList} disabled={listLoading} sx={{ color: 'text.secondary' }}>
-                        {listLoading ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
-                    </IconButton>
-                </Tooltip>
-            </DialogTitle>
-            <DialogContent sx={{ px: 1 }}>
-                {listLoading && workspaces.length === 0 ? (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4, gap: 1.5 }}>
-                        <CircularProgress size={28} />
-                        <Typography variant="body2" color="text.secondary">{t('workspace.loadingSessions')}</Typography>
-                    </Box>
-                ) : (
-                    <>
-                        {/* New session — same row style as session items */}
-                        <Box
-                            sx={{
-                                display: 'flex', alignItems: 'center',
-                                px: 1.5, py: 1, mx: 0, my: 0.5, borderRadius: 1, cursor: 'pointer',
-                                '&:hover': { backgroundColor: 'action.hover' },
-                                transition: 'background-color 0.15s',
-                            }}
-                            onClick={handleCreate}
-                        >
-                            <Typography variant="body2" color="primary" sx={{ fontWeight: 500 }}>
-                                {t('workspace.newSession')}
-                            </Typography>
-                        </Box>
-                        {workspaces.length > 0 && <Divider sx={{ my: 0.5 }} />}
-                        {workspaces.map(s => (
-                        <Box
-                            key={s.id}
-                            sx={{
-                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                px: 1.5, py: 1, mx: 0, my: 0.5, borderRadius: 1, cursor: 'pointer',
-                                backgroundColor: activeWorkspace?.id === s.id ? 'action.selected' : 'transparent',
-                                '&:hover': { backgroundColor: activeWorkspace?.id === s.id ? 'action.selected' : 'action.hover' },
-                                transition: 'background-color 0.15s',
-                            }}
-                            onClick={() => handleOpen(s.id)}
-                        >
-                            <Box sx={{ flex: 1, minWidth: 0 }}>
-                                <Typography variant="body2" fontWeight={activeWorkspace?.id === s.id ? 'bold' : 'normal'} noWrap>
-                                    {s.display_name} {activeWorkspace?.id === s.id ? t('workspace.active') : ''}
-                                </Typography>
-                                {s.saved_at && (
-                                    <Typography variant="caption" color="text.secondary">
-                                        {new Date(s.saved_at).toLocaleString()}
-                                    </Typography>
-                                )}
-                            </Box>
-                            {activeWorkspace?.id !== s.id && (
-                                confirmDelete === s.id ? (
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }} onClick={e => e.stopPropagation()}>
-                                        <Button size="small" color="error" sx={{ minWidth: 0, fontSize: textVar.xs, textTransform: 'none' }}
-                                            onClick={() => handleDelete(s.id)}>{t('workspace.delete')}</Button>
-                                        <Button size="small" sx={{ minWidth: 0, fontSize: textVar.xs, textTransform: 'none' }}
-                                            onClick={() => setConfirmDelete(null)}>{t('workspace.cancel')}</Button>
-                                    </Box>
-                                ) : (
-                                    <Tooltip title={t('workspace.deleteSession')}>
-                                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); setConfirmDelete(s.id); }} sx={{ color: 'text.secondary' }}>
-                                            <ClearIcon fontSize="small" />
-                                        </IconButton>
-                                    </Tooltip>
-                                )
-                            )}
-                        </Box>
-                    ))
-                    }
-                    </>
-                )}
-            </DialogContent>
-            <DialogActions>
-                <Button onClick={onClose}>{t('workspace.close')}</Button>
-            </DialogActions>
-        </Dialog>
-    );
+    const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+    if (!available) return null;
+    const canSend = !!activeWorkspace && !activeWorkspace.readOnly && !activeWorkspace.provisional;
+    const label = t('wormhole.menuTooltip');
+    const choose = (run: () => void) => () => { setAnchor(null); run(); };
+    return <>
+        <Tooltip title={label} placement="bottom">
+            <IconButton size="small" aria-label={label} aria-haspopup="menu" aria-expanded={!!anchor} sx={wormholeButtonSx}
+                onClick={event => setAnchor(event.currentTarget)}>
+                <WormholeIcon sx={{ fontSize: iconVar.lg }} />
+            </IconButton>
+        </Tooltip>
+        <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }} transformOrigin={{ vertical: 'top', horizontal: 'center' }}
+            slotProps={{ paper: { sx: { minWidth: 200 } } }}>
+            {canSend && <MenuItem sx={menuItemSx} onClick={choose(() => requestWormholeDialog({ kind: 'send',
+                workspaceId: activeWorkspace.id, displayName: activeWorkspace.displayName || activeWorkspace.id }))}>
+                <ListItemIcon><WormholeSendIcon fontSize="small" /></ListItemIcon>
+                <ListItemText primaryTypographyProps={{ fontSize: textVar.md }}>{t('wormhole.sendSession')}</ListItemText>
+            </MenuItem>}
+            <MenuItem sx={menuItemSx} onClick={choose(() => requestWormholeDialog({ kind: 'receive' }))}>
+                <ListItemIcon><WormholeReceiveIcon fontSize="small" /></ListItemIcon>
+                <ListItemText primaryTypographyProps={{ fontSize: textVar.md }}>{t('wormhole.receiveTooltip')}</ListItemText>
+            </MenuItem>
+        </Menu>
+    </>;
 };
 
 const WorkspaceMenu: React.FC = () => {
-    const [pickerOpen, setPickerOpen] = useState(false);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const { t } = useTranslation();
@@ -659,10 +561,10 @@ const WorkspaceMenu: React.FC = () => {
 
     return (
         <>
-            <Tooltip title={t('workspace.sessionTooltip', { name: activeWorkspace?.id || '' })} placement="bottom">
+            <AllSessions trigger={openSessions => <Tooltip title={t('workspace.sessionTooltip', { name: activeWorkspace?.id || '' })} placement="bottom">
                 <ButtonBase
                     disableRipple
-                    onClick={() => !diskPersistenceDisabled && setPickerOpen(true)}
+                    onClick={() => !diskPersistenceDisabled && openSessions()}
                     sx={{ 
                         display: 'flex', alignItems: 'center', gap: 0.5, textAlign: 'left',
                         '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
@@ -688,8 +590,8 @@ const WorkspaceMenu: React.FC = () => {
                     </Typography>
                     <KeyboardArrowDownIcon className="ws-chevron" sx={{ fontSize: iconVar.md, color: 'text.secondary', opacity: 0.4, transition: 'opacity 0.15s' }} />
                 </ButtonBase>
-            </Tooltip>
-            <WorkspacePickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} />
+            </Tooltip>} />
+            <WormholeMenuButton />
         </>
     );
 };
@@ -1138,7 +1040,7 @@ const ErrorBoundaryFallback: React.FC = () => {
                             onClick={() => setLogsOpen(true)}
                             sx={mutedActionSx}
                         >
-                            View backend log
+                            Open console
                         </Button>
                     )}
                 </Box>
@@ -1366,7 +1268,7 @@ const AppShell: FC = () => {
                                         },
                                         ...(serverConfig.IS_LOCAL_MODE ? [{
                                             key: 'logs',
-                                            label: t('logs.viewLogs', { defaultValue: 'View backend log' }),
+                                            label: t('logs.viewLogs', { defaultValue: 'Open console' }),
                                             icon: <TerminalOutlinedIcon fontSize="small" />,
                                             onClick: () => setLogsOpen(true),
                                         }] : []),
@@ -1427,6 +1329,7 @@ const AppShell: FC = () => {
                     <Outlet />
                 </Box>
                 <MessageSnackbar />
+                <SessionWormhole />
                 <ChartRenderService />
             </Box>
         </Box>
@@ -1675,7 +1578,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                                         '&:hover': { color: 'text.secondary' },
                                     }}
                                 >
-                                    View backend log
+                                    Open console
                                 </Link>
                             ) : undefined}
                         />

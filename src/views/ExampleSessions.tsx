@@ -169,7 +169,7 @@ export const exampleSessions: ExampleSession[] = [
 ];
 
 // ── Published example sessions ─────────────────────────────────────────────
-// Administrators publish one of their sessions; opening it imports a copy, like the built-in demos.
+// Examples administrators published earlier; opening one imports a copy, like the built-in demos.
 
 type PublishedExample = { id: string; title: string; description?: string; published_at: string };
 const publishedChanged = new EventTarget();
@@ -183,12 +183,6 @@ export async function fetchPublishedExamples(): Promise<ExampleSession[]> {
         description: example.description || i18n.t('administration.publishedOn', { date: publishedDate(example.published_at) }),
         workspace: `/api/sessions/examples/${example.id}`,
     }));
-}
-
-export async function publishExampleSession(workspaceId: string, title: string): Promise<void> {
-    await apiRequest('/api/sessions/examples', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspace_id: workspaceId, title }) });
-    publishedChanged.dispatchEvent(new Event('change'));
 }
 
 export function usePublishedExamples(enabled = true): ExampleSession[] {

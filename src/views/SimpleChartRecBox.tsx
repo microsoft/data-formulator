@@ -76,6 +76,8 @@ import { formatAnalystToolProgress } from './analystToolProgress';
 import { TerminalApprovalDialog, TerminalProposal } from '../components/TerminalApprovalDialog';
 import { ToolsAccessButton } from '../components/ToolsAccess';
 import { requestToolsDialog } from '../app/toolsSettings';
+import { onTurnResumeRequest } from '../app/accounts';
+import { SignInFormCard } from '../components/SignInFormCard';
 import { MCP_CALL_TOOL, McpApprovalDialog, McpDecision, McpProposal, mcpCallArgs, mcpCallRecord } from '../components/McpServers';
 import { selectChatWorkflow, WorkflowProgress, WORKFLOW_AUTHORING_PROMPT } from './WorkflowPanel';
 import { formArtifactFromEvent, requestAutoSubmit } from '../app/setupForms';
@@ -131,6 +133,12 @@ const ShowLatestLink: FC<{ count: number; onShow: () => void }> = ({ count, onSh
 /** Live status: elapsed time is shown after this long, and a model that has not started writing after
  * STILL_WAITING_SECONDS is reported as still being waited on. */
 const SHOW_ELAPSED_SECONDS = 10;
+
+/** A turn the user answered by replying in the chat. A pending sign-in card records that it was left unused. */
+const answeredInChat = (turn: TextTurn): { id: string } & Partial<TextTurn> =>
+    turn.form?.kind === 'signin' && turn.form.signin.status === 'pending'
+        ? { id: turn.id, answered: true, form: { ...turn.form, signin: { ...turn.form.signin, status: 'replied' } } }
+        : { id: turn.id, answered: true };
 const STILL_WAITING_SECONDS = 30;
 /** Stream events that show something of their own, so the live status gives way to them. */
 /** How often the streaming answer re-renders (ms): smooth, without re-parsing markdown on every token. */
@@ -1703,6 +1711,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     textKind: 'explain',
                     content: String(result.form.response || result.form.title || `Connect to ${sourceType}`),
                     ...(existingFormId ? {} : { form: formArtifactFromEvent(result.form) }),
+                    // A sign-in resumes the paused run once the user answers on the card (design-docs/72).
+                    ...(result.form.kind === 'signin' && Array.isArray(result.trajectory) && result.trajectory.length ? {
+                        resume: { trajectory: result.trajectory, completedStepCount: result.completed_step_count || 0 },
+                    } : {}),
                     ...(runSourceChartIdRef.current ? { sourceChartId: runSourceChartIdRef.current } : {}),
                     progressSteps: snapshotProgress(true),
                 });
@@ -2609,7 +2621,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 return;
             }
             // The reply follows the focused message; replying again branches (design-docs/58, rule 10).
-            if (!focusedTurn.answered) dispatch(dfActions.updateTextTurn({ id: focusedTurn.id, answered: true }));
+            if (!focusedTurn.answered) dispatch(dfActions.updateTextTurn(answeredInChat(focusedTurn)));
             exploreFromChat(prompt, { parentNodeId: focusedTurn.id }, displayPrompt, explicitAttachments);
             focusCanvasAfterReply();
             return;
@@ -2617,7 +2629,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         if (conversationParentId) {
             const conversationParent = textTurns.find(turn => turn.id === conversationParentId);
             if (conversationParent && !conversationParent.answered && !conversationParent.workflow) {
-                dispatch(dfActions.updateTextTurn({ id: conversationParent.id, answered: true }));
+                dispatch(dfActions.updateTextTurn(answeredInChat(conversationParent)));
             }
             exploreFromChat(prompt, { parentNodeId: conversationParentId }, displayPrompt, explicitAttachments);
             return;
@@ -2668,6 +2680,24 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         window.addEventListener('df-view-tool-activity', handler);
         return () => window.removeEventListener('df-view-tool-activity', handler);
     }, []);
+
+    // A sign-in card answered: continue the run it paused, with the user's answer as the message (design-docs/72).
+    useEffect(() => onTurnResumeRequest((turnId, message) => {
+        const turn = (currentStore.getState() as DataFormulatorState).textTurns.find(item => item.id === turnId);
+        if (!turn || turn.answered || isChatFormulating) return false;
+        dispatch(dfActions.updateTextTurn({ id: turn.id, answered: true }));
+        exploreFromChat(message, {
+            parentNodeId: turn.id,
+            ...(turn.resume ? {
+                trajectory: turn.resume.trajectory,
+                completedStepCount: turn.resume.completedStepCount,
+                actionId: turn.actionId || '',
+                lastCreatedTableId: null,
+            } : {}),
+        });
+        focusCanvasAfterReply();
+        return true;
+    }), [currentStore, dispatch, exploreFromChat, focusCanvasAfterReply, isChatFormulating]);
 
     useEffect(() => {
         setViewingToolActivity(null);
@@ -3026,7 +3056,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         onClose={() => closeTextTurn()}
                         onDelete={() => dispatch(dfActions.removeTextTurn(focusedTextTurn.id))}
                         onOpen={() => openTurnInChat(focusedTextTurn.id)}
-                    />
+                    >
+                        {/* A sign-in request is answered here, in the agent's message (design-docs/72). */}
+                        {focusedTextTurn.form?.kind === 'signin' && <SignInFormCard key={`signin-${focusedTextTurn.id}`}
+                            turn={focusedTextTurn} form={focusedTextTurn.form} embedded />}
+                    </ExplanationPanel>
                 )
             )}
             {!viewingToolActivity && focusedDraft && (
@@ -3587,6 +3621,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     && !focusedTextTurn.answered
                     && (focusedTextTurn.options?.length ?? 0) > 0;
                 if (isActiveClarify) return;
+                // A pending sign-in stays too: the user often goes to the service's site and comes back.
+                if (focusedTextTurn?.form?.kind === 'signin' && !focusedTextTurn.answered
+                    && focusedTextTurn.form.signin.status === 'pending') return;
                 const el = e.target as HTMLElement | null;
                 if (el?.closest?.('[data-thread-item], .data-thread-card')) return;
                 if (focusedDraft) closeFocusedDraft();

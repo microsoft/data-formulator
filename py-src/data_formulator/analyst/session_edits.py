@@ -25,6 +25,23 @@ TYPES = ("quantitative", "nominal", "ordinal", "temporal")
 AGGREGATES = ("count", "sum", "average")
 SORT_ORDERS = ("ascending", "descending")
 _CHART_REF = re.compile(r"chart://([A-Za-z0-9_.:-]+)")
+_MAP_REF = re.compile(r"map://([^)\s]+)")
+
+
+def report_map_paths(text: str) -> set[str]:
+    """The map files a report embeds (``![caption](map://files/<name>.map.json)``)."""
+    return set(_MAP_REF.findall(text))
+
+
+def workspace_map_paths(ctx: Any) -> set[str] | None:
+    """The session paths of the workspace's map files, or None when they cannot be listed."""
+    workspace = getattr(ctx, "workspace", None)
+    if workspace is None or not hasattr(workspace, "list_workspace_files"):
+        return None
+    try:
+        return {f"files/{file.name}" for file in workspace.list_workspace_files() if file.name.endswith(".map.json")}
+    except Exception:
+        return None
 
 
 @lru_cache(maxsize=1)
@@ -147,13 +164,19 @@ def validate_chart(text: str, previous: dict[str, Any], columns: list[str], save
     return normalized
 
 
-def validate_report(text: str, chart_ids: set[str]) -> None:
+def validate_report(text: str, chart_ids: set[str], map_paths: set[str] | None = None) -> None:
+    """Raises ``ValueError`` for an empty report or one embedding charts (or, when ``map_paths`` is given,
+    map files) the session does not have."""
     if not text.strip():
         raise ValueError("Report not changed: it would be empty.")
     unknown = sorted({chart_id for chart_id in _CHART_REF.findall(text) if chart_id not in chart_ids})
     if unknown:
         raise ValueError(f"Report not changed: it embeds charts that are not in the session: {', '.join(unknown)}. "
                          "Embed charts by id with ![caption](chart://<id>); list_files session/charts shows them.")
+    missing = sorted(report_map_paths(text) - map_paths) if map_paths is not None else []
+    if missing:
+        raise ValueError(f"Report not changed: it embeds maps that are not in the workspace: {', '.join(missing)}. "
+                         "Embed a map file by its path with ![caption](map://files/<name>.map.json); write it with write_map first.")
 
 
 def _saved_theme_ids(ctx: Any) -> list[str]:
@@ -205,7 +228,7 @@ def edit_session_file(args: dict[str, Any], ctx: Any) -> dict[str, Any]:
     elif path.startswith("session/reports/"):
         chart_ids = {key[len("session/charts/"):-len(".json")] for key in layer.paths() if key.startswith("session/charts/")}
         chart_ids |= {str(chart.get("chart_id")) for chart in payload.get("charts") or [] if isinstance(chart, dict)}
-        validate_report(text, chart_ids)
+        validate_report(text, chart_ids, workspace_map_paths(ctx))
         update = {"kind": "report", "id": path[len("session/reports/"):-len(".md")], "content": text, "base": current}
     else:
         raise ValueError(f"{path} cannot be edited")

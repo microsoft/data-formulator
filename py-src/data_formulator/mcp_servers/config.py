@@ -200,7 +200,7 @@ def normalize_server(raw: dict[str, Any], *, server_id: str) -> dict[str, Any]:
         server.update(command=command.strip(), args=list(args))
         cwd = raw.get("cwd")
         if cwd:
-            if not isinstance(cwd, str) or not Path(cwd).expanduser().is_absolute():
+            if not isinstance(cwd, str) or not os.path.isabs(os.path.expanduser(cwd)):
                 raise McpConfigError("The working directory must be an absolute path.")
             server["cwd"] = cwd
         server["auth"] = {"type": "none"}

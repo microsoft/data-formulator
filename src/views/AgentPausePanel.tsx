@@ -901,6 +901,8 @@ interface ExplanationPanelProps {
     onDelete?: () => void;
     /** Open the message in the chat view, where a long answer reads in full. */
     onOpen?: () => void;
+    /** What the user answers under the message, inside the panel (a sign-in, design-docs/72). */
+    children?: ReactNode;
 }
 
 /**
@@ -972,7 +974,7 @@ export const ToolActivityPanel: FC<{
     </AgentPauseShell>;
 };
 
-export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, onDelete, onOpen }) => {
+export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, onDelete, onOpen, children }) => {
     const theme = useTheme();
     const { t } = useTranslation();
 
@@ -995,6 +997,8 @@ export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, 
             <PauseScrollRegion defaultMaxHeight="clamp(120px, 32vh, 360px)" sx={{ pb: '8px', pl: '20px', pr: '8px', fontSize: textVar.sm }}>
                 <TerminalMessageContent content={content} />
             </PauseScrollRegion>
+            {/* Outside the scroll region, so the controls stay in view under a long message; in the message's text size. */}
+            {children && <Box sx={{ pl: '20px', pr: '8px', pb: '10px', fontSize: textVar.sm }}>{children}</Box>}
         </AgentPauseShell>
     );
 };

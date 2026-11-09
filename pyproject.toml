@@ -71,6 +71,8 @@ dependencies = [
     "filelock>=3.20",
     "apscheduler>=3.11,<4",
     "pypdf>=6.16.2",
+    "magic-wormhole>=0.17",
+    "tldextract>=5.1",
 ]
 
 [project.optional-dependencies]

@@ -208,6 +208,20 @@ describe('layer model', () => {
         expect(controlDomain(map.controls[0], { f: flows })).toEqual(['MEX', 'Nowhere']);
     });
 
+    it('splits a route of stops into legs, each carrying the row it leaves', () => {
+        const stops = [{ stop: 3, name: 'C', lon: 20, lat: 0, crew: 10, leg: 'b' }, { stop: 1, name: 'A', lon: 0, lat: 0, crew: 30, leg: 'a' },
+            { stop: 2, name: 'B', lon: 10, lat: 0, crew: 20, leg: 'a' }, { stop: 4, name: 'C again', lon: 20, lat: 0, crew: 5, leg: 'b' }];
+        const map = spec({ data: { s: { values: stops } }, layers: [{ type: 'paths', data: 's', lon: 'lon', lat: 'lat', order: 'stop', legs: true, text: 'name',
+            color: { field: 'leg' }, size: { field: 'crew' } }] });
+        const model = buildLayer(map, map.layers[0], { s: stops }, {}, {});
+        // Ordered by stop; the leg that stays put (C to C again) is left out.
+        expect(model.marks.map(mark => [mark.at, mark.to])).toEqual([[[0, 0], [10, 0]], [[10, 0], [20, 0]]]);
+        expect(model.marks.map(mark => [mark.label, mark.colorValue, mark.sizeValue])).toEqual([['A → B', 'a', 30], ['B → C', 'a', 20]]);
+        expect(model.marks[0].ends).toEqual(['A', 'B']);
+        expect(new Set(model.marks.map(mark => mark.key)).size).toBe(2);
+        expect(parseMapSpec(JSON.stringify({ ...map, layers: [{ ...map.layers[0], legs: 'yes' }] })).errors).toEqual([expect.stringMatching(/legs must be true or false/)]);
+    });
+
     it('matches filters with params, ranges, and dates', () => {
         const row = { year: 2010, kind: 'Taxi', when: '2020-05-01' };
         expect(matchesFilter(row, { field: 'year', op: 'between', value: { param: 'range' } }, { range: [2000, 2015] })).toBe(true);

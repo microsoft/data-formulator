@@ -281,6 +281,20 @@ def test_vector_maps_and_flow_direction_validate(workspace) -> None:
     assert any("direction must be one of" in error for error in errors)
 
 
+def test_routes_template_draws_legs() -> None:
+    from data_formulator.analyst.skills.map.templates import compile_template, template_errors
+    from data_formulator.analyst.skills.map.validate import check_structure
+    routes = {"template": "routes", "data": {"table": "t"}, "encoding": {"lat": "lat", "lon": "lon", "order": "stop", "label": "place"}}
+    assert template_errors(routes) == []
+    layer = compile_template(routes)["layers"][0]
+    assert layer["type"] == "paths" and layer["legs"] is True and layer["order"] == "stop" and layer["direction"] == "arrow"
+    assert "group" not in layer
+    assert template_errors({**routes, "encoding": {"lat": "lat", "lon": "lon"}}) == ["routes needs encoding.order."]
+    errors, _ = check_structure({"data": {"t": {"table": "t"}}, "layers": [
+        {"type": "paths", "data": "t", "lon": "lon", "lat": "lat", "legs": "yes"}]})
+    assert any("legs must be true or false" in error for error in errors)
+
+
 def test_template_colour_property_is_checked() -> None:
     from data_formulator.analyst.skills.map.templates import template_errors
     base = {"template": "flows", "data": {"table": "t"}, "encoding": {"origin": "a", "destination": "b"}}

@@ -10,7 +10,7 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import { Markdown } from 'tiptap-markdown';
 import { createTheme } from '@mui/material/styles';
 import {
-    excerptCitation, excerptLinks, parseBlockAttrs, quotedPassage, reportBlocksPlugin, resolveCitations, splitFrontMatter,
+    excerptCitation, excerptLinks, parseBlockAttrs, quotedPassage, reportBlocksPlugin, reportMapPaths, resolveCitations, splitFrontMatter,
     streamingReportText,
 } from '../../../../src/views/reportBlocks';
 import {
@@ -380,5 +380,13 @@ describe('PDF sources', () => {
         expect(scrollToIndex).toHaveBeenLastCalledWith({ index: 11, align: 'start' });
         vi.useRealTimers();
         vi.unstubAllGlobals();
+    });
+});
+
+describe('reportMapPaths', () => {
+    it('finds the map files a report embeds, in its Markdown and in images an edit kept', () => {
+        const text = '# R\n\n![Spend](map://files/spend.map.json)\n\n![Trend](chart://c1)\n'
+            + '<img src="blob:x" data-chart-id="map:files/rates.map.json">\n![Again](map://files/spend.map.json)';
+        expect(reportMapPaths(text)).toEqual(['files/spend.map.json', 'files/rates.map.json']);
     });
 });

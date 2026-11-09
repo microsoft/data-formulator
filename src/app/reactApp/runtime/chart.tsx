@@ -100,16 +100,18 @@ function useSurface(ref: React.RefObject<HTMLElement | null>, ready: boolean) {
     return surface;
 }
 
-/** Flint's map basemaps load from the web (vega.github.io, jsDelivr), which the sandbox blocks; `@df/geo` vendors the same boundaries. */
-const BASEMAP_URL = /\/(world-110m|us-10m|counties-albers-10m)\.json$/;
-const BASEMAPS = { 'world-110m': 'world', 'us-10m': 'us', 'counties-albers-10m': 'usAlbers' } as const;
+/**
+ * Flint's map basemaps load from the web (vega.github.io, jsDelivr, Flint's site), which the sandbox
+ * blocks; `@df/geo/basemaps` vendors the same boundaries, by file name.
+ */
+const BASEMAP_URL = /\/(world-110m|us-10m|states-10m|counties-albers-10m|world-bank-coarse|world-bank-medium)\.json$/;
 
 const basemapOf = (url: string): unknown => {
     const match = BASEMAP_URL.exec(url);
     if (!match) return undefined;
-    const geo = optionalModule('@df/geo') as Record<string, unknown> | undefined;
-    if (!geo) throw new Error('Map boundaries did not load in this app. Reload the app to try again.');
-    return geo[BASEMAPS[match[1] as keyof typeof BASEMAPS]];
+    const basemaps = optionalModule('@df/geo/basemaps') as Record<string, unknown> | undefined;
+    if (!basemaps) throw new Error('Map boundaries did not load in this app. Reload the app to try again.');
+    return basemaps[match[1]];
 };
 
 /**

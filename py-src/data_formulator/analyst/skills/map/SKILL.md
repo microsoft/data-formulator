@@ -23,6 +23,8 @@ A map is a JSON spec saved as `files/<name>.map.json` with `write_map`; the
 built-in map renderer draws it on the canvas, reading workspace tables live.
 The user can pan, zoom (double-click a region to zoom to it), hover for
 tooltips, click to select (shift adds), and restyle layers in the Style panel.
+A report embeds a map by its path, `![caption](map://files/<name>.map.json)`,
+as a still picture of how the map first opens (title, legend; no controls).
 
 ## Plan
 
@@ -40,8 +42,12 @@ tooltips, click to select (shift adds), and restyle layers in the Style panel.
      points: `density` (hexagon bins or a heatmap). To single out notable
      rows (M7+ quakes over all quakes' density), add `highlight` (below).
    - Origin → destination: `flows` (`"curve": "great-circle"` for flights or
-     shipping). Ordered tracks (routes, storms): `tracks`. Both show which way
-     they go with an arrowhead at the destination; `direction` can instead be
+     shipping). A journey's stops in order (an itinerary, an expedition, a
+     tour; up to a couple of dozen stops): `routes` — each leg is its own
+     arrow, coloured and sized by the row it leaves (`size` for the crew or
+     cargo on that leg), `label` names the stops. Many closely spaced fixes
+     (storms, GPS, animal tracks): `tracks`, one line per `group`. All show
+     which way they go with arrowheads; `direction` can instead be
      `animate` (moving dashes), `taper`, or `none` — use `none` for routes
      from one hub (every line leaves it; the hub is marked and named). With
      coordinates, also bind `origin`/`destination` to the place names: they
@@ -94,6 +100,7 @@ let the fields' semantics, the theme, and the style decide the rest:
 | `density` | lat+lon | weight, time, filter |
 | `spikes` | region or lat+lon, size | color, label, time, filter |
 | `flows` | origin or originLat+originLon, destination or destinationLat+destinationLon | size, color, time, filter |
+| `routes` | lat+lon, order | group, label, color, size, time, filter |
 | `tracks` | lat+lon, group | order, color, size, time, filter |
 | `bivariate` | region, color, color2 | label, time, filter |
 | `cartogram` | region, size | color, label, time, filter |
@@ -119,7 +126,7 @@ column. Properties (all
 optional): `geography` (`world`, `us-states`, `us-counties`, or a
 `files/…` GeoJSON with `featureKey`), `keyType`, `classes`, `method`,
 `scheme`, `colors`, `color`, `sizeMax`, `opacity`, `density` (`hexbin` or `heatmap`), `radius`,
-`curve` (flows), `direction` (flows and tracks: `taper`, `arrow`, `animate`,
+`curve` (flows and routes), `direction` (flows, routes and tracks: `taper`, `arrow`, `animate`,
 `none`), `play` (false: no play button), `search`, `details`
 (default on), `stats` (default off), `highlight` (below). `fields`, `view`, `title`-level text
 (`subtitle`, `source`), and extra `controls` work as below. Marks are already
@@ -274,7 +281,10 @@ Placing rows:
 - Coordinates: `lon` and `lat` columns.
 - Flows: `from` and `to`, each `{"key": …}` (region centroid) or
   `{"lon": …, "lat": …}`.
-- Paths: `lon`, `lat`, `group` (one line per value), `order` (sort field).
+- Paths: `lon`, `lat`, `group` (one line per value), `order` (sort field);
+  `"legs": true` draws each leg between consecutive rows as its own flow (a
+  route of stops: it bows as `curve` says, takes the colour and width of the
+  row it leaves, and gets its own arrowhead).
 
 Rows that share a region (or point) are aggregated: `color.aggregate`
 defaults to `mean`, `size.aggregate` to `sum`; set `sum`, `mean`, `median`,
@@ -304,7 +314,7 @@ Encodings:
 - `vectors`: `lon`, `lat`, and `angle` (degrees clockwise from north) or `u`
   and `v`; `size` sets arrow length (default max 28 px), `color` as usual.
 
-Other layer options: `curve` on flows (`arc` default, `great-circle` default
+Other layer options: `curve` on flows and legged paths (`arc` default, `great-circle` default
 on the globe, `straight`); `direction` on flows and paths (`arrow`,
 `taper`, `animate`, `none`; layers default to none, templates to arrow); `"layout": "dorling"` on bubbles;
 `selectionFilter: {"layer": "states", "field": "state", "by": "state"}`

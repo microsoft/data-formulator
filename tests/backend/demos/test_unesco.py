@@ -161,6 +161,10 @@ def test_build_adds_a_story_to_its_dataset_session(tmp_path):
     assert all(table["virtual"]["tableId"] in tables for table in state["derivedTables"])
     assert state["charts"] == seed["charts"] and state["textTurns"] == seed["textTurns"]
     assert state["activeWorkspace"] == {"id": "culture-c20", "displayName": story["headline"]}
+    # The seed's code is signed by this installation, so the app can refresh its tables.
+    from data_formulator.security.code_signing import verify_code
+    derives = [table["derive"] for table in state["derivedTables"] if (table.get("derive") or {}).get("code")]
+    assert derives and all(verify_code(derive["code"], derive["codeSignature"]) for derive in derives)
 
 
 

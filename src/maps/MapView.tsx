@@ -45,6 +45,13 @@ export interface MapViewProps {
     geoSets: Record<string, GeoSet>;
     /** Static (thumbnails): no controls, tooltips, or zoom. */
     interactive?: boolean;
+    /**
+     * A still picture (report embeds): the title, legends and credit as on the canvas, without controls, tooltips,
+     * zoom or transitions.
+     */
+    still?: boolean;
+    /** After each render once the panels are placed (a still picture is ready when these stop). */
+    onDrawn?: () => void;
     /** Room at the top right for the host's floating buttons. */
     reserveTopRight?: number;
     /** Extra status (loading, join warnings) under the legends. */
@@ -145,7 +152,7 @@ export const MapView: FC<MapViewProps> = (rawProps) => {
         ...rawProps.spec,
         view: { ...saved, projection: globe ? 'orthographic' as const : 'equalEarth' as const, rotate: undefined, center: undefined, zoom: undefined, spin: undefined },
     }, [rawProps.spec, saved, override, globe, savedGlobe]);
-    const projectionToggle = world && rawProps.interactive !== false
+    const projectionToggle = world && rawProps.interactive !== false && !rawProps.still
         ? { globe, toggle: () => setOverride(globe ? 'flat' : 'globe') } : undefined;
     const props = { ...rawProps, spec, projectionToggle };
     const style = framedStyle(props.spec.view);
@@ -158,8 +165,11 @@ export const MapView: FC<MapViewProps> = (rawProps) => {
     return <ThemeProvider theme={theme}><MapViewBody {...props} /></ThemeProvider>;
 };
 
-const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = ({ spec, data, geoSets: loadedGeoSets, interactive = true, reserveTopRight = 0, footer, reserveBottomRight = 0,
-    annotations, defaultTheme, projectionToggle }) => {
+const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = ({ spec, data, geoSets: loadedGeoSets, interactive: live = true, still = false, onDrawn,
+    reserveTopRight = 0, footer, reserveBottomRight = 0, annotations, defaultTheme, projectionToggle }) => {
+    const interactive = live && !still;
+    // The title, legends and credit: on the canvas and in a still picture.
+    const panels = interactive || still;
     const { t } = useTranslation();
     const style = framedStyle(spec.view);
     const ink = useMemo(() => themeInk(spec.view.theme ?? defaultTheme), [spec.view.theme, defaultTheme]);
@@ -313,7 +323,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     const timeControlIndex = spec.controls.findIndex((control, index) => control.type === 'slider' && isTimeLike(control, domains[index] ?? []));
     const columnControls = spec.controls.filter((control, index) => index !== timeControlIndex && control.type !== 'details' && control.type !== 'stats');
     const sideControls = spec.controls.filter(control => control.type === 'details' || control.type === 'stats');
-    const headerHeight = interactive && (spec.title || spec.subtitle) ? measuredHeader + 4 : 0;
+    const headerHeight = panels && (spec.title || spec.subtitle) ? measuredHeader + 4 : 0;
     // The map reframes on new data or layers, not when a filter, frame, or selection changes its marks.
     const fitVersion = useMemo(() => ++fitCounter, [spec.layers, data, loadedGeoSets]);
 
@@ -348,7 +358,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     // World boundaries carry their source and the UN-style disclaimer (World Bank Official Boundaries, CC BY 4.0).
     const worldBoundaries = !!basemap?.name.startsWith('countries') || models.some(model => !!model.geoSet?.name.startsWith('countries'));
     const hasLegendCard = legends.length > 0 || unplaced > 0 || noData || !!footer || !!spec.source;
-    const creditLine = interactive && worldBoundaries;
+    const creditLine = panels && worldBoundaries;
 
     // Where the panels go (layout.ts): the controls and timeline share one box in a row under the title, a row along
     // the bottom, or a column at the left; the legend takes a corner or joins that box. Chosen by trying each
@@ -409,7 +419,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
         sideControls.filter(control => control.type === 'stats').length, interactive, layout, legendJoins, legendCorner, compactRow, widgetsHeight]);
     useLayoutEffect(() => {
         const container = containerRef.current;
-        if (!container || !interactive) { setObstacles([]); return; }
+        if (!container || !panels) { setObstacles([]); return; }
         // Minimised controls cover less than the map was fitted around: keep the fit, so the map does not move.
         if (controlsMinimized) return;
         const origin = container.getBoundingClientRect();
@@ -430,7 +440,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     useEffect(() => {
         const stepped = lastTimeValue.current !== timeValue;
         lastTimeValue.current = timeValue;
-        rendererRef.current?.update({ view: spec.view, basemap, models, selection, hidden, highlight, interactive, obstacles, fitVersion }, !stepped);
+        rendererRef.current?.update({ view: spec.view, basemap, models, selection, hidden, highlight, interactive, obstacles, fitVersion }, !stepped && !still);
     }, [spec.view, basemap, models, selection, hidden, highlight, interactive, obstacles, fitVersion, timeValue]);
 
     // Drop a selection whose marks are gone (filtered out).
@@ -481,7 +491,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     useLayoutEffect(() => {
         const renderer = rendererRef.current;
         const container = containerRef.current;
-        if (!interactive || !renderer || !container || !size.width || !size.height) return;
+        if (!panels || !renderer || !container || !size.width || !size.height) return;
         if (decided && decided.key === decisionKey && Math.abs(size.width - decided.width) <= decided.width / 3
             && Math.abs(size.height - decided.height) <= decided.height / 3) return;
         // Measured where laid out; planned from estimates where not (before the first layout, or without a layout engine).
@@ -503,14 +513,17 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
             : [size.width - EDGE - 34, size.height - bottomRight - reserveBottomRight - 170, size.width - EDGE, size.height - bottomRight - reserveBottomRight];
         const scene: Scene = { view: spec.view, basemap, models, selection: null, hidden: {}, highlight: null, interactive, fitVersion };
         const next = chooseLayout({
-            width: size.width, height: size.height, header, items, legend, fixed: [zoomBox], creditLine, reserveTopRight, bottomRight, pin,
+            width: size.width, height: size.height, header, items, legend, fixed: interactive ? [zoomBox] : [], creditLine, reserveTopRight, bottomRight, pin,
             timelineOnly: rowOrder.length === 1 && rowOrder[0] === 'timeline',
         }, arrangements => renderer.measureLayouts(scene, size.width, size.height, arrangements));
         setDecided({ key: decisionKey, layout: next, width: size.width, height: size.height });
     // What the layout depends on is in `decisionKey`; the rest (filters, frames) must not move the panels.
-    }, [decisionKey, size.width, size.height, rendererReady, interactive]);
+    }, [decisionKey, size.width, size.height, rendererReady, interactive, panels]);
     // Until the layout is chosen, the panels wait unseen (so they do not appear in one place, then jump to another).
-    const pending = interactive && decided?.key !== decisionKey;
+    const pending = panels && decided?.key !== decisionKey;
+    useEffect(() => {
+        if (onDrawn && rendererReady && size.width > 0 && !pending) onDrawn();
+    });
 
     const legendHover = (model: LayerModel) => (item: { value?: string; from?: number; to?: number } | null) => {
         if (!item) { setHighlight(null); return; }
@@ -586,7 +599,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
         <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />
 
         {/* Only the title's line shares the top with the host's buttons; the subtitle below them runs the full width. */}
-        {interactive && (spec.title || spec.subtitle) && <Box ref={headerRef} data-map-obstacle sx={{ position: 'absolute', top: 12, left: 16, width: 'fit-content',
+        {panels && (spec.title || spec.subtitle) && <Box ref={headerRef} data-map-obstacle sx={{ position: 'absolute', top: 12, left: 16, width: 'fit-content',
             maxWidth: 'calc(100% - 32px)', pointerEvents: 'none' }}>
             {spec.title && <Typography component="h2" sx={{ fontSize: '1.05rem', fontWeight: 650, color: titleInk?.primary ?? 'text.primary', lineHeight: 1.3,
                 maxWidth: reserveTopRight && size.width ? size.width - 16 - reserveTopRight : undefined,
@@ -679,7 +692,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
         </Tooltip>}
 
         {/* The legend in its corner (when it does not join the controls' box). */}
-        {interactive && legendCorner && <Box ref={legendRef} data-map-legends data-map-obstacle data-map-corner={legendCorner} sx={{ position: 'absolute',
+        {panels && legendCorner && <Box ref={legendRef} data-map-legends data-map-obstacle data-map-corner={legendCorner} sx={{ position: 'absolute',
             ...(legendCorner === 'bottom-right' ? { right: EDGE + ZOOM_SPACE, bottom: tiles ? 30 : 16 }
                 : legendCorner === 'top-left' ? { left: EDGE, top: detailsTopLeft } : { left: EDGE, bottom: bottomInset(creditLine) }),
             ...panelSx, p: 1, display: 'flex', flexDirection: 'column', gap: 1, maxWidth: side && legendCorner === 'bottom-left' ? WIDGET_WIDTH : LEGEND_WIDTH,

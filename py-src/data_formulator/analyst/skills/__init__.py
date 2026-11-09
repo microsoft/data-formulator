@@ -82,6 +82,7 @@ def _meta_from_frontmatter(raw: dict[str, Any], fallback_name: str) -> SkillMeta
         when_to_use=str(raw.get("when_to_use") or ""),
         always_on=bool(raw.get("always_on", False)),
         includes=_coerce_name_list(raw.get("includes")),
+        listed=bool(raw.get("listed", False)),
         tool_names=_coerce_name_list(raw.get("tools")),
         action_names=_coerce_name_list(raw.get("actions")),
     )
@@ -188,6 +189,22 @@ class SkillRegistry:
                 )
         return registry
 
+    def with_accounts_policy(self, available: bool) -> SkillRegistry:
+        """Drop ``accounts`` and the provider skills that include it unless sign-ins are available (design-docs/72):
+        an interactive chat in the single-user local app."""
+        if available:
+            return self
+        dropped = {"accounts"} | {name for name, meta in self.metas.items() if "accounts" in meta.includes}
+        if not dropped & set(self.metas):
+            return self
+        registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
+                           _bodies=dict(self._bodies), _body_edits=dict(self._body_edits))
+        for name in dropped:
+            for collection in (registry.metas, registry.skills, registry.tool_specs, registry._doc_paths):
+                collection.pop(name, None)
+        return registry
+
     def with_demo(self, site_id: str | None) -> SkillRegistry:
         """This registry for a request on the demo ``site_id`` (design-docs/69); unchanged without one.
 
@@ -288,11 +305,11 @@ class SkillRegistry:
         return expanded
 
     def included_skill_names(self) -> set[str]:
-        """Return implementation members hidden from the public skill index."""
+        """Return implementation members hidden from the public skill index (all included skills but listed ones)."""
         included: set[str] = set()
         for meta in self.metas.values():
             included.update(self.expanded_names(meta.includes))
-        return included
+        return {name for name in included if not self.metas[name].listed}
 
     def is_active(self, loaded_names, name: str) -> bool:
         return self.canonical_name(name) in self.expanded_names(loaded_names)

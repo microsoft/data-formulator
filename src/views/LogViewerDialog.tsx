@@ -2,7 +2,8 @@
 // Licensed under the MIT License.
 
 /**
- * LogViewerDialog — view and download the persistent server log.
+ * LogViewerDialog — the Console: the persistent server log (to view and download), the session's saved state and
+ * files, and sign-in activity.
  *
  * Only mounted when the server reports local single-user mode
  * (`serverConfig.IS_LOCAL_MODE`). In hosted deployments the log endpoints
@@ -64,6 +65,7 @@ import { textVar } from '../app/layout';
 import { codeEditorSearchPanelSx } from '../app/tokens';
 import { WorkspaceFile, previewWorkspaceFile, downloadWorkspaceFile } from '../app/workspaceService';
 import { formatBytes } from './ViewUtils';
+import { SignInActivity } from '../components/SignInActivity';
 
 const DEFAULT_TAIL_LINES = 500;
 
@@ -270,6 +272,7 @@ export const LogViewerDialog: FC<{
     const [path, setPath] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState(0);
+    const [signInRefresh, setSignInRefresh] = useState(0);
     const [savedState, setSavedState] = useState('');
     const [scratchFiles, setScratchFiles] = useState<WorkspaceFile[]>([]);
     const [selectedScratch, setSelectedScratch] = useState<string | null>(null);
@@ -350,7 +353,8 @@ export const LogViewerDialog: FC<{
         if (open) {
             if (activeTab === 0) fetchLogs();
             else if (activeTab === 1) fetchSavedState();
-            else fetchScratchFiles();
+            else if (activeTab === 2) fetchScratchFiles();
+            else setError(null);
         }
     }, [activeTab, open, fetchLogs, fetchSavedState, fetchScratchFiles]);
 
@@ -434,12 +438,13 @@ export const LogViewerDialog: FC<{
         }
     };
 
-    const handleRefresh = activeTab === 0 ? fetchLogs : activeTab === 1 ? fetchSavedState : fetchScratchFiles;
+    const handleRefresh = activeTab === 0 ? fetchLogs : activeTab === 1 ? fetchSavedState : activeTab === 2 ? fetchScratchFiles
+        : () => setSignInRefresh(count => count + 1);
 
     return (
         <>
             {!hideTrigger && (
-            <Tooltip title={t('logs.viewLogs', { defaultValue: 'View backend log' })}>
+            <Tooltip title={t('logs.viewLogs', { defaultValue: 'Open console' })}>
                 <IconButton
                     size="small"
                     onClick={() => setOpen(true)}
@@ -448,7 +453,7 @@ export const LogViewerDialog: FC<{
                         color: 'text.secondary',
                         '&:hover': { color: 'text.primary', backgroundColor: 'rgba(0, 0, 0, 0.04)' },
                     }}
-                    aria-label={t('logs.viewLogs', { defaultValue: 'View backend log' })}
+                    aria-label={t('logs.viewLogs', { defaultValue: 'Open console' })}
                 >
                     <TerminalOutlinedIcon fontSize="small" />
                 </IconButton>
@@ -457,7 +462,7 @@ export const LogViewerDialog: FC<{
             <Dialog open={open} onClose={() => setOpen(false)} maxWidth="lg" fullWidth>
                 <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 2, py: 1.25, flexShrink: 0 }}>
                     <Typography component="span" sx={{ fontSize: textVar.xl, fontWeight: 500 }}>
-                        {title || t('logs.title', { defaultValue: 'Backend Log' })}
+                        {title || t('logs.title', { defaultValue: 'Console' })}
                     </Typography>
                     <Tooltip title={t('logs.refresh', { defaultValue: 'Refresh' })}>
                         <span>
@@ -543,6 +548,7 @@ export const LogViewerDialog: FC<{
                     <Tab label={t('logs.logTab', { defaultValue: 'Backend log' })} />
                     <Tab label={t('logs.savedStateTab', { defaultValue: 'Saved state' })} />
                     <Tab label={t('logs.workspaceFilesTab', { defaultValue: 'Workspace files' })} />
+                    <Tab label={t('logs.signinsTab', { defaultValue: 'Sign-ins' })} />
                 </Tabs>
                 <DialogContent dividers data-testid="diagnostics-content" sx={{ p: 0, height: '60vh', flex: '0 1 60vh', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
                     {activeTab === 0 && path && (
@@ -634,6 +640,7 @@ export const LogViewerDialog: FC<{
                                     aria-label={t('logs.savedStateTab', { defaultValue: 'Saved State' })}
                                 />
                             </Box>
+                            {open && activeTab === 3 && <SignInActivity refresh={signInRefresh} />}
                 </DialogContent>
             </Dialog>
         </>

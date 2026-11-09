@@ -49,6 +49,7 @@ const TableRowsPreview: React.FC<{ table: DictTable; rowCount: number; format: (
     </HorizontalScrollFade>;
 };
 import { WorkflowFormArtifactView } from './SetupFormArtifacts';
+import { SignInFormCard } from '../components/SignInFormCard';
 import { chartTitleFits } from '../components/ComponentType';
 
 /**
@@ -267,7 +268,11 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label, anchorId }: {
                                 <RunPlanChecklist items={turn.plan} title={turn.planTitle} defaultExpanded />
                             </Box>}
                             {turn.form?.kind === 'workflow' && <WorkflowFormArtifactView turn={turn} form={turn.form} />}
-                            {((turn.form && turn.form.kind !== 'workflow') || turn.dataOperation || (turn.textKind === 'clarify' && !turn.answered)) && <Button startIcon={<OpenInNewIcon />} sx={artifactButtonSx}
+                            {/* A sign-in request is answered right in the message (design-docs/72). */}
+                            {turn.form?.kind === 'signin' && <Box sx={{ mt: 1, maxWidth: 640 }}>
+                                <SignInFormCard turn={turn} form={turn.form} embedded />
+                            </Box>}
+                            {((turn.form && turn.form.kind !== 'workflow' && turn.form.kind !== 'signin') || turn.dataOperation || (turn.textKind === 'clarify' && !turn.answered)) && <Button startIcon={<OpenInNewIcon />} sx={artifactButtonSx}
                                 onClick={() => dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }))}>
                                 {turn.form?.title || t('conversation.openInteraction', { defaultValue: 'Open interaction' })}
                             </Button>}

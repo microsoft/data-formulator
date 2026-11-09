@@ -76,6 +76,23 @@ const MarkdownChartImage: React.FC<{ chartId: string; alt?: string }> = ({ chart
             sx={{ color: 'text.secondary' }}>{alt || chartId}</Box>;
 };
 
+// Map embeds (map://files/<name>.map.json) draw offscreen with the map renderer, loaded only when a message embeds one.
+const MapSnapshot = React.lazy(() => import('../maps/MapSnapshot'));
+/** Map pictures already drawn for messages, by path, so a message drawn again does not redraw its maps. */
+const messageMapImages = new Map<string, string>();
+
+const MarkdownMapImage: React.FC<{ path: string; alt?: string }> = ({ path, alt }) => {
+    const [src, setSrc] = useState(() => messageMapImages.get(path));
+    const [failed, setFailed] = useState(false);
+    if (src) return <Box component="img" src={src} alt={alt || path} sx={markdownImageSx} />;
+    return <Box component="span" role="img" aria-label={alt || path} sx={{ color: 'text.secondary' }}>
+        {alt || path}
+        {!failed && <React.Suspense fallback={null}>
+            <MapSnapshot path={path} onImage={image => { messageMapImages.set(path, image.url); setSrc(image.url); }} onError={() => setFailed(true)} />
+        </React.Suspense>}
+    </Box>;
+};
+
 export const getStepIconComponent = (step: ProgressStep | string) => {
     if (typeof step === 'string') return AutoAwesomeIcon;
     if (step.status === 'failed') return ErrorOutlineIcon;
@@ -263,11 +280,12 @@ export const CompactMarkdown: React.FC<{
     }}>
         <Markdown
             remarkPlugins={[remarkGfm]}
-            urlTransform={(url, key, node) => (key === 'src' && node.tagName === 'img' && url.startsWith('chart://'))
+            urlTransform={(url, key, node) => (key === 'src' && node.tagName === 'img' && (url.startsWith('chart://') || url.startsWith('map://')))
                 || (key === 'href' && browserTabFromHref(url)) ? url : defaultUrlTransform(url)}
             components={{
                 img: ({ src, alt }) => src?.startsWith('chart://')
                     ? <MarkdownChartImage chartId={src.slice('chart://'.length)} alt={alt} />
+                    : src?.startsWith('map://') ? <MarkdownMapImage path={src.slice('map://'.length)} alt={alt} />
                     : src ? <Box component="img" src={src} alt={alt} sx={markdownImageSx} /> : null,
                 a: ({ href, children }) => {
                     const browserTab = browserTabFromHref(href || '');

@@ -171,6 +171,17 @@ export function countyUnemployment(fips: string[]): Row[] {
     })));
 }
 
+/** Odysseus's voyage, stop by stop: episode, leg of the story, crew aboard on leaving, lon, lat. */
+const ODYSSEY: [number, string, string, number, number, number][] = [
+    [1, 'Troy', 'Leaving Troy', 600, 26.24, 39.96], [2, 'Ismarus', 'Leaving Troy', 528, 25.52, 40.89],
+    [3, 'The Lotus-Eaters', 'Leaving Troy', 528, 10.86, 33.81], [4, 'The Cyclops', 'Monsters and winds', 522, 15.16, 37.56],
+    [5, 'Aeolia', 'Monsters and winds', 522, 14.95, 38.47], [6, 'The Laestrygonians', 'Monsters and winds', 46, 9.16, 41.39],
+    [7, 'Aeaea', 'Circe and the dead', 45, 13.05, 41.23], [8, 'The Underworld', 'Circe and the dead', 45, 14.07, 40.84],
+    [9, 'The Sirens', 'Sirens to shipwreck', 45, 14.43, 40.58], [10, 'Scylla and Charybdis', 'Sirens to shipwreck', 39, 15.63, 38.25],
+    [11, 'Thrinacia', 'Sirens to shipwreck', 1, 15, 37.08], [12, 'Ogygia', 'Homeward', 1, 14.25, 36.05],
+    [13, 'Scheria', 'Homeward', 1, 19.92, 39.62], [14, 'Ithaca', 'Homeward', 1, 20.71, 38.37],
+];
+
 export function sampleMaps(countyIds: string[] = []): SampleMap[] {
     const world = worldIndicators();
     const states = stateStats();
@@ -241,6 +252,16 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
                 template: 'tracks', data: { values: stormTracks() },
                 encoding: { lat: 'lat', lon: 'lon', group: 'storm', order: 'step', color: 'storm' },
                 properties: { geography: 'world', sizeMax: 3 },
+            },
+        },
+        {
+            id: 'routes', label: 'Route of stops (Odysseus)', spec: {
+                title: 'The wanderings of Odysseus', subtitle: 'Each leg as wide as the crew that sailed it', view: { basemap: 'world', style: 'atlas' },
+                template: 'routes', data: { values: ODYSSEY.map(([stop, episode, leg, crew, lon, lat]) => ({ stop, episode, leg, crew, lon, lat })) },
+                encoding: { lat: 'lat', lon: 'lon', order: 'stop', label: 'episode', color: 'leg', size: 'crew' },
+                fields: { crew: { semanticType: 'Count', displayName: 'Crew' } },
+                properties: { sizeMax: 8, colors: { 'Leaving Troy': '#b2182b', 'Monsters and winds': '#e0622b', 'Circe and the dead': '#d9a320',
+                    'Sirens to shipwreck': '#2a9d8f', Homeward: '#1d3557' } },
             },
         },
         {

@@ -39,6 +39,7 @@ import pyarrow.parquet as pq
 import yaml
 
 from data_formulator.datalake.workspace_manager import WorkspaceManager
+from data_formulator.security.code_signing import sign_code
 from data_formulator.session_format import SESSION_STATE_VERSION
 from data_formulator.sites import referenced_files, sites_dir
 
@@ -206,8 +207,8 @@ def dataset_tables(con, workspace, folder: Path, code: str) -> list[tuple[str, i
 def shared_tables(con, workspace, folders: dict[str, Path]) -> list[tuple[str, int, str]]:
     written = []
     countries = next(path for code, folder in folders.items() if (path := csv(folder, code, "COUNTRY")))
-    description = ("UIS countries and territories: country_id (ISO 3166-1 alpha-3), English name, and map_id "
-                   "(ISO 3166-1 numeric), the id to use for a country in a world map (Choropleth).")
+    description = ("UIS countries and territories: country_id (ISO 3166-1 alpha-3), the key for a world map, "
+                   "English name, and map_id (ISO 3166-1 numeric), kept for older Choropleth charts.")
     rows = write_table(con, workspace, "countries", f"""
         select c.country_id, c.country_name_en as country, m.map_id
         from {read_csv(countries)} c left join read_csv_auto('{ISO_NUMERIC.as_posix()}') m using (country_id)
@@ -353,6 +354,18 @@ def build_starter(starter: dict, profile: dict, raw: Path, work: Path, out: Path
     return target
 
 
+def signed_here(table: dict) -> dict:
+    """A seed's derived table with its code signed by this installation, so the app can refresh it.
+
+    The seeds ship with Data Formulator, but the signatures they carry are the key of the machine that
+    made them, which no other installation accepts.
+    """
+    derive = table.get("derive")
+    if not isinstance(derive, dict) or not derive.get("code"):
+        return table
+    return {**table, "derive": {**derive, "codeSignature": sign_code(derive["code"])}}
+
+
 def build_story(story: dict, starter: dict, work: Path, content: Path) -> Path:
     """A story's session: its dataset's session with the story's seed (question, answer, charts) added."""
     seed = STORIES / story["id"]
@@ -361,7 +374,8 @@ def build_story(story: dict, starter: dict, work: Path, content: Path) -> Path:
     dataset = workspace.import_session_zip(io.BytesIO((content / starter["file"]).read_bytes()))
     for path in sorted(seed.glob("*.parquet")):
         workspace.write_parquet_from_arrow(pq.read_table(path), path.stem)
-    state = {**state, "inputTables": dataset["inputTables"], "workspaceItemOrder": dataset["workspaceItemOrder"]}
+    state = {**state, "derivedTables": [signed_here(table) for table in state.get("derivedTables") or []],
+             "inputTables": dataset["inputTables"], "workspaceItemOrder": dataset["workspaceItemOrder"]}
     target = content / story["file"]
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(workspace.export_session_zip(state).getvalue())

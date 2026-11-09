@@ -42,7 +42,7 @@ _DEMO_RULES: dict[str, tuple[tuple[str, str], ...]] = {
         ("| Create or revise a file |",
          "| Create or revise a file | Use `create_file` or `edit_file`. | The requested artifact exists as a "
          "durable workspace file, not merely a description of how to create it. |"),
-        ("| Build or change an interactive app or dashboard |", ""),
+        ("| Build or change an app:", ""),
     ),
     "analysis": (
         ("=Network access depends on the deployment\n(local macOS allows internet but never local services); when it is unavailable,\n"

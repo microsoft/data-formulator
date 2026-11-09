@@ -1631,7 +1631,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
 
     let tempModel = allModels.find(m => m.id == tempSelectedModelId);
     let tempModelName = tempModel ? tempModel.display_name || `${tempModel.endpoint}/${tempModel.model}` : t('model.pleaseSelectModel');
-    let selectedModelName = allModels.find(m => m.id == selectedModelId)?.model || t('model.unselected');
+    let selectedModelName = allModels.find(m => m.id == selectedModelId)?.model;
 
     const selectedReady = isModelReady(selectedModelId);
     const isInlineAction = appearance === 'inline';
@@ -1670,7 +1670,9 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                     setModelDialogOpen(true);
                 }}
             >
-                {selectedReady ? selectedModelName : t('model.selectModels')}
+                {/* A selected model keeps its name even when unverified (warning colour); the prompt to
+                    select is only for when there is none. */}
+                {selectedModelName ?? t('model.selectModels')}
             </Button>
         </Tooltip>
         <Dialog 

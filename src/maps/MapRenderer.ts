@@ -15,7 +15,7 @@ import { featureAnchor } from './model';
 import { frameBackground, mapStyle, type MapStyle } from './styles';
 import type { LayerModel, LonLat, Mark } from './model';
 import { arrowPath, CATEGORICAL_SCHEMES, DIVERGING_SCHEMES, SEQUENTIAL_SCHEMES, formatter, type LegendModel } from './scales';
-import type { MapView, ProjectionName } from './spec';
+import type { Layer, MapView, ProjectionName } from './spec';
 
 export interface Hit {
     layerId: string;
@@ -171,6 +171,9 @@ const arcControl = (from: [number, number], to: [number, number], curve: string)
     return [(from[0] + to[0]) / 2 - dy * bend, (from[1] + to[1]) / 2 + dx * bend];
 };
 
+/** Layers drawn as flows, one line from place to place: flows, and routes (paths drawn leg by leg). */
+const asFlows = (layer: Layer) => layer.type === 'flows' || (layer.type === 'paths' && !!layer.legs);
+
 /** A line's outline narrowing from `width` at its origin to a point at its end (a tapered flow line). */
 function taperPath(points: [number, number][], width: number): string {
     if (points.length < 2) return '';
@@ -189,19 +192,128 @@ function taperPath(points: [number, number][], width: number): string {
     return `M${ring.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join('L')}Z`;
 }
 
-/** A filled arrowhead at a line's last point, pointing along its final stretch. */
-function arrowHead(points: [number, number][], width: number): string {
-    const tip = points[points.length - 1];
-    const length = Math.min(20, Math.max(9, width * 2.4 + 6));
-    // Head along the last few pixels of the line, not just its final segment (curves bend there).
-    let index = points.length - 2;
-    while (index > 0 && Math.hypot(tip[0] - points[index][0], tip[1] - points[index][1]) < length) index--;
-    const base = points[index];
-    const distance = Math.hypot(tip[0] - base[0], tip[1] - base[1]) || 1;
-    const [ux, uy] = [(tip[0] - base[0]) / distance, (tip[1] - base[1]) / distance];
+type ScreenPoint = [number, number];
+
+/**
+ * A line as drawn on screen, for cutting it at its arrowhead: points along it, origin first, each with its
+ * position along the line (0 at the origin, 1 at the end); the exact point at a position; and the line's
+ * path up to a position.
+ */
+export interface Course {
+    points: ScreenPoint[];
+    ts: number[];
+    at: (t: number) => ScreenPoint | null;
+    upTo: (t: number) => string;
+}
+
+/** A line of this width takes a head this long (9 to 20 px), half as wide as 0.45 of its length. */
+const headLength = (width: number) => Math.min(20, Math.max(9, width * 2.4 + 6));
+/** A head wants its line this many head lengths long on screen; a shorter line shrinks it, and below `MIN_HEAD` of its size drops it. */
+const SHORT_LINE = 1.6;
+const MIN_HEAD = 0.6;
+/** How far a line runs into its head: a hair, so no seam shows, yet a translucent head does not show the line through it. */
+const INTO_HEAD = 0.5;
+
+/** The position along a course `distance` px back from its end, or null where the course is shorter. */
+function backFromEnd(points: ScreenPoint[], ts: number[], distance: number): number | null {
+    let left = distance;
+    for (let index = points.length - 1; index > 0; index--) {
+        const step = Math.hypot(points[index][0] - points[index - 1][0], points[index][1] - points[index - 1][1]);
+        if (step >= left) return ts[index] + (ts[index - 1] - ts[index]) * (step ? left / step : 0);
+        left -= step;
+    }
+    return null;
+}
+
+export interface Arrow {
+    /** The head's outline, and its two sides alone (the halo, which leaves its base to the line). */
+    head: string;
+    sides: string;
+    /** The position along the line where the line ends, a hair inside the head. */
+    cut: number;
+}
+
+/**
+ * A filled arrowhead fitted to its line: its tip `gap` px short of the line's end (the edge of a place's dot),
+ * pointing from where the line runs a head's length back. A line too short for its head shrinks it, and
+ * below 60% of its size has none; so does a line whose end is out of view or cut by the map's edge.
+ */
+export function fitArrow(course: Course, width: number, gap = 0): Arrow | null {
+    const { points, ts } = course;
+    if (points.length < 2 || ts[ts.length - 1] < 1 - 1e-9) return null;
+    let total = 0;
+    for (let index = 1; index < points.length; index++) total += Math.hypot(points[index][0] - points[index - 1][0], points[index][1] - points[index - 1][1]);
+    const full = headLength(width);
+    const scale = Math.min(1, total / (SHORT_LINE * (gap + full)));
+    if (scale < MIN_HEAD) return null;
+    const length = full * scale;
+    const tipAt = gap > 0 ? backFromEnd(points, ts, gap) : 1;
+    const baseAt = backFromEnd(points, ts, gap + length);
+    const cut = backFromEnd(points, ts, gap + length - INTO_HEAD);
+    if (tipAt === null || baseAt === null || cut === null) return null;
+    const tip = course.at(tipAt);
+    const base = course.at(baseAt);
+    if (!tip || !base) return null;
+    const reach = Math.hypot(tip[0] - base[0], tip[1] - base[1]);
+    // A line the map's edge cuts jumps across the map between its samples: no head can sit on it there.
+    if (!reach || reach > 2 * length) return null;
+    const [ux, uy] = [(tip[0] - base[0]) / reach, (tip[1] - base[1]) / reach];
     const half = length * 0.45;
     const [bx, by] = [tip[0] - ux * length, tip[1] - uy * length];
-    return `M${tip[0]},${tip[1]}L${bx - uy * half},${by + ux * half}L${bx + uy * half},${by - ux * half}Z`;
+    const f = (value: number) => value.toFixed(2);
+    const left = `${f(bx - uy * half)},${f(by + ux * half)}`;
+    const right = `${f(bx + uy * half)},${f(by - ux * half)}`;
+    const point = `${f(tip[0])},${f(tip[1])}`;
+    return { head: `M${point}L${left}L${right}Z`, sides: `M${left}L${point}L${right}`, cut };
+}
+
+/** A quadratic curve's point at `t`. */
+const quadAt = (from: ScreenPoint, control: ScreenPoint, to: ScreenPoint, t: number): ScreenPoint => [
+    (1 - t) ** 2 * from[0] + 2 * (1 - t) * t * control[0] + t ** 2 * to[0],
+    (1 - t) ** 2 * from[1] + 2 * (1 - t) * t * control[1] + t ** 2 * to[1],
+];
+
+/** A flow's arc (or straight line) on screen as a course: its first stretch up to any `t` is a quadratic curve of its own. */
+export function arcCourse(from: ScreenPoint, to: ScreenPoint, curve: string, steps = 32): Course {
+    const control = arcControl(from, to, curve);
+    const ts = d3.range(steps + 1).map(index => index / steps);
+    return {
+        points: ts.map(t => quadAt(from, control, to, t)), ts,
+        at: t => quadAt(from, control, to, t),
+        // De Casteljau: the curve up to t has its control point a share t of the way to the whole curve's.
+        upTo: t => {
+            const end = quadAt(from, control, to, t);
+            return `M${from[0]},${from[1]}Q${from[0] + (control[0] - from[0]) * t},${from[1] + (control[1] - from[1]) * t} ${end[0]},${end[1]}`;
+        },
+    };
+}
+
+/**
+ * A line through places on the map as a course: positions run evenly over its legs, each leg a great circle,
+ * so the line is cut exactly where it is drawn. Places out of view (a globe's far side) are left out of its points.
+ */
+export function placesCourse(places: LonLat[], project: (place: LonLat) => ScreenPoint | null, path: d3.GeoPath, steps = 1): Course {
+    const legs = places.length - 1;
+    const interpolators = places.slice(1).map((place, index) => d3.geoInterpolate(places[index], place));
+    const placeAt = (t: number): LonLat => {
+        const position = Math.max(0, Math.min(legs, t * legs));
+        const leg = Math.min(legs - 1, Math.floor(position));
+        return interpolators[leg](position - leg) as LonLat;
+    };
+    const points: ScreenPoint[] = [];
+    const ts: number[] = [];
+    for (let index = 0; index <= legs * steps; index++) {
+        const t = index / (legs * steps);
+        const point = project(index % steps ? placeAt(t) : places[index / steps]);
+        if (point) { points.push(point); ts.push(t); }
+    }
+    return {
+        points, ts, at: t => project(placeAt(t)),
+        upTo: t => {
+            const leg = Math.min(legs - 1, Math.floor(t * legs));
+            return path({ type: 'LineString', coordinates: [...places.slice(0, leg + 1), placeAt(t)] } as never) ?? '';
+        },
+    };
 }
 
 /** A fitted map's collision outline and bounds, in units of its projection's scale from its translate. */
@@ -619,7 +731,7 @@ export class MapRenderer {
         for (const model of this.scene!.models) {
             const type = model.layer.type;
             if (model.layer.visible === false || type === 'labels') continue;
-            const curve = type === 'flows' ? model.layer.curve ?? (globe ? 'great-circle' : 'arc') : null;
+            const curve = asFlows(model.layer) ? model.layer.curve ?? (globe ? 'great-circle' : 'arc') : null;
             for (const mark of model.marks.slice(0, 3000)) {
                 if (mark.feature && (type === 'regions' || type === 'shapes')) {
                     edges(mark.feature);
@@ -857,7 +969,7 @@ export class MapRenderer {
     private flowBulge(projection: d3.GeoProjection): LonLat[] {
         const points: LonLat[] = [];
         for (const model of this.scene!.models) {
-            if (model.layer.visible === false || model.layer.type !== 'flows') continue;
+            if (model.layer.visible === false || !asFlows(model.layer)) continue;
             const curve = model.layer.curve ?? (this.isGlobe ? 'great-circle' : 'arc');
             if (curve === 'straight') continue;
             for (const mark of model.marks.slice(0, 2000)) {
@@ -1227,40 +1339,77 @@ export class MapRenderer {
 
         if (type === 'flows' || type === 'paths') {
             const direction = layer.direction ?? 'none';
+            // Flows, and routes drawn leg by leg, run from place to place; tracks run through their fixes.
+            const flows = asFlows(layer);
             const curve = layer.curve ?? (this.isGlobe ? 'great-circle' : 'arc');
-            // Points along the line on screen, origin first: the arrowhead's heading and the taper's outline.
-            const samples = (mark: Mark): [number, number][] => {
-                if (type === 'paths' && mark.line) return mark.line.map(project).filter((point): point is [number, number] => !!point);
-                if (!mark.at || !mark.to) return [];
-                if (curve === 'great-circle') {
-                    const interpolate = d3.geoInterpolate(mark.at, mark.to);
-                    return d3.range(0, 1.0001, 1 / 40).map(t => project(interpolate(t) as LonLat)).filter((point): point is [number, number] => !!point);
+            const ink = (mark: Mark) => this.markState(model, mark).selected ? this.style.selection : model.color.color(mark.colorValue);
+            // White on light styles and the page's dark on dark ones, flat or globe: a halo in the water's colour
+            // would trace a blue outline over the land.
+            const halo = this.style.mode === 'dark' ? this.style.page : '#ffffff';
+
+            // Flows start and end at places: a node dot at each, once per place, drawn under the lines.
+            // Flows anchored to nodes are read far more accurately than ones fading into an area. A hub (the
+            // place most flows share) gets a larger dot and a bold name, as editorial route maps do.
+            type Node = { x: number; y: number; color: string; dim: boolean; name: string; flows: number; volume: number };
+            const nodes = new Map<string, Node>();
+            const nodeKey = (point: ScreenPoint) => `${Math.round(point[0])},${Math.round(point[1])}`;
+            if (flows) {
+                for (const mark of model.marks) {
+                    if (this.markState(model, mark).hidden) continue;
+                    [mark.at, mark.to].forEach((end, index) => {
+                        const point = project(end);
+                        if (!point) return;
+                        const key = nodeKey(point);
+                        const dim = this.markState(model, mark).dim;
+                        const node = nodes.get(key) ?? { x: point[0], y: point[1], color: ink(mark), dim, name: mark.ends?.[index] ?? '', flows: 0, volume: 0 };
+                        node.flows += 1;
+                        node.volume += Number(mark.sizeValue) || 1;
+                        if (node.dim && !dim) Object.assign(node, { dim, color: ink(mark) });
+                        nodes.set(key, node);
+                    });
                 }
+            }
+            const ranked = Array.from(nodes.values()).sort((a, b) => b.flows - a.flows);
+            const hub = ranked.length > 3 && ranked[0].flows >= 3 && ranked[0].flows > 2 * (ranked[1]?.flows ?? 0) ? ranked[0] : null;
+            const nodeRadius = (node: Node) => node === hub ? 4.5 : 2.6;
+            const nodeStroke = (node: Node) => node === hub ? 1.5 : 1;
+            // A flow's arrowhead stops at the edge of its destination's dot, so heads arriving at one place meet round it.
+            const gapOf = (mark: Mark) => {
+                const point = flows ? project(mark.to) : null;
+                const node = point ? nodes.get(nodeKey(point)) : undefined;
+                return node ? nodeRadius(node) + nodeStroke(node) / 2 + 0.75 : 0;
+            };
+
+            // The line on screen, origin first: where its arrowhead sits and its line ends, and a taper's outline.
+            const courseOf = (mark: Mark): Course | null => {
+                if (!flows && mark.line) return placesCourse(mark.line, project, path, Math.max(1, Math.round(48 / (mark.line.length - 1))));
+                if (!mark.at || !mark.to) return null;
+                if (curve === 'great-circle') return placesCourse([mark.at, mark.to], project, path, 40);
                 const from = project(mark.at);
                 const to = project(mark.to);
-                if (!from || !to) return [];
-                const control = arcControl(from, to, curve);
-                return d3.range(0, 1.0001, 1 / 24).map(t => [
-                    (1 - t) ** 2 * from[0] + 2 * (1 - t) * t * control[0] + t ** 2 * to[0],
-                    (1 - t) ** 2 * from[1] + 2 * (1 - t) * t * control[1] + t ** 2 * to[1],
-                ] as [number, number]);
+                return from && to ? arcCourse(from, to, curve) : null;
             };
             const lineData = model.marks.map(mark => {
                 let d = '';
-                let points: [number, number][] = [];
-                if (direction === 'taper' || direction === 'arrow' || type === 'paths') points = samples(mark);
-                if (direction === 'taper') d = taperPath(points, Math.max(1, model.size.size(mark.sizeValue)));
-                else if (type === 'paths' && mark.line) d = path({ type: 'LineString', coordinates: mark.line } as never) ?? '';
-                else if (mark.at && mark.to && curve === 'great-circle') d = path({ type: 'LineString', coordinates: [mark.at, mark.to] } as never) ?? '';
-                else if (mark.at && mark.to) {
-                    const from = project(mark.at);
-                    const to = project(mark.to);
-                    if (from && to) {
-                        const control = arcControl(from, to, curve);
-                        d = `M${from[0]},${from[1]}Q${control[0]},${control[1]} ${to[0]},${to[1]}`;
+                let arrow: Arrow | null = null;
+                const course = direction === 'taper' || direction === 'arrow' || !flows ? courseOf(mark) : null;
+                if (direction === 'taper') d = course ? taperPath(course.points, Math.max(1, model.size.size(mark.sizeValue))) : '';
+                else {
+                    if (course && direction === 'arrow') arrow = fitArrow(course, model.size.size(mark.sizeValue), gapOf(mark));
+                    // A line with a head ends at the head's base (a hair inside it), so the two read as one arrow.
+                    if (arrow && course) d = course.upTo(arrow.cut);
+                    else if (!flows && mark.line) d = path({ type: 'LineString', coordinates: mark.line } as never) ?? '';
+                    else if (mark.at && mark.to && curve === 'great-circle') d = path({ type: 'LineString', coordinates: [mark.at, mark.to] } as never) ?? '';
+                    else if (mark.at && mark.to) {
+                        const from = project(mark.at);
+                        const to = project(mark.to);
+                        if (from && to) {
+                            const control = arcControl(from, to, curve);
+                            d = `M${from[0]},${from[1]}Q${control[0]},${control[1]} ${to[0]},${to[1]}`;
+                        }
                     }
                 }
-                return { mark, d, points };
+                return { mark, d, arrow, points: course?.points ?? [] };
             }).filter(item => item.d);
             // Small flows over large ones (Dent; Jenny et al. 2017), so the big ones never bury the rest.
             const sorted = lineData.sort((a, b) => model.size.size(b.mark.sizeValue) - model.size.size(a.mark.sizeValue));
@@ -1270,23 +1419,24 @@ export class MapRenderer {
             const base = Math.max(0.55, Math.min(0.92, 0.92 - 0.11 * Math.log2(Math.max(1, shown / 12))));
             // Dashed (animated) lines show the map through their gaps; a casing would fill them white.
             const cased = direction !== 'taper' && direction !== 'animate';
-            // White on light styles and the page's dark on dark ones, flat or globe: a halo in the water's colour
-            // would trace a blue outline over the land.
-            const halo = this.style.mode === 'dark' ? this.style.page : '#ffffff';
+            // A line ending at its head ends square, flush with the head's base (a round end would show inside a
+            // translucent head); corners stay round, as do lines without heads.
+            const headed = new Map(sorted.map(item => [item.mark.key, !!item.arrow]));
+            const cap = (key: string) => headed.get(key) ? 'butt' : 'round';
             const casings = group.selectAll<SVGPathElement, { mark: Mark; d: string }>('path.df-map-casing')
                 .data(cased ? sorted.filter(item => !this.markState(model, item.mark).hidden) : [], item => item.mark.key)
-                .join('path').attr('class', 'df-map-casing').attr('fill', 'none').attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round')
-                .style('pointer-events', 'none')
+                .join('path').attr('class', 'df-map-casing').attr('fill', 'none').attr('stroke-linejoin', 'round')
+                .style('pointer-events', 'none').attr('stroke-linecap', item => cap(item.mark.key))
                 .attr('d', item => item.d).attr('stroke', halo).attr('stroke-opacity', item => this.markState(model, item.mark).dim ? 0.3 : Math.min(0.9, base + 0.05))
-                .attr('stroke-width', item => Math.max(0.5, model.size.size(item.mark.sizeValue)) + (type === 'paths' ? 3 : 2));
+                .attr('stroke-width', item => Math.max(0.5, model.size.size(item.mark.sizeValue)) + (flows ? 2 : 3));
             const lines = group.selectAll<SVGPathElement, Mark>('path.df-map-line').data(sorted.map(item => item.mark), mark => mark.key)
-                .join('path').attr('class', 'df-map-line').attr('fill', 'none').attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+                .join('path').attr('class', 'df-map-line').attr('fill', 'none').attr('stroke-linejoin', 'round')
+                .attr('stroke-linecap', mark => cap(mark.key));
             const ds = new Map(sorted.map(item => [item.mark.key, item.d]));
             const opacity = (mark: Mark) => {
                 const state = this.markState(model, mark);
                 return state.hidden ? 0 : state.dim ? 0.12 : state.selected ? 1 : base;
             };
-            const ink = (mark: Mark) => this.markState(model, mark).selected ? this.style.selection : model.color.color(mark.colorValue);
             const tapered = direction === 'taper';
             lines.attr('d', mark => ds.get(mark.key) ?? '')
                 // A taper is a filled outline; the other lines are strokes.
@@ -1309,17 +1459,35 @@ export class MapRenderer {
                 parent.appendChild(this);
             });
             this.bindMarkEvents(lines, model);
-            // Arrowheads at the destination (or a path's last point), as wide as the line allows.
-            const heads = group.selectAll<SVGPathElement, { mark: Mark; points: [number, number][] }>('path.df-map-arrow')
-                .data(direction === 'arrow' ? sorted.filter(item => item.points.length >= 2 && !this.markState(model, item.mark).hidden) : [], item => item.mark.key)
+            // The places' dots over the lines' starts (a square start hides under its dot) and under the arrowheads.
+            group.selectAll<SVGCircleElement, [string, Node]>('circle.df-map-node')
+                .data(Array.from(nodes), ([key]) => key)
+                .join('circle').attr('class', 'df-map-node').style('pointer-events', 'none')
+                .attr('cx', ([, node]) => node.x).attr('cy', ([, node]) => node.y).attr('r', ([, node]) => nodeRadius(node))
+                .attr('fill', ([, node]) => node === hub ? this.style.text : node.color).attr('stroke', halo).attr('stroke-width', ([, node]) => nodeStroke(node))
+                .attr('opacity', ([, node]) => node.dim ? 0.2 : 1)
+                .raise();
+            // Arrowheads over the lines, each on a halo along its two sides only: the halo keeps heads apart where
+            // several flows arrive at one place, and leaves the head's base, where its line runs in, without a seam.
+            type Headed = { mark: Mark; arrow: Arrow | null };
+            const arrows = sorted.filter(item => item.arrow && !this.markState(model, item.mark).hidden);
+            const rims = group.selectAll<SVGPathElement, Headed>('path.df-map-arrow-halo').data(arrows, item => item.mark.key)
+                .join('path').attr('class', 'df-map-arrow-halo').style('pointer-events', 'none').attr('fill', 'none')
+                .attr('d', item => item.arrow!.sides).attr('stroke', halo).attr('stroke-width', 2).attr('stroke-linejoin', 'round')
+                .attr('stroke-opacity', item => this.markState(model, item.mark).dim ? 0.3 : Math.min(0.9, base + 0.05));
+            const heads = group.selectAll<SVGPathElement, Headed>('path.df-map-arrow').data(arrows, item => item.mark.key)
                 .join('path').attr('class', 'df-map-arrow').style('pointer-events', 'none')
-                .attr('d', item => arrowHead(item.points, model.size.size(item.mark.sizeValue)))
-                .attr('fill', item => ink(item.mark)).attr('fill-opacity', item => Math.min(1, opacity(item.mark) + 0.1))
-                // A hairline halo keeps heads apart where several flows arrive at one place.
-                .attr('stroke', halo).attr('stroke-width', 1).attr('stroke-linejoin', 'round').attr('paint-order', 'stroke');
-            heads.raise();
+                .attr('d', item => item.arrow!.head)
+                .attr('fill', item => ink(item.mark)).attr('fill-opacity', item => Math.min(1, opacity(item.mark) + 0.1));
+            const rimOf = new Map<string, SVGPathElement>();
+            rims.each(function (item) { rimOf.set(item.mark.key, this); });
+            heads.order().each(function (item) {
+                const rim = rimOf.get(item.mark.key);
+                if (rim) parent.appendChild(rim);
+                parent.appendChild(this);
+            });
             // A track starts at a hollow dot and is named there, in its own colour: it reads "from here, that way".
-            const starts = type === 'paths' ? sorted.filter(item => item.points.length >= 2 && !this.markState(model, item.mark).hidden) : [];
+            const starts = !flows ? sorted.filter(item => item.points.length >= 2 && !this.markState(model, item.mark).hidden) : [];
             group.selectAll<SVGCircleElement, { mark: Mark; points: [number, number][] }>('circle.df-map-start').data(starts, item => item.mark.key)
                 .join('circle').attr('class', 'df-map-start').style('pointer-events', 'none')
                 .attr('cx', item => item.points[0][0]).attr('cy', item => item.points[0][1])
@@ -1343,7 +1511,7 @@ export class MapRenderer {
                 }
             }
             // Path heads, unless an arrow or taper already shows where they end.
-            const ends = group.selectAll<SVGCircleElement, Mark>('circle.df-map-end').data(type === 'flows' || direction === 'arrow' || direction === 'taper' ? []
+            const ends = group.selectAll<SVGCircleElement, Mark>('circle.df-map-end').data(flows || direction === 'arrow' || direction === 'taper' ? []
                 : model.marks.filter(mark => !this.markState(model, mark).hidden), mark => mark.key)
                 .join('circle').attr('class', 'df-map-end')
                 .attr('r', mark => Math.max(1.8, model.size.size(mark.sizeValue) * 0.75))
@@ -1355,37 +1523,6 @@ export class MapRenderer {
                     d3.select(this).attr('display', point ? null : 'none').attr('cx', point?.[0] ?? 0).attr('cy', point?.[1] ?? 0);
                 });
             ends.raise();
-            // Flows start and end at places: a node dot at each, once per place, drawn under the arrowheads.
-            // Flows anchored to nodes are read far more accurately than ones fading into an area. A hub (the
-            // place most flows share) gets a larger dot and a bold name, as editorial route maps do.
-            type Node = { x: number; y: number; color: string; dim: boolean; name: string; flows: number; volume: number };
-            const nodes = new Map<string, Node>();
-            if (type === 'flows') {
-                for (const mark of model.marks) {
-                    if (this.markState(model, mark).hidden) continue;
-                    [mark.at, mark.to].forEach((end, index) => {
-                        const point = project(end);
-                        if (!point) return;
-                        const key = `${Math.round(point[0])},${Math.round(point[1])}`;
-                        const dim = this.markState(model, mark).dim;
-                        const node = nodes.get(key) ?? { x: point[0], y: point[1], color: ink(mark), dim, name: mark.ends?.[index] ?? '', flows: 0, volume: 0 };
-                        node.flows += 1;
-                        node.volume += Number(mark.sizeValue) || 1;
-                        if (node.dim && !dim) Object.assign(node, { dim, color: ink(mark) });
-                        nodes.set(key, node);
-                    });
-                }
-            }
-            const ranked = Array.from(nodes.values()).sort((a, b) => b.flows - a.flows);
-            const hub = ranked.length > 3 && ranked[0].flows >= 3 && ranked[0].flows > 2 * (ranked[1]?.flows ?? 0) ? ranked[0] : null;
-            group.selectAll<SVGCircleElement, [string, Node]>('circle.df-map-node')
-                .data(Array.from(nodes), ([key]) => key)
-                .join('circle').attr('class', 'df-map-node').style('pointer-events', 'none')
-                .attr('cx', ([, node]) => node.x).attr('cy', ([, node]) => node.y).attr('r', ([, node]) => node === hub ? 4.5 : 2.6)
-                .attr('fill', ([, node]) => node === hub ? this.style.text : node.color).attr('stroke', halo).attr('stroke-width', ([, node]) => node === hub ? 1.5 : 1)
-                .attr('opacity', ([, node]) => node.dim ? 0.2 : 1)
-                .lower();
-            group.selectAll<SVGCircleElement, [string, Node]>('circle.df-map-node').filter(([, node]) => node === hub).raise();
             // Names beside the places when there are few enough to read: the hub always, then the busiest.
             if (ranked.length <= 40) {
                 for (const node of ranked) {

@@ -286,8 +286,18 @@ it('points vector arrows along their heading and shows flow direction', async ()
     for (const [direction, check] of [
         ['arrow', (root: HTMLElement) => {
             expect(root.querySelectorAll('path.df-map-arrow')).toHaveLength(1);
+            expect(root.querySelectorAll('path.df-map-arrow-halo')).toHaveLength(1);
             // Both places get a node dot.
             expect(root.querySelectorAll('circle.df-map-node')).toHaveLength(2);
+            // The line ends square at its head, which stops at the edge of the destination's dot.
+            const line = root.querySelector('path.df-map-line')!;
+            expect(line.getAttribute('stroke-linecap')).toBe('butt');
+            const tip = root.querySelector('path.df-map-arrow')!.getAttribute('d')!.match(/-?[\d.]+/g)!.map(Number).slice(0, 2);
+            const lineEnd = line.getAttribute('d')!.match(/-?[\d.]+/g)!.map(Number).slice(-2);
+            const brazil = Array.from(root.querySelectorAll('circle.df-map-node')).map(node => [Number(node.getAttribute('cx')), Number(node.getAttribute('cy'))])
+                .sort((a, b) => Math.hypot(a[0] - tip[0], a[1] - tip[1]) - Math.hypot(b[0] - tip[0], b[1] - tip[1]))[0];
+            expect(Math.hypot(tip[0] - brazil[0], tip[1] - brazil[1])).toBeCloseTo(2.6 + 0.5 + 0.75, 0);
+            expect(Math.hypot(lineEnd[0] - brazil[0], lineEnd[1] - brazil[1])).toBeGreaterThan(9);
         }],
         ['taper', (root: HTMLElement) => expect(root.querySelector('path.df-map-line')!.getAttribute('fill')).not.toBe('none')],
         ['animate', (root: HTMLElement) => expect((root.querySelector('path.df-map-line') as SVGElement).style.animation).toContain('df-map-flow')],

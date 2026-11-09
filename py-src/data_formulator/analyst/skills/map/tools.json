@@ -35,7 +35,7 @@
           },
           "map": {
             "type": "object",
-            "description": "The map spec. Usually a template: {template, data, encoding, properties?, fields?, view?, subtitle?, source?} — template is choropleth, bubbles, points, density, spikes, flows, tracks, bivariate, cartogram, or vectors; data is one source ({\"table\": ...}, {\"sql\": ..., \"tables\": [...]}, or a few inline values); encoding binds columns to channels; color, color2, size, weight, label, time, and filter may instead list column options ([\"a\", \"b\"], first shown, or {\"field\", \"options\"}) that people choose among. For several layers, give {view, data (named sources), layers, controls?} instead. Do not embed large data.",
+            "description": "The map spec. Usually a template: {template, data, encoding, properties?, fields?, view?, subtitle?, source?} — template is choropleth, bubbles, points, density, spikes, flows, routes, tracks, bivariate, cartogram, or vectors; data is one source ({\"table\": ...}, {\"sql\": ..., \"tables\": [...]}, or a few inline values); encoding binds columns to channels; color, color2, size, weight, label, time, and filter may instead list column options ([\"a\", \"b\"], first shown, or {\"field\", \"options\"}) that people choose among. For several layers, give {view, data (named sources), layers, controls?} instead. Do not embed large data.",
             "properties": {
               "subtitle": {
                 "type": "string"

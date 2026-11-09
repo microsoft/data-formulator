@@ -59,6 +59,7 @@ import { Chart, DictTable, EncodingItem, EncodingMap, FieldItem, FieldSemanticsI
 import { WorkflowProgress } from './WorkflowPanel';
 import { ScheduleFormArtifactView, SessionsFormArtifactView, WorkflowFormArtifactView } from './SetupFormArtifacts';
 import { McpFormSummary } from '../components/McpProposal';
+import { SignInFormCard } from '../components/SignInFormCard';
 import { ConnectorFormCard } from '../components/ConnectorFormCard';
 import { ConversationCanvas } from './ConversationCanvas';
 
@@ -336,6 +337,8 @@ const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, 
             return setupCanvas(<SessionsFormArtifactView key={turn.id} turn={turn} form={form} />);
         case 'mcp':
             return setupCanvas(<McpFormSummary key={turn.id} turn={turn} form={form} />);
+        case 'signin':
+            return setupCanvas(<SignInFormCard key={turn.id} turn={turn} form={form} />);
         case 'connector': {
             const connected = form.connector.status === 'connected';
             return (
@@ -1875,7 +1878,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
         ? textTurns.find(turn => turn.id === focusedId.textId && turn.workflow)
         : undefined;
     const focusedFormTurn = focusedId?.type === 'text'
-        ? textTurns.find(turn => turn.id === focusedId.textId && turn.form)
+        ? textTurns.find(turn => turn.id === focusedId.textId && turn.form && turn.form.kind !== 'signin')
         : undefined;
     const focusedExplanationTurn = focusedId?.type === 'text'
         ? textTurns.find(turn => turn.id === focusedId.textId && turn.textKind === 'explain' && turn.presentation === 'long_response' && !turn.form && !turn.dataOperation)

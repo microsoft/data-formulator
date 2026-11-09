@@ -635,6 +635,11 @@ class AnalystAgent:
         from data_formulator.mcp_servers.config import mcp_available
         if not (mcp and not demo and mcp_available()):
             self.registry = self.registry.without_tools(MCP_SETUP_TOOLS)
+        # Sign-ins to data providers need a person at hand, like MCP tools (design-docs/72).
+        from data_formulator.accounts import accounts_available
+        from data_formulator.configuration import tools_mode
+        self.registry = self.registry.with_accounts_policy(
+            mcp and not demo and accounts_available() and tools_mode() != "off")
         self.agent_exploration_rules = agent_exploration_rules
         self.agent_coding_rules = agent_coding_rules
         self.language_instruction = language_instruction

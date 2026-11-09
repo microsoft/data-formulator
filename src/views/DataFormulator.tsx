@@ -61,9 +61,10 @@ import { LandingDataEntry } from './LandingDataEntry';
 import { ReportView } from './ReportView';
 import { CanvasChromeContext } from './CanvasHeader';
 import { CanvasTabs } from './CanvasTabs';
-import { DataSourceSidebar, SessionsDialog } from './DataSourceSidebar';
+import { DataSourceSidebar } from './DataSourceSidebar';
+import { SessionsDialog } from './AllSessions';
 import GitHubIcon from '@mui/icons-material/GitHub';
-import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions, publishExampleSession, usePublishedExamples } from './ExampleSessions';
+import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions, usePublishedExamples } from './ExampleSessions';
 import { WorkflowPanel, WorkflowRunObserver } from './WorkflowPanel';
 import { SiteLanding } from '../sites/SiteLanding';
 import { DemoDatasetTabs, inSentence } from '../sites/DemoDatasetTabs';
@@ -85,8 +86,9 @@ import { ItemCard, ItemCardAction, itemCardGridSx, StarAction, useItemCardGridCo
 import IconButton from '@mui/material/IconButton';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
-import PublishOutlinedIcon from '@mui/icons-material/PublishOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import { WormholeReceiveIcon, WormholeSendIcon } from '../icons';
+import { requestWormholeDialog } from '../app/wormholeService';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import Dialog from '@mui/material/Dialog';
@@ -255,17 +257,6 @@ export const DataFormulatorFC = ({ }) => {
         await dispatch(openSession(name, metaDisplayName));
     }, [dispatch]);
 
-    /** Administrators add a session to everyone's Example sessions; opening it imports a copy. */
-    const handlePublishExample = useCallback(async (id: string, title: string) => {
-        try {
-            await publishExampleSession(id, title);
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), type: 'success', component: 'workspace',
-                value: t('workspace.publishedExample', { defaultValue: 'Published "{{title}}" as an example session.', title }) }));
-        } catch (error) {
-            handleApiError(error, 'Publish example session');
-        }
-    }, [dispatch, t]);
-
     const handleDeleteWorkspace = useCallback(async (name: string) => {
         try {
             await deleteWorkspace(name);
@@ -416,8 +407,8 @@ export const DataFormulatorFC = ({ }) => {
                 <ItemCardAction label={t('workspace.rename')} icon={<EditOutlinedIcon />}
                     onClick={() => startRenameWorkspace(w.id, w.display_name)} />
                 <ItemCardAction label={t('workspace.export')} icon={<DownloadIcon />} onClick={() => handleExportWorkspace(w.id)} />
-                {serverConfig?.CAN_CONFIGURE && <ItemCardAction label={t('workspace.publishExample', { defaultValue: 'Publish as example' })}
-                    icon={<PublishOutlinedIcon />} onClick={() => void handlePublishExample(w.id, w.display_name)} />}
+                {serverConfig?.SESSION_WORMHOLE_AVAILABLE && <ItemCardAction label={t('wormhole.send')} icon={<WormholeSendIcon />}
+                    onClick={() => requestWormholeDialog({ kind: 'send', workspaceId: w.id, displayName: w.display_name })} />}
                 <ItemCardAction danger label={t('workspace.delete')} icon={<DeleteIcon />} onClick={() => setConfirmDeleteWs(w.id)} />
             </>} />;
     
@@ -980,6 +971,13 @@ export const DataFormulatorFC = ({ }) => {
                         sx={{ fontSize: textVar.xs, textTransform: 'none', whiteSpace: 'nowrap' }}>
                         {t('workspace.importSession', { defaultValue: 'Import session' })}
                     </Button>
+                    {serverConfig?.SESSION_WORMHOLE_AVAILABLE && (
+                        <Button variant="outlined" size="small" startIcon={<WormholeReceiveIcon sx={{ fontSize: iconVar.md }} />}
+                            onClick={() => requestWormholeDialog({ kind: 'receive' })}
+                            sx={{ fontSize: textVar.xs, textTransform: 'none', whiteSpace: 'nowrap' }}>
+                            {t('wormhole.receiveSession')}
+                        </Button>
+                    )}
                 </>}
                 sessions={<>
                 {starredSavedWorkspaces.length > 0 && <Box component="section" aria-labelledby="home-starred-sessions" sx={{ mb: 2.5 }}>

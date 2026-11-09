@@ -410,27 +410,30 @@ def test_missing_retry_checkpoint_never_starts_fresh(execution_context, monkeypa
     assert store.history(schedule["id"])[0]["status"] == "needs_attention"
 
 
-def test_admin_publishes_example_sessions_for_everyone_to_import(execution_context, monkeypatch):
+def test_published_example_sessions_can_be_imported_and_unpublished_by_admins(execution_context, monkeypatch):
+    """Publishing is gone (sessions are shared by wormhole); examples published before stay listed until removed."""
     import io
     import zipfile
-    from data_formulator.workspace_factory import get_workspace_manager
+    from data_formulator.routes import sessions as session_routes
     app, _, _, _ = execution_context
-    with app.app_context():
-        manager = get_workspace_manager("local:test")
-        manager.create_workspace("session_demo")
-        manager.save_session_state("session_demo", {"activeWorkspace": {"id": "session_demo", "displayName": "Price review"}, "textTurns": []})
     client = app.test_client()
-    published = client.post("/api/sessions/examples", json={"workspace_id": "session_demo"}).get_json()["data"]["example"]
-    assert published["title"] == "Price review"
+    with app.app_context():
+        published = {"id": "a" * 32, "title": "Price review", "description": "", "published_at": "2026-11-01T00:00:00Z"}
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("session_state.json", "{}")
+        (session_routes._examples_dir() / f"{published['id']}.zip").write_bytes(buffer.getvalue())
+        session_routes._write_examples([published])
+    assert client.post("/api/sessions/examples", json={"workspace_id": "session_demo"}).status_code != 200
     assert client.get("/api/sessions/examples").get_json()["data"]["examples"] == [published]
     archive = client.get(f"/api/sessions/examples/{published['id']}")
     assert archive.status_code == 200 and zipfile.is_zipfile(io.BytesIO(archive.data))
     assert client.get("/api/sessions/examples/../index").status_code == 404
 
     monkeypatch.setattr("data_formulator.routes.configurations.can_configure", lambda: False)
-    assert client.post("/api/sessions/examples", json={"workspace_id": "session_demo"}).get_json()["error"]["code"] == "ACCESS_DENIED"
     assert client.delete(f"/api/sessions/examples/{published['id']}").get_json()["error"]["code"] == "ACCESS_DENIED"
     monkeypatch.setattr("data_formulator.routes.configurations.can_configure", lambda: True)
     client.delete(f"/api/sessions/examples/{published['id']}")
     assert client.get("/api/sessions/examples").get_json()["data"]["examples"] == []
     assert client.get(f"/api/sessions/examples/{published['id']}").get_json()["error"]["code"] == "TABLE_NOT_FOUND"
+

@@ -4,7 +4,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ModelSelectionButton, parseAzureTargetUri } from '../../../../src/views/ModelSelectionDialog';
-import { dataFormulatorReducer, dfActions, dfSelectors, ModelConfig } from '../../../../src/app/dfSlice';
+import { dataFormulatorReducer, dfActions, dfSelectors, fetchGlobalModelList, ModelConfig } from '../../../../src/app/dfSlice';
 import { apiRequest, ApiRequestError } from '../../../../src/app/apiClient';
 import modelStrings from '../../../../src/i18n/locales/en/model.json';
 import commonStrings from '../../../../src/i18n/locales/en/common.json';
@@ -831,5 +831,40 @@ describe('Model connection Target URI', () => {
         'not a URL',
     ])('leaves other inputs untouched: %s', value => {
         expect(parseAzureTargetUri(value)).toBeNull();
+    });
+});
+
+describe('Model selection button', () => {
+    const azure = (model: string): ModelConfig => ({ id: `global-azure-${model}`, endpoint: 'azure', model, is_global: true });
+    const loadGlobals = (preloaded: Partial<ReturnType<typeof dataFormulatorReducer>>, globals: ModelConfig[]) => {
+        const initial = dataFormulatorReducer(undefined, { type: 'test/init' });
+        const store = configureStore({ reducer: dataFormulatorReducer, preloadedState: { ...initial, ...preloaded } });
+        store.dispatch(fetchGlobalModelList.fulfilled(globals, 'request'));
+        return store;
+    };
+
+    it('replaces a remembered selection that is no longer configured', () => {
+        const store = loadGlobals({ selectedModelId: 'global-azure-retired' }, [azure('current'), azure('other')]);
+        expect(store.getState().selectedModelId).toBe('global-azure-current');
+        render(<Provider store={store}><ModelSelectionButton /></Provider>);
+        expect(screen.getByRole('button', { name: 'Select a model' }).textContent).toBe('current');
+    });
+
+    it('keeps a selection that is still available, including a personal model', () => {
+        const personal: ModelConfig = { id: 'personal', endpoint: 'openai', model: 'mine', api_key: 'test-key' };
+        expect(loadGlobals({ selectedModelId: 'global-azure-other' }, [azure('current'), azure('other')])
+            .getState().selectedModelId).toBe('global-azure-other');
+        expect(loadGlobals({ models: [personal], selectedModelId: 'personal' }, [azure('current')])
+            .getState().selectedModelId).toBe('personal');
+    });
+
+    it('shows the selected model name when its test failed, and asks to select only without a model', () => {
+        const store = loadGlobals({}, [azure('current')]);
+        store.dispatch(dfActions.updateModelStatus({ id: 'global-azure-current', status: 'error', message: 'unreachable' }));
+        render(<Provider store={store}><ModelSelectionButton /></Provider>);
+        expect(screen.getByRole('button', { name: 'Select a model' }).textContent).toBe('current');
+        cleanup();
+        render(<Provider store={loadGlobals({}, [])}><ModelSelectionButton /></Provider>);
+        expect(screen.getByRole('button', { name: 'Select a model' }).textContent).toBe(modelStrings.model.selectModels);
     });
 });

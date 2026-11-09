@@ -36,12 +36,18 @@ import { getCachedChart } from '../app/chartCache';
 import { floatingPillSx } from '../app/tokens';
 import { iconVar, textVar } from '../app/layout';
 import { useTranslation } from 'react-i18next';
-import { resolveCitations, splitFrontMatter, streamingReportText } from './reportBlocks';
+import { MAP_EMBED, mapEmbedKey, reportMapPaths, resolveCitations, splitFrontMatter, streamingReportText } from './reportBlocks';
 import { requestSourceLocation } from '../app/sourceLocation';
+import { onWorkspaceFilesChanged } from '../app/workspaceService';
 import {
     DEFAULT_REPORT_DENSITY, DEFAULT_REPORT_TYPEFACE, REPORT_COLUMN_WIDTH, ReportTypeface,
     reportDensityFor, reportTypefaceFor,
 } from './reportThemes';
+
+// Map embeds draw offscreen with the map renderer, loaded only for reports that embed a map.
+const MapSnapshot = React.lazy(() => import('../maps/MapSnapshot'));
+
+const escapeHtml = (text: string) => text.replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]!));
 
 export const ReportView: FC = () => {
     // Get all generated reports from Redux state
@@ -70,6 +76,12 @@ export const ReportView: FC = () => {
     const isGenerating = currentReport?.status === 'generating';
 
     const [cachedReportImages, setCachedReportImages] = useState<Record<string, { url: string; width: number; height: number }>>({});
+    // Embedded maps: drawn once per revision of the workspace's files (a saved file redraws them),
+    // keeping the last picture until the new one is ready; a map that cannot draw says why.
+    const [mapRevision, setMapRevision] = useState(0);
+    const [mapsDrawn, setMapsDrawn] = useState<Record<string, number>>({});
+    const [mapFailures, setMapFailures] = useState<Record<string, string>>({});
+    useEffect(() => onWorkspaceFilesChanged(() => { setMapRevision(revision => revision + 1); setMapFailures({}); }), []);
     // Read-first: report opens as a clean text page; users opt into editing explicitly.
     const [isEditMode, setIsEditMode] = useState(false);
     // Download/share menu anchored to the floating download button.
@@ -469,6 +481,14 @@ ${styles}
             return `<img src="${url}" alt="${caption || t('report.chartAlt')}" data-chart-id="${chartId}" width="${width}" height="${height}" style="max-width:100%;" />`;
         };
 
+        // Process ![caption](map://files/<name>.map.json): the map file as a still picture
+        processed = processed.replace(MAP_EMBED, (_match, caption: string, path: string) => {
+            const cached = cachedReportImages[mapEmbedKey(path)];
+            if (cached) return makeImg(mapEmbedKey(path), cached.url, cached.width, cached.height, escapeHtml(caption));
+            const failure = mapFailures[path];
+            return `<p style="text-align:center;color:#999;padding:16px 0;">🗺️ ${escapeHtml(caption || path)}${failure ? ` (${escapeHtml(failure)})` : ''}</p>`;
+        });
+
         // Process ![caption](chart://chart_id) syntax
         processed = processed.replace(/!\[([^\]]*)\]\(chart:\/\/([^)]+)\)/g, (_match, caption, chartId) => {
             const cached = cachedReportImages[chartId];
@@ -491,7 +511,7 @@ ${styles}
         });
 
         const unusedEntries = Object.entries(cachedReportImages)
-            .filter(([key]) => !usedKeys.has(key));
+            .filter(([key]) => !usedKeys.has(key) && !key.startsWith(mapEmbedKey('')));
         let unusedIdx = 0;
         processed = processed.replace(/\[IMAGE\([^\)]+\)\]/g, () => {
             if (unusedIdx < unusedEntries.length) {
@@ -672,6 +692,7 @@ ${styles}
 
     let displayedReport = generatedReport;
     displayedReport = processReport(isGenerating ? streamingReportText(displayedReport) : displayedReport);
+    const pendingMaps = reportMapPaths(generatedReport).filter(path => (mapsDrawn[path] ?? -1) < mapRevision && !mapFailures[path]);
 
     const { style: frontMatterGenre } = (() => {
         const m = generatedReport.match(/```markdown\n([\s\S]*?)(?:\n```)?$/);
@@ -847,6 +868,14 @@ ${styles}
                                 flexShrink: 0,
                             }}
                         >
+                            {pendingMaps.length > 0 && <React.Suspense fallback={null}>
+                                {pendingMaps.map(path => <MapSnapshot key={`${path}#${mapRevision}`} path={path}
+                                    onImage={image => {
+                                        updateCachedReportImages(mapEmbedKey(path), image.url, image.width, image.height);
+                                        setMapsDrawn(drawn => ({ ...drawn, [path]: mapRevision }));
+                                    }}
+                                    onError={failure => setMapFailures(failures => ({ ...failures, [path]: failure }))} />)}
+                            </React.Suspense>}
                             <TiptapReportEditor
                                 content={displayedReport}
                                 editable={isEditMode && !isGenerating}

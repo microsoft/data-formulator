@@ -11,7 +11,7 @@ import { iconTone } from '../app/tokens';
 import {
     AgentIcon, BooleanIcon, FormIcon, chartFamily, CONNECTOR_ICON_MAP, DatabaseIcon, DatabaseViewIcon, DateIcon,
     DateTimeIcon, DurationIcon, FileTypeIcon, FolderOpenIcon, InsightIcon, NumericalIcon, RelationalDBIcon, StreamIcon,
-    StringIcon, TableIcon, TimeIcon, UnknownIcon,
+    StringIcon, TableIcon, TimeIcon, UnknownIcon, WormholeIcon, WormholeReceiveIcon, WormholeSendIcon,
 } from '../icons';
 import { CHART_ICONS } from '../components/ChartTemplates';
 import { CONNECTOR_BRANDS } from '../connectorBrands';
@@ -36,6 +36,7 @@ const CONNECTORS = Object.keys(CONNECTOR_ICON_MAP);
 const DOMAIN: [string, React.ElementType][] = [
     ['Table', TableIcon], ['Form', FormIcon], ['Stream', StreamIcon], ['Agent', AgentIcon], ['Insight', InsightIcon],
     ['FolderOpen', FolderOpenIcon], ['Database', DatabaseIcon], ['RelationalDB', RelationalDBIcon], ['DatabaseView', DatabaseViewIcon],
+    ['Wormhole', WormholeIcon], ['WormholeSend', WormholeSendIcon], ['WormholeReceive', WormholeReceiveIcon],
 ];
 const DATA_TYPES: [string, React.ElementType][] = [
     ['boolean', BooleanIcon], ['number', NumericalIcon], ['string', StringIcon], ['date', DateIcon],

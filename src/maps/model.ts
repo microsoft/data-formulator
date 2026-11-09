@@ -326,6 +326,21 @@ function buildMarks(spec: MapSpec, layer: Layer, rows: Row[], params: Params, ge
             }) : groupRows;
             const line = ordered.map(row => coordinate(row, layer.lon, layer.lat)).filter((point): point is LonLat => !!point);
             if (line.length < 2) { unplaced.push(...groupRows); continue; }
+            if (layer.legs) {
+                // A route of stops: each leg its own flow, carrying the row it leaves (its colour, width and tooltip).
+                const stops = ordered.flatMap(row => { const at = coordinate(row, layer.lon, layer.lat); return at ? [{ row, at }] : []; });
+                const stopName = (row: Row) => layer.text ? String(row[layer.text] ?? '') : '';
+                stops.slice(1).forEach((stop, index) => {
+                    const from = stops[index];
+                    // A leg that stays put has no way to point.
+                    if (from.at[0] === stop.at[0] && from.at[1] === stop.at[1]) return;
+                    const ends: [string, string] = [stopName(from.row), stopName(stop.row)];
+                    marks.push({ key: `${group}\u0001${index}`, rows: [from.row], at: from.at, to: stop.at, ends,
+                        label: ends.every(Boolean) ? `${ends[0]} → ${ends[1]}` : `${group || layer.name || 'Route'} · ${index + 1}`,
+                        colorValue: colorField ? colorOf([from.row]) : undefined, sizeValue: sizeField ? from.row[sizeField] : undefined });
+                });
+                continue;
+            }
             marks.push({ key: group, rows: ordered, line, at: line[line.length - 1], label: group || layer.name || 'Path',
                 colorValue: colorField ? aggregate(ordered.map(row => row[colorField]), colorAggregate === 'mean' && !layer.color?.aggregate ? 'first' : colorAggregate) : undefined,
                 sizeValue: sizeField ? aggregate(ordered.map(row => row[sizeField]), sizeAggregate) : undefined });

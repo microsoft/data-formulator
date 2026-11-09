@@ -38,5 +38,7 @@ Each dataset's data guide has the details; in short:
   `*_regional` table by `indicator_id` in SQL before loading rows into Python; some have millions
   of rows.
 - Use the `*_regional` tables for regional and world figures: they are the official UIS aggregates.
-- For a world map, join `countries` on `country_id` and use its `map_id`.
+- For a world map, use the map skill (`write_map`) with a choropleth keyed by `country_id`
+  (ISO 3166-1 alpha-3, `keyType: iso3`); the `*_national` tables already carry it. A report embeds
+  it with `![caption](map://files/<name>.map.json)`.
 - Coverage is uneven: say which years the values are from.

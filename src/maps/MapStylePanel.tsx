@@ -329,7 +329,7 @@ export const MapStylePanel: FC<{
 /** Which properties a template offers in the panel. */
 const TEMPLATE_PROPERTIES: Record<TemplateName, ('classes' | 'scheme' | 'size' | 'density' | 'curve' | 'direction')[]> = {
     choropleth: ['classes', 'scheme'], bubbles: ['scheme', 'size'], points: ['scheme', 'size'], density: ['scheme', 'density'],
-    spikes: ['scheme', 'size'], flows: ['scheme', 'size', 'curve', 'direction'], tracks: ['scheme', 'size', 'direction'], bivariate: ['scheme'],
+    spikes: ['scheme', 'size'], flows: ['scheme', 'size', 'curve', 'direction'], routes: ['scheme', 'size', 'curve', 'direction'], tracks: ['scheme', 'size', 'direction'], bivariate: ['scheme'],
     cartogram: ['scheme', 'size'], vectors: ['scheme', 'size'],
 };
 
@@ -439,8 +439,8 @@ const TemplateEditor: FC<{ raw: Raw; readOnly?: boolean; patch: (mutate: (draft:
             </Row>}
         </>}
         {offered.includes('size') && <Row label={boundField(encoding, 'size') ? t('map.maxSize') : t('map.size')}>
-            <Slider size="small" min={1} max={name === 'spikes' ? 240 : name === 'flows' || name === 'tracks' ? 24 : 60} step={1} disabled={readOnly}
-                value={properties.sizeMax ?? (name === 'spikes' ? 120 : name === 'flows' || name === 'tracks' ? 10 : name === 'points' ? 12 : name === 'vectors' ? 28 : 32)}
+            <Slider size="small" min={1} max={name === 'spikes' ? 240 : name === 'flows' || name === 'routes' || name === 'tracks' ? 24 : 60} step={1} disabled={readOnly}
+                value={properties.sizeMax ?? (name === 'spikes' ? 120 : name === 'flows' || name === 'routes' || name === 'tracks' ? 10 : name === 'points' ? 12 : name === 'vectors' ? 28 : 32)}
                 aria-label={t('map.size')} valueLabelDisplay="auto" sx={{ mx: 1 }} onChange={(_, value) => setProperty('sizeMax', value)} />
         </Row>}
         {offered.includes('density') && <Row label={t('map.showAs')}>
@@ -468,7 +468,7 @@ const TemplateEditor: FC<{ raw: Raw; readOnly?: boolean; patch: (mutate: (draft:
                 onChange={(_, value) => setProperty('opacity', value === 1 ? undefined : value)} />
         </Row>
         <Typography sx={{ ...sectionSx, mt: 2 }}>{t('map.interaction')}</Typography>
-        {switchRow('search', !!(boundField(encoding, 'region') || boundField(encoding, 'label')) && name !== 'flows' && name !== 'density')}
+        {switchRow('search', !!(boundField(encoding, 'region') || boundField(encoding, 'label')) && name !== 'flows' && name !== 'routes' && name !== 'density')}
         {switchRow('details', name !== 'density')}
         {switchRow('stats', false)}
     </>;

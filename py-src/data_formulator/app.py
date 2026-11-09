@@ -339,6 +339,8 @@ def _register_blueprints():
     app.register_blueprint(configuration_bp)
     from data_formulator.mcp_servers.routes import mcp_bp
     app.register_blueprint(mcp_bp)
+    from data_formulator.accounts.routes import accounts_bp
+    app.register_blueprint(accounts_bp)
     from data_formulator.routes.browser import browser_bp
     app.register_blueprint(browser_bp)
 
@@ -490,6 +492,8 @@ def get_app_config():
 
     from data_formulator.auth.identity import is_local_mode
     config["IS_LOCAL_MODE"] = is_local_mode()
+    from data_formulator import session_wormhole
+    config["SESSION_WORMHOLE_AVAILABLE"] = session_wormhole.enabled()
     from data_formulator.analyst.skills.configure.automation import workflows_unavailable
     config["WORKFLOWS_AVAILABLE"] = workflows_unavailable() is None
     from data_formulator.routes.configurations import can_configure

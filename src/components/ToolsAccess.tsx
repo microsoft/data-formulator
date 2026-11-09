@@ -30,6 +30,9 @@ import { mcpFormDone, McpProposalPanel, useMcpProposal } from './McpProposal';
 import { TerminalFilesystemSummary } from './TerminalApprovalDialog';
 import { BrowserDetails, BrowserStatusLabel } from './BrowserAccess';
 import { browserConfig, browserOn, checkBrowser, loadBrowserStatus, saveBrowserSettings, type BrowserChoice, type BrowserStatus } from '../app/browserSettings';
+import LoginIcon from '@mui/icons-material/Login';
+import { accountsApi, type AccountState } from '../app/accounts';
+import { AccountSignIn } from './AccountSignIn';
 
 const errorText = (reason: unknown) => reason instanceof Error ? reason.message : String(reason);
 
@@ -136,7 +139,12 @@ const HomeHeading = ({ children }: { children: React.ReactNode }) =>
  * The page the dialog shows instead of the home page: the terminal, a toolkit (added or not), a custom server, adding
  * a custom server, or an agent's suggestion to review.
  */
-type Page = 'terminal' | 'browser' | 'custom' | 'proposal' | `pack:${string}` | `server:${string}`;
+type Page = 'terminal' | 'browser' | 'custom' | 'proposal' | `pack:${string}` | `server:${string}` | `account:${string}`;
+
+/** What signing in to each provider lets the agent do (design-docs/72). */
+const ACCOUNT_ABOUT: Record<string, string> = {
+    huggingface: 'Open gated datasets you have accepted, and use your own rate limits. Read-only.',
+};
 
 /** The composer's Tools chip: the shared approval mode, the terminal, and the user's MCP servers. */
 export const ToolsAccessButton = () => {
@@ -153,6 +161,10 @@ export const ToolsAccessButton = () => {
     const [saving, setSaving] = useState(false);
     const [policyError, setPolicyError] = useState('');
     const [browser, setBrowser] = useState<BrowserStatus>();
+    // The user's sign-ins to data providers, as the server lists them (never their tokens).
+    const [accounts, setAccounts] = useState<AccountState[]>();
+    const loadAccounts = () => accountsApi.list().then(result => setAccounts(result.available ? result.accounts : []))
+        .catch(() => setAccounts([]));
     const mcp = useMcpSettings(open && !!config.MCP_AVAILABLE);
     // An agent's MCP proposal under review (its text turn).
     const [proposalTurnId, setProposalTurnId] = useState<string>();
@@ -197,7 +209,7 @@ export const ToolsAccessButton = () => {
         setOpen(true); go(turnId ? 'proposal' : undefined); setProposalTurnId(turnId);
         void loadPolicy();
         if (config.BROWSER_AVAILABLE) void loadBrowserStatus().then(applyBrowser).catch(() => undefined);
-        if (config.MCP_AVAILABLE) { void mcp.load(); void mcp.loadPacks(); }
+        if (config.MCP_AVAILABLE) { void mcp.load(); void mcp.loadPacks(); void loadAccounts(); }
     };
     useEffect(() => onToolsDialogRequest(turnId => show(turnId)), [config.MCP_AVAILABLE]);
     useEffect(() => { if (page?.startsWith('pack:')) void mcp.loadPackTools(page.slice('pack:'.length)); }, [page]);
@@ -231,15 +243,18 @@ export const ToolsAccessButton = () => {
     const shownPack = page?.startsWith('pack:') ? packs.find(pack => `pack:${pack.id}` === page) : undefined;
     const shownServer = page?.startsWith('server:') ? servers.find(server => `server:${server.id}` === page)
         : shownPack ? packServer(shownPack.id) : undefined;
+    const shownAccount = page?.startsWith('account:') ? accounts?.find(account => `account:${account.id}` === page) : undefined;
     const shown = page === 'terminal' ? (policy?.available ? page : undefined)
         : page === 'browser' ? (browser?.available ? page : undefined)
         : page === 'custom' ? (canAdd ? page : undefined)
         : page === 'proposal' ? (reviewing ? page : undefined)
+        : shownAccount ? page
         : shownPack || shownServer ? page : undefined;
     const pageTitle = shown === 'terminal' ? t('tools.terminal.name', { defaultValue: 'Terminal' })
         : shown === 'browser' ? t('browser.name', { defaultValue: 'Browser' })
         : shown === 'custom' ? t('tools.add.custom', { defaultValue: 'Custom MCP server' })
         : shown === 'proposal' ? proposal?.form.title
+        : shownAccount ? shownAccount.name
         : shownServer?.name ?? (shownPack ? t(`mcp.pack.${shownPack.id}.name`, { defaultValue: shownPack.name }) : undefined);
     const addPack = async () => { if (shownPack) await mcp.addPack(shownPack.id, draft); };
     const removeServer = async (server: McpServer) => { if (await mcp.remove(server)) go(undefined); };
@@ -286,6 +301,24 @@ export const ToolsAccessButton = () => {
                 {shown === 'browser' && browser && <BrowserDetails status={browser} busy={busy} onChange={changeBrowser}
                     onCheck={async () => { await runBrowser(checkBrowser); }} />}
                 {shown === 'proposal' && <McpProposalPanel turnId={proposalTurnId!} settings={mcp} onDismiss={() => { setProposalTurnId(undefined); go(undefined); }} />}
+                {shownAccount && <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.25 }}>
+                        <Box sx={{ display: 'flex', color: 'primary.main', pt: 0.5, '& svg': { fontSize: 22 } }}><LoginIcon /></Box>
+                        <Box>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{shownAccount.name}</Typography>
+                            <Typography variant="body2">{t(`accounts.about.${shownAccount.id}`, {
+                                defaultValue: ACCOUNT_ABOUT[shownAccount.id] ?? shownAccount.instructions ?? '' })}</Typography>
+                            <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }}>
+                                {t('accounts.aboutAll', { defaultValue: 'The agent fetches from it as you; your key stays in this app and goes only to the service.' })}
+                            </Typography>
+                        </Box>
+                    </Box>
+                    <Box component="section" aria-label={t('accounts.section', { defaultValue: 'Sign-in' })} sx={setupPanelSx}>
+                        <AccountSignIn account={shownAccount} onChange={next => setAccounts(current =>
+                            // A service the agent set up is forgotten with its key.
+                            current?.flatMap(account => account.id !== next.id ? [account] : next.signed_in || next.verified ? [next] : []))} />
+                    </Box>
+                </Box>}
                 {(shownPack || (shown?.startsWith('server:') && shownServer)) && <ToolPage key={shownPack ? `pack:${shownPack.id}` : shown}
                     server={shownServer} pack={shownPack} previewTools={shownPack ? mcp.packTools[shownPack.id] : undefined}
                     draft={draft} onDraft={setDraft} busy={busy} onAdd={() => void addPack()} {...serverActions(shownServer)}
@@ -356,6 +389,22 @@ export const ToolsAccessButton = () => {
                                         label={t('mcp.serverEnabled', { defaultValue: 'Use {{name}}', name: server.name })} />} />;
                             })}
                         </Box>
+                        {!!accounts?.length && <>
+                            <HomeHeading>{t('tools.home.accounts', { defaultValue: 'Accounts' })}</HomeHeading>
+                            <Box sx={itemCardGridSx}>
+                                {accounts.map(account => <ToolCard key={account.id} icon={<LoginIcon />} name={account.name}
+                                    available={!account.signed_in}
+                                    about={t(`accounts.about.${account.id}`, { defaultValue: ACCOUNT_ABOUT[account.id] ?? account.send_to.join(', ') })}
+                                    status={<Typography component="span" variant="caption"
+                                        sx={{ color: account.signed_in ? 'text.secondary' : 'primary.main' }}>
+                                        {account.signed_in
+                                            ? account.login
+                                                ? t('accounts.signedInShort', { defaultValue: 'Signed in as @{{login}}', login: account.login })
+                                                : t('accounts.keyShort', { defaultValue: 'Key {{hint}} saved', hint: account.secret_hint || '' })
+                                            : t('accounts.signInShort', { defaultValue: '+ Sign in' })}</Typography>}
+                                    onOpen={() => go(`account:${account.id}`)} />)}
+                            </Box>
+                        </>}
                         {canAdd && <>
                             <HomeHeading>{t('tools.home.more', { defaultValue: 'Add more' })}</HomeHeading>
                             <Box sx={itemCardGridSx}>

@@ -22,6 +22,20 @@ describe('map templates', () => {
             .toMatchObject({ type: 'bubbles', layout: 'dorling', text: 'state' });
     });
 
+    it('compiles a route of stops into legged paths with arrows', () => {
+        const routes = compileTemplate({ template: 'routes', data: { table: 't' }, encoding: { lat: 'y', lon: 'x', order: 'stop', label: 'place', size: 'crew' },
+            properties: { curve: 'straight' } });
+        expect(routes.layers[0]).toMatchObject({ type: 'paths', lon: 'x', lat: 'y', order: 'stop', legs: true, text: 'place', curve: 'straight', direction: 'arrow' });
+        expect(routes.layers[0].group).toBeUndefined();
+        // Named stops get no search box, as flows' places do not.
+        expect(routes.controls.map(control => control.type)).toEqual(['details']);
+        // Several routes by group are coloured by it unless a colour is bound.
+        expect(compileTemplate({ template: 'routes', data: { table: 't' }, encoding: { lat: 'y', lon: 'x', order: 'stop', group: 'voyage' } }).layers[0])
+            .toMatchObject({ group: 'voyage', color: { field: 'voyage' } });
+        expect(templateErrors({ template: 'routes', data: { table: 't' }, encoding: { lat: 'y', lon: 'x' } })).toEqual(['Route map needs encoding.order.']);
+        expect(compatibleTemplates({ lat: 'y', lon: 'x', order: 'stop' })).toContain('routes');
+    });
+
     it('explains missing channels', () => {
         expect(templateErrors({ template: 'bubbles', data: { table: 't' }, encoding: { color: 'x' } })).toEqual([
             'Bubble map needs encoding.size.', 'Bubble map needs encoding.region, or encoding.lat and encoding.lon.']);

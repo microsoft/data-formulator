@@ -143,6 +143,11 @@ export interface Layer extends Location {
     /** Paths: rows sharing `group` form one line, ordered by `order`. */
     group?: string;
     order?: string;
+    /**
+     * Paths: draw each leg between consecutive rows as its own flow (a route of stops, not a track): it bows
+     * as `curve` says, takes the colour and width of the row it leaves, and carries its own arrowhead.
+     */
+    legs?: boolean;
     /** Hexbin radius / heatmap bandwidth, in pixels. */
     radius?: number;
     weight?: string;
@@ -151,7 +156,7 @@ export interface Layer extends Location {
     zoomOnClick?: boolean;
     /** Show only rows whose `field` matches the rows selected in another layer (`by`: that layer's field, default `field`). */
     selectionFilter?: { layer: string; field: string; by?: string };
-    /** Flows: curved arcs (default on flat maps), great circles (default on the globe), or straight lines. */
+    /** Flows and routes: curved arcs (default on flat maps), great circles (default on the globe), or straight lines. */
     curve?: 'arc' | 'great-circle' | 'straight';
     /** Bubbles: `dorling` spreads circles so they do not overlap (a Dorling cartogram). */
     layout?: 'dorling';
@@ -353,7 +358,8 @@ export function parseMapSpec(text: string): ParsedMap {
             errors.push(`${where}: ${layer.type} need key or lon and lat.`);
         }
         if (layer.type === 'labels' && !layer.text) errors.push(`${where}: labels need text, the field to show.`);
-        if (layer.type === 'paths' && !layer.group) warnings.push(`${where}: paths without group draw one line through all rows.`);
+        if (layer.type === 'paths' && !layer.group && !layer.legs) warnings.push(`${where}: paths without group draw one line through all rows.`);
+        if (layer.legs !== undefined && typeof layer.legs !== 'boolean') errors.push(`${where}.legs must be true or false.`);
         for (const location of [layer, layer.from, layer.to]) {
             if (location?.keyType !== undefined && !oneOf(KEY_TYPES, location.keyType)) errors.push(`${where}.keyType must be one of ${KEY_TYPES.join(', ')}.`);
         }

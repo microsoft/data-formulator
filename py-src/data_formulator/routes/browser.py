@@ -53,8 +53,8 @@ def browser_settings():
                 from data_formulator.browser.service import reset_service
                 reset_service()
         return json_ok(_status())
-    except ConfigurationConflict as exc:
-        return {'status': 'error', 'error': {'code': 'INVALID_REQUEST', 'message': str(exc), 'retry': False}}, 409
+    except ConfigurationConflict:
+        return {'status': 'error', 'error': {'code': 'INVALID_REQUEST', 'message': 'Configuration changed. Reload before saving.', 'retry': False}}, 409
     except (ValueError, OSError) as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
 

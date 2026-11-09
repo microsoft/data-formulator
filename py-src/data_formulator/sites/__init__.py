@@ -127,6 +127,25 @@ def all_demo_ids() -> list[str]:
     return sorted(site_id for site_id in ids if site_profile(site_id))
 
 
+def known_site_id(site_id: str | None) -> str | None:
+    """The demo named ``site_id``, or None when there is no such demo.
+
+    The id returned is the demo folder's name as listed on disk, never the caller's string, so a
+    request's value cannot reach the storage and content paths built from it.
+    """
+    if not site_id or not _SITE_ID.fullmatch(site_id):
+        return None
+    for base in (sites_dir(), PACKAGED_DEMOS):
+        try:
+            names = os.listdir(base)
+        except OSError:
+            continue
+        name = next((name for name in names if name == site_id), None)
+        if name is not None:
+            return name if site_profile(name) else None
+    return None
+
+
 def current_site() -> str | None:
     """The demo the current request belongs to (its ``X-DF-Demo`` header), or None for the standard app."""
     try:
@@ -135,8 +154,7 @@ def current_site() -> str | None:
         return None
     if not has_request_context():
         return None
-    site = (request.headers.get(DEMO_HEADER) or "").strip()
-    return site if site and site_profile(site) else None
+    return known_site_id((request.headers.get(DEMO_HEADER) or "").strip())
 
 
 def default_demo() -> str | None:

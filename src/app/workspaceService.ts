@@ -142,6 +142,11 @@ function _notifyListChanged(): void {
     window.dispatchEvent(new Event(WORKSPACE_LIST_CHANGED));
 }
 
+/** Tell session lists to refresh after a session was added outside this module (e.g. received by wormhole). */
+export function notifyWorkspaceListChanged(): void {
+    _notifyListChanged();
+}
+
 /** Listen for changes to the session's files; `added` are files known to exist already, before a re-list. */
 export function onWorkspaceFilesChanged(cb: (added: WorkspaceFile[]) => void): () => void {
     const listener = (event: Event) => cb((event as CustomEvent<WorkspaceFile[] | undefined>).detail ?? []);

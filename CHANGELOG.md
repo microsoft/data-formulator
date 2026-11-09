@@ -14,6 +14,18 @@ Notable changes to Data Formulator are documented here. The format follows
   passwords. Contributed by @syedataiba12311-coder (#503).
 - Spanish, Portuguese and Russian interface languages. Contributed by
   @fazelllyyy (#502).
+- Sign-ins the agent can ask for. The agent reaches Hugging Face's APIs without a
+  toolkit. For any service that needs a key (a Kaggle competition, an API
+  key), it proposes a sign-in: which site the key goes to and how it is sent.
+  The run pauses on a card above the chat box. The card shows where your key
+  will go, takes it (or reuses a login this computer already has, read with the
+  command or file the card shows, e.g. `gh auth token`; or, for Hugging Face, a
+  code), checks it, and continues the run. Keys stay in the credential vault.
+  They go only to the hosts you confirmed and are never shown to the agent.
+  A sign-in is kept for the session it was made in, unless you choose to keep
+  it for all sessions. Sign-ins are listed under
+  Tools > Accounts, and the Console's Sign-ins tab shows what you signed in
+  to, how, and each request made with it. See design-docs/72.
 
 ### Changed
 

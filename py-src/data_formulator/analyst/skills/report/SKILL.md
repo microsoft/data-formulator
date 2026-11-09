@@ -46,6 +46,8 @@ returns an observation; it does not end the run. Follow the baseline completion 
 
 Embed supporting charts using `![caption](chart://chart_id)` on its own line.
 The ID must be a chart in the session ([SESSION INDEX], session/charts) or from a successful `visualize` result.
+Embed a map file (made with `write_map`) the same way by its path: `![caption](map://files/<name>.map.json)`;
+the report shows a still picture of the map as it first opens (its controls and street tiles are left out).
 Use concise captions and explain the relevant takeaway; avoid duplicate embeds.
 Use standard Markdown tables for tabular results.
 

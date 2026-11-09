@@ -23,7 +23,7 @@ import uuid
 import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Optional
 
 import pandas as pd
@@ -130,6 +130,10 @@ def _sanitize_identity_id(identity_id: str) -> str:
 # Default; overridable per server start via --scratch-max-size-mb (CLI_ARGS['scratch_max_bytes']).
 SCRATCH_MAX_BYTES = 1 * 1024 * 1024 * 1024  # 1 GiB
 WORKSPACE_TEXT_MEMORY_MAX_CHARS = 100_000
+# Bounds on a session archive being imported (uncompressed); sessions arrive from other people
+# through downloads and wormhole transfers (design-docs/71).
+MAX_SESSION_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB
+MAX_SESSION_ARCHIVE_ENTRIES = 20_000
 
 
 def run_sql_over_parquet_file(path: Path | str, sql: str) -> pd.DataFrame:
@@ -1631,7 +1635,13 @@ class Workspace:
     # ------------------------------------------------------------------
 
     def export_session_zip(self, state: dict) -> io.BytesIO:
-        """Export current state + workspace as a zip."""
+        """Export ``state`` + the workspace's shareable files as a zip.
+
+        Files are filtered by :func:`~data_formulator.datalake.session_archive.is_shared_workspace_file`
+        (design-docs/71); callers sharing a saved state clean it with ``build_session_archive``.
+        """
+        from data_formulator.datalake.session_archive import is_shared_workspace_file
+
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("state.json", json.dumps(state, default=str, ensure_ascii=False))
@@ -1639,12 +1649,10 @@ class Workspace:
                 ws_snap = Path(tmp_dir) / "workspace"
                 self.save_workspace_snapshot(ws_snap)
                 if ws_snap.exists():
-                    for ws_file in ws_snap.rglob("*"):
-                        relative = ws_file.relative_to(ws_snap)
-                        # The agent's conversation stays with the session it happened in (design-docs/63).
-                        if ws_file.is_file() and relative.parts[:2] != ("scratch", "_agent"):
-                            arcname = "workspace/" + str(relative)
-                            zf.write(ws_file, arcname)
+                    for ws_file in sorted(ws_snap.rglob("*")):
+                        relative = PurePosixPath(*ws_file.relative_to(ws_snap).parts)
+                        if ws_file.is_file() and is_shared_workspace_file(relative, ws_file):
+                            zf.write(ws_file, f"workspace/{relative}")
         buf.seek(0)
         return buf
 
@@ -1656,6 +1664,10 @@ class Workspace:
         with zipfile.ZipFile(zip_data, "r") as zf:
             if "state.json" not in zf.namelist():
                 raise ValueError("Invalid session file: missing state.json")
+            entries = zf.infolist()
+            if (len(entries) > MAX_SESSION_ARCHIVE_ENTRIES
+                    or sum(entry.file_size for entry in entries) > MAX_SESSION_ARCHIVE_BYTES):
+                raise ValueError("Session file is too large to import")
 
             state = json.loads(zf.read("state.json"))
 

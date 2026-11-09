@@ -67,6 +67,16 @@ export default defineConfig({
         target: `http://localhost:${apiPort}`,
         changeOrigin: false,
       },
+      // So do sign-ins to data providers.
+      '/api/accounts': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: false,
+      },
+      // So does wormhole session sharing: its codes are secrets.
+      '/api/sessions/wormhole': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: false,
+      },
       '/api': {
         target: `http://localhost:${apiPort}`,
         changeOrigin: true,

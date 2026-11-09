@@ -11,13 +11,8 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
-import i18n from '../i18n';
 import {
     Box,
-    Dialog,
-    DialogContent,
-    DialogTitle,
     Typography,
     IconButton,
     Tooltip,
@@ -33,17 +28,15 @@ import {
     ListItemText,
     ListSubheader,
     ClickAwayListener,
-    Chip,
-    alpha,
 } from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
 import StarRoundedIcon from '@mui/icons-material/StarRounded';
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded';
 import DownloadIcon from '@mui/icons-material/Download';
-import PublishOutlinedIcon from '@mui/icons-material/PublishOutlined';
-import { publishExampleSession } from './ExampleSessions';
+import { requestWormholeDialog } from '../app/wormholeService';
+import { AllSessions, formatCompactTime, SessionBadges, sessionDateGroup, sessionGroupHeaderSx,
+    sessionGroupLabelsFor, sessionTimeFor, sortSessions, useSessionActions, type SessionDateGroup, type SessionSortKey } from './AllSessions';
 import { generateUUID } from '../app/identity';
-import { generateWorkspaceId, leaveSession, openSession, renameSession } from '../app/sessionThunks';
+import { generateWorkspaceId, leaveSession } from '../app/sessionThunks';
 import { defaultSessionName } from '../app/useWorkspaceAutoName';
 import { openSessionInNewTab } from '../app/sessionTabs';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
@@ -80,13 +73,13 @@ import { AppDispatch } from '../app/store';
 import { CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef, translateBackend, fetchConnectorCatalog } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { LoadableState, errorLoadable, loadingLoadable, successLoadable } from '../app/loadableState';
-import { getConnectorIcon, connectorSortOrder, RelationalDBIcon } from '../icons';
+import { getConnectorIcon, connectorSortOrder, RelationalDBIcon, WormholeReceiveIcon, WormholeSendIcon } from '../icons';
 import { loadTable } from '../app/tableThunks';
-import { listWorkspaces, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, setWorkspaceStarred } from '../app/workspaceService';
+import { listWorkspaces, importWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import { borderColor, sidebarEdge, sidebarMenuSx, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarToolbarSx } from '../app/tokens';
-import { ItemCard, ItemCardAction, itemCardGridSx, MetadataCard, MetadataChips, StarAction, starredColor, ViewAllButton } from '../components/ItemCard';
+import { ItemCard, ItemCardAction, MetadataCard, MetadataChips, starredColor, ViewAllButton } from '../components/ItemCard';
 
 import type { ConnectorInstance, DictTable } from '../components/ComponentType';
 import {
@@ -123,53 +116,9 @@ const MAX_PANEL_WIDTH = REFERENCE.sidebar.max;
 const SIDEBAR_WIDTH_KEY = 'df-sidebar-panel-width';
 const SIDEBAR_PINNED_KEY = 'df-sidebar-pinned';
 
-// Compact relative time for sidebar rows: "2m", "3h", "yesterday",
-// "May 5", "May 5, 24". Designed to stay <= ~10 chars so it fits in
-// the narrow sidebar without truncating session names.
-function formatCompactTime(iso: string | null | undefined): string {
-    if (!iso) return '';
-    const then = new Date(iso);
-    const ts = then.getTime();
-    if (Number.isNaN(ts)) return '';
-    const now = Date.now();
-    const diffSec = Math.max(0, Math.round((now - ts) / 1000));
-    if (diffSec < 60) return i18n.t('sidebar.timeJustNow');
-    const diffMin = Math.round(diffSec / 60);
-    if (diffMin < 60) return i18n.t('sidebar.timeMinutes', { count: diffMin });
-    const diffHr = Math.round(diffMin / 60);
-    if (diffHr < 24) return i18n.t('sidebar.timeHours', { count: diffHr });
-    const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
-    const diffDays = Math.floor((startOfToday.getTime() - then.getTime()) / 86400000) + 1;
-    if (diffDays === 1) return i18n.t('sidebar.timeYesterday');
-    if (diffDays < 7) return i18n.t('sidebar.timeDays', { count: diffDays });
-    const sameYear = then.getFullYear() === new Date().getFullYear();
-    return then.toLocaleDateString(undefined, sameYear
-        ? { month: 'short', day: 'numeric' }
-        : { month: 'short', day: 'numeric', year: '2-digit' });
-}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type SessionDateGroup = 'today' | 'yesterday' | 'week' | 'month' | 'older';
-
-function sessionDateGroup(iso: string | null | undefined): SessionDateGroup {
-    const ts = iso ? new Date(iso).getTime() : NaN;
-    if (Number.isNaN(ts)) return 'older';
-    const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
-    const days = Math.floor((startOfToday.getTime() - ts) / 86400000) + 1;
-    return days <= 0 ? 'today' : days === 1 ? 'yesterday' : days < 7 ? 'week' : days < 30 ? 'month' : 'older';
-}
-
-const sessionGroupLabelsFor = (t: TFunction): Record<SessionDateGroup, string> => ({
-    today: t('sidebar.groupToday', { defaultValue: 'Today' }),
-    yesterday: t('sidebar.groupYesterday', { defaultValue: 'Yesterday' }),
-    week: t('sidebar.groupWeek', { defaultValue: 'Previous 7 days' }),
-    month: t('sidebar.groupMonth', { defaultValue: 'Previous 30 days' }),
-    older: t('sidebar.groupOlder', { defaultValue: 'Older' }),
-});
-
-const sessionGroupHeaderSx = { m: 0, pb: 0.5, fontSize: textVar.xxs, fontWeight: 600, letterSpacing: '0.04em',
-    textTransform: 'uppercase', color: 'text.disabled' } as const;
 
 /** Quiet placeholder while a panel's list loads for the first time. */
 const PanelLoadingSpinner: React.FC = () => {
@@ -179,68 +128,6 @@ const PanelLoadingSpinner: React.FC = () => {
     </Box>;
 };
 
-/**
- * All sessions in a searchable dialog. With `groupTime`, sessions (already sorted by that time)
- * fall under day ranges; without it (name order) they render as one grid. A Starred filter
- * appears once any session is starred; `starredOnly` opens with it on.
- */
-export const SessionsDialog: React.FC<{ open: boolean; onClose: () => void; title: string; sessions: WorkspaceSummary[];
-    groupTime?: (session: WorkspaceSummary) => string | null | undefined; renderCard: (session: WorkspaceSummary) => React.ReactNode;
-    starredOnly?: boolean }>
-    = ({ open, onClose, title, sessions, groupTime, renderCard, starredOnly: initialStarredOnly = false }) => {
-    const { t } = useTranslation();
-    const [query, setQuery] = useState('');
-    const [starredOnly, setStarredOnly] = useState(initialStarredOnly);
-    useEffect(() => { if (open) setStarredOnly(initialStarredOnly); }, [open, initialStarredOnly]);
-    const anyStarred = sessions.some(s => s.starred);
-    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const matches = sessions.filter(s => (!starredOnly || !anyStarred || s.starred)
-        && terms.every(term => `${s.display_name} ${s.scheduled_run?.scheduleName ?? ''}`.toLowerCase().includes(term)));
-    const labels = sessionGroupLabelsFor(t);
-    // Cards are built only while the dialog shows (including its closing transition), not on every sidebar render.
-    const [shown, setShown] = useState(open);
-    if (open && !shown) setShown(true);
-    // Hundreds of cards would make opening and closing the dialog crawl; render them as the user scrolls.
-    const { count, sentinel } = useProgressiveCount(matches.length, { initial: 36, step: 36, resetKey: `${shown}|${starredOnly}|${query}` });
-    const groups = (shown ? matches.slice(0, count) : []).reduce<{ group: SessionDateGroup | null; sessions: WorkspaceSummary[] }[]>((all, s) => {
-        const group = groupTime ? sessionDateGroup(groupTime(s)) : null;
-        const last = all[all.length - 1];
-        if (last && last.group === group) last.sessions.push(s);
-        else all.push({ group, sessions: [s] });
-        return all;
-    }, []);
-    return <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth aria-labelledby="all-sessions-title"
-        slotProps={{ paper: { sx: { height: 'min(720px, 85vh)' } }, transition: { onExited: () => { setQuery(''); setShown(false); } } }}>
-        <DialogTitle id="all-sessions-heading" sx={{ display: 'flex', alignItems: 'center', gap: 1.5, fontSize: textVar.lg, fontWeight: 600 }}>
-            <Box component="span" id="all-sessions-title" sx={{ flex: 1 }}>{title}</Box>
-            {anyStarred && <Chip size="small" clickable aria-pressed={starredOnly} onClick={() => setStarredOnly(value => !value)}
-                label={t('workspace.starred')}
-                icon={starredOnly ? <StarRoundedIcon /> : <StarBorderRoundedIcon />}
-                variant={starredOnly ? 'filled' : 'outlined'}
-                sx={{ fontSize: textVar.xs, '& .MuiChip-icon': { color: starredColor, fontSize: iconVar.sm },
-                    ...(starredOnly ? { bgcolor: alpha(starredColor, 0.14), '&:hover': { bgcolor: alpha(starredColor, 0.22) } } : {}) }} />}
-            <TextField size="small" value={query} onChange={event => setQuery(event.target.value)}
-                placeholder={t('sidebar.searchSessions', { defaultValue: 'Search sessions' })}
-                slotProps={{ htmlInput: { 'aria-label': t('sidebar.searchSessions', { defaultValue: 'Search sessions' }) },
-                    input: { startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: iconVar.md, color: 'text.disabled' }} /></InputAdornment> } }}
-                sx={{ width: 260, '& .MuiInputBase-root': { fontSize: textVar.sm } }} />
-            <IconButton size="small" aria-label={t('common.close', { defaultValue: 'Close' })} onClick={onClose}>
-                <CloseIcon sx={{ fontSize: iconVar.md }} />
-            </IconButton>
-        </DialogTitle>
-        <DialogContent dividers>
-            {matches.length === 0
-                ? <Typography sx={{ py: 4, textAlign: 'center', fontSize: textVar.sm, color: 'text.disabled' }}>
-                    {t('sidebar.noMatchingSessions', { defaultValue: 'No matching sessions' })}</Typography>
-                : groups.map(({ group, sessions: groupSessions }, groupIndex) => <Box component="section" key={group ?? 'all'}
-                    aria-label={group ? labels[group] : undefined} sx={{ mt: groupIndex === 0 ? 0 : 2.5 }}>
-                    {group && <Typography component="h3" sx={sessionGroupHeaderSx}>{labels[group]}</Typography>}
-                    <Box sx={itemCardGridSx}>{groupSessions.map(renderCard)}</Box>
-                </Box>)}
-            {sentinel}
-        </DialogContent>
-    </Dialog>;
-};
 
 interface CatalogCache {
     tree: CatalogTreeNode[];
@@ -540,6 +427,7 @@ const DataSourceSidebarPanel: React.FC<{
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const inSession = useSelector(dfSelectors.selectInSession);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+    const wormholeAvailable = serverConfig?.SESSION_WORMHOLE_AVAILABLE === true;
     const identityKey = useSelector(
         (state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`,
     );
@@ -636,51 +524,12 @@ const DataSourceSidebarPanel: React.FC<{
         if (sessionsLoaded) cachePanelList(identityKey, 'sessions', sessions);
     }, [identityKey, sessions, sessionsLoaded]);
 
-    // Default to creation chronology so auto-saves do not unexpectedly move
-    // older sessions. Modified time remains available as an explicit sort.
-    type SessionSortKey = 'created_desc' | 'created_asc' | 'updated_desc' | 'name_asc';
     const [sessionSort, setSessionSort] = useState<SessionSortKey>('created_desc');
     const [sessionSortAnchor, setSessionSortAnchor] = useState<HTMLElement | null>(null);
     const [sessionMenu, setSessionMenu] = useState<{ anchor: HTMLElement; session: WorkspaceSummary } | null>(null);
-    const handlePublishExample = async (id: string, title: string) => {
-        try {
-            await publishExampleSession(id, title);
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), type: 'success', component: 'workspace',
-                value: t('workspace.publishedExample', { defaultValue: 'Published "{{title}}" as an example session.', title }) }));
-        } catch (error) {
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), type: 'error', component: 'workspace',
-                value: error instanceof Error ? error.message : t('workspace.publishExampleFailed') }));
-        }
-    };
     const sessionMenuAction = useRef<(() => void) | null>(null);
-    const [sessionsDialogOpen, setSessionsDialogOpen] = useState(false);
 
-    const sortedSessions = useMemo(() => {
-        const cmpDate = (a: string | null | undefined, b: string | null | undefined): number => {
-            if (!a && !b) return 0;
-            if (!a) return 1;
-            if (!b) return -1;
-            return a.localeCompare(b);
-        };
-        const copy = [...sessions];
-        switch (sessionSort) {
-            case 'created_desc':
-                return copy.sort((a, b) => cmpDate(b.created_at, a.created_at));
-            case 'created_asc':
-                return copy.sort((a, b) => cmpDate(a.created_at, b.created_at));
-            case 'updated_desc':
-                return copy.sort((a, b) =>
-                    cmpDate(b.saved_at || b.created_at, a.saved_at || a.created_at)
-                    || cmpDate(b.created_at, a.created_at),
-                );
-            case 'name_asc':
-                return copy.sort((a, b) =>
-                    (a.display_name || '').localeCompare(b.display_name || ''),
-                );
-            default:
-                return copy;
-        }
-    }, [sessions, sessionSort]);
+    const sortedSessions = useMemo(() => sortSessions(sessions, sessionSort), [sessions, sessionSort]);
 
     const refreshSessions = useCallback(() => {
         listWorkspaces()
@@ -689,6 +538,8 @@ const DataSourceSidebarPanel: React.FC<{
             .catch(() => { /* session list is best-effort */ })
             .finally(() => setSessionsLoaded(true));
     }, []);
+    const { open: handleOpenSession, rename: renameSessionTo, toggleStar: toggleStarSession, exportSession: handleExportSession,
+        remove: handleDeleteSession } = useSessionActions(setSessions, refreshSessions);
 
     // Inline rename state for sidebar session rows.
     const [renamingSession, setRenamingSession] = useState<string | null>(null);
@@ -709,57 +560,11 @@ const DataSourceSidebarPanel: React.FC<{
         if (!id) return;
         const next = renameSessionDraft.trim();
         const current = sessions.find(s => s.id === id);
-        if (!current || !next || next === current.display_name) {
-            cancelRenameSession();
-            return;
-        }
-        setSessions(prev =>
-            prev.map(s => (s.id === id ? { ...s, display_name: next } : s)),
-        );
         cancelRenameSession();
-        try {
-            await dispatch(renameSession(id, next));
-        } catch {
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(), type: 'error',
-                component: 'data-source-sidebar',
-                value: t('sidebar.failedRenameSession'),
-            }));
-            refreshSessions();
-        }
-    }, [renamingSession, renameSessionDraft, sessions, activeWorkspace, cancelRenameSession, dispatch, refreshSessions]);
+        if (current && next && next !== current.display_name) await renameSessionTo(id, next);
+    }, [renamingSession, renameSessionDraft, sessions, cancelRenameSession, renameSessionTo]);
 
-    const toggleStarSession = useCallback(async (session: WorkspaceSummary) => {
-        const starred = !session.starred;
-        setSessions(prev => prev.map(s => (s.id === session.id ? { ...s, starred } : s)));
-        try {
-            await setWorkspaceStarred(session.id, starred);
-        } catch {
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(), type: 'error',
-                component: 'data-source-sidebar',
-                value: t('workspace.starFailed'),
-            }));
-            refreshSessions();
-        }
-    }, [dispatch, refreshSessions, t]);
 
-    const handleExportSession = useCallback(async (id: string, displayName: string) => {
-        try {
-            const blob = await exportWorkspace(id);
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `${displayName || id}.zip`;
-            a.click();
-            URL.revokeObjectURL(a.href);
-        } catch (e) {
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(), type: 'error',
-                component: 'data-source-sidebar',
-                value: t('sidebar.exportFailed'),
-            }));
-        }
-    }, [dispatch, t]);
 
     const importRef = useRef<HTMLInputElement>(null);
     // Scroll container element for the connectors list. Held in state (via a
@@ -818,43 +623,7 @@ const DataSourceSidebarPanel: React.FC<{
         return <MetadataCard title={s.display_name} summary={counts || undefined} description={details || undefined} />;
     }, [t]);
 
-    const handleOpenSession = useCallback(async (sessionId: string, metaDisplayName?: string) => {
-        await dispatch(openSession(sessionId, metaDisplayName));
-    }, [dispatch]);
 
-    const handleDeleteSession = useCallback(async (sessionId: string) => {
-        try {
-            await deleteWorkspace(sessionId);
-            setSessions(prev => {
-                const updated = prev.filter(s => s.id !== sessionId);
-                // If we deleted the active session, switch to the next one up the list
-                if (activeWorkspace?.id === sessionId) {
-                    const deletedIndex = prev.findIndex(s => s.id === sessionId);
-                    const nextSession = updated[Math.min(deletedIndex, updated.length - 1)];
-                    if (nextSession) {
-                        handleOpenSession(nextSession.id, nextSession.display_name);
-                    } else {
-                        // No sessions left — back to the landing page.
-                        dispatch(dfActions.resetState());
-                    }
-                }
-                return updated;
-            });
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'success',
-                component: 'data source sidebar',
-                value: t('sidebar.sessionDeleted'),
-            }));
-        } catch {
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'error',
-                component: 'data source sidebar',
-                value: t('sidebar.failedDeleteSession'),
-            }));
-        }
-    }, [dispatch, activeWorkspace, handleOpenSession]);
 
     // ── Connector list ───────────────────────────────────────────────────────
 
@@ -1546,19 +1315,6 @@ const DataSourceSidebarPanel: React.FC<{
         '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
     } as const;
 
-    const panelSubActionSx = {
-        minWidth: 0,
-        p: 0,
-        color: 'text.secondary',
-        fontSize: textVar.xs,
-        fontWeight: 400,
-        lineHeight: 1.2,
-        textTransform: 'none',
-        '& .MuiButton-startIcon': { mr: 0.25 },
-        '& .MuiButton-startIcon .MuiSvgIcon-root': { fontSize: iconVar.xs },
-        '&:hover': { color: 'primary.main', bgcolor: 'transparent' },
-    } as const;
-
     const pinAction = (
         <Tooltip
             title={isPinned
@@ -1599,12 +1355,7 @@ const DataSourceSidebarPanel: React.FC<{
         await handleOpenSession(id);
         dispatch(dfActions.setDataSourceSidebarOpen(false));
     };
-    const sessionBadges = (s: WorkspaceSummary) => <>
-        {s.scheduled_run && !s.scheduled_run.forked && <Box component="span" role="img" aria-label="Scheduled"
-            sx={{ display: 'inline-flex', verticalAlign: 'middle', color: 'text.disabled', flexShrink: 0, ml: 0.5 }}>
-            <ScheduleOutlinedIcon sx={{ fontSize: 13 }} />
-        </Box>}
-    </>;
+    const sessionBadges = (s: WorkspaceSummary) => <SessionBadges session={s} />;
     const sessionActions = (s: WorkspaceSummary, isCurrent: boolean) => (!s.read_only || !isCurrent) ? <>
         {!isCurrent && <ItemCardAction label={t('sidebar.openInNewTab', { defaultValue: 'Open in new tab' })}
             icon={<OpenInNewIcon />} onClick={() => openSessionInNewTab(s.id)} />}
@@ -1614,13 +1365,8 @@ const DataSourceSidebarPanel: React.FC<{
     </> : undefined;
     // Time sorts group sessions under day ranges; name order keeps a per-row stamp instead.
     const sessionsGrouped = sessionSort !== 'name_asc';
-    const sessionTime = (s: WorkspaceSummary) =>
-        sessionSort === 'created_desc' || sessionSort === 'created_asc' ? s.created_at : (s.saved_at || s.created_at);
+    const sessionTime = sessionTimeFor(sessionSort);
     const sessionGroupLabels = sessionGroupLabelsFor(t);
-    const sessionCounts = (s: WorkspaceSummary) => [
-        s.table_count != null ? t('sidebar.tableCount', { count: s.table_count }) : '',
-        s.chart_count ? t('sidebar.chartCount', { count: s.chart_count }) : '',
-    ].filter(Boolean).join(' · ');
     // Rows render as the list scrolls, so opening and closing the panel stays fast with hundreds of sessions.
     const { count: sessionRowCount, sentinel: sessionRowSentinel } = useProgressiveCount(sessions.length,
         { initial: 40, step: 40, resetKey: sessionSort });
@@ -2084,8 +1830,9 @@ const DataSourceSidebarPanel: React.FC<{
                     <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary' }}>
                         {t('sidebar.sessions', { defaultValue: 'Sessions' })}
                     </Typography>
-                    <ViewAllButton label={t('sidebar.viewAllSessions', { defaultValue: 'View all sessions' })}
-                        onClick={() => { cancelRenameSession(); setSessionsDialogOpen(true); }} />
+                    <AllSessions sort={sessionSort} trigger={open => <ViewAllButton
+                        label={t('sidebar.viewAllSessions', { defaultValue: 'View all sessions' })}
+                        onClick={() => { cancelRenameSession(); open(); }} />} />
                     <Box sx={{ flex: 1 }} />
                     {pinAction}
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
@@ -2119,22 +1866,37 @@ const DataSourceSidebarPanel: React.FC<{
                         </Button>
                         </Tooltip>
                         <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
+                        {wormholeAvailable && (
+                            <Tooltip title={t('wormhole.receiveTooltip')}>
+                            <Button
+                                variant="outlined" size="small"
+                                startIcon={<WormholeReceiveIcon />}
+                                aria-label={t('wormhole.receiveTooltip')}
+                                onClick={() => requestWormholeDialog({ kind: 'receive' })}
+                                sx={{ ...sidebarPrimaryActionSx, color: 'text.secondary' }}
+                            >
+                                {t('wormhole.receive')}
+                            </Button>
+                            </Tooltip>
+                        )}
                         <Box sx={{ flex: 1 }} />
-                        <Button
-                            startIcon={<SortIcon />}
+                        <Tooltip title={`${t('sidebar.sortSessionList', { defaultValue: 'Sort sessions' })}: ${({
+                            created_desc: t('sidebar.sortNewest'),
+                            created_asc: t('sidebar.sortOldest'),
+                            updated_desc: t('sidebar.sortRecentlyModified'),
+                            name_asc: t('sidebar.sortName'),
+                        } as Record<SessionSortKey, string>)[sessionSort]}`}>
+                        <IconButton
+                            size="small"
                             aria-label={t('sidebar.sortSessionList', { defaultValue: 'Sort sessions' })}
                             aria-haspopup="menu"
                             aria-expanded={sessionSortAnchor ? 'true' : undefined}
                             onClick={(event) => setSessionSortAnchor(event.currentTarget)}
-                            sx={panelSubActionSx}
+                            sx={panelHeaderActionSx}
                         >
-                            {({
-                                created_desc: t('sidebar.sortNewest'),
-                                created_asc: t('sidebar.sortOldest'),
-                                updated_desc: t('sidebar.sortRecentlyModified'),
-                                name_asc: t('sidebar.sortName'),
-                            } as Record<SessionSortKey, string>)[sessionSort]}
-                        </Button>
+                            <SortIcon sx={{ fontSize: iconVar.md }} />
+                        </IconButton>
+                        </Tooltip>
                     </Box>
                     <Menu
                         anchorEl={sessionSortAnchor}
@@ -2207,7 +1969,7 @@ const DataSourceSidebarPanel: React.FC<{
                             tooltip={buildSessionTooltip(s, isCurrent)}
                             onOpen={() => handleOpenSession(s.id, s.display_name)}
                             onOpenInNewTab={() => openSessionInNewTab(s.id)}
-                            rename={isRenaming && !sessionsDialogOpen ? { value: renameSessionDraft, label: t('sidebar.rename', { defaultValue: 'Rename' }),
+                            rename={isRenaming ? { value: renameSessionDraft, label: t('sidebar.rename', { defaultValue: 'Rename' }),
                                 onChange: setRenameSessionDraft, onCommit: commitRenameSession, onCancel: cancelRenameSession } : undefined}
                             badges={sessionBadges(s)}
                             captions={[stamp]}
@@ -2243,9 +2005,8 @@ const DataSourceSidebarPanel: React.FC<{
                         <MenuItem key="export" onClick={run(() => handleExportSession(s.id, s.display_name))}>
                             <ListItemIcon><DownloadIcon /></ListItemIcon><ListItemText primary={t('sidebar.exportSession', { defaultValue: 'Export' })} />
                         </MenuItem>,
-                        ...(serverConfig?.CAN_CONFIGURE ? [<MenuItem key="publish" onClick={run(() => void handlePublishExample(s.id, s.display_name))}>
-                            <ListItemIcon><PublishOutlinedIcon /></ListItemIcon>
-                            <ListItemText primary={t('workspace.publishExample', { defaultValue: 'Publish as example' })} />
+                        ...(wormholeAvailable ? [<MenuItem key="wormhole" onClick={run(() => requestWormholeDialog({ kind: 'send', workspaceId: s.id, displayName: s.display_name }))}>
+                            <ListItemIcon><WormholeSendIcon /></ListItemIcon><ListItemText primary={t('wormhole.send')} />
                         </MenuItem>] : []),
                         <MenuItem key="delete" onClick={run(() => handleDeleteSession(s.id))} sx={{ color: 'error.main' }}>
                             <ListItemIcon sx={{ color: 'inherit' }}><DeleteIcon /></ListItemIcon><ListItemText primary={t('workspace.deleteSession')} />
@@ -2253,36 +2014,6 @@ const DataSourceSidebarPanel: React.FC<{
                     ];
                 })()}
             </Menu>
-            <SessionsDialog open={sessionsDialogOpen} onClose={() => { cancelRenameSession(); setSessionsDialogOpen(false); }}
-                title={t('sidebar.sessions', { defaultValue: 'Sessions' })} sessions={sortedSessions}
-                groupTime={sessionsGrouped ? sessionTime : undefined}
-                renderCard={s => {
-                                const isCurrent = activeWorkspace?.id === s.id;
-                                return <ItemCard key={s.id}
-                                    title={s.display_name}
-                                    starred={s.starred}
-                                    current={isCurrent}
-                                    onOpen={() => { setSessionsDialogOpen(false); void handleOpenSession(s.id, s.display_name); }}
-                                    onOpenInNewTab={() => openSessionInNewTab(s.id)}
-                                    rename={renamingSession === s.id ? { value: renameSessionDraft, label: t('sidebar.rename', { defaultValue: 'Rename' }),
-                                        onChange: setRenameSessionDraft, onCommit: commitRenameSession, onCancel: cancelRenameSession } : undefined}
-                                    badges={sessionBadges(s)}
-                                    captions={[isCurrent ? t('sidebar.currentSession') : '', sessionCounts(s),
-                                        sessionsGrouped ? '' : formatCompactTime(sessionTime(s))]}
-                                    actions={(!s.read_only || !isCurrent) ? <>
-                                        {!isCurrent && <ItemCardAction label={t('sidebar.openInNewTab', { defaultValue: 'Open in new tab' })}
-                                            icon={<OpenInNewIcon />} onClick={() => openSessionInNewTab(s.id)} />}
-                                        {!s.read_only && <>
-                                            <StarAction starred={!!s.starred} onToggle={() => void toggleStarSession(s)} />
-                                            <ItemCardAction label={t('sidebar.rename', { defaultValue: 'Rename' })} icon={<EditIcon />}
-                                                onClick={() => startRenameSession(s.id, s.display_name)} />
-                                            <ItemCardAction label={t('sidebar.exportSession', { defaultValue: 'Export' })} icon={<DownloadIcon />}
-                                                onClick={() => handleExportSession(s.id, s.display_name)} />
-                                            <ItemCardAction danger label={t('workspace.deleteSession')} icon={<DeleteIcon />}
-                                                onClick={() => handleDeleteSession(s.id)} />
-                                        </>}
-                                    </> : undefined} />;
-                            }} />
             </Box>
             )}
 

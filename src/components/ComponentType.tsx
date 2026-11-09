@@ -6,6 +6,7 @@ import { channels, type ChartTemplateDef } from 'flint-chart';
 import { inferTypeFromValueArray, refineTemporalType } from '../data/utils';
 import type { DataOperation, LoadQuery } from '../dataOperations/models';
 import { generateUUID } from '../app/identity';
+import type { SignInSpec } from '../app/accounts';
 
 export type FieldSource = "custom" | "original";
 
@@ -574,8 +575,36 @@ export interface McpFormArtifact extends SetupFormBase {
     };
 }
 
+/**
+ * The agent's request that the user sign in to a service (design-docs/72): a built-in one, or one the agent wrote a
+ * spec for (where the key goes, how). The agent supplies only the explanation and steps; the card's controls are the
+ * app's. Never holds a token, key or sign-in code.
+ */
+export interface SignInFormArtifact extends SetupFormBase {
+    kind: 'signin';
+    signin: {
+        provider: string;
+        providerName: string;
+        /** The sign-in as proposed and checked by the server (a card read from a saved session checks it again). */
+        spec?: SignInSpec;
+        verified?: boolean;
+        /** A different spec under the name of one the user saved: saving a key replaces it. */
+        replaces?: boolean;
+        reason: 'gated' | 'private' | 'rate_limit' | 'terms' | 'rejected' | 'unauthorized' | 'other';
+        explanation: string;
+        unlocks?: string;
+        /** Steps on the service's own site (links checked by the server, and again by the card). */
+        steps: { text: string; url?: string }[];
+        prefer?: 'reuse' | 'device' | 'token';
+        /** How the user answered: signed in (or was already, and continued), continued without, or replied in the chat instead. */
+        status: 'pending' | 'signed_in' | 'declined' | 'replied';
+        login?: string;
+    };
+}
+
 /** Canvas-owning form artifacts. Add future setup form kinds to this union. */
-export type FormArtifact = ConnectorFormArtifact | ScheduleFormArtifact | SessionsFormArtifact | WorkflowFormArtifact | McpFormArtifact;
+export type FormArtifact = ConnectorFormArtifact | ScheduleFormArtifact | SessionsFormArtifact | WorkflowFormArtifact
+    | McpFormArtifact | SignInFormArtifact;
 
 // Data source types for tracking where data originated
 export type DataSourceType = 'paste' | 'file' | 'url' | 'stream' | 'database' | 'example' | 'extract';

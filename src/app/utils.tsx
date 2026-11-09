@@ -76,6 +76,11 @@ export function getUrls() {
         SESSION_EXPORT: `/api/sessions/export`,
         SESSION_IMPORT: `/api/sessions/import`,
         SESSION_UPDATE_META: `/api/sessions/update-meta`,
+        SESSION_WORMHOLE_SEND: `/api/sessions/wormhole/send`,
+        SESSION_WORMHOLE_RECEIVE: `/api/sessions/wormhole/receive`,
+        SESSION_WORMHOLE_TRANSFERS: `/api/sessions/wormhole/transfers`,
+        SESSION_WORMHOLE_CANCEL: `/api/sessions/wormhole/cancel`,
+        SESSION_WORMHOLE_DISMISS: `/api/sessions/wormhole/dismiss`,
 
         // Workspace
         OPEN_WORKSPACE: `/api/tables/open-workspace`,
@@ -270,10 +275,9 @@ async function _doFetch(
 
         options = { ...options, headers };
 
-        console.log(
-            `[fetchWithIdentity] ${options.method || 'GET'} ${urlString} with headers:`,
-            Object.fromEntries(headers.entries()),
-        );
+        const loggedHeaders = Object.fromEntries(headers.entries());
+        if (loggedHeaders.authorization) loggedHeaders.authorization = '[redacted]';
+        console.log('[fetchWithIdentity] %s %s with headers:', options.method || 'GET', urlString, loggedHeaders);
 
     }
 

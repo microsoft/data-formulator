@@ -21,7 +21,7 @@ import * as d3 from 'd3';
 
 import { FILTER_OPS, type Control, type DataSource, type FieldRef, type FilterOp, type FlowDirection, type Layer, type LayerType, type MapView } from './spec';
 
-export const TEMPLATES = ['choropleth', 'bubbles', 'points', 'density', 'spikes', 'flows', 'tracks', 'bivariate', 'cartogram', 'vectors'] as const;
+export const TEMPLATES = ['choropleth', 'bubbles', 'points', 'density', 'spikes', 'flows', 'routes', 'tracks', 'bivariate', 'cartogram', 'vectors'] as const;
 export type TemplateName = typeof TEMPLATES[number];
 
 export const CHANNELS = ['region', 'lat', 'lon', 'color', 'color2', 'size', 'label', 'time', 'filter', 'weight',
@@ -84,7 +84,7 @@ export interface TemplateProperties {
     density?: 'hexbin' | 'heatmap';
     radius?: number;
     curve?: Layer['curve'];
-    /** Flows and tracks: arrowheads, a taper from origin to destination, moving dashes, or none. */
+    /** Flows, routes and tracks: arrowheads, a taper from origin to destination, moving dashes, or none. */
     direction?: FlowDirection;
     /** Maps placed by lat/lon: rows meeting one condition drawn as points above the map (M7+ quakes over their density). */
     highlight?: Highlight;
@@ -153,6 +153,7 @@ export const TEMPLATE_DEFS: Record<TemplateName, TemplateDef> = {
     spikes: { label: 'Spike map', requires: [WHERE_ANY, ['size']], channels: ['region', 'lat', 'lon', 'size', 'color', 'label', 'time', 'filter'], layer: 'spikes' },
     flows: { label: 'Flow map', requires: [['origin', 'originLat'], ['destination', 'destinationLat']],
         channels: ['origin', 'destination', 'originLat', 'originLon', 'destinationLat', 'destinationLon', 'size', 'color', 'time', 'filter'], layer: 'flows' },
+    routes: { label: 'Route map', requires: [['lat', 'lon'], ['order']], channels: ['lat', 'lon', 'order', 'group', 'label', 'color', 'size', 'time', 'filter'], layer: 'paths' },
     tracks: { label: 'Track map', requires: [['lat', 'lon'], ['group']], channels: ['lat', 'lon', 'group', 'order', 'color', 'size', 'time', 'filter'], layer: 'paths' },
     bivariate: { label: 'Bivariate choropleth', requires: [['region'], ['color'], ['color2']], channels: ['region', 'color', 'color2', 'label', 'time', 'filter'], layer: 'regions' },
     cartogram: { label: 'Cartogram', requires: [['region'], ['size']], channels: ['region', 'size', 'color', 'label', 'time', 'filter'], layer: 'bubbles' },
@@ -263,13 +264,17 @@ export function compileTemplate(spec: TemplateSpec): { data: Record<string, Data
         layer.to = encoding.destinationLat ? { lon: encoding.destinationLon, lat: encoding.destinationLat, ...(encoding.destination ? { label: encoding.destination } : {}) }
             : { key: encoding.destination, ...geoOf(properties) };
         if (properties.curve) layer.curve = properties.curve;
+    } else if (template === 'routes') {
+        // Stops in order, each leg its own arrow (bowed like a flow), coloured and sized by the row it leaves.
+        Object.assign(layer, { lon: encoding.lon, lat: encoding.lat, order: encoding.order, legs: true, ...(encoding.group ? { group: encoding.group } : {}) });
+        if (properties.curve) layer.curve = properties.curve;
     } else if (template === 'tracks') {
         Object.assign(layer, { lon: encoding.lon, lat: encoding.lat, group: encoding.group, ...(encoding.order ? { order: encoding.order } : {}) });
     } else {
         Object.assign(layer, where);
     }
     // Lines show which way they go with arrowheads, the cue readers decode best (Jenny et al. 2017).
-    if (template === 'flows' || template === 'tracks') layer.direction = properties.direction ?? 'arrow';
+    if (template === 'flows' || template === 'routes' || template === 'tracks') layer.direction = properties.direction ?? 'arrow';
     if (template === 'vectors') Object.assign(layer, encoding.angle ? { angle: encoding.angle } : { u: encoding.u, v: encoding.v });
     if (template === 'density') {
         layer.type = properties.density ?? 'hexbin';
@@ -277,7 +282,7 @@ export function compileTemplate(spec: TemplateSpec): { data: Record<string, Data
         if (properties.radius) layer.radius = properties.radius;
     }
     if (template === 'cartogram') layer.layout = 'dorling';
-    if (template === 'tracks' && !encoding.color && !properties.color) layer.color = { field: encoding.group };
+    if ((template === 'tracks' || template === 'routes') && encoding.group && !encoding.color && !properties.color) layer.color = { field: encoding.group };
 
     if (template === 'bivariate') {
         layer.color = { type: 'bivariate', field: fieldOf('color'), field2: fieldOf('color2'), ...(properties.scheme ? { scheme: properties.scheme } : {}) };
@@ -313,7 +318,7 @@ export function compileTemplate(spec: TemplateSpec): { data: Record<string, Data
     if (encoding.time) controls.push({ type: 'slider', field: encoding.time, data: 'main', play: properties.play !== false });
     if (encoding.filter) controls.push({ type: 'checkboxes', field: encoding.filter, data: 'main' });
     const named = !!(encoding.region || encoding.label);
-    if (properties.search ?? (named && template !== 'flows' && template !== 'density')) controls.push({ type: 'search', layer: 'main' });
+    if (properties.search ?? (named && template !== 'flows' && template !== 'routes' && template !== 'density')) controls.push({ type: 'search', layer: 'main' });
     if (properties.details ?? template !== 'density') controls.push({ type: 'details', layer: 'main' });
     if (properties.stats) controls.push({ type: 'stats', layer: 'main' });
 
@@ -364,6 +369,7 @@ export function compatibleTemplates(encoding: Encoding): TemplateName[] {
     return TEMPLATES.filter(name => {
         if (name === 'flows') return false;
         if (name === 'tracks') return hasPoint && has('group');
+        if (name === 'routes') return hasPoint && has('order');
         if (name === 'bivariate') return hasRegion && has('color') && has('color2');
         if (name === 'choropleth' || name === 'cartogram') return hasRegion && measure;
         if (name === 'points' || name === 'density') return hasPoint;

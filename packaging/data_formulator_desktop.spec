@@ -26,6 +26,12 @@ datas += collect_data_files("data_formulator", includes=["demos/**/*"], excludes
                             include_py_files=True)
 binaries = []
 hiddenimports = collect_submodules("data_formulator")
+# Session sharing (design-docs/71): Twisted, autobahn and txaio choose their backends at runtime.
+hiddenimports += collect_submodules("wormhole", filter=lambda name: ".test" not in name)
+hiddenimports += collect_submodules("txaio") + collect_submodules("autobahn.twisted")
+# autobahn's cffi validators read their C sources at import and load top-level extension modules.
+datas += collect_data_files("autobahn", includes=["nvx/*.c"])
+hiddenimports += ["_nvx_utf8validator", "_nvx_xormasker"]
 
 for package in (
     "azure.identity",
@@ -39,6 +45,8 @@ for package in (
     "pyarrow",
     "tiktoken",
     "tiktoken_ext",
+    # The Public Suffix List snapshot sign-in specs are checked against (accounts/specs.py).
+    "tldextract",
     "webview",
 ):
     package_datas, package_binaries, package_hiddenimports = collect_all(

@@ -546,7 +546,7 @@ describe('DataSourceSidebar', () => {
         fireEvent.click(screen.getByRole('button', { name: 'View all sessions' }));
         const dialog = await screen.findByRole('dialog', { name: 'Sessions' });
         expect(within(dialog).getByText('Movies')).toBeInTheDocument();
-        fireEvent.click(within(dialog).getByRole('button', { name: 'workspace.starred' }));
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Starred only' }));
         expect(within(dialog).queryByText('Movies')).toBeNull();
         expect(within(dialog).getByText('Gas prices')).toBeInTheDocument();
     });

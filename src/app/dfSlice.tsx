@@ -135,6 +135,8 @@ export interface ServerConfig {
     IDENTITY?: { type: string; id: string };
     CREDENTIAL_VAULT_ENABLED?: boolean;
     IS_LOCAL_MODE?: boolean;
+    /** Sessions can be sent and received with Magic Wormhole codes (local mode only). */
+    SESSION_WORMHOLE_AVAILABLE?: boolean;
     /** Whether this deployment offers workflows and schedules (local or managed mode). */
     WORKFLOWS_AVAILABLE?: boolean;
 }
@@ -228,8 +230,12 @@ export const canvasTabKey = (target: NonNullable<FocusedId>): string => {
 
 const isTabTarget = (target: FocusedId): target is CanvasTab['target'] => !!target && target.type !== 'reference';
 
+/** A sign-in request is answered above the chat box, under the agent's message, not on the canvas (design-docs/72). */
+const isSignIn = (turn: TextTurn) => turn.form?.kind === 'signin';
+
 /** A message with a view of its own (design-docs/58, rule 2); other messages show in the chat, beside what the canvas shows. */
-export const textTurnOwnsCanvas = (turn: TextTurn | undefined): boolean => !!turn && !!(turn.dataOperation || turn.form || turn.workflow
+export const textTurnOwnsCanvas = (turn: TextTurn | undefined): boolean => !!turn && !!(turn.dataOperation
+    || (turn.form && !isSignIn(turn)) || turn.workflow
     || (turn.textKind === 'explain' && turn.presentation === 'long_response'));
 
 /** A run's open end has a view of its own while it writes an app or map: the artifact taking shape (design-docs/58, rule 2). */
@@ -277,7 +283,8 @@ const ensureCanvasTab = (state: DataFormulatorState, target: CanvasTab['target']
 };
 
 /** A message the chat shows in full; one that waits on the user (a question, a form, a data step) or a run opens on its own. */
-export const chatShowsTurn = (turn: TextTurn | undefined): boolean => !!turn && !turn.dataOperation && !turn.form && !turn.workflow
+export const chatShowsTurn = (turn: TextTurn | undefined): boolean => !!turn && !turn.dataOperation
+    && (!turn.form || (isSignIn(turn) && !!turn.answered)) && !turn.workflow
     && !(turn.textKind === 'clarify' && !turn.answered && !!turn.options?.length);
 
 /**
@@ -2833,9 +2840,13 @@ export const dataFormulatorSlice = createSlice({
                 ...state.testedModels.filter(t => !globalIds.has(t.id)),
             ];
 
-            // Auto-select the first global model when nothing is selected.
-            if (state.selectedModelId == undefined && models.length > 0) {
-                state.selectedModelId = models[0].id;
+            // Select the first model when nothing is selected, or when the remembered selection is gone
+            // (removed or disabled in configuration, or no longer in the server's model list); otherwise
+            // the toolbar would ask to select a model while requests silently use the first one.
+            const available = state.serverConfig.DISABLE_CUSTOM_MODELS ? models : [...models, ...state.models];
+            if (available.length > 0 && !available.some(m => m.id === state.selectedModelId)) {
+                state.selectedModelId = available[0].id;
+                try { localStorage.setItem('df_selected_model', available[0].id); } catch { /* localStorage unavailable */ }
             }
         })
         .addCase(fetchGlobalModelList.rejected, (state, action) => {

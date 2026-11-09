@@ -285,7 +285,26 @@ def _run_self_test() -> int:
         print(f"self-test sandbox parquet read: FAIL - {result.get('content')}")
         return 1
 
-    return _self_test_clr()
+    return _self_test_wormhole() or _self_test_clr()
+
+
+def _self_test_wormhole() -> int:
+    """Load the session-sharing stack (design-docs/71): Twisted and txaio pick their backends at import time."""
+    try:
+        import txaio
+        from twisted.internet import reactor  # noqa: F401
+        txaio.use_twisted()
+        from autobahn.twisted.websocket import WebSocketClientFactory  # noqa: F401
+        from autobahn.websocket.utf8validator import Utf8Validator
+        from wormhole import create  # noqa: F401
+        from wormhole.transit import TransitReceiver, TransitSender  # noqa: F401
+        if not Utf8Validator().validate(b"wormhole")[0]:
+            raise RuntimeError("websocket UTF-8 validator rejected ASCII")
+    except Exception as exc:  # pragma: no cover - exercised only in frozen builds
+        print(f"self-test wormhole import: FAIL - {exc}")
+        return 1
+    print("self-test wormhole import: PASS")
+    return 0
 
 
 def _self_test_clr() -> int:

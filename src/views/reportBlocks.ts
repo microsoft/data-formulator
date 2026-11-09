@@ -336,3 +336,15 @@ export function streamingReportText(text: string): string {
     const defined = new Set([...body.matchAll(/^\[\^([^\]\s]+)\]:/gm)].map(match => match[1]));
     return body.replace(CITE_REF, (ref, key: string) => defined.has(key) ? ref : '');
 }
+
+/** A map file embedded in a report: `![caption](map://files/<name>.map.json)`. */
+export const MAP_EMBED = /!\[([^\]]*)\]\(map:\/\/([^)\s]+)\)/g;
+/** The image cache key (and `data-chart-id`, which edited reports keep) of an embedded map. */
+export const mapEmbedKey = (path: string) => `map:${path}`;
+
+/** The map files a report embeds: in its Markdown, or as images an edit kept. */
+export function reportMapPaths(text: string): string[] {
+    const paths = [...text.matchAll(MAP_EMBED)].map(match => match[2]);
+    paths.push(...[...text.matchAll(/data-chart-id="map:([^"]+)"/g)].map(match => match[1]));
+    return Array.from(new Set(paths));
+}

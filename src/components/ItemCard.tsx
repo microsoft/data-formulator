@@ -204,6 +204,8 @@ export interface ItemCardProps {
     mini?: boolean;
     /** Starred by the user: a gold star before the title and, on cards, a gold-tinted surface. */
     starred?: boolean;
+    /** Cards: let a long title wrap to this many lines (in a slightly smaller size) instead of cutting it at one. */
+    titleLines?: number;
 }
 
 const RenameField: React.FC<{ rename: NonNullable<ItemCardProps['rename']>; mini: boolean }> = ({ rename, mini }) =>
@@ -228,7 +230,8 @@ const revealSx = {
 const stopClick = (event: React.MouseEvent) => event.stopPropagation();
 
 export const ItemCard: React.FC<ItemCardProps> = ({ title, badges, captions = [], meta, rename, actions, persistentActions = false,
-    onOpen, openLabel, onOpenInNewTab, tooltip, inactive = false, current = false, active = false, compact = false, mini = false, starred = false }) => {
+    onOpen, openLabel, onOpenInNewTab, tooltip, inactive = false, current = false, active = false, compact = false, mini = false, starred = false,
+    titleLines = 1 }) => {
     const clickable = !!onOpen && !rename && !inactive && !current;
     const handleClick = (event: React.MouseEvent) => {
         if (rename || inactive) return;
@@ -267,8 +270,11 @@ export const ItemCard: React.FC<ItemCardProps> = ({ title, badges, captions = []
 
     const titleContent = <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
         {starred && <StarredMark size={compact ? 14 : 16} />}
-        <Typography component="span" noWrap={!compact} sx={{ color: titleColor, textDecoration: inactive ? 'line-through' : 'none',
-            ...(compact ? { ...sidebarRowTitleSx, flex: '0 1 auto', overflowWrap: 'anywhere' } : { minWidth: 0, fontSize: '0.875rem', lineHeight: 1.43 }) }}>{title}</Typography>
+        <Typography component="span" noWrap={!compact && titleLines <= 1} sx={{ color: titleColor, textDecoration: inactive ? 'line-through' : 'none',
+            ...(compact ? { ...sidebarRowTitleSx, flex: '0 1 auto', overflowWrap: 'anywhere' }
+                : titleLines > 1 ? { minWidth: 0, fontSize: '0.8125rem', lineHeight: 1.35, overflowWrap: 'anywhere', display: '-webkit-box',
+                    WebkitLineClamp: titleLines, WebkitBoxOrient: 'vertical', overflow: 'hidden' }
+                : { minWidth: 0, fontSize: '0.875rem', lineHeight: 1.43 }) }}>{title}</Typography>
         {badges}
     </Box>;
     const baseSurfaceSx: Record<string, any> = compact
@@ -278,8 +284,11 @@ export const ItemCard: React.FC<ItemCardProps> = ({ title, badges, captions = []
         ...baseSurfaceSx, borderColor: alpha(starredColor, 0.6), bgcolor: alpha(starredColor, 0.06),
         ...(baseSurfaceSx['&:hover'] ? { '&:hover': { ...baseSurfaceSx['&:hover'], borderColor: starredColor } } : {}),
     } : baseSurfaceSx;
+    // The current item in a grid of cards: a primary border.
+    const currentSx = current && !compact ? { borderColor: 'primary.main' } : {};
     const card = <Box component="article" onClick={handleClick} onAuxClick={handleAuxClick} className={active ? 'item-active' : undefined} sx={{
         ...surfaceSx,
+        ...currentSx,
         position: 'relative', minWidth: 0, textAlign: 'left', fontFamily: theme => theme.typography.fontFamily,
         px: compact ? 1 : 2, py: compact ? 0.75 : 1.5, display: 'flex', flexDirection: 'column', gap: compact ? 0.25 : 0,
         cursor: clickable ? 'pointer' : 'default', opacity: inactive ? 0.55 : 1,
@@ -301,12 +310,16 @@ export const ItemCard: React.FC<ItemCardProps> = ({ title, badges, captions = []
             sx={{ fontSize: textVar.xs, lineHeight: 1.5, color: 'text.secondary', overflowWrap: 'anywhere' }}>{caption}</Typography>)}
         {meta && <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5 }}>{meta}</Box>}
         {showActions && !persistentActions && <RowActionContext.Provider value={compact}>
-            {/* Near-opaque so captions under the actions don't read through; the halo softens its edge. */}
+            {/* No box: the card fades to its own background behind the buttons, so captions under them don't read through. */}
             <Box className="item-overlay-actions" onClick={stopClick} onAuxClick={stopClick}
-                sx={{ position: 'absolute', bottom: 4, right: 4, display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'default',
-                    borderRadius: 1, bgcolor: theme => alpha(theme.palette.background.paper, 0.92),
-                    boxShadow: theme => `0 0 6px 3px ${alpha(theme.palette.background.paper, 0.92)}`,
-                    ...(starred ? { backgroundImage: `linear-gradient(${alpha(starredColor, 0.06)}, ${alpha(starredColor, 0.06)})` } : {}) }}>{actions}</Box>
+                sx={{ position: 'absolute', bottom: 0, right: 0, display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'default',
+                    pl: 4, pr: 0.5, py: 0.5, borderBottomRightRadius: 'inherit',
+                    // Fade to the card's own colour (a starred card's is tinted gold).
+                    background: theme => {
+                        const paper = theme.palette.background.paper;
+                        const surface = starred ? `color-mix(in srgb, ${starredColor} 6%, ${paper})` : paper;
+                        return `linear-gradient(to right, transparent, ${surface} 2rem)`;
+                    } }}>{actions}</Box>
         </RowActionContext.Provider>}
     </Box>;
     return tooltip && !rename ? <MetadataTooltip title={tooltip} placement={compact ? 'right-start' : 'bottom-start'}>{card}</MetadataTooltip> : card;

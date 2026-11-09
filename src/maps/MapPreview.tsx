@@ -82,22 +82,11 @@ export function useMapInputs(spec: MapSpec | null, reloadKey = 0) {
     return state;
 }
 
-export const MapPreview: FC<{
-    source: string;
-    reloadKey?: number;
-    styleOpen?: boolean;
-    onStyleClose?: () => void;
-    /** Save-able edits from the style panel; absent when read-only. */
-    onSourceChange?: (source: string) => void;
-    onAskFix?: (errors: string[]) => void;
-}> = ({ source, reloadKey = 0, styleOpen = false, onStyleClose, onSourceChange, onAskFix }) => {
-    const { t } = useTranslation();
-    const parsed = useMemo(() => parseMapSpec(source), [source]);
-    const inputs = useMapInputs(parsed.spec, reloadKey);
-    // Maps share charts' look and field semantics: the default chart theme and the tables' annotations.
+/** What a map's look follows besides its spec: the default chart theme and its tables' field annotations. */
+export function useMapLook(spec: MapSpec | null) {
     const defaultTheme = useSelector((state: DataFormulatorState) => resolveDefaultChartTheme(state.config));
     const tableSemantics = useSelector((state: DataFormulatorState) => state.tableSemantics);
-    const tablesKey = parsed.spec ? mapTables(parsed.spec).join('\u0000') : '';
+    const tablesKey = spec ? mapTables(spec).join('\u0000') : '';
     const annotations = useMemo(() => {
         const tables = new Set(tablesKey.split('\u0000').filter(Boolean));
         const fields: Record<string, FieldAnnotation> = {};
@@ -111,6 +100,23 @@ export const MapPreview: FC<{
         }
         return fields;
     }, [tableSemantics, tablesKey]);
+    return { annotations, defaultTheme };
+}
+
+export const MapPreview: FC<{
+    source: string;
+    reloadKey?: number;
+    styleOpen?: boolean;
+    onStyleClose?: () => void;
+    /** Save-able edits from the style panel; absent when read-only. */
+    onSourceChange?: (source: string) => void;
+    onAskFix?: (errors: string[]) => void;
+}> = ({ source, reloadKey = 0, styleOpen = false, onStyleClose, onSourceChange, onAskFix }) => {
+    const { t } = useTranslation();
+    const parsed = useMemo(() => parseMapSpec(source), [source]);
+    const inputs = useMapInputs(parsed.spec, reloadKey);
+    // Maps share charts' look and field semantics: the default chart theme and the tables' annotations.
+    const { annotations, defaultTheme } = useMapLook(parsed.spec);
     const [askedFix, setAskedFix] = useState(false);
     useEffect(() => setAskedFix(false), [source]);
 

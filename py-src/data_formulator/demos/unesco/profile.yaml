@@ -48,11 +48,11 @@ analyst_rules: >-
   example "DR Congo", "Tanzania", "UK") so labels are not cut off. Mention coverage gaps
   or estimates in one plain sentence when they matter.
   When a question asks where something is high or low across the world's countries, show it on a
-  world map (a Choropleth keyed by the countries table's map_id). Visitors ask short questions: pick
+  world map made with the map skill (a choropleth keyed by country_id). Visitors ask short questions: pick
   a sensible reading (the main indicator, both sexes, recent years) and say what you chose rather
   than asking them to choose. Keep answers short: the finding first, then one or two supporting
   sentences. When asked for a report, write a short news-style story: a headline of at most nine
-  words, a few short paragraphs that build from the first finding to the last with the charts in
+  words, a few short paragraphs that build from the first finding to the last with the charts and maps in
   order, and one plain sentence on what the data cannot tell us.
 attribution: >-
   Data: UNESCO Institute for Statistics (UIS), Bulk Data Download Service,

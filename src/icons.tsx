@@ -46,6 +46,81 @@ export { default as FolderOpenIcon } from '@mui/icons-material/FolderOpen';
 /** A form the agent asks the user to fill (connect a source, answer setup questions): a clipboard with lines. */
 export { default as FormIcon } from '@mui/icons-material/AssignmentOutlined';
 
+// A chunky, square-ish solid arrow pointing right and an upright wormhole portal (an ellipse seen
+// edge-on): the arrow goes into a portal on the right (send) or comes out of one on the left
+// (receive). The arrow overlaps the portal; a halo (a mask around the arrow) cuts the portal's line
+// where it passes behind, so semi-transparent colours never darken where they cross. Both shapes are
+// symmetric about the middle, so the cuts sit flush on both sides of the arrow (design-docs/71).
+const WormholeGlyph: React.FC<{ arrow: string; portalX: number }> = ({ arrow, portalX }) => {
+    const mask = `wormhole-halo-${React.useId().replace(/:/g, '')}`;
+    return <>
+        <mask id={mask} maskUnits="userSpaceOnUse" x={0} y={0} width={24} height={24}>
+            <rect width={24} height={24} fill="white" />
+            <path d={arrow} fill="black" stroke="black" strokeWidth={2.6} strokeLinejoin="round" />
+        </mask>
+        <ellipse mask={`url(#${mask})`} cx={portalX} cy={12} rx={3.4} ry={8.5} fill="none" stroke="currentColor" strokeWidth={1.6} />
+        <path d={arrow} fill="currentColor" />
+    </>;
+};
+
+/** Portal's two colours: blue goes in (send), orange comes out (receive). A wormhole icon takes its colour when the
+ *  button or menu item around it is hovered. */
+export const WORMHOLE_SEND_COLOR = '#2b8fef';
+export const WORMHOLE_RECEIVE_COLOR = '#f5871f';
+const onButtonHover = (style: Record<string, string>, sx: SvgIconProps['sx']): SvgIconProps['sx'] =>
+    [{ '.MuiButtonBase-root:hover &': style }, ...(Array.isArray(sx) ? sx : [sx])];
+
+/** Send through a wormhole: a solid arrow going into a portal. */
+export const WormholeSendIcon: React.FC<SvgIconProps> = props => (
+    <SvgIcon data-testid="WormholeSendIcon" {...props} sx={onButtonHover({ color: WORMHOLE_SEND_COLOR }, props.sx)} viewBox="0 0 24 24">
+        <WormholeGlyph arrow="M3 8.5h7.5v-4L18 12l-7.5 7.5v-4H3z" portalX={17.5} />
+    </SvgIcon>
+);
+
+/** Receive through a wormhole: a solid arrow coming out of a portal. */
+export const WormholeReceiveIcon: React.FC<SvgIconProps> = props => (
+    <SvgIcon data-testid="WormholeReceiveIcon" {...props} sx={onButtonHover({ color: WORMHOLE_RECEIVE_COLOR }, props.sx)} viewBox="0 0 24 24">
+        <WormholeGlyph arrow="M6.5 8.5h7v-4L21 12l-7.5 7.5v-4h-7z" portalX={6.5} />
+    </SvgIcon>
+);
+
+/** Wormhole (share and receive): the share and receive icons' arrow and portal, in their proportions, with the arrow
+ *  through two portals, one behind the other. It goes in solid over the first portal's near arc, crosses between the
+ *  portals as fainter stripes (the far arcs pass over them), and comes out solid. The first portal hides the part of
+ *  the second inside it; a small halo parts the tail from the arcs it covers.
+ *
+ *  One colour; while the button around it is hovered, the way in (the first portal, the tail and its stripes) turns
+ *  the send colour and the way out (the second portal, its stripes and the head) the receive colour. */
+export const WormholeIcon: React.FC<SvgIconProps> = props => {
+    const id = React.useId().replace(/:/g, '');
+    const tail = 'M0.6 8.5h6v7h-6z';
+    const portal = { cy: 12, rx: 3.4, ry: 8.5 };
+    const front = { ...portal, cx: 7 };
+    const paint = { in: 'var(--wormhole-in, currentColor)', out: 'var(--wormhole-out, currentColor)' };
+    const mask = (name: string, children: React.ReactNode) =>
+        <mask id={`${id}-${name}`} maskUnits="userSpaceOnUse" x={-2} y={-2} width={28} height={28}>
+            <rect x={-2} y={-2} width={28} height={28} fill="white" />
+            {children}
+        </mask>;
+    const stripes = (side: keyof typeof paint, xs: number[]) => <g style={{ fill: paint[side] }} opacity={0.45}>
+        {xs.map(x => <rect key={x} x={x} y={8.5} width={0.7} height={7} />)}
+    </g>;
+    // The drawing is a little wider than the others (x 0.6 to 24): the view starts a bit right instead of shrinking it.
+    return <SvgIcon data-testid="WormholeIcon" {...props} viewBox="0.3 0 24 24"
+        sx={onButtonHover({ '--wormhole-in': WORMHOLE_SEND_COLOR, '--wormhole-out': WORMHOLE_RECEIVE_COLOR }, props.sx)}>
+        {mask('tail', <path d={tail} fill="black" stroke="black" strokeWidth={2.6} />)}
+        {mask('inside', <ellipse {...front} fill="black" stroke="black" strokeWidth={3.4} />)}
+        <g fill="none" strokeWidth={1.6} mask={`url(#${id}-tail)`}>
+            <ellipse {...front} style={{ stroke: paint.in }} />
+            <ellipse {...portal} cx={11.6} mask={`url(#${id}-inside)`} style={{ stroke: paint.out }} />
+        </g>
+        <path d={tail} style={{ fill: paint.in }} />
+        {stripes('in', [7.2, 8.4])}
+        {stripes('out', [11.6, 12.8])}
+        <path d="M16 8.5h0.5v-4L24 12l-7.5 7.5v-4H16z" style={{ fill: paint.out }} />
+    </SvgIcon>;
+};
+
 // Cell shades for the heatmap glyph: values cooling away from one corner, so it reads as data, not a table.
 const HEATMAP_SHADES = [[1, 0.7, 0.35], [0.7, 0.45, 0.25], [0.35, 0.25, 0.15]];
 

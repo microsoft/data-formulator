@@ -7,9 +7,14 @@ from flask import Blueprint, send_file
 
 from data_formulator.error_handler import json_ok
 from data_formulator.errors import AppError, ErrorCode
-from data_formulator.sites import site_content_dir, site_profile, site_starter, site_story
+from data_formulator.sites import known_site_id, site_content_dir, site_profile, site_starter, site_story
 
 site_bp = Blueprint("site", __name__, url_prefix="/api/demos")
+
+
+def _site(site: str) -> str:
+    """The URL's demo as named on disk; an unknown one becomes "", which no lookup below finds."""
+    return known_site_id(site) or ""
 
 
 def _content_file(site: str, file_name: str, message: str):
@@ -23,6 +28,7 @@ def _content_file(site: str, file_name: str, message: str):
 
 @site_bp.route("/<site>/starters/<starter_id>", methods=["GET"])
 def download_starter(site: str, starter_id: str):
+    site = _site(site)
     file_name = str((site_starter(site, starter_id) or {}).get("file") or "") if site_profile(site) else ""
     path = _content_file(site, file_name, "Starter session not found.")
     return send_file(path, mimetype="application/zip", download_name=f"{starter_id}.zip")
@@ -44,6 +50,7 @@ def _image(path):
 @site_bp.route("/<site>/stories/<story_id>", methods=["GET"])
 def download_story(site: str, story_id: str):
     """A story's session (ZIP): its dataset with the story's question already answered."""
+    site = _site(site)
     return send_file(_story_path(site, story_id, "file"), mimetype="application/zip",
                      download_name=f"{story_id}.zip")
 
@@ -51,18 +58,21 @@ def download_story(site: str, story_id: str):
 @site_bp.route("/<site>/stories/<story_id>/image", methods=["GET"])
 def story_image(site: str, story_id: str):
     """A story's cover image for the front page."""
+    site = _site(site)
     return _image(_story_path(site, story_id, "image"))
 
 
 @site_bp.route("/<site>/stories/<story_id>/stack/<int:index>", methods=["GET"])
 def story_stack_image(site: str, story_id: str, index: int):
     """One chart of a story's front-page stack of findings."""
+    site = _site(site)
     return _image(_story_path(site, story_id, "stack", index))
 
 
 @site_bp.route("/<site>/hero", methods=["GET"])
 def hero_image(site: str):
     """The front page's picture of the app at work."""
+    site = _site(site)
     file_name = str((site_profile(site) or {}).get("hero_image") or "")
     return _image(_content_file(site, file_name, "Image not found."))
 
@@ -71,10 +81,12 @@ def hero_image(site: str):
 def start_install(site: str):
     """Start building and installing the demo's content (local installs only)."""
     from data_formulator.sites.install import start
+    site = _site(site)
     return json_ok(start(site))
 
 
 @site_bp.route("/<site>/install", methods=["GET"])
 def install_status(site: str):
     from data_formulator.sites.install import status
+    site = _site(site)
     return json_ok(status(site))

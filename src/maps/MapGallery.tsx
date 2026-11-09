@@ -16,7 +16,10 @@ export default function MapGallery() {
     const [countyIds, setCountyIds] = useState<string[] | null>(null);
     useEffect(() => { loadGeoSet('us-counties').then(set => setCountyIds(set.features.map(item => item.properties.id))); }, []);
     const samples = useMemo(() => sampleMaps(countyIds ?? []), [countyIds]);
-    const [active, setActive] = useState(() => new URLSearchParams(window.location.search).get('map') ?? samples[0].id);
+    const [active, setActive] = useState(() => {
+        const requested = new URLSearchParams(window.location.search).get('map');
+        return (samples.find(sample => sample.id === requested) ?? samples[0]).id;
+    });
     const [sources, setSources] = useState<Record<string, string>>({});
     useEffect(() => {
         if (countyIds) setSources(current => ({ ...Object.fromEntries(samples.map(sample => [sample.id, stringifyMapSpec(sample.spec)])), ...current }));

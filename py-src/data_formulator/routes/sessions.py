@@ -17,6 +17,7 @@ Routes:
   POST /api/sessions/update-meta — update display name and/or starred flag (lightweight, no full state)
   POST /api/sessions/export      — export active workspace as zip
   POST /api/sessions/import      — import workspace from zip
+  POST /api/sessions/wormhole/*  — send / receive a session with a one-time code (local mode)
 
 Note: URL prefix kept as /api/sessions for frontend compatibility.
 """
@@ -57,8 +58,9 @@ def scheduled_checkpoint(manager, workspace_id: str, identity_id: str) -> dict |
 
 
 # ---------------------------------------------------------------------------
-# Published example sessions: administrators publish a session; opening one
-# imports a copy into the user's sessions, like the built-in demos.
+# Published example sessions (published before sessions were shared by
+# wormhole): opening one imports a copy into the user's sessions, like the
+# built-in demos; administrators can remove them.
 # ---------------------------------------------------------------------------
 
 def _examples_dir():
@@ -90,7 +92,7 @@ def _published_example(identifier: str) -> dict:
 def _require_example_admin() -> None:
     from data_formulator.routes.configurations import can_configure
     if not can_configure():
-        raise AppError(ErrorCode.ACCESS_DENIED, "Only administrators can publish example sessions.")
+        raise AppError(ErrorCode.ACCESS_DENIED, "Only administrators can manage example sessions.")
     if request.headers.get("Sec-Fetch-Site") == "cross-site":
         raise AppError(ErrorCode.ACCESS_DENIED, "Example sessions must be managed from the application.")
 
@@ -104,28 +106,6 @@ def list_examples():
 def download_example(identifier: str):
     example = _published_example(identifier)
     return send_file(_examples_dir() / f"{example['id']}.zip", mimetype="application/zip")
-
-
-@session_bp.route("/examples", methods=["POST"])
-def publish_example():
-    from uuid import uuid4
-    from data_formulator.datalake.workspace_manager import _strip_sensitive
-
-    _require_example_admin()
-    data = request.get_json(force=True) or {}
-    workspace_id = str(data.get("workspace_id") or "").strip()
-    identity_id = get_identity_id()
-    mgr = get_workspace_manager(identity_id)
-    if not workspace_id or not mgr.workspace_exists(workspace_id):
-        raise AppError(ErrorCode.TABLE_NOT_FOUND, "Session not found.")
-    state = mgr.load_session_state(workspace_id) or {}
-    title = str(data.get("title") or (state.get("activeWorkspace") or {}).get("displayName") or "Example session").strip()[:200]
-    archive = mgr.open_workspace(workspace_id, identity_id).export_session_zip(_strip_sensitive(state))
-    example = {"id": uuid4().hex, "title": title, "description": str(data.get("description") or "").strip()[:500],
-               "published_at": datetime.utcnow().isoformat() + "Z"}
-    (_examples_dir() / f"{example['id']}.zip").write_bytes(archive.getvalue())
-    _write_examples([example, *_published_examples()])
-    return json_ok({"example": example})
 
 
 @session_bp.route("/examples/<identifier>", methods=["DELETE"])
@@ -391,9 +371,8 @@ def export_session():
 
     ws = mgr.open_workspace(workspace_id, identity_id)
 
-    from data_formulator.datalake.workspace_manager import _strip_sensitive
-    clean_state = _strip_sensitive(state)
-    buf = ws.export_session_zip(clean_state)
+    from data_formulator.datalake.session_archive import build_session_archive
+    buf = build_session_archive(ws, state)
 
     filename = f"df_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
     return send_file(buf, mimetype="application/zip", as_attachment=True, download_name=filename)
@@ -438,6 +417,113 @@ def import_session():
     except Exception as e:
         logger.error("Error importing session", exc_info=e)
         raise AppError(ErrorCode.INTERNAL_ERROR, "Failed to import session")
+
+
+# ---------------------------------------------------------------------------
+# Wormhole sharing (design-docs/71): send a session to someone with a one-time
+# code, or receive one. Transfers run in the background on this server.
+# ---------------------------------------------------------------------------
+
+def _require_wormhole_request() -> None:
+    from urllib.parse import urlsplit
+    from data_formulator.session_wormhole import enabled
+
+    if not enabled():
+        raise AppError(ErrorCode.ACCESS_DENIED,
+                       "Wormhole sharing is available only when Data Formulator runs on your own computer.")
+    # Codes are secrets: only the app itself, on this machine, may start transfers or read them.
+    host = urlsplit(request.host_url).hostname
+    if (request.remote_addr not in {"127.0.0.1", "::1"} or host not in {"localhost", "127.0.0.1", "::1"}
+            or request.headers.get("Sec-Fetch-Site") == "cross-site"
+            or (request.method != "GET" and request.headers.get("Origin") != request.host_url.rstrip("/"))):
+        raise AppError(ErrorCode.ACCESS_DENIED, "Wormhole sharing must be used from the application.")
+
+
+def _wormhole_body() -> dict:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        raise AppError(ErrorCode.INVALID_REQUEST, "A JSON body is required")
+    return data
+
+
+@session_bp.route("/wormhole/send", methods=["POST"])
+def wormhole_send():
+    """Offer a saved session through a wormhole. Body: ``{ "workspace_id": "session_..." }``."""
+    from data_formulator import session_wormhole
+    from data_formulator.datalake.session_archive import build_session_archive
+
+    _require_wormhole_request()
+    workspace_id = str(_wormhole_body().get("workspace_id") or "").strip()
+    identity_id = get_identity_id()
+    mgr = get_workspace_manager(identity_id)
+    if not workspace_id or not mgr.workspace_exists(workspace_id):
+        raise AppError(ErrorCode.TABLE_NOT_FOUND, "Session not found.")
+    state = mgr.load_session_state(workspace_id) or {}
+    display_name = str((state.get("activeWorkspace") or {}).get("displayName") or workspace_id)
+    archive = build_session_archive(mgr.open_workspace(workspace_id, identity_id), state).getvalue()
+    transfer = session_wormhole.start_send(identity_id, workspace_id, display_name, archive)
+    return json_ok({"transfer": transfer})
+
+
+@session_bp.route("/wormhole/receive", methods=["POST"])
+def wormhole_receive():
+    """Receive a session by its code into a new session. Body: ``{ "code": "7-guitarist-revenge" }``."""
+    from data_formulator import session_wormhole
+
+    _require_wormhole_request()
+    try:
+        code = session_wormhole.normalize_code(_wormhole_body().get("code"))
+    except ValueError as error:
+        raise AppError(ErrorCode.INVALID_REQUEST, str(error))
+    identity_id = get_identity_id()
+    mgr = get_workspace_manager(identity_id)
+
+    def import_received(path, offered_name: str) -> tuple[str, str]:
+        workspace_id = session_wormhole.new_workspace_id()
+        workspace = mgr.create_and_open_workspace(workspace_id, identity_id)
+        try:
+            with open(path, "rb") as archive:
+                state = workspace.import_session_zip(archive)
+            if not isinstance(state, dict):
+                raise ValueError("state.json is not a session state")
+            name = str((state.get("activeWorkspace") or {}).get("displayName") or offered_name or "Received session")
+            state["activeWorkspace"] = {"id": workspace_id, "displayName": name}
+            mgr.save_session_state(workspace_id, state)
+        except BaseException:
+            mgr.delete_workspace(workspace_id)
+            raise
+        return workspace_id, name
+
+    transfer = session_wormhole.start_receive(identity_id, code, import_received)
+    return json_ok({"transfer": transfer})
+
+
+@session_bp.route("/wormhole/transfers", methods=["GET"])
+def wormhole_transfers():
+    from data_formulator import session_wormhole
+
+    _require_wormhole_request()
+    return json_ok({"transfers": session_wormhole.list_transfers(get_identity_id())})
+
+
+@session_bp.route("/wormhole/cancel", methods=["POST"])
+def wormhole_cancel():
+    from data_formulator import session_wormhole
+
+    _require_wormhole_request()
+    transfer_id = str(_wormhole_body().get("id") or "")
+    if not session_wormhole.cancel(get_identity_id(), transfer_id):
+        raise AppError(ErrorCode.TABLE_NOT_FOUND, "Transfer not found.")
+    return json_ok({"transfer": session_wormhole.get_transfer(get_identity_id(), transfer_id)})
+
+
+@session_bp.route("/wormhole/dismiss", methods=["POST"])
+def wormhole_dismiss():
+    from data_formulator import session_wormhole
+
+    _require_wormhole_request()
+    transfer_id = str(_wormhole_body().get("id") or "")
+    return json_ok({"dismissed": session_wormhole.dismiss(get_identity_id(), transfer_id)})
 
 
 @session_bp.route("/migrate", methods=["POST"])

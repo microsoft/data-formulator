@@ -16,7 +16,7 @@ const render = async (chartType: string, rows: Record<string, unknown>[], encodi
         chart_spec: { chartType, encodings, baseSize: { width: 600, height: 350 } } as any,
         options: {},
     } as any) as Record<string, unknown>;
-    const web = /vega\.github\.io|cdn\.jsdelivr\.net/;
+    const web = /vega\.github\.io|cdn\.jsdelivr\.net|microsoft\.github\.io/;
     expect(JSON.stringify(spec)).toMatch(web);
     const resolved = resolveBasemaps(spec) as Record<string, unknown>;
     expect(JSON.stringify(resolved)).not.toMatch(web);
@@ -37,9 +37,10 @@ describe('offline Flint maps', () => {
     it('colors countries in a choropleth joined by name', async () => {
         const svg = await render('Choropleth', [{ country: 'Japan', value: 5 }, { country: 'Brazil', value: 9 }, { country: 'Kenya', value: 2 }],
             { id: { field: 'country' }, color: { field: 'value' } });
-        // Each country joins its value and takes its own color from the scale (low, middle, high).
+        // Each country joins its value and takes its own color from the scale (low, middle, high); the
+        // legend may add swatches of the same scale.
         const filled = svg.match(/fill="rgb\([^)]*\)"/g) ?? [];
-        expect(new Set(filled).size).toBe(3);
+        expect(new Set(filled).size).toBeGreaterThanOrEqual(3);
     });
 
     it('draws US states', async () => {
@@ -49,5 +50,31 @@ describe('offline Flint maps', () => {
         // Both states join their values and take their own colors.
         const filled = svg.match(/fill="rgb\([^)]*\)"/g) ?? [];
         expect(new Set(filled).size).toBeGreaterThanOrEqual(2);
+    });
+
+    // Flint's published boundaries (`geo/v1` on its site), whichever Flint version is installed.
+    it('draws the World Bank and US boundaries Flint names on its site', async () => {
+        const site = 'https://microsoft.github.io/flint-chart/geo/v1';
+        const layer = (file: string, feature: string, mark: Record<string, unknown>) =>
+            ({ data: { url: `${site}/${file}.json`, format: { type: 'topojson', feature } }, mark: { type: 'geoshape', ...mark } });
+        const spec = {
+            width: 600, height: 350, projection: { type: 'equalEarth' },
+            layer: [
+                {
+                    ...layer('world-bank-coarse', 'countries', {}),
+                    transform: [{ lookup: 'id', from: { data: { values: [{ id: 356, value: 1 }, { id: 76, value: 2 }] }, key: 'id', fields: ['value'] } }],
+                    encoding: { color: { field: 'value', type: 'quantitative' } },
+                },
+                layer('world-bank-coarse', 'disputed', { filled: false, strokeDash: [2, 2] }),
+                layer('world-bank-medium', 'countries', { filled: false }),
+                layer('states-10m', 'states', { filled: false }),
+            ],
+        };
+        const resolved = resolveBasemaps(spec) as Record<string, unknown>;
+        expect(JSON.stringify(resolved)).not.toMatch(/microsoft\.github\.io/);
+        const svg = await new vega.View(vega.parse(compile(resolved as any).spec), { renderer: 'none' }).toSVG();
+        expect((svg.match(/<path/g) ?? []).length).toBeGreaterThan(100);
+        // India and Brazil join their values by ISO numeric id and take their own colors.
+        expect(new Set(svg.match(/fill="rgb\([^)]*\)"/g) ?? []).size).toBeGreaterThanOrEqual(2);
     });
 });

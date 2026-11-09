@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-TEMPLATES = ("choropleth", "bubbles", "points", "density", "spikes", "flows", "tracks", "bivariate", "cartogram", "vectors")
+TEMPLATES = ("choropleth", "bubbles", "points", "density", "spikes", "flows", "routes", "tracks", "bivariate", "cartogram", "vectors")
 CHANNELS = ("region", "lat", "lon", "color", "color2", "size", "label", "time", "filter", "weight",
             "origin", "destination", "originLat", "originLon", "destinationLat", "destinationLon", "group", "order",
             "angle", "u", "v")
@@ -35,6 +35,7 @@ TEMPLATE_DEFS: dict[str, tuple[tuple[tuple[str, ...], ...], tuple[str, ...], str
     "spikes": ((_WHERE, ("size",)), ("region", "lat", "lon", "size", "color", "label", "time", "filter"), "spikes"),
     "flows": ((("origin", "originLat"), ("destination", "destinationLat")),
               ("origin", "destination", "originLat", "originLon", "destinationLat", "destinationLon", "size", "color", "time", "filter"), "flows"),
+    "routes": ((("lat", "lon"), ("order",)), ("lat", "lon", "order", "group", "label", "color", "size", "time", "filter"), "paths"),
     "tracks": ((("lat", "lon"), ("group",)), ("lat", "lon", "group", "order", "color", "size", "time", "filter"), "paths"),
     "vectors": ((("lat", "lon"), ("angle", "u")), ("lat", "lon", "angle", "u", "v", "size", "color", "time", "filter"), "vectors"),
     "bivariate": ((("region",), ("color",), ("color2",)), ("region", "color", "color2", "label", "time", "filter"), "regions"),
@@ -198,6 +199,11 @@ def compile_template(spec: dict[str, Any]) -> dict[str, Any]:
             {"lon": encoding.get("originLon"), "lat": encoding.get("originLat")}
         layer["to"] = {"key": encoding["destination"], **_geo(properties)} if encoding.get("destination") else \
             {"lon": encoding.get("destinationLon"), "lat": encoding.get("destinationLat")}
+    elif name == "routes":
+        # Stops in order, each leg its own arrow, coloured and sized by the row it leaves.
+        layer.update({"lon": encoding.get("lon"), "lat": encoding.get("lat"), "order": encoding.get("order"), "legs": True})
+        if encoding.get("group"):
+            layer["group"] = encoding["group"]
     elif name == "tracks":
         layer.update({"lon": encoding.get("lon"), "lat": encoding.get("lat"), "group": encoding.get("group")})
         if encoding.get("order"):
@@ -207,7 +213,7 @@ def compile_template(spec: dict[str, Any]) -> dict[str, Any]:
     else:
         layer.update({"lon": encoding.get("lon"), "lat": encoding.get("lat")})
     # Lines show which way they go with arrowheads, the cue readers decode best.
-    if name in ("flows", "tracks"):
+    if name in ("flows", "routes", "tracks"):
         layer["direction"] = properties.get("direction") or "arrow"
     if name == "vectors":
         layer.update({"angle": encoding["angle"]} if encoding.get("angle") else {"u": encoding.get("u"), "v": encoding.get("v")})

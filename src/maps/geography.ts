@@ -189,6 +189,7 @@ const cache = new Map<string, Promise<GeoSet>>();
 export function loadGeoSet(name: GeoSetName | 'countries-detailed' | 'countries-fine'): Promise<GeoSet> {
     let set = cache.get(name);
     if (!set) {
+        if (!Object.hasOwn(loaders, name)) return Promise.reject(new Error(`Unknown boundary set: ${name}`));
         set = loaders[name]();
         cache.set(name, set);
         set.catch(() => cache.delete(name));

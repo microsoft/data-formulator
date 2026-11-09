@@ -8,6 +8,7 @@
  */
 
 import type { FormArtifact } from '../components/ComponentType';
+import type { SignInSpec } from './accounts';
 
 type FormEvent = Record<string, any>;
 
@@ -115,6 +116,53 @@ export function formArtifactFromEvent(form: FormEvent): FormArtifact {
                 },
             };
         }
+        case 'signin': {
+            const signin = form.signin || {};
+            const reasons = ['gated', 'private', 'rate_limit', 'terms', 'rejected', 'unauthorized', 'other'];
+            const methods = ['reuse', 'device', 'token'];
+            const authTypes = ['bearer', 'header', 'query', 'basic'];
+            const providerName = String(signin.provider_name || signin.provider || '');
+            const raw = signin.spec || {};
+            const strings = (value: unknown) => Array.isArray(value) ? value.map(String) : [];
+            // Only the spec's known fields are kept, as plain strings.
+            const spec = raw.id && authTypes.includes(raw.auth?.type) ? {
+                id: String(raw.id), name: String(raw.name ?? providerName), send_to: strings(raw.send_to),
+                auth: { type: raw.auth.type,
+                    ...(raw.auth.name ? { name: String(raw.auth.name) } : {}),
+                    ...(raw.auth.username_label ? { username_label: String(raw.auth.username_label) } : {}),
+                    ...(raw.auth.secret_label ? { secret_label: String(raw.auth.secret_label) } : {}) },
+                get_token: String(raw.get_token ?? ''), instructions: String(raw.instructions ?? ''),
+                ...(raw.check ? { check: String(raw.check) } : {}),
+                ...(raw.local && typeof raw.local === 'object' ? { local: {
+                    ...(Array.isArray(raw.local.command) ? { command: strings(raw.local.command) } : {}),
+                    ...(raw.local.file ? { file: String(raw.local.file) } : {}),
+                    ...(raw.local.env ? { env: String(raw.local.env) } : {}),
+                    ...(raw.local.fields && typeof raw.local.fields === 'object' ? { fields: Object.fromEntries(
+                        Object.entries(raw.local.fields).map(([part, key]) => [part, String(key)])) } : {}),
+                } } : {}),
+                verified: raw.verified === true, methods: strings(raw.methods).filter(method => methods.includes(method)) as SignInSpec['methods'],
+                domains: strings(raw.domains),
+            } : undefined;
+            return {
+                kind: 'signin', title: title || `Sign in to ${providerName}`,
+                signin: {
+                    provider: String(signin.provider ?? ''),
+                    providerName,
+                    ...(spec ? { spec } : {}),
+                    ...(typeof signin.verified === 'boolean' ? { verified: signin.verified } : {}),
+                    ...(signin.replaces === true ? { replaces: true } : {}),
+                    reason: reasons.includes(signin.reason) ? signin.reason : 'other',
+                    explanation: String(signin.explanation ?? ''),
+                    ...(signin.unlocks ? { unlocks: String(signin.unlocks) } : {}),
+                    steps: (Array.isArray(signin.steps) ? signin.steps : []).map((step: FormEvent) => ({
+                        text: String(step.text ?? ''), ...(step.url ? { url: String(step.url) } : {}),
+                    })),
+                    ...(methods.includes(signin.prefer) ? { prefer: signin.prefer } : {}),
+                    status: 'pending',
+                    ...(signin.signed_in && signin.login ? { login: String(signin.login) } : {}),
+                },
+            };
+        }
         default:
             throw new Error(`Unsupported form artifact kind: ${String(form.kind)}`);
     }
@@ -153,6 +201,14 @@ export function formArtifactStatus(form: FormArtifact): string {
             if (!workflow.saved) return form.title;
             const verb = workflow.target && workflow.saved.path === workflow.target.id ? 'Updated' : 'Saved';
             return `${verb}${workflow.schedule?.savedId ? ' and scheduled' : ''} workflow: ${workflow.definition.name}`;
+        }
+        case 'signin': {
+            const { signin } = form;
+            if (signin.status === 'signed_in') {
+                return signin.login ? `Signed in to ${signin.providerName} as @${signin.login}` : `Signed in to ${signin.providerName}`;
+            }
+            if (signin.status === 'declined') return `Continued without signing in to ${signin.providerName}`;
+            return signin.status === 'replied' ? `Not signed in to ${signin.providerName} (replied in chat)` : form.title;
         }
     }
 }

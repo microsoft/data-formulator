@@ -72,6 +72,9 @@ class SkillMeta:
     # Other skill packages whose tools, actions, and guidance this bundle
     # activates. Included skills remain the concrete owners of their handlers.
     includes: tuple[str, ...] = ()
+    # An included skill is an implementation member, hidden from the skill index; ``listed`` keeps one that is also
+    # useful on its own (``accounts``, included by provider skills) in the index.
+    listed: bool = False
     # The inspection **tool** names this skill exposes (data gathering, no turn
     # commit). Declared in the ``SKILL.md`` frontmatter (``tools: [list_connectors]``)
     # so the frontmatter is the complete, symmetric surface declaration; the

@@ -34,6 +34,7 @@ import re
 from typing import Any, Generator
 
 from data_formulator.analyst.replacement import resolve_replacement
+from data_formulator.analyst.session_edits import report_map_paths, workspace_map_paths
 from data_formulator.analyst.session_files import SessionFiles
 from data_formulator.analyst.skills.report.excerpts import check_report_excerpts, summarize_checks
 from data_formulator.analyst.skills.base import (
@@ -156,6 +157,13 @@ class ReportWritingSkill:
             excerpt_note = summarize_checks(check_report_excerpts(report, SessionFiles(ctx)))
         except Exception:
             logger.warning("Could not check the report's excerpts", exc_info=True)
+        # Embedded maps must be map files in the workspace; a missing one shows as a placeholder.
+        maps = workspace_map_paths(ctx)
+        missing_maps = sorted(report_map_paths(report) - maps) if maps is not None else []
+        if missing_maps:
+            map_note = (f"These embedded maps are not map files in the workspace and show as placeholders: {', '.join(missing_maps)}. "
+                        "Write the map with write_map, then fix the report's map://files/<name>.map.json paths.")
+            excerpt_note = f"{excerpt_note}\n{map_note}" if excerpt_note else map_note
 
         return "[REPORT DELIVERED] The report was written and shown to the user." + (
             f" It replaced {replaces['name']} ({replaces['id']}), which is deleted." if replaces else "") + (
