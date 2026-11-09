@@ -538,6 +538,35 @@ class TestCheaperInference:
 
 
 # ---------------------------------------------------------------------------
+# Standard Compute endpoint
+# ---------------------------------------------------------------------------
+
+class TestStandardCompute:
+    def test_default_base_url(self):
+        c = Client("standardcompute", "StandardCompute", api_key="k")
+        assert c.params["api_base"] == "https://api.stdcmpt.com/v1"
+
+    def test_custom_base_url_strips_trailing_slash(self):
+        c = Client("standardcompute", "StandardCompute", api_key="k",
+                   api_base="https://api.stdcmpt.com/v1/")
+        assert c.params["api_base"] == "https://api.stdcmpt.com/v1"
+
+    def test_uses_openai_compatible_provider(self):
+        c = Client("standardcompute", "StandardCompute", api_key="k")
+        assert c.params["custom_llm_provider"] == "openai"
+
+    def test_model_ids_kept_unchanged(self):
+        assert Client("standardcompute", "StandardCompute", api_key="k").model == "StandardCompute"
+        c = Client("standardcompute", "anthropic/claude-sonnet-5.5", api_key="k")
+        assert c.model == "anthropic/claude-sonnet-5.5"
+
+    def test_openai_prefixed_id_survives_litellm_stripping(self):
+        """LiteLLM strips one leading ``openai/``, so the gateway still gets ``openai/...``."""
+        c = Client("standardcompute", "openai/gpt-5.6-sol", api_key="k")
+        assert c.model == "openai/openai/gpt-5.6-sol"
+
+
+# ---------------------------------------------------------------------------
 # Ollama api_base normalisation
 # ---------------------------------------------------------------------------
 
