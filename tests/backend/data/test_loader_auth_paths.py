@@ -8,6 +8,7 @@ from data_formulator.data_loader.bigquery_data_loader import BigQueryDataLoader
 from data_formulator.data_loader.external_data_loader import ConnectorParamError
 from data_formulator.data_loader.mongodb_data_loader import MongoDBDataLoader
 from data_formulator.data_loader.s3_data_loader import S3DataLoader
+from data_formulator.data_loader.search_console_data_loader import SearchConsoleDataLoader
 from data_formulator.data_loader.superset_data_loader import SupersetLoader
 
 pytestmark = pytest.mark.backend
@@ -24,6 +25,7 @@ def _paths(loader):
         (AzureBlobDataLoader, {"azure_identity", "sas_token", "connection_string", "account_key"}),
         (MongoDBDataLoader, {"none", "credentials"}),
         (BigQueryDataLoader, {"default_credentials", "service_account_file"}),
+        (SearchConsoleDataLoader, {"default_credentials", "service_account_file"}),
         (AthenaDataLoader, {"profile", "access_keys"}),
     ],
 )
@@ -38,6 +40,7 @@ def test_multi_auth_loaders_expose_expected_paths(loader, expected):
     AzureBlobDataLoader,
     MongoDBDataLoader,
     BigQueryDataLoader,
+    SearchConsoleDataLoader,
     AthenaDataLoader,
 ])
 def test_auth_path_fields_do_not_overlap(loader):
