@@ -59,7 +59,7 @@ dependencies = [
     "psycopg2-binary", # postgresql
     "boto3", # s3, athena
     "google-cloud-bigquery", # bigquery
-    "google-auth", # bigquery
+    "google-auth", # bigquery, search console
     "db-dtypes", # bigquery
     "databricks-sql-connector", # databricks
     "snowflake-connector-python", # snowflake

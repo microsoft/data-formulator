@@ -72,6 +72,7 @@ _LOADER_SPECS: list[tuple[str, str, str, str]] = [
     ("mongodb",    "data_formulator.data_loader.mongodb_data_loader",    "MongoDBDataLoader",    "pymongo"),
     ("cosmosdb",   "data_formulator.data_loader.cosmosdb_data_loader",  "CosmosDBDataLoader",   "azure-cosmos"),
     ("bigquery",   "data_formulator.data_loader.bigquery_data_loader",   "BigQueryDataLoader",   "google-cloud-bigquery"),
+    ("search_console", "data_formulator.data_loader.search_console_data_loader", "SearchConsoleDataLoader", "google-auth"),
     ("athena",     "data_formulator.data_loader.athena_data_loader",     "AthenaDataLoader",     "boto3"),
     ("superset",   "data_formulator.data_loader.superset_data_loader",   "SupersetLoader",       "requests"),
     ("cube",       "data_formulator.data_loader.cube_data_loader",       "CubeDataLoader",       "requests"),
@@ -113,7 +114,7 @@ _BUILTIN_CATALOG_POLICIES: dict[str, CatalogCachePolicy] = {
             automatic_refresh="while_connected",
             automatic_refresh_kind="full",
         )
-        for key in ("mysql", "postgresql", "mssql", "clickhouse", "cube")
+        for key in ("mysql", "postgresql", "mssql", "clickhouse", "cube", "search_console")
     },
     **{
         key: CatalogCachePolicy(
