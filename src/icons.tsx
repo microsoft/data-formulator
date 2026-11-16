@@ -342,7 +342,7 @@ export const CONNECTOR_ICON_MAP: Record<string, React.FC<SvgIconProps>> = {
     powerbi: DashboardIcon,
     // Local
     local_folder: FolderOpenIconMui,
-    // Brands: mysql, postgresql, mongodb, clickhouse, sqlite, databricks, bigquery, snowflake, superset
+    // Brands: mysql, postgresql, mongodb, clickhouse, sqlite, databricks, bigquery, search_console, snowflake, superset
     ...Object.fromEntries(Object.entries(CONNECTOR_BRANDS).map(([type, brand]) => [type, brandIcon(brand)])),
 };
 
@@ -380,6 +380,7 @@ const CONNECTOR_CATEGORY_ORDER: Record<string, number> = {
     superset: 4, SupersetLoader: 4,
     cube: 4, CubeDataLoader: 4,
     powerbi: 4, PowerBIDataLoader: 4,
+    search_console: 4, SearchConsoleDataLoader: 4,
 };
 
 /** Sort comparator: group by category, then alphabetical within each group. */
