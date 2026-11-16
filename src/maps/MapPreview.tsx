@@ -10,15 +10,15 @@
 import React, { FC, useEffect, useMemo, useState } from 'react';
 import { Alert, Box, Button, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import { apiRequest } from '../app/apiClient';
-import { resolveDefaultChartTheme, type DataFormulatorState } from '../app/dfSlice';
+import { dfActions, dfSelectors, resolveDefaultChartTheme, siteChartThemeId, type DataFormulatorState } from '../app/dfSlice';
 import { getUrls } from '../app/utils';
 import { readWorkspaceTextFile } from '../app/workspaceService';
 import { customGeoSet, loadGeoSet, type GeoSet } from './geography';
 import { MapStylePanel } from './MapStylePanel';
-import { MapView } from './MapView';
+import { MapView, type MapCategoryColors } from './MapView';
 import { requiredGeoSets } from './model';
 import type { FieldAnnotation } from './semantics';
 import { mapTables, parseMapSpec, type DataSource, type MapSpec, type Row } from './spec';
@@ -82,10 +82,15 @@ export function useMapInputs(spec: MapSpec | null, reloadKey = 0) {
     return state;
 }
 
-/** What a map's look follows besides its spec: the default chart theme and its tables' field annotations. */
+/** What a map's look follows besides its spec: the default chart theme, its tables' field annotations, and the session's category colours. */
 export function useMapLook(spec: MapSpec | null) {
-    const defaultTheme = useSelector((state: DataFormulatorState) => resolveDefaultChartTheme(state.config));
+    const dispatch = useDispatch();
+    const defaultTheme = useSelector((state: DataFormulatorState) => resolveDefaultChartTheme(state.config, siteChartThemeId(state)));
     const tableSemantics = useSelector((state: DataFormulatorState) => state.tableSemantics);
+    const session = useSelector(dfSelectors.getSessionCategoryColors);
+    const categoryColors = useMemo<MapCategoryColors>(() => ({
+        session, register: registration => dispatch(dfActions.registerCategoryColors(registration)),
+    }), [session, dispatch]);
     const tablesKey = spec ? mapTables(spec).join('\u0000') : '';
     const annotations = useMemo(() => {
         const tables = new Set(tablesKey.split('\u0000').filter(Boolean));
@@ -94,13 +99,13 @@ export function useMapLook(spec: MapSpec | null) {
             if (!tables.has(info.tableId)) continue;
             for (const [name, field] of Object.entries(info.fields ?? {})) {
                 const merged = { ...field, ...field.authored };
-                if (merged.semanticType) fields[name] = { semanticType: merged.semanticType, unit: merged.unit, intrinsicDomain: merged.intrinsicDomain,
-                    divergingMidpoint: merged.divergingMidpoint, colors: merged.colors, displayName: merged.displayName };
+                if (merged.semanticType || merged.colors) fields[name] = { semanticType: merged.semanticType, unit: merged.unit, intrinsicDomain: merged.intrinsicDomain,
+                    divergingMidpoint: merged.divergingMidpoint, colors: merged.colors, sortOrder: merged.sortOrder, displayName: merged.displayName };
             }
         }
         return fields;
     }, [tableSemantics, tablesKey]);
-    return { annotations, defaultTheme };
+    return { annotations, defaultTheme, categoryColors };
 }
 
 export const MapPreview: FC<{
@@ -116,7 +121,7 @@ export const MapPreview: FC<{
     const parsed = useMemo(() => parseMapSpec(source), [source]);
     const inputs = useMapInputs(parsed.spec, reloadKey);
     // Maps share charts' look and field semantics: the default chart theme and the tables' annotations.
-    const { annotations, defaultTheme } = useMapLook(parsed.spec);
+    const { annotations, defaultTheme, categoryColors } = useMapLook(parsed.spec);
     const [askedFix, setAskedFix] = useState(false);
     useEffect(() => setAskedFix(false), [source]);
 
@@ -145,7 +150,7 @@ export const MapPreview: FC<{
             {inputs.loading && !Object.keys(inputs.geoSets).length
                 ? <Box sx={{ height: '100%', display: 'grid', placeItems: 'center' }}><Typography sx={{ fontSize: '0.8rem', color: 'text.secondary' }}>{t('map.loading')}</Typography></Box>
                 : <MapView spec={spec} data={inputs.data} geoSets={inputs.geoSets} reserveTopRight={styleOpen ? 0 : HOST_BUTTONS_WIDTH} reserveBottomRight={styleOpen ? 0 : 28} footer={footer}
-                    annotations={annotations} defaultTheme={defaultTheme} />}
+                    annotations={annotations} defaultTheme={defaultTheme} categoryColors={categoryColors} />}
             {parsed.warnings.length > 0 && !inputs.loading && <Alert severity="info" sx={{ position: 'absolute', top: 56, right: 16, maxWidth: 320, py: 0, fontSize: '0.75rem' }}>
                 {parsed.warnings[0]}</Alert>}
         </Box>

@@ -21,6 +21,8 @@ export interface FieldAnnotation {
     divergingMidpoint?: number;
     /** Colours pinned to category values (Flint `colors`). */
     colors?: Record<string, string>;
+    /** Ordered levels (Flint `sortOrder`): a ranked category, not identities. */
+    sortOrder?: (string | number)[];
     displayName?: string;
 }
 
@@ -69,6 +71,7 @@ export const humanize = (field: string): string => {
 export interface ResolvedField {
     /** Legend and tooltip label: display name, else the humanized field, with its unit. */
     label: string;
+    /** Number format: a declared Year, Decade, ID or ZipCode reads as a plain integer (2020, not 2,020). */
     format?: FormatSpec;
     aggregate?: Aggregate;
     colorType: 'sequential' | 'diverging' | 'categorical';
@@ -83,8 +86,12 @@ export interface ResolvedField {
 
 const UNIT_LABELS: Record<string, string> = { USD: 'US$', EUR: '€', GBP: '£' };
 
+/** Types whose numbers are names, not amounts: no thousands separator. Only when declared, never guessed. */
+const PLAIN_INTEGER_TYPES = new Set(['Year', 'Decade', 'ID', 'ZipCode']);
+
 export function resolveField(field: string, values: unknown[], declared?: FieldAnnotation): ResolvedField {
     const annotation = annotateField(field, values, declared);
+    const plainInteger = !!declared?.semanticType && PLAIN_INTEGER_TYPES.has(declared.semanticType);
     const type = annotation.semanticType ?? 'Unknown';
     let semantics: ReturnType<typeof resolveFieldSemantics> | null = null;
     try { semantics = resolveFieldSemantics(annotation as never, field, values as never[]); } catch { semantics = null; }
@@ -112,7 +119,7 @@ export function resolveField(field: string, values: unknown[], declared?: FieldA
     const currency = annotation.unit ? UNIT_LABELS[annotation.unit.toUpperCase()] : undefined;
     return {
         label: unit && !name.toLowerCase().includes(unit.toLowerCase()) ? `${name} (${unit})` : currency && !/\$|€|£/.test(name) ? `${name} (${currency})` : name,
-        format: semantics?.tooltipFormat ?? semantics?.format,
+        format: plainInteger ? { pattern: 'd' } : semantics?.tooltipFormat ?? semantics?.format,
         aggregate: aggregation === 'sum' ? 'sum' : aggregation === 'average' ? 'mean' : undefined,
         colorType, midpoint, scheme,
         additive: entry?.aggRole === 'additive' || entry?.aggRole === 'signed-additive',
@@ -129,14 +136,17 @@ const SCHEME_NAMES: Record<string, string> = {
 export const schemeFromFlint = (name: string | undefined) => name ? SCHEME_NAMES[name.toLowerCase()] : undefined;
 
 /**
- * Flint's unit (prefix/suffix) and percent pattern; other patterns (`,d`, `,.2f`) give way to the
- * map's compact numbers, which keep legends short ("$1.2M").
+ * Flint's unit (prefix/suffix) and percent pattern, and plain integers for years and ids; other patterns (`,d`,
+ * `,.2f`) give way to the map's compact numbers, which keep legends short ("$1.2M").
  */
+export const keptPattern = (pattern: string | undefined) => pattern && (pattern.includes('%') || pattern === 'd') ? pattern : undefined;
+
 function semanticFormat(encoding: { prefix?: string; suffix?: string }, resolved: ResolvedField) {
     const format = resolved.format;
     if (!format) return {};
+    const pattern = keptPattern(format.pattern);
     return {
-        ...(format.pattern?.includes('%') ? { format: format.pattern } : {}),
+        ...(pattern ? { format: pattern } : {}),
         prefix: encoding.prefix ?? format.prefix,
         suffix: encoding.suffix ?? format.suffix,
     };

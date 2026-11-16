@@ -68,6 +68,8 @@ class DemoSkill:
             record_data_operation_result(ctx.workspace, ctx.payload, operation)
             # The documents that came with the tables join them in the thread.
             yield {"type": "data_operation_result", "operation": operation.to_public_dict(),
+                   # The thread names what came in together by the datasets, not only its table count.
+                   "label": plan.label,
                    **({"files": [{"path": f"files/{name}", "content_hash": digest}
                                  for name, digest in result.copied_files]} if result.copied_files else {})}
 

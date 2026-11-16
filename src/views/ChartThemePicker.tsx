@@ -11,7 +11,7 @@ import { Box, alpha, useTheme, Tooltip, Divider, Menu, MenuItem } from '@mui/mat
 import { DEFAULT_THEME_ICON, THEME_PRESETS } from 'flint-chart';
 
 import { dfActions, dfSelectors } from '../app/dfSlice';
-import { deleteSavedTheme, resolvedChartTheme, useSavedThemes, type SavedTheme } from '../app/savedThemes';
+import { deleteSavedTheme, isSiteTheme, resolvedChartTheme, useSavedThemes, type SavedTheme } from '../app/savedThemes';
 import { AppDispatch } from '../app/store';
 import { transition } from '../app/tokens';
 import { Chart } from '../components/ComponentType';
@@ -51,15 +51,17 @@ const savedThemeIcon = (theme: SavedTheme) => {
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect x="0.5" y="0.5" width="15" height="15" rx="3" fill="${safe(paper)}" stroke="#c8c8c8"/>${bars}</svg>`;
 };
 
-export type ThemeChoice = typeof THEME_CHOICES[number] & { saved?: boolean };
+export type ThemeChoice = typeof THEME_CHOICES[number] & { saved?: boolean; removable?: boolean };
 
-/** Flint's presets, then the user's saved themes. */
+/** Flint's presets, then the site's theme and the user's saved themes. */
 export function useThemeChoices(): ThemeChoice[] {
     const saved = useSavedThemes();
     return useMemo(() => [
         ...THEME_CHOICES,
         ...saved.map(theme => ({ id: theme.id, label: theme.label || theme.id, icon: savedThemeIcon(theme),
-            description: theme.description ?? `Your saved theme${theme.extends ? `, based on ${theme.extends}` : ''}.`, saved: true })),
+            description: theme.description ?? `Your saved theme${theme.extends ? `, based on ${theme.extends}` : ''}.`, saved: true,
+            // The site's theme comes with the site, not from the user's library.
+            removable: !isSiteTheme(theme.id) })),
     ], [saved]);
 }
 
@@ -205,7 +207,7 @@ export const ChartThemePicker: FC<ChartThemePickerProps> = function ({ chartId, 
                         <Box component="span" sx={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {choice.label}
                         </Box>
-                        {choice.saved && choice.id && (
+                        {choice.saved && choice.removable && choice.id && (
                             <Box component="button" type="button" aria-label={`Remove theme ${choice.label}`} title="Remove from your themes"
                                 onClick={(event: React.MouseEvent) => {
                                     event.stopPropagation();

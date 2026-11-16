@@ -22,8 +22,10 @@ import * as data from './data';
 import * as icons from './icons';
 import { AppThemeProvider } from './appTheme';
 import { DEFAULT_DENSITY, densityTheme } from './density';
+import { TokenStyles, boardTheme, useInks, useMeasure, useSize } from './board';
 import { DataTable } from './table';
 import * as controls from './controls';
+import * as kpi from './kpi';
 import { optionalModule } from './optional/register';
 import { ErrorState } from './states';
 
@@ -32,7 +34,7 @@ export const MODULES: Record<string, unknown> = {
     'react/jsx-runtime': ReactJsxRuntime,
     '@df/data': { useQuery: data.useQuery, useDistinct: data.useDistinct, useTable: data.useTable,
         useSql: data.useSql, useSourceQuery: data.useSourceQuery },
-    '@df/chart': { ...chart, ...controls, DataTable, AppTheme: AppThemeProvider },
+    '@df/chart': { ...chart, ...controls, ...kpi, DataTable, AppTheme: AppThemeProvider, useInks, useSize, useMeasure },
     '@df/format': {
         get format() { return bridge().format; },
         ...Object.fromEntries(['number', 'compact', 'percent', 'delta', 'date'].map(name =>
@@ -115,12 +117,12 @@ export function mount(factory: (require: (name: string) => unknown, module: { ex
     const AppComponent = App as React.ComponentType;
     const root = createRoot(target);
     root.render(
-        <ThemeProvider theme={densityTheme(createDfTheme(appConfig().paletteKey ?? ''), appConfig().density ?? DEFAULT_DENSITY)}>
+        <ThemeProvider theme={boardTheme(densityTheme(createDfTheme(appConfig().paletteKey ?? ''), appConfig().density ?? DEFAULT_DENSITY))}>
             <GlobalStyles styles={theme => ({
                 // The scrollbar's colors; a dark AppTheme page sets its own (appTheme.tsx).
-                ':root': { '--df-scrollbar': 'rgba(0, 0, 0, 0.14)', '--df-scrollbar-hover': 'rgba(0, 0, 0, 0.28)' },
+                ':root': { '--df-scrollbar': 'rgba(0, 0, 0, 0.15)', '--df-scrollbar-hover': 'rgba(0, 0, 0, 0.3)' },
                 'html, body': {
-                    margin: 0, background: '#f6f7f9', color: theme.palette.text.primary,
+                    margin: 0, background: theme.palette.background.default, color: theme.palette.text.primary,
                     fontFamily: theme.typography.fontFamily, lineHeight: 1.5,
                     WebkitFontSmoothing: 'antialiased', MozOsxFontSmoothing: 'grayscale',
                 },
@@ -129,16 +131,17 @@ export function mount(factory: (require: (name: string) => unknown, module: { ex
                 body: { fontSize: 'var(--df-text-sm, 13px)' },
                 'button, input, select, textarea': { font: 'inherit' },
                 '*, *::before, *::after': { boxSizing: 'border-box' },
-                // Thin, muted scrollbars everywhere (a table, a menu, the page), always shown so more is findable.
-                // Chrome and Firefox take the standard properties; Safari the -webkit- ones.
-                '*': { scrollbarWidth: 'thin', scrollbarColor: 'var(--df-scrollbar) transparent' },
-                '*::-webkit-scrollbar': { width: 8, height: 8 },
+                // DF's own scrollbars (src/scss/App.scss): thin, shown while the pointer is over what scrolls (the only
+                // sign a table has more), darker under the pointer. Chrome and Firefox take the standard properties; Safari the -webkit- ones.
+                '*': { scrollbarWidth: 'thin', scrollbarColor: 'transparent transparent' },
+                '*:hover': { scrollbarColor: 'var(--df-scrollbar) transparent' },
+                '*::-webkit-scrollbar': { width: 6, height: 6 },
                 '*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner': { background: 'transparent' },
-                '*::-webkit-scrollbar-thumb': {
-                    background: 'var(--df-scrollbar)', borderRadius: 4, border: '2px solid transparent', backgroundClip: 'content-box',
-                },
-                '*::-webkit-scrollbar-thumb:hover': { background: 'var(--df-scrollbar-hover)', backgroundClip: 'content-box' },
+                '*::-webkit-scrollbar-thumb': { background: 'transparent', borderRadius: 3, transition: 'background-color 0.2s ease' },
+                '*:hover::-webkit-scrollbar-thumb': { background: 'var(--df-scrollbar)' },
+                '*:hover::-webkit-scrollbar-thumb:hover': { background: 'var(--df-scrollbar-hover)' },
             })} />
+            <TokenStyles />
             <ErrorBoundary><AppComponent /></ErrorBoundary>
         </ThemeProvider>,
     );

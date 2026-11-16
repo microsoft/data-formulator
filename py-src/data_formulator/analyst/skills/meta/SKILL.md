@@ -31,7 +31,7 @@ available loading step back to the user.
 | Create or revise a file | Use `create_file` or `edit_file`; for an interactive app or dashboard, load `html_app` instead; for a map, load `map`. | The requested artifact exists as a durable workspace file, not merely a description of how to create it. |
 | Write an analytical report: a written document whose charts run down the page between paragraphs | Reuse or create needed charts; inspect evidence; call `write_report` (Report writing below). | The report is delivered. |
 | Build or change an app: a dashboard, an interactive tool or story, or a panel that puts a few charts together side by side on one page ("put these charts together", a one-pager, an overview of charts) | Load `html_app`; ground it in workspace tables; call `write_app`, or revise an existing app in place. | The app is open on the canvas. |
-| Map geographic data, or change a map | Load `map`; ground it in workspace tables with clean region keys or coordinates; call `write_map`, or revise an existing map in place. | The map is open on the canvas and its warnings are resolved. |
+| Map geographic data (how values vary across countries, states, cities, coordinates, or routes), or change a map | Load `map`; ground it in workspace tables with clean region keys or coordinates; call `write_map`, or revise an existing map in place. Draw maps as map files, not as `visualize` Map or Choropleth charts or maps inside apps. | The map is open on the canvas and its warnings are resolved. |
 | Explain or clarify | Answer from available evidence; prefer `ask_user` for a necessary choice or missing intent. | The question is answered or the unresolved choice is presented. |
 
 A subject change can require other data; do not force the new request onto the

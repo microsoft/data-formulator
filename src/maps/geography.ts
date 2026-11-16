@@ -19,6 +19,7 @@ import type { Feature, FeatureCollection, Geometry, MultiLineString, Position } 
 import { feature, mesh } from 'topojson-client';
 import type { GeometryCollection, Topology } from 'topojson-specification';
 
+import antarcticaShape from './data/antarctica.json';
 import countryTable from './data/countries.json';
 import type { BasemapName, GeoSetName, KeyType } from './spec';
 
@@ -36,6 +37,8 @@ export interface GeoSet {
     disputedBorders?: MultiLineString;
     /** World sets: the coastline without Antarctica, drawn while Antarctica is left off the map. */
     outlineWithoutAntarctica?: Feature;
+    /** World sets: Antarctica (Natural Earth 1:110m), which the World Bank boundaries leave out; drawn when data lies there. */
+    antarctica?: Feature;
 }
 
 interface CountryRow { n: string | null; a2: string; a3: string; name: string; aliases: string[] }
@@ -156,6 +159,7 @@ function countrySet(topology: Atlas, name: string): GeoSet {
         disputedBorders: mesh(topology, topology.objects.countries, (a, b) => a !== b && (undetermined(a) || undetermined(b))),
         outline,
         outlineWithoutAntarctica: (outline.type === 'Feature' ? outline : outline.features[0]) as Feature,
+        antarctica: antarcticaShape as unknown as Feature,
     };
 }
 

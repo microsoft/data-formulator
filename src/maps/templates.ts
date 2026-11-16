@@ -19,6 +19,7 @@
 
 import * as d3 from 'd3';
 
+import { validSizeDomain, validSizeRange } from './scales';
 import { FILTER_OPS, type Control, type DataSource, type FieldRef, type FilterOp, type FlowDirection, type Layer, type LayerType, type MapView } from './spec';
 
 export const TEMPLATES = ['choropleth', 'bubbles', 'points', 'density', 'spikes', 'flows', 'routes', 'tracks', 'bivariate', 'cartogram', 'vectors'] as const;
@@ -73,12 +74,25 @@ export interface TemplateProperties {
     classes?: number;
     method?: NonNullable<Layer['color']>['method'];
     scheme?: string;
+    /** Colour class breaks (method threshold), e.g. those of an earlier map of the same measure, so the two compare. */
+    thresholds?: number[];
+    /** The colour scale's value range `[min, max]` instead of the data's (continuous, equal, log and diverging scales). */
+    domain?: number[];
     /** Categorical colour column: colours pinned to its values (`{"Republican": "#d62728"}`); others take the scheme. */
     colors?: Record<string, string>;
     /** One colour (any CSS colour) for every mark when no colour column is bound; else the theme's. */
     color?: string;
-    /** Largest bubble radius, spike height, or flow width. */
+    /**
+     * `[smallest, largest]` mark size in pixels on a full canvas (bubble radius, spike height, flow width) when a column
+     * sets sizes. Leave unset: sizes fit the data and the panel.
+     */
+    sizeRange?: number[];
+    /** One size for every mark when no column sets sizes (point radius, flow width). */
+    markSize?: number;
+    /** Older maps: the largest size (as `sizeRange`'s), or every mark's size when no column sets sizes. */
     sizeMax?: number;
+    /** The values sizes span, `[low, high]`, instead of the data's, so sizes compare across maps. */
+    sizeDomain?: number[];
     opacity?: number;
     /** Density: hexagon bins or a smooth heatmap; their radius. */
     density?: 'hexbin' | 'heatmap';
@@ -209,6 +223,23 @@ export function templateErrors(raw: Record<string, unknown>): string[] {
         && Object.values(properties.colors).every(color => typeof color === 'string' && d3.color(color)))) {
         errors.push('properties.colors must map category values to CSS colours, such as {"Republican": "#d62728"}.');
     }
+    const numbers = (value: unknown) => Array.isArray(value) && value.length > 0 && value.every(item => typeof item === 'number' && Number.isFinite(item));
+    if (properties.thresholds !== undefined && !numbers(properties.thresholds)) {
+        errors.push('properties.thresholds must list the colour class breaks as numbers, such as [10, 25, 50].');
+    }
+    if (properties.domain !== undefined && !(numbers(properties.domain) && (properties.domain as number[]).length === 2
+        && (properties.domain as number[])[0] < (properties.domain as number[])[1])) {
+        errors.push('properties.domain must be [min, max] numbers with min < max.');
+    }
+    if (properties.sizeDomain !== undefined && !validSizeDomain(properties.sizeDomain)) {
+        errors.push('properties.sizeDomain must be [low, high] numbers with 0 ≤ low < high.');
+    }
+    if (properties.sizeRange !== undefined && !validSizeRange(properties.sizeRange)) {
+        errors.push('properties.sizeRange must be [smallest, largest] pixel sizes with 0 ≤ smallest ≤ largest.');
+    }
+    if (properties.markSize !== undefined && !(typeof properties.markSize === 'number' && properties.markSize > 0)) {
+        errors.push('properties.markSize must be a positive number of pixels.');
+    }
     errors.push(...highlightErrors(properties.highlight));
     if (name === 'flows') {
         if (has('originLat') !== has('originLon')) errors.push('encoding.originLat and originLon go together.');
@@ -290,7 +321,9 @@ export function compileTemplate(spec: TemplateSpec): { data: Record<string, Data
         layer.color = {
             field: fieldOf('color'),
             ...(properties.classes ? { classes: properties.classes } : {}),
-            ...(properties.method ? { method: properties.method } : {}),
+            ...(properties.method ? { method: properties.method } : properties.thresholds ? { method: 'threshold' as const } : {}),
+            ...(properties.thresholds ? { thresholds: properties.thresholds } : {}),
+            ...(properties.domain ? { domain: properties.domain } : {}),
             ...(properties.scheme ? { scheme: properties.scheme } : {}),
             ...(properties.colors ? { colors: properties.colors } : {}),
         };
@@ -300,8 +333,10 @@ export function compileTemplate(spec: TemplateSpec): { data: Record<string, Data
         // Hexbins and heatmaps colour by count: the scheme sets their ramp.
         layer.color = { scheme: properties.scheme };
     }
-    if (encoding.size) layer.size = { field: fieldOf('size'), ...(properties.sizeMax ? { max: properties.sizeMax } : {}) };
-    else if (properties.sizeMax && template !== 'choropleth') layer.size = { value: properties.sizeMax };
+    const sizeRange = validSizeRange(properties.sizeRange);
+    if (encoding.size) layer.size = { field: fieldOf('size'), ...(sizeRange ? { range: sizeRange } : properties.sizeMax ? { max: properties.sizeMax } : {}),
+        ...(properties.sizeDomain ? { domain: properties.sizeDomain } : {}) };
+    else if ((properties.markSize ?? properties.sizeMax) && template !== 'choropleth') layer.size = { value: properties.markSize ?? properties.sizeMax };
     if (encoding.label) layer.text = encoding.label;
     // A cartogram names its circles by region unless told otherwise.
     if (template === 'cartogram' && !encoding.label && encoding.region) layer.text = encoding.region;

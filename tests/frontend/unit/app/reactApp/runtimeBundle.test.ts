@@ -72,10 +72,11 @@ it('runs the skill starter app end to end in the bundled runtime', async () => {
     const appRoot = new Function(`return ${mountScript(compiled.code)}`)();
 
     // The header: a title from the data (the period's growth, or the topic) and a context line with its source.
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toMatch(/Revenue grew|Monthly sales/));
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toMatch(/Revenue (up|down|by month)/));
     await waitFor(() => expect(document.querySelector('[data-df-header-meta]')?.textContent).toContain('Source: sales table'));
     await waitFor(() => expect(screen.getByText('Coffee')).toBeInTheDocument());
-    expect(screen.getAllByText('Total')).toHaveLength(2);
+    // KPIs computed from the rows: the leading product and its share.
+    await waitFor(() => expect(screen.getByText('Top product: Tea')).toBeInTheDocument());
     expect(query).toHaveBeenCalledWith('sales', expect.objectContaining({ columns: ['month'], aggregates: [{ op: 'sum', field: 'revenue' }] }));
     // Flint draws the chart itself, with the frame's vega.
     await waitFor(() => expect(document.querySelector('[data-flint-chart] svg')).not.toBeNull());

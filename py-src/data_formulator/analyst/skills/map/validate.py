@@ -16,7 +16,7 @@ import logging
 from typing import Any
 
 from data_formulator.analyst.skills.map.geo import layer_geo_set, normalize_key, region_id
-from data_formulator.analyst.skills.map.templates import colors_ok, compile_template, offered_columns, template_errors
+from data_formulator.analyst.skills.map.templates import colors_ok, compile_template, offered_columns, size_domain_ok, size_range_ok, template_errors
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +187,11 @@ def check_structure(spec: Any) -> tuple[list[str], list[str]]:
         for encoding in (color, layer.get("size")):
             if isinstance(encoding, dict) and "aggregate" in encoding and encoding["aggregate"] not in AGGREGATES:
                 errors.append(f"{where}: aggregate must be one of {', '.join(AGGREGATES)}.")
+        size = layer.get("size")
+        if isinstance(size, dict) and "domain" in size and not size_domain_ok(size["domain"]):
+            errors.append(f"{where}.size.domain must be [low, high] numbers with 0 ≤ low < high.")
+        if isinstance(size, dict) and "range" in size and not size_range_ok(size["range"]):
+            errors.append(f"{where}.size.range must be [smallest, largest] pixel sizes with 0 ≤ smallest ≤ largest.")
         filters = layer.get("filter", [])
         if not isinstance(filters, list):
             errors.append(f"{where}.filter must be a list.")

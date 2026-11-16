@@ -3,7 +3,7 @@
 # one short note on coverage, so a first-time visitor sees a clear, simple insight.
 
 education-sdg4-e20: |
-  **South Sudan has the lowest high school completion rate: just 2% in 2025.** The lowest rates are concentrated in sub-Saharan Africa:
+  **South Sudan has the lowest upper secondary school completion rate: just 2% in 2025.** The lowest rates are concentrated in sub-Saharan Africa:
 
   - **South Sudan:** 2.1%
   - **Niger:** 4.9%
@@ -11,7 +11,7 @@ education-sdg4-e20: |
   - **Chad:** 6.6%
   - **Zimbabwe:** 8.1%
 
-  "High school" means upper secondary education. Blank countries have no recent estimate. Source: UIS, February 2026 release.
+  These are UIS modelled estimates. Blank countries have no recent estimate. Source: UIS, February 2026 release; indicator CR.MOD.3.
 
 education-sdg4-e21: |
   **Nigeria has the biggest gap among the 87 countries compared:** 90% of children from the richest fifth of families finished upper secondary school, versus 16% from the poorest fifth, a **74-point gap** (2021).

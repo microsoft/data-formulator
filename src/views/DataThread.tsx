@@ -704,6 +704,7 @@ let SingleThreadGroupView: FC<{
     const loadedTableNodes = useSelector((state: DataFormulatorState) => state.loadedTableNodes);
     const externalReferences = useSelector((state: DataFormulatorState) => state.externalTableReferences);
     const fileNodes = useSelector((state: DataFormulatorState) => state.fileNodes);
+    const artifactSets = useSelector((state: DataFormulatorState) => state.artifactSets);
     const generatedReports = useSelector(dfSelectors.getThreadReports);
     const threadGraph = useSelector(dfSelectors.getThreadGraph);
     const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
@@ -1426,7 +1427,11 @@ let SingleThreadGroupView: FC<{
                         const tableCount = chips.filter(chip => chip.kind === 'table').length;
                         const fileCount = chips.length - tableCount;
                         const firstFile = run.map(fileOf).find(Boolean);
+                        // A set that came in as one thing (a demo dataset) leads with its name, so its tables
+                        // read as the dataset loaded, not as results of the question.
+                        const setLabel = artifactSets.find(set => set.id === id)?.label;
                         const label = allChips ? [
+                            setLabel,
                             tableCount && t('dataThread.tableSet', { defaultValue: '{{count}} tables', count: tableCount }),
                             fileCount && t('dataThread.fileSet', { defaultValue: '{{count}} files', count: fileCount }),
                         ].filter(Boolean).join(' · ') : undefined;

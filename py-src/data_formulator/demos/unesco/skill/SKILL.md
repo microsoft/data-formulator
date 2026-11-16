@@ -42,3 +42,11 @@ Each dataset's data guide has the details; in short:
   (ISO 3166-1 alpha-3, `keyType: iso3`); the `*_national` tables already carry it. A report embeds
   it with `![caption](map://files/<name>.map.json)`.
 - Coverage is uneven: say which years the values are from.
+- Labels ending "(modelled data)" (ids with `MOD`, such as `CR.MOD.3`) are UIS modelled estimates,
+  often alongside an observed series: say which one you used, and call modelled values "modelled
+  estimates" in the chart or map subtitle and in the answer.
+- Keep titles and axis labels in plain words, but cite the indicator code(s) with the source (for
+  example "Source: UIS, February 2026 release; indicator CR.MOD.3") in a map's source, at the end of
+  a chart's subtitle, in a table's description and in a report's source note.
+- Name education levels as UIS does (primary, lower secondary, upper secondary, tertiary), not
+  "high school" or "college", unless the user does.

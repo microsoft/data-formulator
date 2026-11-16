@@ -1023,6 +1023,7 @@ export const DataFormulatorFC = ({ }) => {
                 ? { minHeight: DEMO_CHAT_CENTRE, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', boxSizing: 'border-box', pt: 3 }
                 : { minHeight: 'calc(100vh - 140px)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <Box sx={{ mx: 'auto', width: '100%', minWidth: 0 }}>
+                {site?.logo && <Box component="img" src={site.logo} alt="" sx={{ display: 'block', height: { xs: 36, sm: 48 }, width: 'auto', mx: 'auto', mb: 2 }} />}
                 <Typography component="h1" sx={{
                     fontSize: { xs: 28, sm: headingSize },
                     lineHeight: 1.05,

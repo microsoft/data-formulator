@@ -77,6 +77,17 @@ def hero_image(site: str):
     return _image(_content_file(site, file_name, "Image not found."))
 
 
+@site_bp.route("/<site>/logo", methods=["GET"])
+def logo_image(site: str):
+    """The site's logo, shown beside its name."""
+    site = _site(site)
+    file_name = str((site_profile(site) or {}).get("logo") or "")
+    response = _image(_content_file(site, file_name, "Image not found."))
+    # An SVG opened on its own runs no scripts.
+    response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
+    return response
+
+
 @site_bp.route("/<site>/install", methods=["POST"])
 def start_install(site: str):
     """Start building and installing the demo's content (local installs only)."""

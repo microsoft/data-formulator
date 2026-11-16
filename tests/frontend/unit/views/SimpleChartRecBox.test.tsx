@@ -690,7 +690,7 @@ describe('Analyst landing attachment handoff', () => {
             store.dispatch(dfActions.upsertExternalTableReference(reference));
             store.dispatch(dfActions.setFocused({ type: 'external-table', referenceId: reference.id }));
         });
-        await screen.findByText('Compare trips by vendor', {}, { timeout: 2000 });
+        await screen.findByText('Compare trips by vendor');
         const calls = vi.mocked(apiRequest).mock.calls.filter(([url]) => String(url).includes('derive-starter-questions'));
         expect(calls).toHaveLength(1);
         const body = JSON.parse(calls[0][1]!.body as string);
@@ -706,7 +706,7 @@ describe('Analyst landing attachment handoff', () => {
         const refreshed = { ...reference, summary: { ...reference.summary, sampleRows: [{ vendor: 'B', fare: 20 }] } };
         act(() => store.dispatch(dfActions.upsertExternalTableReference(refreshed)));
         await waitFor(() => expect(vi.mocked(apiRequest).mock.calls.filter(([url]) => String(url).includes('derive-starter-questions')))
-            .toHaveLength(2), { timeout: 2000 });
+            .toHaveLength(2));
         expect(store.getState().starterQuestions[reference.id].signature).not.toBe(signature);
         fireEvent.click(await screen.findByText('Compare trips by vendor'));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
@@ -785,7 +785,8 @@ describe('Analyst landing attachment handoff', () => {
         } } as any);
         vi.mocked(streamRequest).mockImplementationOnce(async function* () {
             yield { type: 'tool_result', tool: 'create_data', status: 'ok',
-                stdout: JSON.stringify({ table_name: 'retail_sales', display_name: 'Retail Sales' }) };
+                stdout: JSON.stringify({ table_name: 'retail_sales', display_name: 'Retail Sales',
+                    field_metadata: { revenue: { semantic_type: 'Amount', unit: 'USD' } } }) };
             await running;
             yield { type: 'completion', status: 'success', content: { summary: 'Created Retail Sales.' } };
         });
@@ -793,6 +794,9 @@ describe('Analyst landing attachment handoff', () => {
         const request = () => turnWith(store, turn => turn.prompt === 'Create a demo dataset');
         try {
             await waitFor(() => expect(store.getState().loadedTableNodes).toHaveLength(1));
+            // The semantic types the agent gave apply at once, before background inference.
+            expect(store.getState().tableSemantics.find(info => info.tableId === 'retail_sales')?.fields.revenue)
+                .toMatchObject({ semanticType: 'Amount', unit: 'USD' });
             // request → new data, and the run's live draft follows the data.
             expect(request().parentNodeId).toMatch(/^conversation-root:/);
             expect(store.getState().loadedTableNodes[0].parentNodeId).toBe(request().id);
@@ -999,6 +1003,8 @@ describe('Analyst landing attachment handoff', () => {
         expect(explanation.parentNodeId).toBe(app.id);
         act(() => store.dispatch(dfActions.setFocused({ type: 'text', textId: explanation.id })));
         expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'file', fileName: 'sales.app.jsx' });
+        // An edited app is repaired on its own if it fails when it opens, like a newly written one.
+        expect(store.getState().appAutoFixes).toEqual({ 'sales.app.jsx': 0 });
     });
 
     describe('replacing an artifact the user wants fixed', () => {

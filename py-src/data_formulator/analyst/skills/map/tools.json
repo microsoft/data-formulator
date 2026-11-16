@@ -3,7 +3,7 @@
     "type": "function",
     "function": {
       "name": "write_map",
-      "description": "Create a map from a template (choropleth, bubble, point, density, spike, flow, track, bivariate, cartogram, or vector map) or from layers (choropleth, bubbles, points, density, hexbins, flows, spikes, paths, vectors, labels; world, US states/counties, or custom GeoJSON; optional street tiles and globe) and open it on the canvas: a new file (filename) or a full rewrite of an existing map (path + expected_content_hash). The map reads workspace tables live and can carry controls (time slider with play, metric switch, filters, search, layer toggles, details and stats panels). The result lists warnings such as unmatched region keys; fix them. For small changes to an existing map, use edit_file replacements instead.",
+      "description": "Create a map from a template (choropleth, bubble, point, density, spike, flow, route, track, bivariate, cartogram, or vector map) or from layers (choropleth, bubbles, points, density, hexbins, flows, spikes, paths, vectors, labels; world, US states/counties, or custom GeoJSON; optional street tiles and globe) and open it on the canvas: a new file (filename) or a full rewrite of an existing map (path + expected_content_hash). The map reads workspace tables live and can carry controls (time slider with play, metric switch, filters, search, layer toggles, details and stats panels). The result lists warnings such as unmatched region keys; fix them. For small changes to an existing map, use edit_file replacements instead.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -70,6 +70,7 @@
                   "density",
                   "spikes",
                   "flows",
+                  "routes",
                   "tracks",
                   "bivariate",
                   "cartogram",

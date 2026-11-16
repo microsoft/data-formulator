@@ -241,6 +241,24 @@ def test_react_lint_and_import_helpers() -> None:
         "borderColor: '#333', outlineColor: '#444' }} />; }", ["sales"]))
     assert "Network requests are blocked" in warnings and "Browser storage" in warnings
     assert "never reads them" in warnings and "hardcodes 4 colors" in warnings
+    # Colours stated on purpose (a theme object, a category's colours) are fine; CSS that fights the theme is not.
+    themed = ("const THEME = { extends: 'board', ink: { accent: '#c2410c', series: { categorical: ['#c2410c', '#0f766e', "
+              "'#7c3aed', '#ca8a04'] } } };\nexport default () => <AppTheme theme={THEME}><FlintChart semanticTypes={{ party: "
+              "{ semanticType: 'Category', colors: { Rep: '#d62728', Dem: '#1f5fbf' } } }} /></AppTheme>;")
+    assert lint_react_app(themed, []) == []
+    clashing = " ".join(lint_react_app(
+        "export default () => <Box sx={{ '& .MuiPaper-root': { borderRadius: 0 }, '--df-primary': 'red', "
+        "fontFamily: 'Georgia', '& [data-flint-chart] text': { fill: 'red' } }} />;", []))
+    assert "MUI's internal classes" in clashing and "charts' own SVG" in clashing
+    assert "sets --df-* tokens" in clashing and "names a font" in clashing
+    # Long text and a caveat alert always shown are flagged; SQL and an alert under a condition are not.
+    wordy = " ".join(lint_react_app(
+        "export default () => <Stack><Alert severity=\"info\">Data is a historical snapshot.</Alert>"
+        "{truncated && <Alert severity=\"warning\">Results were truncated.</Alert>}"
+        f"<Typography>{'This note explains the method at length ' * 6}</Typography>"
+        "{useSql(`SELECT a, CASE\n WHEN b THEN 'x' END FROM t WHERE c GROUP BY a ORDER BY a`)}</Stack>;", []))
+    assert "over 40 words" in wordy and "info or warning Alert" in wordy
+    assert lint_react_app("export default () => <Stack>{truncated && (\n <Alert severity=\"warning\">Cut short.</Alert>)}</Stack>;", []) == []
     stamped = stamp_react_manifest("// @df-app {}\r\n\nexport default 1", {"version": 2})
     assert stamped == '// @df-app {"version": 2}\nexport default 1'
 

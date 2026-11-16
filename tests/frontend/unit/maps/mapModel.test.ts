@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import * as d3 from 'd3';
 import { countryDetail, countryId, countyId, customGeoSet, layerGeoSet, loadGeoSet, regionId, stateId } from '../../../../src/maps/geography';
 import { pinJoins } from '../../../../src/maps/MapStylePanel';
-import { buildLayer, controlDomain, initialParams, matchesFilter, requiredGeoSets } from '../../../../src/maps/model';
+import { buildLayer, controlDomain, sizeRangeFor, initialParams, matchesFilter, requiredGeoSets } from '../../../../src/maps/model';
 import { colorScale, jenksBreaks, sizeScale } from '../../../../src/maps/scales';
 import { mapGeoFiles, mapTables, parseMapSpec, type MapSpec } from '../../../../src/maps/spec';
 import { sampleMaps } from '../../../../src/maps/samples';
@@ -134,6 +134,19 @@ describe('scales', () => {
         expect(scale.size(25)).toBeCloseTo(10);
         expect(scale.legend?.kind).toBe('sizes');
     });
+
+    it('sizes over a fixed domain, so two maps of the same measure compare', () => {
+        const world = sizeScale({ field: 'p', max: 20, domain: [0, 400] }, [0, 25, 400], 'p', 'circle', { min: 1, max: 32, value: 6 });
+        const europe = sizeScale({ field: 'p', max: 20, domain: [0, 400] }, [0, 25, 100], 'p', 'circle', { min: 1, max: 32, value: 6 });
+        expect(europe.size(100)).toBeCloseTo(world.size(100));
+        expect(europe.size(100)).toBeCloseTo(10);
+        // Lines span the domain's low end to its high end; beyond it they clamp.
+        const lines = sizeScale({ field: 'p', domain: [10, 110] }, [50], 'p', 'line', { min: 1, max: 11, value: 2 });
+        expect(lines.size(60)).toBeCloseTo(6);
+        expect(lines.size(500)).toBeCloseTo(11);
+        expect(parseMapSpec(JSON.stringify({ data: { d: { values: [] } }, layers: [{ type: 'bubbles', data: 'd', lon: 'x', lat: 'y',
+            size: { field: 'p', domain: [5, 1] } }] })).errors).toContain('layers[0].size.domain must be [low, high] numbers with 0 ≤ low < high.');
+    });
 });
 
 describe('layer model', () => {
@@ -178,6 +191,58 @@ describe('layer model', () => {
         expect(high.color.legend).toMatchObject({ domain: [4, 9] });
         // Moving the stepped slider itself reuses the domain.
         expect(buildLayer(map, map.layers[0], { d: rows }, { year: 2000, minV: 4 }, geoSets).color.legend).toMatchObject({ domain: [4, 9] });
+    });
+
+    it('fits the largest bubble to the data, between 40% of the default and the default, unless the spec sets a range', () => {
+        const giants = [1000, 5, 3, 2, 1];
+        const similar = Array.from({ length: 300 }, (_, index) => 90 + (index % 10));
+        const bubbles = { min: 1.5, max: 32 };
+        const largest = (size: Record<string, unknown>, values: unknown[], panelSide = 800, frames = 1) =>
+            sizeRangeFor({ field: 'v', ...size }, bubbles, { fit: true, panelSide, values, frames }).max;
+        // A few giants among small values leave room: the default size.
+        expect(largest({}, giants)).toBe(32);
+        // Hundreds of similar values cover about 15% of the panel, bounded below by 40% of the default.
+        const crowded = largest({}, similar);
+        expect(crowded).toBeLessThan(32);
+        expect(crowded).toBeGreaterThanOrEqual(0.4 * 32);
+        expect(largest({}, Array.from({ length: 30000 }, () => 1))).toBeCloseTo(0.4 * 32);
+        // Several time frames count per frame.
+        expect(largest({}, [...similar, ...similar], 800, 2)).toBeCloseTo(crowded);
+        // A range the spec sets is kept, its largest shrunk only with a small panel; older maps' max reads the same.
+        expect(sizeRangeFor({ field: 'v', range: [4, 20] }, bubbles, { fit: true, panelSide: 800, values: similar })).toEqual({ min: 4, max: 20 });
+        expect(sizeRangeFor({ field: 'v', range: [4, 20] }, bubbles, { fit: true, panelSide: 400, values: similar })).toEqual({ min: 4, max: 10 });
+        expect(largest({ max: 20 }, similar)).toBe(20);
+        // Maps meant to compare (a fixed domain) keep the default; so do marks that do not fit (spikes, flows), shrunk with the panel.
+        expect(largest({ domain: [0, 100] }, similar)).toBe(32);
+        expect(sizeRangeFor({ field: 'v' }, { min: 0, max: 120 }, { fit: false, panelSide: 400, values: similar })).toEqual({ min: 0, max: 60 });
+    });
+
+    it('fits bubbles on a panel but leaves a cartogram, whose circles spread apart, at the default size', () => {
+        const rows = Array.from({ length: 300 }, (_, index) => ({ lon: index % 60, lat: Math.floor(index / 60), v: 90 + (index % 10) }));
+        const layer = (layout?: string) => spec({ data: { d: { values: rows } }, layers: [{ id: 'b', type: 'bubbles', data: 'd', lon: 'lon', lat: 'lat', size: { field: 'v' }, ...(layout ? { layout } : {}) }] });
+        const largest = (layout?: string) => { const map = layer(layout); return buildLayer(map, map.layers[0], { d: rows }, {}, {}, null, { panelSide: 800 }).size.size(99); };
+        expect(largest()).toBeLessThan(32);
+        expect(largest('dorling')).toBeCloseTo(32);
+    });
+
+    it('merges a spec slider on the time field into the template slider', () => {
+        const map = spec({ template: 'choropleth', data: { values: [{ fips: '01001', v: 1, year: 2020 }] }, encoding: { region: 'fips', color: 'v', time: 'year' },
+            properties: { geography: 'us-counties', keyType: 'fips' }, controls: [{ type: 'slider', field: 'year', value: 2021 }] });
+        const sliders = map.controls.filter(control => control.type === 'slider');
+        expect(sliders).toHaveLength(1);
+        expect(sliders[0]).toMatchObject({ field: 'year', value: 2021 });
+    });
+
+    it('frames the places of every time frame, so a frame with few points does not zoom onto them', async () => {
+        const sightings = [{ lon: 116, lat: -32, year: 1990 }, { lon: 150, lat: -25, year: 1990 }, { lon: 117, lat: -31, year: 2023 }];
+        const map = spec({
+            data: { s: { values: sightings } },
+            layers: [{ id: 'p', type: 'points', data: 's', lon: 'lon', lat: 'lat' }],
+            controls: [{ type: 'slider', field: 'year', data: 's' }],
+        });
+        const model = buildLayer(map, map.layers[0], { s: sightings }, { year: 2023 }, {});
+        expect(model.marks).toHaveLength(1);
+        expect(model.fitMarks?.map(mark => mark.at)).toEqual(expect.arrayContaining([[116, -32], [150, -25], [117, -31]]));
     });
 
     it('aggregates rows per region and follows another layer’s selection', async () => {

@@ -327,7 +327,7 @@ it('saves map style edits as they happen, without Save or Discard', async () => 
         fireEvent.change(await screen.findByRole('textbox', { name: 'Title' }), { target: { value: 'Renamed map' } });
         expect(screen.queryByRole('button', { name: 'Save file' })).toBeNull();
         expect(screen.queryByRole('button', { name: 'Discard changes' })).toBeNull();
-        await waitFor(() => expect(save).toHaveBeenCalledTimes(1), { timeout: 2000 });
+        await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
         expect(save.mock.calls[0][0]).toBe('empty.map.json');
         expect(JSON.parse(save.mock.calls[0][1] as string).title).toBe('Renamed map');
         expect(save.mock.calls[0][2]).toBe('h');

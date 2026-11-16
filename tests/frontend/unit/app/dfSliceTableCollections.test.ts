@@ -612,6 +612,26 @@ describe("split table collections", () => {
     expect(dfSelectors.selectCanvasTarget(state)).toEqual({ type: "report", reportId: "report-1" });
   });
 
+  it("shows the map a run changed in place with its answer, not the table before the answer", () => {
+    let state = dataFormulatorReducer(undefined, dfActions.addTableToStore(sourceTable as any));
+    state = dataFormulatorReducer(state, dfActions.upsertFileNode({
+      kind: "file", id: "file-flows.map.json", path: "flows.map.json", displayName: "Flows", contentHash: "h",
+      parentNodeId: "elsewhere", createdAt: 1,
+    } as any));
+    const answer = (canvasTarget?: object) => dfActions.addTextTurn({
+      kind: "text", id: "textTurn-answer", displayId: "Answer", textKind: "explain", content: "Added country selectors.",
+      parentNodeId: "orders", createdAt: 3, ...(canvasTarget ? { canvasTarget } : {}),
+    } as any);
+    const focused = (next: typeof state) => dataFormulatorReducer(next, dfActions.setFocused({ type: "text", textId: "textTurn-answer" }));
+
+    expect(dfSelectors.selectCanvasTarget(focused(dataFormulatorReducer(state, answer({ type: "file", fileName: "flows.map.json" })))))
+      .toEqual({ type: "file", fileName: "flows.map.json" });
+    // Answers without one, or whose map is gone, show the nearest item as before.
+    expect(dfSelectors.selectCanvasTarget(focused(dataFormulatorReducer(state, answer())))).toEqual({ type: "table", tableId: "orders" });
+    expect(dfSelectors.selectCanvasTarget(focused(dataFormulatorReducer(state, answer({ type: "file", fileName: "gone.map.json" })))))
+      .toEqual({ type: "table", tableId: "orders" });
+  });
+
   it("passes workspace file focus through to the canvas without a table context", () => {
     const state = dataFormulatorReducer(
       undefined,

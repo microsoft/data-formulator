@@ -223,6 +223,9 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
             <Fade in={true} timeout={600} key={targetTable?.id}>
                 <Box sx={{height: '100%'}}>
                     <SelectableDataGrid
+                        // A workspace-backed table keeps the rows it fetched: rewritten in place (same id, new
+                        // content), it starts over with the new rows rather than showing the old ones.
+                        key={targetTable?.virtual ? `${targetTable.id}:${targetTable.contentHash ?? targetTable.virtual.rowCount}` : targetTable?.id}
                         tableId={targetTable?.id || ""}
                         tableName={displayName}
                         rows={rowData}

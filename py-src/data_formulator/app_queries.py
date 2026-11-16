@@ -91,8 +91,9 @@ def validate_app_sql(sql: Any, tables: list[str]) -> str:
 
     _walk(tree, visit)
     if functions:
-        raise ValueError(f"Apps cannot call table functions ({', '.join(sorted(set(functions)))}); "
-                         "query the declared tables by name")
+        names = sorted(set(functions))
+        hint = "; to split a list column, use unnest(...) in the SELECT list instead" if "unnest" in names else ""
+        raise ValueError(f"Apps cannot call table functions ({', '.join(names)}) in FROM; query the declared tables by name{hint}")
     declared = {name.lower() for name in tables}
     for reference in references:
         name = str(reference.get("table_name", ""))

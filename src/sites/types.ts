@@ -66,6 +66,10 @@ export interface SiteConfig {
     release?: string;
     /** URL of a picture of the app at work, for the front page; null until the image is in the content folder. */
     hero_image?: string | null;
+    /** URL of the site's logo, shown beside its name; null until the image is in the content folder. */
+    logo?: string | null;
+    /** The site's chart theme (a Flint ThemeSpec): new charts and maps on the site use it unless the user picks another. */
+    chart_theme?: { id: string; label: string; [part: string]: unknown };
     attribution?: string;
     /** A note after "Powered by Data Formulator" at the foot of the page; [text](url) is a link. */
     disclaimer?: string;

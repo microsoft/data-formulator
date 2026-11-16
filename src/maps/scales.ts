@@ -130,6 +130,7 @@ export interface ColorScale {
 }
 
 /** A value formatter from a d3-format string, or a compact default. */
+/** Numbers as the map shows them; a year or an id reads plainly only when its field says so (`format: 'd'`, from its semantic type). */
 export function formatter(format?: string, prefix = '', suffix = ''): (value: unknown) => string {
     let numeric: ((value: number) => string) | null = null;
     if (format) {
@@ -137,7 +138,6 @@ export function formatter(format?: string, prefix = '', suffix = ''): (value: un
     }
     const plain = (number: number) => {
         if (numeric) return numeric(number);
-        if (Number.isInteger(number) && Math.abs(number) < 1e4 && Math.abs(number) >= 1000 && /^(1[5-9]|20)\d\d$/.test(String(number))) return String(number);
         if (Math.abs(number) >= 1e4) return d3.format('.3~s')(number).replace('G', 'B');
         if (Math.abs(number) >= 100) return d3.format(',.0f')(number);
         return d3.format('.3~g')(number);
@@ -165,6 +165,42 @@ export interface Palette {
     classes?: number;
     /** Fill for places without a value (the map style's). */
     noData?: string;
+    /** What marks sit on (the map style's land): dark surfaces turn sequential ramps around. */
+    surface?: string;
+    /** Colours for a categorical domain from the session (values keep the colour they have in other charts and maps). */
+    assign?: (domain: string[], palette: readonly string[], surface?: string) => Record<string, string> | undefined;
+}
+
+/**
+ * A sequential ramp on a dark surface: the same ramp in the same direction, stopped short at its dark end
+ * where that end would sink into the surface (reds' near-black red on dark land). Undefined on light
+ * surfaces and where the ramp already stands clear.
+ */
+export function rampOnSurface(interpolate: (t: number) => string, surface: string | undefined): ((t: number) => string) | undefined {
+    const ground = surface ? d3.lab(surface) : null;
+    if (!ground || !(ground.l < 50)) return undefined;
+    const darkEnd = d3.lab(interpolate(0)).l < d3.lab(interpolate(1)).l ? 0 : 1;
+    const at = (cut: number) => darkEnd === 0 ? cut : 1 - cut;
+    let cut = 0;
+    while (cut < 0.5 && d3.lab(interpolate(at(cut))).l < ground.l + 18) cut += 0.02;
+    if (cut === 0) return undefined;
+    return darkEnd === 0 ? (t: number) => interpolate(cut + (1 - cut) * t) : (t: number) => interpolate((1 - cut) * t);
+}
+
+/**
+ * A default diverging ramp on a dark surface: each colour keeps its hue and chroma, but the lightness turns around, so
+ * the middle (pale, for light pages) recedes a little above the land and the ends glow. Undefined on light surfaces.
+ */
+export function divergingOnSurface(interpolate: (t: number) => string, surface: string | undefined): ((t: number) => string) | undefined {
+    const ground = surface ? d3.lab(surface) : null;
+    if (!ground || !(ground.l < 50)) return undefined;
+    const middle = ground.l + 18;
+    const end = Math.min(80, ground.l + 55);
+    return (t: number) => {
+        const color = d3.hcl(interpolate(t));
+        const hued = Number.isFinite(color.h) && Number.isFinite(color.c);
+        return `${d3.hcl(hued ? color.h : 0, hued ? color.c : 0, middle + (end - middle) * Math.abs(2 * t - 1))}`;
+    };
 }
 
 const isNumericField = (values: unknown[]) => {
@@ -217,7 +253,9 @@ export function colorScale(encoding: ColorEncoding | undefined, values: unknown[
         const domain = (encoding.domain?.map(String) ?? Array.from(new Set(values.filter(value => value !== null && value !== undefined && value !== '').map(String)))
             .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
         const colors = scheme && scheme in CATEGORICAL_SCHEMES ? CATEGORICAL_SCHEMES[scheme] : palette.categorical ?? CATEGORICAL_SCHEMES.tableau10;
-        const ordinal = pinnedOrdinal(domain, colors, encoding.colors);
+        // A scheme the spec names is the map's own choice; otherwise values keep their session colours.
+        const session = scheme ? undefined : palette.assign?.(domain, colors, palette.surface);
+        const ordinal = pinnedOrdinal(domain, colors, { ...session, ...encoding.colors });
         return {
             color: value => value === null || value === undefined || value === '' ? noData : ordinal(String(value)),
             legend: { kind: 'categories', title, items: domain.slice(0, 24).map(value => ({ value, label: value, color: ordinal(value) })) },
@@ -232,10 +270,16 @@ export function colorScale(encoding: ColorEncoding | undefined, values: unknown[
     const named = diverging ? (scheme && scheme in DIVERGING_SCHEMES ? DIVERGING_SCHEMES[scheme] : undefined)
         : (scheme && scheme in SEQUENTIAL_SCHEMES ? SEQUENTIAL_SCHEMES[scheme] : undefined);
     const themed = named ? undefined : diverging ? palette.diverging : palette.sequential;
-    const interpolate = named ?? themed ?? (diverging ? DIVERGING_SCHEMES.rdBu : SEQUENTIAL_SCHEMES.blues);
+    const base = named ?? themed ?? (diverging ? DIVERGING_SCHEMES.rdBu : SEQUENTIAL_SCHEMES.blues);
+    // A scheme the spec names is drawn as designed. The default ramp (theme or semantics) suits the style: on a dark
+    // map a sequential ramp keeps its direction with a dark end cut short of the land, and a diverging one turns its
+    // lightness around so the middle recedes.
+    const onDark = !!palette.surface && d3.lab(palette.surface).l < 50;
+    const adapted = named ? undefined : diverging ? divergingOnSurface(base, palette.surface) : rampOnSurface(base, palette.surface);
+    const interpolate = adapted ?? base;
     const ramp = (t: number) => interpolate(encoding.reverse ? 1 - t : t);
-    // Built-in sequential ramps skip their near-white start so light classes stay visible on the basemap.
-    const trim = !diverging && !(themed && palette.designed);
+    // Built-in sequential ramps skip their near-white start so light classes stay visible on a light basemap.
+    const trim = !diverging && !onDark && !(themed && palette.designed);
     const start = diverging ? 0 : Math.max(trim ? 0.12 : 0, options.floor ?? 0);
     const sequential = (t: number) => ramp(start + (1 - start) * t);
     const [min, max] = encoding.domain && encoding.domain.length >= 2
@@ -243,7 +287,7 @@ export function colorScale(encoding: ColorEncoding | undefined, values: unknown[
         : (d3.extent(numbers) as [number, number]);
     const method: ClassMethod = encoding.method ?? (encoding.thresholds ? 'threshold' : diverging ? 'continuous' : 'quantile');
 
-    if (diverging || method === 'continuous' || method === 'log') {
+    if (method === 'continuous' || method === 'log') {
         let scale: (value: number) => number;
         let legendDomain: [number, number] = [min, max];
         let midpoint: number | undefined;
@@ -283,9 +327,18 @@ export function colorScale(encoding: ColorEncoding | undefined, values: unknown[
     }
     breaks = Array.from(new Set(breaks)).filter(value => Number.isFinite(value));
     const count = breaks.length + 1;
-    const colors = d3.range(count).map(index => sequential(count === 1 ? 0.5 : index / (count - 1)));
-    const threshold = d3.scaleThreshold<number, string>().domain(breaks).range(colors);
     const bounds = [min, ...breaks, max];
+    // Diverging classes take their colour by side and distance from the midpoint (as many steps each side as the
+    // longer side has), so equally far classes match in strength and a class spanning the midpoint is neutral.
+    const mid = encoding.midpoint ?? (min < 0 && max > 0 ? 0 : (min + max) / 2);
+    const below = d3.range(count).filter(index => index < count - 1 && breaks[index] <= mid).length;
+    const above = d3.range(count).filter(index => index > 0 && breaks[index - 1] >= mid).length;
+    const steps = Math.max(below, above, 1);
+    const colors = d3.range(count).map(index => !diverging ? sequential(count === 1 ? 0.5 : index / (count - 1))
+        : index < below ? sequential(0.5 - 0.5 * (below - index) / steps)
+        : index >= count - above ? sequential(0.5 + 0.5 * (index - (count - above) + 1) / steps)
+        : sequential(0.5));
+    const threshold = d3.scaleThreshold<number, string>().domain(breaks).range(colors);
     return {
         color: value => {
             const number = toNumber(value);
@@ -319,6 +372,22 @@ export const arrowPath = (x0: number, y0: number, x1: number, y1: number) => {
 /** How a size reads: a circle's radius, a spike's height, a line's width, or an arrow's length. */
 export type SizeShape = 'circle' | 'spike' | 'line' | 'arrow';
 
+/** A size domain `[low, high]` (finite, 0 ≤ low < high), or undefined. */
+/** A size range in pixels, `[smallest, largest]`, with 0 ≤ smallest ≤ largest and largest > 0. */
+export function validSizeRange(range: unknown): [number, number] | undefined {
+    if (!Array.isArray(range) || range.length !== 2) return undefined;
+    const [low, high] = range;
+    return typeof low === 'number' && typeof high === 'number' && Number.isFinite(low) && Number.isFinite(high) && low >= 0 && high >= low && high > 0
+        ? [low, high] : undefined;
+}
+
+export function validSizeDomain(domain: unknown): [number, number] | undefined {
+    if (!Array.isArray(domain) || domain.length !== 2) return undefined;
+    const [low, high] = domain;
+    return typeof low === 'number' && typeof high === 'number' && Number.isFinite(low) && Number.isFinite(high) && low >= 0 && high > low
+        ? [low, high] : undefined;
+}
+
 export function sizeScale(encoding: SizeEncoding | undefined, values: unknown[], fieldName: string,
     shape: SizeShape, defaults: { min: number; max: number; value: number }): SizeScale {
     if (!encoding || encoding.field === undefined) {
@@ -326,12 +395,16 @@ export function sizeScale(encoding: SizeEncoding | undefined, values: unknown[],
         return { size: () => fixed, legend: null };
     }
     const numbers = values.map(toNumber).filter((value): value is number => value !== null && value >= 0);
-    const max = d3.max(numbers) ?? 1;
-    const minSize = encoding.min ?? defaults.min;
-    const maxSize = encoding.max ?? defaults.max;
+    // A fixed domain keeps sizes comparable across maps; circles stay area-true from zero.
+    const fixed = validSizeDomain(encoding.domain);
+    const max = fixed?.[1] ?? d3.max(numbers) ?? 1;
+    const low = shape === 'circle' ? 0 : fixed?.[0] ?? 0;
+    const range = validSizeRange(encoding.range);
+    const minSize = range?.[0] ?? encoding.min ?? defaults.min;
+    const maxSize = range?.[1] ?? encoding.max ?? defaults.max;
     const scale = shape === 'circle'
         ? d3.scaleSqrt().domain([0, max || 1]).range([0, maxSize]).clamp(true)
-        : d3.scaleLinear().domain([0, max || 1]).range([minSize, maxSize]).clamp(true);
+        : d3.scaleLinear().domain([low, max > low ? max : low + 1]).range([minSize, maxSize]).clamp(true);
     const size = (value: unknown) => {
         const number = toNumber(value);
         if (number === null || number < 0) return 0;

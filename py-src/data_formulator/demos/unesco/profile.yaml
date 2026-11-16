@@ -33,18 +33,56 @@ install_note: >-
   builds the example sessions on this computer (about 230 MB).
 # A screenshot of the app with an example session open, in the release's content folder.
 hero_image: hero.png
+# The UIS logotype (blue, as the brand guidelines ask), above the page title and beside the name in the app bar.
+logo: logo.png
+# The site's chart theme (a Flint ThemeSpec), from the UIS brand guidelines: new charts and maps use it, and the
+# stories' charts are built in it.
+chart_theme:
+  id: uis
+  label: UIS
+  description: >-
+    UNESCO Institute for Statistics: institutional blue, the four theme colours, blue tints for world
+    maps, Saira and Fira Sans Condensed.
+  extends: datawrapper
+  ink:
+    text: {primary: "#183254"}
+    series:
+      single: "#0069b4"
+      categorical: ["#0069b4", "#c5192d", "#51ad32", "#eb6608", "#81358a", "#fcc002"]
+      categoricalExtended: ["#0069b4", "#c5192d", "#51ad32", "#eb6608", "#81358a", "#fcc002", "#183254", "#67bb89", "#0086cb"]
+      # The guidelines' world-map tints of UIS blue (20% to 100%).
+      sequential: {stops: ["#cce1f0", "#99c3e1", "#66a5d2", "#3387c3", "#0069b4"], space: lab}
+      diverging: {stops: ["#c5192d", "#e28c96", "#f2f2f2", "#80b4da", "#0069b4"], space: lab}
+    accent: "#0069b4"
+  type:
+    headline: {family: "'Saira Condensed', 'Fira Sans Condensed', 'Arial Narrow', Arial, sans-serif", weight: bold}
+    deck: {family: "'Saira Condensed', 'Fira Sans Condensed', 'Arial Narrow', Arial, sans-serif"}
+    axisLabel: {family: "'Fira Sans Condensed', 'Arial Narrow', Arial, sans-serif"}
+    axisTitle: {family: "'Fira Sans Condensed', 'Arial Narrow', Arial, sans-serif"}
+    keyLabel: {family: "'Fira Sans Condensed', 'Arial Narrow', Arial, sans-serif"}
+    valueLabel: {family: "'Fira Sans Condensed', 'Arial Narrow', Arial, sans-serif"}
 # Standing guidance for the analyst on this site: visitors are a general audience.
 analyst_rules: >-
   Write for curious general readers, not statisticians. Use plain words and short sentences; name
-  indicators in everyday language (for example "share of children not in school", not an indicator
-  code) and never show table names, column names or indicator codes in answers, charts or reports.
+  indicators in everyday language (for example "share of children not in school") in titles, axis
+  labels and text, and never show table or column names in answers, charts or reports. Do cite the
+  UIS indicator code(s) used where the source is given: a map's source, the end of a chart's
+  subtitle, a table's description, a report's source note (for example "Source: UIS, February 2026
+  release; indicator CR.MOD.3"). When an indicator's label says "(modelled data)", call its values
+  modelled estimates in the chart or map subtitle and in the answer; when both an observed and a
+  modelled series exist, say which one you used. Name education levels as UIS does (primary, lower
+  secondary, upper secondary, tertiary), not with country-specific terms such as "high school" or
+  "college", unless the user does. Write "Sustainable Development Goal" in full at its first mention
+  in an answer or report, for example "Sustainable Development Goal 4 (SDG 4)".
   State units and years plainly. Prefer simple comparisons, shares and changes over time; avoid
   statistical methods such as regressions or correlation coefficients. Put years on a time (temporal)
   axis so they read 2000, 2010, 2020. In ranked bar charts, sort
   bars from largest to smallest and keep them to a readable number (about 15). In country rankings,
   leave out very small territories (under about 100,000 people) unless asked, and use each country's
   most recent value within a recent window (say which years) rather than only the latest calendar
-  year, which few countries may have reported. Use short, common country names in charts (for
+  year, which few countries may have reported; name that year column latest_year and say so in the
+  table's description and its charts' subtitles (for example "latest year with data, 2018–2024").
+  Use short, common country names in charts (for
   example "DR Congo", "Tanzania", "UK") so labels are not cut off. Mention coverage gaps
   or estimates in one plain sentence when they matter.
   When a question asks where something is high or low across the world's countries, show it on a
@@ -76,7 +114,7 @@ starters:
     kicker: SDG 4 education
     icon: school
     start_note: The full dataset, with its README and UIS notes
-    title: "Education: SDG 4"
+    title: "Education: Sustainable Development Goal 4 (SDG 4)"
     subtitle: Global and thematic indicators
     # UIS's own description of the dataset, from the UNESCO DataHub (data.unesco.org/explore/assets/uis001).
     description: >-
@@ -103,14 +141,14 @@ starters:
     stories:
       - id: education-sdg4-e20
         label: Finishing school
-        headline: Finishing high school is rarest in sub-Saharan Africa
-        dek: In South Sudan, just 2 in 100 young people finish high school. Niger, the Central African Republic
-          and Chad are all below 7 in 100.
+        headline: Finishing upper secondary school is rarest in sub-Saharan Africa
+        dek: In South Sudan, just 2 in 100 young people finish upper secondary school. Niger, the Central African
+          Republic and Chad are all below 7 in 100.
         featured: true
-        prompt: "Where do young people finish high school least often?"
+        prompt: "Where do young people finish upper secondary school least often?"
         file: stories/education-sdg4-e20.zip
         follow_ups:
-        - Which countries improved high school completion the most since 2000?
+        - Which countries improved upper secondary completion the most since 2000?
         - Do girls or boys finish school more often?
         - Is completion lower in rural areas?
         stack:
@@ -122,8 +160,8 @@ starters:
       - id: education-sdg4-e21
         label: Rich and poor
         headline: In Nigeria, the rich–poor gap in finishing school is widest
-        dek: 'In Nigeria, 90% of children from the richest fifth of families finish high school, but only 16%
-          from the poorest: the widest gap of 87 countries. Laos and Ghana come next.'
+        dek: 'In Nigeria, 90% of children from the richest fifth of families finish upper secondary school, but
+          only 16% from the poorest: the widest gap of 87 countries. Laos and Ghana come next.'
         prompt: "Where is the gap between rich and poor children in finishing school biggest?"
         file: stories/education-sdg4-e21.zip
         follow_ups:
@@ -244,7 +282,7 @@ starters:
     kicker: Research and development
     icon: science
     start_note: The full dataset, with its README and UIS notes
-    title: "Science: Research and development"
+    title: "Science: Research and development, Sustainable Development Goal 9.5 (SDG 9.5)"
     subtitle: SDG 9.5 and other R&D indicators
     # UIS's own description of the dataset, from the UNESCO DataHub (data.unesco.org/explore/assets/uis004, uis005).
     description: >-
@@ -327,7 +365,7 @@ starters:
     kicker: Heritage spending
     icon: landmark
     start_note: The full dataset, with its README and UIS notes
-    title: "Culture: SDG 11.4"
+    title: "Culture: Sustainable Development Goal 11.4 (SDG 11.4)"
     subtitle: Spending on cultural and natural heritage
     # UIS's own description of the dataset, from the UNESCO DataHub (data.unesco.org/explore/assets/uis002).
     description: >-

@@ -9,6 +9,7 @@ bound columns, region keys, and coordinates against the data like any layer spec
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
@@ -58,6 +59,34 @@ def _css_color(value: Any) -> bool:
 def colors_ok(value: Any) -> bool:
     """Colours pinned to category values: ``{"Republican": "#d62728"}``."""
     return isinstance(value, dict) and all(isinstance(key, str) and _css_color(color) for key, color in value.items())
+
+
+def _finite(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def size_domain_ok(value: Any) -> bool:
+    """The values sizes span, ``[low, high]`` with ``0 <= low < high``."""
+    return isinstance(value, list) and len(value) == 2 and all(_finite(item) for item in value) and 0 <= value[0] < value[1]
+
+
+def size_range_ok(value: Any) -> bool:
+    """Mark sizes in pixels, ``[smallest, largest]`` with ``0 <= smallest <= largest`` and ``largest > 0``."""
+    return isinstance(value, list) and len(value) == 2 and all(_finite(item) for item in value) and 0 <= value[0] <= value[1] and value[1] > 0
+
+
+def _merge_controls(compiled: list[dict[str, Any]], extra: list[Any]) -> list[Any]:
+    """The template's controls, then the spec's; a spec slider on a field the template already steps refines that slider."""
+    merged: list[Any] = list(compiled)
+    for control in extra:
+        index = next((i for i, item in enumerate(merged) if isinstance(control, dict) and control.get("type") == "slider"
+                      and isinstance(control.get("field"), str) and isinstance(item, dict) and item.get("type") == "slider"
+                      and item.get("field") == control["field"]), None)
+        if index is None:
+            merged.append(control)
+        else:
+            merged[index] = {**merged[index], **control}
+    return merged
 
 
 def channel_binding(value: Any) -> tuple[str | None, list[str]]:
@@ -136,6 +165,19 @@ def template_errors(spec: dict[str, Any]) -> list[str]:
         errors.append('properties.color must be a CSS colour, such as "#4e79a7" or "darkslategray".')
     if "colors" in properties and not colors_ok(properties["colors"]):
         errors.append('properties.colors must map category values to CSS colours, such as {"Republican": "#d62728"}.')
+    if "thresholds" in properties and not (isinstance(properties["thresholds"], list) and properties["thresholds"]
+                                           and all(_finite(item) for item in properties["thresholds"])):
+        errors.append("properties.thresholds must list the colour class breaks as numbers, such as [10, 25, 50].")
+    domain = properties.get("domain")
+    if "domain" in properties and not (isinstance(domain, list) and len(domain) == 2 and all(_finite(item) for item in domain)
+                                       and domain[0] < domain[1]):
+        errors.append("properties.domain must be [min, max] numbers with min < max.")
+    if "sizeDomain" in properties and not size_domain_ok(properties["sizeDomain"]):
+        errors.append("properties.sizeDomain must be [low, high] numbers with 0 ≤ low < high.")
+    if "sizeRange" in properties and not size_range_ok(properties["sizeRange"]):
+        errors.append("properties.sizeRange must be [smallest, largest] pixel sizes with 0 ≤ smallest ≤ largest.")
+    if "markSize" in properties and not (_finite(properties["markSize"]) and properties["markSize"] > 0):
+        errors.append("properties.markSize must be a positive number of pixels.")
     highlight = properties.get("highlight")
     if highlight is not None:
         if not isinstance(highlight, dict) or not _text(highlight.get("field")) or "value" not in highlight:
@@ -256,5 +298,5 @@ def compile_template(spec: dict[str, Any]) -> dict[str, Any]:
     view = {**({"basemap": basemap} if basemap else {}), **(spec.get("view") or {})}
     compiled = {key: value for key, value in spec.items() if key not in ("template", "encoding", "properties")}
     compiled.update({"view": view, "data": {"main": spec.get("data")}, "layers": layers,
-                     "controls": controls + list(spec.get("controls") or [])})
+                     "controls": _merge_controls(controls, list(spec.get("controls") or []))})
     return compiled

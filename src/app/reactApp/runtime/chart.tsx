@@ -5,6 +5,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
+import { useTheme } from '@mui/material/styles';
 import {
     FlintChart as FlintChartView,
     type ChartChange, type ChartUpdate, type FlintChartFit, type FlintChartHandle,
@@ -17,6 +18,7 @@ import { appConfig, bridge, errorMessage, reportError, type Row } from './bridge
 import { optionalModule } from './optional/register';
 import { useQuery, type QueryResult } from './data';
 import { resolveAppTheme, usePageChartTheme, type AppTheme } from './appTheme';
+import { boardChartTheme, useSize } from './board';
 import { ErrorState, FILL_SX, QueryView, useStable } from './states';
 
 type Encoding = string | { field: string; type?: string; aggregate?: string; sortOrder?: string; sortBy?: string; scheme?: string };
@@ -36,25 +38,6 @@ const fixedHeight = (height: ChartHeight | undefined) => (typeof height === 'num
 /** A chart's height: pixels, or 'fill' to take the height its container gives it. */
 export type ChartHeight = number | 'fill';
 
-/** Size of an element, tracked across resizes. */
-function useSize(ref: React.RefObject<HTMLElement | null>) {
-    const [size, setSize] = useState({ width: 0, height: 0 });
-    useEffect(() => {
-        const element = ref.current;
-        if (!element) return;
-        const update = () => {
-            const box = element.getBoundingClientRect();
-            setSize(previous => (previous.width === Math.floor(box.width) && previous.height === Math.floor(box.height)
-                ? previous : { width: Math.floor(box.width), height: Math.floor(box.height) }));
-        };
-        update();
-        if (typeof ResizeObserver === 'undefined') return;
-        const observer = new ResizeObserver(update);
-        observer.observe(element);
-        return () => observer.disconnect();
-    }, [ref]);
-    return size;
-}
 
 const useWidth = (ref: React.RefObject<HTMLElement | null>) => useSize(ref).width;
 
@@ -437,9 +420,12 @@ export function chartErrorMessage(props: Pick<ResolvedChartProps, 'chartType' | 
 /** A chart compiled by Flint from semantic encodings, matching the DF canvas; interactive, with a focus the app sets. */
 export function FlintChart(given: FlintChartProps) {
     const pageTheme = usePageChartTheme();
+    const accent = useTheme().palette.primary.main;
+    const board = useMemo(() => boardChartTheme(accent), [accent]);
     const resolved = resolveChartProps(given, pageTheme, appConfig().charts);
     if (typeof resolved === 'string') return <ChartSpecError message={resolved} height={fixedHeight(given.height)} />;
-    const props = resolved;
+    // A chart no theme reaches (the app's, the page's, its session chart's) takes the board's look.
+    const props = resolved.theme === undefined ? { ...resolved, theme: board } : resolved;
     const { query } = props;
     const Body = props.chartType === 'Choropleth' ? StaticChoropleth : FlintChartBody;
     if (query) return <QueryView query={query} height={fixedHeight(props.height)} fill={props.height === 'fill'}>{rows => <Body {...props} data={rows} />}</QueryView>;
@@ -497,7 +483,7 @@ const showNumber = (value: unknown) => isNumber(value)
  * label with its value.
  */
 export function focusLayers(where: FocusWhere | null | undefined, rows: Row[], chartType: string,
-    encodings: Record<string, Encoding>, note?: string): ChartUpdate[] {
+    encodings: Record<string, Encoding>, note?: string, inks: NoteInks = NOTE_INKS): ChartUpdate[] {
     const carried = Object.entries(where ?? {}).filter(([field]) => rows.some(row => row && field in row));
     if (!carried.length) return [];
     const parts = Object.fromEntries(carried.map(([field, value]) => [field, focusPart(value)]));
@@ -541,18 +527,21 @@ export function focusLayers(where: FocusWhere | null | undefined, rows: Row[], c
         ? (detail ? [detail] : [x, y])
         : [x, y, color, detail].filter((field): field is string => !!field && !(field === (numericY ? y : x) && !linear) && !(linear && field === y));
     const key = Object.fromEntries(keyFields.map(field => [field, target![field]]));
-    layers.push({ id: 'df-focus-label', ops: pointNote(rows, encodings, chartType, key, text, 'df-focus-label') } as unknown as ChartUpdate);
+    layers.push({ id: 'df-focus-label', ops: pointNote(rows, encodings, chartType, key, text, 'df-focus-label', undefined, inks) } as unknown as ChartUpdate);
     return layers;
 }
 
-const ANNOTATION_INK = '#6b6f76';
+/** The inks notes are written in: `strong` for a note on a mark, `quiet` for lines, bands, and their labels. */
+export interface NoteInks { strong: string; quiet: string }
+
+const NOTE_INKS: NoteInks = { strong: '#333333', quiet: '#6b6f76' };
 
 /**
  * The ops that write a note on the one mark `key` picks out. Flint notes a line or an area only at a
  * series' last point; inside the line, the point is marked and the note written above it.
  */
 function pointNote(rows: Row[], encodings: Record<string, Encoding>, chartType: string, key: Record<string, unknown>,
-    text: string, name: string, color?: string): Record<string, unknown>[] {
+    text: string, name: string, color?: string, inks: NoteInks = NOTE_INKS): Record<string, unknown>[] {
     const linear = /line|area/i.test(chartType);
     const x = fieldOfEncoding(encodings.x);
     const y = fieldOfEncoding(encodings.y);
@@ -563,7 +552,7 @@ function pointNote(rows: Row[], encodings: Record<string, Encoding>, chartType: 
         // On a line, the note marks the row's own point rather than the segment that starts there.
         return [{ op: 'set-annotation', target: { select: { key } }, value: { text, ...(linear ? { anchor: 'point' } : {}) } }];
     }
-    const ink = color ?? '#333333';
+    const ink = color ?? inks.strong;
     const at = { x: row[x!], y: row[y!] };
     return [
         { op: 'set-overlay', name: `${name}-point`, value: { mark: 'point', role: 'annotation', data: { values: [at] },
@@ -594,7 +583,7 @@ const numericAxis = (rows: Row[], field: string | undefined) => !!field
  * chart's own scales) for lines and bands, with their text at the plot's far end or top.
  */
 export function annotationLayers(annotations: ChartAnnotation[] | undefined, rows: Row[], encodings: Record<string, Encoding>,
-    chartType = ''): ChartUpdate[] {
+    chartType = '', inks: NoteInks = NOTE_INKS): ChartUpdate[] {
     if (!annotations?.length) return [];
     const xEnds = axisEnds(rows, fieldOfEncoding(encodings.x));
     const yEnds = axisEnds(rows, fieldOfEncoding(encodings.y));
@@ -605,7 +594,7 @@ export function annotationLayers(annotations: ChartAnnotation[] | undefined, row
         const name = `df-annotation-${index}`;
         const ops: Record<string, unknown>[] = [];
         const done = () => { if (ops.length) layers.push({ id: name, ops } as unknown as ChartUpdate); };
-        const ink = annotation.color ?? ANNOTATION_INK;
+        const ink = annotation.color ?? inks.quiet;
         const text = (row: Record<string, unknown>, style: Record<string, unknown>) => annotation.text ? [{
             op: 'set-overlay', name: `${name}-text`, value: {
                 mark: 'text', role: 'annotation', data: { values: [{ ...row, text: annotation.text }] },
@@ -614,7 +603,7 @@ export function annotationLayers(annotations: ChartAnnotation[] | undefined, row
             },
         }] : [];
         if (annotation.at) {
-            ops.push(...pointNote(rows, encodings, chartType, annotation.at, annotation.text ?? '', name, annotation.color));
+            ops.push(...pointNote(rows, encodings, chartType, annotation.at, annotation.text ?? '', name, annotation.color, inks));
             done();
             return;
         }
@@ -705,6 +694,32 @@ export function inFieldTerms(value: unknown, sample: unknown): unknown {
         return iso;
     }
     return date;
+}
+
+/**
+ * The marks a reader selected, in the terms of the app's own rows: a time axis hands back its instants (a Year of 2004
+ * as the epoch milliseconds of 2004-01-01), which become the field's own values again (2004), when they land
+ * exactly on one the rows hold. A value the rows already hold is kept as it is, so measures and categories never change.
+ */
+export function selectedInFieldTerms(values: Record<string, unknown>[], rows: Row[]): Record<string, unknown>[] {
+    const own = new Map<string, { known: Set<string>; sample: unknown }>();
+    const fieldOf = (field: string) => {
+        let entry = own.get(field);
+        if (!entry) {
+            const present = rows.map(row => row?.[field]).filter(value => value !== null && value !== undefined);
+            entry = { known: new Set(present.map(String)), sample: present[0] };
+            own.set(field, entry);
+        }
+        return entry;
+    };
+    return values.map(value => Object.fromEntries(Object.entries(value ?? {}).map(([field, item]) => {
+        const { known, sample } = fieldOf(field);
+        if (item === null || item === undefined || sample === undefined || known.has(String(item))) return [field, item];
+        // Read as an instant, the value must land on one the rows hold (1970 is instant 0): anything else is kept.
+        const instant = item instanceof Date ? item : typeof item === 'number' ? new Date(item) : null;
+        const own = instant && !Number.isNaN(instant.getTime()) ? inFieldTerms(instant, sample) : undefined;
+        return [field, own !== undefined && known.has(String(own)) ? own : item];
+    })));
 }
 
 /** The view a reader's zoom stands for, by the fields on the axes it moved. */
@@ -979,9 +994,12 @@ function FlintChartBody(props: ResolvedChartProps) {
     const annotations = useStable(props.annotations);
     const hide = useStable(props.hide);
     const view = useStable(props.view);
-    const layers = useMemo(() => [...hideLayers(hide, data), ...focusLayers(focus, data, chartType, encodings, note),
-        ...annotationLayers(annotations, data, encodings, chartType), ...viewLayers(view, data, encodings)],
-    [hide, focus, data, chartType, encodings, note, annotations, view]);
+    // Notes are written in the page's inks, so they read on a dark page too.
+    const palette = useTheme().palette;
+    const inks = useMemo(() => ({ strong: palette.text.primary, quiet: palette.text.secondary }), [palette.text.primary, palette.text.secondary]);
+    const layers = useMemo(() => [...hideLayers(hide, data), ...focusLayers(focus, data, chartType, encodings, note, inks),
+        ...annotationLayers(annotations, data, encodings, chartType, inks), ...viewLayers(view, data, encodings)],
+    [hide, focus, data, chartType, encodings, note, annotations, view, inks]);
     const updates = useStable(focusable || props.updates ? [...layers, ...(props.updates ?? [])] : undefined);
     const ref = useRef<HTMLDivElement>(null);
     const size = useSize(ref);
@@ -1047,7 +1065,8 @@ function FlintChartBody(props: ResolvedChartProps) {
             }
             return;
         }
-        const report = (values: Record<string, unknown>[]) => {
+        const report = (selected: Record<string, unknown>[]) => {
+            const values = selectedInFieldTerms(selected, viewOf.current.data as Row[]);
             onSelect.current?.(values);
             const { chartType: type, encodings: channels, select } = focusOf.current;
             const focus = selectionFocus(values, type, channels, select);

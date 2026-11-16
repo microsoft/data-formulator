@@ -104,6 +104,9 @@ def test_build_makes_a_session_data_formulator_can_open(tmp_path):
     assert set(tables) == {"sdg11_indicators", "sdg11_national", "sdg11_regional", "dem_indicators",
                            "dem_national", "countries", "region_members"}
     assert tables["sdg11_national"]["snapshot"]["rowCount"] == 2
+    # The indicator list is named as the whole catalog, so it is not mistaken for a query result.
+    assert tables["sdg11_indicators"]["displayId"] == "All SDG 11.4 heritage indicators (catalog)"
+    assert tables["sdg11_national"]["displayId"] == "sdg11_national"
     assert state["activeWorkspace"] == {"id": "culture", "displayName": starter["title"]}
     with zipfile.ZipFile(target) as archive:
         guide = next(name for name in archive.namelist() if name.endswith("UIS data guide.md"))
@@ -188,3 +191,25 @@ def test_install_builds_and_reports_what_is_still_missing(tmp_path):
 def test_install_rejects_unknown_datasets(tmp_path):
     with pytest.raises(build.InstallError, match="unknown datasets: nope"):
         build.install(tmp_path, tmp_path / "raw", only=["nope"], download_missing=False, log=lambda line: None)
+
+
+def test_cutting_a_seed_again_keeps_the_page_wording():
+    spec = importlib.util.spec_from_file_location("unesco_make_seeds", DEMO / "make_seeds.py")
+    make_seeds = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(make_seeds)
+    # As the curated session has it.
+    state = {
+        "derivedTables": [{"displayId": "Recent high school completion by country"}],
+        "charts": [{"title": "High school completion across countries", "subtitle": "Latest estimates, 2020–2025"}],
+        "tableSemantics": [{"fields": {"value": {"displayName": "High school completion (%)",
+                                                 "authored": {"displayName": "High school completion (%)"}}}}],
+    }
+    make_seeds.reword(state, "education-sdg4-e20")
+    assert state["derivedTables"][0]["displayId"] == "Recent upper secondary completion by country"
+    assert state["charts"][0] == {"title": "Upper secondary completion across countries",
+                                  "subtitle": "Latest modelled estimates, 2020–2025; indicator CR.MOD.3"}
+    field = state["tableSemantics"][0]["fields"]["value"]
+    assert field["displayName"] == field["authored"]["displayName"] == "Upper secondary completion (%)"
+    # Running it again changes nothing.
+    make_seeds.reword(state, "education-sdg4-e20")
+    assert state["charts"][0]["subtitle"] == "Latest modelled estimates, 2020–2025; indicator CR.MOD.3"

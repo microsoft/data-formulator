@@ -247,6 +247,8 @@ export interface ArtifactSetNode {
     parentNodeId: string;
     /** Member item ids in the order they were produced; each member's `parentNodeId` is this set. */
     memberIds: string[];
+    /** What the members are together, when they came in as one thing (a demo dataset's title). */
+    label?: string;
     createdAt: number;
 }
 
@@ -414,6 +416,12 @@ export interface TextTurn {
     /** The chart the user was on when this turn was created — canvas provenance
      *  only (focusing the turn keeps this chart on the canvas). NOT positioning. */
     sourceChartId?: string;
+    /**
+     * A run's closing answer: the chart, app or map the run last brought into view. Focusing the answer
+     * shows it, which matters when the run changed an app or map in place: that adds nothing to the thread,
+     * so the nearest item before the answer would be an older table.
+     */
+    canvasTarget?: { type: 'chart'; chartId: string } | { type: 'file'; fileName: string };
     actionId?: string;
     /**
      * §12 opaque resume token — set iff the backend stamped a trajectory on the

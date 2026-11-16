@@ -16,6 +16,7 @@ import { readWorkspaceTextFile } from '../app/workspaceService';
 import { useMapInputs, useMapLook } from './MapPreview';
 import { MapView } from './MapView';
 import { parseMapSpec } from './spec';
+import { viewStyleName } from './styles';
 
 /** An embedded map's size in a report, in CSS pixels (captured at twice that). */
 export const MAP_EMBED_WIDTH = 640;
@@ -53,7 +54,7 @@ export const MapSnapshot: FC<{
     const parsed = useMemo(() => source === null ? null : parseMapSpec(source), [source]);
     const spec = useMemo(() => {
         const base = parsed?.spec;
-        return base && base.view.tiles && base.view.tiles !== 'none' ? { ...base, view: { ...base.view, tiles: 'none' as const } } : base ?? null;
+        return base && base.view.tiles && base.view.tiles !== 'none' ? { ...base, view: { ...base.view, style: viewStyleName(base.view), tiles: 'none' as const } } : base ?? null;
     }, [parsed]);
     const inputs = useMapInputs(spec);
     const look = useMapLook(spec);
@@ -106,7 +107,7 @@ export const MapSnapshot: FC<{
         <Box ref={frame} aria-hidden sx={{ position: 'fixed', left: 0, top: 0, width: MAP_EMBED_WIDTH, height: MAP_EMBED_HEIGHT,
             opacity: 0, pointerEvents: 'none', zIndex: -1 }}>
             <MapView spec={spec} data={inputs.data} geoSets={inputs.geoSets} still onDrawn={onDrawn}
-                annotations={look.annotations} defaultTheme={look.defaultTheme} />
+                annotations={look.annotations} defaultTheme={look.defaultTheme} categoryColors={look.categoryColors} />
         </Box>,
         document.body,
     );

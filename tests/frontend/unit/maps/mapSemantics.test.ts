@@ -1,3 +1,4 @@
+import * as d3 from 'd3';
 import { describe, expect, it } from 'vitest';
 
 import { loadGeoSet } from '../../../../src/maps/geography';
@@ -64,7 +65,55 @@ describe('styles and themes', () => {
         expect(typeof ink.palette.sequential).toBe('function');
         expect(themeInk('none')).toBeUndefined();
         expect(mapStyle('dark').mode).toBe('dark');
-        expect(mapStyle(undefined).id).toBe('light');
+        expect(mapStyle(undefined).id).toBe('dark');
+    });
+
+    it('draws a named scheme as designed, and fits the default ramp to a dark surface', () => {
+        const land = mapStyle('dark').land;
+        const values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        const lightness = (color: string) => d3.lab(color).l;
+        // Named: as designed on either style, even where its darkest red sinks into the dark land.
+        const named = colorScale({ field: 'v', method: 'continuous', scheme: 'reds' }, values, 'V', undefined, { surface: land });
+        expect(named.color(10)).toBe(d3.interpolateReds(1));
+        // Default: keeps its direction, its dark end stopped short of the land.
+        for (const surface of [land, mapStyle('light').land]) {
+            const reds = colorScale({ field: 'v', method: 'continuous' }, values, 'V', undefined, { surface, sequential: d3.interpolateReds });
+            expect(lightness(reds.color(10))).toBeLessThan(lightness(reds.color(1)));
+        }
+        const reds = colorScale({ field: 'v', method: 'continuous' }, values, 'V', undefined, { surface: land, sequential: d3.interpolateReds, designed: true });
+        expect(lightness(reds.color(10)) - lightness(land)).toBeGreaterThanOrEqual(17);
+        expect(reds.color(1)).toBe(d3.interpolateReds(0));
+        // A default diverging ramp turns its lightness around on dark land: the middle recedes, the ends glow.
+        const margins = [-10, -5, 0, 5, 10];
+        const diverging = colorScale({ field: 'v', type: 'diverging' }, margins, 'V', undefined, { surface: land, diverging: d3.interpolateRdBu });
+        expect(lightness(diverging.color(0))).toBeLessThan(lightness(diverging.color(10)) - 20);
+        expect(lightness(diverging.color(0))).toBeGreaterThan(lightness(land) + 10);
+        const rdBu = colorScale({ field: 'v', type: 'diverging', scheme: 'rdBu' }, margins, 'V', undefined, { surface: land });
+        expect(rdBu.color(0)).toBe(d3.interpolateRdBu(0.5));
+    });
+
+    it('formats a number as a year only when its field is declared one, never by its value', () => {
+        const rows = [{ iso3: 'FRA', year: 2020, visitors: 1999 }];
+        const map = parseMapSpec(JSON.stringify({ data: { d: { values: rows } }, fields: { year: 'Year' },
+            layers: [{ id: 'r', type: 'regions', data: 'd', key: 'iso3', color: { field: 'visitors' } }] })).spec!;
+        const model = buildLayer(map, map.layers[0], { d: rows }, {}, {});
+        expect(model.describe('year').format(2020)).toBe('2020');
+        expect(model.describe('visitors').format(1999)).toBe('1,999');
+        expect(formatter()(2020)).toBe('2,020');
+    });
+
+    it('classes a diverging measure by its thresholds, coloured by side and distance from the midpoint', () => {
+        const values = [-12000, -60, -20, -5, 5, 20, 60, 12000];
+        const scale = colorScale({ field: 'v', type: 'diverging', midpoint: 0, method: 'threshold', thresholds: [-50, -10, 0, 10, 50], scheme: 'rdYlGn' },
+            values, 'V');
+        expect(scale.legend?.kind).toBe('classes');
+        const color = (value: number) => scale.color(value);
+        expect(color(-5)).toBe(d3.interpolateRdYlGn(0.5 - 0.5 / 3));
+        expect(color(5)).toBe(d3.interpolateRdYlGn(0.5 + 0.5 / 3));
+        expect(color(-12000)).toBe(d3.interpolateRdYlGn(0));
+        expect(color(12000)).toBe(d3.interpolateRdYlGn(1));
+        // Without a method, a diverging measure stays a continuous ramp.
+        expect(colorScale({ field: 'v', type: 'diverging', scheme: 'rdYlGn' }, values, 'V').legend?.kind).toBe('gradient');
     });
 
     it('parses styles, themes, and field annotations', () => {

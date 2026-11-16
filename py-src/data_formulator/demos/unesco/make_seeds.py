@@ -43,12 +43,14 @@ QUESTIONS = {
     "science-s23": "How does China compare with the US?",
 }
 
-# Questions asked mid-conversation ("Where do they go?") rewritten to stand on their own.
+# Questions asked mid-conversation ("Where do they go?") rewritten to stand on their own, or
+# reworded for the page (UIS level names such as "upper secondary", not "high school").
 STANDALONE = {
     "culture-c22": "Where does nature get the bigger share of heritage spending?",
     "culture-c23": "Which countries added the most to heritage spending per person since before the pandemic?",
     "education-opri-o20": "Where do out-of-school children and young people live? Show me on a map.",
     "education-opri-o21": "Where do students who study abroad go?",
+    "education-sdg4-e20": "Where do young people finish upper secondary school least often?",
     "education-sdg4-e21": "Where is the gap between rich and poor children in finishing school biggest?",
     "education-sdg4-e22": "Where do most children reach a minimum reading level by the end of primary school?",
     "science-s20": "Which countries spend the most on research?",
@@ -58,6 +60,16 @@ STANDALONE = {
 
 # Stories about where a value is lowest: their ranking chart lists the lowest first.
 LOWEST_FIRST = {"education-sdg4-e20"}
+
+# Wording the page uses instead of the curated session's, in a story's table names, chart titles and subtitles,
+# and field names: story id -> (old, new) replacements (UIS level names; modelled series called so).
+WORDING = {
+    "education-sdg4-e20": (("High school completion", "Upper secondary completion"),
+                           ("high school completion", "upper secondary completion"),
+                           ("Latest estimates,", "Latest modelled estimates,")),
+}
+# The indicator(s) a story's values come from, cited at the end of its charts' subtitles.
+SOURCES = {"education-sdg4-e20": "indicator CR.MOD.3"}
 
 # Session state a seed keeps; everything else (model and connection settings, UI layout,
 # messages, other answers) is dropped.
@@ -129,10 +141,36 @@ def _without_transcripts(table: dict) -> dict:
     return {**table, "derive": derive}
 
 
+def reword(state: dict, story_id: str) -> None:
+    """Apply the story's WORDING and SOURCES to its tables, charts and field names, in place."""
+    def text(value: str) -> str:
+        for old, new in WORDING.get(story_id, ()):
+            value = value.replace(old, new)
+        return value
+
+    for table in state.get("derivedTables") or []:
+        if isinstance(table.get("displayId"), str):
+            table["displayId"] = text(table["displayId"])
+    source = SOURCES.get(story_id)
+    for chart in state.get("charts") or []:
+        if isinstance(chart.get("title"), str):
+            chart["title"] = text(chart["title"])
+        if isinstance(chart.get("subtitle"), str):
+            chart["subtitle"] = text(chart["subtitle"])
+            if source and source not in chart["subtitle"]:
+                chart["subtitle"] = f"{chart['subtitle']}; {source}"
+    for entry in state.get("tableSemantics") or []:
+        for field in (entry.get("fields") or {}).values():
+            for info in (field, field.get("authored")):
+                if isinstance(info, dict) and isinstance(info.get("displayName"), str):
+                    info["displayName"] = text(info["displayName"])
+
+
 def make_seed(story_id: str, session: Path, headline: str, answer: str | None = None) -> tuple[dict, dict[str, bytes], str]:
     """The seed state, its tables' parquet files, and the question it answers."""
     with zipfile.ZipFile(session) as archive:
         state = json.loads(archive.read("state.json"))
+        reword(state, story_id)
         table = _chosen_table(state, story_id)
         turns = {turn["id"]: turn for turn in state["textTurns"]}
         action = turns[table["parentNodeId"]]["actionId"]

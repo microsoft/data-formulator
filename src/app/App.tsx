@@ -13,7 +13,10 @@ import {
     fetchGlobalModelList,
     DEFAULT_ROW_LIMIT,
     DEFAULT_CHART_THEME_ID,
+    resolveDefaultChartTheme,
+    siteChartThemeId,
 } from './dfSlice'
+import { setSiteTheme, type SavedTheme } from './savedThemes';
 import { getBrowserId, generateUUID } from './identity';
 import type { AuthInfo } from './oidcConfig';
 import { OidcCallback } from './OidcCallback';
@@ -689,7 +692,8 @@ const ConfigDialog: React.FC<{
     const [paletteKey, setPaletteKey] = useState(
         (config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey
     );
-    const configChartThemeId = config.defaultChartThemeId ?? DEFAULT_CHART_THEME_ID;
+    const siteThemeId = useSelector(siteChartThemeId);
+    const configChartThemeId = resolveDefaultChartTheme(config, siteThemeId) ?? '';
     const [defaultChartThemeId, setDefaultChartThemeId] = useState(configChartThemeId);
     const themeChoices = useThemeChoices();
     // UI size is a per-browser preference: Auto follows the window width, the others pin it.
@@ -965,7 +969,7 @@ const ConfigDialog: React.FC<{
                         setMaxStretchFactor(2.0);
                         setFrontendRowLimit(rowLimitDefault);
                         setPaletteKey(defaultPaletteKey);
-                        setDefaultChartThemeId(DEFAULT_CHART_THEME_ID);
+                        setDefaultChartThemeId(siteThemeId ?? DEFAULT_CHART_THEME_ID);
                         setDisplaySize('auto');
                     }}>{t('session.resetToDefault')}</Button>
                     <Button onClick={() => setOpen(false)}>{t('app.cancel')}</Button>
@@ -1186,7 +1190,7 @@ const AppShell: FC = () => {
                                 <PageNavMenu isAdministrationPage={isAdministrationPage} appName={appName}
                                     destinations={destinations} onGoHome={goHome} />
                             ) : destinations.length > 0 ? (
-                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} compact />
+                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} compact logo={serverConfig.SITE?.logo} />
                             ) : (
                                 <Button component={RouterLink} to={APP_PATH} onClick={goHome} color="inherit"
                                     sx={{ textTransform: 'none', minWidth: 0, px: 0.75, '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' } }}>
@@ -1201,7 +1205,7 @@ const AppShell: FC = () => {
                         <Box ref={brandRef} sx={{ display: 'flex', alignItems: 'baseline', minWidth: 0 }}>
                         {destinations.length > 0 ? (
                             <Box sx={{ display: { xs: 'none', sm: 'block' }, minWidth: 0 }}>
-                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} />
+                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} logo={serverConfig.SITE?.logo} />
                             </Box>
                         ) : (
                         <Button component={RouterLink} to={APP_PATH} onClick={goHome} sx={{
@@ -1367,6 +1371,10 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             });
     }, []);
 
+    // A site's own chart theme is used by id like a saved theme.
+    const siteTheme = useSelector((state: DataFormulatorState) => state.serverConfig.SITE?.chart_theme);
+    useEffect(() => { setSiteTheme(siteTheme as SavedTheme | undefined); }, [siteTheme]);
+
     // Validate persisted workspace still exists on the backend
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const tables = useSelector(dfSelectors.getAllTables);
@@ -1514,6 +1522,14 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         {
             path: "/dev/maps",
             lazy: () => import('../maps/MapGallery').then(module => ({ Component: module.default })),
+        },
+        {
+            path: "/dev/map-colors",
+            lazy: () => import('../maps/MapColorPreview').then(module => ({ Component: module.default })),
+        },
+        {
+            path: "/dev/map-bubbles",
+            lazy: () => import('../maps/MapBubblePreview').then(module => ({ Component: module.default })),
         },
         {
             path: "/dev/samples",
