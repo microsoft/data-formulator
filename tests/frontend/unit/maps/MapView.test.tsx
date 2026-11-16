@@ -1,6 +1,7 @@
 import React from 'react';
 import '@testing-library/jest-dom/vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import * as d3 from 'd3';
 import { beforeAll, expect, it } from 'vitest';
 
 import '../../../../src/i18n';
@@ -257,8 +258,8 @@ it('locates a searched place and returns to the whole map when the search is cle
 it('draws a flat world without a sea-coloured oval (land on the page, or water filling the frame) and a globe on the page', async () => {
     const world = (style?: string, projection?: string) => parseMapSpec(JSON.stringify({ ...JSON.parse(JSON.stringify(map)),
         view: { basemap: 'world', fit: 'basemap', ...(style ? { style } : {}), ...(projection ? { projection } : {}) } })).spec!;
-    for (const [style, projection, ovals, background] of [[undefined, undefined, 0, 'rgb(255, 255, 255)'], ['atlas', undefined, 0, 'rgb(219, 233, 242)'],
-        [undefined, 'orthographic', 1, 'rgb(255, 255, 255)'], ['atlas', 'orthographic', 1, 'rgb(255, 255, 255)']] as const) {
+    for (const [style, projection, ovals, background] of [[undefined, undefined, 0, 'rgb(29, 34, 39)'], ['light', undefined, 0, 'rgb(255, 255, 255)'],
+        ['atlas', undefined, 0, 'rgb(219, 233, 242)'], [undefined, 'orthographic', 1, 'rgb(21, 24, 27)'], ['atlas', 'orthographic', 1, 'rgb(255, 255, 255)']] as const) {
         const { container, unmount } = render(<MapView spec={world(style, projection)} data={{ d: rows }} geoSets={{ countries }} />);
         await flush();
         expect(container.querySelectorAll('.df-map-ocean path')).toHaveLength(ovals);
@@ -287,16 +288,19 @@ it('points vector arrows along their heading and shows flow direction', async ()
         ['arrow', (root: HTMLElement) => {
             expect(root.querySelectorAll('path.df-map-arrow')).toHaveLength(1);
             expect(root.querySelectorAll('path.df-map-arrow-halo')).toHaveLength(1);
-            // Both places get a node dot.
+            // Both places are named, so both get a node dot to anchor the name.
             expect(root.querySelectorAll('circle.df-map-node')).toHaveLength(2);
-            // The line ends square at its head, which stops at the edge of the destination's dot.
+            // Halos, then dots, then heads: the head's halo never cuts the dot it lands on.
+            const order = Array.from(root.querySelectorAll('path.df-map-arrow-halo, circle.df-map-node, path.df-map-arrow')).map(node => node.getAttribute('class'));
+            expect(order).toEqual(['df-map-arrow-halo', 'df-map-node', 'df-map-node', 'df-map-arrow']);
+            // The line ends square at its head, whose tip is on the destination itself.
             const line = root.querySelector('path.df-map-line')!;
             expect(line.getAttribute('stroke-linecap')).toBe('butt');
             const tip = root.querySelector('path.df-map-arrow')!.getAttribute('d')!.match(/-?[\d.]+/g)!.map(Number).slice(0, 2);
             const lineEnd = line.getAttribute('d')!.match(/-?[\d.]+/g)!.map(Number).slice(-2);
             const brazil = Array.from(root.querySelectorAll('circle.df-map-node')).map(node => [Number(node.getAttribute('cx')), Number(node.getAttribute('cy'))])
                 .sort((a, b) => Math.hypot(a[0] - tip[0], a[1] - tip[1]) - Math.hypot(b[0] - tip[0], b[1] - tip[1]))[0];
-            expect(Math.hypot(tip[0] - brazil[0], tip[1] - brazil[1])).toBeCloseTo(2.6 + 0.5 + 0.75, 0);
+            expect(Math.hypot(tip[0] - brazil[0], tip[1] - brazil[1])).toBeCloseTo(0, 0);
             expect(Math.hypot(lineEnd[0] - brazil[0], lineEnd[1] - brazil[1])).toBeGreaterThan(9);
         }],
         ['taper', (root: HTMLElement) => expect(root.querySelector('path.df-map-line')!.getAttribute('fill')).not.toBe('none')],
@@ -307,6 +311,83 @@ it('points vector arrows along their heading and shows flow direction', async ()
         check(view.container);
         view.unmount();
     }
+});
+
+it('marks an unnamed flow’s end by its head alone, and lays a point layer beneath the arrows whatever its place in the list', async () => {
+    const tracks = [{ x0: -97, y0: 35, x1: -95, y1: 36, n: 5 }, { x0: -90, y0: 33, x1: -87, y1: 34.5, n: 9 }];
+    const spec = parseMapSpec(JSON.stringify({ view: { basemap: 'world' }, data: { t: { values: tracks } },
+        layers: [
+            { id: 'paths', type: 'flows', data: 't', from: { lon: 'x0', lat: 'y0' }, to: { lon: 'x1', lat: 'y1' }, size: { field: 'n' }, direction: 'arrow' },
+            { id: 'lift', type: 'points', data: 't', lon: 'x1', lat: 'y1' },
+        ] })).spec!;
+    const { container, unmount } = render(<MapView spec={spec} data={{ t: tracks }} geoSets={{ countries }} />);
+    await flush();
+    // A dot where each track starts; where it ends, its head.
+    expect(container.querySelectorAll('path.df-map-arrow')).toHaveLength(2);
+    expect(container.querySelectorAll('circle.df-map-node')).toHaveLength(2);
+    // The lift-off points come first in the marks, beneath the arrows.
+    expect(Array.from(container.querySelectorAll('.df-map-marks > g.df-map-layer')).map(group => group.getAttribute('data-layer'))).toEqual(['lift', 'paths']);
+    unmount();
+
+    // With a touchdown layer too, the flows draw no dot of their own: each end is already marked.
+    const both = parseMapSpec(JSON.stringify({ view: { basemap: 'world' }, data: { t: { values: tracks } },
+        layers: [...JSON.parse(JSON.stringify(spec.layers)), { id: 'touch', type: 'points', data: 't', lon: 'x0', lat: 'y0' }] })).spec!;
+    const marked = render(<MapView spec={both} data={{ t: tracks }} geoSets={{ countries }} />);
+    await flush();
+    expect(marked.container.querySelectorAll('circle.df-map-node')).toHaveLength(0);
+    marked.unmount();
+});
+
+it('checks every value of a checklist once its rows arrive, though it first drew with none', async () => {
+    const rows = [{ lon: 0, lat: 0, kind: 'a' }, { lon: 10, lat: 10, kind: 'b' }];
+    const spec = parseMapSpec(JSON.stringify({ view: { basemap: 'world' }, data: { p: { values: rows } },
+        layers: [{ id: 'p', type: 'points', data: 'p', lon: 'lon', lat: 'lat' }],
+        controls: [{ type: 'checkboxes', field: 'kind', data: 'p' }] })).spec!;
+    const view = render(<MapView spec={spec} data={{ p: [] }} geoSets={{ countries }} />);
+    await flush();
+    view.rerender(<MapView spec={spec} data={{ p: rows }} geoSets={{ countries }} />);
+    await flush();
+    expect(view.container.querySelectorAll('[data-layer="p"] circle')).toHaveLength(2);
+    view.unmount();
+});
+
+it('fans the heads of flows arriving at one place round a ring, and keeps heads for the largest twelve only', async () => {
+    const spokes = (count: number) => Array.from({ length: count }, (_, index) => {
+        const angle = (2 * Math.PI * index) / count;
+        return { x0: 10 + 25 * Math.cos(angle), y0: 20 + 18 * Math.sin(angle), x1: 10, y1: 20, n: index + 1 };
+    });
+    const draw = async (rows: Record<string, number>[]) => {
+        const spec = parseMapSpec(JSON.stringify({ view: { basemap: 'world' }, data: { f: { values: rows } },
+            layers: [{ id: 'f', type: 'flows', data: 'f', from: { lon: 'x0', lat: 'y0' }, to: { lon: 'x1', lat: 'y1' }, size: { field: 'n' }, direction: 'arrow' }] })).spec!;
+        const view = render(<MapView spec={spec} data={{ f: rows }} geoSets={{ countries }} />);
+        await flush();
+        const tips = Array.from(view.container.querySelectorAll('path.df-map-arrow')).map(head => head.getAttribute('d')!.match(/-?[\d.]+/g)!.map(Number).slice(0, 2));
+        view.unmount();
+        return tips;
+    };
+    const tips = await draw(spokes(4));
+    expect(tips).toHaveLength(4);
+    // Four arrivals: the tips stand on a ring round the place, apart from each other.
+    const [cx, cy] = [tips.reduce((sum, tip) => sum + tip[0], 0) / 4, tips.reduce((sum, tip) => sum + tip[1], 0) / 4];
+    for (const tip of tips) expect(Math.hypot(tip[0] - cx, tip[1] - cy)).toBeGreaterThan(3);
+    expect(await draw(spokes(20))).toHaveLength(12);
+});
+
+it('names the most salient regions first, within a budget of the plot’s area', async () => {
+    const names = ['France', 'Brazil', 'China', 'India', 'Canada', 'Australia', 'Mexico', 'Germany', 'Spain', 'Italy', 'Egypt', 'Kenya', 'Japan', 'Peru',
+        'Chile', 'Argentina', 'Nigeria', 'Russia', 'Turkey', 'Iran'];
+    const rows = names.map((country, index) => ({ country, v: index }));
+    const spec = parseMapSpec(JSON.stringify({ view: { basemap: 'world' }, data: { d: { values: rows } },
+        layers: [{ id: 'c', type: 'regions', data: 'd', key: 'country', color: { field: 'v' }, text: 'country' }] })).spec!;
+    panelSize = { width: 400, height: 300 };
+    const { container, unmount } = render(<MapView spec={spec} data={{ d: rows }} geoSets={{ countries }} />);
+    await flush();
+    const named = Array.from(container.querySelectorAll('.df-map-labels text')).map(text => text.textContent);
+    panelSize = { width: 900, height: 600 };
+    unmount();
+    // A 400 × 300 plot names at most a dozen; Russia, the largest and at the top of the scale, is among them.
+    expect(named.length).toBeLessThanOrEqual(12);
+    expect(named).toContain('Russia');
 });
 
 it('switches a world map between flat and globe without changing the saved spec', async () => {
@@ -321,6 +402,142 @@ it('switches a world map between flat and globe without changing the saved spec'
     fireEvent.click(screen.getByRole('button', { name: 'Flat map' }));
     await flush();
     expect(container.querySelectorAll('.df-map-ocean path')).toHaveLength(0);
+});
+
+it('draws a map on light street tiles in the light look unless it names a style', async () => {
+    const places = [{ name: 'Oakland', lon: -122.2, lat: 37.75 }];
+    const titleColor = async (tiles: string) => {
+        const spec = parseMapSpec(JSON.stringify({ title: 'Places', view: { basemap: 'world', tiles },
+            data: { p: { values: places } }, layers: [{ id: 'p', type: 'points', data: 'p', lon: 'lon', lat: 'lat' }] })).spec!;
+        const { unmount } = render(<MapView spec={spec} data={{ p: places }} geoSets={{ countries }} />);
+        await flush();
+        const color = getComputedStyle(screen.getByRole('heading', { name: 'Places' })).color;
+        unmount();
+        return color;
+    };
+    expect(await titleColor('dark')).toBe('rgb(232, 234, 236)');
+    expect(await titleColor('light')).not.toBe('rgb(232, 234, 236)');
+});
+
+it('names marks close together that share a name once', async () => {
+    const turbines = [{ farm: 'Moose Lake', lon: -110, lat: 52 }, { farm: 'Moose Lake', lon: -110.02, lat: 52.01 }, { farm: 'Moose Lake', lon: -110.01, lat: 51.99 },
+        { farm: 'Blue Trail', lon: -100, lat: 50 }];
+    const spec = parseMapSpec(JSON.stringify({ template: 'points', data: { values: turbines }, encoding: { lat: 'lat', lon: 'lon', label: 'farm' } })).spec!;
+    const { container, unmount } = render(<MapView spec={spec} data={{ main: turbines }} geoSets={{ countries }} />);
+    await flush();
+    await flush();
+    const labels = Array.from(container.querySelectorAll('.df-map-labels text')).map(text => text.textContent);
+    expect(labels.filter(text => text === 'Moose Lake')).toHaveLength(1);
+    expect(labels).toContain('Blue Trail');
+    unmount();
+});
+
+it('labels every size of small bubbles, and tells apart legends of layers sized by the same field', async () => {
+    const places = [{ iso3: 'FRA', n: 65 }, { iso3: 'BRA', n: 1900 }, { iso3: 'IND', n: 3750 }];
+    const small = parseMapSpec(JSON.stringify({ template: 'bubbles', data: { values: places }, encoding: { region: 'iso3', size: 'n' }, properties: { keyType: 'iso3', sizeRange: [1.5, 9] } })).spec!;
+    const first = render(<MapView spec={small} data={{ main: places }} geoSets={{ countries }} />);
+    await flush();
+    const legend = first.container.querySelector('[data-map-legends]') as HTMLElement;
+    for (const label of ['380', '1,900', '3,800']) expect(within(legend).getByText(label)).toBeInTheDocument();
+    first.unmount();
+
+    const bars = places.map(({ iso3, n }) => ({ iso3, reviewed_bars: n }));
+    const twice = parseMapSpec(JSON.stringify({ data: { d: { values: bars } }, layers: [
+        { id: 'a', name: 'Origins', type: 'bubbles', data: 'd', key: 'iso3', keyType: 'iso3', size: { field: 'reviewed_bars' } },
+        { id: 'b', name: 'Makers (reviewed bars)', type: 'bubbles', data: 'd', key: 'iso3', keyType: 'iso3', size: { field: 'reviewed_bars' } },
+    ] })).spec!;
+    const second = render(<MapView spec={twice} data={{ d: bars }} geoSets={{ countries }} />);
+    await flush();
+    const legends = second.container.querySelector('[data-map-legends]') as HTMLElement;
+    expect(within(legends).getByText('Origins · Reviewed bars')).toBeInTheDocument();
+    expect(within(legends).getByText('Makers (reviewed bars)')).toBeInTheDocument();
+    second.unmount();
+});
+
+it('shrinks bubbles with a small panel, and edges each in a darker shade of its own colour', async () => {
+    const places = [{ iso3: 'FRA', n: 10 }, { iso3: 'BRA', n: 100 }];
+    const spec = parseMapSpec(JSON.stringify({ template: 'bubbles', data: { values: places }, encoding: { region: 'iso3', size: 'n' }, properties: { keyType: 'iso3' } })).spec!;
+    const largest = async (width: number, height: number) => {
+        panelSize = { width, height };
+        const { container, unmount } = render(<MapView spec={spec} data={{ main: places }} geoSets={{ countries }} still />);
+        await flush();
+        const circles = Array.from(container.querySelectorAll('circle.df-map-point'));
+        const radius = Math.max(...circles.map(circle => Number(circle.getAttribute('r'))));
+        const circle = circles[0];
+        const [fill, stroke] = [circle.getAttribute('fill')!, circle.getAttribute('stroke')!];
+        unmount();
+        return { radius, fill, stroke };
+    };
+    const full = await largest(1000, 800);
+    const thumbnail = await largest(340, 240);
+    panelSize = { width: 900, height: 600 };
+    expect(full.radius).toBeCloseTo(32, 0);
+    expect(thumbnail.radius).toBeLessThan(full.radius / 2);
+    expect(full.stroke).not.toBe('#ffffff');
+    expect(d3.hcl(full.stroke).h).toBeCloseTo(d3.hcl(full.fill).h, -1);
+    expect(d3.lab(full.stroke).l).toBeLessThan(d3.lab(full.fill).l);
+});
+
+it('draws Antarctica on a world map when places lie there', async () => {
+    const drawsAntarctica = async (finds: { lon: number; lat: number }[]) => {
+        const map = parseMapSpec(JSON.stringify({ template: 'points', data: { values: finds }, encoding: { lat: 'lat', lon: 'lon' } })).spec!;
+        const { container, unmount } = render(<MapView spec={map} data={{ main: finds }} geoSets={{ countries }} />);
+        await flush();
+        const ids = Array.from(container.querySelectorAll('.df-map-land path')).map(path => (path as unknown as { __data__?: { properties?: { id?: string } } }).__data__?.properties?.id);
+        unmount();
+        return ids.includes('ATA');
+    };
+    expect(await drawsAntarctica([{ lon: 10, lat: 45 }, { lon: 150, lat: -75 }, { lon: -60, lat: -10 }])).toBe(true);
+    expect(await drawsAntarctica([{ lon: 10, lat: 45 }, { lon: -60, lat: -10 }])).toBe(false);
+});
+
+it('frames bubbles keyed to countries by the countries, not their centres', async () => {
+    const places = [{ iso3: 'USA', n: 5 }, { iso3: 'BRA', n: 3 }];
+    const map = parseMapSpec(JSON.stringify({ template: 'bubbles', data: { values: places }, encoding: { region: 'iso3', size: 'n' }, properties: { keyType: 'iso3' } })).spec!;
+    const { container, unmount } = render(<MapView spec={map} data={{ main: places }} geoSets={{ countries }} />);
+    await flush();
+    // Alaska's land (west of the USA's centre by far) lies inside the panel.
+    const xs = Array.from(container.querySelectorAll('.df-map-land path')).filter(path => (path as unknown as { __data__?: { properties?: { id?: string } } }).__data__?.properties?.id === 'USA')
+        .flatMap(path => (path.getAttribute('d')!.match(/-?[\d.]+/g) ?? []).filter((_, index) => index % 2 === 0).map(Number));
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(-1);
+    unmount();
+});
+
+it('folds the legend into a chip on a small interactive map, and keeps a compact one in a small still picture', async () => {
+    panelSize = { width: 360, height: 260 };
+    const interactive = render(<MapView spec={map} data={{ d: rows }} geoSets={{ countries }} />);
+    await flush();
+    const toggle = screen.getByRole('button', { name: /Legend/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(interactive.container.querySelector('[data-map-legend]')).toBeNull();
+    fireEvent.click(toggle);
+    expect(interactive.container.querySelector('[data-map-legend][data-map-legend-compact]')).not.toBeNull();
+    interactive.unmount();
+    const still = render(<MapView spec={map} data={{ d: rows }} geoSets={{ countries }} still />);
+    await flush();
+    expect(screen.queryByRole('button', { name: /Legend/ })).toBeNull();
+    expect(still.container.querySelector('[data-map-legend][data-map-legend-compact]')).not.toBeNull();
+    still.unmount();
+    panelSize = { width: 900, height: 600 };
+    const full = render(<MapView spec={map} data={{ d: rows }} geoSets={{ countries }} />);
+    await flush();
+    expect(full.container.querySelector('[data-map-legend]:not([data-map-legend-compact])')).not.toBeNull();
+    full.unmount();
+});
+
+it('keeps a set centre and zoom on a flat web map when it redraws', async () => {
+    panelSize = { width: 900, height: 600 };
+    const places = [{ name: 'Oakland', lon: -122.2, lat: 37.75 }];
+    const spec = parseMapSpec(JSON.stringify({ view: { basemap: 'world', projection: 'mercator', center: [-122.2, 37.75], zoom: 8 },
+        data: { p: { values: places } }, layers: [{ id: 'p', type: 'points', data: 'p', lon: 'lon', lat: 'lat' }] })).spec!;
+    const { container, rerender, unmount } = render(<MapView spec={spec} data={{ p: places }} geoSets={{ countries }} />);
+    await flush();
+    rerender(<MapView spec={spec} data={{ p: [...places] }} geoSets={{ countries }} />);
+    await flush();
+    const point = container.querySelector('circle.df-map-point')!;
+    expect(Number(point.getAttribute('cx'))).toBeCloseTo(450, 0);
+    expect(Number(point.getAttribute('cy'))).toBeCloseTo(300, 0);
+    unmount();
 });
 
 it('draws bubbles on a globe as circles on the sphere, clipped at the horizon', async () => {
@@ -348,7 +565,7 @@ it('draws bubbles on a globe as circles on the sphere, clipped at the horizon', 
 it('draws small flows over large ones, each on its own casing, and fades only crowded maps', async () => {
     const flowsOf = (rows: Record<string, unknown>[]) => parseMapSpec(JSON.stringify({ view: { basemap: 'world' }, data: { f: { values: rows } },
         layers: [{ id: 'f', type: 'flows', data: 'f', from: { lon: 'x0', lat: 'y0' }, to: { lon: 'x1', lat: 'y1' }, size: { field: 'n' }, direction: 'arrow' }] })).spec!;
-    const few = [{ x0: 0, y0: 0, x1: 30, y1: 10, n: 1 }, { x0: 0, y0: 0, x1: 30, y1: -10, n: 10 }, { x0: 5, y0: 5, x1: -30, y1: 20, n: 5 }];
+    const few = [{ x0: 0, y0: 0, x1: 30, y1: 10, n: 4 }, { x0: 0, y0: 0, x1: 30, y1: -10, n: 10 }, { x0: 5, y0: 5, x1: -30, y1: 20, n: 7 }];
     const { container, unmount } = render(<MapView spec={flowsOf(few)} data={{ f: few }} geoSets={{ countries }} />);
     await flush();
     const group = container.querySelector('[data-layer="f"]')!;
@@ -364,8 +581,15 @@ it('draws small flows over large ones, each on its own casing, and fades only cr
     const crowded = render(<MapView spec={flowsOf(many)} data={{ f: many }} geoSets={{ countries }} />);
     await flush();
     const opacity = Number(crowded.container.querySelector('path.df-map-line')!.getAttribute('stroke-opacity'));
-    expect(opacity).toBeGreaterThanOrEqual(0.55);
-    expect(opacity).toBeLessThan(0.6);
+    expect(opacity).toBeGreaterThanOrEqual(0.65);
+    expect(opacity).toBeLessThan(0.7);
+    // Lines under 1.5 px take no halo, so a crowd of hairlines does not darken the map.
+    const thin = Array.from(crowded.container.querySelectorAll('path.df-map-line')).filter(line => Number(line.getAttribute('stroke-width')) < 1.5).length;
+    expect(crowded.container.querySelectorAll('path.df-map-casing').length).toBe(120 - thin);
+    expect(thin).toBeGreaterThan(0);
+    // Its lines also thin: the widest of 120 is narrower than the widest of three.
+    const widest = (root: HTMLElement) => Math.max(...Array.from(root.querySelectorAll('path.df-map-line')).map(line => Number(line.getAttribute('stroke-width'))));
+    expect(widest(crowded.container)).toBeLessThan(Math.max(...widths));
     crowded.unmount();
 });
 
@@ -390,7 +614,7 @@ it('turns a flat world to the Pacific-centred view when that cuts fewer routes, 
 });
 
 it('uses World Bank boundaries: areas of non-determined status apart from countries, their borders dotted', async () => {
-    const { container } = render(<MapView spec={parseMapSpec(JSON.stringify({ view: { basemap: 'world' }, data: {}, layers: [] })).spec!} data={{}} geoSets={{ countries }} />);
+    const { container } = render(<MapView spec={parseMapSpec(JSON.stringify({ view: { basemap: 'world', style: 'light' }, data: {}, layers: [] })).spec!} data={{}} geoSets={{ countries }} />);
     await flush();
     // The UN depiction: Taiwan is part of China, Crimea of Ukraine; Jammu and Kashmir and Western Sahara stand apart.
     expect(countries.byId.has('TWN')).toBe(false);
@@ -406,4 +630,19 @@ it('uses World Bank boundaries: areas of non-determined status apart from countr
     expect(credit.textContent).toBe('Map based on World Bank Official Boundaries (CC BY 4.0)');
     expect(credit.querySelector('a')?.getAttribute('href')).toContain('datacatalog.worldbank.org');
     expect(container.querySelector('[data-map-legends] [data-map-boundaries]')).toBeNull();
+});
+
+it('colours hexagon counts piled into a few cells by their logarithm, so the rest are not all the palest', async () => {
+    // One cell of 2,000 finds among cells of a handful each.
+    const finds = [...Array.from({ length: 2000 }, () => ({ lon: 0, lat: -80 })),
+        ...Array.from({ length: 30 }, (_, index) => Array.from({ length: 1 + (index % 4) }, () => ({ lon: -150 + 10 * index, lat: 30 }))).flat()];
+    const spec = parseMapSpec(JSON.stringify({ view: { basemap: 'world' }, data: { p: { values: finds } },
+        layers: [{ id: 'h', type: 'hexbin', data: 'p', lon: 'lon', lat: 'lat', radius: 8 }] })).spec!;
+    const { container, unmount } = render(<MapView spec={spec} data={{ p: finds }} geoSets={{ countries }} />);
+    await flush();
+    const fills = new Set(Array.from(container.querySelectorAll('[data-layer="h"] path')).map(hex => hex.getAttribute('fill')));
+    unmount();
+    // A linear scale would draw every small cell in one colour; a log one tells 1 from 2 from 3.
+    expect(fills.size).toBeGreaterThan(2);
+    expect(container.textContent ?? '').not.toContain('NaN');
 });

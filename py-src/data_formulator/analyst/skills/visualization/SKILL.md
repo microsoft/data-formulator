@@ -44,7 +44,7 @@ Common chart contracts:
 | distribution | Histogram, Density Plot, Boxplot, Violin Plot | raw quantitative values |
 | composition | Stacked Bar Chart, Pie Chart, Streamgraph | value plus category |
 | uncertainty | Range Area Chart | x, lower y, upper y2 |
-| spatial | Map, Choropleth | longitude/latitude or region id |
+| spatial | a map file: load `map` and call `write_map`; Map or Choropleth charts only when a chart is explicitly asked for | longitude/latitude or region id |
 
 Pass raw values to Histogram and ECDF Plot rather than precomputing bins or a
 CDF. Regression computes its trend line; do not calculate predictions in code.
@@ -56,6 +56,9 @@ All encoded fields must exist in the output DataFrame.
 
 Leave colors to the theme unless the values carry a meaning readers already tie
 to a color; then pin them, so a meaningful color never lands on the wrong value.
+Category values keep their colors across the session on their own: a country,
+product or group drawn once keeps its color in later charts and maps that add
+other values, so do not recolor follow-up charts by hand.
 
 - Categories with conventional colors: political parties (US Republican red,
   Democratic blue), outcomes (win/loss, pass/fail, yes/no: green and red),
@@ -65,8 +68,9 @@ to a color; then pin them, so a meaningful color never lands on the wrong value.
   `{"party": {"semantic_type": "Category", "colors": {"Republican": "#d62728",
   "Democratic": "#1f5fbf", "Independent": "#8c8c8c"}}}`. Give non-answers (no
   race, not called, unknown, other) neutral greys so they do not read as a side.
-  The colors stay with the table, so later charts, maps and apps of the field
-  agree; when a column already lists `colors`, keep them.
+  Pin them the first time the values appear: the colors then apply across the
+  session, to the same kind of field in any table and in maps and apps; when a
+  column already lists `colors`, keep them.
 - A diverging measure whose sides mean something (a party margin, surplus versus
   deficit): match each side's color. A diverging scheme runs from the low end:
   `redblue` is red for low values and blue for high. Orient the measure so the

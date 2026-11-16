@@ -5,6 +5,8 @@
  * /dev/samples: apps an agent generated from the sample datasets, shown live from their own sessions, with
  * how each was made (prompt, model, time, tokens) and what the layout checks found, to review issues.
  * The list is `devSamples.json`; each sample is a session (`sample_…`) in the local DF home.
+ * `?workspace=<session>&file=<name>.app.jsx` shows one app from any session instead (`&height=` sets its frame), for
+ * reviewing an app written by hand (tests/eval/dashboard_gen/preview.py).
  */
 
 import React, { useEffect, useState } from 'react';
@@ -15,6 +17,7 @@ import { DevNav } from './DevNav';
 import type { Density } from '../app/reactApp/runtime/density';
 import { apiRequest } from '../app/apiClient';
 import { getUrls } from '../app/utils';
+import { refreshSavedThemes } from '../app/savedThemes';
 import SAMPLES from './devSamples.json';
 
 interface Sample {
@@ -35,7 +38,7 @@ type SampleSession = NonNullable<React.ComponentProps<typeof ReactAppPreview>['s
 
 const FRAME = { width: 1000, height: 760 };
 
-function SampleSection({ sample, density }: { sample: Sample; density: Density }) {
+function SampleSection({ sample, density, frameHeight = FRAME.height }: { sample: Sample; density: Density; frameHeight?: number }) {
     const [source, setSource] = useState<string | null>(null);
     const [session, setSession] = useState<SampleSession | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -85,7 +88,7 @@ function SampleSection({ sample, density }: { sample: Sample; density: Density }
             {sample.notes && <Box sx={{ fontSize: 12, color: 'text.secondary', mb: 1 }}>{sample.notes}</Box>}
             <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
                 <Box data-app-frame sx={{
-                    flexShrink: 0, width: FRAME.width, height: FRAME.height, position: 'relative',
+                    flexShrink: 0, width: FRAME.width, height: frameHeight, position: 'relative',
                     border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden', bgcolor: 'background.paper', boxShadow: 1,
                 }}>
                     {error ? <Box sx={{ p: 2, color: 'error.main', fontSize: 13 }}>Could not load the app: {error}</Box>
@@ -106,7 +109,15 @@ function SampleSection({ sample, density }: { sample: Sample; density: Density }
 
 export default function DevSamplesPage() {
     const [density, setDensity] = useState<Density>('compact');
-    const samples = SAMPLES as Sample[];
+    const params = new URLSearchParams(window.location.search);
+    const single = params.get('workspace') && params.get('file')
+        ? { id: 'preview', workspace: params.get('workspace')!, file: params.get('file')!, style: 'Preview', dataset: params.get('file')!, prompt: '', model: '' }
+        : null;
+    const samples = single ? [single] : SAMPLES as Sample[];
+    const frameHeight = Number(params.get('height')) || FRAME.height;
+    // The user's saved themes, which apps use by id as the app shell loads them; the apps wait for them.
+    const [themesLoaded, setThemesLoaded] = useState(false);
+    useEffect(() => { void refreshSavedThemes().finally(() => setThemesLoaded(true)); }, []);
     return (
         <Box sx={{ height: '100vh', overflow: 'auto', bgcolor: 'background.default' }}>
             <DevNav />
@@ -126,7 +137,7 @@ export default function DevSamplesPage() {
                         {' '}{samples.map(sample => <a key={sample.id} href={`#${sample.id}`} style={{ marginRight: 12 }}>{sample.style}</a>)}
                     </Box>
                 </Box>
-                {samples.map(sample => <SampleSection key={sample.id} sample={sample} density={density} />)}
+                {themesLoaded && samples.map(sample => <SampleSection key={sample.id} sample={sample} density={density} frameHeight={frameHeight} />)}
             </Box>
         </Box>
     );

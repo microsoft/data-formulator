@@ -11,6 +11,7 @@ import { getChartTemplate, getChartChannels } from "../components/ChartTemplates
 import { vlAdaptChart, vlRecommendEncodings } from 'flint-chart';
 import { DF_STATE_VERSION, migrateState } from './stateMigrations';
 import { applyAuthoredSemantics, mergeInferredSemantics, normalizeFieldAnnotation } from './fieldSemantics';
+import { registerCategoryColors, sessionPins, type CategoryColorRegistry, type CategoryRegistration, type SessionCategoryColors } from './categoryColors';
 import { getDataTable } from '../views/ChartUtils';
 import { getUrls, computeContentHash } from './utils';
 import { apiRequest, ApiRequestError } from './apiClient';
@@ -335,14 +336,22 @@ export interface ClientConfig {
     defaultChartThemeId?: string;
 }
 
-/** The theme new charts start with, or undefined for Flint's own defaults. */
-export const resolveDefaultChartTheme = (config: Partial<ClientConfig> | undefined): string | undefined => {
+/**
+ * The theme new charts start with, or undefined for Flint's own defaults. A site's own theme (`siteThemeId`)
+ * takes the place of the app's default, but not of a theme the user chose.
+ */
+export const resolveDefaultChartTheme = (config: Partial<ClientConfig> | undefined, siteThemeId?: string): string | undefined => {
     const themeId = config?.defaultChartThemeId ?? DEFAULT_CHART_THEME_ID;
+    if (siteThemeId && themeId === DEFAULT_CHART_THEME_ID) return siteThemeId;
     return themeId || undefined;
 };
 
-const withDefaultChartTheme = (chart: Chart, config: ClientConfig): Chart =>
-    chart.themeId === undefined ? { ...chart, themeId: resolveDefaultChartTheme(config) } : chart;
+/** The site's own chart theme id (a demo's `chart_theme`), if it has one. */
+export const siteChartThemeId = (state: Pick<DataFormulatorState, 'serverConfig'>): string | undefined =>
+    state.serverConfig?.SITE?.chart_theme?.id;
+
+const withDefaultChartTheme = (chart: Chart, config: ClientConfig, siteThemeId?: string): Chart =>
+    chart.themeId === undefined ? { ...chart, themeId: resolveDefaultChartTheme(config, siteThemeId) } : chart;
 
 export interface GeneratedReport {
     id: string;
@@ -409,6 +418,8 @@ export interface DataFormulatorState {
     /** The title of the dataset the session was opened from (a demo starter), shown in the folded workspace card. */
     workspaceTitle: string | null;
     tableSemantics: TableSemanticsInfo[];
+    /** The session's category colours: which palette slot each value of a kind of field has taken (categoryColors.ts). */
+    categoryColors: CategoryColorRegistry;
     draftNodes: DraftNode[];
     charts: Chart[];
     
@@ -566,6 +577,7 @@ const initialState: DataFormulatorState = {
     workspaceItemOrder: [],
     workspaceTitle: null,
     tableSemantics: [],
+    categoryColors: {},
     draftNodes: [],
     charts: [],
 
@@ -1402,6 +1414,7 @@ export const dataFormulatorSlice = createSlice({
                     ? saved.workspaceItemOrder.filter((key: unknown) => typeof key === 'string') : [],
                 workspaceTitle: typeof saved.workspaceTitle === 'string' && saved.workspaceTitle.trim() ? saved.workspaceTitle : null,
                 tableSemantics: saved.tableSemantics || [],
+                categoryColors: saved.categoryColors && typeof saved.categoryColors === 'object' ? saved.categoryColors : {},
                 draftNodes: (saved.draftNodes || []).map((node: DraftNode) => {
                     // Mark any running/clarifying drafts as interrupted (SSE connection lost)
                     if (node.derive?.status === 'running' || node.derive?.status === 'clarifying') {
@@ -1806,7 +1819,7 @@ export const dataFormulatorSlice = createSlice({
             let chartType = action.payload.chartType;
             const tables = collectAllTables(state);
             let tableId = action.payload.tableId || tables[0].id;
-            let freshChart = withDefaultChartTheme(generateFreshChart(tableId, chartType, "user"), state.config);
+            let freshChart = withDefaultChartTheme(generateFreshChart(tableId, chartType, "user"), state.config, siteChartThemeId(state));
             
             // Auto-populate encodings based on table metadata
             let table = tables.find(t => t.id === tableId);
@@ -1825,11 +1838,11 @@ export const dataFormulatorSlice = createSlice({
             state.focusedId = { type: 'chart', chartId: freshChart.id };
         },
         addChart: (state, action: PayloadAction<Chart>) => {
-            let chart = withDefaultChartTheme(action.payload, state.config);
+            let chart = withDefaultChartTheme(action.payload, state.config, siteChartThemeId(state));
             state.charts = [chart, ...state.charts];
         },
         addAndFocusChart: (state, action: PayloadAction<Chart>) => {
-            let chart = withDefaultChartTheme(action.payload, state.config);
+            let chart = withDefaultChartTheme(action.payload, state.config, siteChartThemeId(state));
             state.charts = [chart, ...state.charts];
             state.focusedId = { type: 'chart', chartId: chart.id };
         },
@@ -1971,6 +1984,10 @@ export const dataFormulatorSlice = createSlice({
             const chart = collectAllCharts(state).find(c => c.id === action.payload.chartId);
             if (!chart) return;
             chart.themeId = action.payload.themeId;
+        },
+        registerCategoryColors: (state, action: PayloadAction<CategoryRegistration>) => {
+            const next = registerCategoryColors(state.categoryColors ?? {}, action.payload);
+            if (next !== state.categoryColors) state.categoryColors = next;
         },
         updateChartEncoding: (state, action: PayloadAction<{chartId: string, channel: Channel, encoding: EncodingItem}>) => {
             let chartId = action.payload.chartId;
@@ -3190,8 +3207,13 @@ export const dfSelectors = {
             const turn = textTurns.find(item => item.id === startId);
             // A message with its own view shows it while focused (design-docs/58, rule 2).
             if (turn && textTurnOwnsCanvas(turn)) return { type: 'text', textId: turn.id };
-            // Anything else shows the nearest earlier item; a chart the user was on stays in view within its table.
+            // A run's answer shows what the run last brought into view, while it still exists: an app or map
+            // changed in place adds nothing to the thread, so the nearest item could be an older table.
             const allCharts = [...userCharts, ...triggerCharts];
+            const shown = turn?.canvasTarget;
+            if (shown?.type === 'chart' && allCharts.some(chart => chart.id === shown.chartId)) return shown;
+            if (shown?.type === 'file' && fileNodes.some(file => file.path === shown.fileName)) return shown;
+            // Anything else shows the nearest earlier item; a chart the user was on stays in view within its table.
             const tableCanvas = (tableId: string): FocusedId => {
                 const sourceChart = turn?.sourceChartId ? allCharts.find(chart => chart.id === turn.sourceChartId) : undefined;
                 if (sourceChart?.tableRef === tableId) return { type: 'chart', chartId: sourceChart.id };
@@ -3261,6 +3283,12 @@ export const dfSelectors = {
     getChartThumbnail: (chartId: string) =>
         (state: DataFormulatorState): string | undefined =>
             state.chartThumbnails?.[chartId],
+
+    /** The session's category colours: the registry and every pinned colour in its tables' fields. */
+    getSessionCategoryColors: createSelector(
+        [(state: DataFormulatorState) => state.categoryColors, (state: DataFormulatorState) => state.tableSemantics],
+        (registry, tableSemantics): SessionCategoryColors => ({ registry: registry ?? {}, pins: sessionPins(tableSemantics ?? []) }),
+    ),
 
     replaceChart: (state: DataFormulatorState, chart: Chart) => {
         if (state.charts.find(c => c.id == chart.id)) {

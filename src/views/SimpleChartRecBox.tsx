@@ -338,6 +338,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // The chart the user was on when the current run started — provenance for a
     // clarify/explain TextTurn emitted mid/end of the run (design-docs/41).
     const runSourceChartIdRef = useRef<string | null>(null);
+    // The chart, app or map this run last brought into view: its closing answer shows it (TextTurn.canvasTarget).
+    const runShownRef = useRef<NonNullable<TextTurn['canvasTarget']> | null>(null);
     // Authored thread edge, chained (design-docs/42): the LAST thread node this
     // run created — starts as the node the user asked from (a table, or the turn
     // being answered), then advances to each turn/table as it's emitted. Every
@@ -381,6 +383,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
     /** Focus a new result if the user hasn't steered this run; otherwise count it for "Show latest". */
     const followFocus = (target: NonNullable<FocusedId>): boolean => {
+        if (target.type === 'chart' || target.type === 'file') runShownRef.current = target;
+        // A report the run writes takes over the view; its answer belongs to it.
+        else if (target.type === 'report') runShownRef.current = null;
         // Reports, apps and maps get a tab, unseen until visited, including any a burst skips past.
         dispatch(dfActions.noteCanvasResult(target));
         if (!shouldAutoFocusGeneratedChart(userSteeredRef.current)) {
@@ -839,6 +844,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         pendingFollowRef.current = undefined;
         if (followTimerRef.current) { clearTimeout(followTimerRef.current); followTimerRef.current = null; }
         setUnseenResults({ count: 0 });
+        runShownRef.current = null;
         // Capture the source chart for any TextTurn this run emits — its CANVAS
         // anchor (focusing the turn keeps this chart on the canvas, design-docs/41).
         // Fall back to the last-focused chart ONLY when it belongs to the asked-
@@ -1382,14 +1388,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             advanceTo(itemId);
         }
         /** Items one result brought in together, each added with `chainHead()` as its parent: one set when there are several. */
-        const itemsProducedTogether = (itemIds: string[]) => {
+        const itemsProducedTogether = (itemIds: string[], label?: string) => {
             if (itemIds.length < 2) {
                 if (itemIds[0]) itemProduced(itemIds[0]);
                 return;
             }
             const setId = `artifactSet_${runKey}_${++setCount}`;
             dispatch(dfActions.addArtifactSet({ kind: 'artifact-set', id: setId, parentNodeId: chainHead(),
-                memberIds: itemIds, createdAt: Date.now() }));
+                memberIds: itemIds, ...(label ? { label } : {}), createdAt: Date.now() }));
             itemProduced(setId);
         };
         /**
@@ -1476,6 +1482,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 ...(result.content?.form ? { form: formArtifactFromEvent(result.content.form) } : {}),
                 ...(result.content?.presentation === 'long_response' ? { presentation: 'long_response' as const } : {}),
                 ...(runSourceChartIdRef.current ? { sourceChartId: runSourceChartIdRef.current } : {}),
+                ...(runShownRef.current ? { canvasTarget: runShownRef.current } : {}),
                 progressSteps: snapshotProgress(true),
                 ...(resumeTraj ? { resume: {
                     trajectory: resumeTraj,
@@ -1806,7 +1813,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             created_at: new Date().toISOString(), file_size: 0, media_type: null });
                     }
                     if (loadedFiles.length) notifyWorkspaceFilesChanged(addedFiles);
-                    itemsProducedTogether(loadedIds);
+                    itemsProducedTogether(loadedIds, typeof result.label === 'string' && result.label.trim() ? result.label.trim() : undefined);
                     const firstLoadedTable = loadedIds.find(id => id.startsWith(`loaded-table-${runKey}-`));
                     if (firstLoadedTable) followFocus({ type: 'reference', referenceId: firstLoadedTable });
                     if (operation.status === 'partially_loaded') {
@@ -2035,6 +2042,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             table.displayId = existing?.displayId || output.display_name || table.displayId;
                             runSourceTables.set(table.id, table);
                             dispatch(dfActions.addTableToStore(table));
+                            // The semantic types the agent gave (a Year reads 2022 at once); inference fills in the rest.
+                            const semanticFields = authoredFieldSemantics(table.names, output.field_metadata, undefined);
+                            if (Object.keys(semanticFields).length > 0) {
+                                dispatch(dfActions.applyAuthoredFieldSemantics({ tableId: table.id, fields: semanticFields }));
+                            }
                             addLoadedItem(`data-reference-${runKey}-${table.id}`, table.id);
                             dispatch(fetchFieldSemanticType(table));
                             dispatch(fetchColumnStats(table));
@@ -2053,8 +2065,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         && typeof file.content_hash === 'string' && file.available_in_workspace === true) {
                         const fileName = file.path.slice('files/'.length);
                         addFileItem(fileName, file.display_name || file.name || fileName, file.content_hash, file.replaces);
-                        // An app the agent edited comes into view, like a newly written one.
+                        // An app the agent edited comes into view, like a newly written one, and is repaired on its own
+                        // if the edit breaks it (maps report their own problems).
                         if (result.tool === 'edit_file' && file.app === true) {
+                            if (!fileName.endsWith('.map.json')) dispatch(dfActions.watchAgentApp(fileName));
                             followFocus({ type: 'file', fileName });
                             addProgressStep(t('htmlApp.updated', { title: file.display_name || fileName }), 'info');
                         }
@@ -2437,12 +2451,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     }
 
                     if (data.type === "warning") {
-                        // A rate-limit retry is what the run is waiting on now: show it as the status too.
-                        if ((data as any).warning?.message_code === 'LLM_RATE_LIMIT_RETRY') {
+                        // A rate-limit retry is what the run is waiting on now: show it as the status too. It is
+                        // logged as info, so a retry the run recovers from does not leave the badge on a warning.
+                        const retrying = (data as any).warning?.message_code === 'LLM_RATE_LIMIT_RETRY';
+                        if (retrying) {
                             setLiveStatus(translateBackend((data as any).warning.message, 'LLM_RATE_LIMIT_RETRY'), false, true);
                         }
                         dispatch(dfActions.addMessages({
-                            timestamp: Date.now(), type: 'warning',
+                            timestamp: Date.now(), type: retrying ? 'info' : 'warning',
                             component: 'data-agent',
                             value: (data as any).warning?.message ?? 'Warning from server',
                         }));

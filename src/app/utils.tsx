@@ -3,6 +3,7 @@
 
 import _, {  } from "lodash";
 import { chartThemeSpec } from './savedThemes';
+import { CHART_COLOR_CHANNELS } from './categoryColors';
 import { useEffect, useRef } from "react";
 import ts from "typescript";
 import { Channel, Chart, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, Trigger } from "../components/ComponentType";
@@ -643,6 +644,8 @@ export const assembleVegaChart = (
     title?: string,
     subtitle?: string,
     themeId?: string,
+    /** Colours bound to values of the colour (or group) field: the session's category colours. */
+    valueColors?: Record<string, string>,
 ) => {
 
     // Convert app-level EncodingMap (fieldID-based) to library-level encodings (field-name-based)
@@ -661,6 +664,9 @@ export const assembleVegaChart = (
 
     // Flint rejects sort references it cannot resolve; an unusable sort hint must not block the chart.
     Object.assign(encodings, resolveColumnSorts(encodings, workingTable));
+    const colorChannel = valueColors && Object.keys(valueColors).length
+        ? CHART_COLOR_CHANNELS.find(channel => encodings[channel]?.field) : undefined;
+    if (colorChannel) encodings[colorChannel] = { ...encodings[colorChannel], colors: valueColors };
     for (const encoding of Object.values(encodings)) {
         const sortBy = encoding.sortBy;
         if (sortBy === undefined) continue;

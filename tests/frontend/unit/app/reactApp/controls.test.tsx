@@ -198,3 +198,23 @@ describe('controls and displays', () => {
         expect(screen.getByText('controls')).toBeInTheDocument();
     });
 });
+
+describe('Kpi', () => {
+    it('shows the change against a previous value or a target, coloured by whether it is good', async () => {
+        installBridge();
+        const { Kpi } = await import('../../../../../src/app/reactApp/runtime/kpi');
+        const change = () => Array.from(document.querySelectorAll('[data-kpi-change]')).map(node => node.textContent);
+        const { unmount } = themed(<>
+            <Kpi label="Revenue" value={1150} format="compact" previous={1000} vs="2023" />
+            <Kpi label="Return rate" value={0.043} format="percent:1" previous={0.051} vs="last year" good="down" />
+            <Kpi label="Orders" value={14.3e6} format="compact" target={15e6} />
+            <Kpi label="Visitors" value={500} />
+        </>);
+        expect(screen.getByText('Revenue')).toBeInTheDocument();
+        expect(change()).toEqual(['▲ +15% vs 2023', '▼ −0.8 pts vs last year', '▼ 95% of target vs 15M']);
+        // A fall in a rate that should fall is good: green; missing the target: red.
+        const tones = Array.from(document.querySelectorAll('[data-kpi-change] > span:first-child')).map(node => getComputedStyle(node).color);
+        expect(tones[1]).not.toBe(tones[2]);
+        unmount();
+    });
+});

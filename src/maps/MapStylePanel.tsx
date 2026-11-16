@@ -20,7 +20,7 @@ import { layerGeoSet } from './geography';
 import { BIVARIATE_SCHEMES, CATEGORICAL_SCHEMES, DIVERGING_SCHEMES, SEQUENTIAL_SCHEMES } from './scales';
 import { bindChannel, boundField, channelBinding, CHOICE_CHANNELS, compatibleTemplates, switchTemplate, TEMPLATE_DEFS, TEMPLATES, type Encoding, type TemplateName } from './templates';
 import { BASEMAPS, CLASS_METHODS, FLOW_DIRECTIONS, MAP_STYLES, PROJECTIONS, TILES, type LayerType, type MapSpec, type MapStyleName, type Row } from './spec';
-import { mapStyle } from './styles';
+import { mapStyle, viewStyleName } from './styles';
 import { themeIconUrl, useThemeChoices } from '../views/ChartThemePicker';
 
 type Raw = Record<string, any>;
@@ -56,6 +56,80 @@ const Row: FC<{ label: string; children: React.ReactNode }> = ({ label, children
         <Typography sx={rowLabelSx}>{label}</Typography>
         <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>{children}</Box>
     </Box>;
+
+/**
+ * One-click colours for a layer drawn in a single colour: Tableau's ten (readable on light and dark ground) and
+ * three neutrals.
+ */
+const SWATCHES = ['#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f', '#edc948', '#b07aa1', '#ff9da7', '#9c755f', '#bab0ac', '#ffffff', '#7f7f7f', '#2b2f33'];
+
+/** Whether a string is a colour CSS can draw (a hex, rgb()/hsl(), or a name). */
+const isColor = (value: string) => value.trim() !== '' && (typeof CSS !== 'undefined' && CSS.supports ? CSS.supports('color', value.trim()) : /^#[0-9a-f]{3,8}$/i.test(value.trim()));
+
+/** A colour chosen in one click from the swatches, or typed: any CSS colour, applied once it reads as one. */
+const ColorPicker: FC<{ value: string | undefined; label: string; disabled?: boolean; onChange: (color: string | undefined) => void;
+    /** Offer a first swatch that clears the choice, so the theme's colour applies; its tooltip. */
+    clearLabel?: string }> = ({ value, label, disabled, onChange, clearLabel }) => {
+    const [text, setText] = useState(value ?? '');
+    React.useEffect(() => setText(value ?? ''), [value]);
+    const current = (value ?? '').toLowerCase();
+    return <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, py: 0.5, minWidth: 0 }}>
+        <Box role="radiogroup" aria-label={label} sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+            {clearLabel && <Box component="button" type="button" role="radio" aria-checked={!current} aria-label={clearLabel} title={clearLabel} disabled={disabled}
+                onClick={() => onChange(undefined)}
+                sx={{ width: 18, height: 18, p: 0, borderRadius: '50%', cursor: disabled ? 'default' : 'pointer', bgcolor: 'transparent',
+                    border: '1px dashed', borderColor: 'text.secondary', outline: !current ? '2px solid' : 'none', outlineColor: 'primary.main', outlineOffset: '1px' }} />}
+            {SWATCHES.map(swatch => {
+                const chosen = current === swatch;
+                return <Box key={swatch} component="button" type="button" role="radio" aria-checked={chosen} aria-label={swatch} title={swatch} disabled={disabled}
+                    onClick={() => onChange(swatch)}
+                    sx={{ width: 18, height: 18, p: 0, borderRadius: '50%', bgcolor: swatch, cursor: disabled ? 'default' : 'pointer',
+                        border: '1px solid', borderColor: 'divider', outline: chosen ? '2px solid' : 'none', outlineColor: 'primary.main', outlineOffset: '1px' }} />;
+            })}
+        </Box>
+        <TextField size="small" value={text} disabled={disabled} placeholder="#4e79a7, tomato, rgb(…)"
+            slotProps={{ htmlInput: { 'aria-label': `${label} (CSS)`, style: { fontSize: '0.75rem', padding: '3px 6px', fontFamily: 'monospace' } } }}
+            error={text.trim() !== '' && !isColor(text)}
+            onChange={event => {
+                setText(event.target.value);
+                if (isColor(event.target.value)) onChange(event.target.value.trim());
+                else if (!event.target.value.trim() && clearLabel) onChange(undefined);
+            }}
+            sx={{ width: 150 }} />
+    </Box>;
+};
+
+/** Each mark type's sizes when nothing sets them (see sizeDefaults in model.ts), and how far the slider goes. */
+const SIZE_DEFAULTS: Record<string, { range: [number, number]; value: number; limit: number }> = {
+    bubbles: { range: [1.5, 32], value: 6, limit: 60 }, points: { range: [1, 12], value: 3, limit: 40 }, spikes: { range: [0, 120], value: 20, limit: 240 },
+    flows: { range: [0.5, 10], value: 1.5, limit: 24 }, paths: { range: [1, 10], value: 2.5, limit: 24 }, vectors: { range: [4, 28], value: 14, limit: 60 },
+};
+const TEMPLATE_MARKS: Record<string, string> = { cartogram: 'bubbles', routes: 'paths', tracks: 'paths' };
+const sizeDefaultsOf = (type: string) => SIZE_DEFAULTS[TEMPLATE_MARKS[type] ?? type] ?? SIZE_DEFAULTS.bubbles;
+
+/**
+ * Sizes set by a column: Auto (fitted to the data and the panel, or the marks' defaults) or a `[smallest, largest]`
+ * range. Dragging sets the range; turning Auto back on clears it.
+ */
+const SizeRangeRow: FC<{ type: string; value?: [number, number]; readOnly?: boolean; onChange: (range: [number, number] | undefined) => void }> = ({ type, value, readOnly, onChange }) => {
+    const { t } = useTranslation();
+    const defaults = sizeDefaultsOf(type);
+    return <Row label={t('map.sizeRange')}>
+        <Tooltip title={t('map.sizeAuto')}>
+            <Switch size="small" checked={!value} disabled={readOnly} onChange={(_, auto) => onChange(auto ? undefined : defaults.range)}
+                slotProps={{ input: { 'aria-label': t('map.sizeAuto') } }} />
+        </Tooltip>
+        <Slider size="small" min={0} max={defaults.limit} step={0.5} value={value ?? defaults.range} disabled={readOnly} valueLabelDisplay="auto"
+            sx={{ mx: 1, opacity: value ? 1 : 0.5 }} getAriaLabel={index => `${t('map.sizeRange')} ${index + 1}`}
+            onChange={(_, next) => onChange(next as [number, number])} />
+    </Row>;
+};
+
+/** A size range as a spec sets it: `range`, or an older map's `max` (and `min`). */
+const setSizeRange = (range: unknown, min: unknown, max: unknown, type: string): [number, number] | undefined => {
+    if (Array.isArray(range) && range.length === 2) return range as [number, number];
+    return typeof max === 'number' ? [typeof min === 'number' ? min : sizeDefaultsOf(type).range[0], max] : undefined;
+};
 
 /** A style's water, land, and border in one chip. */
 const StyleSwatch: FC<{ name: MapStyleName }> = ({ name }) => {
@@ -167,13 +241,16 @@ export const MapStylePanel: FC<{
 
             <Typography sx={{ ...sectionSx, mt: 2 }}>{t('map.look')}</Typography>
             <Row label={t('map.mapStyle')}>
-                <Select size="small" value={view.style ?? 'light'} disabled={readOnly} sx={selectSx} inputProps={{ 'aria-label': t('map.mapStyle') }}
+                <Select size="small" value={viewStyleName(view)} disabled={readOnly} sx={selectSx} inputProps={{ 'aria-label': t('map.mapStyle') }}
                     renderValue={value => <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><StyleSwatch name={value as MapStyleName} />{t(`map.styles.${value}`)}</Box>}
                     onChange={event => patch(draft => {
                         draft.view = { ...(draft.view ?? {}) };
-                        if (event.target.value === 'light') delete draft.view.style; else draft.view.style = event.target.value;
+                        const name = event.target.value as MapStyleName;
                         // Street tiles follow the style's light or dark look.
-                        if (draft.view.tiles === 'light' || draft.view.tiles === 'dark') draft.view.tiles = mapStyle(event.target.value as MapStyleName).tiles;
+                        if (draft.view.tiles === 'light' || draft.view.tiles === 'dark') draft.view.tiles = mapStyle(name).tiles;
+                        // The style is left unset when the view would take it anyway.
+                        delete draft.view.style;
+                        if (viewStyleName(draft.view) !== name) draft.view.style = name;
                     })}>
                     {MAP_STYLES.map(name => <MenuItem key={name} value={name} sx={{ ...itemSx, gap: 1 }}><StyleSwatch name={name} />{t(`map.styles.${name}`)}</MenuItem>)}
                 </Select>
@@ -271,9 +348,8 @@ export const MapStylePanel: FC<{
                                     onChange={event => setLayer(index, draft => { draft.color = { ...(draft.color ?? {}), reverse: event.target.checked || undefined }; })} />
                             </Row>}
                             {!color.field && !['heatmap', 'hexbin', 'labels'].includes(layer.type) && <Row label={t('map.color')}>
-                                <Box component="input" type="color" aria-label={t('map.color')} disabled={readOnly} value={typeof color.value === 'string' && /^#[0-9a-f]{6}$/i.test(color.value) ? color.value : '#4e79a7'}
-                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setLayer(index, draft => { draft.color = { value: event.target.value }; })}
-                                    sx={{ width: 36, height: 24, p: 0, border: '1px solid', borderColor: 'divider', borderRadius: '4px', bgcolor: 'transparent' }} />
+                                <ColorPicker label={t('map.color')} disabled={readOnly} value={typeof color.value === 'string' ? color.value : undefined}
+                                    onChange={next => next && setLayer(index, draft => { draft.color = { value: next }; })} />
                             </Row>}
                             {sized && <Row label={t('map.sizeBy')}>
                                 <Select size="small" value={sizeField} displayEmpty disabled={readOnly || typeof size.field === 'object'} sx={selectSx} inputProps={{ 'aria-label': t('map.sizeBy') }}
@@ -286,15 +362,20 @@ export const MapStylePanel: FC<{
                                     {numericColumns(layer).map(column => <MenuItem key={column} value={column} sx={itemSx}>{column}</MenuItem>)}
                                 </Select>
                             </Row>}
-                            {sized && <Row label={size.field ? t('map.maxSize') : t('map.size')}>
-                                <Slider size="small" min={1} max={layer.type === 'spikes' ? 240 : layer.type === 'flows' || layer.type === 'paths' ? 24 : 60} step={1} disabled={readOnly}
-                                    value={size.field ? size.max ?? (layer.type === 'spikes' ? 120 : layer.type === 'flows' || layer.type === 'paths' ? 10 : layer.type === 'points' ? 12 : 32)
-                                        : size.value ?? (layer.type === 'spikes' ? 20 : layer.type === 'points' ? 3 : layer.type === 'flows' || layer.type === 'paths' ? 1.5 : 6)}
+                            {sized && size.field && <SizeRangeRow type={layer.type} readOnly={readOnly}
+                                value={setSizeRange(size.range, size.min, size.max, layer.type)}
+                                onChange={range => setLayer(index, draft => {
+                                    const next = { ...(typeof draft.size === 'object' && draft.size ? draft.size : {}) };
+                                    delete next.min; delete next.max;
+                                    if (range) next.range = range; else delete next.range;
+                                    draft.size = next;
+                                })} />}
+                            {sized && !size.field && <Row label={t('map.size')}>
+                                <Slider size="small" min={1} max={sizeDefaultsOf(layer.type).limit} step={0.5} disabled={readOnly}
+                                    value={size.value ?? sizeDefaultsOf(layer.type).value}
                                     aria-label={t('map.size')} valueLabelDisplay="auto" sx={{ mx: 1 }}
                                     onChange={(_, value) => setLayer(index, draft => {
-                                        const next = { ...(typeof draft.size === 'object' && draft.size ? draft.size : {}) };
-                                        if (next.field) next.max = value; else next.value = value;
-                                        draft.size = next;
+                                        draft.size = { ...(typeof draft.size === 'object' && draft.size ? draft.size : {}), value };
                                     })} />
                             </Row>}
                             {['hexbin', 'heatmap'].includes(layer.type) && <Row label={layer.type === 'hexbin' ? t('map.hexSize') : t('map.smoothing')}>
@@ -338,8 +419,6 @@ const TEMPLATE_PROPERTIES: Record<TemplateName, ('classes' | 'scheme' | 'size' |
  * type's properties — the same knobs the agent sets, like a chart's encoding shelf.
  */
 /** Colours offered for marks without a colour column: Tableau 10, plus a near-black for quiet maps. */
-const MARK_COLORS = [...CATEGORICAL_SCHEMES.tableau10.slice(0, 10), '#333333'];
-
 /** Channels that carry the map's measure. */
 const MEASURE_CHANNELS = ['color', 'size', 'weight', 'color2'];
 
@@ -356,11 +435,14 @@ const TemplateEditor: FC<{ raw: Raw; readOnly?: boolean; patch: (mutate: (draft:
     // A fixed order, so the list does not shuffle as the type changes.
     const allowed = new Set([name, ...compatibleTemplates(encoding)]);
     const types = TEMPLATES.filter(type => allowed.has(type));
-    const setProperty = (key: string, value: unknown) => patch(draft => {
+    const setProperties = (values: Record<string, unknown>) => patch(draft => {
         draft.properties = { ...(draft.properties ?? {}) };
-        if (value === undefined || value === '') delete draft.properties[key]; else draft.properties[key] = value;
+        for (const [key, value] of Object.entries(values)) {
+            if (value === undefined || value === '') delete draft.properties[key]; else draft.properties[key] = value;
+        }
         if (!Object.keys(draft.properties).length) delete draft.properties;
     });
+    const setProperty = (key: string, value: unknown) => setProperties({ [key]: value });
     const offered = TEMPLATE_PROPERTIES[name];
     const bivariate = name === 'bivariate';
     const colorField = boundField(encoding, 'color');
@@ -406,16 +488,8 @@ const TemplateEditor: FC<{ raw: Raw; readOnly?: boolean; patch: (mutate: (draft:
         </Row>)}
         {/* Without a colour column, every mark takes one colour: the theme's, or one chosen here. */}
         {!colorField && !bivariate && name !== 'density' && name !== 'choropleth' && <Row label={t('map.markColor')}>
-            <Select size="small" value={properties.color ?? ''} displayEmpty disabled={readOnly} sx={selectSx} inputProps={{ 'aria-label': t('map.markColor') }}
-                renderValue={value => <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    {value && <Box sx={{ width: 12, height: 12, borderRadius: '2px', bgcolor: value, flexShrink: 0 }} />}
-                    <span>{value || t('map.themeColor')}</span></Box>}
-                onChange={event => setProperty('color', event.target.value || undefined)}>
-                <MenuItem value="" sx={itemSx}>{t('map.themeColor')}</MenuItem>
-                {Array.from(new Set([...MARK_COLORS, ...(properties.color ? [properties.color] : [])])).map(color =>
-                    <MenuItem key={color} value={color} sx={{ ...itemSx, gap: 1 }}>
-                        <Box sx={{ width: 12, height: 12, borderRadius: '2px', bgcolor: color, flexShrink: 0 }} />{color}</MenuItem>)}
-            </Select>
+            <ColorPicker label={t('map.markColor')} disabled={readOnly} value={properties.color} clearLabel={t('map.themeColor')}
+                onChange={next => setProperty('color', next)} />
         </Row>}
         {offered.includes('scheme') && (colorField || bivariate || name === 'density') && <Row label={t('map.colors')}>
             <Select size="small" value={properties.scheme ?? ''} displayEmpty disabled={readOnly} sx={selectSx} inputProps={{ 'aria-label': t('map.colors') }}
@@ -438,10 +512,13 @@ const TemplateEditor: FC<{ raw: Raw; readOnly?: boolean; patch: (mutate: (draft:
                     valueLabelDisplay="auto" sx={{ mx: 1 }} onChange={(_, value) => setProperty('classes', value)} />
             </Row>}
         </>}
-        {offered.includes('size') && <Row label={boundField(encoding, 'size') ? t('map.maxSize') : t('map.size')}>
-            <Slider size="small" min={1} max={name === 'spikes' ? 240 : name === 'flows' || name === 'routes' || name === 'tracks' ? 24 : 60} step={1} disabled={readOnly}
-                value={properties.sizeMax ?? (name === 'spikes' ? 120 : name === 'flows' || name === 'routes' || name === 'tracks' ? 10 : name === 'points' ? 12 : name === 'vectors' ? 28 : 32)}
-                aria-label={t('map.size')} valueLabelDisplay="auto" sx={{ mx: 1 }} onChange={(_, value) => setProperty('sizeMax', value)} />
+        {offered.includes('size') && boundField(encoding, 'size') && <SizeRangeRow type={name} readOnly={readOnly}
+            value={setSizeRange(properties.sizeRange, undefined, properties.sizeMax, name)}
+            onChange={range => setProperties({ sizeMax: undefined, sizeRange: range })} />}
+        {offered.includes('size') && !boundField(encoding, 'size') && <Row label={t('map.size')}>
+            <Slider size="small" min={1} max={sizeDefaultsOf(name).limit} step={0.5} disabled={readOnly}
+                value={properties.markSize ?? properties.sizeMax ?? sizeDefaultsOf(name).value}
+                aria-label={t('map.size')} valueLabelDisplay="auto" sx={{ mx: 1 }} onChange={(_, value) => setProperties({ sizeMax: undefined, markSize: value })} />
         </Row>}
         {offered.includes('density') && <Row label={t('map.showAs')}>
             <Select size="small" value={properties.density ?? 'hexbin'} disabled={readOnly} sx={selectSx} inputProps={{ 'aria-label': t('map.showAs') }}

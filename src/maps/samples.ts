@@ -220,7 +220,6 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
                     continent: lon < -30 ? 'Americas' : lon < 60 ? (lat > 35 ? 'Europe' : 'Africa / Middle East') : 'Asia-Pacific' })) },
                 encoding: { lat: 'lat', lon: 'lon', size: 'population', color: 'continent', label: 'city' },
                 fields: { population: { semanticType: 'Quantity', unit: 'M', displayName: 'Population' } },
-                properties: { sizeMax: 26 },
             },
         },
         {
@@ -235,7 +234,7 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
                 title: 'Largest migration corridors', view: { projection: 'orthographic', spin: true, style: 'atlas' },
                 template: 'flows', data: { values: migration() }, encoding: { origin: 'origin', destination: 'destination', size: 'migrants' },
                 fields: { migrants: { semanticType: 'Count', displayName: 'Migrants' } },
-                properties: { geography: 'world', sizeMax: 8, color: '#e15759', stats: true },
+                properties: { geography: 'world', sizeRange: [0.5, 8], color: '#e15759', stats: true },
             },
         },
         {
@@ -243,7 +242,7 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
                 title: 'Store revenue', template: 'spikes', data: { values: storeRevenue() },
                 encoding: { lat: 'lat', lon: 'lon', size: 'revenue', label: 'city' },
                 fields: { revenue: { semanticType: 'Amount', unit: 'USD', displayName: 'Revenue' } },
-                properties: { geography: 'us-states', sizeMax: 140, color: '#4e79a7' },
+                properties: { geography: 'us-states', sizeRange: [0, 140], color: '#4e79a7' },
             },
         },
         {
@@ -251,7 +250,7 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
                 title: 'Hurricane tracks', subtitle: 'Synthetic: west in the trades, then recurving north-east',
                 template: 'tracks', data: { values: stormTracks() },
                 encoding: { lat: 'lat', lon: 'lon', group: 'storm', order: 'step', color: 'storm' },
-                properties: { geography: 'world', sizeMax: 3 },
+                properties: { geography: 'world', markSize: 3 },
             },
         },
         {
@@ -260,7 +259,7 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
                 template: 'routes', data: { values: ODYSSEY.map(([stop, episode, leg, crew, lon, lat]) => ({ stop, episode, leg, crew, lon, lat })) },
                 encoding: { lat: 'lat', lon: 'lon', order: 'stop', label: 'episode', color: 'leg', size: 'crew' },
                 fields: { crew: { semanticType: 'Count', displayName: 'Crew' } },
-                properties: { sizeMax: 8, colors: { 'Leaving Troy': '#b2182b', 'Monsters and winds': '#e0622b', 'Circe and the dead': '#d9a320',
+                properties: { sizeRange: [1, 8], colors: { 'Leaving Troy': '#b2182b', 'Monsters and winds': '#e0622b', 'Circe and the dead': '#d9a320',
                     'Sirens to shipwreck': '#2a9d8f', Homeward: '#1d3557' } },
             },
         },
@@ -286,7 +285,7 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
                 title: 'Population by state', subtitle: 'Circles sized by population, spread apart',
                 template: 'cartogram', data: { values: states }, encoding: { region: 'state', size: 'population', color: 'margin', label: 'abbr' },
                 fields: { population: 'Count', margin: { semanticType: 'PercentageChange', unit: 'pts' } },
-                properties: { geography: 'us-states', sizeMax: 40 },
+                properties: { geography: 'us-states' },
             },
         },
         {
@@ -300,7 +299,7 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
                     color: 'airline', size: 'weekly', filter: 'airline' },
                 fields: { weekly: { semanticType: 'Count', displayName: 'Weekly flights' } },
                 // Routes from one hub need no arrows: the hub is marked, every line leaves it.
-                properties: { curve: 'great-circle', sizeMax: 3, direction: 'none' },
+                properties: { curve: 'great-circle', markSize: 3, direction: 'none' },
             },
         },
         {
@@ -309,7 +308,7 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
                 template: 'flows', data: { values: migration() },
                 encoding: { origin: 'origin', destination: 'destination', size: 'migrants' },
                 fields: { migrants: { semanticType: 'Count', displayName: 'Migrants' } },
-                properties: { geography: 'world', sizeMax: 6, color: '#e15759' },
+                properties: { geography: 'world', sizeRange: [0.5, 6], color: '#e15759' },
                 view: { style: 'atlas' },
             },
         },
@@ -319,7 +318,7 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
                 template: 'flows', data: { values: migration() },
                 encoding: { origin: 'origin', destination: 'destination', size: 'migrants' },
                 fields: { migrants: { semanticType: 'Count', displayName: 'Migrants' } },
-                properties: { geography: 'world', sizeMax: 10, color: '#e15759', direction: 'taper' },
+                properties: { geography: 'world', sizeRange: [0.5, 10], color: '#e15759', direction: 'taper' },
             },
         },
         {
@@ -328,7 +327,7 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
                 template: 'vectors', data: { values: windField() },
                 encoding: { lat: 'lat', lon: 'lon', u: 'u', v: 'v', size: 'speed', color: 'speed' },
                 fields: { speed: { semanticType: 'Quantity', unit: 'm/s', displayName: 'Wind speed' } },
-                properties: { geography: 'world', sizeMax: 22 },
+                properties: { geography: 'world', sizeRange: [4, 22] },
             },
         },
     ];

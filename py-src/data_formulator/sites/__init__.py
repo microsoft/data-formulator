@@ -31,6 +31,8 @@ DEMO_HEADER = "X-DF-Demo"
 _SITE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 # The demos shipped with Data Formulator.
 PACKAGED_DEMOS = Path(__file__).resolve().parent.parent / "demos"
+# Image types a site's logo may be.
+LOGO_SUFFIXES = (".svg", ".png", ".jpg", ".jpeg", ".webp")
 
 
 def sites_dir() -> Path:
@@ -93,12 +95,21 @@ def _profile_problem(profile: Any) -> str | None:
     for field in ("about", "links", "suggestions"):
         if not isinstance(profile.get(field) or [], list):
             return f"'{field}' is not a list"
+    if "logo" in profile and not (isinstance(profile["logo"], str) and Path(profile["logo"]).suffix.lower() in LOGO_SUFFIXES):
+        return f"'logo' is not an image file name ({', '.join(LOGO_SUFFIXES)})"
+    if profile.get("chart_theme") is not None:
+        from data_formulator.analyst.session_edits import chart_catalog
+        from data_formulator.knowledge.themes import validate_theme
+        try:
+            validate_theme(profile["chart_theme"], list(chart_catalog()["themes"]))
+        except ValueError as exc:
+            return f"'chart_theme': {exc}"
     return None
 
 
 def referenced_files(profile: dict[str, Any]) -> list[str]:
     """Every content file the profile names, relative to its release folder."""
-    files = [profile.get("hero_image")]
+    files = [profile.get("hero_image"), profile.get("logo")]
     for starter in profile.get("starters") or []:
         files.append(starter.get("file"))
         for story in starter.get("stories") or []:
@@ -272,6 +283,9 @@ def site_frontend_config(site_id: str) -> dict[str, Any]:
         "about": [str(item) for item in profile.get("about") or []],
         "release": profile.get("release", ""),
         "hero_image": f"/api/demos/{site_id}/hero{_version(content / hero)}" if (hero := str(profile.get("hero_image") or "")) and (content / hero).is_file() else None,
+        "logo": f"/api/demos/{site_id}/logo{_version(content / logo)}" if (logo := str(profile.get("logo") or "")) and (content / logo).is_file() else None,
+        # The site's own chart theme (a Flint ThemeSpec): new charts and maps on the site use it.
+        **({"chart_theme": profile["chart_theme"]} if isinstance(profile.get("chart_theme"), dict) else {}),
         "attribution": profile.get("attribution", ""),
         "disclaimer": profile.get("disclaimer", ""),
         "install_note": profile.get("install_note", ""),

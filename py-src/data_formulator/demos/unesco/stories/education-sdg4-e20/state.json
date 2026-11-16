@@ -4,7 +4,7 @@
   {
    "kind": "table",
    "id": "d_out_3",
-   "displayId": "Recent high school completion by country",
+   "displayId": "Recent upper secondary completion by country",
    "names": [
     "country",
     "year",
@@ -1414,8 +1414,8 @@
    },
    "tableRef": "d_out_3",
    "source": "user",
-   "title": "High school completion across countries",
-   "subtitle": "Latest estimates, 2020–2025 • Girls and boys combined • UIS, February 2026 release",
+   "title": "Upper secondary completion across countries",
+   "subtitle": "Latest modelled estimates, 2020–2025 • Girls and boys combined • UIS, February 2026 release; indicator CR.MOD.3",
    "titleKey": "Choropleth|color:concept-value-1792307006382-0.7865765719088531:|detail::|id:concept-map_id-1792307067645-0.9095956281136525:",
    "unread": false,
    "themeId": "datawrapper"
@@ -1453,8 +1453,8 @@
    },
    "tableRef": "d_out_3",
    "source": "user",
-   "title": "High school completion across countries: lowest first",
-   "subtitle": "Latest estimates, 2020–2025 • Girls and boys combined • UIS, February 2026 release",
+   "title": "Upper secondary completion across countries: lowest first",
+   "subtitle": "Latest modelled estimates, 2020–2025 • Girls and boys combined • UIS, February 2026 release; indicator CR.MOD.3",
    "unread": false,
    "themeId": "datawrapper",
    "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-value-1792307006382-0.7865765719088531:|y:concept-country-1792307067645-0.8625743059302777:"
@@ -1487,7 +1487,7 @@
    "displayId": "textTurn_exploreDataFromNL_1792307048893_prompt",
    "textKind": "explain",
    "content": "",
-   "prompt": "Where do young people finish high school least often?",
+   "prompt": "Where do young people finish upper secondary school least often?",
    "parentNodeId": "conversation-root:e31847d2-ea04-460a-8414-357f3db7249b",
    "actionId": "exploreDataFromNL_1792307048893",
    "createdAt": 1792307048893
@@ -1524,7 +1524,7 @@
    "id": "textTurn_exploreDataFromNL_1792307048893_1792307075547",
    "displayId": "textTurn_exploreDataFromNL_1792307048893_closing",
    "textKind": "explain",
-   "content": "**South Sudan has the lowest high school completion rate: just 2% in 2025.** The lowest rates are concentrated in sub-Saharan Africa:\n\n- **South Sudan:** 2.1%\n- **Niger:** 4.9%\n- **Central African Republic:** 5.6%\n- **Chad:** 6.6%\n- **Zimbabwe:** 8.1%\n\n\"High school\" means upper secondary education. Blank countries have no recent estimate. Source: UIS, February 2026 release.",
+   "content": "**South Sudan has the lowest upper secondary school completion rate: just 2% in 2025.** The lowest rates are concentrated in sub-Saharan Africa:\n\n- **South Sudan:** 2.1%\n- **Niger:** 4.9%\n- **Central African Republic:** 5.6%\n- **Chad:** 6.6%\n- **Zimbabwe:** 8.1%\n\nThese are UIS modelled estimates. Blank countries have no recent estimate. Source: UIS, February 2026 release; indicator CR.MOD.3.",
    "parentNodeId": "d_out_3",
    "actionId": "exploreDataFromNL_1792307048893",
    "createdAt": 1792307075547,
@@ -1557,7 +1557,7 @@
       0,
       100
      ],
-     "displayName": "High school completion (%)",
+     "displayName": "Upper secondary completion (%)",
      "authored": {
       "semanticType": "Percentage",
       "unit": "%",
@@ -1565,7 +1565,7 @@
        0,
        100
       ],
-      "displayName": "High school completion (%)"
+      "displayName": "Upper secondary completion (%)"
      }
     },
     "qualifier": {
@@ -1583,7 +1583,7 @@
  ],
  "activeWorkspace": {
   "id": "education-sdg4-e20",
-  "displayName": "Finishing high school is rarest in sub-Saharan Africa"
+  "displayName": "Finishing upper secondary school is rarest in sub-Saharan Africa"
  },
  "focusedId": {
   "type": "chart",

@@ -123,6 +123,12 @@ class WorkspaceSkill:
                 frame, table_name, input_sources=sources, expected_content_hash=expected_hash,
                 display_name=display_name, acquisition=args.get("acquisition"),
             )
+            # The table's semantic types, for the app to apply at once (it infers the rest in the background).
+            field_metadata = args.get("field_metadata")
+            columns = {str(column) for column in frame.columns}
+            field_metadata = {column: annotation for column, annotation in field_metadata.items()
+                              if column in columns and isinstance(annotation, (str, dict))} \
+                if isinstance(field_metadata, dict) else {}
             input_tables = ctx.payload.setdefault("input_tables", [])
             input_tables[:] = [table for table in input_tables if table.get("name") != metadata.name]
             input_tables.append({
@@ -139,6 +145,7 @@ class WorkspaceSkill:
                 "edit_policy": metadata.edit_policy,
                 "display_name": metadata.original_name,
                 "path": f"data/{metadata.filename}",
+                **({"field_metadata": field_metadata} if field_metadata else {}),
                 **({"acquisition": metadata.import_options["acquisition"]} if metadata.import_options and "acquisition" in metadata.import_options else {}),
             }, ensure_ascii=False))
         if name == "edit_file" and str(args.get("path") or "").startswith("session/"):

@@ -27,13 +27,14 @@ import OpenInFullIcon from '@mui/icons-material/OpenInFull';
 import * as d3 from 'd3';
 import { useTranslation } from 'react-i18next';
 
+import { sessionValueColors, type CategoryRegistration, type SessionCategoryColors } from '../app/categoryColors';
 import { COUNTRY_DETAIL_SETS, countryDetail, loadGeoSet, type GeoSet } from './geography';
 import { MapLegend } from './MapLegend';
 import { MapRenderer, TILE_STYLES, viewProjection, type Hit, type Scene } from './MapRenderer';
 import { buildLayer, controlDomain, initialParams, type LayerModel, type Mark, type Params } from './model';
 import { formatter, toNumber, type LegendModel } from './scales';
 import type { FieldAnnotation } from './semantics';
-import { frameBackground, mapStyle, themeInk } from './styles';
+import { frameBackground, themeInk, viewStyle } from './styles';
 import { isParamRef, type Control, type MapSpec, type Row, type TooltipField } from './spec';
 import { bottomInset, chooseLayout, EDGE, panelTop, ROW_GAP, ROW_PADDING, ROW_WIDTH, rowFit, rowRoom, TOGGLE_SPACE, WIDGET_WIDTH, ZOOM_SPACE,
     type Box as PanelBox, type MapLayout, type Size } from './layout';
@@ -62,6 +63,14 @@ export interface MapViewProps {
     annotations?: Record<string, FieldAnnotation>;
     /** The chart theme maps follow when the spec names none (the app's default chart theme). */
     defaultTheme?: string;
+    /** The session's category colours: categorical values keep the colours they have in the session's charts and other maps. */
+    categoryColors?: MapCategoryColors;
+}
+
+export interface MapCategoryColors {
+    session: SessionCategoryColors;
+    /** Record values the map drew for the first time. */
+    register: (registration: CategoryRegistration) => void;
 }
 
 /**
@@ -83,9 +92,12 @@ function useRealOverflow(ref: React.RefObject<HTMLElement | null>) {
     return overflow;
 }
 
+/** The panel's side for sizing circles (see circleSizeMax), in 40px steps so a resize rebuilds the layers rarely. */
+const panelSideFor = (width: number, height: number) => width > 0 && height > 0 ? Math.max(40, Math.round(Math.sqrt(width * height) / 40) * 40) : undefined;
+
 /** The style, with the frame behind the map as the projection shows it (the page around a globe). */
 const framedStyle = (view: MapSpec['view']) => {
-    const style = mapStyle(view.style);
+    const style = viewStyle(view);
     return { ...style, background: frameBackground(style, viewProjection(view)) };
 };
 
@@ -105,6 +117,9 @@ const sliderSx = { py: '10px', mx: '6px', width: 'calc(100% - 12px)' } as const;
 const ESTIMATED_HEIGHT: Record<string, number> = { timeline: 64, select: 50, search: 50, slider: 56, range: 56, checkboxes: 110, layers: 90 };
 /** A legend's widest, in its own corner. */
 const LEGEND_WIDTH = 260;
+/** Panels smaller than these get a compact legend, and (interactive) a legend folded into a chip. */
+const COMPACT_LEGEND_PANEL = { width: 560, height: 380 };
+const FOLD_LEGEND_PANEL = { width: 420, height: 300 };
 let fitCounter = 0;
 const MARK_NOUNS: Partial<Record<string, string>> = { flows: 'map.flows', paths: 'map.paths', points: 'map.points' };
 
@@ -166,14 +181,30 @@ export const MapView: FC<MapViewProps> = (rawProps) => {
 };
 
 const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = ({ spec, data, geoSets: loadedGeoSets, interactive: live = true, still = false, onDrawn,
-    reserveTopRight = 0, footer, reserveBottomRight = 0, annotations, defaultTheme, projectionToggle }) => {
+    reserveTopRight = 0, footer, reserveBottomRight = 0, annotations, defaultTheme, categoryColors, projectionToggle }) => {
     const interactive = live && !still;
     // The title, legends and credit: on the canvas and in a still picture.
     const panels = interactive || still;
     const { t } = useTranslation();
     const style = framedStyle(spec.view);
     const ink = useMemo(() => themeInk(spec.view.theme ?? defaultTheme), [spec.view.theme, defaultTheme]);
-    const context = useMemo(() => ({ annotations, palette: { ...ink?.palette, noData: style.noData } }), [annotations, ink, style.noData]);
+    // Values a layer colours for the first time are registered once the map has drawn.
+    const pendingColors = useRef<CategoryRegistration[]>([]);
+    const sessionColors = categoryColors?.session;
+    const [size, setSize] = useState({ width: 0, height: 0 });
+    const panelSide = panelSideFor(size.width, size.height);
+    const context = useMemo(() => ({
+        annotations, palette: { ...ink?.palette, noData: style.noData, surface: style.land }, panelSide,
+        categoryColors: sessionColors ? (field: string, annotation: FieldAnnotation | undefined, domain: string[], palette: readonly string[], surface?: string) => {
+            const result = sessionValueColors(sessionColors, field, annotation, domain, palette, surface);
+            if (result.register) pendingColors.current.push(result.register);
+            return result.colors;
+        } : undefined,
+    }), [annotations, ink, style.noData, style.land, sessionColors, panelSide]);
+    const registerColors = categoryColors?.register;
+    useEffect(() => {
+        for (const registration of pendingColors.current.splice(0)) registerColors?.(registration);
+    });
     // A theme's title ink and font, on light styles (dark styles keep their own light ink).
     const titleInk = style.mode === 'light' ? ink : undefined;
     // Zoomed in, world boundaries swap for finer ones (same ids and set name, so joins and framing hold).
@@ -203,7 +234,6 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const rendererRef = useRef<MapRenderer | null>(null);
     const [rendererReady, setRendererReady] = useState(false);
-    const [size, setSize] = useState({ width: 0, height: 0 });
     const [params, setParams] = useState<Params>(() => initialParams(spec.controls, data));
     const [selection, setSelection] = useState<Scene['selection']>(null);
     const [hidden, setHidden] = useState<Record<string, Set<string>>>({});
@@ -234,6 +264,11 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     const [widgetsHeight, setWidgetsHeight] = useState(0);
     const legendRef = useRef<HTMLDivElement>(null);
     const legendOverflow = useRealOverflow(legendRef);
+    // Small panels (thumbnails, report embeds, a narrow canvas) get a compact legend; a small interactive map folds it
+    // into a chip that opens it, so the legend does not cover the data.
+    const compactLegend = size.width > 0 && (size.width < COMPACT_LEGEND_PANEL.width || size.height < COMPACT_LEGEND_PANEL.height);
+    const foldLegend = interactive && size.width > 0 && (size.width < FOLD_LEGEND_PANEL.width || size.height < FOLD_LEGEND_PANEL.height);
+    const [legendOpen, setLegendOpen] = useState(false);
     const [legendSize, setLegendSize] = useState<Size>({ width: 0, height: 0 });
     useEffect(() => {
         const element = legendRef.current;
@@ -248,16 +283,22 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     });
     const zoomRef = useRef<HTMLDivElement>(null);
 
-    // New data or controls (a reload, an edit) reset params that no longer apply.
+    // New data or controls (a reload, an edit) reset params that no longer apply. A param the reader set is kept; one
+    // still at the default the old data gave (every value of a checklist, read before the rows arrived) takes the new one.
     const controlsKey = JSON.stringify(spec.controls);
+    const lastDefaults = useRef<Params>(params);
     useEffect(() => {
+        const fresh = initialParams(spec.controls, data);
+        const before = lastDefaults.current;
+        lastDefaults.current = fresh;
         setParams(previous => {
-            const fresh = initialParams(spec.controls, data);
-            for (const key of Object.keys(fresh)) {
+            const next = { ...fresh };
+            for (const key of Object.keys(next)) {
                 const control = spec.controls.find(item => item.param === key);
-                if (key in previous && control?.value === undefined) fresh[key] = previous[key];
+                const untouched = JSON.stringify(previous[key]) === JSON.stringify(before[key]);
+                if (key in previous && control?.value === undefined && !untouched) next[key] = previous[key];
             }
-            return fresh;
+            return next;
         });
     }, [controlsKey, data]);
 
@@ -301,7 +342,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
             onScale: worldWidth => setDetail(countryDetail(worldWidth, basemapRef.current)),
         }, {
             points: count => t('map.pointCount', { count }), density: t('map.density'), low: t('map.low'), high: t('map.high'),
-            perHexagon: t('map.pointsPerHexagon'), total: field => t('map.total', { field }),
+            perHexagon: t('map.pointsPerHexagon'), total: field => t('map.total', { field }), logScale: t('map.logScale'),
         });
         rendererRef.current = renderer;
         setRendererReady(true);
@@ -342,6 +383,13 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
         const sameAsColor = model.layer.type === 'vectors' && !!model.sizeField && model.sizeField === model.colorField;
         if (model.size.legend && !sameAsColor) items.push({ model, legend: model.size.legend, key: `${model.layer.id}-size` });
         return items;
+    }).map((item, _, all) => {
+        // Layers encoding the same field get legends titled alike: name each by its layer (the name alone when it says the field).
+        const name = item.model.layer.name;
+        if (!name || all.filter(other => other.legend.title === item.legend.title).length < 2) return item;
+        const saysField = new RegExp(`(^|\\W)${item.legend.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|\\W)`, 'i').test(name);
+        const title = saysField ? name : `${name} · ${item.legend.title}`;
+        return { ...item, legend: { ...item.legend, title } };
     });
     // Basemap regions a choropleth leaves empty are grey: say so.
     const noData = !!basemap && models.some(model => model.layer.type === 'regions' && model.layer.visible !== false && model.geoSet === basemap
@@ -440,8 +488,11 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     useEffect(() => {
         const stepped = lastTimeValue.current !== timeValue;
         lastTimeValue.current = timeValue;
+        // Nothing reaches the renderer before the panel has a size: its marks (bubble sizes) depend on it, and a first
+        // drawing at another size would animate into place.
+        if (!size.width || !size.height) return;
         rendererRef.current?.update({ view: spec.view, basemap, models, selection, hidden, highlight, interactive, obstacles, fitVersion }, !stepped && !still);
-    }, [spec.view, basemap, models, selection, hidden, highlight, interactive, obstacles, fitVersion, timeValue]);
+    }, [spec.view, basemap, models, selection, hidden, highlight, interactive, obstacles, fitVersion, timeValue, size.width, size.height]);
 
     // Drop a selection whose marks are gone (filtered out).
     useEffect(() => {
@@ -550,7 +601,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     const controlSummary = (control: Control): string => {
         const value = control.param ? params[control.param] : undefined;
         const domain = domains[spec.controls.indexOf(control)] ?? [];
-        const format = formatter();
+        const format = controlFormat(control, models);
         if (control.type === 'select') {
             if (value == null) return t('map.all');
             const option = control.options?.find(item => JSON.stringify(item.value) === JSON.stringify(value));
@@ -573,7 +624,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     };
 
     const legendBody = <>
-        {legends.map(({ model, legend, key }) => <MapLegend key={key} legend={legend} hidden={hidden[model.layer.id]}
+        {legends.map(({ model, legend, key }) => <MapLegend key={key} legend={legend} hidden={hidden[model.layer.id]} compact={compactLegend}
             onHover={legend.kind === 'categories' || legend.kind === 'classes' ? legendHover(model) : undefined}
             onToggle={legend.kind === 'categories' ? value => setHidden(current => {
                 const next = new Set(current[model.layer.id] ?? []);
@@ -589,7 +640,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
                 {t('map.notOnMap', { count: unplaced, formatted: unplaced.toLocaleString() })}
             </Typography>
         </Tooltip>}
-        {spec.source && <SourceNote text={spec.source} />}
+        {spec.source && <SourceNote text={spec.source} lines={compactLegend ? 1 : 2} />}
         {footer}
     </>;
 
@@ -631,7 +682,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
                         : firstRow ? { width: firstRow.openWidth + ROW_PADDING + TOGGLE_SPACE + 2, pr: `${TOGGLE_SPACE}px` } : {}) }),
         }}>
             {controlsMinimized ? <>
-                {timeControlIndex >= 0 && <TimeSlider compact above={placement === 'bottom'} control={{ ...spec.controls[timeControlIndex], label: controlLabel(spec.controls[timeControlIndex], models, t('map.show')) }}
+                {timeControlIndex >= 0 && <TimeSlider compact above={placement === 'bottom'} format={controlFormat(spec.controls[timeControlIndex], models)} control={{ ...spec.controls[timeControlIndex], label: controlLabel(spec.controls[timeControlIndex], models, t('map.show')) }}
                     domain={domains[timeControlIndex] ?? []} value={params[spec.controls[timeControlIndex].param!]} onChange={value => setParam(spec.controls[timeControlIndex].param!, value)} />}
                 {columnControls.map(control => <CompactControl key={spec.controls.indexOf(control)} label={controlLabel(control, models, t('map.show')) ?? ''}
                     summary={controlSummary(control)} above={placement === 'bottom'}>{renderControl(control)}</CompactControl>)}
@@ -640,15 +691,17 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
                         <OpenInFullIcon sx={{ fontSize: 13 }} />
                     </IconButton>
                 </Tooltip>
-                {legendJoins && <Box data-map-joined sx={{ flexBasis: '100%', borderTop: '1px solid', borderColor: 'divider', pt: 0.75, pb: 0.5, px: 0.5 }}>
-                    <Box ref={legendRef} data-map-legends sx={{ width: 'fit-content', maxWidth: LEGEND_WIDTH, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {/* Within the minimised box's width: the box is as wide as its chips, and a legend title or note wider than them wraps. */}
+                {legendJoins && <Box data-map-joined sx={{ flexBasis: '100%', minWidth: 0, borderTop: '1px solid', borderColor: 'divider', pt: 0.75, pb: 0.5, px: 0.5 }}>
+                    <Box ref={legendRef} data-map-legends sx={{ width: 'fit-content', maxWidth: `min(100%, ${LEGEND_WIDTH}px)`, display: 'flex', flexDirection: 'column', gap: 1,
+                        overflowWrap: 'anywhere' }}>
                         {legendBody}
                     </Box>
                 </Box>}
             </> : <>
             {/* First in the row (always in its first row); in the column it follows the controls. */}
             {timeControlIndex >= 0 && <Box data-map-timeline data-map-item sx={{ minWidth: 0, order: side ? 1 : 0, width: side ? undefined : ROW_WIDTH.timeline }}>
-                <TimeSlider control={{ ...spec.controls[timeControlIndex], label: controlLabel(spec.controls[timeControlIndex], models, t('map.show')) }} domain={domains[timeControlIndex] ?? []} value={params[spec.controls[timeControlIndex].param!]}
+                <TimeSlider format={controlFormat(spec.controls[timeControlIndex], models)} control={{ ...spec.controls[timeControlIndex], label: controlLabel(spec.controls[timeControlIndex], models, t('map.show')) }} domain={domains[timeControlIndex] ?? []} value={params[spec.controls[timeControlIndex].param!]}
                     onChange={value => setParam(spec.controls[timeControlIndex].param!, value)} />
             </Box>}
             {columnControls.length > 0 && <Box data-map-controls sx={{ display: 'contents' }}>
@@ -696,8 +749,14 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
             ...(legendCorner === 'bottom-right' ? { right: EDGE + ZOOM_SPACE, bottom: tiles ? 30 : 16 }
                 : legendCorner === 'top-left' ? { left: EDGE, top: detailsTopLeft } : { left: EDGE, bottom: bottomInset(creditLine) }),
             ...panelSx, p: 1, display: 'flex', flexDirection: 'column', gap: 1, maxWidth: side && legendCorner === 'bottom-left' ? WIDGET_WIDTH : LEGEND_WIDTH,
-            maxHeight: '40%', overflowY: legendOverflow ? 'auto' : 'hidden', overflowX: 'hidden' }}>
-            {legendBody}
+            maxHeight: foldLegend ? 'calc(100% - 24px)' : compactLegend ? '55%' : '40%', overflowY: legendOverflow ? 'auto' : 'hidden', overflowX: 'hidden',
+            ...(compactLegend ? { p: 0.75, gap: 0.75 } : {}), ...(foldLegend && !legendOpen ? { p: 0 } : {}) }}>
+            {foldLegend && <Box component="button" type="button" data-map-legend-toggle aria-expanded={legendOpen} onClick={() => setLegendOpen(open => !open)}
+                sx={{ display: 'flex', alignItems: 'center', gap: 0.25, border: 0, bgcolor: 'transparent', color: 'text.secondary', font: 'inherit',
+                    fontSize: '0.68rem', fontWeight: 600, cursor: 'pointer', p: legendOpen ? 0 : '3px 8px', alignSelf: 'flex-start' }}>
+                {t('map.legend')}{legendOpen ? <ExpandMoreIcon sx={{ fontSize: 15 }} /> : <ExpandLessIcon sx={{ fontSize: 15 }} />}
+            </Box>}
+            {(!foldLegend || legendOpen) && legendBody}
         </Box>}
 
         {interactive && (sideControls.length > 0 || selectedMarks.length > 0) && <SidePanel controls={sideControls} models={models}
@@ -760,11 +819,11 @@ const DETAILS_WIDTH = 240;
 const DETAILS_FIELDS = 6;
 
 /** The map's source or notes under the legend: two lines, the rest on a click (and on hover). */
-const SourceNote: FC<{ text: string }> = ({ text }) => {
+const SourceNote: FC<{ text: string; lines?: number }> = ({ text, lines = 2 }) => {
     const [open, setOpen] = useState(false);
     return <Typography data-map-source title={open ? undefined : text} onClick={() => setOpen(current => !current)}
         sx={{ fontSize: '0.64rem', color: 'text.secondary', cursor: 'pointer', overflowWrap: 'anywhere',
-            ...(open ? {} : { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }) }}>{text}</Typography>;
+            ...(open ? {} : { display: '-webkit-box', WebkitLineClamp: lines, WebkitBoxOrient: 'vertical', overflow: 'hidden' }) }}>{text}</Typography>;
 };
 
 /** A label that keeps to one line: cut short with the whole of it on hover. */
@@ -819,9 +878,15 @@ function usePreview<T>(items: T[], limit: number, slack = 2): { shown: T[]; togg
     };
 }
 
+/** How a control shows its field's numbers: as the field's semantics format them (a declared Year reads 2020). */
+const controlFormat = (control: Control, models: LayerModel[]) => {
+    const model = control.field ? models.find(item => !control.data || item.layer.data === control.data) : undefined;
+    return model && control.field ? model.describe(control.field).format : formatter();
+};
+
 const TimeSlider: FC<{ control: Control; domain: unknown[]; value: unknown; onChange: (value: unknown) => void;
     /** Minimised: ▶ and the value, the slider on a click. */
-    compact?: boolean; above?: boolean }> = ({ control, domain, value, onChange, compact, above }) => {
+    compact?: boolean; above?: boolean; format?: (value: unknown) => string }> = ({ control, domain, value, onChange, compact, above, format = formatter() }) => {
     const { t } = useTranslation();
     const [playing, setPlaying] = useState(false);
     const discrete = control.field ? domain : [];
@@ -860,16 +925,16 @@ const TimeSlider: FC<{ control: Control; domain: unknown[]; value: unknown; onCh
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>{play}{slider}</Box>
         </Labeled>;
     }
-    const numeric = <NumericSlider control={control} domain={domain} value={value} onChange={onChange} />;
-    return compact ? <CompactControl label={label} summary={formatter()(toNumber(value))} above={above}>{numeric}</CompactControl> : numeric;
+    const numeric = <NumericSlider control={control} domain={domain} value={value} onChange={onChange} format={format} />;
+    return compact ? <CompactControl label={label} summary={format(toNumber(value))} above={above}>{numeric}</CompactControl> : numeric;
 };
 
-const NumericSlider: FC<{ control: Control; domain: unknown[]; value: unknown; onChange: (value: unknown) => void }> = ({ control, domain, value, onChange }) => {
+const NumericSlider: FC<{ control: Control; domain: unknown[]; value: unknown; onChange: (value: unknown) => void; format?: (value: unknown) => string }> = ({ control, domain, value, onChange, format = formatter() }) => {
     const numbers = domain.map(toNumber).filter((item): item is number => item !== null);
     const min = control.min ?? d3.min(numbers) ?? 0;
     const max = control.max ?? d3.max(numbers) ?? 100;
     const label = control.label ?? control.field ?? control.param ?? '';
-    return <Labeled label={label} aside={<Typography sx={{ ...labelSx, color: 'text.primary', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatter()(toNumber(value))}</Typography>}>
+    return <Labeled label={label} aside={<Typography sx={{ ...labelSx, color: 'text.primary', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{format(toNumber(value))}</Typography>}>
         <Slider size="small" aria-label={label} value={toNumber(value) ?? min} min={min} max={max} step={control.step ?? ((max - min) / 100 || 1)}
             onChange={(_, next) => onChange(next)} sx={sliderSx} />
     </Labeled>;
@@ -891,7 +956,7 @@ const ControlWidget: FC<{
         if (control.field && domain.length && domain.every(item => toNumber(item) === null)) {
             return <TimeSlider control={{ ...control, play: control.play ?? false }} domain={domain} value={value} onChange={next => setParam(control.param!, next)} />;
         }
-        return <NumericSlider control={control} domain={domain} value={value} onChange={next => setParam(control.param!, next)} />;
+        return <NumericSlider control={control} domain={domain} value={value} onChange={next => setParam(control.param!, next)} format={controlFormat(control, models)} />;
     }
     if (control.type === 'select') {
         const fields = switchesField(control, models);
@@ -926,7 +991,7 @@ const ControlWidget: FC<{
         const min = control.min ?? d3.min(numbers) ?? 0;
         const max = control.max ?? d3.max(numbers) ?? 100;
         const current = Array.isArray(value) ? value.map(item => toNumber(item) ?? min) : [min, max];
-        const format = formatter();
+        const format = controlFormat(control, models);
         return <Labeled label={label} aside={<Typography sx={{ ...labelSx, color: 'text.primary', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
             {format(current[0])} – {format(current[1])}</Typography>}>
             <Slider size="small" getAriaLabel={index => t(index ? 'map.maximum' : 'map.minimum', { label })} value={current} min={min} max={max}

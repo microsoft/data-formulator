@@ -5,14 +5,15 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 import bridgeSource from '../../../../../src/app/htmlApp/dfAppRuntime.js?raw';
 import { createDfTheme } from '../../../../../src/app/theme';
-import { FlintChart, annotationLayers, chartErrorMessage, chartFilters, explicitChannelSorts, fitChartToWidth, hideLayers, flintChartInput, focusLayers, inFieldTerms, resolveChartProps, selectPreset, selectionFocus, surfaceBehind, viewLayers } from '../../../../../src/app/reactApp/runtime/chart';
+import { FlintChart, annotationLayers, chartErrorMessage, chartFilters, explicitChannelSorts, fitChartToWidth, hideLayers, flintChartInput, focusLayers, inFieldTerms, resolveChartProps, selectPreset, selectedInFieldTerms, selectionFocus, surfaceBehind, viewLayers } from '../../../../../src/app/reactApp/runtime/chart';
 import { pageLook } from '../../../../../src/app/reactApp/runtime/appTheme';
 import { clearQueryCache, useQuery } from '../../../../../src/app/reactApp/runtime/data';
 import { mount, requireModule } from '../../../../../src/app/reactApp/runtime/index';
 import * as MUI from '@mui/material';
 import { DataTable } from '../../../../../src/app/reactApp/runtime/table';
 import { QueryView } from '../../../../../src/app/reactApp/runtime/states';
-import { AppThemeProvider } from '../../../../../src/app/reactApp/runtime/appTheme';
+import { AppThemeProvider, resolveAppTheme } from '../../../../../src/app/reactApp/runtime/appTheme';
+import { BOARD_PAGE, BOARD_PALETTE, boardTheme, tokenVars, useInks } from '../../../../../src/app/reactApp/runtime/board';
 
 let realFormat: unknown;
 const deferred = <T,>() => {
@@ -107,6 +108,38 @@ describe('components', () => {
         expect(screen.getByText(/Showing 2 of 10 rows/)).toBeInTheDocument();
     });
 
+    it('DataTable fits its box: turns a short wide table on its side, tightens rows to fit, and scrolls the rest', () => {
+        installBridge();
+        // jsdom lays nothing out: a box 300 px wide and 200 tall, and tables as wide and tall as their cells.
+        const box = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 300, height: 200 } as DOMRect);
+        const size = (element: HTMLElement) => ({ cells: element.querySelectorAll('thead th').length, rows: element.querySelectorAll('tbody tr').length,
+            dense: element.dataset.tableDense === 'true' });
+        const props = (name: string, get: (this: HTMLElement) => number) => Object.defineProperty(HTMLElement.prototype, name, { configurable: true, get });
+        props('clientWidth', function () { return this.dataset.tableFit ? 300 : 0; });
+        props('scrollWidth', function () { return this.dataset.tableFit ? size(this).cells * 80 : 0; });
+        props('clientHeight', function () { return this.dataset.tableFit ? 200 : 0; });
+        props('scrollHeight', function () { return this.dataset.tableFit ? 30 + size(this).rows * (size(this).dense ? 20 : 30) : 0; });
+        try {
+            const columns = ['name', 'a', 'b', 'c', 'd', 'e'].map(field => ({ field }));
+            const short = renderThemed(<DataTable data={[{ name: 'East', a: 1, b: 2, c: 3, d: 4, e: 5 }, { name: 'West', a: 6, b: 7, c: 8, d: 9, e: 10 }]} columns={columns} />);
+            const turned = short.container.querySelector('[data-table-fit]') as HTMLElement;
+            expect(turned.dataset.tableFit).toBe('turned');
+            expect([...turned.querySelectorAll('thead th')].map(cell => cell.textContent)).toEqual(['name', 'East', 'West']);
+            expect([...turned.querySelectorAll('tbody tr')].map(row => row.textContent)).toEqual(['a16', 'b27', 'c38', 'd49', 'e510']);
+            short.unmount();
+            // Seven rows overflow 200 px a little (240): tighter rows show them all. Too many columns to turn: it scrolls.
+            const rows = Array.from({ length: 7 }, (_, index) => ({ name: `R${index}`, a: index }));
+            const tall = renderThemed(<DataTable data={rows} columns={[{ field: 'name' }, { field: 'a' }]} />);
+            expect((tall.container.querySelector('[data-table-fit]') as HTMLElement).dataset).toMatchObject({ tableFit: 'natural', tableDense: 'true' });
+            tall.unmount();
+            const wide = renderThemed(<DataTable data={rows} columns={columns} />);
+            expect((wide.container.querySelector('[data-table-fit]') as HTMLElement).dataset.tableFit).toBe('scroll');
+        } finally {
+            box.mockRestore();
+            for (const name of ['clientWidth', 'scrollWidth', 'clientHeight', 'scrollHeight']) delete (HTMLElement.prototype as any)[name];
+        }
+    });
+
     it('DataTable groups rows under subtotals, with a grand total, and folds a group', () => {
         installBridge();
         const rows = [
@@ -127,7 +160,7 @@ describe('components', () => {
         expect(look).toMatchObject({ dark: true, page: '#252423', tile: '#1b1a19', text: '#f3f2f1' });
         expect(look.vars).toMatchObject({ '--df-canvas': '#252423', '--df-surface': '#1b1a19', '--df-text': '#f3f2f1' });
         // A dark page's scrollbars are light on dark; a light page keeps the runtime's muted dark ones.
-        expect(look.vars['--df-scrollbar']).toBe('rgba(255, 255, 255, 0.16)');
+        expect(look.vars['--df-scrollbar']).toBe('rgba(255, 255, 255, 0.2)');
         expect(pageLook('nyt').vars['--df-scrollbar']).toBeUndefined();
         // A theme that draws on the host's page keeps DF's surfaces.
         expect(pageLook('nyt').vars['--df-canvas']).toBeUndefined();
@@ -141,6 +174,29 @@ describe('components', () => {
         (window as any).__DF_APP_CONFIG__ = {};
         renderThemed(<AppThemeProvider theme="powerbi"><span>x</span></AppThemeProvider>);
         expect(getComputedStyle(document.documentElement).getPropertyValue('--df-canvas')).toBe('#252423');
+    });
+
+    it('gives every look the full --df-* token set, and the board as a theme to adjust', () => {
+        installBridge();
+        // The board: its page, tiles, palette, and the type scale, with no AppTheme.
+        const tokens = tokenVars(boardTheme(createDfTheme('fluent')));
+        expect(tokens).toMatchObject({ '--df-canvas': BOARD_PAGE, '--df-surface': '#ffffff', '--df-palette-1': BOARD_PALETTE[0] });
+        expect(tokens['--df-primary']).toMatch(/^#/);
+        expect(tokens['--df-text-sm']).toBeTruthy();
+        // `extends: "board"` keeps the board's structure and takes the app's accent and palette.
+        const spec = resolveAppTheme({ extends: 'board', ink: { accent: '#c2410c', series: { categorical: ['#c2410c', '#0f766e'] } } }) as any;
+        expect(spec.extends).toBeUndefined();
+        expect(spec.structure.frame).toBe('omit');
+        expect(spec.ink.series).toMatchObject({ single: '#c2410c', accent: '#c2410c', categorical: ['#c2410c', '#0f766e'] });
+        expect(pageLook('board')).toMatchObject({ page: BOARD_PAGE, palette: BOARD_PALETTE });
+        // Under an AppTheme, the tokens and useInks follow its palette and accent.
+        let inks: any;
+        const Probe = () => { inks = useInks(); return null; };
+        renderThemed(<AppThemeProvider theme={{ extends: 'board', ink: { accent: '#c2410c', series: { categorical: ['#c2410c', '#0f766e'] } } }}><Probe /></AppThemeProvider>);
+        expect(inks).toMatchObject({ accent: '#c2410c', palette: ['#c2410c', '#0f766e'], page: BOARD_PAGE });
+        const root = getComputedStyle(document.documentElement);
+        expect(root.getPropertyValue('--df-primary')).toBe('#c2410c');
+        expect(root.getPropertyValue('--df-palette-2')).toBe('#0f766e');
     });
 
 });
@@ -372,6 +428,19 @@ describe('selectionFocus', () => {
         expect(selectionFocus(points, 'Scatter Plot', { x: 'gdp', y: 'life' }, 'range'))
             .toEqual({ gdp: { range: [5, 42] }, life: { range: [61.4, 84.6] } });
         expect(selectionFocus([], 'Bar Chart', { x: 'region', y: 'countries' }, true)).toBeNull();
+    });
+
+    it('hands back selected marks in the rows\' own terms: a Year axis\'s instants become years again', () => {
+        const rows = [{ year: 1957, reports: 3, day: '1957-06-01' }, { year: 1970, reports: 9, day: '1970-01-01' }, { year: 1990, reports: 40, day: '1990-02-03' }];
+        // 1970-01-01 is instant 0.
+        const picked = [{ year: Date.UTC(1957, 0, 1), reports: 3, day: Date.UTC(1957, 5, 1) }, { year: 0, reports: 9, day: 0 },
+            { year: new Date(Date.UTC(1990, 0, 1)), reports: 40, day: '1990-02-03' }];
+        const values = selectedInFieldTerms(picked, rows);
+        expect(values).toEqual(rows);
+        expect(selectionFocus(values, 'Line Chart', { x: 'year', y: 'reports' }, 'range')).toEqual({ year: { range: [1957, 1990] } });
+        // Values the rows hold are left alone, and so is a measure the chart summed (its instant names no value the rows hold).
+        expect(selectedInFieldTerms([{ year: 2004, reports: 1e12 }], [{ year: 2004, reports: 1e12 }])).toEqual([{ year: 2004, reports: 1e12 }]);
+        expect(selectedInFieldTerms([{ reports: 43 }], rows)).toEqual([{ reports: 43 }]);
     });
 });
 

@@ -12,7 +12,9 @@ import GlobalStyles from '@mui/material/GlobalStyles';
 import { ThemeProvider, type Theme } from '@mui/material/styles';
 import { THEME_PRESETS, resolveThemeSpec } from 'flint-chart';
 
+import { defaultPaletteKey, palettes } from '../../tokens';
 import { appConfig, reportError } from './bridge';
+import { TokenStyles, boardSpec, isBoardTheme } from './board';
 import { densityTheme, type Density } from './density';
 
 /** A Flint theme preset id ("nyt", "economist", "powerbi", …) or a Flint theme object (`{ extends: 'nyt', … }`). */
@@ -27,12 +29,14 @@ const unknownReported = new Set<string>();
  * object as is. An id that is neither draws with Flint's defaults, and the app reports it once.
  */
 export function resolveAppTheme(theme: AppTheme | undefined, saved = appConfig().themes): AppTheme | undefined {
+    // The board, DF's own look, in the user's accent unless the theme gives one.
+    if (isBoardTheme(theme)) return boardSpec(theme, (palettes[appConfig().paletteKey ?? ''] ?? palettes[defaultPaletteKey]).primary.main);
     if (typeof theme !== 'string') return theme;
     if (theme in THEME_PRESETS) return theme;
     if (saved?.[theme]) return saved[theme];
     if (!unknownReported.has(theme)) {
         unknownReported.add(theme);
-        const ids = [...Object.keys(THEME_PRESETS), ...Object.keys(saved ?? {})];
+        const ids = ['board', ...Object.keys(THEME_PRESETS), ...Object.keys(saved ?? {})];
         reportError(`Theme "${theme}" is not a Flint preset or one of the user's saved themes; themes: ${ids.join(', ')}.`);
     }
     return undefined;
@@ -63,6 +67,9 @@ export interface PageLook {
     display?: string;
     /** The theme's accent, which the page's controls and highlights take. */
     accent?: string;
+    /** The theme's categorical colours and grid ink, for the app's own visuals. */
+    palette?: string[];
+    grid?: string;
 }
 
 const luminance = (color: string) => {
@@ -96,20 +103,24 @@ export function pageLook(theme: AppTheme): PageLook {
         '--df-primary-soft': accent ? `color-mix(in srgb, ${accent} 12%, transparent)` : undefined,
         '--df-rule': dark ? 'rgba(255, 255, 255, 0.14)' : undefined,
         '--df-faint': dark ? 'rgba(255, 255, 255, 0.45)' : undefined,
-        '--df-scrollbar': dark ? 'rgba(255, 255, 255, 0.16)' : undefined,
-        '--df-scrollbar-hover': dark ? 'rgba(255, 255, 255, 0.3)' : undefined,
+        '--df-scrollbar': dark ? 'rgba(255, 255, 255, 0.2)' : undefined,
+        '--df-scrollbar-hover': dark ? 'rgba(255, 255, 255, 0.36)' : undefined,
         ...Object.fromEntries((ink.series?.categorical ?? []).slice(0, 10).map((color, index) => [`--df-palette-${index + 1}`, color])),
     };
     return {
         vars: Object.fromEntries(Object.entries(vars).filter((entry): entry is [string, string] => !!entry[1])),
         dark, text: ink.text?.primary, muted: ink.text?.secondary, page, tile, font, display,
         accent: accent && /^#[0-9a-f]{3,8}$/i.test(accent) ? accent : undefined,
+        palette: ink.series?.categorical?.length ? ink.series.categorical : undefined,
+        grid: ink.structure?.grid,
     };
 }
 
 /** The MUI theme inside a themed page, so controls and MUI text follow the page's inks and type. */
 const pageMuiTheme = (look: PageLook) => (outer: Theme): Theme => ({
     ...outer,
+    ...(look.palette ? { dfPalette: look.palette } : {}),
+    ...(look.grid ? { dfGrid: look.grid } : {}),
     palette: {
         ...outer.palette,
         ...(look.dark ? { mode: 'dark' as const, divider: 'rgba(255, 255, 255, 0.14)',
@@ -174,6 +185,7 @@ export function AppThemeProvider({ theme, density, children }: AppThemeProps) {
                     ...(look.font ? { fontFamily: look.font } : {}),
                 },
             }} />}
+            {look && <TokenStyles />}
             {children}
         </ThemeProvider>
     );

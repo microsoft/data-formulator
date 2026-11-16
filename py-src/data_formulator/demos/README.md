@@ -101,6 +101,8 @@ and `intro` reads as the release's month and year (e.g. `2026-02` → February 2
 | `intro` | A paragraph after them (*links*) |
 | `release` | The content folder to use (`<release>/`), e.g. `2026-02` |
 | `hero_image` | A picture in the release folder; installed, but no longer shown on the page |
+| `logo` | An image in the release folder (`.svg`, `.png`, `.jpg`, `.webp`), shown above the page title and beside the name in the app bar |
+| `chart_theme` | The demo's chart theme, a Flint ThemeSpec (as saved by the theme skill: `id`, `label`, `extends`, `ink`, `type`, …): new charts and maps on the demo use it unless the visitor picks another default, and it is listed with the chart themes |
 | `attribution` | A line at the foot of the page, e.g. the data's source and license |
 | `links` | Links at the foot: a list of `{label, url}` |
 | `workspace_collapsed` | `true` to start sessions with the workspace folded into one card (its name and a few tables) |

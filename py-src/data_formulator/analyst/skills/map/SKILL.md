@@ -8,9 +8,12 @@ description: >-
 when_to_use: >-
   The user asks for a map or anything geographic (by country, state, county,
   city, region, coordinates, routes, origins and destinations), or asks to
-  change an existing map (*.map.json). Prefer it over a chart for geographic
-  data and over an app for map-centred dashboards. Not for non-geographic
-  charts (use visualize).
+  change an existing map (*.map.json). A map is the default overview of how a
+  measure varies across places; draw maps as map files with this skill rather
+  than as Map or Choropleth charts or maps inside an app. Not for
+  non-geographic charts (use visualize), or when the question is really a
+  ranking or exact comparison of a few places (a sorted bar chart reads better;
+  it can sit beside the map).
 always_on: false
 tools: []
 actions:
@@ -54,9 +57,11 @@ as a still picture of how the map first opens (title, legend; no controls).
      label the ends. A flat world map centres on the Pacific by itself when
      that keeps more routes whole; leave `view.rotate` unset. For routes
      reaching both Asia and Europe, a globe (`projection: orthographic`)
-     shows every route whole. Give flows a dark,
-     non-blue `color` (e.g. `"#c0392b"`, `"#7a5195"`, `"#3d3d3d"`) unless a
-     colour column is bound: blue lines read as rivers and sea routes.
+     shows every route whole. Give flows a non-blue `color` that stands out
+     on the basemap unless a colour column is bound (blue lines read as
+     rivers and sea routes): a warm, bright one on the default dark style
+     (e.g. `"#f28e2b"`, `"#ff6b5b"`, `"#f1ce63"`), a dark one on light styles
+     (e.g. `"#c0392b"`, `"#7a5195"`, `"#3d3d3d"`).
    - Wind, currents, or headings at places: `vectors` — one row per grid cell
      or station with lat, lon, and either `angle` (degrees clockwise from
      north, the way it points) or `u`+`v` (east and north components; their
@@ -77,6 +82,15 @@ as a still picture of how the map first opens (title, legend; no controls).
 4. Read the result: `write_map` returns `warnings` (unmatched keys, missing
    coordinates, constant controls). Fix real problems (clean names, set
    `keyType`, filter out aggregates like "World") with `edit_file`.
+5. Follow-ups: decide whether the user wants the earlier map changed, the
+   new view added to it (a layer, a measure switch, a time slider), or a
+   separate map beside it, and keep the earlier map unless they meant to
+   change it. A new map that shows the same content as an earlier one (the
+   same measure and unit over the same kind of places) decides whether the two
+   should compare: when they should (a drill-down from the world to a region,
+   the same measure for another period), reuse the earlier map's colour
+   classes and size range (Comparable maps, below); when the new map is about
+   detail the earlier scale would wash out, let it fit its own data.
 
 ## Templates (use these first)
 
@@ -88,8 +102,7 @@ let the fields' semantics, the theme, and the style decide the rest:
  "data": {"table": "indicators"},
  "encoding": {"region": "country", "color": "gdp_per_capita", "time": "year"},
  "fields": {"gdp_per_capita": {"semanticType": "Price", "unit": "USD"}},
- "properties": {"classes": 5},
- "view": {"style": "light"}}
+ "properties": {"classes": 5}}
 ```
 
 | template | needs | also takes |
@@ -107,7 +120,10 @@ let the fields' semantics, the theme, and the style decide the rest:
 | `vectors` | lat+lon, angle or u+v | size, color, time, filter |
 
 Channels name columns. `time` adds a playable slider; `filter` adds
-checkboxes; `tooltip` (a list) sets the tooltip fields.
+checkboxes; `tooltip` (a list) sets the tooltip fields. `label` writes a name
+on each mark where it fits: use it for up to a few dozen places; with
+hundreds of regions or points (counties, every turbine) the names crowd the
+map, so leave it off and let tooltips and search name them.
 
 The choice channels — `color`, `color2`, `size`, `weight`, `label`, `time`,
 `filter` — also take options, the columns people may choose among:
@@ -125,13 +141,19 @@ Where marks go (region, lat/lon, origin/destination, group, order) takes one
 column. Properties (all
 optional): `geography` (`world`, `us-states`, `us-counties`, or a
 `files/…` GeoJSON with `featureKey`), `keyType`, `classes`, `method`,
-`scheme`, `colors`, `color`, `sizeMax`, `opacity`, `density` (`hexbin` or `heatmap`), `radius`,
+`scheme`, `thresholds`, `domain`, `colors`, `color`, `sizeRange`, `sizeDomain`, `markSize`, `opacity`, `density` (`hexbin` or `heatmap`), `radius`,
 `curve` (flows and routes), `direction` (flows, routes and tracks: `taper`, `arrow`, `animate`,
 `none`), `play` (false: no play button), `search`, `details`
 (default on), `stats` (default off), `highlight` (below). `fields`, `view`, `title`-level text
 (`subtitle`, `source`), and extra `controls` work as below. Marks are already
 semi-transparent with outlines: leave `opacity` unset unless a dense layer
-needs fading, or the map turns washed out.
+needs fading, or the map turns washed out. Leave `sizeRange` unset too: sizes
+fit the number and spread of values and the panel, which reads best. Set it
+(`[smallest, largest]` px on a full canvas: bubble radius, spike height, flow
+width; smaller panels scale it) only to customize; it is then kept as set.
+`markSize` is one size for every mark when no column sets sizes. With many
+thousands of places, bubbles shrink to fit and overlap; consider whether a
+`density` map (hexbins or heatmap) shows the pattern better.
 
 Colour: bind the `color` channel when colour encodes data. Otherwise every
 mark takes one colour: the theme's, unless `properties.color` (any CSS
@@ -139,18 +161,35 @@ colour) sets it. Set it when the measure has a conventional colour — fossil
 fuels dark grey or brown, renewables green, emissions and heat warm red or
 orange, rain and water blue — or to keep a map consistent with related
 charts; leave it unset otherwise. `properties.scheme` picks the ramp for a
-colour column, or for density (hexbins and heatmaps). In a layer spec, use
+colour column, or for density (hexbins and heatmaps). A scheme you name is
+drawn exactly as designed on every style; left unset, the default ramp suits
+the style (on the dark default, a diverging ramp's middle recedes and its ends
+glow, where a named diverging scheme's pale middle would be the brightest
+colour). In a layer spec, use
 `color: {"value": "#…"}` or `color: {"field", "scheme"}`.
 
 Values with a conventional colour are pinned, not left to the theme (Color in
 the visualization guidance). Categories: `properties.colors` on a template, or
 `colors` in a layer's `color`, keyed by the values as they appear in the data:
 `{"Republican": "#d62728", "Democratic": "#1f5fbf", "No race": "#d9d9d9"}`.
-Colours a column already stores (from its charts) apply on their own; keep them.
+Colours pinned on a field anywhere in the session (from its charts) apply on
+their own; keep them. Other category values keep the colour the session's
+charts and maps first gave them, so leave them to the map rather than
+recolouring a follow-up by hand.
 A diverging measure with meaningful sides is set by its scheme and sign: `rdBu`
 is red for low values and blue for high, so map a Democratic-minus-Republican
 margin with `rdBu` (or set `"reverse": true` on a layer's colour), and state the
 sign in the subtitle.
+
+Comparable maps: a measure's colour classes come from the data on the map
+(quantiles by default) and bubbles scale to its largest value, so two maps of
+the same measure differ unless told otherwise. When a map should compare with
+an earlier one (the same measure and unit, a drill-down or another period;
+Plan, step 5), copy the earlier map's scales from its legend or file:
+`thresholds` (the class breaks, e.g. `[5, 10, 20, 40]`), or `domain`
+(`[min, max]`) with `method` `continuous`, `equal`, or `log`, and
+`sizeDomain` (`[0, max]` the sizes span). Use one measure on such a map: a
+measure switch would apply the same breaks to every option.
 
 Highlight (`density`, `points`, `bubbles`, `spikes` placed by lat/lon): rows
 meeting one condition are drawn as points above the map, with checkboxes to
@@ -206,23 +245,29 @@ table) or linked layers.
   `transverseMercator`.
 - `tiles`: `light`, `dark`, `streets` adds online street-map tiles (needs
   network; uses Mercator) — for city-scale points, routes, or when the user
-  wants streets. Omit for country/state-level maps.
+  wants streets. Omit for country/state-level maps. `dark` matches the
+  default dark look; `light` and `streets` draw the whole map light, so use
+  them when the user asks for a light map or street detail.
 - `fit`: leave it unset. The map frames the data (European data shows
   Europe) and shows the whole world, without Antarctica, when the data spans
   it. `basemap` forces the whole basemap even for regional data; use it only
   when the user asks for the world context. `center` `[lon, lat]` with `zoom`
-  (1 = whole basemap) sets an explicit view.
+  (1 = whole basemap) sets an explicit view; `zoom` multiplies that scale and
+  is not a web-map zoom level (a metro area needs about 200). When a few stray
+  far-off rows widen the frame, filter them out in the data (and say so)
+  rather than setting a view.
 - `graticule: true` draws latitude/longitude lines.
 - `layout`: leave it unset (`auto`). The controls, timeline and legend are
   placed where they cover the least data and leave the map largest (a globe
   gets a column beside it; a US map often gets a row along the bottom). Set
   `top` (a row under the title), `bottom` (a row along the bottom) or `side`
   (a column at the left) only when the user asks for one.
-- `style`: the basemap's look — `light` (default; Datawrapper-like grey land
-  with white borders on the page), `muted` (near-white land drawn by grey
-  borders: a stage for strong colours), `atlas` (blue water filling the
-  frame, warm land), `dark` (dark water filling the frame), `minimal`
-  (outlines, for print). Leave it unset unless the user asks for a look.
+- `style`: the basemap's look — `dark` (default; dark land and water filling
+  the frame), `light` (Datawrapper-like grey land with white borders on the
+  page), `muted` (near-white land drawn by grey borders: a stage for strong
+  colours), `atlas` (blue water filling the frame, warm land), `minimal`
+  (outlines, for print). Leave it unset unless the user asks for a look (a
+  light map, a print or report look).
 - `theme`: a chart theme (`datawrapper`, `nyt`, `economist`, `swiss`,
   `nature`, `mckinsey`, `powerbi`, `powerbi-light`, `pop`, `cartoon`, one of
   the user's saved themes by id, or `none`); it sets the title font, single and categorical colours, and the
@@ -306,13 +351,17 @@ Encodings:
   3×3 tertile classes of two measures (`blueRed`, `purpleGold`, `greenPink`)
   with a grid legend.
 - `prefix`/`suffix` on colour and size add text around numbers (`"$"`, `" kt"`).
-- `size`: `{"field", "max", "min", "aggregate", "format", "title"}` or
-  `{"value": n}`. Bubbles: max radius (default 32 px, area-true); spikes:
-  max height (120); flows/paths: max width (10).
+- `size`: `{"field", "range", "domain", "aggregate", "format", "title"}` or
+  `{"value": n}`. `range` (`[smallest, largest]` px), like `sizeRange`: leave
+  it unset to fit the data. Defaults: bubbles up to 32 px radius
+  (area-true); spikes up to 120 px high; flows/paths up to 10 px wide.
+  `domain` (`[low, high]`)
+  fixes the values sizes span instead of the data's, so sizes compare across
+  maps (bubbles always start at zero).
 - `hexbin`/`heatmap`: `radius` (px), `weight` (field); hexbins colour by
   count, or by `color.field` with `color.aggregate`.
 - `vectors`: `lon`, `lat`, and `angle` (degrees clockwise from north) or `u`
-  and `v`; `size` sets arrow length (default max 28 px), `color` as usual.
+  and `v`; `size` sets arrow length (default up to 28 px), `color` as usual.
 
 Other layer options: `curve` on flows and legged paths (`arc` default, `great-circle` default
 on the globe, `straight`); `direction` on flows and paths (`arrow`,

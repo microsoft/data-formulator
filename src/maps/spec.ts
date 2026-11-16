@@ -14,6 +14,7 @@
  * filter value anywhere.
  */
 
+import { validSizeDomain, validSizeRange } from './scales';
 import type { FieldAnnotation } from './semantics';
 import { compileTemplate, templateErrors, type TemplateSpec } from './templates';
 
@@ -33,6 +34,8 @@ export const TILES = ['none', 'light', 'dark', 'streets'] as const;
 /** Basemap looks: water, land, borders, place labels, and panels. */
 export const MAP_STYLES = ['light', 'muted', 'atlas', 'dark', 'minimal'] as const;
 export type MapStyleName = typeof MAP_STYLES[number];
+/** The look of a map whose spec names none. */
+export const DEFAULT_MAP_STYLE: MapStyleName = 'dark';
 export type TileStyle = typeof TILES[number];
 
 /** Where the controls go (view.layout); auto picks the place that serves the map best. */
@@ -92,9 +95,17 @@ export interface ColorEncoding {
 export interface SizeEncoding {
     field?: FieldRef;
     value?: number;
-    /** Largest radius (bubbles) or height (spikes) / width (flows) in pixels. */
+    /**
+     * `[smallest, largest]` mark size in pixels on a full canvas: radius (bubbles, points), height (spikes), width
+     * (flows, routes, tracks), length (vectors). Bubbles stay area-true from zero, so their smallest is the least a
+     * bubble is drawn at. Unset, sized circles fit the data and the panel and other marks take their defaults.
+     */
+    range?: number[];
+    /** Older maps' range ends: read as `range`. */
     max?: number;
     min?: number;
+    /** The values sizes span, `[low, high]`, instead of the data's: keeps sizes comparable across maps. Bubbles start at zero. */
+    domain?: number[];
     aggregate?: Aggregate;
     format?: string;
     prefix?: string;
@@ -209,7 +220,7 @@ export interface MapView {
     graticule?: boolean;
     /** Globe: rotate slowly until the user interacts. */
     spin?: boolean;
-    /** The basemap's look (default light). */
+    /** The basemap's look (default DEFAULT_MAP_STYLE, dark; light with light or street tiles). */
     style?: MapStyleName;
     /** A Flint chart theme for text, palettes, and ramps ("none" for Flint's own); default: the app's chart theme. */
     theme?: string;
@@ -276,6 +287,21 @@ export function mapGeoFiles(spec: MapSpec): string[] {
  * Parse and check a map spec. Errors stop the map from drawing; warnings point at parts
  * that are ignored. Shapes are kept loose so a hand edit with an unknown key still draws.
  */
+/**
+ * A template's controls, then the spec's own. A slider of the spec's on a field the template already steps (its
+ * `time` channel) refines that slider (start value, play) rather than adding a second one.
+ */
+function mergeTemplateControls(compiled: Control[], extra: unknown[]): unknown[] {
+    const merged: unknown[] = compiled.slice();
+    for (const control of extra) {
+        const index = isRecord(control) && control.type === 'slider' && typeof control.field === 'string'
+            ? merged.findIndex(item => isRecord(item) && item.type === 'slider' && item.field === control.field) : -1;
+        if (index >= 0) merged[index] = { ...(merged[index] as Record<string, unknown>), ...(control as Record<string, unknown>) };
+        else merged.push(control);
+    }
+    return merged;
+}
+
 export function parseMapSpec(text: string): ParsedMap {
     const errors: string[] = [];
     const warnings: string[] = [];
@@ -294,7 +320,7 @@ export function parseMapSpec(text: string): ParsedMap {
         if (problems.length) return { spec: null, errors: problems, warnings };
         template = { template: raw.template, data: raw.data, encoding: raw.encoding, properties: raw.properties } as TemplateSpec;
         const compiled = compileTemplate(template);
-        raw = { ...raw, data: compiled.data, layers: compiled.layers, controls: [...compiled.controls, ...(Array.isArray(raw.controls) ? raw.controls : [])],
+        raw = { ...raw, data: compiled.data, layers: compiled.layers, controls: mergeTemplateControls(compiled.controls, Array.isArray(raw.controls) ? raw.controls : []),
             view: { ...compiled.view, ...(isRecord(raw.view) ? raw.view : {}) } };
     }
     if (!isRecord(raw)) return { spec: null, errors: ['The map file must be a JSON object.'], warnings };
@@ -374,6 +400,12 @@ export function parseMapSpec(text: string): ParsedMap {
         }
         if (layer.size !== undefined && !isRecord(layer.size)) {
             layer.size = typeof layer.size === 'number' ? { value: layer.size } : undefined;
+        }
+        if (layer.size?.domain !== undefined && !validSizeDomain(layer.size.domain)) {
+            errors.push(`${where}.size.domain must be [low, high] numbers with 0 ≤ low < high.`);
+        }
+        if (layer.size?.range !== undefined && !validSizeRange(layer.size.range)) {
+            errors.push(`${where}.size.range must be [smallest, largest] pixel sizes with 0 ≤ smallest ≤ largest.`);
         }
         if (layer.color?.type === 'bivariate' && (layer.color.field === undefined || layer.color.field2 === undefined)) {
             errors.push(`${where}.color: a bivariate colour needs field and field2.`);

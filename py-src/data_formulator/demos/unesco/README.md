@@ -11,6 +11,7 @@ A front page for exploring UNESCO Institute for Statistics (UIS) data with Data 
 | `stories/<story>/` | Story seeds: one answered question, its table (parquet) and two charts |
 | `build.py` | Downloads the UIS data, builds the dataset and story sessions, installs the demo |
 | `make_seeds.py` | Cuts full story sessions exported from the app down to seeds (maintainers) |
+| `make_covers.py` | Redraws the story covers in `assets/stories/` from the seeds, in the site's chart theme (maintainers) |
 | `story_answers.yaml` | The shortened answer each story seed shows (used by `make_seeds.py`) |
 | `iso3166_numeric.csv` | Country codes for world maps, used by `build.py` |
 
@@ -42,10 +43,19 @@ uv run python py-src/data_formulator/demos/unesco/make_seeds.py <folder> --only 
 ```
 
 It keeps one simple question (the one set in `QUESTIONS`, else the one that made the story's
-map, else its first), adds the ranking chart, drops model settings, UI state and agent
+map, else its first), applies the page's wording (`STANDALONE` questions, `WORDING` and `SOURCES` for
+titles, field names and source notes), adds the ranking chart, drops model settings, UI state and agent
 transcripts, swaps in the shortened answer from `story_answers.yaml`, and writes the question
-into `profile.yaml` as the story's `prompt`. Then update the story's `headline`, `dek` and
-cover images in `profile.yaml` and `assets/stories/` to match what the seed shows.
+into `profile.yaml` as the story's `prompt`. Then update the story's `headline` and `dek` in
+`profile.yaml`, and redraw its cover images from the new seed:
+
+```bash
+uv run python py-src/data_formulator/demos/unesco/make_covers.py --only <story id>
+```
+
+`make_covers.py` draws each cover as the app draws the seed's charts, in the profile's `chart_theme`
+(`--out <folder>` writes them elsewhere for review). It runs `render_covers.mjs` (beside it), so it
+needs the frontend's `node_modules`, and network access for the world map outline.
 
 Data: UIS Bulk Data Download Service, February 2026 release
 (<https://download.uis.unesco.org/bdds/202602/>), licensed CC BY-SA 3.0 IGO.

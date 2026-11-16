@@ -202,3 +202,13 @@ describe('extractErrorMessage', () => {
         expect(extractErrorMessage(42)).toBe('42');
         expect(extractErrorMessage(null)).toBe('null');
     });});
+
+describe('messageBadgeSeverity', () => {
+    it('follows the latest message, so an earlier error no longer reads as the current state', async () => {
+        const { messageBadgeSeverity } = await import('../../../../src/views/MessageSnackbar');
+        const message = (type: 'error' | 'warning' | 'info' | 'success') => ({ type, component: 'test', timestamp: 0, value: type });
+        expect(messageBadgeSeverity([])).toBe('default');
+        expect(messageBadgeSeverity([message('error'), message('info')])).toBe('info');
+        expect(messageBadgeSeverity([message('info'), message('error')])).toBe('error');
+    });
+});

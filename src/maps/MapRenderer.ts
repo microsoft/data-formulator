@@ -12,9 +12,9 @@ import type { Feature, FeatureCollection, Geometry } from 'geojson';
 
 import { stateAbbr, type GeoSet } from './geography';
 import { featureAnchor } from './model';
-import { frameBackground, mapStyle, type MapStyle } from './styles';
+import { frameBackground, viewStyle, type MapStyle } from './styles';
 import type { LayerModel, LonLat, Mark } from './model';
-import { arrowPath, CATEGORICAL_SCHEMES, DIVERGING_SCHEMES, SEQUENTIAL_SCHEMES, formatter, type LegendModel } from './scales';
+import { arrowPath, CATEGORICAL_SCHEMES, DIVERGING_SCHEMES, SEQUENTIAL_SCHEMES, formatter, rampOnSurface, type LegendModel } from './scales';
 import type { Layer, MapView, ProjectionName } from './spec';
 
 export interface Hit {
@@ -130,6 +130,24 @@ interface Label {
     alt?: { x: number; y: number };
 }
 
+/**
+ * How far each mark's colour value stands from the middle of its layer's, 0 to 1 by rank: the extremes are
+ * what a reader looks for first, so they are named first. Non-numeric colours leave every mark at 0.
+ */
+function colorExtremity(marks: readonly Mark[]): Map<string, number> {
+    const valued = marks.filter(mark => mark.colorValue !== null && mark.colorValue !== undefined && mark.colorValue !== '')
+        .map(mark => ({ key: mark.key, value: Number(mark.colorValue) }))
+        .filter(item => Number.isFinite(item.value))
+        .sort((a, b) => a.value - b.value);
+    if (valued.length < 2 || valued.length < marks.length / 2) return new Map();
+    return new Map(valued.map((item, index) => [item.key, Math.abs(index / (valued.length - 1) - 0.5) * 2]));
+}
+
+/** One data label per this many square px of the plot: zoomed in, the marks in view share the same room. */
+const LABEL_ROOM = 36000;
+/** Room kept round each data label, in px, so a dense map's names do not run together. */
+const LABEL_PAD = { x: 6, y: 3 };
+
 const isDark = (color: string | undefined) => {
     if (!color) return false;
     const rgb = d3.rgb(color);
@@ -206,13 +224,27 @@ export interface Course {
     upTo: (t: number) => string;
 }
 
-/** A line of this width takes a head this long (9 to 20 px), half as wide as 0.45 of its length. */
-const headLength = (width: number) => Math.min(20, Math.max(9, width * 2.4 + 6));
-/** A head wants its line this many head lengths long on screen; a shorter line shrinks it, and below `MIN_HEAD` of its size drops it. */
+/**
+ * The head a line of this width takes, in px: its length and half its width, each growing with the line, so
+ * a hairline takes a slim small head and a broad line a broad one (to 22 px long) — not one fixed shape.
+ */
+export function headShape(width: number): { length: number; half: number } {
+    const w = Math.max(0, width);
+    return { length: Math.min(22, 4 + 2.6 * w), half: Math.min(12, 1 + 1.1 * w) };
+}
+/** A head wants its line this many head lengths long on screen; a shorter line shrinks it, down to `MIN_HEAD` of its size. */
 const SHORT_LINE = 1.6;
 const MIN_HEAD = 0.6;
+/** A head shorter than this, in px, is not drawn: its line is too short to point anywhere. */
+const MIN_HEAD_PX = 3;
 /** How far a line runs into its head: a hair, so no seam shows, yet a translucent head does not show the line through it. */
 const INTO_HEAD = 0.5;
+/** Lines (and their heads) thinner than this, in px, take no halo. */
+const HALO_MIN_WIDTH = 1.5;
+/** A place this many flows arrive at takes their heads on a ring round it. */
+const RING_ARRIVALS = 3;
+/** At most this many flows arriving at one place keep a head: the largest. */
+const HEAD_BUDGET = 12;
 
 /** The position along a course `distance` px back from its end, or null where the course is shorter. */
 function backFromEnd(points: ScreenPoint[], ts: number[], distance: number): number | null {
@@ -234,22 +266,27 @@ export interface Arrow {
 }
 
 /**
- * A filled arrowhead fitted to its line: its tip `gap` px short of the line's end (the edge of a place's dot),
- * pointing from where the line runs a head's length back. A line too short for its head shrinks it, and
- * below 60% of its size has none; so does a line whose end is out of view or cut by the map's edge.
+ * A filled arrowhead fitted to its line: its tip on the line's end — the place itself, whatever dot is
+ * drawn there, which lies beneath it — or `ring` px short of it, where many flows arrive at one place and
+ * their heads fan round it. It points from where the line runs a head's length back. A line too short for
+ * its head shrinks it to 60% of its size, then to the line's own length; one a few px long has none, as has
+ * a line whose end is out of view or cut by the map's edge. `crowd` shrinks a head that arrives among many at one place.
  */
-export function fitArrow(course: Course, width: number, gap = 0): Arrow | null {
+export function fitArrow(course: Course, width: number, ring = 0, crowd = 1): Arrow | null {
     const { points, ts } = course;
     if (points.length < 2 || ts[ts.length - 1] < 1 - 1e-9) return null;
     let total = 0;
     for (let index = 1; index < points.length; index++) total += Math.hypot(points[index][0] - points[index - 1][0], points[index][1] - points[index - 1][1]);
-    const full = headLength(width);
-    const scale = Math.min(1, total / (SHORT_LINE * (gap + full)));
-    if (scale < MIN_HEAD) return null;
-    const length = full * scale;
-    const tipAt = gap > 0 ? backFromEnd(points, ts, gap) : 1;
-    const baseAt = backFromEnd(points, ts, gap + length);
-    const cut = backFromEnd(points, ts, gap + length - INTO_HEAD);
+    const shape = headShape(width);
+    const full = shape.length * crowd;
+    // A short line keeps a head at no less than 60% of its size — and no longer than the line itself, so the head is
+    // all of it — rather than losing it and reading as dot–line–dot; only a line a few px long goes without.
+    const scale = Math.max(MIN_HEAD, Math.min(1, total / (SHORT_LINE * (ring + full))));
+    const length = Math.min(full * scale, 0.95 * total - ring);
+    if (length < MIN_HEAD_PX) return null;
+    const tipAt = ring > 0 ? backFromEnd(points, ts, ring) : 1;
+    const baseAt = backFromEnd(points, ts, ring + length);
+    const cut = backFromEnd(points, ts, ring + length - INTO_HEAD);
     if (tipAt === null || baseAt === null || cut === null) return null;
     const tip = course.at(tipAt);
     const base = course.at(baseAt);
@@ -258,7 +295,7 @@ export function fitArrow(course: Course, width: number, gap = 0): Arrow | null {
     // A line the map's edge cuts jumps across the map between its samples: no head can sit on it there.
     if (!reach || reach > 2 * length) return null;
     const [ux, uy] = [(tip[0] - base[0]) / reach, (tip[1] - base[1]) / reach];
-    const half = length * 0.45;
+    const half = shape.half * (length / shape.length);
     const [bx, by] = [tip[0] - ux * length, tip[1] - uy * length];
     const f = (value: number) => value.toFixed(2);
     const left = `${f(bx - uy * half)},${f(by + ux * half)}`;
@@ -327,11 +364,12 @@ export interface RendererStrings {
     high: string;
     perHexagon: string;
     total: (field: string) => string;
+    logScale: string;
 }
 
 const ENGLISH: RendererStrings = {
     points: count => `${count} ${count === 1 ? 'point' : 'points'}`, density: 'Density', low: 'Low', high: 'High',
-    perHexagon: 'Points per hexagon', total: field => `Total ${field}`,
+    perHexagon: 'Points per hexagon', total: field => `Total ${field}`, logScale: 'log scale',
 };
 
 export class MapRenderer {
@@ -504,7 +542,7 @@ export class MapRenderer {
         this.schedule(animate && !!previous);
     }
 
-    private get style(): MapStyle { return mapStyle(this.scene?.view.style); }
+    private get style(): MapStyle { return viewStyle(this.scene?.view ?? {}); }
 
     get isGlobe() { return viewProjection(this.scene?.view ?? {}) === 'orthographic'; }
 
@@ -683,7 +721,10 @@ export class MapRenderer {
             projection.fitExtent(extent, SPHERE);
             const scale = projection.scale() * (view.zoom ?? 1);
             if (name === 'mercator' || name === 'equirectangular' || name === 'transverseMercator') {
-                projection.scale(scale).center(view.center).translate(middle);
+                // Placed by translate alone (not d3's center), so the cached base projection keeps it.
+                projection.scale(scale).translate(middle);
+                const [x, y] = projection(view.center as [number, number]) ?? middle;
+                projection.translate([2 * middle[0] - x, 2 * middle[1] - y]);
             } else {
                 projection.rotate([-view.center[0], -view.center[1], 0]).scale(scale).translate(middle);
             }
@@ -945,14 +986,28 @@ export class MapRenderer {
         return d3.geoCentroid({ type: 'MultiPoint', coordinates: points } as unknown as d3.GeoPermissibleObjects) as LonLat;
     }
 
+/** Whether the data reaches Antarctica: a region keyed to it, or places south of 60°S (Antarctic meteorites, stations). */
+    private showsAntarctica(): boolean {
+        const south = (point: LonLat | undefined) => !!point && point[1] < -60;
+        return this.scene!.models.some(model => model.layer.visible !== false && (model.fitMarks ?? model.marks).some(mark =>
+            mark.regionId === 'ATA' || south(mark.at) || south(mark.to) || !!mark.line?.some(south)));
+    }
+
+    /** Antarctica as a land feature when the data reaches it and the boundaries leave it out (the World Bank set does). */
+    private antarctica(): Feature[] {
+        const basemap = this.scene?.basemap;
+        if (!basemap?.antarctica || !this.showsAntarctica() || basemap.byId.has('ATA')) return [];
+        return [basemap.antarctica];
+    }
+
     /** The world's land as one target, Antarctica only when the data includes it. */
     private worldLandCache: { key: string; target: d3.GeoPermissibleObjects } | null = null;
     private worldLand(): d3.GeoPermissibleObjects {
         const scene = this.scene!;
-        const withAntarctica = scene.models.some(model => model.marks.some(mark => mark.regionId === 'ATA'));
+        const withAntarctica = this.showsAntarctica();
         const key = `${scene.basemap!.name}:${withAntarctica}`;
         if (this.worldLandCache?.key !== key) {
-            const features = scene.basemap!.features.filter(item => withAntarctica || item.properties.id !== 'ATA');
+            const features = [...this.antarctica(), ...scene.basemap!.features.filter(item => withAntarctica || item.properties.id !== 'ATA')];
             this.worldLandCache = { key, target: { type: 'FeatureCollection', features } as d3.GeoPermissibleObjects };
         }
         return this.worldLandCache.target;
@@ -1021,8 +1076,10 @@ export class MapRenderer {
         const points: LonLat[] = [];
         for (const model of scene.models) {
             if (model.layer.visible === false) continue;
-            for (const mark of model.marks) {
-                if (mark.feature && model.layer.type === 'regions' || model.layer.type === 'shapes') { if (mark.feature) features.push(mark.feature); }
+            for (const mark of model.fitMarks ?? model.marks) {
+                // Marks keyed to a region (choropleths, and bubbles or spikes at a state's or country's centre) frame the
+                // whole region, not just its centre, so the places stay whole on the map.
+                if (mark.feature && !mark.to && !mark.line || model.layer.type === 'shapes') { if (mark.feature) features.push(mark.feature); }
                 else if (mark.line) points.push(...mark.line);
                 else {
                     if (mark.at) points.push(mark.at);
@@ -1120,8 +1177,8 @@ export class MapRenderer {
         const land = this.root.select<SVGGElement>('.df-map-land');
         const regionsLayerIds = new Set(scene.models.filter(model => model.layer.type === 'regions' && model.layer.visible !== false && model.geoSet === scene.basemap).map(model => model.layer.id));
         // Antarctica only takes room on world maps, unless the data includes it.
-        const showsAntarctica = scene.models.some(model => model.marks.some(mark => mark.regionId === 'ATA'));
-        const landFeatures = (scene.basemap?.features ?? []).filter(item => showsAntarctica || item.properties.id !== 'ATA');
+        const showsAntarctica = this.showsAntarctica();
+        const landFeatures = [...this.antarctica(), ...(scene.basemap?.features ?? []).filter(item => showsAntarctica || item.properties.id !== 'ATA')];
         const landPaths = land.selectAll<SVGPathElement, Feature>('path').data(tiles ? [] : landFeatures, item => String(item.id))
             .join('path').attr('fill', overField ? 'none' : regionsLayerIds.size ? style.noData : style.land)
             .attr('stroke', 'none');
@@ -1131,7 +1188,8 @@ export class MapRenderer {
         const outlines = [
             ...(scene.basemap?.borders ? [{ kind: 'border', shape: scene.basemap.borders as unknown }] : []),
             ...(scene.basemap?.disputedBorders ? [{ kind: 'disputed', shape: scene.basemap.disputedBorders as unknown }] : []),
-            ...(scene.basemap?.outline && !tiles ? [{ kind: 'coast', shape: (showsAntarctica ? scene.basemap.outline
+            ...(scene.basemap?.outline && !tiles ? [{ kind: 'coast', shape: (showsAntarctica
+                ? { type: 'FeatureCollection', features: [...(scene.basemap.outline.type === 'FeatureCollection' ? scene.basemap.outline.features : [scene.basemap.outline]), ...this.antarctica()] }
                 : scene.basemap.outlineWithoutAntarctica ?? scene.basemap.outline) as unknown }] : []),
         ];
         const borderPaths = borders.selectAll<SVGPathElement, { kind: string; shape: unknown }>('path').data(outlines, item => item.kind)
@@ -1157,7 +1215,12 @@ export class MapRenderer {
             return joined;
         };
         const areaGroups = layerGroups('.df-map-layers', visibleModels.filter(model => areaTypes.has(model.layer.type)));
-        const markGroups = layerGroups('.df-map-marks', visibleModels.filter(model => !areaTypes.has(model.layer.type)));
+        // Point markers lie beneath the lines and arrows that run to them, whatever order the layers are listed in:
+        // an arrow's tip sits on its place, and a dot over it would hide it. Bubbles keep their place in the list:
+        // their area is data, which lines drawn across them would hatch over.
+        const dotTypes = new Set(['points']);
+        const marks = visibleModels.filter(model => !areaTypes.has(model.layer.type));
+        const markGroups = layerGroups('.df-map-marks', [...marks.filter(model => dotTypes.has(model.layer.type)), ...marks.filter(model => !dotTypes.has(model.layer.type))]);
         this.canvasMarks = [];
         this.positions.clear();
         this.circleBoxes = [];
@@ -1325,9 +1388,12 @@ export class MapRenderer {
             regions.filter(mark => this.markState(model, mark).selected).raise();
             this.bindMarkEvents(regions, model);
             if (layer.text) {
+                // Large regions and those at the ends of the colour scale are named first; a selected one always.
+                const extremity = colorExtremity(model.marks);
                 for (const mark of model.marks) {
                     const point = project(mark.at);
-                    if (point && mark.text) labels.push({ x: point[0], y: point[1], text: mark.text, priority: d3.geoArea(mark.feature as never), model,
+                    const priority = d3.geoArea(mark.feature as never) * (1 + (extremity.get(mark.key) ?? 0)) + (this.markState(model, mark).selected ? 1e12 : 0);
+                    if (point && mark.text) labels.push({ x: point[0], y: point[1], text: mark.text, priority, model,
                         fill: this.markState(model, mark).hidden ? undefined : model.color.color(mark.colorValue) });
                 }
             }
@@ -1373,11 +1439,34 @@ export class MapRenderer {
             const hub = ranked.length > 3 && ranked[0].flows >= 3 && ranked[0].flows > 2 * (ranked[1]?.flows ?? 0) ? ranked[0] : null;
             const nodeRadius = (node: Node) => node === hub ? 4.5 : 2.6;
             const nodeStroke = (node: Node) => node === hub ? 1.5 : 1;
-            // A flow's arrowhead stops at the edge of its destination's dot, so heads arriving at one place meet round it.
-            const gapOf = (mark: Mark) => {
-                const point = flows ? project(mark.to) : null;
-                const node = point ? nodes.get(nodeKey(point)) : undefined;
-                return node ? nodeRadius(node) + nodeStroke(node) / 2 + 0.75 : 0;
+            // Where several flows arrive at one place, their heads stop on a ring round it and fan out, rather
+            // than stacking on the point; past a budget, only the largest arrivals keep a head, the rest
+            // converging on the ring shows the way well enough.
+            const arrivals = new Map<string, Mark[]>();
+            if (flows && direction === 'arrow') {
+                for (const mark of model.marks) {
+                    const point = !this.markState(model, mark).hidden && mark.to ? project(mark.to) : null;
+                    if (point) arrivals.set(nodeKey(point), [...(arrivals.get(nodeKey(point)) ?? []), mark]);
+                }
+            }
+            const headless = new Set<string>();
+            for (const arriving of arrivals.values()) {
+                if (arriving.length <= HEAD_BUDGET) continue;
+                const bySize = [...arriving].sort((a, b) => (Number(b.sizeValue) || 0) - (Number(a.sizeValue) || 0));
+                for (const mark of bySize.slice(HEAD_BUDGET)) headless.add(mark.key);
+            }
+            const arrivingAt = (mark: Mark) => {
+                const point = mark.to ? project(mark.to) : null;
+                return point ? arrivals.get(nodeKey(point))?.length ?? 0 : 0;
+            };
+            const ringOf = (mark: Mark) => {
+                const count = arrivingAt(mark);
+                return count >= RING_ARRIVALS ? Math.min(8, 2 + 1.5 * Math.sqrt(count)) : 0;
+            };
+            // Heads crowding one place shrink with their number, to 60% of their size.
+            const crowdOf = (mark: Mark) => {
+                const count = arrivingAt(mark);
+                return count >= RING_ARRIVALS ? Math.max(0.6, Math.sqrt(RING_ARRIVALS / count)) : 1;
             };
 
             // The line on screen, origin first: where its arrowhead sits and its line ends, and a taper's outline.
@@ -1395,7 +1484,7 @@ export class MapRenderer {
                 const course = direction === 'taper' || direction === 'arrow' || !flows ? courseOf(mark) : null;
                 if (direction === 'taper') d = course ? taperPath(course.points, Math.max(1, model.size.size(mark.sizeValue))) : '';
                 else {
-                    if (course && direction === 'arrow') arrow = fitArrow(course, model.size.size(mark.sizeValue), gapOf(mark));
+                    if (course && direction === 'arrow' && !headless.has(mark.key)) arrow = fitArrow(course, model.size.size(mark.sizeValue), ringOf(mark), crowdOf(mark));
                     // A line with a head ends at the head's base (a hair inside it), so the two read as one arrow.
                     if (arrow && course) d = course.upTo(arrow.cut);
                     else if (!flows && mark.line) d = path({ type: 'LineString', coordinates: mark.line } as never) ?? '';
@@ -1414,21 +1503,28 @@ export class MapRenderer {
             // Small flows over large ones (Dent; Jenny et al. 2017), so the big ones never bury the rest.
             const sorted = lineData.sort((a, b) => model.size.size(b.mark.sizeValue) - model.size.size(a.mark.sizeValue));
             // Lines stay nearly opaque, as most published flow maps draw them; crossings separate by a casing
-            // in the frame colour under each line, not by transparency. Only crowded maps fade (to 0.55).
+            // in the frame colour under each line, not by transparency. Only crowded maps fade (to 0.65): their widths already thin with their number.
             const shown = sorted.filter(item => !this.markState(model, item.mark).hidden).length;
-            const base = Math.max(0.55, Math.min(0.92, 0.92 - 0.11 * Math.log2(Math.max(1, shown / 12))));
+            // A layer the author gives its own opacity is faded by that alone: the two would multiply to a muddy line.
+            const base = layer.opacity !== undefined ? 0.92 : Math.max(0.65, Math.min(0.92, 0.92 - 0.11 * Math.log2(Math.max(1, shown / 12))));
             // Dashed (animated) lines show the map through their gaps; a casing would fill them white.
             const cased = direction !== 'taper' && direction !== 'animate';
             // A line ending at its head ends square, flush with the head's base (a round end would show inside a
             // translucent head); corners stay round, as do lines without heads.
             const headed = new Map(sorted.map(item => [item.mark.key, !!item.arrow]));
             const cap = (key: string) => headed.get(key) ? 'butt' : 'round';
+            // A thin line takes no halo: round a hairline it outweighs the line and darkens the map under a crowd of them.
+            const haloed = (mark: Mark) => model.size.size(mark.sizeValue) >= HALO_MIN_WIDTH;
             const casings = group.selectAll<SVGPathElement, { mark: Mark; d: string }>('path.df-map-casing')
-                .data(cased ? sorted.filter(item => !this.markState(model, item.mark).hidden) : [], item => item.mark.key)
+                .data(cased ? sorted.filter(item => !this.markState(model, item.mark).hidden && haloed(item.mark)) : [], item => item.mark.key)
                 .join('path').attr('class', 'df-map-casing').attr('fill', 'none').attr('stroke-linejoin', 'round')
                 .style('pointer-events', 'none').attr('stroke-linecap', item => cap(item.mark.key))
                 .attr('d', item => item.d).attr('stroke', halo).attr('stroke-opacity', item => this.markState(model, item.mark).dim ? 0.3 : Math.min(0.9, base + 0.05))
-                .attr('stroke-width', item => Math.max(0.5, model.size.size(item.mark.sizeValue)) + (flows ? 2 : 3));
+                // A hairline each side, never wider than the line itself: a thin line in a broad dark sleeve reads as dark.
+                .attr('stroke-width', item => {
+                    const width = Math.max(0.5, model.size.size(item.mark.sizeValue));
+                    return width + Math.min(flows ? 2 : 3, Math.max(0.6, width));
+                });
             const lines = group.selectAll<SVGPathElement, Mark>('path.df-map-line').data(sorted.map(item => item.mark), mark => mark.key)
                 .join('path').attr('class', 'df-map-line').attr('fill', 'none').attr('stroke-linejoin', 'round')
                 .attr('stroke-linecap', mark => cap(mark.key));
@@ -1459,33 +1555,44 @@ export class MapRenderer {
                 parent.appendChild(this);
             });
             this.bindMarkEvents(lines, model);
+            // Arrowheads over the lines, each on a halo along its two sides only: the halo keeps heads apart where
+            // several flows arrive at one place, and leaves the head's base, where its line runs in, without a seam.
+            type Headed = { mark: Mark; arrow: Arrow | null };
+            const arrows = sorted.filter(item => item.arrow && !this.markState(model, item.mark).hidden);
+            // A place an arrowhead marks takes no dot of its own, unless its name is drawn there (the dot anchors
+            // it) or it is the hub; a place no head reaches keeps its dot.
+            const tipped = new Set(arrows.map(item => project(item.mark.to)).filter((point): point is ScreenPoint => !!point).map(nodeKey));
+            const named = (node: Node) => ranked.length <= 40 && !!node.name && !node.dim;
+            // A place another visible layer marks with a point of its own (a touchdown, a lift-off) needs no second dot.
+            const marked = new Set<string>();
+            for (const other of this.scene?.models ?? []) {
+                if (other === model || other.layer.visible === false || (other.layer.type !== 'points' && other.layer.type !== 'bubbles')) continue;
+                for (const mark of other.marks) {
+                    const point = project(mark.at);
+                    if (point) marked.add(nodeKey(point));
+                }
+            }
+            const dotted = Array.from(nodes).filter(([key, node]) => node === hub || (!marked.has(key) && (named(node) || !tipped.has(key))));
+            // Two passes, as a road map draws its casings: the heads' halos, then the places' dots, then the heads,
+            // so a halo parts an arrow from the ground but never cuts the dot it lands on.
+            const rims = group.selectAll<SVGPathElement, Headed>('path.df-map-arrow-halo').data(arrows.filter(item => haloed(item.mark)), item => item.mark.key)
+                .join('path').attr('class', 'df-map-arrow-halo').style('pointer-events', 'none').attr('fill', 'none')
+                .attr('d', item => item.arrow!.sides).attr('stroke', halo).attr('stroke-width', 2).attr('stroke-linejoin', 'round')
+                .attr('stroke-opacity', item => this.markState(model, item.mark).dim ? 0.3 : Math.min(0.9, base + 0.05));
+            rims.order().each(function () { parent.appendChild(this); });
             // The places' dots over the lines' starts (a square start hides under its dot) and under the arrowheads.
             group.selectAll<SVGCircleElement, [string, Node]>('circle.df-map-node')
-                .data(Array.from(nodes), ([key]) => key)
+                .data(dotted, ([key]) => key)
                 .join('circle').attr('class', 'df-map-node').style('pointer-events', 'none')
                 .attr('cx', ([, node]) => node.x).attr('cy', ([, node]) => node.y).attr('r', ([, node]) => nodeRadius(node))
                 .attr('fill', ([, node]) => node === hub ? this.style.text : node.color).attr('stroke', halo).attr('stroke-width', ([, node]) => nodeStroke(node))
                 .attr('opacity', ([, node]) => node.dim ? 0.2 : 1)
                 .raise();
-            // Arrowheads over the lines, each on a halo along its two sides only: the halo keeps heads apart where
-            // several flows arrive at one place, and leaves the head's base, where its line runs in, without a seam.
-            type Headed = { mark: Mark; arrow: Arrow | null };
-            const arrows = sorted.filter(item => item.arrow && !this.markState(model, item.mark).hidden);
-            const rims = group.selectAll<SVGPathElement, Headed>('path.df-map-arrow-halo').data(arrows, item => item.mark.key)
-                .join('path').attr('class', 'df-map-arrow-halo').style('pointer-events', 'none').attr('fill', 'none')
-                .attr('d', item => item.arrow!.sides).attr('stroke', halo).attr('stroke-width', 2).attr('stroke-linejoin', 'round')
-                .attr('stroke-opacity', item => this.markState(model, item.mark).dim ? 0.3 : Math.min(0.9, base + 0.05));
             const heads = group.selectAll<SVGPathElement, Headed>('path.df-map-arrow').data(arrows, item => item.mark.key)
                 .join('path').attr('class', 'df-map-arrow').style('pointer-events', 'none')
                 .attr('d', item => item.arrow!.head)
                 .attr('fill', item => ink(item.mark)).attr('fill-opacity', item => Math.min(1, opacity(item.mark) + 0.1));
-            const rimOf = new Map<string, SVGPathElement>();
-            rims.each(function (item) { rimOf.set(item.mark.key, this); });
-            heads.order().each(function (item) {
-                const rim = rimOf.get(item.mark.key);
-                if (rim) parent.appendChild(rim);
-                parent.appendChild(this);
-            });
+            heads.order().each(function () { parent.appendChild(this); });
             // A track starts at a hollow dot and is named there, in its own colour: it reads "from here, that way".
             const starts = !flows ? sorted.filter(item => item.points.length >= 2 && !this.markState(model, item.mark).hidden) : [];
             group.selectAll<SVGCircleElement, { mark: Mark; points: [number, number][] }>('circle.df-map-start').data(starts, item => item.mark.key)
@@ -1608,6 +1715,8 @@ export class MapRenderer {
             for (const node of nodes) node.item.point = [node.x, node.y];
         }
         const sorted = placed.sort((a, b) => model.size.size(b.mark.sizeValue) - model.size.size(a.mark.sizeValue));
+        // A bubble's edge is a darker shade of its own fill: overlaps read as overlaps, without a web of white rings.
+        const outline = (mark: Mark) => d3.color(model.color.color(mark.colorValue))?.darker(0.9).formatHex() ?? this.style.border;
         // On a globe, marks lie on the surface: circles drawn on the sphere foreshorten toward the edge and
         // are clipped at the horizon, instead of flat discs hanging off it. (Dorling spreads screen discs.)
         const onSphere = this.isGlobe && layer.layout !== 'dorling';
@@ -1622,8 +1731,8 @@ export class MapRenderer {
             discs.attr('d', mark => path(circle.center(mark.at!).radius(Math.max(0.01, model.size.size(mark.sizeValue) * degreesPerPixel))()) ?? '')
                 .attr('fill', mark => model.color.color(mark.colorValue))
                 .attr('fill-opacity', mark => this.markState(model, mark).dim ? 0.25 : bubbles ? 0.78 : 0.85)
-                .attr('stroke', mark => this.markState(model, mark).selected ? this.style.selection : stroke ?? (bubbles ? (this.style.mode === 'dark' ? 'rgba(0,0,0,0.45)' : '#ffffff') : 'none'))
-                .attr('stroke-width', mark => this.markState(model, mark).selected ? 1.6 : bubbles ? 1 : 0);
+                .attr('stroke', mark => this.markState(model, mark).selected ? this.style.selection : stroke ?? (bubbles ? outline(mark) : 'none'))
+                .attr('stroke-width', mark => this.markState(model, mark).selected ? 1.6 : bubbles ? 0.75 : 0);
             discs.order();
             this.bindMarkEvents(discs, model);
         }
@@ -1639,18 +1748,21 @@ export class MapRenderer {
             .attr('fill', mark => model.color.color(mark.colorValue));
         circles
             .attr('fill-opacity', mark => this.markState(model, mark).dim ? 0.25 : bubbles ? 0.78 : 0.85)
-            .attr('stroke', mark => this.markState(model, mark).selected ? this.style.selection : stroke ?? (bubbles ? (this.style.mode === 'dark' ? 'rgba(0,0,0,0.45)' : '#ffffff') : 'none'))
-            .attr('stroke-width', mark => this.markState(model, mark).selected ? 1.6 : bubbles ? 1 : 0);
+            .attr('stroke', mark => this.markState(model, mark).selected ? this.style.selection : stroke ?? (bubbles ? outline(mark) : 'none'))
+            .attr('stroke-width', mark => this.markState(model, mark).selected ? 1.6 : bubbles ? 0.75 : 0);
         circles.order();
         this.bindMarkEvents(circles, model);
         if (layer.text) {
+            // Large marks and those at the ends of the colour scale are named first; a selected one always.
+            const extremity = colorExtremity(sorted.map(item => item.mark));
             for (const item of sorted) {
                 if (!item.mark.text) continue;
                 const radius = model.size.size(item.mark.sizeValue);
+                const priority = radius * (1 + (extremity.get(item.mark.key) ?? 0)) + (this.markState(model, item.mark).selected ? 1e12 : 0);
                 // A label goes inside a circle only if it fits (at 11px, else 9px); otherwise above it, with a halo.
                 const size = [11, 9].find(candidate => textWidth(item.mark.text!, candidate) + 4 <= 2 * radius * 0.9 && candidate + 2 <= 2 * radius * 0.8);
                 const inside = bubbles && size !== undefined;
-                labels.push({ x: item.point[0], y: inside ? item.point[1] : item.point[1] - radius - 7, text: item.mark.text, priority: radius, model,
+                labels.push({ x: item.point[0], y: inside ? item.point[1] : item.point[1] - radius - 7, text: item.mark.text, priority, model,
                     size: inside ? size : 11, fill: inside ? model.color.color(item.mark.colorValue) : undefined,
                     alt: inside ? undefined : { x: item.point[0], y: item.point[1] + radius + 8 } });
             }
@@ -1662,7 +1774,8 @@ export class MapRenderer {
         const name = model.layer.color?.scheme;
         const key = name && Object.keys(SEQUENTIAL_SCHEMES).find(scheme => scheme.toLowerCase() === name.toLowerCase());
         const interpolate = SEQUENTIAL_SCHEMES[key ?? 'ylOrRd'];
-        return (t: number) => interpolate(model.layer.color?.reverse ? 1 - t : t);
+        const onSurface = rampOnSurface(interpolate, this.style.land) ?? interpolate;
+        return (t: number) => onSurface(model.layer.color?.reverse ? 1 - t : t);
     }
 
     /** The keyframes that move dashes along animated flows, added once. */
@@ -1735,6 +1848,13 @@ export class MapRenderer {
             return how === 'sum' ? d3.sum(numbers) : how === 'max' ? d3.max(numbers) ?? 0 : how === 'min' ? d3.min(numbers) ?? 0 : d3.mean(numbers) ?? 0;
         });
         const max = d3.max(values) ?? 1;
+        // Counts piled into a few cells (finds in Antarctica's ice) would leave every other cell the palest
+        // colour on a linear scale: where all are positive and the largest is ten times the typical, colour
+        // follows their logarithm, from the smallest count to the largest.
+        const least = d3.min(values) ?? 0;
+        const totals = !colorField || how === 'count' || how === 'sum';
+        const logged = totals && least > 0 && max > least && max >= 10 * (d3.median(values) ?? max);
+        const share = (value: number) => logged ? Math.log(value / least) / Math.log(max / least) : max ? value / max : 0;
         const scheme = this.densityScheme(model);
         const corners = d3.range(0, 2 * Math.PI, Math.PI / 3).map(angle => [Math.sin(angle) * radius * 0.96, -Math.cos(angle) * radius * 0.96]);
         const hexagon = `m${corners.map((corner, index) => {
@@ -1744,7 +1864,7 @@ export class MapRenderer {
         const binList = Array.from(bins.values()).map((bin, index) => ({ ...bin, value: values[index], key: `${Math.round(bin.x)},${Math.round(bin.y)}` }));
         const hexes = group.selectAll<SVGPathElement, typeof binList[number]>('path').data(binList, bin => bin.key)
             .join('path').attr('d', bin => `M${bin.x},${bin.y}${hexagon}`)
-            .attr('fill', bin => scheme(0.1 + 0.9 * (max ? bin.value / max : 0))).attr('fill-opacity', 0.85).attr('stroke', '#fff').attr('stroke-width', 0.4);
+            .attr('fill', bin => scheme(0.1 + 0.9 * share(bin.value))).attr('fill-opacity', 0.85).attr('stroke', '#fff').attr('stroke-width', 0.4);
         if (this.scene?.interactive) {
             hexes.attr('data-mark', '').style('cursor', 'default')
                 .on('mousemove', (event: MouseEvent, bin) => {
@@ -1756,7 +1876,8 @@ export class MapRenderer {
         if (!binList.length) return null;
         const title = model.layer.color?.title ?? (colorField && how !== 'count' ? `${how} ${colorField}` : model.layer.weight ? this.strings.total(model.layer.weight) : this.strings.perHexagon);
         const format = formatter(model.layer.color?.format);
-        return { kind: 'gradient', title, stops: d3.range(0, 1.0001, 0.1).map(t => scheme(0.1 + 0.9 * t)), domain: [0, max], format: value => format(value) };
+        return { kind: 'gradient', title: logged ? `${title} · ${this.strings.logScale}` : title, stops: d3.range(0, 1.0001, 0.1).map(t => scheme(0.1 + 0.9 * t)),
+            domain: logged ? [least, max] : [0, max], ...(logged ? { midpoint: Math.sqrt(least * max) } : {}), format: value => format(value) };
     }
 
     private drawCanvas() {
@@ -1835,13 +1956,20 @@ export class MapRenderer {
         const group = this.root.select<SVGGElement>('.df-map-labels');
         const style = this.style;
         const placed: [number, number, number, number][] = [];
+        // Marks close together that share a name (turbines of one wind farm) are named once.
+        const named = new Map<string, [number, number][]>();
+        // Data labels share the plot by its area, most salient first; place names keep their own budget.
+        let dataBudget = Math.max(12, Math.round((this.width * this.height) / LABEL_ROOM));
         const kept = candidates.filter(item => item.text && Number.isFinite(item.x) && Number.isFinite(item.y)
             && item.x > -50 && item.x < this.width + 50 && item.y > -20 && item.y < this.height + 20)
             .sort((a, b) => b.priority - a.priority)
             .filter(item => {
-                const width = textWidth(item.text, item.size ?? (item.place ? 9.5 : 11)) + (item.place ? 16 : 4);
+                if (!item.place && dataBudget <= 0) return false;
+                const width = textWidth(item.text, item.size ?? (item.place ? 9.5 : 11)) + (item.place ? 16 : 4 + 2 * LABEL_PAD.x);
+                if (named.get(item.text)?.some(([x, y]) => Math.hypot(x - item.x, y - item.y) < Math.max(80, width))) return false;
                 const fits = ({ x, y }: { x: number; y: number }) => {
-                    const box: [number, number, number, number] = [x - width / 2, y - 8, x + width / 2, y + 6];
+                    const pad = item.place ? 0 : LABEL_PAD.y;
+                    const box: [number, number, number, number] = [x - width / 2, y - 8 - pad, x + width / 2, y + 6 + pad];
                     const overlaps = (other: [number, number, number, number]) => box[0] < other[2] && box[2] > other[0] && box[1] < other[3] && box[3] > other[1];
                     // No label covers a spike; place names also give way to bubbles (data labels belong on them).
                     if (placed.some(overlaps) || this.spikeBoxes.some(overlaps) || (item.place && this.circleBoxes.some(overlaps))) return null;
@@ -1849,9 +1977,13 @@ export class MapRenderer {
                 };
                 const spot = fits(item) ? item : item.alt && fits(item.alt) ? item.alt : null;
                 if (!spot) return false;
+                const anchors = named.get(item.text) ?? [];
+                anchors.push([item.x, item.y]);
+                named.set(item.text, anchors);
                 item.x = spot.x;
                 item.y = spot.y;
                 placed.push(fits(spot)!);
+                if (!item.place) dataBudget -= 1;
                 return placed.length <= 300;
             });
         group.selectAll<SVGTextElement, typeof kept[number]>('text').data(kept)

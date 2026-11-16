@@ -12,7 +12,8 @@ when_to_use: >-
   or walkthrough, or custom UI with controls such as filters, tabs, sliders,
   drill-down, or linked views, or asks to change an existing app. Not for a
   written narrative document whose charts run between paragraphs (use report),
-  a single chart (use visualize), a plain file, or an ordinary answer.
+  a single chart (use visualize), a map or a map-centred view with its own
+  controls (use map), a plain file, or an ordinary answer.
 always_on: false
 tools: []
 actions:
@@ -42,8 +43,9 @@ Use what the session already shows, as ideas rather than rules:
 - Field semantics (units, percentages, date granularity) decide formats;
   never sum rates or averages.
 - Fit the purpose: monitoring, explaining a finding, exploring, or comparing.
-- Compute headline numbers from the data, not from the conversation, and note
-  earlier caveats (cleaning, exclusions) in a note at the end.
+- Compute headline numbers from the data, not from the conversation; a
+  caveat that changes how a number reads (Words, below) goes in the closing
+  note.
 - With little context, build a broad overview of the key measures.
 
 ## Choose the form
@@ -90,7 +92,8 @@ dialogs, or navigation; keep state in React. Import only from these modules:
   `@df/format`, `@df/icons` (below).
 - `d3`, `lodash`, `@df/geo`: for custom visuals and data shaping (below).
 
-Never hardcode colors or fonts. Read data only with `@df/data`; do not embed it,
+State colours and fonts once, in the theme, and read them from it everywhere
+else (Look, below). Read data only with `@df/data`; do not embed it,
 including map boundaries (use `@df/geo` or Flint's Map charts).
 
 Lay the code out like the starter app below: 2-space indentation, one statement
@@ -121,7 +124,8 @@ In JSX text, a line break next to `{value}` drops the space: write
   SQL over the declared tables, referred to by name: joins, window functions,
   date bucketing, percentiles, `CASE`. Use `?` placeholders bound from `params`
   (for filter values); never splice values into the text. One `SELECT` (CTEs
-  allowed); no table functions. Rows are capped at `limit` (default 5000,
+  allowed); no table functions in `FROM` (split a list column with `unnest(...)`
+  in the `SELECT` list). Rows are capped at `limit` (default 5000,
   max 50000); `truncated` says more matched. Pass `null` as sql to skip it.
 - `useSourceQuery(source, query, {limit})` → the same result shape, read live
   from a connected source declared in `sources` (its reference id), each time
@@ -212,9 +216,12 @@ context line, "Jan 2023 – Jun 2024 · 3,193 films · Source: …", then
 
 - `title`, by form. A story, panel, slide deck, or report states its main
   finding as a sentence, computed from the data ("Construction lost the most
-  jobs in 2009", not "Unemployment by industry"). A dashboard or explorer names
-  what it monitors and for whom ("Weekly fuel prices, U.S. retail"). Avoid
-  "Dashboard", "Explorer", and "Overview" as the title's main words.
+  jobs in 2009", not "Unemployment by industry"). A dashboard or explorer
+  states its current finding the same way, computed from the rows it shows so
+  it follows the controls ("Revenue up 12% on the year before"), or names what
+  it monitors when there is no single finding ("Weekly fuel prices, U.S.
+  retail"). Avoid "Dashboard", "Explorer", and "Overview" as the title's main
+  words.
 - `deck`: one sentence on what the page covers: the measure, unit, scope, and
   period ("Monthly unemployment rate by industry, %, 2000–2010"), or the key
   number behind the title. Put how to use the page ("click a bar…") in a tile's
@@ -245,20 +252,17 @@ context line, "Jan 2023 – Jun 2024 · 3,193 films · Source: …", then
 - Tables: a `DataTable` needs room, a tile at least half the page wide
   (`md: 6`) or the full width, with 2–5 columns. For a top-N list in a
   narrower tile use `BarList` (a name over a bar, the value at the end).
-- KPIs: one strip, not a box each: `<Paper variant="outlined">` holding a
-  `<Stack direction={{ xs: 'column', sm: 'row' }} divider={<Divider flexItem
-  orientation="vertical" />}>` of 2–5 cells, each a `Stack spacing={0.25}`
-  with `sx={{ flex: 1, minWidth: 0, px: 2, py: 1.5 }}`: the label (`body2`,
-  `text.secondary`), the value (`h4`, `fontWeight={600}`, `lineHeight={1.15}`),
-  and the change or note (`caption`; `color="success.main"` or `"error.main"`
-  by whether it is good).
+- KPIs: one `KpiStrip` of 2–5 `Kpi`s, not a box each. A number alone says
+  little: give each one what it is read against, a `previous` value with `vs`
+  (the year before, the prior period, the average) or a `target`, and a
+  `trend` sparkline where its history matters; otherwise a `note` saying what
+  it counts. Compute both numbers from query rows.
 - Fill what you draw: every tile's space goes to its content. A tile holds a
   chart, a table, or a list, never a lone sentence; a row of tiles ends
   together at its content (a set height with `height="fill"` charts); controls
   and KPIs take one line each, not a tile's worth of space.
 - Notes and sources: `Typography variant="caption" color="text.secondary"` at
-  the end of the page, one or two short lines (`maxWidth: 720`); several
-  caveats go in a short list, not one long run-on line.
+  the end of the page, one or two short lines (`maxWidth: 720`).
 - Reading text: paragraphs at most about 70 characters wide (`maxWidth:
   '68ch'` on a `Typography`, or a `md: 5` column).
 - States: a `FlintChart` or `DataTable` given `query` shows loading, empty,
@@ -266,28 +270,130 @@ context line, "Jan 2023 – Jun 2024 · 3,193 films · Source: …", then
   variant="rounded"` of the content's height) and `query.error` (an `Alert
   severity="error"`).
 
+### Words
+
+How much text an app carries depends on its form. A **dashboard**,
+**explorer**, **panel**, or **slides** is read at a glance: the charts carry
+it, and text names and points. Write each piece once, short, and only where
+the page would mislead without it:
+
+- Title: the finding, up to about 12 words. Deck: one sentence.
+- Tile heading: the finding; subtitle: the measure, unit, and period in a
+  few words. A hint for a gesture the reader cannot guess, in two or three
+  words ("click a bar to filter").
+- KPI: a label of a few words; its note, if any, under 6 words.
+- A slide: its takeaway headline and at most two short lines.
+- Closing note: two short lines at most: the source, and a caveat only when
+  it changes how a number reads (a partial last year, a changed definition,
+  a sample). Leave out what the reader does not need to act on the page:
+  how values were computed, how filters apply, counts of missing values,
+  "not live" or "not causal" disclaimers, and definitions the labels already
+  give.
+- No `Alert` for caveats; an `Alert` is for a failed query or data that
+  cannot answer what the page asks.
+- Never repeat what the header, a control, an axis, or a legend already says.
+
+Such a page has about 150 words of text outside its charts and tables.
+
+A **data story** (or another reading page) is read, not scanned: each step's
+text explains what its chart shows, as long as that takes, in paragraphs of
+plain sentences. Its headings, captions, and closing note follow the rules
+above.
+
 ### Look
 
-- Colors and fonts come from the theme: in `sx` and props use theme keys
-  (`color: 'text.secondary'`, `bgcolor: 'background.paper'`, `borderColor:
-  'divider'`, `'primary.main'`, `'success.main'`, `'error.main'`), never hex
-  values or font names.
-- `AppTheme` (from `@df/chart`) gives the whole app one look from a Flint
-  theme, the same themes as the canvas charts: `"nyt"`, `"economist"`,
-  `"datawrapper"`, `"bbc"`, `"swiss"`, `"apple"`, `"mckinsey"`, `"nature"`,
-  `"powerbi"` (dark), `"powerbi-light"`, …, or one of the user's saved themes
-  by id. Wrap the app once: `<AppTheme theme="nyt"><Container>…</Container>
-  </AppTheme>`. Every chart takes it, and MUI takes its text colors, accent
-  (the primary color), fonts (`nyt` sets headings in serif), and, for a theme
-  with its own paper (`powerbi`, `swiss`), the page and `Paper` colors. When
-  the session's charts share a theme, use that one. A Flint theme object
-  (`{extends: "economist", ink: {...}}`) adjusts one for this app only; to keep
-  a look for reuse, save it with the theme skill.
+Most apps need no styling: the default look is finished, and a preset covers
+most of the rest. Go further only when the user or the subject asks for it,
+from the cheapest step up:
 
-By form: a **dashboard** uses `Container maxWidth="lg"`, outlined tiles, and
-the default look; a **data story** uses `maxWidth="lg"` with an editorial
-`AppTheme` (`nyt`, `economist`), text and charts on the page without tiles;
-**slides** use `maxWidth="md"` and one tile per slide.
+1. **The default** (no `AppTheme`): the board. Soft outlined cards on a quiet
+   page, tight headings, light tables, and charts without frames or axis rules
+   in the accent. Use it for dashboards and explorers.
+2. **A preset**: `<AppTheme theme="nyt">` wraps the app once. Every chart takes
+   the theme, and MUI takes its text colours, accent, fonts and, for a theme
+   with its own paper, the page and `Paper` colours. Pick it for the form and
+   the audience, not by habit; when the session's charts share a theme, use
+   that one. The presets, by what they suit:
+
+   - Monitoring and business: `board` (the default), `powerbi-light` (white
+     tiles, legend at the right), `powerbi` (dark tiles), `apple` (a quiet app
+     interface, rounded bars), `material` (Material Design, purple-led).
+   - Editorial (stories, panels, explainers): `nyt` (serif headline, values
+     on marks, series named at their ends), `economist` (compact, red tab),
+     `bbc` (big bold headline, no axis lines), `datawrapper` (plain web
+     chart, values on bars).
+   - Presentation and print: `mckinsey` (slides: takeaway headlines, values
+     printed), `nature` (journal figures, axis titles with units), `swiss`
+     (warm paper, grid, one red accent).
+   - Playful or poster: `cartoon` (cream paper, comic type, outlined marks),
+     `pop` (electric colours, heavy black), `de-stijl` (red, yellow, blue
+     planes and black lines).
+
+   One of the user's saved themes (the theme skill's `list_themes`) works by
+   id, like a preset.
+3. **An adjusted theme**: a Flint theme object that `extends` a preset and
+   overrides parts of it, for a brand, a mood, or a dark page:
+
+   ```js
+   const THEME = {
+     extends: 'board',
+     ink: {
+       accent: '#2f6b4f',
+       series: { categorical: ['#2f6b4f', '#c0803a', '#6b7f99', '#a34e3b'] },
+       // A dark page: the page (panel), the tiles (canvas, plot), and text.
+       // surface: { canvas: '#161b22', plot: '#161b22', panel: '#0d1117' },
+       // text: { primary: '#e6edf3', secondary: '#9198a1' },
+       // structure: { grid: '#262c36', rule: '#30363d' },
+     },
+     // type: { headline: { family: 'Georgia, serif' } },
+   };
+   ```
+
+   `<AppTheme theme={THEME}>` restyles the page, MUI, the `--df-*` tokens,
+   and every chart together. This object (and a category's `colors`) is the
+   one place for colour values and font names. Fonts are the system's (no
+   web fonts load): a stack such as `Georgia, serif` or `ui-monospace,
+   monospace`. Beyond `ink` and `type`, a theme sets `structure` (axes,
+   grid, frame), `marks`, `legend`, `dataLabels`, `furniture` (house rules
+   and tabs), and `layout.density`; the theme skill describes every part and
+   saves a look for reuse. Extend the preset nearest to the goal and
+   override only what differs.
+4. **The app's own CSS**, for its own elements: `sx` on an element, or
+   `<GlobalStyles styles={{ '.app-legend': {...} }} />` (from
+   `@mui/material`) for classes the app names with an `app-` prefix. It reads
+   the theme through tokens, which follow every step above:
+
+   - Colour: `--df-text`, `--df-muted`, `--df-faint`, `--df-primary`,
+     `--df-primary-soft`, `--df-on-primary`, `--df-positive`,
+     `--df-negative`, `--df-warning`; the page `--df-canvas`, a tile
+     `--df-surface`, `--df-grid`, `--df-rule` (borders), `--df-hover`;
+     `--df-palette-1` … `--df-palette-10` (the series colours, in the
+     charts' order).
+   - Type: `--df-font`, `--df-font-display`, `--df-font-mono`;
+     `--df-text-xs`, `-sm`, `-md`, `-lg`, `-xl`.
+   - Shape: `--df-space` (the spacing unit), `--df-radius`,
+     `--df-radius-tile`.
+
+   In `sx` and MUI props, theme keys say the same: `color: 'text.secondary'`,
+   `bgcolor: 'background.paper'`, `borderColor: 'divider'`,
+   `'primary.main'`, `'success.main'`, `'error.main'`.
+
+So that the app's styles never fight the theme:
+
+- `--df-*` tokens are read-only: MUI and the charts do not read them back, so
+  setting one recolours only the app's own CSS. Change the look in the theme
+  object; name the app's own variables `--app-…`.
+- Style MUI components through their props and `sx` on the component itself,
+  never through MUI's class names (`.MuiPaper-root`); restyle charts through
+  `theme`, never by selecting their SVG.
+- Scope global CSS to `app-` classes; never restyle bare elements (`svg`,
+  `text`, `table`, `button`) or `body`.
+- Space with the layout rules above (container `spacing`, tile padding).
+
+By form: a **dashboard** or **explorer** uses `Container maxWidth="lg"`,
+outlined tiles, and the default look; a **data story** uses `maxWidth="lg"`
+with an editorial `AppTheme` (`nyt`, `economist`), text and charts on the page
+without tiles; **slides** use `maxWidth="md"` and one tile per slide.
 
 - Density: apps are compact by default, sized for the canvas panel: a 6 px
   spacing unit, a smaller type scale (body 14 px, `h5` 19 px), and 30 px
@@ -328,6 +434,12 @@ the default look; a **data story** uses `maxWidth="lg"` with an editorial
   `"min"`, `"max"`, `"count"`, or a function of the rows, e.g. a ratio of
   sums); a column with a `total` also adds a Total row. Together they make a
   matrix. Use it for every table rather than MUI's `Table`.
+  It fits its box on its own: headings wrap, a table a little taller than
+  `maxHeight` (default 420) tightens its rows to show them all, a table of
+  up to 4 rows too wide for its tile turns on its side (its columns become
+  rows), then its type gets smaller, and only then it scrolls, its first
+  column held. Set `maxHeight`
+  only to cap a long table; never size one to a neighbour.
 - `AppTheme {theme, density}`: the app's look from a Flint theme, and its
   density (`"compact"` by default, or `"normal"`) (Layout and UI, above).
 - Filters: a `FilterBar {sticky}` at the top holds labeled controls side by
@@ -355,6 +467,13 @@ the default look; a **data story** uses `maxWidth="lg"` with an editorial
   sidebar; clicking a row sets the focus to it. In a tile of natural height it
   shows all `limit` rows; in a tile too short for them, it shows what fits and
   "+N more" (so size the tile by the list, not the list by the tile).
+- `Kpi {label, value, format, unit, previous, vs, target, change, good, trend,
+  x, y, note}` in a `KpiStrip` (a row of them with dividers): the label, the
+  value (`format` as in `DataTable`), then its change against `previous`
+  ("▲ +12% vs 2023"; `change`: `"percent"`, `"points"` (the default for a
+  percent value), or `"number"`) or the share of `target` reached, coloured by
+  `good` (`"up"`, `"down"`, or `"none"`), a sparkline of `trend` (rows or a
+  query, with its `x` and `y` fields), and a `note`.
 - `TargetBar {value, target, label, goodDirection}`: progress toward a
   target, under a KPI's value.
 - `FocusChips {focus, onChange, labels}`: the shared focus as removable chips
@@ -365,6 +484,9 @@ the default look; a **data story** uses `maxWidth="lg"` with an editorial
   in place of a `FlintChart` that failed: it has no theme, focus, selection,
   view, or filter.
 - `Sparkline {data, x, y}`.
+- `useInks()`, `useMeasure()`, `useSize(ref)`: the theme's resolved colours
+  and a container's size, for the app's own components (Custom components,
+  below).
 - `format.number(v, digits)`, `.compact(v)` (12.3K), `.percent(v)` (ratios
   0–1), `.delta(v)` (+1.2 / −0.4), `.date(v)`; each returns "—" for missing values.
 - `Icon {name}`: `trend-up`, `trend-down`, `info`, `warning`, `money`, `people`,
@@ -423,6 +545,9 @@ the default look; a **data story** uses `maxWidth="lg"` with an editorial
   note on the one mark those fields pick out (name every field that tells the
   marks apart: x, and color for a line). Values are in the data's own terms
   (the same date strings, categories, or numbers); a few per chart at most.
+  A chart marks what its title says, computed from its rows: the peak or
+  latest point it names, and the reference it is read against (an average,
+  a target, a period).
 
 ### Reusing the session's charts
 
@@ -462,7 +587,9 @@ can apply to several different charts.
   [2010, 2015]}}`, or `null` when cleared); `onSelect(rows)` gives the picked
   rows, e.g. for a drill-down: `onSelect={values => setRegion(values[0]?.region
   ?? '')}`, filtering other queries by `region`.
-- `focus`: the app sets it: `<FlintChart focus={{region: 'West'}} … />`.
+- `focus`: the app sets it: `<FlintChart focus={{region: 'West'}} … />`. It
+  also picks out what a tile's title names (`focus={{season: top.season}}`
+  under "Summer brings 38% of reports"), the rest muted.
 - `note`: a few words on the one mark (or the end of the one line) the focus
   picks out, in place of its value: `note="Record high"`. When the focus picks
   out one mark or one line and there is no note, its value is labelled.
@@ -671,13 +798,86 @@ a panel arranges them side by side, sized by importance.
 variant="outlined"` (a flex column with `gap: 1`) holding the heading, the
 chart, and the caption.
 
-## `d3`, `lodash`, `@df/geo`
+## Custom components: `d3`, `lodash`, `@df/geo`
 
-Prefer `FlintChart`; reach for d3 only for visuals Flint lacks (custom maps,
-networks, trees, annotated diagrams).
+Use `FlintChart` for the standard charts: it themes, formats, links, and
+explains itself for free. For anything else, write the component: a dumbbell
+or bullet chart, a waffle, a calendar, a network or tree, a custom map, an
+annotated diagram, a KPI tile or table cell of your own design. A component
+of 40–80 lines goes far, and it joins the app as the charts do when it
+follows this recipe:
 
-- `d3`: the full d3 v7 API. Compute scales, shapes, layouts, and projections in
-  `useMemo` and render SVG with React; size from the container.
+- Size from its container: `const [ref, { width }] = useMeasure();` on a
+  wrapping `div`, then draw once `width > 0` (`useSize(ref)` for a ref you
+  already have).
+- Compute scales, shapes, and layouts with d3 in `useMemo`, and render the
+  SVG with React (JSX elements, not `d3.select` edits).
+- Take colours from `useInks()` (both from `@df/chart`): `palette` (the series
+  colours, in the charts' order, so a category matches its colour in the
+  charts), `accent`, `text`, `muted`, `faint`, `grid`, `rule`, `surface`,
+  `positive`, `negative`, and `dark`. They are resolved colour values, so d3
+  can interpolate them, and they follow the AppTheme, dark ones included.
+  In CSS, the `--df-*` tokens say the same (Look, above).
+- Join the focus: dim marks outside it (`inFocus(row, focus)`), and set it on
+  click (`onFocus({state: {in: [row.state]}})`; the same mark again clears
+  it). Put MUI's `Tooltip` around a mark for its values, and format them with
+  `format`. Text at 11–12 px in `text` or `muted`; gridlines in `grid`.
+
+```jsx
+// A dumbbell chart: each state's value in two periods, joined by a line.
+function Dumbbell({ rows, focus, onFocus }) {
+  const [ref, { width }] = useMeasure();
+  const inks = useInks();
+  const row = 26;
+  const left = 110;
+  const height = rows.length * row + 24;
+  const x = useMemo(() => d3.scaleLinear()
+    .domain([0, d3.max(rows, d => Math.max(d.before, d.after)) || 1])
+    .nice()
+    .range([left, Math.max(left + 1, width - 40)]), [rows, width]);
+  return (
+    <div ref={ref}>
+      {width > 0 && (
+        <svg width={width} height={height} fontSize={12} role="img" aria-label="By state">
+          {x.ticks(5).map(tick => (
+            <g key={tick} transform={`translate(${x(tick)},0)`}>
+              <line y2={height - 24} stroke={inks.grid} />
+              <text y={height - 6} textAnchor="middle" fill={inks.muted} fontSize={11}>{tick}</text>
+            </g>
+          ))}
+          {rows.map((d, i) => {
+            const y = i * row + row / 2;
+            const picked = focus?.state?.in?.[0] === d.state;
+            return (
+              <Tooltip key={d.state} title={`${d.state}: ${d.before} → ${d.after}`}>
+                <g
+                  opacity={!focus || inFocus(d, focus) ? 1 : 0.25}
+                  onClick={() => onFocus(picked ? null : { state: { in: [d.state] } })}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <rect y={y - row / 2} width={width} height={row} fill="transparent" />
+                  <text x={left - 10} y={y} dy="0.35em" textAnchor="end" fill={inks.text}>
+                    {d.state}
+                  </text>
+                  <line x1={x(d.before)} x2={x(d.after)} y1={y} y2={y} stroke={inks.rule} />
+                  <circle cx={x(d.before)} cy={y} r={5} fill={inks.palette[2]} />
+                  <circle cx={x(d.after)} cy={y} r={5} fill={inks.accent} />
+                </g>
+              </Tooltip>
+            );
+          })}
+        </svg>
+      )}
+    </div>
+  );
+}
+```
+
+Give it a key like any chart (a `div className="app-legend"` with swatches in
+`var(--df-palette-3)` and `var(--df-primary)`), a tile heading that states its
+finding, and the query's loading state (`Skeleton`) while its rows load.
+
+- `d3`: the full d3 v7 API (scales, shapes, layouts, projections, `rollups`).
 - `lodash`: `import _ from 'lodash'` or named imports (`groupBy`, `sumBy`,
   `orderBy`, …) for shaping query results. Only the `lodash` module path.
 - `@df/geo`: boundaries for d3 maps. `countries()` and `states()` return GeoJSON
@@ -692,7 +892,6 @@ networks, trees, annotated diagrams).
 import { useState } from 'react';
 import {
   Container,
-  Divider,
   Grid,
   Paper,
   Stack,
@@ -701,10 +900,13 @@ import {
 import { useQuery } from '@df/data';
 import {
   AppHeader,
-  DataTable,
+  BarList,
   DateRange,
   FilterBar,
   FlintChart,
+  FocusChips,
+  Kpi,
+  KpiStrip,
   Segmented,
   ValueSelect,
   inFocus,
@@ -739,52 +941,82 @@ function Tile({ title, subtitle, caption, height = '100%', children }) {
   );
 }
 
+const total = (rows, field) => rows.reduce((sum, row) => sum + row[field], 0);
+const largest = (rows, field) => rows.reduce((best, row) => (
+  !best || row[field] > best[field] ? row : best
+), null);
+// The same month a year earlier, for 'YYYY-MM' months.
+const yearBefore = month => month && `${Number(month.slice(0, 4)) - 1}${month.slice(4)}`;
+
 export default function App() {
   const [region, setRegion] = useState('');
   const [metric, setMetric] = useState('revenue');
-  // The period frames the trend in place (view) rather than querying again.
+  // The period frames the trend in place (view) and narrows the other views.
   const [period, setPeriod] = useState(null);
-  const filters = queryFilters({ region });
-  const value = `${metric}_sum`;
+  // A product picked in the list: one focus, shared by the views.
+  const [focus, setFocus] = useState(null);
   const measure = METRICS.find(option => option.value === metric);
+  const value = `${metric}_sum`;
   const aggregates = [{ op: 'sum', field: metric }];
+  // A focus names values as `{product: {in: ['Desk']}}`: the one product picked, or ''.
+  const product = focus?.product?.in?.[0] ?? '';
   const monthly = useQuery('sales', {
     columns: ['month'],
-    filters,
+    filters: queryFilters({ region, product }),
     aggregates,
     orderBy: 'month',
   });
-  const byRegion = useQuery('sales', {
-    columns: ['region'],
-    aggregates,
-  });
-  const top = useQuery('sales', {
+  // A view that picks something leaves out its own filter, so it keeps every choice.
+  const byProduct = useQuery('sales', {
     columns: ['product'],
-    filters,
+    filters: queryFilters({ region, month: { range: period } }),
     aggregates,
-    orderBy: [{ field: value, descending: true }],
-    limit: 8,
   });
-  // The figures for the framed period come from the rows already loaded.
-  const rows = monthly.rows.filter(row => inFocus(row, { month: { range: period } }));
-  const total = rows.reduce((sum, row) => sum + row[value], 0);
-  const first = rows[0]?.[value];
-  const last = rows[rows.length - 1]?.[value];
-  const change = first ? (last - first) / first : null;
+  const byRegionMonth = useQuery('sales', {
+    columns: ['region', 'month'],
+    filters: queryFilters({ product, month: { range: period } }),
+    aggregates,
+    orderBy: 'month',
+  });
+
+  // Every figure comes from the rows: the framed months, and the year before them.
+  const months = monthly.rows.filter(row => inFocus(row, { month: { range: period } }));
+  const latest = months[months.length - 1];
+  const recent = months.slice(-12);
+  const before = monthly.rows.filter(row => (
+    recent.length === 12 && row.month >= yearBefore(recent[0].month) && row.month < recent[0].month
+  ));
+  const lastYear = monthly.rows.find(row => row.month === yearBefore(latest?.month));
+  const peak = largest(months, value);
+  const average = months.length ? total(months, value) / months.length : null;
+  const topProduct = largest(byProduct.rows, value);
+  const productShare = topProduct && topProduct[value] / total(byProduct.rows, value);
+  const regionTotals = Object.values(byRegionMonth.rows.reduce((sums, row) => {
+    const sum = (sums[row.region]?.[value] ?? 0) + row[value];
+    sums[row.region] = { region: row.region, [value]: sum };
+    return sums;
+  }, {}));
+  const topRegion = largest(regionTotals, value);
+  const regionShare = topRegion && topRegion[value] / total(regionTotals, value);
+  const yearChange = before.length === 12 ? total(recent, value) / total(before, value) - 1 : null;
+  // The headline states the finding, computed from the rows it shows.
+  const headline = yearChange === null
+    ? `${measure.label} by month, region, and product`
+    : `${measure.label} ${yearChange >= 0 ? 'up' : 'down'} ${format.percent(Math.abs(yearChange))}`
+      + ' on the year before';
+  const unit = metric === 'revenue' ? 'compact' : 'number';
 
   return (
     <Container maxWidth="lg" sx={{ py: 3 }}>
       <Stack spacing={3}>
         <AppHeader
           kicker="Sales"
-          title={change > 0
-            ? `Revenue grew ${format.percent(change)} over the period`
-            : 'Monthly sales'}
-          deck={`${measure.label} by month, region, and product.`}
-          period={[rows[0]?.month, rows[rows.length - 1]?.month]}
+          title={headline}
+          deck="Monthly sales by region and product, the last 12 months against the 12 before."
+          period={[months[0]?.month, latest?.month]}
           source="sales table"
-          where={{ region, month: { range: period } }}
-          labels={{ region: 'Region', month: 'Period' }}
+          where={{ region, product, month: { range: period } }}
+          labels={{ region: 'Region', product: 'Product', month: 'Period' }}
         />
         <FilterBar>
           <ValueSelect
@@ -807,70 +1039,101 @@ export default function App() {
             value={period}
             onChange={setPeriod}
           />
+          <FocusChips focus={focus} onChange={setFocus} labels={{ product: 'Product' }} />
         </FilterBar>
-        <Paper variant="outlined">
-          <Stack
-            direction={{ xs: 'column', sm: 'row' }}
-            divider={<Divider flexItem orientation="vertical" />}
-          >
-            {[
-              ['Total', format.compact(total), `${rows.length} months`],
-              ['Latest month', format.compact(last), rows[rows.length - 1]?.month],
-              ['Change', change === null ? '—' : format.percent(change), 'first to last month'],
-            ].map(([label, figure, note]) => (
-              <Stack key={label} spacing={0.25} sx={{ flex: 1, minWidth: 0, px: 2, py: 1.5 }}>
-                <Typography variant="body2" color="text.secondary">{label}</Typography>
-                <Typography variant="h4" fontWeight={600} lineHeight={1.15}>{figure}</Typography>
-                <Typography variant="caption" color="text.secondary">{note}</Typography>
-              </Stack>
-            ))}
-          </Stack>
-        </Paper>
+        <KpiStrip>
+          <Kpi
+            label={`${measure.label}, last 12 months`}
+            value={recent.length ? total(recent, value) : null}
+            format={unit}
+            previous={before.length === 12 ? total(before, value) : null}
+            vs="the 12 before"
+            trend={months}
+            x="month"
+            y={value}
+          />
+          <Kpi
+            label={`Latest month, ${latest?.month ?? ''}`}
+            value={latest?.[value]}
+            format={unit}
+            previous={lastYear?.[value]}
+            vs={lastYear?.month}
+          />
+          <Kpi
+            label={`Top product: ${topProduct?.product ?? '—'}`}
+            value={productShare}
+            format="percent"
+            note={`${format.compact(topProduct?.[value])} in the period`}
+          />
+          <Kpi
+            label={`Top region: ${topRegion?.region ?? '—'}`}
+            value={topRegion?.[value]}
+            format={unit}
+            note={`${format.percent(regionShare)} of the total`}
+          />
+        </KpiStrip>
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 8 }}>
-            <Tile title="Monthly trend" subtitle={`${measure.label} per month`} height={380}>
+            <Tile
+              title={peak ? `${measure.label} peaked in ${peak.month}` : 'Monthly trend'}
+              subtitle={`${measure.label} per month${product ? `, ${product}` : ''}; drag to zoom`}
+            >
               <FlintChart
                 chartType="Line Chart"
                 height="fill"
                 query={monthly}
                 encodings={{ x: 'month', y: value }}
+                semanticTypes={{ month: 'YearMonth', [value]: measure.type }}
+                labels={{ month: '', [value]: '' }}
                 view={{ month: period }}
                 onView={view => setPeriod(view ? view.month : null)}
-                semanticTypes={{ month: 'YearMonth', [value]: measure.type }}
-                labels={{ month: '', [value]: measure.label }}
+                annotations={peak ? [
+                  { at: { month: peak.month }, text: `Peak: ${format.compact(peak[value])}` },
+                  { y: Math.round(average), text: 'Monthly average', dashed: true },
+                ] : []}
               />
             </Tile>
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
             <Tile
-              title="By region"
-              subtitle={`${measure.label}, all months; click a region to filter`}
-              height={380}
+              title={topProduct
+                ? `${topProduct.product} brings ${format.percent(productShare)}`
+                : 'Products'}
+              subtitle={`${measure.label} by product; click one to focus`}
             >
-              <FlintChart
-                chartType="Bar Chart"
-                height="fill"
-                query={byRegion}
-                encodings={{ x: 'region', y: value }}
-                semanticTypes={{ [value]: measure.type }}
-                labels={{ region: '', [value]: measure.label }}
-                select
-                onSelect={values => setRegion(values[0]?.region ?? '')}
+              <BarList
+                query={byProduct}
+                label="product"
+                value={value}
+                format={unit}
+                focus={focus}
+                onFocus={setFocus}
               />
             </Tile>
           </Grid>
         </Grid>
-        <Tile title="Top products" subtitle={`${measure.label}, the 8 largest`}>
-          <DataTable
-            query={top}
-            columns={[
-              { field: 'product', label: 'Product' },
-              { field: value, label: 'Total', format: 'compact', bar: true },
-            ]}
+        <Tile
+          title={topRegion
+            ? `${topRegion.region} leads with ${format.percent(regionShare)} of the total`
+            : 'By region'}
+          subtitle={`${measure.label} by region and month; click a cell to filter by its region`}
+        >
+          <FlintChart
+            chartType="Heatmap"
+            height={200}
+            query={byRegionMonth}
+            encodings={{ x: 'month', y: 'region', color: value }}
+            semanticTypes={{ month: 'YearMonth', [value]: measure.type }}
+            labels={{ month: '', region: '', [value]: measure.label }}
+            // The region picked, or else the one the title names.
+            focus={{ region: region || topRegion?.region }}
+            select
+            onSelect={values => setRegion(values[0]?.region ?? '')}
           />
         </Tile>
-        <Typography variant="caption" color="text.secondary">
-          Source: sales table. Months without orders are omitted.
+        <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 720 }}>
+          Changes compare the last 12 months shown with the 12 months before them.
+          Regions and products narrow every view except their own.
         </Typography>
       </Stack>
     </Container>
@@ -1019,17 +1282,24 @@ export default function App() {
 ## Quality checklist
 
 - An `AppHeader` opens the app: a story, panel, or deck states its finding
-  in the title; a dashboard names what it monitors; the deck gives measure,
-  unit, scope, and period; the context line gives the period, count, and
-  source, and `where` the active filters. 3–5 KPIs lead with the key numbers,
-  their units and period, and a change when change matters.
+  in the title; a dashboard states its current finding or names what it
+  monitors; the deck gives measure, unit, scope, and period; the context line
+  gives the period, count, and source, and `where` the active filters. 3–5 KPIs lead with the key numbers,
+  each read against something: a previous period, a target, or a sparkline.
 - A `FilterBar` on top, KPIs, then one primary chart tile with supporting tiles
-  beside or below. Every tile has a heading that says what it shows and its
-  unit.
+  beside or below. Every tile's heading states its finding, computed from its
+  rows ("West leads with 35%"), and the subtitle its measure and unit. Each
+  chart marks what its heading names: `focus` on the bar or series it names,
+  an `annotations` note on the point (the peak, the latest value). Each tile
+  shows something the others do not (not one ranking as both a list and a
+  table).
 - Gaps come from `Stack`/`Grid` `spacing` and tile padding only; no margins on
   text, charts, or tiles; colors and fonts from the theme.
 - Controls apply immediately and default to a meaningful selection.
 - Skip nulls rather than treating them as zero; disclose truncated results.
+- Text fits the form (Words): on a dashboard, explorer, panel, or slides,
+  headings state findings, subtitles name the measure, and the closing note
+  has at most two lines of material caveats.
 - Format numbers with `@df/format` or DataTable `format`.
 - A story has 3–7 steps, each its text beside a chart showing something the
   others do not (a reveal, a focus, a mark, or a different chart); a story

@@ -44,10 +44,12 @@ export const destinationItems = (destinations: AppDestination[], onGoHome: (even
 
 /**
  * The app name; on a server with demos, a menu to switch between Data Formulator and each demo.
- * In a demo it reads as a breadcrumb, "Data Formulator / <demo>", the first part linking to the app.
+ * In a demo it reads as a breadcrumb, "Data Formulator / <demo>", the first part linking to the app;
+ * a demo's logo (`logo`) stands beside its name.
  */
-export const AppSwitcher: React.FC<{ appName: string; destinations: AppDestination[]; onGoHome: (event: React.MouseEvent) => void; compact?: boolean }> = ({
-    appName, destinations, onGoHome, compact,
+export const AppSwitcher: React.FC<{ appName: string; destinations: AppDestination[]; onGoHome: (event: React.MouseEvent) => void; compact?: boolean;
+    logo?: string | null }> = ({
+    appName, destinations, onGoHome, compact, logo,
 }) => {
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const standard = destinations.find(destination => destination.key === 'app');
@@ -66,6 +68,7 @@ export const AppSwitcher: React.FC<{ appName: string; destinations: AppDestinati
                 endIcon={<KeyboardArrowDownIcon sx={{ fontSize: iconVar.md, color: 'text.secondary' }} />}
                 sx={{ textTransform: 'none', minWidth: 0, height: compact ? undefined : 36, px: 0.75, gap: 0.25,
                     '& .MuiButton-endIcon': { ml: 0.25 }, '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' } }}>
+                {logo && <Box component="img" src={logo} alt="" sx={{ height: compact ? 22 : 28, width: 'auto', mr: 0.75, display: 'block', flexShrink: 0 }} />}
                 <Typography noWrap component="h1" title={appName} sx={{ maxWidth: compact ? { xs: 160, sm: 320 } : 360, ...nameSx }}>
                     {appName}
                 </Typography>

@@ -53,15 +53,21 @@ STORIES = HERE / "stories"
 ISO_NUMERIC = HERE / "iso3166_numeric.csv"
 BASE_URL = "https://download.uis.unesco.org/bdds/202602/"
 
-# Bulk dataset code -> (table prefix, display name)
+# Bulk dataset code -> (table prefix, display name, display name of its `<prefix>_indicators` table).
+# The indicators table lists every indicator, so its name says it is the whole catalog, not a query result.
 DATASETS = {
-    "SDG": ("sdg4", "Education: SDG 4 global and thematic indicators"),
-    "OPRI": ("opri", "Education: other policy-relevant indicators (OPRI)"),
-    "SCN-SDG": ("rd_sdg", "Science: SDG 9.5 research and development"),
-    "SCN-OPRI": ("rd_opri", "Science: other policy-relevant R&D indicators"),
-    "SDG11": ("sdg11", "Culture: SDG 11.4 expenditure on cultural and natural heritage"),
-    "DEM": ("dem", "Demographic and socio-economic indicators"),
+    "SDG": ("sdg4", "Education: Sustainable Development Goal 4 (SDG 4) global and thematic indicators",
+            "All SDG 4 education indicators (catalog)"),
+    "OPRI": ("opri", "Education: other policy-relevant indicators (OPRI)", "All OPRI education indicators (catalog)"),
+    "SCN-SDG": ("rd_sdg", "Science: Sustainable Development Goal 9.5 (SDG 9.5) research and development",
+                "All SDG 9.5 R&D indicators (catalog)"),
+    "SCN-OPRI": ("rd_opri", "Science: other policy-relevant R&D indicators", "All other R&D indicators (catalog)"),
+    "SDG11": ("sdg11", "Culture: Sustainable Development Goal 11.4 (SDG 11.4) expenditure on cultural and natural "
+              "heritage", "All SDG 11.4 heritage indicators (catalog)"),
+    "DEM": ("dem", "Demographic and socio-economic indicators", "All demographic indicators (catalog)"),
 }
+# Table name -> the name the app shows for it (tables not listed show their name).
+DISPLAY_NAMES = {f"{prefix}_indicators": catalog for prefix, _, catalog in DATASETS.values()}
 
 # Background notes: local name -> download name
 DOCS = {
@@ -139,7 +145,7 @@ def write_table(con, workspace, name: str, sql: str, description: str) -> int:
 
 
 def dataset_tables(con, workspace, folder: Path, code: str) -> list[tuple[str, int, str]]:
-    prefix, title = DATASETS[code]
+    prefix, title, _ = DATASETS[code]
     country = csv(folder, code, "COUNTRY")
     label = csv(folder, code, "LABEL")
     national = csv(folder, code, "DATA_NATIONAL")
@@ -155,7 +161,7 @@ def dataset_tables(con, workspace, folder: Path, code: str) -> list[tuple[str, i
                 f"from {read_csv(national)}")
 
     name = f"{prefix}_indicators"
-    description = (f"{title}: one row per indicator with its label and national coverage "
+    description = (f"{title}: the full indicator catalog, one row per indicator with its label and national coverage "
                    f"(countries with data, first and last year, number of values). Search `indicator` "
                    f"to find indicator_id values for {prefix}_national"
                    + (f" and {prefix}_regional." if regional else "."))
@@ -253,10 +259,14 @@ def data_guide(starter: dict, profile: dict, tables: list[tuple[str, int, str]],
                             "values, and state which countries are included."]),
         "Coverage is sparse: when comparing countries, say which year each value is from (for example the "
         "latest year available since a cut-off).",
-        "For a world map, use a Choropleth with `id` = `countries.map_id` (join on country_id) and `color` = "
-        "the value; keep the country name in the table for the tooltip.",
-        "Cite the year range and \"UIS, February 2026 release\" with each result; name indicators in plain words "
-        "for readers and keep indicator_id codes and table names to your code.",
+        "For a world map, use the map skill (`write_map`) with a choropleth keyed by `country_id` (ISO 3166-1 "
+        "alpha-3, `keyType: iso3`); keep the country name in the table for the tooltip.",
+        "Labels ending \"(modelled data)\" (indicator_id with `MOD`) are UIS modelled estimates, often beside an "
+        "observed series: say which one you used, and call modelled values \"modelled estimates\" in the chart or "
+        "map subtitle and in the answer.",
+        "Cite the year range and \"UIS, February 2026 release\" with each result, with the indicator_id code(s) "
+        "used in that source line (for example \"Source: UIS, February 2026 release; indicator CR.MOD.3\"). Keep "
+        "titles and axis labels in plain words, and table and column names to your code.",
     ]
     lines = [
         f"# Data guide: {starter['title']}",
@@ -294,7 +304,7 @@ def session_state(workspace, starter: dict, order: list[str]) -> dict:
         input_tables.append({
             "kind": "input-table",
             "id": name,
-            "displayId": name,
+            "displayId": DISPLAY_NAMES.get(name, name),
             "source": {"kind": "workspace", "tableId": name},
             "snapshot": {
                 "columns": [{"name": column.name, "type": "number" if column.dtype in ("integer", "number") else "string"}
@@ -366,8 +376,11 @@ def signed_here(table: dict) -> dict:
     return {**table, "derive": {**derive, "codeSignature": sign_code(derive["code"])}}
 
 
-def build_story(story: dict, starter: dict, work: Path, content: Path) -> Path:
-    """A story's session: its dataset's session with the story's seed (question, answer, charts) added."""
+def build_story(story: dict, starter: dict, work: Path, content: Path, theme_id: str | None = None) -> Path:
+    """A story's session: its dataset's session with the story's seed (question, answer, charts) added.
+
+    With the site's chart theme (``theme_id``), the seed's charts are drawn in it, like charts made on the site.
+    """
     seed = STORIES / story["id"]
     state = json.loads((seed / "state.json").read_text(encoding="utf-8"))
     workspace = WorkspaceManager(work / "stories").create_and_open_workspace(story["id"], "local:site-builder")
@@ -376,6 +389,8 @@ def build_story(story: dict, starter: dict, work: Path, content: Path) -> Path:
         workspace.write_parquet_from_arrow(pq.read_table(path), path.stem)
     state = {**state, "derivedTables": [signed_here(table) for table in state.get("derivedTables") or []],
              "inputTables": dataset["inputTables"], "workspaceItemOrder": dataset["workspaceItemOrder"]}
+    if theme_id:
+        state["charts"] = [{**chart, "themeId": theme_id} if isinstance(chart, dict) else chart for chart in state.get("charts") or []]
     target = content / story["file"]
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(workspace.export_session_zip(state).getvalue())
@@ -449,7 +464,7 @@ def install(sites: Path | None = None, raw: Path | None = None, *, only: list[st
                     continue
                 for story in starter.get("stories") or []:
                     if story.get("file") and (STORIES / story["id"] / "state.json").is_file():
-                        target = build_story(story, starter, Path(tmp), content)
+                        target = build_story(story, starter, Path(tmp), content, (profile.get("chart_theme") or {}).get("id"))
                         log(f"  story {story['id']} -> {target.name} ({target.stat().st_size / 2**20:.1f} MB)")
 
         install_static(profile, site)

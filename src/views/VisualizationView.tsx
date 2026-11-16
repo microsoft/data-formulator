@@ -2,7 +2,8 @@
 // Licensed under the MIT License.
 
 import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { chartThemeKey, useSavedThemes } from '../app/savedThemes';
+import { chartThemeKey, resolvedChartTheme, useSavedThemes } from '../app/savedThemes';
+import { chartCategoryColors } from '../app/categoryColors';
 
 import {
     Box,
@@ -639,7 +640,17 @@ const VegaChartRenderer: FC<{
     const [assemblyError, setAssemblyError] = useState<string>();
     // The saved theme the chart (or the preview) names: the chart is drawn again when it changes.
     useSavedThemes();
-    const themeKey = chartThemeKey(themePreview?.active ? themePreview.themeId : chart.themeId);
+    const themeId = themePreview?.active ? themePreview.themeId : chart.themeId;
+    const themeKey = chartThemeKey(themeId);
+    // Category values keep the colours the session gave them; values drawn for the first time are registered.
+    const sessionColors = useSelector(dfSelectors.getSessionCategoryColors);
+    const categoryColors = useMemo(() => chartCategoryColors(sessionColors, chart.encodingMap, conceptShelfItems, visTableRows,
+        fieldSemantics, resolvedChartTheme(themeId)), [sessionColors, chart.encodingMap, conceptShelfItems, visTableRows, fieldSemantics, themeId, themeKey]);
+    const valueColorsKey = JSON.stringify(categoryColors.colors ?? null);
+    const valueColors = useMemo(() => categoryColors.colors, [valueColorsKey]);
+    useEffect(() => {
+        if (categoryColors.register) dispatch(dfActions.registerCategoryColors(categoryColors.register));
+    }, [categoryColors.register, dispatch]);
 
     useEffect(() => {
         setAssemblyError(undefined);
@@ -675,7 +686,8 @@ const VegaChartRenderer: FC<{
                 fieldSemantics,
                 insightTitle,
                 insightSubtitle,
-                themePreview?.active ? themePreview.themeId : chart.themeId,
+                themeId,
+                valueColors,
             );
         } catch (error) {
             console.warn('VegaChartRenderer: chart assembly failed', error);
@@ -748,7 +760,7 @@ const VegaChartRenderer: FC<{
             el.innerHTML = '';
         };
 
-    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, chart.themeId, themeKey, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, insightTitle, insightSubtitle, themePreview?.active, themePreview?.themeId, fieldSemantics, onSpecReady, elementId]);
+    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, chart.themeId, themeKey, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, insightTitle, insightSubtitle, themePreview?.active, themePreview?.themeId, fieldSemantics, onSpecReady, elementId, valueColors]);
 
     // Resize the drawn canvas instead of recompiling. Overriding Vega's inline
     // width (with `height: auto` from the wrapper) scales the chart uniformly

@@ -314,3 +314,59 @@ def test_pinned_category_colours_are_checked() -> None:
     errors, _ = check_structure({"data": {"t": {"table": "t"}}, "layers": [
         {"type": "regions", "data": "t", "key": "state", "color": {"field": "winner", "colors": {"Republican": 3}}}]})
     assert any("color.colors must map category values" in error for error in errors)
+
+
+def test_fixed_scales_for_comparable_maps_are_checked() -> None:
+    from data_formulator.analyst.skills.map.templates import template_errors
+    from data_formulator.analyst.skills.map.validate import check_structure
+    base = {"template": "bubbles", "data": {"table": "t"}, "encoding": {"region": "country", "color": "rate", "size": "pop"}}
+    assert template_errors({**base, "properties": {"thresholds": [5, 10, 20], "domain": [0, 50], "sizeDomain": [0, 1e9]}}) == []
+    assert template_errors({**base, "properties": {"thresholds": [], "domain": [5, 1], "sizeDomain": [-1, 4]}}) == [
+        "properties.thresholds must list the colour class breaks as numbers, such as [10, 25, 50].",
+        "properties.domain must be [min, max] numbers with min < max.",
+        "properties.sizeDomain must be [low, high] numbers with 0 ≤ low < high."]
+    errors, _ = check_structure({"data": {"t": {"table": "t"}}, "layers": [
+        {"type": "bubbles", "data": "t", "key": "country", "size": {"field": "pop", "domain": [0, True]}}]})
+    assert any("size.domain must be [low, high]" in error for error in errors)
+
+
+def test_size_range_and_mark_size_are_checked() -> None:
+    from data_formulator.analyst.skills.map.templates import template_errors
+    from data_formulator.analyst.skills.map.validate import check_structure
+    base = {"template": "bubbles", "data": {"table": "t"}, "encoding": {"region": "country", "size": "pop"}}
+    assert template_errors({**base, "properties": {"sizeRange": [2, 24], "markSize": 4}}) == []
+    # Older maps' sizeMax still passes.
+    assert template_errors({**base, "properties": {"sizeMax": 20}}) == []
+    assert template_errors({**base, "properties": {"sizeRange": [24, 2], "markSize": 0}}) == [
+        "properties.sizeRange must be [smallest, largest] pixel sizes with 0 ≤ smallest ≤ largest.",
+        "properties.markSize must be a positive number of pixels."]
+    errors, _ = check_structure({"data": {"t": {"table": "t"}}, "layers": [
+        {"type": "bubbles", "data": "t", "key": "country", "size": {"field": "pop", "range": [-1, 10]}}]})
+    assert any("size.range must be [smallest, largest]" in error for error in errors)
+
+
+def test_a_spec_slider_on_the_time_field_refines_the_templates_slider() -> None:
+    from data_formulator.analyst.skills.map.templates import compile_template
+    compiled = compile_template({"template": "choropleth", "data": {"table": "t"}, "encoding": {"region": "fips", "color": "v", "time": "year"},
+                                 "controls": [{"type": "slider", "field": "year", "value": 2021}, {"type": "stats"}]})
+    sliders = [control for control in compiled["controls"] if control.get("type") == "slider"]
+    assert sliders == [{"type": "slider", "field": "year", "data": "main", "value": 2021}]
+
+
+def test_write_map_schema_offers_every_template() -> None:
+    import json
+    from pathlib import Path
+    from data_formulator.analyst.skills.map import templates
+    tools = json.loads((Path(templates.__file__).parent / "tools.json").read_text(encoding="utf-8"))
+
+    def enums(node):
+        if isinstance(node, dict):
+            if isinstance(node.get("template"), dict) and "enum" in node["template"]:
+                yield node["template"]["enum"]
+            for value in node.values():
+                yield from enums(value)
+        elif isinstance(node, list):
+            for value in node:
+                yield from enums(value)
+
+    assert [sorted(enum) for enum in enums(tools)] == [sorted(templates.TEMPLATES)]

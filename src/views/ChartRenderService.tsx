@@ -20,7 +20,8 @@
  */
 
 import { chartTitleFits } from '../components/ComponentType';
-import { chartThemeKey, refreshSavedThemes, useSavedThemes } from '../app/savedThemes';
+import { chartThemeKey, refreshSavedThemes, resolvedChartTheme, useSavedThemes } from '../app/savedThemes';
+import { chartCategoryColors, registerCategoryColors, type CategoryRegistration } from '../app/categoryColors';
 import { FC, useEffect, useRef, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
@@ -47,6 +48,8 @@ interface RenderJob {
     conceptShelfItems: FieldItem[];
     cacheKey: string;
     fieldSemantics?: Record<string, FieldSemanticsInfo>;
+    /** The session's colours for the chart's category values. */
+    valueColors?: Record<string, string>;
 }
 
 /**
@@ -155,6 +158,8 @@ export const ChartRenderService: FC = () => {
     // The canvas types fields (and so picks color scales) from these, so the
     // thumbnail must read them too or the two renders disagree.
     const tableSemantics = useSelector((state: DataFormulatorState) => state.tableSemantics);
+    // Category values keep their session colours in thumbnails too.
+    const sessionColors = useSelector(dfSelectors.getSessionCategoryColors);
     const chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
     const maxStretchFactor = useSelector((state: DataFormulatorState) => state.config.maxStretchFactor);
     const canvasChartWidth = useSelector((state: DataFormulatorState) => state.config.defaultChartWidth);
@@ -178,7 +183,7 @@ export const ChartRenderService: FC = () => {
     const prevChartIdsRef = useRef<Set<string>>(new Set());
 
     const processChart = useCallback(async (job: RenderJob) => {
-        const { chart, table, conceptShelfItems: items, cacheKey, fieldSemantics } = job;
+        const { chart, table, conceptShelfItems: items, cacheKey, fieldSemantics, valueColors } = job;
 
         // Skip if already rendering this chart
         if (renderingRef.current.has(chart.id)) return;
@@ -217,6 +222,7 @@ export const ChartRenderService: FC = () => {
                 titled ? chart.title : undefined,
                 titled ? chart.subtitle : undefined,
                 chart.themeId,
+                valueColors,
             );
 
             if (!fullSpec || fullSpec === "Table") return;
@@ -231,7 +237,7 @@ export const ChartRenderService: FC = () => {
                 const canvasSpec: any = assembleVegaChart(
                     chart.chartType, chart.encodingMap, items, visTableRows, table.metadata,
                     canvasChartWidth, canvasChartHeight, false, chart.config, 1, maxStretchFactor, undefined,
-                    fieldSemantics, titled ? chart.title : undefined, titled ? chart.subtitle : undefined, chart.themeId,
+                    fieldSemantics, titled ? chart.title : undefined, titled ? chart.subtitle : undefined, chart.themeId, valueColors,
                 );
                 if (canvasSpec && canvasSpec !== 'Table') {
                     const drawn = await measureHeadless(canvasSpec);
@@ -289,6 +295,9 @@ export const ChartRenderService: FC = () => {
 
         // Build render jobs for charts that need (re-)rendering
         const jobs: RenderJob[] = [];
+        // Charts register new category values in order, each seeing the slots the ones before it took.
+        let session = sessionColors;
+        const registrations: CategoryRegistration[] = [];
 
         for (const chart of charts) {
             // Skip non-renderable chart types
@@ -315,6 +324,12 @@ export const ChartRenderService: FC = () => {
                 ? `disp:${displayEntry.rows.length}/${displayEntry.totalCount}`
                 : `preview:${table.rows.length}`;
             const fieldSemantics = tableSemantics.find(info => info.tableId === table.id)?.fields;
+            const { colors: valueColors, register } = chartCategoryColors(session, chart.encodingMap, conceptShelfItems,
+                displayEntry?.rows ?? table.rows, fieldSemantics, resolvedChartTheme(chart.themeId));
+            if (register) {
+                registrations.push(register);
+                session = { ...session, registry: registerCategoryColors(session.registry, register) };
+            }
             const cacheKey = computeCacheKey(
                 chart.chartType,
                 chart.encodingMap,
@@ -324,7 +339,7 @@ export const ChartRenderService: FC = () => {
                 table.id,
                 table.metadata,
                 fieldSemantics,
-                `${chartThemeKey(chart.themeId)}|${chartTitleFits(chart) ? `${chart.title}|${chart.subtitle || ''}` : ''}`,
+                `${chartThemeKey(chart.themeId)}|${chartTitleFits(chart) ? `${chart.title}|${chart.subtitle || ''}` : ''}|${JSON.stringify(valueColors ?? null)}`,
                 `stretch:${maxStretchFactor ?? ''}|canvas:${canvasChartWidth}x${canvasChartHeight}`,
             );
 
@@ -343,8 +358,9 @@ export const ChartRenderService: FC = () => {
                 continue;
             }
 
-            jobs.push({ chart, table, conceptShelfItems, cacheKey, fieldSemantics });
+            jobs.push({ chart, table, conceptShelfItems, cacheKey, fieldSemantics, valueColors });
         }
+        for (const registration of registrations) dispatch(dfActions.registerCategoryColors(registration));
 
         // Process jobs sequentially to avoid overwhelming the browser
         // Use a small delay between renders to keep the UI responsive
@@ -364,7 +380,7 @@ export const ChartRenderService: FC = () => {
 
             return () => { cancelled = true; };
         }
-    }, [charts, tables, conceptShelfItems, tableSemantics, chartSynthesisInProgress, displayRowsTick, maxStretchFactor, canvasChartWidth, canvasChartHeight, processChart, dispatch, savedThemeList]);
+    }, [charts, tables, conceptShelfItems, tableSemantics, sessionColors, chartSynthesisInProgress, displayRowsTick, maxStretchFactor, canvasChartWidth, canvasChartHeight, processChart, dispatch, savedThemeList]);
 
     // This component renders nothing
     return null;

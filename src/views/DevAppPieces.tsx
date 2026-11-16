@@ -15,7 +15,7 @@ const GALLERY_CODE = `import { useState } from 'react';
 import { Box, Paper, Stack, Typography } from '@mui/material';
 import {
   AppHeader, BarList, DataTable, DateRange, FilterBar, FlintChart, FocusChips, NumberRange, Search, Segmented,
-  Sparkline, TargetBar, ValueChips, ValueSelect,
+  Kpi, KpiStrip, Sparkline, TargetBar, ValueChips, ValueSelect,
 } from '@df/chart';
 
 const REGIONS = ['North', 'South', 'East', 'West'];
@@ -107,6 +107,14 @@ export default function App() {
           <TargetBar value={14.3e6} target={15e6} />
           <TargetBar value={4.1} target={3.5} label="3.5 days" goodDirection="down" />
         </Stack>
+      </Piece>
+      <Piece name="KpiStrip" width={760}>
+        <KpiStrip>
+          <Kpi label="Revenue" value={byMonth[byMonth.length - 1].revenue} format="compact" previous={byMonth[byMonth.length - 13].revenue}
+            vs="a year earlier" trend={byMonth} x="month" y="revenue" />
+          <Kpi label="Return rate" value={0.043} format="percent:1" previous={0.051} vs="last year" good="down" />
+          <Kpi label="Orders" value={14.3e6} format="compact" target={15e6} note="Target for the year" />
+        </KpiStrip>
       </Piece>
       <Piece name="Sparkline" width={220}>
         <Sparkline data={byMonth} x="month" y="revenue" height={48} />

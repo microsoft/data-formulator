@@ -234,6 +234,24 @@ def test_frontend_config_passes_the_page_settings(tmp_path):
     assert config["disclaimer"] == "Check the source."
 
 
+def test_a_site_logo_and_chart_theme_reach_the_frontend(tmp_path):
+    theme = {"id": "demo-house", "label": "Demo house", "extends": "datawrapper", "ink": {"series": {"single": "#0069b4"}}}
+    (tmp_path / "content" / "demo" / "profile.yaml").write_text(
+        PROFILE + "logo: logo.svg\nchart_theme: " + json.dumps(theme) + "\n", encoding="utf-8")
+    release_dir = tmp_path / "content" / "demo" / "r1"
+    release_dir.mkdir(parents=True)
+    config = sites.site_frontend_config("demo")
+    assert config["chart_theme"] == theme
+    # The logo shows once its file is installed, and counts among the files the demo needs.
+    assert config["logo"] is None
+    assert "logo.svg" in sites.referenced_files(sites.site_profile("demo"))
+    (release_dir / "logo.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'/>", encoding="utf-8")
+    assert sites.site_frontend_config("demo")["logo"].startswith("/api/demos/demo/logo?v=")
+    response = _app().test_client().get("/api/demos/demo/logo")
+    assert response.status_code == 200
+    assert "default-src 'none'" in response.headers["Content-Security-Policy"]
+
+
 def test_a_default_demo_that_does_not_exist_is_reported(monkeypatch, caplog):
     monkeypatch.setenv("DF_SITE", "demo")
     with caplog.at_level("WARNING", logger="data_formulator.sites"):
@@ -253,6 +271,8 @@ def test_a_default_demo_that_does_not_exist_is_reported(monkeypatch, caplog):
     ("starters:\n  - id: culture\n    stories: oops\n", "'stories' is not a list"),
     ("links: https://example.org\n", "'links' is not a list"),
     ("starters:\n  - id: culture\n    stories:\n      - id: s1\n        headline: No prompt\n", "needs an 'id' and a 'prompt'"),
+    ("logo: logo.gif\n", "'logo' is not an image file name"),
+    ("chart_theme: {id: datawrapper, label: Copy}\n", "'chart_theme'"),
 ])
 def test_an_invalid_profile_disables_the_site_without_breaking_requests(tmp_path, monkeypatch, caplog, text, problem):
     (tmp_path / "content" / "demo" / "profile.yaml").write_text(text, encoding="utf-8")

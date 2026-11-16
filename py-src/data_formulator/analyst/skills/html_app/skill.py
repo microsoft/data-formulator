@@ -52,6 +52,20 @@ _BARE_IMPORT_RE = re.compile(r"^\s*import\s*['\"]([^'\"]+)['\"]", re.MULTILINE)
 _REQUIRE_RE = re.compile(r"\b(?:require|import)\s*\(\s*['\"]([^'\"]+)['\"]\s*\)")
 _DEFAULT_EXPORT_RE = re.compile(r"^\s*export\s+default\b", re.MULTILINE)
 _HEX_COLOR_RE = re.compile(r"['\"]#[0-9a-fA-F]{3,8}['\"]")
+# Where an app states colours on purpose: a theme object (`extends`, `ink`) and a category's `colors`.
+_THEME_KEY_RE = re.compile(r"\b(?:extends|ink|colors)\s*:")
+# CSS that reaches into MUI's or the charts' own markup, sets the theme's tokens, or names a font.
+_MUI_CLASS_RE = re.compile(r"\.Mui[A-Z]\w*")
+_CHART_INTERNALS_RE = re.compile(r"""['"`][^'"`\n]*(?:\[data-flint-chart\]|\.vega-embed|\bsvg\s+(?:text|path|rect|g)\b)[^'"`\n]*['"`]\s*:""")
+_TOKEN_SET_RE = re.compile(r"""['"]--df-[\w-]+['"]\s*:""")
+# The prose an app writes: JSX text and string literals of several words (not SQL), and caveat alerts.
+_JSX_TEXT_RE = re.compile(r">([^<>{}]*[A-Za-z][^<>{}]*)<")
+_STRING_RE = re.compile(r"'((?:[^'\\\n]|\\.)*)'|\"((?:[^\"\\\n]|\\.)*)\"|`((?:[^`\\]|\\.)*)`")
+_SQL_RE = re.compile(r"\b(?:SELECT|FROM|WHERE|GROUP\s+BY|WITH|CASE\s+WHEN|JOIN|ORDER\s+BY)\b")
+_CAVEAT_ALERT_RE = re.compile(r"<Alert\b[^>]*\bseverity=[\"'](?:info|warning)[\"']")
+MAX_TEXT_WORDS = 40
+MAX_APP_WORDS = 350
+_FONT_LITERAL_RE = re.compile(r"""fontFamily\s*:\s*['"`]([^'"`]*)['"`]""")
 
 _MANIFEST_RE = re.compile(
     r"<script\b[^>]*\bid\s*=\s*[\"']?" + MANIFEST_ID + r"[\"']?[^>]*>(.*?)</script\s*>",
@@ -166,15 +180,111 @@ def validate_react_app(code: str) -> None:
         raise ValueError("The app must `export default` a React component")
 
 
+def _without_theme_objects(code: str) -> str:
+    """The code without the object literals that hold a theme or a category's colours, where colours belong."""
+    spans: list[tuple[int, int]] = []
+    for match in _THEME_KEY_RE.finditer(code):
+        # The object the key is in: back to its unmatched `{`, then on to the matching `}`.
+        depth, start = 0, None
+        for index in range(match.start() - 1, -1, -1):
+            if code[index] == "}":
+                depth += 1
+            elif code[index] == "{":
+                if depth == 0:
+                    start = index
+                    break
+                depth -= 1
+        if start is None:
+            continue
+        depth, end = 0, None
+        for index in range(start, len(code)):
+            if code[index] == "{":
+                depth += 1
+            elif code[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    end = index + 1
+                    break
+        if end is not None:
+            spans.append((start, end))
+    kept, cursor = [], 0
+    for start, end in sorted(spans):
+        if start >= cursor:
+            kept.append(code[cursor:start])
+            cursor = end
+        else:
+            cursor = max(cursor, end)
+    kept.append(code[cursor:])
+    return "".join(kept)
+
+
+def _prose(code: str) -> list[str]:
+    """The pieces of text an app shows: JSX text and string literals that read as words, not code or SQL."""
+    pieces = [match.group(1) for match in _JSX_TEXT_RE.finditer(code)]
+    for match in _STRING_RE.finditer(code):
+        text = next(group for group in match.groups() if group is not None)
+        if _SQL_RE.search(text):
+            continue
+        text = re.sub(r"\$\{[^}]*\}", "x", text)
+        if len(re.findall(r"[A-Za-z]{2,}", text)) >= 3 and " " in text:
+            pieces.append(text)
+    return [" ".join(piece.split()) for piece in pieces if piece.strip()]
+
+
 def lint_react_app(code: str, tables: list[str]) -> list[str]:
     warnings = [message for pattern, message in _LINT_RULES if pattern.search(code)]
     if tables and not re.search(r"\b(?:useQuery|useDistinct|useTable|useSql)\s*\(", code):
         warnings.append("The app declares tables but never reads them; use useQuery, useSql, useDistinct, or useTable from @df/data.")
-    colors = sorted({color.strip("'\"").lower() for color in _HEX_COLOR_RE.findall(code)})
+    styled = _without_theme_objects(code)
+    colors = sorted({color.strip("'\"").lower() for color in _HEX_COLOR_RE.findall(styled)})
     if len(colors) > MAX_COLOR_LITERALS:
         warnings.append(
-            f"The app hardcodes {len(colors)} colors ({', '.join(colors[:5])}); use MUI theme colors such as "
-            "'primary.main', 'text.secondary', 'success.main' or 'divider', so the app matches Data Formulator and its AppTheme."
+            f"The app hardcodes {len(colors)} colors ({', '.join(colors[:5])}) in its styles; read them from the theme "
+            "('primary.main', 'text.secondary', 'divider'; var(--df-palette-1) in CSS; useInks() in d3), and state "
+            "the app's own colours once, in its AppTheme theme object or a category's `colors`."
+        )
+    if _MUI_CLASS_RE.search(code):
+        warnings.append(
+            "The app styles MUI's internal classes (.Mui…), which change between versions and fight the theme; "
+            "use component props, `sx` on the component itself, or the AppTheme theme object."
+        )
+    if _CHART_INTERNALS_RE.search(code):
+        warnings.append(
+            "The app styles the charts' own SVG; change a FlintChart's look through its `theme` or the AppTheme "
+            "(scope the app's own SVG styles to its own class)."
+        )
+    if _TOKEN_SET_RE.search(code):
+        warnings.append(
+            "The app sets --df-* tokens; they are read-only outputs of the theme (MUI and the charts do not read "
+            "them back). Change colours and fonts in the AppTheme theme object, and name the app's own variables "
+            "with another prefix (--app-…)."
+        )
+    pieces = _prose(code)
+    words = [len(piece.split()) for piece in pieces]
+    long = [piece for piece, count in zip(pieces, words) if count > MAX_TEXT_WORDS]
+    if long:
+        warnings.append(
+            f"The app has {len(long)} text(s) over {MAX_TEXT_WORDS} words (\"{long[0][:80]}…\"). On a dashboard, explorer, "
+            "panel, or slides, keep headings, subtitles, and notes short, with only caveats that change how a number reads "
+            "(Words in the skill); a data story's step text may run longer."
+        )
+    if sum(words) > MAX_APP_WORDS:
+        warnings.append(
+            f"The app writes about {sum(words)} words of text. A dashboard, explorer, panel, or slides reads at a glance "
+            "with about 150 outside its charts: cut method notes, filter explanations, missing-value counts, and "
+            "disclaimers. A data story may need more."
+        )
+    # An alert shown under a condition (a truncated query) is fine; one always shown is a caveat in a box.
+    if any(not re.search(r"(?:&&|\?|:)\s*\(?\s*$", code[:match.start()]) for match in _CAVEAT_ALERT_RE.finditer(code)):
+        warnings.append(
+            "The app shows an info or warning Alert; a caveat belongs in the closing note, in a line, and an Alert only "
+            "for a failed query or data that cannot answer what the page asks."
+        )
+    if any("var(--df-font" not in family and family.strip().lower() not in ("inherit", "monospace")
+           for family in _FONT_LITERAL_RE.findall(code)):
+        warnings.append(
+            "The app names a font; fonts come from the theme (set them in the AppTheme theme object's `type`), "
+            "or use var(--df-font), var(--df-font-display), or var(--df-font-mono)."
         )
     return warnings
 

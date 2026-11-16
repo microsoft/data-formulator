@@ -68,6 +68,7 @@ def test_sql_caps_rows_and_reports_truncation(workspace) -> None:
     ("select * from private", "'private' is not declared"),
     ("select * from read_parquet('/etc/passwd')", "cannot call table functions"),
     ("select * from duckdb_settings()", "cannot call table functions"),
+    ("select t from sales, unnest(string_split(region, ',')) as u(t)", "use unnest\\(\\.\\.\\.\\) in the SELECT list"),
     ("select * from main.sales", "by name only"),
     ("delete from sales", "exactly one SELECT"),
     ("select 1; select 2", "exactly one SELECT"),
@@ -76,6 +77,10 @@ def test_sql_caps_rows_and_reports_truncation(workspace) -> None:
 def test_sql_reads_only_declared_tables(sql, message) -> None:
     with pytest.raises(ValueError, match=message):
         validate_app_sql(sql, ["sales"])
+
+
+def test_sql_allows_unnest_in_the_select_list() -> None:
+    validate_app_sql("select unnest(string_split(region, ',')) as part from sales", ["sales"])
 
 
 def test_sql_runs_on_a_locked_connection(workspace) -> None:

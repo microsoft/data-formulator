@@ -109,6 +109,10 @@ const DiagnosticsViewer: React.FC<{ diagnostics: any }> = React.memo(({ diagnost
     );
 });
 
+/** The badge follows the latest message: an error that has since been followed by other news no longer reads as the current state. */
+export const messageBadgeSeverity = (messages: Message[]): Message['type'] | 'default' =>
+    messages.length ? messages[messages.length - 1].type : 'default';
+
 export const MessageSnackbar = React.memo(function MessageSnackbar() {
   
     const messages = useSelector((state: DataFormulatorState) => state.messages);
@@ -140,13 +144,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
 
     const messagesScrollRef = React.useRef<HTMLDivElement>(null);
 
-    const buttonSeverity: "error" | "warning" | "info" | "success" | "default" = React.useMemo(() => {
-        if (messages.length === 0) return "default";
-        if (messages.some(m => m.type === "error")) return "error";
-        if (messages.some(m => m.type === "warning")) return "warning";
-        if (messages.some(m => m.type === "info")) return "info";
-        return "success";
-    }, [messages]);
+    const buttonSeverity = messageBadgeSeverity(messages);
 
     React.useEffect(()=>{
         if (displayedMessageIdx < messages.length) {

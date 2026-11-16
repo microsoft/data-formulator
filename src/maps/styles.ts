@@ -4,14 +4,15 @@
 /**
  * How a map looks: a basemap style (water, land, borders, place labels, panels) and a Flint chart
  * theme (text ink, single and categorical colours, sequential and diverging ramps), the same
- * themes charts use. A map follows the app's default chart theme unless its spec names one.
+ * themes charts use. A map follows the app's default chart theme unless its spec names one, and is
+ * drawn dark (DEFAULT_MAP_STYLE) unless its spec names a style or sets light street tiles.
  */
 
 import * as d3 from 'd3';
 import { resolvedChartTheme } from '../app/savedThemes';
 
 import type { Palette } from './scales';
-import type { MapStyleName } from './spec';
+import { DEFAULT_MAP_STYLE, type MapStyleName } from './spec';
 
 export interface MapStyle {
     id: MapStyleName;
@@ -82,7 +83,13 @@ export const MAP_STYLE_PRESETS: Record<MapStyleName, MapStyle> = {
 /** What fills the frame: water on full-bleed styles, but the page around a globe. */
 export const frameBackground = (style: MapStyle, projection: string) => projection === 'orthographic' ? style.page : style.background;
 
-export const mapStyle = (name: MapStyleName | undefined): MapStyle => MAP_STYLE_PRESETS[name ?? 'light'] ?? MAP_STYLE_PRESETS.light;
+export const mapStyle = (name: MapStyleName | undefined): MapStyle => MAP_STYLE_PRESETS[name ?? DEFAULT_MAP_STYLE] ?? MAP_STYLE_PRESETS[DEFAULT_MAP_STYLE];
+
+/** The style a view names; without one, the look that matches its street tiles (light tiles take the light style). */
+export const viewStyleName = (view: { style?: MapStyleName; tiles?: string }): MapStyleName =>
+    view.style ?? (view.tiles === 'light' || view.tiles === 'streets' ? 'light' : DEFAULT_MAP_STYLE);
+
+export const viewStyle = (view: { style?: MapStyleName; tiles?: string }): MapStyle => mapStyle(viewStyleName(view));
 
 export interface ThemeInk {
     /** Title and legend text. */

@@ -18,23 +18,39 @@ export interface SavedTheme {
 }
 
 let themes: SavedTheme[] = [];
+// The site's own theme (a demo's `chart_theme`), listed with the user's and used by id the same way.
+let siteThemes: SavedTheme[] = [];
+let listed: SavedTheme[] = [];
 const listeners = new Set<() => void>();
-const emit = () => listeners.forEach(listener => listener());
+const emit = () => {
+    listed = [...siteThemes, ...themes.filter(theme => !siteThemes.some(site => site.id === theme.id))];
+    listeners.forEach(listener => listener());
+};
 
 const subscribe = (listener: () => void) => {
     listeners.add(listener);
     return () => { listeners.delete(listener); };
 };
 
-/** The saved themes, re-rendering when they change. */
-export const useSavedThemes = () => useSyncExternalStore(subscribe, () => themes, () => themes);
+/** The saved themes (the site's first), re-rendering when they change. */
+export const useSavedThemes = () => useSyncExternalStore(subscribe, () => listed, () => listed);
 
-export const savedThemes = () => themes;
+export const savedThemes = () => listed;
 
 export function setSavedThemes(next: SavedTheme[]) {
     themes = next.filter(theme => theme && typeof theme.id === 'string' && !(theme.id in THEME_PRESETS));
     emit();
 }
+
+/** The theme the site brings, if any; it is not part of the user's library. */
+export function setSiteTheme(theme: SavedTheme | undefined) {
+    const next = theme && typeof theme.id === 'string' && !(theme.id in THEME_PRESETS) ? [theme] : [];
+    if (JSON.stringify(next) === JSON.stringify(siteThemes)) return;
+    siteThemes = next;
+    emit();
+}
+
+export const isSiteTheme = (themeId: string | undefined) => !!themeId && siteThemes.some(theme => theme.id === themeId);
 
 /** Add or replace one theme (e.g. the one a `save_theme` result carries). */
 export function upsertSavedTheme(theme: SavedTheme) {
@@ -82,7 +98,7 @@ const flintSpec = ({ description: _description, ...spec }: SavedTheme) => spec;
 export function chartThemeSpec(themeId: string | undefined): string | Record<string, unknown> | undefined {
     if (!themeId || themeId === 'none') return undefined;
     if (themeId in THEME_PRESETS) return themeId;
-    const saved = themes.find(theme => theme.id === themeId);
+    const saved = listed.find(theme => theme.id === themeId);
     return saved ? flintSpec(saved) : undefined;
 }
 

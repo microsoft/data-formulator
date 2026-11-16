@@ -11,10 +11,10 @@ import * as d3 from 'd3';
 import type { Feature, MultiPolygon, Polygon } from 'geojson';
 
 import { countryId, layerGeoSet, regionId, type GeoSet, type RegionFeature } from './geography';
-import { aggregate, CATEGORICAL_SCHEMES, colorScale, DIVERGING_SCHEMES, formatter, SEQUENTIAL_SCHEMES, sizeScale, toNumber,
+import { aggregate, CATEGORICAL_SCHEMES, colorScale, DIVERGING_SCHEMES, formatter, SEQUENTIAL_SCHEMES, sizeScale, toNumber, validSizeDomain, validSizeRange,
     type ColorScale, type Palette, type SizeScale } from './scales';
-import { colorDefaults, resolveField as resolveSemantics, schemeFromFlint, sizeDefaults, type FieldAnnotation, type ResolvedField } from './semantics';
-import { isParamRef, type Control, type Filter, type Layer, type Location, type MapSpec, type Row } from './spec';
+import { colorDefaults, keptPattern, resolveField as resolveSemantics, schemeFromFlint, sizeDefaults, type FieldAnnotation, type ResolvedField } from './semantics';
+import { isParamRef, type Control, type Filter, type Layer, type Location, type MapSpec, type Row, type SizeEncoding } from './spec';
 
 export type Params = Record<string, unknown>;
 export type LonLat = [number, number];
@@ -55,6 +55,8 @@ export interface LayerModel {
     /** Rows naming a known region these boundaries do not draw (e.g. Antarctica on the world map). */
     undrawn: Row[];
     geoSet?: GeoSet;
+    /** Under a time slider, the marks of all its frames: what the map frames, so it holds still while the frames play. */
+    fitMarks?: Mark[];
 }
 
 export const resolveField = (field: unknown, params: Params): string | undefined => {
@@ -378,7 +380,7 @@ function buildMarks(spec: MapSpec, layer: Layer, rows: Row[], params: Params, ge
     return { marks, unplaced, undrawn, set, colorField, colorField2, sizeField };
 }
 
-const frameCache = new WeakMap<Row[], Map<string, { colorValues: unknown[]; sizeValues: unknown[] } | null>>();
+const frameCache = new WeakMap<Row[], Map<string, { colorValues: unknown[]; sizeValues: unknown[]; frames: number } | null>>();
 
 /** Frames of a slider (e.g. years) that filters this layer: the colour and size domains span all of them. Cached per rows. */
 function frameDomains(spec: MapSpec, layer: Layer, allRows: Row[], data: Record<string, Row[]>, params: Params, geoSets: GeoSets, selection?: SelectionRows | null) {
@@ -391,6 +393,25 @@ function frameDomains(spec: MapSpec, layer: Layer, allRows: Row[], data: Record<
     if (!cache.has(key)) {
         if (cache.size > 50) cache.clear();
         cache.set(key, computeFrameDomains(spec, layer, allRows, data, params, geoSets, selection));
+    }
+    return cache.get(key)!;
+}
+
+const fitCache = new WeakMap<Row[], Map<string, Mark[] | null>>();
+
+/** The marks of every frame of the layer's time slider (its other filters still apply); null without one. */
+function frameFitMarks(spec: MapSpec, layer: Layer, allRows: Row[], params: Params, geoSets: GeoSets, selection?: SelectionRows | null): Mark[] | null {
+    const slider = frameSlider(spec, layer, allRows);
+    if (!slider) return null;
+    const otherParams = Object.entries(params).filter(([name]) => name !== slider.param);
+    const key = JSON.stringify([layer, spec.controls, spec.view.basemap, otherParams, Object.keys(geoSets),
+        selection ? [selection.layerId, selection.rows.length, selection.rows.slice(0, 20)] : null]);
+    let cache = fitCache.get(allRows);
+    if (!cache) { cache = new Map(); fitCache.set(allRows, cache); }
+    if (!cache.has(key)) {
+        if (cache.size > 50) cache.clear();
+        const unstepped = { ...spec, controls: spec.controls.filter(control => control !== slider) };
+        cache.set(key, buildMarks(unstepped, layer, filterRows(unstepped, layer, allRows, params, selection), params, geoSets).marks);
     }
     return cache.get(key)!;
 }
@@ -414,7 +435,7 @@ function computeFrameDomains(spec: MapSpec, layer: Layer, allRows: Row[], data: 
         const built = buildMarks(spec, layer, filterRows(spec, layer, allRows, frameParams, selection), frameParams, geoSets);
         for (const mark of built.marks) { colorValues.push(mark.colorValue); sizeValues.push(mark.sizeValue); }
     }
-    return { colorValues, sizeValues };
+    return { colorValues, sizeValues, frames: Math.ceil(frames.length / step) };
 }
 
 export interface BuildContext {
@@ -422,6 +443,11 @@ export interface BuildContext {
     annotations?: Record<string, FieldAnnotation>;
     /** The theme's colours and ramps. */
     palette?: Palette;
+    /** The panel's side (the square root of its area, in px): sized circles fit to it (see circleSizeMax). */
+    panelSide?: number;
+    /** The session's colours for a categorical field's values, so they match the session's charts and other maps. */
+    categoryColors?: (field: string, annotation: FieldAnnotation | undefined, domain: string[], palette: readonly string[], surface?: string)
+        => Record<string, string> | undefined;
 }
 
 const sample = (rows: Row[], field: string) => {
@@ -472,36 +498,112 @@ export function buildLayer(spec: MapSpec, sourceLayer: Layer, data: Record<strin
     const { layer, resolvedColor } = withSemantics(spec, sourceLayer, allRows, params, annotations);
     const rows = filterRows(spec, layer, allRows, params, selection);
     const { marks, unplaced, undrawn, set, colorField, colorField2, sizeField } = buildMarks(spec, layer, rows, params, geoSets);
-    // A time slider keeps one colour scale across frames, so changes over time are comparable.
-    const frames = layer.color?.domain || layer.type === 'shapes' ? null : frameDomains(spec, layer, allRows, data, params, geoSets, selection);
+    // A time slider keeps one colour and size scale across frames, so changes over time are comparable.
+    const colorFixed = !layer.color?.field || !!layer.color.domain;
+    const sizeFixed = !layer.size?.field || !!validSizeDomain(layer.size.domain);
+    const frames = (colorFixed && sizeFixed) || layer.type === 'shapes' ? null : frameDomains(spec, layer, allRows, data, params, geoSets, selection);
     const shape = layer.type === 'spikes' ? 'spike' : layer.type === 'flows' || layer.type === 'paths' ? 'line' : layer.type === 'vectors' ? 'arrow' : 'circle';
     const sizeDefaults = layer.type === 'spikes' ? { min: 0, max: 120, value: 20 }
         : layer.type === 'vectors' ? { min: 4, max: 28, value: 14 }
         : layer.type === 'flows' ? { min: 0.5, max: 10, value: 1.5 }
         : layer.type === 'paths' ? { min: 1, max: 10, value: 2.5 }
         : layer.type === 'points' ? { min: 1, max: 12, value: 3 } : { min: 1.5, max: 32, value: 6 };
-    const palette = { ...semanticPalette(resolvedColor), ...definedOnly(context.palette) };
+    const sized = layer.size?.field !== undefined;
+    const range = sized ? sizeRangeFor(layer.size, sizeDefaults, { fit: (shape === 'circle' && layer.layout !== 'dorling') || shape === 'line', panelSide: context.panelSide,
+        values: frames ? frames.sizeValues : marks.map(mark => mark.sizeValue), frames: frames?.frames,
+        ...(shape === 'line' ? { line: true, lineLength: typicalLineLength(marks) } : {}) }) : null;
+    const sizeEncoding = range ? { ...layer.size, range: [range.min, range.max] } : layer.size;
+    const categoryColors = context.categoryColors;
+    const assign: Palette['assign'] = categoryColors && colorField
+        ? (domain, colors, surface) => categoryColors(colorField, annotations[colorField], domain, colors, surface) : undefined;
+    const palette = { ...semanticPalette(resolvedColor), ...definedOnly(context.palette), ...(assign ? { assign } : {}) };
     const described = new Map<string, { label: string; format: (value: unknown) => string }>();
     const describe = (field: string) => {
         let entry = described.get(field);
         if (!entry) {
             const resolved = resolveSemantics(field, sample(allRows, field), annotations[field]);
             const format = resolved.format;
-            entry = { label: resolved.label, format: formatter(format?.pattern?.includes('%') ? format.pattern : undefined, format?.prefix, format?.suffix) };
+            entry = { label: resolved.label, format: formatter(keptPattern(format?.pattern), format?.prefix, format?.suffix) };
             described.set(field, entry);
         }
         return entry;
     };
     return {
         layer, marks, unplaced, undrawn, geoSet: set, colorField, colorField2, sizeField, describe,
+        fitMarks: frameFitMarks(spec, layer, allRows, params, geoSets, selection) ?? undefined,
         // Vectors colour a continuous field (wind speed, current strength): a smooth ramp, not classes.
         color: colorScale(layer.type === 'vectors' && layer.color?.field && !layer.color.method && !layer.color.thresholds ? { ...layer.color, method: 'continuous' } : layer.color,
-            frames?.colorValues ?? marks.map(mark => mark.colorValue), paramFieldLabel(spec, layer.color?.field, colorField) ?? colorField,
+            (layer.color?.domain ? undefined : frames?.colorValues) ?? marks.map(mark => mark.colorValue), paramFieldLabel(spec, layer.color?.field, colorField) ?? colorField,
             colorField2 ? paramFieldLabel(spec, layer.color?.field2, colorField2) ?? describe(colorField2).label : undefined, palette,
             // A vector field fades out at its edge: its calmest colour must not look like that fade.
             layer.type === 'vectors' ? { floor: 0.3 } : {}),
-        size: sizeScale(layer.size, frames?.sizeValues ?? marks.map(mark => mark.sizeValue), paramFieldLabel(spec, layer.size?.field, sizeField) ?? sizeField, shape, sizeDefaults),
+        size: sizeScale(sizeEncoding, frames?.sizeValues ?? marks.map(mark => mark.sizeValue), paramFieldLabel(spec, layer.size?.field, sizeField) ?? sizeField, shape, sizeDefaults),
     };
+}
+
+/** A full canvas panel's side: sizes are set for it, and smaller panels shrink them in step. */
+const FULL_PANEL = 800;
+/** The share of the panel sized circles may cover (Flint sizes points to the same 15%). */
+const CIRCLE_COVERAGE = 0.15;
+/** A fitted largest circle never shrinks below this share of the default, or sizes stop reading. */
+const CIRCLE_FLOOR = 0.4;
+/** The share of the panel sized lines (flows, paths) may cover: their lengths on screen times their widths. */
+const LINE_COVERAGE = 0.06;
+
+/** A line's ends and bends, for measuring it: a flow's two ends, a path's vertices. */
+const linePoints = (mark: Mark): LonLat[] => mark.line ?? (mark.at && mark.to ? [mark.at, mark.to] : []);
+
+/**
+ * How long a layer's lines run on screen, as a share of the panel's side, weighted by their sizes: each line's length
+ * over the extent of every line's ends, which the map is fitted to. An estimate, made before anything is projected.
+ */
+export function typicalLineLength(marks: readonly Mark[]): number | undefined {
+    const lines = marks.map(mark => ({ points: linePoints(mark), value: toNumber(mark.sizeValue) ?? 0 })).filter(item => item.points.length >= 2 && item.value > 0);
+    if (!lines.length) return undefined;
+    const all = lines.flatMap(item => item.points);
+    const extent = d3.geoDistance(...(d3.geoBounds({ type: 'MultiPoint', coordinates: all } as never) as [LonLat, LonLat]));
+    if (!(extent > 0)) return undefined;
+    let weighted = 0;
+    let total = 0;
+    for (const { points, value } of lines) {
+        let length = 0;
+        for (let index = 1; index < points.length; index++) length += d3.geoDistance(points[index - 1], points[index]);
+        weighted += value * Math.min(1.5, length / extent);
+        total += value;
+    }
+    return total > 0 ? weighted / total : undefined;
+}
+
+/** How much sizes shrink on a panel smaller than a full canvas (never below 35%). */
+export const panelScale = (panelSide: number | undefined) => panelSide ? Math.max(0.35, Math.min(1, panelSide / FULL_PANEL)) : 1;
+
+/**
+ * The sizes a layer's marks span on a panel, `{ min, max }` in pixels. A range the spec sets (`size.range`, or an
+ * older map's `min`/`max`; the agent's or the Style panel's) is kept, its largest shrunk with a small panel. Unset,
+ * the layer's defaults apply, and circles sized by a column fit the data: together they cover about 15% of the panel,
+ * so many similar values get smaller circles than a few giants among small ones, never larger than the default nor
+ * below 40% of it. A fixed size domain (maps meant to compare) and a cartogram (whose circles spread apart to fill the
+ * map) keep the default. Values from several frames of a time slider count per frame, so sizes hold as it plays.
+ * Lines (`lineLength`, their typical length as a share of the panel's side) fit the same way: their lengths times
+ * their widths cover about 6% of the panel, so a crowded flow map draws thinner lines than a map of a few flows.
+ */
+export function sizeRangeFor(size: SizeEncoding | undefined, defaults: { min: number; max: number },
+    options: { fit: boolean; panelSide?: number; values?: unknown[]; frames?: number; line?: boolean; lineLength?: number }): { min: number; max: number } {
+    const scale = panelScale(options.panelSide);
+    const set = validSizeRange(size?.range);
+    const min = set?.[0] ?? size?.min ?? defaults.min;
+    const setMax = set?.[1] ?? size?.max;
+    if (setMax !== undefined) return { min, max: Math.max(min, setMax * scale) };
+    const ceiling = defaults.max * scale;
+    if (!options.fit || !options.panelSide || validSizeDomain(size?.domain) || (options.line && !options.lineLength)) return { min, max: Math.max(min, ceiling) };
+    const numbers = (options.values ?? []).map(toNumber).filter((value): value is number => value !== null && value > 0);
+    const largest = d3.max(numbers);
+    if (!largest) return { min, max: Math.max(min, ceiling) };
+    const shares = d3.sum(numbers, value => value / largest) / Math.max(1, options.frames ?? 1);
+    const fitted = options.line && options.lineLength
+        ? LINE_COVERAGE * options.panelSide / (shares * options.lineLength)
+        : Math.sqrt(CIRCLE_COVERAGE * options.panelSide ** 2 / (Math.PI * shares));
+    return { min, max: Math.max(min, CIRCLE_FLOOR * ceiling, Math.min(ceiling, fitted)) };
 }
 
 /** Every geo set the spec needs: the basemap's and each layer's (built-in names and `files/…`). */

@@ -122,6 +122,21 @@ def test_agent_data_create_update_and_protected_sources(tmp_path):
     assert workspace.read_data_as_df("uploaded")["value"].tolist() == [9]
 
 
+def test_agent_data_returns_the_semantic_types_it_was_given_for_its_columns(tmp_path):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    ctx = SkillContext(client=None, workspace=workspace)
+    created = json.loads(WorkspaceSkill().handle_tool("create_data", {
+        "table_name": "students", "rows": [{"country": "Austria", "year": 2022, "students": 92054}], "input_sources": [],
+        "field_metadata": {"year": "Year", "students": {"semantic_type": "Count"}, "gone": "Year"},
+    }, ctx).text)
+    # Only the table's own columns, as given; the app applies them to the new table at once.
+    assert created["field_metadata"] == {"year": "Year", "students": {"semantic_type": "Count"}}
+    plain = json.loads(WorkspaceSkill().handle_tool("create_data", {
+        "table_name": "plain", "rows": [{"value": 1}], "input_sources": [],
+    }, ctx).text)
+    assert "field_metadata" not in plain
+
+
 @pytest.mark.parametrize("acquisition", [
     "not an object",
     {},

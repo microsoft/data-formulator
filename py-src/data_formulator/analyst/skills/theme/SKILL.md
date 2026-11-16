@@ -6,7 +6,7 @@ when_to_use: >-
   ("use our brand colors", "make it look like the FT", "save this style"), wants
   to revise or reuse a saved theme, or names a theme that is not a Flint preset.
   Not for applying an existing preset or saved theme to a chart: set the chart
-  file's "theme" (or an app's Page theme) directly.
+  file's "theme" (or an app's AppTheme) directly.
 always_on: false
 tools:
   - list_themes
@@ -25,7 +25,7 @@ Flint ships presets (`nyt`, `economist`, `swiss`, `nature`, `mckinsey`,
 library: `list_themes` shows them in full, and `save_theme` adds one or
 replaces the one with the same id. A saved theme works by id everywhere a
 preset does, in this and later sessions: a chart file's `"theme"`, a map's
-`view.theme`, an app's `<Page theme="…">` (which also styles the page) or
+`view.theme`, an app's `<AppTheme theme="…">` (which also styles the page) or
 `FlintChart theme`, and the canvas theme picker.
 
 ## Workflow
@@ -41,7 +41,7 @@ preset does, in this and later sessions: a chart file's `"theme"`, a map's
    dashboard: `powerbi-light`, `material`) and override only what differs.
    Write a standalone theme only when no preset is close.
 4. `save_theme` with the smallest coherent spec, then apply it (set the
-   charts' `"theme"`, or the app's `Page theme`) so the user sees it.
+   charts' `"theme"`, or the app's `AppTheme theme`) so the user sees it.
 
 ## The spec
 

@@ -54,6 +54,19 @@ describe('map templates', () => {
             'properties.colors must map category values to CSS colours, such as {"Republican": "#d62728"}.']);
     });
 
+    it('fixes colour breaks and size ranges, so a follow-up map compares with an earlier one', () => {
+        const base = { template: 'bubbles', data: { table: 't' }, encoding: { region: 'country', color: 'rate', size: 'pop' } };
+        const layer = compileTemplate({ ...base, properties: { thresholds: [5, 10, 20], sizeDomain: [0, 1e9] } }).layers[0];
+        expect(layer.color).toMatchObject({ field: 'rate', method: 'threshold', thresholds: [5, 10, 20] });
+        expect(layer.size).toMatchObject({ field: 'pop', domain: [0, 1e9] });
+        expect(compileTemplate({ ...base, properties: { domain: [0, 50], method: 'continuous' } }).layers[0].color)
+            .toMatchObject({ domain: [0, 50], method: 'continuous' });
+        expect(templateErrors({ ...base, properties: { thresholds: [], domain: [5, 1], sizeDomain: [-1, 4] } })).toEqual([
+            'properties.thresholds must list the colour class breaks as numbers, such as [10, 25, 50].',
+            'properties.domain must be [min, max] numbers with min < max.',
+            'properties.sizeDomain must be [low, high] numbers with 0 ≤ low < high.']);
+    });
+
     it('parses a template map and keeps it for editing', () => {
         const parsed = parseMapSpec(JSON.stringify({ title: 'T', template: 'bubbles', data: { values: [{ x: 1, y: 2, n: 3 }] },
             encoding: { lat: 'y', lon: 'x', size: 'n' }, view: { style: 'dark' }, controls: [{ type: 'stats', layer: 'main' }] }));
