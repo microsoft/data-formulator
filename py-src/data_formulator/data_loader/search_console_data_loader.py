@@ -91,12 +91,14 @@ class SearchConsoleDataLoader(ExternalDataLoader):
     DESCRIPTION = "Query clicks, impressions, CTR and average position from Google Search Console properties."
     QUERY_EXECUTION = "semantic_query"
     AUTH_GUIDE = "search_console.md"
+    IDENTITY_PARAMS = ("site_url",)
 
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         return [
-            {"name": "site_url", "type": "text", "required": True, "tier": "connection",
-             "description": "Search Console property, e.g. 'sc-domain:example.com' or 'https://www.example.com/'"},
+            {"name": "site_url", "type": "text", "required": False, "tier": "filter", "default": "",
+             "description": "One property to open, e.g. 'sc-domain:example.com' or 'https://www.example.com/' "
+                            "(leave empty to list every property the identity can read)"},
             {"name": "search_type", "type": "text", "required": False, "tier": "connection", "advanced": True,
              "default": "web", "description": "Report type: " + ", ".join(_SEARCH_TYPES)},
             {"name": "credentials_path", "type": "text", "required": False, "tier": "auth", "default": "",
@@ -125,8 +127,6 @@ class SearchConsoleDataLoader(ExternalDataLoader):
     def __init__(self, params: dict[str, Any]):
         self.params = params
         self.site_url = str(params.get("site_url") or "").strip()
-        if not self.site_url:
-            raise ValueError("site_url is required, e.g. 'sc-domain:example.com' or 'https://www.example.com/'.")
         self.search_type = str(params.get("search_type") or "web").strip()
         if self.search_type not in _SEARCH_TYPES:
             raise ValueError(f"search_type must be one of: {', '.join(_SEARCH_TYPES)}")
@@ -167,17 +167,18 @@ class SearchConsoleDataLoader(ExternalDataLoader):
                 str(entry.get("permissionLevel", "")).replace("_", "").lower() != "siteunverifieduser"]
 
     def test_connection(self) -> bool:
-        # Catches both bad credentials and a site_url typo (e.g. a missing trailing slash).
+        # Catches bad credentials, a site_url typo (e.g. a missing trailing slash) and an identity with no property.
         try:
-            return self.site_url in self._sites()
+            sites = self._sites()
         except Exception:
             return False
+        return self.site_url in sites if self.site_url else bool(sites)
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
-        site = self.site_url
-        if (table_filter or "").casefold() not in site.casefold():
-            return []
-        return [{"name": site, "table_key": site, "path": [site], "metadata": self._leaf_metadata(site)}]
+        sites = [self.site_url] if self.site_url else self._sites()
+        needle = (table_filter or "").casefold()
+        return [{"name": site, "table_key": site, "path": [site], "metadata": self._leaf_metadata(site)}
+                for site in sites if needle in site.casefold()]
 
     def get_metadata(self, path: list[str]) -> dict[str, Any]:
         return self._leaf_metadata(path[-1]) if path else {}
@@ -202,7 +203,7 @@ class SearchConsoleDataLoader(ExternalDataLoader):
     def query_data_as_arrow(self, source_table: str, query: dict[str, Any], limit: int) -> pa.Table:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= _MAX_ROWS:
             raise ValueError(f"Semantic query result limit must be between 1 and {_MAX_ROWS}.")
-        if source_table != self.site_url:
+        if self.site_url and source_table != self.site_url:
             raise ValueError(f"This connection is limited to {self.site_url!r}.")
         if query.get("native") is not None:
             self.check_native_query(query["native"])
