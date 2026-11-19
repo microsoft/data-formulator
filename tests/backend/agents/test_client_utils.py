@@ -538,6 +538,27 @@ class TestCheaperInference:
 
 
 # ---------------------------------------------------------------------------
+# Runcrate endpoint
+# ---------------------------------------------------------------------------
+
+class TestRuncrate:
+    def test_blank_base_url_uses_runcrate_default(self):
+        c = Client("runcrate", "deepseek-ai/DeepSeek-V4.1-Flash", api_key="k")
+        assert c.params["api_base"] == "https://api.runcrate.ai/v1"
+
+    def test_custom_base_url_strips_trailing_slash(self):
+        c = Client("runcrate", "deepseek-ai/DeepSeek-V4.1-Flash", api_key="k",
+                   api_base="https://api.runcrate.ai/v1/")
+        assert c.params["api_base"] == "https://api.runcrate.ai/v1"
+
+    def test_vendor_prefixed_model_id_sent_unchanged(self):
+        """Runcrate ids carry a vendor prefix; it must not be read as a LiteLLM provider."""
+        c = Client("runcrate", "zai-org/GLM-5.3", api_key="k")
+        assert c.model == "zai-org/GLM-5.3"
+        assert c.params["custom_llm_provider"] == "openai"
+
+
+# ---------------------------------------------------------------------------
 # Ollama api_base normalisation
 # ---------------------------------------------------------------------------
 

@@ -174,7 +174,7 @@ class TestGetClientGlobalResolution:
 
             assert exc.value.get_http_status() == 403
 
-    @pytest.mark.parametrize("endpoint", ["orcarouter", "cheaperinference"])
+    @pytest.mark.parametrize("endpoint", ["orcarouter", "cheaperinference", "runcrate"])
     @patch.dict(
         os.environ,
         {**SAMPLE_ENV, "DF_ALLOWED_API_BASES": "https://api.openai.com/*"},
