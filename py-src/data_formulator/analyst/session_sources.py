@@ -1,6 +1,6 @@
-"""Connected-source catalogs as read-only files under ``sources/`` (design-docs/66).
+"""Connected-source catalogs as read-only items under ``sources://`` (design-docs/66, 74).
 
-``sources/<source_id>/<catalog path…>``: one folder per connected source, then the catalog's own path
+``sources://<source_id>/<catalog path…>``: one folder per connected source, then the catalog's own path
 segments (a ``/`` inside a segment is written ``%2F``). A table's file is its metadata view: columns one
 per line, so ``read_file`` offset/limit page them and ``search`` finds them; relationships; cached sample
 rows; and the ``source_id`` / ``table_key`` that ``probe_data`` and ``propose_data_operation`` take.
@@ -12,6 +12,7 @@ the cache only. Listings go one level at a time, like ``ls``: catalogs can hold 
 
 from __future__ import annotations
 
+from data_formulator.analyst import names
 import fnmatch
 import json
 import logging
@@ -21,12 +22,12 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-ROOT = "sources/"
+ROOT = names.SOURCES
 SEARCH_LINES_PER_TABLE = 3      # matching lines shown per catalog table
 DEFAULT_SEARCH_TABLES = 10      # catalog tables shown when the search did not name sources/
 VIEW_SAMPLE_ROWS = 5
 PREVIEW_CHARS = 400             # the columns line of a catalog search hit
-SOURCE_EXAMPLES = 8             # top-level names shown per source in the sources/ listing
+SOURCE_EXAMPLES = 8             # top-level names shown per source in the sources:// listing
 
 
 def escape(segment: Any) -> str:
@@ -159,13 +160,14 @@ class Sources:
         """Refresh the sources a set of paths names (``sources/`` alone names every source)."""
         named: list[str] = []
         for path in paths:
-            parts = path.strip().lstrip("/").split("/")
-            if parts[0] != ROOT[:-1]:
+            path = names.canonical(path)
+            if not path.startswith(ROOT):
                 continue
-            if len(parts) < 2 or not parts[1] or any(char in parts[1] for char in "*?["):
+            first = path[len(ROOT):].split("/", 1)[0]
+            if not first or any(char in first for char in "*?["):
                 named += self.source_ids(connected=True)
             else:
-                named.append(unescape(parts[1]))
+                named.append(unescape(first))
         self.refresh(list(dict.fromkeys(named)))
 
     def catalog(self, source_id: str) -> list[CatalogTable]:
@@ -346,7 +348,7 @@ class Sources:
         found = []
         for reference in getattr(layer, "references", []) or []:
             if reference.get("connectorId") == table.source_id and reference.get("tableKey") == table.table_key:
-                found.append(f"In this session: session/references/{reference['id']}.json (cached reference)")
+                found.append(f"In this session: {names.reference(reference['id'])} (cached reference)")
         return found
 
     # -- search ----------------------------------------------------------------
@@ -354,7 +356,7 @@ class Sources:
     def search_sections(self, matcher: Any, scopes: list[str], max_results: int) -> tuple[list[Any], int]:
         """Catalog tables whose name, description or columns match: (sections, tables not shown)."""
         from data_formulator.analyst.session_fs import Section, _selected
-        named = [scope for scope in scopes if isinstance(scope, str) and scope.strip().lstrip("/").startswith(ROOT[:-1])]
+        named = [names.canonical(scope) for scope in scopes if isinstance(scope, str) and names.root_of(scope) == "sources"]
         if named:
             self.refresh_named(named)
         found = []

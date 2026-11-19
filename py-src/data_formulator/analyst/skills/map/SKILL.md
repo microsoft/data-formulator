@@ -26,7 +26,7 @@ A map is a JSON spec saved as `files/<name>.map.json` with `write_map`; the
 built-in map renderer draws it on the canvas, reading workspace tables live.
 The user can pan, zoom (double-click a region to zoom to it), hover for
 tooltips, click to select (shift adds), and restyle layers in the Style panel.
-A report embeds a map by its path, `![caption](map://files/<name>.map.json)`,
+A report embeds a map by its path, `![caption](files/<name>.map.json)`,
 as a still picture of how the map first opens (title, legend; no controls).
 
 ## Plan
@@ -89,7 +89,7 @@ as a still picture of how the map first opens (title, legend; no controls).
    same measure and unit over the same kind of places) decides whether the two
    should compare: when they should (a drill-down from the world to a region,
    the same measure for another period), reuse the earlier map's colour
-   classes and size range (Comparable maps, below); when the new map is about
+   classes and size range (Comparable scales, below); when the new map is about
    detail the earlier scale would wash out, let it fit its own data.
 
 ## Templates (use these first)
@@ -141,7 +141,7 @@ Where marks go (region, lat/lon, origin/destination, group, order) takes one
 column. Properties (all
 optional): `geography` (`world`, `us-states`, `us-counties`, or a
 `files/…` GeoJSON with `featureKey`), `keyType`, `classes`, `method`,
-`scheme`, `thresholds`, `domain`, `colors`, `color`, `sizeRange`, `sizeDomain`, `markSize`, `opacity`, `density` (`hexbin` or `heatmap`), `radius`,
+`scheme`, `reverse`, `thresholds`, `domain`, `colors`, `color`, `sizeRange`, `sizeDomain`, `markSize`, `opacity`, `density` (`hexbin` or `heatmap`), `radius`,
 `curve` (flows and routes), `direction` (flows, routes and tracks: `taper`, `arrow`, `animate`,
 `none`), `play` (false: no play button), `search`, `details`
 (default on), `stats` (default off), `highlight` (below). `fields`, `view`, `title`-level text
@@ -178,18 +178,24 @@ charts and maps first gave them, so leave them to the map rather than
 recolouring a follow-up by hand.
 A diverging measure with meaningful sides is set by its scheme and sign: `rdBu`
 is red for low values and blue for high, so map a Democratic-minus-Republican
-margin with `rdBu` (or set `"reverse": true` on a layer's colour), and state the
-sign in the subtitle.
+margin with `rdBu`, and state the sign in the subtitle. For the other way round
+(a temperature anomaly: warm red, cool blue), keep `rdBu` and set
+`"reverse": true` (`properties.reverse` on a template, `reverse` in a layer's
+`color`).
 
-Comparable maps: a measure's colour classes come from the data on the map
-(quantiles by default) and bubbles scale to its largest value, so two maps of
-the same measure differ unless told otherwise. When a map should compare with
-an earlier one (the same measure and unit, a drill-down or another period;
-Plan, step 5), copy the earlier map's scales from its legend or file:
-`thresholds` (the class breaks, e.g. `[5, 10, 20, 40]`), or `domain`
-(`[min, max]`) with `method` `continuous`, `equal`, or `log`, and
-`sizeDomain` (`[0, max]` the sizes span). Use one measure on such a map: a
-measure switch would apply the same breaks to every option.
+Comparable scales: each map, and each option of a measure switch, fits its
+colours to its own data (quantiles) and bubbles to its largest value. When
+views show the same measure in the same unit and the reader compares them (two
+groups, two years, a drill-down, an earlier map in the session), give them one
+scale with round breaks that cover all their values; otherwise let each fit.
+
+- Per field, in `fields`: `"thresholds": [20, 40, 60, 80]` (class breaks) or
+  `"domain": [0, 100]`. A measure switch uses each option's own, so `poorest`
+  and `richest` can share breaks while `gap` keeps its own.
+- For the whole map: `properties.thresholds`, or `domain` with `method`
+  (`continuous`, `equal`, `log`); `sizeDomain` (`[0, max]`) for bubbles.
+- To match an earlier map or app, copy these from its file; when it fit its
+  own data, give both one scale that covers both.
 
 Highlight (`density`, `points`, `bubbles`, `spikes` placed by lat/lon): rows
 meeting one condition are drawn as points above the map, with checkboxes to
@@ -295,7 +301,9 @@ measures, units and currency in legends and tooltips, and readable labels.
 Common types: `Count`, `Amount` (money totals), `Price` (money per unit or
 per person), `Percentage`, `PercentageChange`, `Profit`, `Quantity`,
 `Temperature`, `Score`, `Number`. `divergingMidpoint` declares the
-comparison (an average, a target). Tables in the session usually carry these
+comparison (an average, a target). `thresholds` or `domain` gives the field
+its colour scale, for maps and switch options that compare (Comparable scales,
+above). Tables in the session usually carry these
 annotations already; `fields` overrides them. Prefer this over setting
 `scheme`, `type`, `midpoint`, `format`, or `title` by hand; set those only
 when the default is wrong.

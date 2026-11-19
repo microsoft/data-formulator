@@ -281,7 +281,7 @@ function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSS
                         pl: `${rowPadLeft(depth)}px`, pr: 0.5,
                         display: 'flex', alignItems: 'center', gap: `${ITEM_LABEL_GAP}px`, minWidth: 0,
                         height: '100%',
-                        borderRadius: '6px',
+                        borderRadius: 1.5,
                         cursor: 'pointer',
                         '&:hover': { backgroundColor: theme.palette.action.hover },
                         '& .catalog-hover-action': { display: 'none' },

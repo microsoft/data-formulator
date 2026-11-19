@@ -38,6 +38,7 @@ import { frameBackground, themeInk, viewStyle } from './styles';
 import { isParamRef, type Control, type MapSpec, type Row, type TooltipField } from './spec';
 import { bottomInset, chooseLayout, EDGE, panelTop, ROW_GAP, ROW_PADDING, ROW_WIDTH, rowFit, rowRoom, TOGGLE_SPACE, WIDGET_WIDTH, ZOOM_SPACE,
     type Box as PanelBox, type MapLayout, type Size } from './layout';
+import { ambientShadow } from '../app/tokens';
 
 const WORLD_BANK_BOUNDARIES_URL = 'https://datacatalog.worldbank.org/search/dataset/0038272/world-bank-official-boundaries';
 export interface MapViewProps {
@@ -51,8 +52,16 @@ export interface MapViewProps {
      * zoom or transitions.
      */
     still?: boolean;
-    /** After each render once the panels are placed (a still picture is ready when these stop). */
-    onDrawn?: () => void;
+    /**
+     * With `still`: the legends, source and boundaries credit in a thin strip under the map instead of a card over it,
+     * so a picture's map is whole and uncovered.
+     */
+    legendBelow?: boolean;
+    /**
+     * After each render once the panels are placed (a still picture is ready when these stop), with where the map's
+     * fitted area is drawn (see MapRenderer.fittedBounds).
+     */
+    onDrawn?: (drawn: MapDrawn) => void;
     /** Room at the top right for the host's floating buttons. */
     reserveTopRight?: number;
     /** Extra status (loading, join warnings) under the legends. */
@@ -66,6 +75,9 @@ export interface MapViewProps {
     /** The session's category colours: categorical values keep the colours they have in the session's charts and other maps. */
     categoryColors?: MapCategoryColors;
 }
+
+/** A drawn map, for taking its picture: where its fitted area falls, and drawing what waits for the next frame. */
+export interface MapDrawn { fittedBounds: () => [number, number, number, number] | null; drawNow: () => void }
 
 export interface MapCategoryColors {
     session: SessionCategoryColors;
@@ -104,8 +116,8 @@ const framedStyle = (view: MapSpec['view']) => {
 const DARK_PALETTE = createTheme({ palette: { mode: 'dark' } } as ThemeOptions).palette;
 
 const panelSx = {
-    bgcolor: (theme: Theme) => alpha(theme.palette.background.paper, 0.94), border: '1px solid', borderColor: 'divider', borderRadius: '8px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.06)', backdropFilter: 'blur(4px)',
+    bgcolor: (theme: Theme) => alpha(theme.palette.background.paper, 0.94), border: '1px solid', borderColor: 'divider', borderRadius: 2,
+    boxShadow: ambientShadow('0 1px 3px rgba(0,0,0,0.06)'), backdropFilter: 'blur(4px)',
 } as const;
 
 const labelSx = { fontSize: '0.68rem', fontWeight: 600, color: 'text.secondary', lineHeight: 1.3 } as const;
@@ -181,8 +193,9 @@ export const MapView: FC<MapViewProps> = (rawProps) => {
 };
 
 const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = ({ spec, data, geoSets: loadedGeoSets, interactive: live = true, still = false, onDrawn,
-    reserveTopRight = 0, footer, reserveBottomRight = 0, annotations, defaultTheme, categoryColors, projectionToggle }) => {
+    reserveTopRight = 0, footer, reserveBottomRight = 0, annotations, defaultTheme, categoryColors, projectionToggle, legendBelow = false }) => {
     const interactive = live && !still;
+    const below = still && legendBelow;
     // The title, legends and credit: on the canvas and in a still picture.
     const panels = interactive || still;
     const { t } = useTranslation();
@@ -266,7 +279,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     const legendOverflow = useRealOverflow(legendRef);
     // Small panels (thumbnails, report embeds, a narrow canvas) get a compact legend; a small interactive map folds it
     // into a chip that opens it, so the legend does not cover the data.
-    const compactLegend = size.width > 0 && (size.width < COMPACT_LEGEND_PANEL.width || size.height < COMPACT_LEGEND_PANEL.height);
+    const compactLegend = !below && size.width > 0 && (size.width < COMPACT_LEGEND_PANEL.width || size.height < COMPACT_LEGEND_PANEL.height);
     const foldLegend = interactive && size.width > 0 && (size.width < FOLD_LEGEND_PANEL.width || size.height < FOLD_LEGEND_PANEL.height);
     const [legendOpen, setLegendOpen] = useState(false);
     const [legendSize, setLegendSize] = useState<Size>({ width: 0, height: 0 });
@@ -405,8 +418,9 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     const tiles = spec.view.tiles && spec.view.tiles !== 'none' ? TILE_STYLES[spec.view.tiles] : null;
     // World boundaries carry their source and the UN-style disclaimer (World Bank Official Boundaries, CC BY 4.0).
     const worldBoundaries = !!basemap?.name.startsWith('countries') || models.some(model => !!model.geoSet?.name.startsWith('countries'));
-    const hasLegendCard = legends.length > 0 || unplaced > 0 || noData || !!footer || !!spec.source;
-    const creditLine = panels && worldBoundaries;
+    const hasLegendItems = legends.length > 0 || unplaced > 0 || noData || !!footer || !!spec.source;
+    const hasLegendCard = !below && hasLegendItems;
+    const creditLine = panels && worldBoundaries && !below;
 
     // Where the panels go (layout.ts): the controls and timeline share one box in a row under the title, a row along
     // the bottom, or a column at the left; the legend takes a corner or joins that box. Chosen by trying each
@@ -573,7 +587,8 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     // Until the layout is chosen, the panels wait unseen (so they do not appear in one place, then jump to another).
     const pending = panels && decided?.key !== decisionKey;
     useEffect(() => {
-        if (onDrawn && rendererReady && size.width > 0 && !pending) onDrawn();
+        if (onDrawn && rendererReady && size.width > 0 && !pending) onDrawn({
+            fittedBounds: () => rendererRef.current?.fittedBounds() ?? null, drawNow: () => rendererRef.current?.drawNow() });
     });
 
     const legendHover = (model: LayerModel) => (item: { value?: string; from?: number; to?: number } | null) => {
@@ -644,13 +659,13 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
         {footer}
     </>;
 
-    return <Box ref={containerRef} data-map-view sx={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', bgcolor: style.background, color: 'text.primary',
+    const mapBox = <Box ref={containerRef} data-map-view sx={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', bgcolor: style.background, color: 'text.primary',
         userSelect: 'none', '& svg': { display: 'block' }, '& [data-map-widgets]:hover + [data-map-minimize]': { opacity: 1 }, ...(pending ? { '& [data-map-obstacle], & [data-map-legends]': { visibility: 'hidden' } } : {}) }}>
         <svg ref={svgRef} role="img" aria-label={spec.title ?? t('map.map')} style={{ position: 'absolute', inset: 0, touchAction: 'none' }} />
         <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />
 
         {/* Only the title's line shares the top with the host's buttons; the subtitle below them runs the full width. */}
-        {panels && (spec.title || spec.subtitle) && <Box ref={headerRef} data-map-obstacle sx={{ position: 'absolute', top: 12, left: 16, width: 'fit-content',
+        {panels && (spec.title || spec.subtitle) && <Box ref={headerRef} data-map-header data-map-obstacle sx={{ position: 'absolute', top: 12, left: 16, width: 'fit-content',
             maxWidth: 'calc(100% - 32px)', pointerEvents: 'none' }}>
             {spec.title && <Typography component="h2" sx={{ fontSize: '1.05rem', fontWeight: 650, color: titleInk?.primary ?? 'text.primary', lineHeight: 1.3,
                 maxWidth: reserveTopRight && size.width ? size.width - 16 - reserveTopRight : undefined,
@@ -724,7 +739,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
                 either way, so the toggle stays put). No outline of its own inside the box's. */}
             {firstRow && <Box component="button" type="button" data-map-more aria-expanded={controlsExpanded} onClick={() => setControlsExpanded(open => !open)}
                 sx={{ position: 'absolute', left: ROW_PADDING + firstRow.width + 8, top: rowBottom !== null ? rowBottom - 25 : 24,
-                    display: 'flex', alignItems: 'center', gap: 0.25, px: 0.75, py: '3px', border: 0, borderRadius: '6px', bgcolor: 'transparent', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 0.25, px: 0.75, py: '3px', border: 0, borderRadius: 1.5, bgcolor: 'transparent', cursor: 'pointer',
                     font: 'inherit', fontSize: '0.7rem', fontWeight: 600, color: 'primary.main', whiteSpace: 'nowrap', '&:hover': { bgcolor: 'action.hover' },
                     '&:focus:not(:focus-visible)': { outline: 'none' } }}>
                 {controlsExpanded ? t('map.showLess') : t('map.moreCount', { count: moreCount })}
@@ -788,6 +803,27 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
 
         {interactive && hover && <MapTooltip hover={hover} width={size.width} height={size.height} />}
     </Box>;
+    if (!below) return mapBox;
+    // A still picture's legends under the map: one thin row, its notes (source, boundaries) at the end.
+    const notes = !!spec.source || worldBoundaries || !!footer;
+    return <Box data-map-still sx={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', bgcolor: style.background, color: 'text.primary' }}>
+        <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>{mapBox}</Box>
+        {(hasLegendItems || worldBoundaries) && <Box data-map-strip sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', columnGap: 3, rowGap: 1,
+            mx: 2, pt: 1, pb: 1.25, borderTop: '1px solid', borderColor: 'divider' }}>
+            {legends.map(({ legend, key }) => <MapLegend key={key} legend={legend} thin />)}
+            {noData && <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, alignSelf: 'flex-end', pb: '2px' }}>
+                <Box sx={{ width: 10, height: 10, borderRadius: '2px', bgcolor: style.noData }} />
+                <Typography sx={{ fontSize: '0.66rem', color: 'text.secondary' }}>{t('map.noData')}</Typography>
+            </Box>}
+            {notes && <Box sx={{ ml: 'auto', maxWidth: '45%', minWidth: 160, alignSelf: 'flex-end', textAlign: 'right' }}>
+                {spec.source && <SourceNote text={spec.source} lines={2} />}
+                {worldBoundaries && <Typography data-map-boundaries sx={{ fontSize: '0.6rem', color: 'text.secondary', opacity: 0.85, lineHeight: 1.3 }}>
+                    {t('map.boundariesCredit')}
+                </Typography>}
+                {footer}
+            </Box>}
+        </Box>}
+    </Box>;
 };
 
 const MapTooltip: FC<{ hover: { hit: Hit; point: [number, number] }; width: number; height: number }> = ({ hover, width, height }) => {
@@ -850,7 +886,7 @@ const CompactControl: FC<{ label: string; summary: string; above?: boolean; chil
             <Box component="button" type="button" data-map-compact-control aria-label={label ? `${label}: ${summary}` : summary} aria-haspopup="dialog"
                 aria-expanded={!!anchor} onClick={event => setAnchor(event.currentTarget)}
                 sx={{ display: 'flex', alignItems: 'center', gap: 0.25, maxWidth: 170, px: 0.75, py: '2px', border: '1px solid', borderColor: 'divider',
-                    borderRadius: '6px', bgcolor: 'transparent', color: 'text.primary', font: 'inherit', fontSize: '0.72rem', lineHeight: 1.5, cursor: 'pointer',
+                    borderRadius: 1.5, bgcolor: 'transparent', color: 'text.primary', font: 'inherit', fontSize: '0.72rem', lineHeight: 1.5, cursor: 'pointer',
                     whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', '&:hover': { bgcolor: 'action.hover' } }}>
                 <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{summary}</Box>
                 <ExpandMoreIcon sx={{ fontSize: 14, color: 'text.secondary', flexShrink: 0 }} />

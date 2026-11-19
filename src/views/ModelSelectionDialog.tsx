@@ -72,6 +72,7 @@ import { apiRequest, ApiError, ApiRequestError } from '../app/apiClient';
 import { useTranslation } from 'react-i18next';
 import { LogViewerDialog } from './LogViewerDialog';
 import { iconVar, textVar } from '../app/layout';
+import { identText } from '../app/tokens';
 
 
 // Add this helper function at the top of the file, after the imports
@@ -1649,6 +1650,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
             <Button
                 sx={{
                     fontSize: isInlineAction ? 'inherit' : '13px',
+                    // The model's id is data: the toolbar shows it in the look's ident font.
+                    ...(isInlineAction ? {} : identText),
                     fontWeight: 400,
                     textTransform: 'none',
                     px: 1.5,

@@ -2,6 +2,7 @@ import React, { FC, Suspense, useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
 import WrapTextIcon from '@mui/icons-material/WrapText';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import IosShareIcon from '@mui/icons-material/IosShare';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import TuneIcon from '@mui/icons-material/Tune';
@@ -44,6 +45,7 @@ const WorkspacePdfPreview = React.lazy(() => import('./WorkspacePdfPreview').the
 const HtmlAppPreview = React.lazy(() => import('./HtmlAppPreview'));
 const ReactAppPreview = React.lazy(() => import('./ReactAppPreview'));
 const MapPreview = React.lazy(() => import('../maps/MapPreview'));
+const ShareDialog = React.lazy(() => import('../components/ShareDialog'));
 
 const textDrafts = new Map<string, { content: string; savedContent: string; hash: string }>();
 
@@ -103,6 +105,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
     const [discardOpen, setDiscardOpen] = useState(false);
     const [renameOpen, setRenameOpen] = useState(false);
     const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
+    const [shareOpen, setShareOpen] = useState(false);
     const [newName, setNewName] = useState(fileName);
     const [renaming, setRenaming] = useState(false);
     const [renameError, setRenameError] = useState('');
@@ -383,7 +386,9 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 {headerMeta && <Typography component="span" sx={{ fontSize: '0.75rem', color: 'text.secondary', flexShrink: 100, minWidth: 0,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--df-font-mono)' }}>{headerMeta}</Typography>}
             </Box>}
-            <Box data-file-actions sx={{ position: 'absolute', top: 10, right: 20, zIndex: 10, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            {/* Its text size (that of its Save and Discard buttons) is also what the ⋯ menu sizes itself from. */}
+            <Box data-file-actions sx={{ position: 'absolute', top: 10, right: 20, zIndex: 10, display: 'flex', alignItems: 'center', gap: 0.5,
+                fontSize: '0.8125rem' }}>
                 {dirty && !autoSaves && <Box component="span" role="status" aria-label="Unsaved changes" title="Unsaved changes"
                     sx={{ width: 7, height: 7, mr: 0.5, borderRadius: '50%', bgcolor: 'text.secondary' }} />}
                 {textFile && dirty && !autoSaves && !temporary && !sourceFile && <>
@@ -420,6 +425,13 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                         <TuneIcon sx={{ fontSize: iconVar.lg }} />
                     </IconButton>
                 </Tooltip>}
+                {textFile && (isApp || isMap) && mode === 'preview' && !temporary && <Tooltip title={t('share.button', { defaultValue: 'Share as an image' })}>
+                    <IconButton size="small" aria-label={t('share.button', { defaultValue: 'Share as an image' })} onClick={() => setShareOpen(true)} sx={floatingPillSx}>
+                        <IosShareIcon sx={{ fontSize: iconVar.lg }} />
+                    </IconButton>
+                </Tooltip>}
+                {shareOpen && <Suspense fallback={null}><ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} title={headerTitle}
+                    target={{ path: `files/${fileName}`, kind: isMap ? 'map' : 'app', name: fileName }} /></Suspense>}
                 {textFile && isApp && mode === 'preview' && <Tooltip title={t('htmlApp.reload')}>
                     <IconButton size="small" aria-label={t('htmlApp.reload')} onClick={() => setAppReloadKey(value => value + 1)} sx={floatingPillSx}>
                         <RefreshIcon sx={{ fontSize: iconVar.lg }} />
@@ -599,7 +611,7 @@ export const TablePreview: FC<{ fileName: string; preview: WorkspaceFilePreview 
             {t('dataThread.tablePreviewSummary', { defaultValue: '{{rows}} rows · {{columns}} columns', rows: total.toLocaleString(), columns: columns.length })}
             {rows.length < total && ` · ${t('dataThread.tablePreviewShowing', { defaultValue: 'showing the first {{count}}', count: rows.length })}`}
         </Typography>
-        <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', border: '1px solid', borderColor: 'divider', borderRadius: '6px', bgcolor: 'background.paper' }}>
+        <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', border: '1px solid', borderColor: 'divider', borderRadius: 1.5, bgcolor: 'background.paper' }}>
             <Box component="table" aria-label={fileName} sx={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: '100%',
                 fontSize: textVar.sm, lineHeight: 1.5, '& tbody tr:hover td': { bgcolor: 'action.hover' } }}>
                 <thead><tr>{columns.map(column => <Box component="th" key={column} title={column} sx={{ ...cellSx,

@@ -21,7 +21,7 @@ actions:
 
 Match the report's scope, audience, format, and length to the user's request;
 do not force a fixed template. Use the focused thread for context and read other
-threads (session/threads) only when relevant. Cover the requested findings, not automatically
+threads (session://threads) only when relevant. Cover the requested findings, not automatically
 every chart or step in the exploration.
 
 Default to a descriptive title and concise sections organized around findings.
@@ -31,7 +31,7 @@ limitations and a takeaway when useful. Do not add sections just to fill a templ
 ## Grounding
 
 Check the evidence behind key claims before writing. Reuse verified findings and
-charts; read a chart and its table together with `read_file` (`session/charts/<id>.json`
+charts; read a chart and its table together with `read_file` (`session://charts/<id>`
 gives the encodings; the table view gives the transformation code and sample rows)
 when their meaning or values need confirmation. Use the backing data for
 full-population claims, not just the sample. Create new charts or analysis only where needed for the requested report.
@@ -44,10 +44,18 @@ Call `write_report` with the complete Markdown document in `report`, including a
 needed charts already created. A successful call delivers the report as-is and
 returns an observation; it does not end the run. Follow the baseline completion rules.
 
-Embed supporting charts using `![caption](chart://chart_id)` on its own line.
-The ID must be a chart in the session ([SESSION INDEX], session/charts) or from a successful `visualize` result.
-Embed a map file (made with `write_map`) the same way by its path: `![caption](map://files/<name>.map.json)`;
-the report shows a still picture of the map as it first opens (its controls and street tiles are left out).
+Refer to anything in the session by its name, as listed in [SESSION INDEX] or by `list_files`:
+`![caption](name)` on its own line draws it, `[text](name)` links to it (a click opens it in the app).
+- Charts draw: `![caption](session://charts/<id>)`, a chart in the session or from a successful
+  `visualize` result.
+- Map files (made with `write_map`) draw by their path: `![caption](files/<name>.map.json)`; the
+  report shows a still picture of the map as it first opens (its controls and street tiles are left out).
+- Tables draw as a short preview of their first rows (`![caption](session://tables/<name>)`); link to a
+  table, a report, a thread or a file to point the reader at it (`[the full table](session://tables/<name>)`).
+
+Every reference is checked when the report is written: the result lists any that do not resolve,
+with the closest real names, and they show as their captions until you patch them with `edit_file`
+on the report (`session://reports/<id>`, given in the result).
 Use concise captions and explain the relevant takeaway; avoid duplicate embeds.
 Use standard Markdown tables for tabular results.
 

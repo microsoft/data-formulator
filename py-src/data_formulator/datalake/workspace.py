@@ -53,6 +53,9 @@ from data_formulator.datalake.parquet_utils import (
     DEFAULT_COMPRESSION,
 )
 from data_formulator.security.path_safety import ConfinedDir
+from data_formulator.datalake.workspace_migrations import (
+    INTERNAL_DIR, SCRATCH_INTERNALS, SCRATCH_LEFTOVERS, run_workspace_migrations,
+)
 from data_formulator.datalake.text_edit import TextEditConflictError, apply_text_patch
 from werkzeug.utils import secure_filename
 
@@ -250,6 +253,15 @@ def _session_archive_segment(segment: str) -> str:
     return secure_filename(segment)
 
 
+def _is_internal_archive_path(parts: list[str]) -> bool:
+    """Whether an imported archive entry would land in the app's own state: ``_internal/`` or what older
+    versions kept in ``scratch/``. An archive never carries these (exports leave them out), so a session
+    cannot bring in another session's agent history or run records."""
+    if parts[0] == INTERNAL_DIR:
+        return True
+    return parts[0] == "scratch" and len(parts) > 1 and (parts[1] in SCRATCH_INTERNALS or parts[1] in SCRATCH_LEFTOVERS)
+
+
 def agent_file_path_error(name: Any) -> str | None:
     """Why the agent cannot create a workspace file at ``name``, or None: visible names, folders allowed."""
     message = "filename must be a visible file name, optionally in folders (notes/plan.md)"
@@ -260,6 +272,12 @@ def agent_file_path_error(name: Any) -> str | None:
     if (len(name.encode("utf-8")) > 255 or any(segment.startswith((".", "_")) for segment in name.split("/"))
             or name.split("/")[0] == "data_operations"):
         return message
+    # Folders that would read as the workspace roots they repeat (design-docs/74).
+    if name.split("/")[0] == "scratch":
+        return ("files/scratch/ would be confused with scratch/: a temporary file's path is scratch/<name>; "
+                "otherwise choose another folder under files/")
+    if name.split("/")[0] == "files":
+        return "files/files/ repeats the root: the path is files/<name>"
     return None
 
 
@@ -324,6 +342,7 @@ class Workspace:
         self._confined_files = ConfinedDir(self._path / "files")
         self._confined_memory = ConfinedDir(self._path / "memory")
         self._confined_scratch = ConfinedDir(self._path / "scratch")
+        self._confined_internal = ConfinedDir(self._path / INTERNAL_DIR)
         self._memory_lock = threading.RLock()
 
         # Initialize metadata if it doesn't exist
@@ -339,6 +358,7 @@ class Workspace:
         # This is safe because active temp files are always created fresh and
         # cleaned up within minutes of their creation
         cleanup_stale_temp_files(self._path, max_age_hours=24)
+        run_workspace_migrations(self)
 
         logger.debug(f"Initialized workspace at {self._path}")
     
@@ -374,6 +394,11 @@ class Workspace:
     def confined_scratch(self) -> ConfinedDir:
         """ConfinedDir jail for the ``scratch/`` sub-directory."""
         return self._confined_scratch
+
+    @property
+    def confined_internal(self) -> ConfinedDir:
+        """ConfinedDir jail for ``_internal/``: the app's own state for this session (history, runs, locks)."""
+        return self._confined_internal
 
     def prune_scratch(self, max_bytes: Optional[int] = None) -> int:
         """Cap the scratch directory's total size via LRU eviction.
@@ -1236,14 +1261,15 @@ class Workspace:
         self, name: str, content: bytes, *, expected_content_hash: str | None = None,
         display_name: str | None = None,
     ) -> None:
-        with WorkspaceLock(self.confined_scratch.root):
+        with WorkspaceLock(self.confined_internal.root):
             path = self.confined_scratch.resolve(name)
             if expected_content_hash is None:
+                path.parent.mkdir(parents=True, exist_ok=True)
                 try:
                     with path.open("xb") as output:
                         output.write(content)
                 except FileExistsError as exc:
-                    raise ValueError("A scratch file with this name already exists; use edit_scratch_file") from exc
+                    raise ValueError(f"scratch/{name} already exists; revise it with edit_file") from exc
             else:
                 path = self.resolve_scratch_file(name)
                 with path.open("rb") as source:
@@ -1265,7 +1291,7 @@ class Workspace:
         path = self.resolve_scratch_file(name)
         stat = path.stat()
         key = hashlib.sha256(name.encode("utf-8")).hexdigest()
-        self.confined_scratch.write(f".display_names/{key}.json", json.dumps({
+        self.confined_internal.write(f"display_names/{key}.json", json.dumps({
             "display_name": display_name,
             "mtime_ns": stat.st_mtime_ns,
             "file_size": stat.st_size,
@@ -1275,7 +1301,7 @@ class Workspace:
         try:
             stat = self.resolve_scratch_file(name).stat()
             key = hashlib.sha256(name.encode("utf-8")).hexdigest()
-            metadata = json.loads(self.confined_scratch.read_text(f".display_names/{key}.json"))
+            metadata = json.loads(self.confined_internal.read_text(f"display_names/{key}.json"))
             if not isinstance(metadata, dict):
                 return None
             display_name = metadata.get("display_name")
@@ -1314,7 +1340,9 @@ class Workspace:
                            for value in acquisition.values())):
                 raise ValueError("acquisition requires non-empty source and scope; optional query and limitations must be text under 8000 characters")
             if not input_sources or any(source.get("kind") != "file" for source in input_sources):
-                raise ValueError("Acquired data must declare the actual acquired file inputs")
+                raise ValueError("Acquired data must declare the actual acquired file inputs: save what was fetched "
+                                 "under scratch/ (run_terminal: curl -o scratch/name.json URL), read it in code, and "
+                                 "list it in input_sources as {kind: file, id: scratch/name.json}")
         safe_name = sanitize_table_name(table_name)
         if not table_name or safe_name != table_name:
             raise ValueError("table_name must be a valid workspace table identifier")
@@ -1629,6 +1657,8 @@ class Workspace:
         self._path.mkdir(parents=True, exist_ok=True)
         if src.exists():
             shutil.copytree(src, self._path, dirs_exist_ok=True)
+        # The metadata on disk was replaced (as AzureBlobWorkspace does).
+        self._metadata_cache = None
 
     # ------------------------------------------------------------------
     # Export / Import
@@ -1690,7 +1720,7 @@ class Workspace:
                         # containment check below this guards against zip-slip.
                         parts = [_session_archive_segment(p) for p in rel.split("/")]
                         parts = [p for p in parts if p]
-                        if not parts:
+                        if not parts or _is_internal_archive_path(parts):
                             continue
                         dest = ws_tmp.joinpath(*parts)
                         if not dest.resolve().is_relative_to(ws_tmp.resolve()):

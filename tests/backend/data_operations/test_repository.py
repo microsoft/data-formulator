@@ -137,7 +137,7 @@ def test_failed_execution_records_typed_error(tmp_path: Path) -> None:
     assert repository.fail(operation.id, error) == failed
 
 
-def test_repository_lives_under_ephemeral_workspace_scratch(tmp_path: Path) -> None:
+def test_repository_lives_under_workspace_internal_state(tmp_path: Path) -> None:
     from data_formulator.datalake.workspace import Workspace
 
     workspace = Workspace("test-user", root_dir=tmp_path)
@@ -146,8 +146,9 @@ def test_repository_lives_under_ephemeral_workspace_scratch(tmp_path: Path) -> N
 
     repository.create(operation, conversation_id="conversation-1")
 
-    store = workspace.confined_scratch.root / "data_operations" / "data_operations.json"
+    store = workspace.confined_internal.root / "data_operations" / "data_operations.json"
     assert store.exists()
+    assert not (workspace.confined_scratch.root / "data_operations").exists()
     assert not (workspace.confined_root.root / "data_operations.json").exists()
 
 

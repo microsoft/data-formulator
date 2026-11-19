@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import MarkdownIt from 'markdown-it';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
+import { DOMSerializer } from '@tiptap/pm/model';
 import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableHeader } from '@tiptap/extension-table-header';
@@ -10,13 +11,14 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import { Markdown } from 'tiptap-markdown';
 import { createTheme } from '@mui/material/styles';
 import {
-    excerptCitation, excerptLinks, parseBlockAttrs, quotedPassage, reportBlocksPlugin, reportMapPaths, resolveCitations, splitFrontMatter,
+    excerptCitation, excerptLinks, isReportLinkAllowed, parseBlockAttrs, quotedPassage, reportBlocksPlugin, reportMapPaths, resolveCitations, splitFrontMatter,
     streamingReportText,
 } from '../../../../src/views/reportBlocks';
 import {
     Callout, DEFAULT_REPORT_BLOCK_LABELS, Excerpt, reportBlockExtensions,
 } from '../../../../src/views/reportBlockNodes';
 import { mergeStyles, reportContentSx, reportDensityFor, reportTypefaceFor } from '../../../../src/views/reportThemes';
+import { ResizableImage } from '../../../../src/views/TiptapReportEditor';
 import { findQuoteRange, onSourceLocation, requestSourceLocation, takeSourceLocation } from '../../../../src/app/sourceLocation';
 
 const REPORT = `# Brief
@@ -79,6 +81,7 @@ describe('excerpt citation and target', () => {
         expect(excerptLinks({ source: 'files/x.pdf', url: 'https://a.b/c' })).toEqual({ fileName: 'x.pdf', href: 'https://a.b/c' });
         expect(excerptLinks({ source: 'https://a.b/c' })).toEqual({ fileName: undefined, href: 'https://a.b/c' });
         expect(excerptLinks({ source: 'javascript:alert(1)' })).toEqual({ fileName: undefined, href: undefined });
+        expect(excerptLinks({ source: 'files/../secret.md' })).toEqual({ fileName: undefined, href: undefined });
     });
 });
 
@@ -388,5 +391,62 @@ describe('reportMapPaths', () => {
         const text = '# R\n\n![Spend](map://files/spend.map.json)\n\n![Trend](chart://c1)\n'
             + '<img src="blob:x" data-chart-id="map:files/rates.map.json">\n![Again](map://files/spend.map.json)';
         expect(reportMapPaths(text)).toEqual(['files/spend.map.json', 'files/rates.map.json']);
+        expect(reportMapPaths('![Spend](files/spend.map.json)\n![Old](map://files/old.map.json)\n![Pic](files/p.png)'))
+            .toEqual(['files/spend.map.json', 'files/old.map.json']);
+    });
+});
+
+describe('items by name in report Markdown', () => {
+    const makeEditor = (content: string) => new Editor({
+        element: document.createElement('div'),
+        extensions: [
+            StarterKit.configure({ link: { openOnClick: false, isAllowedUri: (url, context) => isReportLinkAllowed(url, context.defaultValidate) } }),
+            // The report editor's image node, without its React view (this editor has no React root).
+            ResizableImage.extend({ addNodeView: () => null }), Markdown.configure({ html: true }),
+        ],
+        content,
+    });
+
+    it('keeps session:// embeds and links through an edit', () => {
+        const source = '![Sales rows](session://tables/sales)\n\n![Trend](session://charts/c12)\n\n'
+            + 'See [the chart](session://charts/c12), [thread 2](session://threads/2) and [notes](files/notes.md).';
+        // HTML is serialized in the live document: an <img> there with a name as its src would be fetched.
+        const liveSources: string[] = [];
+        const setAttribute = Element.prototype.setAttribute;
+        const spy = vi.spyOn(Element.prototype, 'setAttribute').mockImplementation(function (this: Element, name: string, value: string) {
+            if (this.ownerDocument === document && name === 'src') liveSources.push(value);
+            return setAttribute.call(this, name, value);
+        });
+        const editor = makeEditor(source + '\n\n![Photo](files/photo.png)\n\n![Web](https://example.com/a.png)');
+        let html: string;
+        try {
+            html = editor.getHTML();
+            DOMSerializer.fromSchema(editor.schema).serializeFragment(editor.state.doc.content);
+        } finally {
+            spy.mockRestore();
+        }
+        expect(liveSources.filter(src => !src.startsWith('https:'))).toEqual([]);
+        expect(html).toContain('<img data-item-src="session://tables/sales" alt="Sales rows">');
+        expect(html).toContain('<img data-item-src="files/photo.png" alt="Photo">');
+        expect(html).toContain('<img src="https://example.com/a.png" alt="Web">');
+        expect(html).toContain('href="session://charts/c12"');
+        expect(html).toContain('href="session://threads/2"');
+        // The edited report is saved as HTML; read back, it still holds every name.
+        const reloaded = makeEditor(html);
+        expect(reloaded.getHTML().startsWith(html.replace(/<p><\/p>$/, ''))).toBe(true);
+        const markdown = (reloaded.storage as any).markdown.getMarkdown();
+        for (const reference of ['![Sales rows](session://tables/sales)', '![Trend](session://charts/c12)',
+            '[the chart](session://charts/c12)', '[thread 2](session://threads/2)', '[notes](files/notes.md)',
+            '![Photo](files/photo.png)', '![Web](https://example.com/a.png)']) {
+            expect(markdown).toContain(reference);
+        }
+        editor.destroy();
+        reloaded.destroy();
+    });
+
+    it('still drops unsafe links', () => {
+        expect(isReportLinkAllowed('javascript:alert(1)', () => false)).toBe(false);
+        expect(isReportLinkAllowed('session://charts/../x', () => false)).toBe(false);
+        expect(isReportLinkAllowed('session://reports/r3', () => false)).toBe(true);
     });
 });

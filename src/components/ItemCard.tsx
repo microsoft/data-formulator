@@ -11,26 +11,29 @@
 
 import React, { createContext, useCallback, useContext, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { alpha, Box, ButtonBase, IconButton, TextField, Tooltip, TooltipProps, Typography } from '@mui/material';
+import { alpha, Box, ButtonBase, IconButton, TextField, Tooltip, TooltipProps, Typography, type Theme } from '@mui/material';
 import StarRoundedIcon from '@mui/icons-material/StarRounded';
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded';
 import { iconVar, textVar } from '../app/layout';
-import { sidebarRowActionSx, sidebarRowDangerActionSx, sidebarRowMetaSx, sidebarRowSx, sidebarRowTitleSx } from '../app/tokens';
+import { sidebarRowActionSx, sidebarRowDangerActionSx, sidebarRowMetaSx, sidebarRowSx, sidebarRowTitleSx, ambientShadow, hoverLift, borderColor } from '../app/tokens';
+import { lineColor } from '../app/look';
+
 
 // Transform and shadow only, so hovering never reflows neighbouring cards.
 export const cardHoverSx = {
     transition: 'box-shadow 90ms ease, transform 90ms ease, border-color 90ms ease',
-    '&:hover': { borderColor: 'rgba(0, 0, 0, 0.18)', boxShadow: '0 2px 8px rgba(32, 33, 36, 0.08)', transform: 'translateY(-1px)' },
+    '&:hover': { borderColor: borderColor.view, boxShadow: ambientShadow('0 2px 8px rgba(32, 33, 36, 0.08)'), transform: hoverLift(1) },
     '@media (prefers-reduced-motion: reduce)': { transition: 'none', '&:hover': { transform: 'none' } },
 } as const;
 
 /** The landing page's example cards (sessions and workflows): a raised surface that lifts onto the accent border. */
 export const exampleCardSx = (disabled = false) => ({
     position: 'relative', display: 'flex', minWidth: 0,
-    border: '1px solid rgba(0, 0, 0, 0.18)', borderRadius: 1, bgcolor: 'background.paper',
-    boxShadow: '0 1px 3px rgba(32, 33, 36, 0.06)',
-    transition: 'box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-    ...(disabled ? {} : { '&:hover': { transform: 'translateY(-2px)', borderColor: 'primary.light', boxShadow: '0 4px 12px rgba(32, 33, 36, 0.12)' } }),
+    border: '1px solid', borderColor: (theme: Theme) => lineColor(theme, 0.18), borderRadius: 1,
+    bgcolor: 'background.paper',
+    boxShadow: ambientShadow('0 1px 3px rgba(32, 33, 36, 0.06)'),
+    transition: 'box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1), border-color 150ms ease',
+    ...(disabled ? {} : { '&:hover': { transform: hoverLift(2), borderColor: 'primary.light', boxShadow: ambientShadow('0 4px 12px rgba(32, 33, 36, 0.12)') } }),
     '@media (prefers-reduced-motion: reduce)': { '&:hover': { transform: 'none' } },
 } as const);
 

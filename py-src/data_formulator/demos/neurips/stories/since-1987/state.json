@@ -1,0 +1,6414 @@
+{
+ "__stateVersion": 15,
+ "activeWorkspace": {
+  "id": "since-1987",
+  "displayName": "Forty years of NeurIPS, since 1987"
+ },
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "papers_per_year",
+   "displayId": "NeurIPS papers per year",
+   "names": [
+    "year",
+    "papers",
+    "authors_per_paper",
+    "city"
+   ],
+   "rows": [
+    {
+     "year": 1987,
+     "papers": 90,
+     "authors_per_paper": 1.97,
+     "city": "Denver"
+    },
+    {
+     "year": 1988,
+     "papers": 94,
+     "authors_per_paper": 2.37,
+     "city": "Denver"
+    },
+    {
+     "year": 1989,
+     "papers": 101,
+     "authors_per_paper": 2.26,
+     "city": "Denver"
+    },
+    {
+     "year": 1990,
+     "papers": 143,
+     "authors_per_paper": 2.27,
+     "city": "Denver"
+    },
+    {
+     "year": 1991,
+     "papers": 144,
+     "authors_per_paper": 2.36,
+     "city": "Denver"
+    },
+    {
+     "year": 1992,
+     "papers": 127,
+     "authors_per_paper": 2.41,
+     "city": "Denver"
+    },
+    {
+     "year": 1993,
+     "papers": 158,
+     "authors_per_paper": 2.22,
+     "city": "Denver"
+    },
+    {
+     "year": 1994,
+     "papers": 140,
+     "authors_per_paper": 2.33,
+     "city": "Denver"
+    },
+    {
+     "year": 1995,
+     "papers": 152,
+     "authors_per_paper": 2.24,
+     "city": "Denver"
+    },
+    {
+     "year": 1996,
+     "papers": 152,
+     "authors_per_paper": 2.23,
+     "city": "Denver"
+    },
+    {
+     "year": 1997,
+     "papers": 150,
+     "authors_per_paper": 2.23,
+     "city": "Denver"
+    },
+    {
+     "year": 1998,
+     "papers": 151,
+     "authors_per_paper": 2.37,
+     "city": "Denver"
+    },
+    {
+     "year": 1999,
+     "papers": 150,
+     "authors_per_paper": 2.43,
+     "city": "Denver"
+    },
+    {
+     "year": 2000,
+     "papers": 152,
+     "authors_per_paper": 2.39,
+     "city": "Denver"
+    },
+    {
+     "year": 2001,
+     "papers": 197,
+     "authors_per_paper": 2.4,
+     "city": "Vancouver"
+    },
+    {
+     "year": 2002,
+     "papers": 207,
+     "authors_per_paper": 2.5,
+     "city": "Vancouver"
+    },
+    {
+     "year": 2003,
+     "papers": 198,
+     "authors_per_paper": 2.79,
+     "city": "Vancouver"
+    },
+    {
+     "year": 2004,
+     "papers": 207,
+     "authors_per_paper": 2.85,
+     "city": "Vancouver"
+    },
+    {
+     "year": 2005,
+     "papers": 207,
+     "authors_per_paper": 2.85,
+     "city": "Vancouver"
+    },
+    {
+     "year": 2006,
+     "papers": 204,
+     "authors_per_paper": 2.79,
+     "city": "Vancouver"
+    },
+    {
+     "year": 2007,
+     "papers": 217,
+     "authors_per_paper": 2.93,
+     "city": "Vancouver"
+    },
+    {
+     "year": 2008,
+     "papers": 250,
+     "authors_per_paper": 2.98,
+     "city": "Vancouver"
+    },
+    {
+     "year": 2009,
+     "papers": 262,
+     "authors_per_paper": 3.02,
+     "city": "Vancouver"
+    },
+    {
+     "year": 2010,
+     "papers": 292,
+     "authors_per_paper": 2.93,
+     "city": "Vancouver"
+    },
+    {
+     "year": 2011,
+     "papers": 306,
+     "authors_per_paper": 2.86,
+     "city": "Granada"
+    },
+    {
+     "year": 2012,
+     "papers": 370,
+     "authors_per_paper": 3.01,
+     "city": "Lake Tahoe"
+    },
+    {
+     "year": 2013,
+     "papers": 360,
+     "authors_per_paper": 3.03,
+     "city": "Lake Tahoe"
+    },
+    {
+     "year": 2014,
+     "papers": 411,
+     "authors_per_paper": 3.13,
+     "city": "Montréal"
+    },
+    {
+     "year": 2015,
+     "papers": 403,
+     "authors_per_paper": 3.28,
+     "city": "Montréal"
+    },
+    {
+     "year": 2016,
+     "papers": 569,
+     "authors_per_paper": 3.41,
+     "city": "Barcelona"
+    },
+    {
+     "year": 2017,
+     "papers": 679,
+     "authors_per_paper": 3.67,
+     "city": "Long Beach"
+    },
+    {
+     "year": 2018,
+     "papers": 1009,
+     "authors_per_paper": 3.79,
+     "city": "Montréal"
+    },
+    {
+     "year": 2019,
+     "papers": 1428,
+     "authors_per_paper": 3.9,
+     "city": "Vancouver"
+    },
+    {
+     "year": 2020,
+     "papers": 1899,
+     "authors_per_paper": 4.1,
+     "city": "Online"
+    },
+    {
+     "year": 2021,
+     "papers": 2334,
+     "authors_per_paper": 4.25,
+     "city": "Online"
+    },
+    {
+     "year": 2022,
+     "papers": 2905,
+     "authors_per_paper": 4.62,
+     "city": "New Orleans"
+    },
+    {
+     "year": 2023,
+     "papers": 3584,
+     "authors_per_paper": 4.98,
+     "city": "New Orleans"
+    },
+    {
+     "year": 2024,
+     "papers": 4537,
+     "authors_per_paper": 5.51,
+     "city": "Vancouver"
+    },
+    {
+     "year": 2025,
+     "papers": 5858,
+     "authors_per_paper": 5.86,
+     "city": "San Diego"
+    },
+    {
+     "year": 2026,
+     "papers": 9097,
+     "authors_per_paper": 5.47,
+     "city": "Sydney"
+    }
+   ],
+   "metadata": {
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "papers": {
+     "type": "integer",
+     "levels": []
+    },
+    "authors_per_paper": {
+     "type": "number",
+     "levels": []
+    },
+    "city": {
+     "type": "string",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    select p.year, count(*) as papers, round(avg(p.n_authors), 2) as authors_per_paper,\n       any_value(c.city) as city\nfrom read_parquet('data/papers.parquet') p\nleft join read_parquet('data/conferences.parquet') c on c.year = p.year and c.main\ngroup by p.year\norder by p.year\n\"\"\").df()\n",
+    "outputVariable": "out",
+    "source": [
+     "conferences",
+     "papers"
+    ],
+    "trigger": {
+     "tableId": "conferences",
+     "resultTableId": "papers_per_year",
+     "chart": {
+      "id": "chart-trigger-papers_per_year",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "conferences",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "papers_per_year",
+    "rowCount": 40
+   },
+   "description": "NeurIPS papers per year since 1987 (all tracks), the average number of authors per paper, and the city NeurIPS met in (its main one in 2025 and 2026). Source: NeurIPS proceedings and neurips.cc; affiliations from neurips.cc (2020 on) and OpenAlex.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794703600000_step_1",
+   "createdAt": 1794703602000
+  },
+  {
+   "kind": "table",
+   "id": "topic_areas_by_year",
+   "displayId": "Share of NeurIPS papers by topic area, by year",
+   "names": [
+    "year",
+    "area",
+    "papers",
+    "share"
+   ],
+   "rows": [
+    {
+     "year": 1987,
+     "area": "Applications",
+     "papers": 29,
+     "share": 32.2
+    },
+    {
+     "year": 1987,
+     "area": "Computer Vision",
+     "papers": 3,
+     "share": 3.3
+    },
+    {
+     "year": 1987,
+     "area": "Deep Learning",
+     "papers": 35,
+     "share": 38.9
+    },
+    {
+     "year": 1987,
+     "area": "General Machine Learning",
+     "papers": 6,
+     "share": 6.7
+    },
+    {
+     "year": 1987,
+     "area": "Optimization",
+     "papers": 10,
+     "share": 11.1
+    },
+    {
+     "year": 1987,
+     "area": "Probabilistic Methods",
+     "papers": 2,
+     "share": 2.2
+    },
+    {
+     "year": 1987,
+     "area": "Reinforcement Learning",
+     "papers": 1,
+     "share": 1.1
+    },
+    {
+     "year": 1987,
+     "area": "Theory",
+     "papers": 4,
+     "share": 4.4
+    },
+    {
+     "year": 1988,
+     "area": "Applications",
+     "papers": 48,
+     "share": 51.1
+    },
+    {
+     "year": 1988,
+     "area": "Computer Vision",
+     "papers": 8,
+     "share": 8.5
+    },
+    {
+     "year": 1988,
+     "area": "Deep Learning",
+     "papers": 22,
+     "share": 23.4
+    },
+    {
+     "year": 1988,
+     "area": "General Machine Learning",
+     "papers": 4,
+     "share": 4.3
+    },
+    {
+     "year": 1988,
+     "area": "Optimization",
+     "papers": 8,
+     "share": 8.5
+    },
+    {
+     "year": 1988,
+     "area": "Probabilistic Methods",
+     "papers": 1,
+     "share": 1.1
+    },
+    {
+     "year": 1988,
+     "area": "Reinforcement Learning",
+     "papers": 1,
+     "share": 1.1
+    },
+    {
+     "year": 1988,
+     "area": "Theory",
+     "papers": 2,
+     "share": 2.1
+    },
+    {
+     "year": 1989,
+     "area": "Applications",
+     "papers": 40,
+     "share": 39.6
+    },
+    {
+     "year": 1989,
+     "area": "Computer Vision",
+     "papers": 10,
+     "share": 9.9
+    },
+    {
+     "year": 1989,
+     "area": "Data-centric AI",
+     "papers": 1,
+     "share": 1.0
+    },
+    {
+     "year": 1989,
+     "area": "Deep Learning",
+     "papers": 25,
+     "share": 24.8
+    },
+    {
+     "year": 1989,
+     "area": "General Machine Learning",
+     "papers": 5,
+     "share": 5.0
+    },
+    {
+     "year": 1989,
+     "area": "Optimization",
+     "papers": 12,
+     "share": 11.9
+    },
+    {
+     "year": 1989,
+     "area": "Probabilistic Methods",
+     "papers": 3,
+     "share": 3.0
+    },
+    {
+     "year": 1989,
+     "area": "Reinforcement Learning",
+     "papers": 2,
+     "share": 2.0
+    },
+    {
+     "year": 1989,
+     "area": "Social Aspects",
+     "papers": 1,
+     "share": 1.0
+    },
+    {
+     "year": 1989,
+     "area": "Theory",
+     "papers": 2,
+     "share": 2.0
+    },
+    {
+     "year": 1990,
+     "area": "Applications",
+     "papers": 57,
+     "share": 39.9
+    },
+    {
+     "year": 1990,
+     "area": "Computer Vision",
+     "papers": 13,
+     "share": 9.1
+    },
+    {
+     "year": 1990,
+     "area": "Data-centric AI",
+     "papers": 1,
+     "share": 0.7
+    },
+    {
+     "year": 1990,
+     "area": "Deep Learning",
+     "papers": 37,
+     "share": 25.9
+    },
+    {
+     "year": 1990,
+     "area": "General Machine Learning",
+     "papers": 8,
+     "share": 5.6
+    },
+    {
+     "year": 1990,
+     "area": "Optimization",
+     "papers": 7,
+     "share": 4.9
+    },
+    {
+     "year": 1990,
+     "area": "Probabilistic Methods",
+     "papers": 1,
+     "share": 0.7
+    },
+    {
+     "year": 1990,
+     "area": "Reinforcement Learning",
+     "papers": 7,
+     "share": 4.9
+    },
+    {
+     "year": 1990,
+     "area": "Social Aspects",
+     "papers": 1,
+     "share": 0.7
+    },
+    {
+     "year": 1990,
+     "area": "Theory",
+     "papers": 11,
+     "share": 7.7
+    },
+    {
+     "year": 1991,
+     "area": "Applications",
+     "papers": 62,
+     "share": 43.1
+    },
+    {
+     "year": 1991,
+     "area": "Computer Vision",
+     "papers": 19,
+     "share": 13.2
+    },
+    {
+     "year": 1991,
+     "area": "Data-centric AI",
+     "papers": 2,
+     "share": 1.4
+    },
+    {
+     "year": 1991,
+     "area": "Deep Learning",
+     "papers": 28,
+     "share": 19.4
+    },
+    {
+     "year": 1991,
+     "area": "General Machine Learning",
+     "papers": 9,
+     "share": 6.3
+    },
+    {
+     "year": 1991,
+     "area": "Optimization",
+     "papers": 8,
+     "share": 5.6
+    },
+    {
+     "year": 1991,
+     "area": "Probabilistic Methods",
+     "papers": 3,
+     "share": 2.1
+    },
+    {
+     "year": 1991,
+     "area": "Reinforcement Learning",
+     "papers": 4,
+     "share": 2.8
+    },
+    {
+     "year": 1991,
+     "area": "Social Aspects",
+     "papers": 1,
+     "share": 0.7
+    },
+    {
+     "year": 1991,
+     "area": "Theory",
+     "papers": 8,
+     "share": 5.6
+    },
+    {
+     "year": 1992,
+     "area": "Applications",
+     "papers": 53,
+     "share": 41.7
+    },
+    {
+     "year": 1992,
+     "area": "Computer Vision",
+     "papers": 9,
+     "share": 7.1
+    },
+    {
+     "year": 1992,
+     "area": "Deep Learning",
+     "papers": 29,
+     "share": 22.8
+    },
+    {
+     "year": 1992,
+     "area": "General Machine Learning",
+     "papers": 12,
+     "share": 9.4
+    },
+    {
+     "year": 1992,
+     "area": "Optimization",
+     "papers": 8,
+     "share": 6.3
+    },
+    {
+     "year": 1992,
+     "area": "Probabilistic Methods",
+     "papers": 6,
+     "share": 4.7
+    },
+    {
+     "year": 1992,
+     "area": "Reinforcement Learning",
+     "papers": 4,
+     "share": 3.1
+    },
+    {
+     "year": 1992,
+     "area": "Social Aspects",
+     "papers": 2,
+     "share": 1.6
+    },
+    {
+     "year": 1992,
+     "area": "Theory",
+     "papers": 4,
+     "share": 3.1
+    },
+    {
+     "year": 1993,
+     "area": "Applications",
+     "papers": 48,
+     "share": 30.4
+    },
+    {
+     "year": 1993,
+     "area": "Computer Vision",
+     "papers": 16,
+     "share": 10.1
+    },
+    {
+     "year": 1993,
+     "area": "Data-centric AI",
+     "papers": 2,
+     "share": 1.3
+    },
+    {
+     "year": 1993,
+     "area": "Deep Learning",
+     "papers": 35,
+     "share": 22.2
+    },
+    {
+     "year": 1993,
+     "area": "General Machine Learning",
+     "papers": 18,
+     "share": 11.4
+    },
+    {
+     "year": 1993,
+     "area": "Optimization",
+     "papers": 12,
+     "share": 7.6
+    },
+    {
+     "year": 1993,
+     "area": "Probabilistic Methods",
+     "papers": 8,
+     "share": 5.1
+    },
+    {
+     "year": 1993,
+     "area": "Reinforcement Learning",
+     "papers": 6,
+     "share": 3.8
+    },
+    {
+     "year": 1993,
+     "area": "Social Aspects",
+     "papers": 3,
+     "share": 1.9
+    },
+    {
+     "year": 1993,
+     "area": "Theory",
+     "papers": 10,
+     "share": 6.3
+    },
+    {
+     "year": 1994,
+     "area": "Applications",
+     "papers": 57,
+     "share": 40.7
+    },
+    {
+     "year": 1994,
+     "area": "Computer Vision",
+     "papers": 16,
+     "share": 11.4
+    },
+    {
+     "year": 1994,
+     "area": "Data-centric AI",
+     "papers": 5,
+     "share": 3.6
+    },
+    {
+     "year": 1994,
+     "area": "Deep Learning",
+     "papers": 9,
+     "share": 6.4
+    },
+    {
+     "year": 1994,
+     "area": "General Machine Learning",
+     "papers": 14,
+     "share": 10.0
+    },
+    {
+     "year": 1994,
+     "area": "Optimization",
+     "papers": 8,
+     "share": 5.7
+    },
+    {
+     "year": 1994,
+     "area": "Probabilistic Methods",
+     "papers": 10,
+     "share": 7.1
+    },
+    {
+     "year": 1994,
+     "area": "Reinforcement Learning",
+     "papers": 4,
+     "share": 2.9
+    },
+    {
+     "year": 1994,
+     "area": "Social Aspects",
+     "papers": 3,
+     "share": 2.1
+    },
+    {
+     "year": 1994,
+     "area": "Theory",
+     "papers": 14,
+     "share": 10.0
+    },
+    {
+     "year": 1995,
+     "area": "Applications",
+     "papers": 54,
+     "share": 35.5
+    },
+    {
+     "year": 1995,
+     "area": "Computer Vision",
+     "papers": 12,
+     "share": 7.9
+    },
+    {
+     "year": 1995,
+     "area": "Deep Learning",
+     "papers": 24,
+     "share": 15.8
+    },
+    {
+     "year": 1995,
+     "area": "General Machine Learning",
+     "papers": 19,
+     "share": 12.5
+    },
+    {
+     "year": 1995,
+     "area": "Optimization",
+     "papers": 9,
+     "share": 5.9
+    },
+    {
+     "year": 1995,
+     "area": "Probabilistic Methods",
+     "papers": 10,
+     "share": 6.6
+    },
+    {
+     "year": 1995,
+     "area": "Reinforcement Learning",
+     "papers": 8,
+     "share": 5.3
+    },
+    {
+     "year": 1995,
+     "area": "Social Aspects",
+     "papers": 1,
+     "share": 0.7
+    },
+    {
+     "year": 1995,
+     "area": "Theory",
+     "papers": 15,
+     "share": 9.9
+    },
+    {
+     "year": 1996,
+     "area": "Applications",
+     "papers": 46,
+     "share": 30.3
+    },
+    {
+     "year": 1996,
+     "area": "Computer Vision",
+     "papers": 10,
+     "share": 6.6
+    },
+    {
+     "year": 1996,
+     "area": "Data-centric AI",
+     "papers": 1,
+     "share": 0.7
+    },
+    {
+     "year": 1996,
+     "area": "Deep Learning",
+     "papers": 21,
+     "share": 13.8
+    },
+    {
+     "year": 1996,
+     "area": "General Machine Learning",
+     "papers": 25,
+     "share": 16.4
+    },
+    {
+     "year": 1996,
+     "area": "Optimization",
+     "papers": 12,
+     "share": 7.9
+    },
+    {
+     "year": 1996,
+     "area": "Probabilistic Methods",
+     "papers": 16,
+     "share": 10.5
+    },
+    {
+     "year": 1996,
+     "area": "Reinforcement Learning",
+     "papers": 10,
+     "share": 6.6
+    },
+    {
+     "year": 1996,
+     "area": "Theory",
+     "papers": 11,
+     "share": 7.2
+    },
+    {
+     "year": 1997,
+     "area": "Applications",
+     "papers": 60,
+     "share": 40.0
+    },
+    {
+     "year": 1997,
+     "area": "Computer Vision",
+     "papers": 11,
+     "share": 7.3
+    },
+    {
+     "year": 1997,
+     "area": "Data-centric AI",
+     "papers": 1,
+     "share": 0.7
+    },
+    {
+     "year": 1997,
+     "area": "Deep Learning",
+     "papers": 17,
+     "share": 11.3
+    },
+    {
+     "year": 1997,
+     "area": "General Machine Learning",
+     "papers": 22,
+     "share": 14.7
+    },
+    {
+     "year": 1997,
+     "area": "Optimization",
+     "papers": 6,
+     "share": 4.0
+    },
+    {
+     "year": 1997,
+     "area": "Probabilistic Methods",
+     "papers": 13,
+     "share": 8.7
+    },
+    {
+     "year": 1997,
+     "area": "Reinforcement Learning",
+     "papers": 4,
+     "share": 2.7
+    },
+    {
+     "year": 1997,
+     "area": "Theory",
+     "papers": 16,
+     "share": 10.7
+    },
+    {
+     "year": 1998,
+     "area": "Applications",
+     "papers": 46,
+     "share": 30.5
+    },
+    {
+     "year": 1998,
+     "area": "Computer Vision",
+     "papers": 19,
+     "share": 12.6
+    },
+    {
+     "year": 1998,
+     "area": "Deep Learning",
+     "papers": 10,
+     "share": 6.6
+    },
+    {
+     "year": 1998,
+     "area": "General Machine Learning",
+     "papers": 24,
+     "share": 15.9
+    },
+    {
+     "year": 1998,
+     "area": "Optimization",
+     "papers": 5,
+     "share": 3.3
+    },
+    {
+     "year": 1998,
+     "area": "Probabilistic Methods",
+     "papers": 26,
+     "share": 17.2
+    },
+    {
+     "year": 1998,
+     "area": "Reinforcement Learning",
+     "papers": 9,
+     "share": 6.0
+    },
+    {
+     "year": 1998,
+     "area": "Theory",
+     "papers": 12,
+     "share": 7.9
+    },
+    {
+     "year": 1999,
+     "area": "Applications",
+     "papers": 56,
+     "share": 37.3
+    },
+    {
+     "year": 1999,
+     "area": "Computer Vision",
+     "papers": 12,
+     "share": 8.0
+    },
+    {
+     "year": 1999,
+     "area": "Deep Learning",
+     "papers": 10,
+     "share": 6.7
+    },
+    {
+     "year": 1999,
+     "area": "General Machine Learning",
+     "papers": 15,
+     "share": 10.0
+    },
+    {
+     "year": 1999,
+     "area": "Optimization",
+     "papers": 3,
+     "share": 2.0
+    },
+    {
+     "year": 1999,
+     "area": "Probabilistic Methods",
+     "papers": 29,
+     "share": 19.3
+    },
+    {
+     "year": 1999,
+     "area": "Reinforcement Learning",
+     "papers": 5,
+     "share": 3.3
+    },
+    {
+     "year": 1999,
+     "area": "Theory",
+     "papers": 20,
+     "share": 13.3
+    },
+    {
+     "year": 2000,
+     "area": "Applications",
+     "papers": 54,
+     "share": 35.5
+    },
+    {
+     "year": 2000,
+     "area": "Computer Vision",
+     "papers": 17,
+     "share": 11.2
+    },
+    {
+     "year": 2000,
+     "area": "Deep Learning",
+     "papers": 2,
+     "share": 1.3
+    },
+    {
+     "year": 2000,
+     "area": "General Machine Learning",
+     "papers": 20,
+     "share": 13.2
+    },
+    {
+     "year": 2000,
+     "area": "Optimization",
+     "papers": 5,
+     "share": 3.3
+    },
+    {
+     "year": 2000,
+     "area": "Probabilistic Methods",
+     "papers": 28,
+     "share": 18.4
+    },
+    {
+     "year": 2000,
+     "area": "Reinforcement Learning",
+     "papers": 7,
+     "share": 4.6
+    },
+    {
+     "year": 2000,
+     "area": "Theory",
+     "papers": 19,
+     "share": 12.5
+    },
+    {
+     "year": 2001,
+     "area": "Applications",
+     "papers": 69,
+     "share": 35.0
+    },
+    {
+     "year": 2001,
+     "area": "Computer Vision",
+     "papers": 11,
+     "share": 5.6
+    },
+    {
+     "year": 2001,
+     "area": "Deep Learning",
+     "papers": 3,
+     "share": 1.5
+    },
+    {
+     "year": 2001,
+     "area": "General Machine Learning",
+     "papers": 38,
+     "share": 19.3
+    },
+    {
+     "year": 2001,
+     "area": "Optimization",
+     "papers": 10,
+     "share": 5.1
+    },
+    {
+     "year": 2001,
+     "area": "Probabilistic Methods",
+     "papers": 33,
+     "share": 16.8
+    },
+    {
+     "year": 2001,
+     "area": "Reinforcement Learning",
+     "papers": 10,
+     "share": 5.1
+    },
+    {
+     "year": 2001,
+     "area": "Social Aspects",
+     "papers": 1,
+     "share": 0.5
+    },
+    {
+     "year": 2001,
+     "area": "Theory",
+     "papers": 22,
+     "share": 11.2
+    },
+    {
+     "year": 2002,
+     "area": "Applications",
+     "papers": 85,
+     "share": 41.1
+    },
+    {
+     "year": 2002,
+     "area": "Computer Vision",
+     "papers": 13,
+     "share": 6.3
+    },
+    {
+     "year": 2002,
+     "area": "Deep Learning",
+     "papers": 1,
+     "share": 0.5
+    },
+    {
+     "year": 2002,
+     "area": "General Machine Learning",
+     "papers": 51,
+     "share": 24.6
+    },
+    {
+     "year": 2002,
+     "area": "Optimization",
+     "papers": 3,
+     "share": 1.4
+    },
+    {
+     "year": 2002,
+     "area": "Probabilistic Methods",
+     "papers": 26,
+     "share": 12.6
+    },
+    {
+     "year": 2002,
+     "area": "Reinforcement Learning",
+     "papers": 5,
+     "share": 2.4
+    },
+    {
+     "year": 2002,
+     "area": "Theory",
+     "papers": 23,
+     "share": 11.1
+    },
+    {
+     "year": 2003,
+     "area": "Applications",
+     "papers": 65,
+     "share": 32.8
+    },
+    {
+     "year": 2003,
+     "area": "Computer Vision",
+     "papers": 19,
+     "share": 9.6
+    },
+    {
+     "year": 2003,
+     "area": "Deep Learning",
+     "papers": 3,
+     "share": 1.5
+    },
+    {
+     "year": 2003,
+     "area": "General Machine Learning",
+     "papers": 34,
+     "share": 17.2
+    },
+    {
+     "year": 2003,
+     "area": "Optimization",
+     "papers": 5,
+     "share": 2.5
+    },
+    {
+     "year": 2003,
+     "area": "Probabilistic Methods",
+     "papers": 35,
+     "share": 17.7
+    },
+    {
+     "year": 2003,
+     "area": "Reinforcement Learning",
+     "papers": 5,
+     "share": 2.5
+    },
+    {
+     "year": 2003,
+     "area": "Theory",
+     "papers": 32,
+     "share": 16.2
+    },
+    {
+     "year": 2004,
+     "area": "Applications",
+     "papers": 58,
+     "share": 28.0
+    },
+    {
+     "year": 2004,
+     "area": "Computer Vision",
+     "papers": 27,
+     "share": 13.0
+    },
+    {
+     "year": 2004,
+     "area": "Data-centric AI",
+     "papers": 2,
+     "share": 1.0
+    },
+    {
+     "year": 2004,
+     "area": "Deep Learning",
+     "papers": 3,
+     "share": 1.4
+    },
+    {
+     "year": 2004,
+     "area": "General Machine Learning",
+     "papers": 37,
+     "share": 17.9
+    },
+    {
+     "year": 2004,
+     "area": "Optimization",
+     "papers": 15,
+     "share": 7.2
+    },
+    {
+     "year": 2004,
+     "area": "Probabilistic Methods",
+     "papers": 27,
+     "share": 13.0
+    },
+    {
+     "year": 2004,
+     "area": "Reinforcement Learning",
+     "papers": 10,
+     "share": 4.8
+    },
+    {
+     "year": 2004,
+     "area": "Theory",
+     "papers": 28,
+     "share": 13.5
+    },
+    {
+     "year": 2005,
+     "area": "Applications",
+     "papers": 70,
+     "share": 33.8
+    },
+    {
+     "year": 2005,
+     "area": "Computer Vision",
+     "papers": 16,
+     "share": 7.7
+    },
+    {
+     "year": 2005,
+     "area": "Data-centric AI",
+     "papers": 1,
+     "share": 0.5
+    },
+    {
+     "year": 2005,
+     "area": "Deep Learning",
+     "papers": 3,
+     "share": 1.4
+    },
+    {
+     "year": 2005,
+     "area": "General Machine Learning",
+     "papers": 30,
+     "share": 14.5
+    },
+    {
+     "year": 2005,
+     "area": "Optimization",
+     "papers": 11,
+     "share": 5.3
+    },
+    {
+     "year": 2005,
+     "area": "Probabilistic Methods",
+     "papers": 38,
+     "share": 18.4
+    },
+    {
+     "year": 2005,
+     "area": "Reinforcement Learning",
+     "papers": 9,
+     "share": 4.3
+    },
+    {
+     "year": 2005,
+     "area": "Theory",
+     "papers": 29,
+     "share": 14.0
+    },
+    {
+     "year": 2006,
+     "area": "Applications",
+     "papers": 54,
+     "share": 26.5
+    },
+    {
+     "year": 2006,
+     "area": "Computer Vision",
+     "papers": 26,
+     "share": 12.7
+    },
+    {
+     "year": 2006,
+     "area": "Deep Learning",
+     "papers": 2,
+     "share": 1.0
+    },
+    {
+     "year": 2006,
+     "area": "General Machine Learning",
+     "papers": 41,
+     "share": 20.1
+    },
+    {
+     "year": 2006,
+     "area": "Optimization",
+     "papers": 10,
+     "share": 4.9
+    },
+    {
+     "year": 2006,
+     "area": "Probabilistic Methods",
+     "papers": 33,
+     "share": 16.2
+    },
+    {
+     "year": 2006,
+     "area": "Reinforcement Learning",
+     "papers": 2,
+     "share": 1.0
+    },
+    {
+     "year": 2006,
+     "area": "Social Aspects",
+     "papers": 1,
+     "share": 0.5
+    },
+    {
+     "year": 2006,
+     "area": "Theory",
+     "papers": 35,
+     "share": 17.2
+    },
+    {
+     "year": 2007,
+     "area": "Applications",
+     "papers": 63,
+     "share": 29.0
+    },
+    {
+     "year": 2007,
+     "area": "Computer Vision",
+     "papers": 12,
+     "share": 5.5
+    },
+    {
+     "year": 2007,
+     "area": "Data-centric AI",
+     "papers": 2,
+     "share": 0.9
+    },
+    {
+     "year": 2007,
+     "area": "Deep Learning",
+     "papers": 1,
+     "share": 0.5
+    },
+    {
+     "year": 2007,
+     "area": "General Machine Learning",
+     "papers": 27,
+     "share": 12.4
+    },
+    {
+     "year": 2007,
+     "area": "Optimization",
+     "papers": 20,
+     "share": 9.2
+    },
+    {
+     "year": 2007,
+     "area": "Probabilistic Methods",
+     "papers": 45,
+     "share": 20.7
+    },
+    {
+     "year": 2007,
+     "area": "Reinforcement Learning",
+     "papers": 11,
+     "share": 5.1
+    },
+    {
+     "year": 2007,
+     "area": "Social Aspects",
+     "papers": 2,
+     "share": 0.9
+    },
+    {
+     "year": 2007,
+     "area": "Theory",
+     "papers": 34,
+     "share": 15.7
+    },
+    {
+     "year": 2008,
+     "area": "Applications",
+     "papers": 71,
+     "share": 28.4
+    },
+    {
+     "year": 2008,
+     "area": "Computer Vision",
+     "papers": 18,
+     "share": 7.2
+    },
+    {
+     "year": 2008,
+     "area": "Deep Learning",
+     "papers": 3,
+     "share": 1.2
+    },
+    {
+     "year": 2008,
+     "area": "General Machine Learning",
+     "papers": 48,
+     "share": 19.2
+    },
+    {
+     "year": 2008,
+     "area": "Optimization",
+     "papers": 20,
+     "share": 8.0
+    },
+    {
+     "year": 2008,
+     "area": "Probabilistic Methods",
+     "papers": 40,
+     "share": 16.0
+    },
+    {
+     "year": 2008,
+     "area": "Reinforcement Learning",
+     "papers": 6,
+     "share": 2.4
+    },
+    {
+     "year": 2008,
+     "area": "Social Aspects",
+     "papers": 1,
+     "share": 0.4
+    },
+    {
+     "year": 2008,
+     "area": "Theory",
+     "papers": 43,
+     "share": 17.2
+    },
+    {
+     "year": 2009,
+     "area": "Applications",
+     "papers": 60,
+     "share": 22.9
+    },
+    {
+     "year": 2009,
+     "area": "Computer Vision",
+     "papers": 22,
+     "share": 8.4
+    },
+    {
+     "year": 2009,
+     "area": "Data-centric AI",
+     "papers": 1,
+     "share": 0.4
+    },
+    {
+     "year": 2009,
+     "area": "Deep Learning",
+     "papers": 4,
+     "share": 1.5
+    },
+    {
+     "year": 2009,
+     "area": "General Machine Learning",
+     "papers": 45,
+     "share": 17.2
+    },
+    {
+     "year": 2009,
+     "area": "Optimization",
+     "papers": 25,
+     "share": 9.5
+    },
+    {
+     "year": 2009,
+     "area": "Probabilistic Methods",
+     "papers": 51,
+     "share": 19.5
+    },
+    {
+     "year": 2009,
+     "area": "Reinforcement Learning",
+     "papers": 8,
+     "share": 3.1
+    },
+    {
+     "year": 2009,
+     "area": "Social Aspects",
+     "papers": 1,
+     "share": 0.4
+    },
+    {
+     "year": 2009,
+     "area": "Theory",
+     "papers": 45,
+     "share": 17.2
+    },
+    {
+     "year": 2010,
+     "area": "Applications",
+     "papers": 61,
+     "share": 20.9
+    },
+    {
+     "year": 2010,
+     "area": "Computer Vision",
+     "papers": 25,
+     "share": 8.6
+    },
+    {
+     "year": 2010,
+     "area": "Data-centric AI",
+     "papers": 3,
+     "share": 1.0
+    },
+    {
+     "year": 2010,
+     "area": "Deep Learning",
+     "papers": 3,
+     "share": 1.0
+    },
+    {
+     "year": 2010,
+     "area": "General Machine Learning",
+     "papers": 49,
+     "share": 16.8
+    },
+    {
+     "year": 2010,
+     "area": "Optimization",
+     "papers": 33,
+     "share": 11.3
+    },
+    {
+     "year": 2010,
+     "area": "Probabilistic Methods",
+     "papers": 51,
+     "share": 17.5
+    },
+    {
+     "year": 2010,
+     "area": "Reinforcement Learning",
+     "papers": 12,
+     "share": 4.1
+    },
+    {
+     "year": 2010,
+     "area": "Social Aspects",
+     "papers": 2,
+     "share": 0.7
+    },
+    {
+     "year": 2010,
+     "area": "Theory",
+     "papers": 53,
+     "share": 18.2
+    },
+    {
+     "year": 2011,
+     "area": "Applications",
+     "papers": 52,
+     "share": 17.0
+    },
+    {
+     "year": 2011,
+     "area": "Computer Vision",
+     "papers": 30,
+     "share": 9.8
+    },
+    {
+     "year": 2011,
+     "area": "Data-centric AI",
+     "papers": 3,
+     "share": 1.0
+    },
+    {
+     "year": 2011,
+     "area": "Deep Learning",
+     "papers": 3,
+     "share": 1.0
+    },
+    {
+     "year": 2011,
+     "area": "General Machine Learning",
+     "papers": 47,
+     "share": 15.4
+    },
+    {
+     "year": 2011,
+     "area": "Optimization",
+     "papers": 36,
+     "share": 11.8
+    },
+    {
+     "year": 2011,
+     "area": "Probabilistic Methods",
+     "papers": 55,
+     "share": 18.0
+    },
+    {
+     "year": 2011,
+     "area": "Reinforcement Learning",
+     "papers": 9,
+     "share": 2.9
+    },
+    {
+     "year": 2011,
+     "area": "Social Aspects",
+     "papers": 1,
+     "share": 0.3
+    },
+    {
+     "year": 2011,
+     "area": "Theory",
+     "papers": 70,
+     "share": 22.9
+    },
+    {
+     "year": 2012,
+     "area": "Applications",
+     "papers": 66,
+     "share": 17.8
+    },
+    {
+     "year": 2012,
+     "area": "Computer Vision",
+     "papers": 31,
+     "share": 8.4
+    },
+    {
+     "year": 2012,
+     "area": "Data-centric AI",
+     "papers": 2,
+     "share": 0.5
+    },
+    {
+     "year": 2012,
+     "area": "Deep Learning",
+     "papers": 3,
+     "share": 0.8
+    },
+    {
+     "year": 2012,
+     "area": "General Machine Learning",
+     "papers": 63,
+     "share": 17.0
+    },
+    {
+     "year": 2012,
+     "area": "Optimization",
+     "papers": 48,
+     "share": 13.0
+    },
+    {
+     "year": 2012,
+     "area": "Probabilistic Methods",
+     "papers": 88,
+     "share": 23.8
+    },
+    {
+     "year": 2012,
+     "area": "Reinforcement Learning",
+     "papers": 16,
+     "share": 4.3
+    },
+    {
+     "year": 2012,
+     "area": "Social Aspects",
+     "papers": 3,
+     "share": 0.8
+    },
+    {
+     "year": 2012,
+     "area": "Theory",
+     "papers": 50,
+     "share": 13.5
+    },
+    {
+     "year": 2013,
+     "area": "Applications",
+     "papers": 55,
+     "share": 15.3
+    },
+    {
+     "year": 2013,
+     "area": "Computer Vision",
+     "papers": 16,
+     "share": 4.4
+    },
+    {
+     "year": 2013,
+     "area": "Deep Learning",
+     "papers": 12,
+     "share": 3.3
+    },
+    {
+     "year": 2013,
+     "area": "General Machine Learning",
+     "papers": 57,
+     "share": 15.8
+    },
+    {
+     "year": 2013,
+     "area": "Optimization",
+     "papers": 54,
+     "share": 15.0
+    },
+    {
+     "year": 2013,
+     "area": "Probabilistic Methods",
+     "papers": 75,
+     "share": 20.8
+    },
+    {
+     "year": 2013,
+     "area": "Reinforcement Learning",
+     "papers": 9,
+     "share": 2.5
+    },
+    {
+     "year": 2013,
+     "area": "Social Aspects",
+     "papers": 7,
+     "share": 1.9
+    },
+    {
+     "year": 2013,
+     "area": "Theory",
+     "papers": 75,
+     "share": 20.8
+    },
+    {
+     "year": 2014,
+     "area": "Applications",
+     "papers": 49,
+     "share": 11.9
+    },
+    {
+     "year": 2014,
+     "area": "Computer Vision",
+     "papers": 34,
+     "share": 8.3
+    },
+    {
+     "year": 2014,
+     "area": "Data-centric AI",
+     "papers": 1,
+     "share": 0.2
+    },
+    {
+     "year": 2014,
+     "area": "Deep Learning",
+     "papers": 20,
+     "share": 4.9
+    },
+    {
+     "year": 2014,
+     "area": "General Machine Learning",
+     "papers": 57,
+     "share": 13.9
+    },
+    {
+     "year": 2014,
+     "area": "Optimization",
+     "papers": 71,
+     "share": 17.3
+    },
+    {
+     "year": 2014,
+     "area": "Probabilistic Methods",
+     "papers": 76,
+     "share": 18.5
+    },
+    {
+     "year": 2014,
+     "area": "Reinforcement Learning",
+     "papers": 11,
+     "share": 2.7
+    },
+    {
+     "year": 2014,
+     "area": "Social Aspects",
+     "papers": 4,
+     "share": 1.0
+    },
+    {
+     "year": 2014,
+     "area": "Theory",
+     "papers": 88,
+     "share": 21.4
+    },
+    {
+     "year": 2015,
+     "area": "Applications",
+     "papers": 35,
+     "share": 8.7
+    },
+    {
+     "year": 2015,
+     "area": "Computer Vision",
+     "papers": 29,
+     "share": 7.2
+    },
+    {
+     "year": 2015,
+     "area": "Data-centric AI",
+     "papers": 1,
+     "share": 0.2
+    },
+    {
+     "year": 2015,
+     "area": "Deep Learning",
+     "papers": 23,
+     "share": 5.7
+    },
+    {
+     "year": 2015,
+     "area": "General Machine Learning",
+     "papers": 46,
+     "share": 11.4
+    },
+    {
+     "year": 2015,
+     "area": "Optimization",
+     "papers": 73,
+     "share": 18.1
+    },
+    {
+     "year": 2015,
+     "area": "Probabilistic Methods",
+     "papers": 83,
+     "share": 20.6
+    },
+    {
+     "year": 2015,
+     "area": "Reinforcement Learning",
+     "papers": 11,
+     "share": 2.7
+    },
+    {
+     "year": 2015,
+     "area": "Social Aspects",
+     "papers": 8,
+     "share": 2.0
+    },
+    {
+     "year": 2015,
+     "area": "Theory",
+     "papers": 94,
+     "share": 23.3
+    },
+    {
+     "year": 2016,
+     "area": "Applications",
+     "papers": 62,
+     "share": 10.9
+    },
+    {
+     "year": 2016,
+     "area": "Computer Vision",
+     "papers": 43,
+     "share": 7.6
+    },
+    {
+     "year": 2016,
+     "area": "Data-centric AI",
+     "papers": 2,
+     "share": 0.4
+    },
+    {
+     "year": 2016,
+     "area": "Deep Learning",
+     "papers": 60,
+     "share": 10.5
+    },
+    {
+     "year": 2016,
+     "area": "General Machine Learning",
+     "papers": 67,
+     "share": 11.8
+    },
+    {
+     "year": 2016,
+     "area": "Optimization",
+     "papers": 114,
+     "share": 20.0
+    },
+    {
+     "year": 2016,
+     "area": "Probabilistic Methods",
+     "papers": 80,
+     "share": 14.1
+    },
+    {
+     "year": 2016,
+     "area": "Reinforcement Learning",
+     "papers": 18,
+     "share": 3.2
+    },
+    {
+     "year": 2016,
+     "area": "Social Aspects",
+     "papers": 9,
+     "share": 1.6
+    },
+    {
+     "year": 2016,
+     "area": "Theory",
+     "papers": 114,
+     "share": 20.0
+    },
+    {
+     "year": 2017,
+     "area": "Applications",
+     "papers": 69,
+     "share": 10.2
+    },
+    {
+     "year": 2017,
+     "area": "Computer Vision",
+     "papers": 49,
+     "share": 7.2
+    },
+    {
+     "year": 2017,
+     "area": "Data-centric AI",
+     "papers": 3,
+     "share": 0.4
+    },
+    {
+     "year": 2017,
+     "area": "Deep Learning",
+     "papers": 97,
+     "share": 14.3
+    },
+    {
+     "year": 2017,
+     "area": "General Machine Learning",
+     "papers": 76,
+     "share": 11.2
+    },
+    {
+     "year": 2017,
+     "area": "Optimization",
+     "papers": 118,
+     "share": 17.4
+    },
+    {
+     "year": 2017,
+     "area": "Probabilistic Methods",
+     "papers": 77,
+     "share": 11.3
+    },
+    {
+     "year": 2017,
+     "area": "Reinforcement Learning",
+     "papers": 40,
+     "share": 5.9
+    },
+    {
+     "year": 2017,
+     "area": "Social Aspects",
+     "papers": 23,
+     "share": 3.4
+    },
+    {
+     "year": 2017,
+     "area": "Theory",
+     "papers": 127,
+     "share": 18.7
+    },
+    {
+     "year": 2018,
+     "area": "Applications",
+     "papers": 100,
+     "share": 9.9
+    },
+    {
+     "year": 2018,
+     "area": "Computer Vision",
+     "papers": 93,
+     "share": 9.2
+    },
+    {
+     "year": 2018,
+     "area": "Data-centric AI",
+     "papers": 3,
+     "share": 0.3
+    },
+    {
+     "year": 2018,
+     "area": "Deep Learning",
+     "papers": 186,
+     "share": 18.4
+    },
+    {
+     "year": 2018,
+     "area": "General Machine Learning",
+     "papers": 108,
+     "share": 10.7
+    },
+    {
+     "year": 2018,
+     "area": "Optimization",
+     "papers": 163,
+     "share": 16.2
+    },
+    {
+     "year": 2018,
+     "area": "Probabilistic Methods",
+     "papers": 100,
+     "share": 9.9
+    },
+    {
+     "year": 2018,
+     "area": "Reinforcement Learning",
+     "papers": 73,
+     "share": 7.2
+    },
+    {
+     "year": 2018,
+     "area": "Social Aspects",
+     "papers": 50,
+     "share": 5.0
+    },
+    {
+     "year": 2018,
+     "area": "Theory",
+     "papers": 133,
+     "share": 13.2
+    },
+    {
+     "year": 2019,
+     "area": "Applications",
+     "papers": 126,
+     "share": 8.8
+    },
+    {
+     "year": 2019,
+     "area": "Computer Vision",
+     "papers": 119,
+     "share": 8.3
+    },
+    {
+     "year": 2019,
+     "area": "Data-centric AI",
+     "papers": 16,
+     "share": 1.1
+    },
+    {
+     "year": 2019,
+     "area": "Deep Learning",
+     "papers": 278,
+     "share": 19.5
+    },
+    {
+     "year": 2019,
+     "area": "General Machine Learning",
+     "papers": 156,
+     "share": 10.9
+    },
+    {
+     "year": 2019,
+     "area": "Optimization",
+     "papers": 200,
+     "share": 14.0
+    },
+    {
+     "year": 2019,
+     "area": "Probabilistic Methods",
+     "papers": 108,
+     "share": 7.6
+    },
+    {
+     "year": 2019,
+     "area": "Reinforcement Learning",
+     "papers": 106,
+     "share": 7.4
+    },
+    {
+     "year": 2019,
+     "area": "Social Aspects",
+     "papers": 101,
+     "share": 7.1
+    },
+    {
+     "year": 2019,
+     "area": "Theory",
+     "papers": 218,
+     "share": 15.3
+    },
+    {
+     "year": 2020,
+     "area": "Applications",
+     "papers": 190,
+     "share": 10.0
+    },
+    {
+     "year": 2020,
+     "area": "Computer Vision",
+     "papers": 176,
+     "share": 9.3
+    },
+    {
+     "year": 2020,
+     "area": "Data-centric AI",
+     "papers": 27,
+     "share": 1.4
+    },
+    {
+     "year": 2020,
+     "area": "Deep Learning",
+     "papers": 377,
+     "share": 19.9
+    },
+    {
+     "year": 2020,
+     "area": "General Machine Learning",
+     "papers": 220,
+     "share": 11.6
+    },
+    {
+     "year": 2020,
+     "area": "Optimization",
+     "papers": 241,
+     "share": 12.7
+    },
+    {
+     "year": 2020,
+     "area": "Probabilistic Methods",
+     "papers": 113,
+     "share": 6.0
+    },
+    {
+     "year": 2020,
+     "area": "Reinforcement Learning",
+     "papers": 141,
+     "share": 7.4
+    },
+    {
+     "year": 2020,
+     "area": "Social Aspects",
+     "papers": 115,
+     "share": 6.1
+    },
+    {
+     "year": 2020,
+     "area": "Theory",
+     "papers": 299,
+     "share": 15.7
+    },
+    {
+     "year": 2021,
+     "area": "Applications",
+     "papers": 216,
+     "share": 9.3
+    },
+    {
+     "year": 2021,
+     "area": "Computer Vision",
+     "papers": 258,
+     "share": 11.1
+    },
+    {
+     "year": 2021,
+     "area": "Data-centric AI",
+     "papers": 24,
+     "share": 1.0
+    },
+    {
+     "year": 2021,
+     "area": "Deep Learning",
+     "papers": 439,
+     "share": 18.8
+    },
+    {
+     "year": 2021,
+     "area": "General Machine Learning",
+     "papers": 276,
+     "share": 11.8
+    },
+    {
+     "year": 2021,
+     "area": "Optimization",
+     "papers": 269,
+     "share": 11.5
+    },
+    {
+     "year": 2021,
+     "area": "Probabilistic Methods",
+     "papers": 134,
+     "share": 5.7
+    },
+    {
+     "year": 2021,
+     "area": "Reinforcement Learning",
+     "papers": 189,
+     "share": 8.1
+    },
+    {
+     "year": 2021,
+     "area": "Social Aspects",
+     "papers": 167,
+     "share": 7.2
+    },
+    {
+     "year": 2021,
+     "area": "Theory",
+     "papers": 362,
+     "share": 15.5
+    },
+    {
+     "year": 2022,
+     "area": "Applications",
+     "papers": 317,
+     "share": 10.9
+    },
+    {
+     "year": 2022,
+     "area": "Computer Vision",
+     "papers": 396,
+     "share": 13.6
+    },
+    {
+     "year": 2022,
+     "area": "Data-centric AI",
+     "papers": 62,
+     "share": 2.1
+    },
+    {
+     "year": 2022,
+     "area": "Deep Learning",
+     "papers": 541,
+     "share": 18.6
+    },
+    {
+     "year": 2022,
+     "area": "General Machine Learning",
+     "papers": 331,
+     "share": 11.4
+    },
+    {
+     "year": 2022,
+     "area": "Optimization",
+     "papers": 303,
+     "share": 10.4
+    },
+    {
+     "year": 2022,
+     "area": "Probabilistic Methods",
+     "papers": 130,
+     "share": 4.5
+    },
+    {
+     "year": 2022,
+     "area": "Reinforcement Learning",
+     "papers": 227,
+     "share": 7.8
+    },
+    {
+     "year": 2022,
+     "area": "Social Aspects",
+     "papers": 220,
+     "share": 7.6
+    },
+    {
+     "year": 2022,
+     "area": "Theory",
+     "papers": 378,
+     "share": 13.0
+    },
+    {
+     "year": 2023,
+     "area": "Applications",
+     "papers": 573,
+     "share": 16.0
+    },
+    {
+     "year": 2023,
+     "area": "Computer Vision",
+     "papers": 593,
+     "share": 16.5
+    },
+    {
+     "year": 2023,
+     "area": "Data-centric AI",
+     "papers": 93,
+     "share": 2.6
+    },
+    {
+     "year": 2023,
+     "area": "Deep Learning",
+     "papers": 574,
+     "share": 16.0
+    },
+    {
+     "year": 2023,
+     "area": "General Machine Learning",
+     "papers": 336,
+     "share": 9.4
+    },
+    {
+     "year": 2023,
+     "area": "Optimization",
+     "papers": 306,
+     "share": 8.5
+    },
+    {
+     "year": 2023,
+     "area": "Probabilistic Methods",
+     "papers": 150,
+     "share": 4.2
+    },
+    {
+     "year": 2023,
+     "area": "Reinforcement Learning",
+     "papers": 256,
+     "share": 7.1
+    },
+    {
+     "year": 2023,
+     "area": "Social Aspects",
+     "papers": 284,
+     "share": 7.9
+    },
+    {
+     "year": 2023,
+     "area": "Theory",
+     "papers": 419,
+     "share": 11.7
+    },
+    {
+     "year": 2024,
+     "area": "Applications",
+     "papers": 826,
+     "share": 18.2
+    },
+    {
+     "year": 2024,
+     "area": "Computer Vision",
+     "papers": 951,
+     "share": 21.0
+    },
+    {
+     "year": 2024,
+     "area": "Data-centric AI",
+     "papers": 123,
+     "share": 2.7
+    },
+    {
+     "year": 2024,
+     "area": "Deep Learning",
+     "papers": 717,
+     "share": 15.8
+    },
+    {
+     "year": 2024,
+     "area": "General Machine Learning",
+     "papers": 347,
+     "share": 7.6
+    },
+    {
+     "year": 2024,
+     "area": "Optimization",
+     "papers": 355,
+     "share": 7.8
+    },
+    {
+     "year": 2024,
+     "area": "Probabilistic Methods",
+     "papers": 124,
+     "share": 2.7
+    },
+    {
+     "year": 2024,
+     "area": "Reinforcement Learning",
+     "papers": 241,
+     "share": 5.3
+    },
+    {
+     "year": 2024,
+     "area": "Social Aspects",
+     "papers": 425,
+     "share": 9.4
+    },
+    {
+     "year": 2024,
+     "area": "Theory",
+     "papers": 428,
+     "share": 9.4
+    },
+    {
+     "year": 2025,
+     "area": "Applications",
+     "papers": 1243,
+     "share": 21.2
+    },
+    {
+     "year": 2025,
+     "area": "Computer Vision",
+     "papers": 1244,
+     "share": 21.2
+    },
+    {
+     "year": 2025,
+     "area": "Data-centric AI",
+     "papers": 151,
+     "share": 2.6
+    },
+    {
+     "year": 2025,
+     "area": "Deep Learning",
+     "papers": 941,
+     "share": 16.1
+    },
+    {
+     "year": 2025,
+     "area": "General Machine Learning",
+     "papers": 398,
+     "share": 6.8
+    },
+    {
+     "year": 2025,
+     "area": "Optimization",
+     "papers": 415,
+     "share": 7.1
+    },
+    {
+     "year": 2025,
+     "area": "Probabilistic Methods",
+     "papers": 160,
+     "share": 2.7
+    },
+    {
+     "year": 2025,
+     "area": "Reinforcement Learning",
+     "papers": 327,
+     "share": 5.6
+    },
+    {
+     "year": 2025,
+     "area": "Social Aspects",
+     "papers": 549,
+     "share": 9.4
+    },
+    {
+     "year": 2025,
+     "area": "Theory",
+     "papers": 430,
+     "share": 7.3
+    },
+    {
+     "year": 2026,
+     "area": "Applications",
+     "papers": 2140,
+     "share": 23.5
+    },
+    {
+     "year": 2026,
+     "area": "Computer Vision",
+     "papers": 1743,
+     "share": 19.2
+    },
+    {
+     "year": 2026,
+     "area": "Data-centric AI",
+     "papers": 206,
+     "share": 2.3
+    },
+    {
+     "year": 2026,
+     "area": "Deep Learning",
+     "papers": 1441,
+     "share": 15.8
+    },
+    {
+     "year": 2026,
+     "area": "General Machine Learning",
+     "papers": 562,
+     "share": 6.2
+    },
+    {
+     "year": 2026,
+     "area": "Optimization",
+     "papers": 593,
+     "share": 6.5
+    },
+    {
+     "year": 2026,
+     "area": "Probabilistic Methods",
+     "papers": 240,
+     "share": 2.6
+    },
+    {
+     "year": 2026,
+     "area": "Reinforcement Learning",
+     "papers": 567,
+     "share": 6.2
+    },
+    {
+     "year": 2026,
+     "area": "Social Aspects",
+     "papers": 1031,
+     "share": 11.3
+    },
+    {
+     "year": 2026,
+     "area": "Theory",
+     "papers": 574,
+     "share": 6.3
+    }
+   ],
+   "metadata": {
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "area": {
+     "type": "string",
+     "levels": []
+    },
+    "papers": {
+     "type": "integer",
+     "levels": []
+    },
+    "share": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    select year, split_part(topic_llm, '->', 1) as area, count(*) as papers,\n       round(100.0 * count(*) / sum(count(*)) over (partition by year), 1) as share\nfrom read_parquet('data/papers.parquet')\nwhere topic_llm is not null\ngroup by year, area\norder by year, area\n\"\"\").df()\n",
+    "outputVariable": "out",
+    "source": [
+     "papers"
+    ],
+    "trigger": {
+     "tableId": "papers",
+     "resultTableId": "topic_areas_by_year",
+     "chart": {
+      "id": "chart-trigger-topic_areas_by_year",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "papers",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "topic_areas_by_year",
+    "rowCount": 376
+   },
+   "description": "Each year's NeurIPS papers by topic area, as an AI model classified every paper into NeurIPS 2025–2026's topic list (it agrees with authors' own choice of area about 70% of the time): papers and share of the year's papers. Source: NeurIPS proceedings and neurips.cc; affiliations from neurips.cc (2020 on) and OpenAlex; topics by an AI model.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794703900000_step_1",
+   "createdAt": 1794703607000
+  },
+  {
+   "kind": "table",
+   "id": "title_words_by_year",
+   "displayId": "Words in NeurIPS paper titles by year",
+   "names": [
+    "year",
+    "term",
+    "papers",
+    "share"
+   ],
+   "rows": [
+    {
+     "year": 1987,
+     "term": "neural network",
+     "papers": 31,
+     "share": 34.4
+    },
+    {
+     "year": 1988,
+     "term": "neural network",
+     "papers": 23,
+     "share": 24.5
+    },
+    {
+     "year": 1989,
+     "term": "neural network",
+     "papers": 26,
+     "share": 25.7
+    },
+    {
+     "year": 1990,
+     "term": "neural network",
+     "papers": 38,
+     "share": 26.6
+    },
+    {
+     "year": 1991,
+     "term": "neural network",
+     "papers": 28,
+     "share": 19.4
+    },
+    {
+     "year": 1992,
+     "term": "neural network",
+     "papers": 29,
+     "share": 22.8
+    },
+    {
+     "year": 1993,
+     "term": "neural network",
+     "papers": 34,
+     "share": 21.5
+    },
+    {
+     "year": 1994,
+     "term": "neural network",
+     "papers": 24,
+     "share": 17.1
+    },
+    {
+     "year": 1995,
+     "term": "neural network",
+     "papers": 22,
+     "share": 14.5
+    },
+    {
+     "year": 1996,
+     "term": "neural network",
+     "papers": 16,
+     "share": 10.5
+    },
+    {
+     "year": 1997,
+     "term": "neural network",
+     "papers": 12,
+     "share": 8.0
+    },
+    {
+     "year": 1998,
+     "term": "neural network",
+     "papers": 9,
+     "share": 6.0
+    },
+    {
+     "year": 1999,
+     "term": "neural network",
+     "papers": 6,
+     "share": 4.0
+    },
+    {
+     "year": 2000,
+     "term": "neural network",
+     "papers": 2,
+     "share": 1.3
+    },
+    {
+     "year": 2001,
+     "term": "neural network",
+     "papers": 4,
+     "share": 2.0
+    },
+    {
+     "year": 2002,
+     "term": "neural network",
+     "papers": 1,
+     "share": 0.5
+    },
+    {
+     "year": 2003,
+     "term": "neural network",
+     "papers": 1,
+     "share": 0.5
+    },
+    {
+     "year": 2004,
+     "term": "neural network",
+     "papers": 4,
+     "share": 1.9
+    },
+    {
+     "year": 2005,
+     "term": "neural network",
+     "papers": 2,
+     "share": 1.0
+    },
+    {
+     "year": 2006,
+     "term": "neural network",
+     "papers": 1,
+     "share": 0.5
+    },
+    {
+     "year": 2007,
+     "term": "neural network",
+     "papers": 4,
+     "share": 1.8
+    },
+    {
+     "year": 2008,
+     "term": "neural network",
+     "papers": 2,
+     "share": 0.8
+    },
+    {
+     "year": 2009,
+     "term": "neural network",
+     "papers": 1,
+     "share": 0.4
+    },
+    {
+     "year": 2010,
+     "term": "neural network",
+     "papers": 4,
+     "share": 1.4
+    },
+    {
+     "year": 2011,
+     "term": "neural network",
+     "papers": 3,
+     "share": 1.0
+    },
+    {
+     "year": 2012,
+     "term": "neural network",
+     "papers": 4,
+     "share": 1.1
+    },
+    {
+     "year": 2013,
+     "term": "neural network",
+     "papers": 5,
+     "share": 1.4
+    },
+    {
+     "year": 2014,
+     "term": "neural network",
+     "papers": 17,
+     "share": 4.1
+    },
+    {
+     "year": 2015,
+     "term": "neural network",
+     "papers": 17,
+     "share": 4.2
+    },
+    {
+     "year": 2016,
+     "term": "neural network",
+     "papers": 32,
+     "share": 5.6
+    },
+    {
+     "year": 2017,
+     "term": "neural network",
+     "papers": 42,
+     "share": 6.2
+    },
+    {
+     "year": 2018,
+     "term": "neural network",
+     "papers": 76,
+     "share": 7.5
+    },
+    {
+     "year": 2019,
+     "term": "neural network",
+     "papers": 105,
+     "share": 7.4
+    },
+    {
+     "year": 2020,
+     "term": "neural network",
+     "papers": 143,
+     "share": 7.5
+    },
+    {
+     "year": 2021,
+     "term": "neural network",
+     "papers": 165,
+     "share": 7.1
+    },
+    {
+     "year": 2022,
+     "term": "neural network",
+     "papers": 171,
+     "share": 5.9
+    },
+    {
+     "year": 2023,
+     "term": "neural network",
+     "papers": 174,
+     "share": 4.9
+    },
+    {
+     "year": 2024,
+     "term": "neural network",
+     "papers": 140,
+     "share": 3.1
+    },
+    {
+     "year": 2025,
+     "term": "neural network",
+     "papers": 133,
+     "share": 2.3
+    },
+    {
+     "year": 2026,
+     "term": "neural network",
+     "papers": 125,
+     "share": 1.4
+    },
+    {
+     "year": 1987,
+     "term": "kernel",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1988,
+     "term": "kernel",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1989,
+     "term": "kernel",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1990,
+     "term": "kernel",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1991,
+     "term": "kernel",
+     "papers": 1,
+     "share": 0.7
+    },
+    {
+     "year": 1992,
+     "term": "kernel",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1993,
+     "term": "kernel",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1994,
+     "term": "kernel",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1995,
+     "term": "kernel",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1996,
+     "term": "kernel",
+     "papers": 1,
+     "share": 0.7
+    },
+    {
+     "year": 1997,
+     "term": "kernel",
+     "papers": 2,
+     "share": 1.3
+    },
+    {
+     "year": 1998,
+     "term": "kernel",
+     "papers": 3,
+     "share": 2.0
+    },
+    {
+     "year": 1999,
+     "term": "kernel",
+     "papers": 4,
+     "share": 2.7
+    },
+    {
+     "year": 2000,
+     "term": "kernel",
+     "papers": 11,
+     "share": 7.2
+    },
+    {
+     "year": 2001,
+     "term": "kernel",
+     "papers": 17,
+     "share": 8.6
+    },
+    {
+     "year": 2002,
+     "term": "kernel",
+     "papers": 17,
+     "share": 8.2
+    },
+    {
+     "year": 2003,
+     "term": "kernel",
+     "papers": 12,
+     "share": 6.1
+    },
+    {
+     "year": 2004,
+     "term": "kernel",
+     "papers": 16,
+     "share": 7.7
+    },
+    {
+     "year": 2005,
+     "term": "kernel",
+     "papers": 12,
+     "share": 5.8
+    },
+    {
+     "year": 2006,
+     "term": "kernel",
+     "papers": 11,
+     "share": 5.4
+    },
+    {
+     "year": 2007,
+     "term": "kernel",
+     "papers": 8,
+     "share": 3.7
+    },
+    {
+     "year": 2008,
+     "term": "kernel",
+     "papers": 18,
+     "share": 7.2
+    },
+    {
+     "year": 2009,
+     "term": "kernel",
+     "papers": 13,
+     "share": 5.0
+    },
+    {
+     "year": 2010,
+     "term": "kernel",
+     "papers": 12,
+     "share": 4.1
+    },
+    {
+     "year": 2011,
+     "term": "kernel",
+     "papers": 11,
+     "share": 3.6
+    },
+    {
+     "year": 2012,
+     "term": "kernel",
+     "papers": 12,
+     "share": 3.2
+    },
+    {
+     "year": 2013,
+     "term": "kernel",
+     "papers": 9,
+     "share": 2.5
+    },
+    {
+     "year": 2014,
+     "term": "kernel",
+     "papers": 12,
+     "share": 2.9
+    },
+    {
+     "year": 2015,
+     "term": "kernel",
+     "papers": 13,
+     "share": 3.2
+    },
+    {
+     "year": 2016,
+     "term": "kernel",
+     "papers": 14,
+     "share": 2.5
+    },
+    {
+     "year": 2017,
+     "term": "kernel",
+     "papers": 20,
+     "share": 2.9
+    },
+    {
+     "year": 2018,
+     "term": "kernel",
+     "papers": 11,
+     "share": 1.1
+    },
+    {
+     "year": 2019,
+     "term": "kernel",
+     "papers": 27,
+     "share": 1.9
+    },
+    {
+     "year": 2020,
+     "term": "kernel",
+     "papers": 31,
+     "share": 1.6
+    },
+    {
+     "year": 2021,
+     "term": "kernel",
+     "papers": 35,
+     "share": 1.5
+    },
+    {
+     "year": 2022,
+     "term": "kernel",
+     "papers": 47,
+     "share": 1.6
+    },
+    {
+     "year": 2023,
+     "term": "kernel",
+     "papers": 39,
+     "share": 1.1
+    },
+    {
+     "year": 2024,
+     "term": "kernel",
+     "papers": 33,
+     "share": 0.7
+    },
+    {
+     "year": 2025,
+     "term": "kernel",
+     "papers": 44,
+     "share": 0.8
+    },
+    {
+     "year": 2026,
+     "term": "kernel",
+     "papers": 56,
+     "share": 0.6
+    },
+    {
+     "year": 1987,
+     "term": "Bayesian",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1988,
+     "term": "Bayesian",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1989,
+     "term": "Bayesian",
+     "papers": 1,
+     "share": 1.0
+    },
+    {
+     "year": 1990,
+     "term": "Bayesian",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1991,
+     "term": "Bayesian",
+     "papers": 2,
+     "share": 1.4
+    },
+    {
+     "year": 1992,
+     "term": "Bayesian",
+     "papers": 2,
+     "share": 1.6
+    },
+    {
+     "year": 1993,
+     "term": "Bayesian",
+     "papers": 4,
+     "share": 2.5
+    },
+    {
+     "year": 1994,
+     "term": "Bayesian",
+     "papers": 1,
+     "share": 0.7
+    },
+    {
+     "year": 1995,
+     "term": "Bayesian",
+     "papers": 6,
+     "share": 3.9
+    },
+    {
+     "year": 1996,
+     "term": "Bayesian",
+     "papers": 7,
+     "share": 4.6
+    },
+    {
+     "year": 1997,
+     "term": "Bayesian",
+     "papers": 4,
+     "share": 2.7
+    },
+    {
+     "year": 1998,
+     "term": "Bayesian",
+     "papers": 5,
+     "share": 3.3
+    },
+    {
+     "year": 1999,
+     "term": "Bayesian",
+     "papers": 11,
+     "share": 7.3
+    },
+    {
+     "year": 2000,
+     "term": "Bayesian",
+     "papers": 8,
+     "share": 5.3
+    },
+    {
+     "year": 2001,
+     "term": "Bayesian",
+     "papers": 12,
+     "share": 6.1
+    },
+    {
+     "year": 2002,
+     "term": "Bayesian",
+     "papers": 12,
+     "share": 5.8
+    },
+    {
+     "year": 2003,
+     "term": "Bayesian",
+     "papers": 5,
+     "share": 2.5
+    },
+    {
+     "year": 2004,
+     "term": "Bayesian",
+     "papers": 13,
+     "share": 6.3
+    },
+    {
+     "year": 2005,
+     "term": "Bayesian",
+     "papers": 13,
+     "share": 6.3
+    },
+    {
+     "year": 2006,
+     "term": "Bayesian",
+     "papers": 21,
+     "share": 10.3
+    },
+    {
+     "year": 2007,
+     "term": "Bayesian",
+     "papers": 13,
+     "share": 6.0
+    },
+    {
+     "year": 2008,
+     "term": "Bayesian",
+     "papers": 15,
+     "share": 6.0
+    },
+    {
+     "year": 2009,
+     "term": "Bayesian",
+     "papers": 22,
+     "share": 8.4
+    },
+    {
+     "year": 2010,
+     "term": "Bayesian",
+     "papers": 12,
+     "share": 4.1
+    },
+    {
+     "year": 2011,
+     "term": "Bayesian",
+     "papers": 11,
+     "share": 3.6
+    },
+    {
+     "year": 2012,
+     "term": "Bayesian",
+     "papers": 25,
+     "share": 6.8
+    },
+    {
+     "year": 2013,
+     "term": "Bayesian",
+     "papers": 23,
+     "share": 6.4
+    },
+    {
+     "year": 2014,
+     "term": "Bayesian",
+     "papers": 19,
+     "share": 4.6
+    },
+    {
+     "year": 2015,
+     "term": "Bayesian",
+     "papers": 17,
+     "share": 4.2
+    },
+    {
+     "year": 2016,
+     "term": "Bayesian",
+     "papers": 25,
+     "share": 4.4
+    },
+    {
+     "year": 2017,
+     "term": "Bayesian",
+     "papers": 23,
+     "share": 3.4
+    },
+    {
+     "year": 2018,
+     "term": "Bayesian",
+     "papers": 50,
+     "share": 5.0
+    },
+    {
+     "year": 2019,
+     "term": "Bayesian",
+     "papers": 47,
+     "share": 3.3
+    },
+    {
+     "year": 2020,
+     "term": "Bayesian",
+     "papers": 62,
+     "share": 3.3
+    },
+    {
+     "year": 2021,
+     "term": "Bayesian",
+     "papers": 66,
+     "share": 2.8
+    },
+    {
+     "year": 2022,
+     "term": "Bayesian",
+     "papers": 59,
+     "share": 2.0
+    },
+    {
+     "year": 2023,
+     "term": "Bayesian",
+     "papers": 70,
+     "share": 2.0
+    },
+    {
+     "year": 2024,
+     "term": "Bayesian",
+     "papers": 65,
+     "share": 1.4
+    },
+    {
+     "year": 2025,
+     "term": "Bayesian",
+     "papers": 63,
+     "share": 1.1
+    },
+    {
+     "year": 2026,
+     "term": "Bayesian",
+     "papers": 99,
+     "share": 1.1
+    },
+    {
+     "year": 1987,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1988,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1989,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1990,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1991,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1992,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1993,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1994,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1995,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1996,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1997,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1998,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1999,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2000,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2001,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2002,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2003,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2004,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2005,
+     "term": "deep",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2006,
+     "term": "deep",
+     "papers": 1,
+     "share": 0.5
+    },
+    {
+     "year": 2007,
+     "term": "deep",
+     "papers": 3,
+     "share": 1.4
+    },
+    {
+     "year": 2008,
+     "term": "deep",
+     "papers": 1,
+     "share": 0.4
+    },
+    {
+     "year": 2009,
+     "term": "deep",
+     "papers": 4,
+     "share": 1.5
+    },
+    {
+     "year": 2010,
+     "term": "deep",
+     "papers": 3,
+     "share": 1.0
+    },
+    {
+     "year": 2011,
+     "term": "deep",
+     "papers": 3,
+     "share": 1.0
+    },
+    {
+     "year": 2012,
+     "term": "deep",
+     "papers": 10,
+     "share": 2.7
+    },
+    {
+     "year": 2013,
+     "term": "deep",
+     "papers": 13,
+     "share": 3.6
+    },
+    {
+     "year": 2014,
+     "term": "deep",
+     "papers": 22,
+     "share": 5.4
+    },
+    {
+     "year": 2015,
+     "term": "deep",
+     "papers": 20,
+     "share": 5.0
+    },
+    {
+     "year": 2016,
+     "term": "deep",
+     "papers": 43,
+     "share": 7.6
+    },
+    {
+     "year": 2017,
+     "term": "deep",
+     "papers": 61,
+     "share": 9.0
+    },
+    {
+     "year": 2018,
+     "term": "deep",
+     "papers": 92,
+     "share": 9.1
+    },
+    {
+     "year": 2019,
+     "term": "deep",
+     "papers": 110,
+     "share": 7.7
+    },
+    {
+     "year": 2020,
+     "term": "deep",
+     "papers": 152,
+     "share": 8.0
+    },
+    {
+     "year": 2021,
+     "term": "deep",
+     "papers": 123,
+     "share": 5.3
+    },
+    {
+     "year": 2022,
+     "term": "deep",
+     "papers": 132,
+     "share": 4.5
+    },
+    {
+     "year": 2023,
+     "term": "deep",
+     "papers": 112,
+     "share": 3.1
+    },
+    {
+     "year": 2024,
+     "term": "deep",
+     "papers": 106,
+     "share": 2.3
+    },
+    {
+     "year": 2025,
+     "term": "deep",
+     "papers": 88,
+     "share": 1.5
+    },
+    {
+     "year": 2026,
+     "term": "deep",
+     "papers": 113,
+     "share": 1.2
+    },
+    {
+     "year": 1987,
+     "term": "diffusion",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1988,
+     "term": "diffusion",
+     "papers": 1,
+     "share": 1.1
+    },
+    {
+     "year": 1989,
+     "term": "diffusion",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1990,
+     "term": "diffusion",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1991,
+     "term": "diffusion",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1992,
+     "term": "diffusion",
+     "papers": 1,
+     "share": 0.8
+    },
+    {
+     "year": 1993,
+     "term": "diffusion",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1994,
+     "term": "diffusion",
+     "papers": 1,
+     "share": 0.7
+    },
+    {
+     "year": 1995,
+     "term": "diffusion",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1996,
+     "term": "diffusion",
+     "papers": 1,
+     "share": 0.7
+    },
+    {
+     "year": 1997,
+     "term": "diffusion",
+     "papers": 1,
+     "share": 0.7
+    },
+    {
+     "year": 1998,
+     "term": "diffusion",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1999,
+     "term": "diffusion",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2000,
+     "term": "diffusion",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2001,
+     "term": "diffusion",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2002,
+     "term": "diffusion",
+     "papers": 2,
+     "share": 1.0
+    },
+    {
+     "year": 2003,
+     "term": "diffusion",
+     "papers": 1,
+     "share": 0.5
+    },
+    {
+     "year": 2004,
+     "term": "diffusion",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2005,
+     "term": "diffusion",
+     "papers": 3,
+     "share": 1.4
+    },
+    {
+     "year": 2006,
+     "term": "diffusion",
+     "papers": 1,
+     "share": 0.5
+    },
+    {
+     "year": 2007,
+     "term": "diffusion",
+     "papers": 1,
+     "share": 0.5
+    },
+    {
+     "year": 2008,
+     "term": "diffusion",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2009,
+     "term": "diffusion",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2010,
+     "term": "diffusion",
+     "papers": 3,
+     "share": 1.0
+    },
+    {
+     "year": 2011,
+     "term": "diffusion",
+     "papers": 1,
+     "share": 0.3
+    },
+    {
+     "year": 2012,
+     "term": "diffusion",
+     "papers": 3,
+     "share": 0.8
+    },
+    {
+     "year": 2013,
+     "term": "diffusion",
+     "papers": 1,
+     "share": 0.3
+    },
+    {
+     "year": 2014,
+     "term": "diffusion",
+     "papers": 3,
+     "share": 0.7
+    },
+    {
+     "year": 2015,
+     "term": "diffusion",
+     "papers": 2,
+     "share": 0.5
+    },
+    {
+     "year": 2016,
+     "term": "diffusion",
+     "papers": 2,
+     "share": 0.4
+    },
+    {
+     "year": 2017,
+     "term": "diffusion",
+     "papers": 2,
+     "share": 0.3
+    },
+    {
+     "year": 2018,
+     "term": "diffusion",
+     "papers": 3,
+     "share": 0.3
+    },
+    {
+     "year": 2019,
+     "term": "diffusion",
+     "papers": 3,
+     "share": 0.2
+    },
+    {
+     "year": 2020,
+     "term": "diffusion",
+     "papers": 4,
+     "share": 0.2
+    },
+    {
+     "year": 2021,
+     "term": "diffusion",
+     "papers": 17,
+     "share": 0.7
+    },
+    {
+     "year": 2022,
+     "term": "diffusion",
+     "papers": 37,
+     "share": 1.3
+    },
+    {
+     "year": 2023,
+     "term": "diffusion",
+     "papers": 193,
+     "share": 5.4
+    },
+    {
+     "year": 2024,
+     "term": "diffusion",
+     "papers": 300,
+     "share": 6.6
+    },
+    {
+     "year": 2025,
+     "term": "diffusion",
+     "papers": 363,
+     "share": 6.2
+    },
+    {
+     "year": 2026,
+     "term": "diffusion",
+     "papers": 483,
+     "share": 5.3
+    },
+    {
+     "year": 1987,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1988,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1989,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1990,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1991,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1992,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1993,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1994,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1995,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1996,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1997,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1998,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1999,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2000,
+     "term": "language model",
+     "papers": 1,
+     "share": 0.7
+    },
+    {
+     "year": 2001,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2002,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2003,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2004,
+     "term": "language model",
+     "papers": 1,
+     "share": 0.5
+    },
+    {
+     "year": 2005,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2006,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2007,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2008,
+     "term": "language model",
+     "papers": 2,
+     "share": 0.8
+    },
+    {
+     "year": 2009,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2010,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2011,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2012,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2013,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2014,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2015,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2016,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2017,
+     "term": "language model",
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 2018,
+     "term": "language model",
+     "papers": 3,
+     "share": 0.3
+    },
+    {
+     "year": 2019,
+     "term": "language model",
+     "papers": 4,
+     "share": 0.3
+    },
+    {
+     "year": 2020,
+     "term": "language model",
+     "papers": 4,
+     "share": 0.2
+    },
+    {
+     "year": 2021,
+     "term": "language model",
+     "papers": 12,
+     "share": 0.5
+    },
+    {
+     "year": 2022,
+     "term": "language model",
+     "papers": 40,
+     "share": 1.4
+    },
+    {
+     "year": 2023,
+     "term": "language model",
+     "papers": 159,
+     "share": 4.4
+    },
+    {
+     "year": 2024,
+     "term": "language model",
+     "papers": 570,
+     "share": 12.6
+    },
+    {
+     "year": 2025,
+     "term": "language model",
+     "papers": 880,
+     "share": 15.0
+    },
+    {
+     "year": 2026,
+     "term": "language model",
+     "papers": 1231,
+     "share": 13.5
+    }
+   ],
+   "metadata": {
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "term": {
+     "type": "string",
+     "levels": []
+    },
+    "papers": {
+     "type": "integer",
+     "levels": []
+    },
+    "share": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\nimport pandas as pd\n\nTERMS = {\n    \"neural network\": r\"\\bneural net\",\n    \"kernel\": r\"\\bkernel\",\n    \"Bayesian\": r\"\\bbayes\",\n    \"deep\": r\"\\bdeep\\b\",\n    \"diffusion\": r\"\\bdiffusion\\b\",\n    \"language model\": r\"\\blanguage models?\\b|\\bllms?\\b\",\n}\npapers = duckdb.sql(\"select year, title from read_parquet('data/papers.parquet')\").df()\ntotals = papers.groupby(\"year\").size()\nrows = []\nfor term, pattern in TERMS.items():\n    hits = papers[papers.title.str.contains(pattern, case=False, regex=True)].groupby(\"year\").size()\n    for year, total in totals.items():\n        rows.append({\"year\": year, \"term\": term, \"papers\": int(hits.get(year, 0)),\n                     \"share\": round(100 * hits.get(year, 0) / total, 1)})\nout = pd.DataFrame(rows)\n",
+    "outputVariable": "out",
+    "source": [
+     "papers"
+    ],
+    "trigger": {
+     "tableId": "papers",
+     "resultTableId": "title_words_by_year",
+     "chart": {
+      "id": "chart-trigger-title_words_by_year",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "papers",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "title_words_by_year",
+    "rowCount": 240
+   },
+   "description": "Share of each year's NeurIPS papers whose title contains a word (case-insensitive, whole words; 'language model' also counts LLM). Source: NeurIPS proceedings and neurips.cc.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794703900000_step_2",
+   "createdAt": 1794703609000
+  },
+  {
+   "kind": "table",
+   "id": "country_shares_by_year",
+   "displayId": "Share of NeurIPS papers by where authors work, by year",
+   "names": [
+    "year",
+    "place",
+    "papers",
+    "share"
+   ],
+   "rows": [
+    {
+     "year": 2000,
+     "place": "Elsewhere",
+     "papers": 33,
+     "share": 26.0
+    },
+    {
+     "year": 2000,
+     "place": "Europe",
+     "papers": 43,
+     "share": 33.9
+    },
+    {
+     "year": 2000,
+     "place": "US",
+     "papers": 71,
+     "share": 55.9
+    },
+    {
+     "year": 2001,
+     "place": "Elsewhere",
+     "papers": 15,
+     "share": 15.6
+    },
+    {
+     "year": 2001,
+     "place": "Europe",
+     "papers": 29,
+     "share": 30.2
+    },
+    {
+     "year": 2001,
+     "place": "US",
+     "papers": 59,
+     "share": 61.5
+    },
+    {
+     "year": 2002,
+     "place": "China",
+     "papers": 1,
+     "share": 0.6
+    },
+    {
+     "year": 2002,
+     "place": "Elsewhere",
+     "papers": 35,
+     "share": 20.6
+    },
+    {
+     "year": 2002,
+     "place": "Europe",
+     "papers": 64,
+     "share": 37.6
+    },
+    {
+     "year": 2002,
+     "place": "US",
+     "papers": 91,
+     "share": 53.5
+    },
+    {
+     "year": 2003,
+     "place": "China",
+     "papers": 1,
+     "share": 0.6
+    },
+    {
+     "year": 2003,
+     "place": "Elsewhere",
+     "papers": 42,
+     "share": 25.9
+    },
+    {
+     "year": 2003,
+     "place": "Europe",
+     "papers": 43,
+     "share": 26.5
+    },
+    {
+     "year": 2003,
+     "place": "US",
+     "papers": 95,
+     "share": 58.6
+    },
+    {
+     "year": 2004,
+     "place": "China",
+     "papers": 1,
+     "share": 0.6
+    },
+    {
+     "year": 2004,
+     "place": "Elsewhere",
+     "papers": 46,
+     "share": 28.0
+    },
+    {
+     "year": 2004,
+     "place": "Europe",
+     "papers": 52,
+     "share": 31.7
+    },
+    {
+     "year": 2004,
+     "place": "US",
+     "papers": 97,
+     "share": 59.1
+    },
+    {
+     "year": 2005,
+     "place": "China",
+     "papers": 3,
+     "share": 1.7
+    },
+    {
+     "year": 2005,
+     "place": "Elsewhere",
+     "papers": 41,
+     "share": 23.3
+    },
+    {
+     "year": 2005,
+     "place": "Europe",
+     "papers": 50,
+     "share": 28.4
+    },
+    {
+     "year": 2005,
+     "place": "US",
+     "papers": 107,
+     "share": 60.8
+    },
+    {
+     "year": 2007,
+     "place": "Elsewhere",
+     "papers": 38,
+     "share": 23.6
+    },
+    {
+     "year": 2007,
+     "place": "Europe",
+     "papers": 52,
+     "share": 32.3
+    },
+    {
+     "year": 2007,
+     "place": "US",
+     "papers": 94,
+     "share": 58.4
+    },
+    {
+     "year": 2008,
+     "place": "China",
+     "papers": 7,
+     "share": 3.8
+    },
+    {
+     "year": 2008,
+     "place": "Elsewhere",
+     "papers": 47,
+     "share": 25.4
+    },
+    {
+     "year": 2008,
+     "place": "Europe",
+     "papers": 60,
+     "share": 32.4
+    },
+    {
+     "year": 2008,
+     "place": "US",
+     "papers": 108,
+     "share": 58.4
+    },
+    {
+     "year": 2009,
+     "place": "China",
+     "papers": 9,
+     "share": 4.2
+    },
+    {
+     "year": 2009,
+     "place": "Elsewhere",
+     "papers": 46,
+     "share": 21.7
+    },
+    {
+     "year": 2009,
+     "place": "Europe",
+     "papers": 54,
+     "share": 25.5
+    },
+    {
+     "year": 2009,
+     "place": "US",
+     "papers": 138,
+     "share": 65.1
+    },
+    {
+     "year": 2010,
+     "place": "China",
+     "papers": 5,
+     "share": 2.2
+    },
+    {
+     "year": 2010,
+     "place": "Elsewhere",
+     "papers": 58,
+     "share": 25.8
+    },
+    {
+     "year": 2010,
+     "place": "Europe",
+     "papers": 52,
+     "share": 23.1
+    },
+    {
+     "year": 2010,
+     "place": "US",
+     "papers": 148,
+     "share": 65.8
+    },
+    {
+     "year": 2011,
+     "place": "China",
+     "papers": 3,
+     "share": 1.3
+    },
+    {
+     "year": 2011,
+     "place": "Elsewhere",
+     "papers": 48,
+     "share": 20.6
+    },
+    {
+     "year": 2011,
+     "place": "Europe",
+     "papers": 81,
+     "share": 34.8
+    },
+    {
+     "year": 2011,
+     "place": "US",
+     "papers": 138,
+     "share": 59.2
+    },
+    {
+     "year": 2012,
+     "place": "China",
+     "papers": 12,
+     "share": 4.3
+    },
+    {
+     "year": 2012,
+     "place": "Elsewhere",
+     "papers": 75,
+     "share": 27.0
+    },
+    {
+     "year": 2012,
+     "place": "Europe",
+     "papers": 75,
+     "share": 27.0
+    },
+    {
+     "year": 2012,
+     "place": "US",
+     "papers": 171,
+     "share": 61.5
+    },
+    {
+     "year": 2013,
+     "place": "China",
+     "papers": 9,
+     "share": 3.5
+    },
+    {
+     "year": 2013,
+     "place": "Elsewhere",
+     "papers": 57,
+     "share": 22.0
+    },
+    {
+     "year": 2013,
+     "place": "Europe",
+     "papers": 66,
+     "share": 25.5
+    },
+    {
+     "year": 2013,
+     "place": "US",
+     "papers": 170,
+     "share": 65.6
+    },
+    {
+     "year": 2014,
+     "place": "China",
+     "papers": 13,
+     "share": 5.0
+    },
+    {
+     "year": 2014,
+     "place": "Elsewhere",
+     "papers": 55,
+     "share": 21.2
+    },
+    {
+     "year": 2014,
+     "place": "Europe",
+     "papers": 60,
+     "share": 23.2
+    },
+    {
+     "year": 2014,
+     "place": "US",
+     "papers": 174,
+     "share": 67.2
+    },
+    {
+     "year": 2015,
+     "place": "China",
+     "papers": 10,
+     "share": 4.1
+    },
+    {
+     "year": 2015,
+     "place": "Elsewhere",
+     "papers": 62,
+     "share": 25.2
+    },
+    {
+     "year": 2015,
+     "place": "Europe",
+     "papers": 55,
+     "share": 22.4
+    },
+    {
+     "year": 2015,
+     "place": "US",
+     "papers": 169,
+     "share": 68.7
+    },
+    {
+     "year": 2016,
+     "place": "China",
+     "papers": 24,
+     "share": 6.8
+    },
+    {
+     "year": 2016,
+     "place": "Elsewhere",
+     "papers": 75,
+     "share": 21.2
+    },
+    {
+     "year": 2016,
+     "place": "Europe",
+     "papers": 90,
+     "share": 25.5
+    },
+    {
+     "year": 2016,
+     "place": "US",
+     "papers": 251,
+     "share": 71.1
+    },
+    {
+     "year": 2017,
+     "place": "China",
+     "papers": 41,
+     "share": 8.9
+    },
+    {
+     "year": 2017,
+     "place": "Elsewhere",
+     "papers": 92,
+     "share": 19.9
+    },
+    {
+     "year": 2017,
+     "place": "Europe",
+     "papers": 116,
+     "share": 25.1
+    },
+    {
+     "year": 2017,
+     "place": "US",
+     "papers": 337,
+     "share": 72.8
+    },
+    {
+     "year": 2018,
+     "place": "China",
+     "papers": 80,
+     "share": 14.2
+    },
+    {
+     "year": 2018,
+     "place": "Elsewhere",
+     "papers": 128,
+     "share": 22.7
+    },
+    {
+     "year": 2018,
+     "place": "Europe",
+     "papers": 121,
+     "share": 21.4
+    },
+    {
+     "year": 2018,
+     "place": "US",
+     "papers": 390,
+     "share": 69.0
+    },
+    {
+     "year": 2019,
+     "place": "China",
+     "papers": 103,
+     "share": 14.1
+    },
+    {
+     "year": 2019,
+     "place": "Elsewhere",
+     "papers": 196,
+     "share": 26.8
+    },
+    {
+     "year": 2019,
+     "place": "Europe",
+     "papers": 178,
+     "share": 24.4
+    },
+    {
+     "year": 2019,
+     "place": "US",
+     "papers": 487,
+     "share": 66.7
+    },
+    {
+     "year": 2020,
+     "place": "China",
+     "papers": 257,
+     "share": 13.5
+    },
+    {
+     "year": 2020,
+     "place": "Elsewhere",
+     "papers": 532,
+     "share": 28.0
+    },
+    {
+     "year": 2020,
+     "place": "Europe",
+     "papers": 594,
+     "share": 31.3
+    },
+    {
+     "year": 2020,
+     "place": "US",
+     "papers": 1238,
+     "share": 65.2
+    },
+    {
+     "year": 2021,
+     "place": "China",
+     "papers": 421,
+     "share": 18.0
+    },
+    {
+     "year": 2021,
+     "place": "Elsewhere",
+     "papers": 731,
+     "share": 31.3
+    },
+    {
+     "year": 2021,
+     "place": "Europe",
+     "papers": 750,
+     "share": 32.1
+    },
+    {
+     "year": 2021,
+     "place": "US",
+     "papers": 1458,
+     "share": 62.5
+    },
+    {
+     "year": 2022,
+     "place": "China",
+     "papers": 701,
+     "share": 24.2
+    },
+    {
+     "year": 2022,
+     "place": "Elsewhere",
+     "papers": 953,
+     "share": 32.8
+    },
+    {
+     "year": 2022,
+     "place": "Europe",
+     "papers": 839,
+     "share": 28.9
+    },
+    {
+     "year": 2022,
+     "place": "US",
+     "papers": 1707,
+     "share": 58.8
+    },
+    {
+     "year": 2023,
+     "place": "China",
+     "papers": 936,
+     "share": 26.1
+    },
+    {
+     "year": 2023,
+     "place": "Elsewhere",
+     "papers": 1233,
+     "share": 34.4
+    },
+    {
+     "year": 2023,
+     "place": "Europe",
+     "papers": 1066,
+     "share": 29.8
+    },
+    {
+     "year": 2023,
+     "place": "US",
+     "papers": 2109,
+     "share": 58.9
+    },
+    {
+     "year": 2024,
+     "place": "China",
+     "papers": 1626,
+     "share": 35.9
+    },
+    {
+     "year": 2024,
+     "place": "Elsewhere",
+     "papers": 1609,
+     "share": 35.5
+    },
+    {
+     "year": 2024,
+     "place": "Europe",
+     "papers": 1296,
+     "share": 28.6
+    },
+    {
+     "year": 2024,
+     "place": "US",
+     "papers": 2364,
+     "share": 52.1
+    },
+    {
+     "year": 2025,
+     "place": "China",
+     "papers": 2424,
+     "share": 41.4
+    },
+    {
+     "year": 2025,
+     "place": "Elsewhere",
+     "papers": 2310,
+     "share": 39.5
+    },
+    {
+     "year": 2025,
+     "place": "Europe",
+     "papers": 1572,
+     "share": 26.8
+    },
+    {
+     "year": 2025,
+     "place": "US",
+     "papers": 2786,
+     "share": 47.6
+    },
+    {
+     "year": 2026,
+     "place": "China",
+     "papers": 3063,
+     "share": 33.9
+    },
+    {
+     "year": 2026,
+     "place": "Elsewhere",
+     "papers": 3581,
+     "share": 39.6
+    },
+    {
+     "year": 2026,
+     "place": "Europe",
+     "papers": 2545,
+     "share": 28.1
+    },
+    {
+     "year": 2026,
+     "place": "US",
+     "papers": 4175,
+     "share": 46.1
+    }
+   ],
+   "metadata": {
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "place": {
+     "type": "string",
+     "levels": []
+    },
+    "papers": {
+     "type": "integer",
+     "levels": []
+    },
+    "share": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with institution_country as (\n    select i.institution,\n           coalesce(i.ror_country_code, i.openalex_country_code, o.country_code) as country_code\n    from read_parquet('data/institutions.parquet') i\n    left join (select institution, country_code from read_parquet('data/institution_orgs.parquet')\n               where org_index = 1) o using (institution)\n),\n                    paper_groups as (\n                        select distinct a.year, a.paper_id,\n                               case when ic.country_code = 'US' then 'US'\n                                    when ic.country_code = 'CN' then 'China'\n                                    when c.region = 'Europe' then 'Europe'\n                                    else 'Elsewhere' end as place\n                        from read_parquet('data/authorships.parquet') a\n                        join institution_country ic using (institution)\n                        join read_parquet('data/countries.parquet') c using (country_code)\n                        where a.year >= 2000 and a.year != 2006\n                    ),\n                    known as (select year, count(distinct paper_id) as papers from paper_groups group by year)\n                    select year, place, count(*) as papers, round(100.0 * count(*) / any_value(k.papers), 1) as share\n                    from paper_groups join known k using (year)\n                    group by year, place\n                    order by year, place\n\"\"\").df()\n",
+    "outputVariable": "out",
+    "source": [
+     "authorships",
+     "countries",
+     "institution_orgs",
+     "institutions"
+    ],
+    "trigger": {
+     "tableId": "authorships",
+     "resultTableId": "country_shares_by_year",
+     "chart": {
+      "id": "chart-trigger-country_shares_by_year",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "authorships",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "country_shares_by_year",
+    "rowCount": 101
+   },
+   "description": "For each year since 2000, the share of NeurIPS papers with known affiliations that have at least one author working in the US, China, Europe or elsewhere (a paper counts for each). Affiliations are known for 98% of papers from 2020 and for 50–85% before (those OpenAlex records; 2006 left out). Source: NeurIPS proceedings and neurips.cc; affiliations from neurips.cc (2020 on) and OpenAlex; ROR.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794704200000_step_1",
+   "createdAt": 1794703614000
+  },
+  {
+   "kind": "table",
+   "id": "country_shares_then_now",
+   "displayId": "Share of NeurIPS papers by country, 2008–2012 and 2026",
+   "names": [
+    "country_code",
+    "map_id",
+    "country",
+    "share_then",
+    "share_now"
+   ],
+   "rows": [
+    {
+     "country_code": "US",
+     "map_id": 840,
+     "country": "US",
+     "share_then": 62.0,
+     "share_now": 46.1
+    },
+    {
+     "country_code": "CN",
+     "map_id": 156,
+     "country": "China",
+     "share_then": 3.2,
+     "share_now": 33.9
+    },
+    {
+     "country_code": "GB",
+     "map_id": 826,
+     "country": "UK",
+     "share_then": 9.9,
+     "share_now": 10.8
+    },
+    {
+     "country_code": "HK",
+     "map_id": 344,
+     "country": "Hong Kong",
+     "share_then": 1.8,
+     "share_now": 8.5
+    },
+    {
+     "country_code": "KR",
+     "map_id": 410,
+     "country": "South Korea",
+     "share_then": 0.9,
+     "share_now": 7.3
+    },
+    {
+     "country_code": "DE",
+     "map_id": 276,
+     "country": "Germany",
+     "share_then": 8.3,
+     "share_now": 7.1
+    },
+    {
+     "country_code": "SG",
+     "map_id": 702,
+     "country": "Singapore",
+     "share_then": 0.9,
+     "share_now": 6.5
+    },
+    {
+     "country_code": "CA",
+     "map_id": 124,
+     "country": "Canada",
+     "share_then": 9.1,
+     "share_now": 5.2
+    },
+    {
+     "country_code": "AU",
+     "map_id": 36,
+     "country": "Australia",
+     "share_then": 2.7,
+     "share_now": 3.9
+    },
+    {
+     "country_code": "CH",
+     "map_id": 756,
+     "country": "Switzerland",
+     "share_then": 2.6,
+     "share_now": 3.7
+    },
+    {
+     "country_code": "JP",
+     "map_id": 392,
+     "country": "Japan",
+     "share_then": 3.4,
+     "share_now": 3.4
+    },
+    {
+     "country_code": "FR",
+     "map_id": 250,
+     "country": "France",
+     "share_then": 3.2,
+     "share_now": 3.4
+    },
+    {
+     "country_code": "IL",
+     "map_id": 376,
+     "country": "Israel",
+     "share_then": 4.1,
+     "share_now": 2.0
+    },
+    {
+     "country_code": "VN",
+     "map_id": 704,
+     "country": "Vietnam",
+     "share_then": 0.2,
+     "share_now": 1.8
+    },
+    {
+     "country_code": "IT",
+     "map_id": 380,
+     "country": "Italy",
+     "share_then": 1.8,
+     "share_now": 1.8
+    },
+    {
+     "country_code": "AE",
+     "map_id": 784,
+     "country": "UAE",
+     "share_then": 0.0,
+     "share_now": 1.7
+    },
+    {
+     "country_code": "NL",
+     "map_id": 528,
+     "country": "Netherlands",
+     "share_then": 1.2,
+     "share_now": 1.6
+    },
+    {
+     "country_code": "IN",
+     "map_id": 356,
+     "country": "India",
+     "share_then": 1.4,
+     "share_now": 1.5
+    },
+    {
+     "country_code": "DK",
+     "map_id": 208,
+     "country": "Denmark",
+     "share_then": 0.4,
+     "share_now": 1.0
+    },
+    {
+     "country_code": "NG",
+     "map_id": 566,
+     "country": "Nigeria",
+     "share_then": 0.0,
+     "share_now": 0.9
+    },
+    {
+     "country_code": "SE",
+     "map_id": 752,
+     "country": "Sweden",
+     "share_then": 0.4,
+     "share_now": 0.9
+    },
+    {
+     "country_code": "FI",
+     "map_id": 246,
+     "country": "Finland",
+     "share_then": 0.8,
+     "share_now": 0.8
+    },
+    {
+     "country_code": "TW",
+     "map_id": 158,
+     "country": "Taiwan",
+     "share_then": 0.4,
+     "share_now": 0.7
+    },
+    {
+     "country_code": "ES",
+     "map_id": 724,
+     "country": "Spain",
+     "share_then": 1.0,
+     "share_now": 0.7
+    },
+    {
+     "country_code": "AT",
+     "map_id": 40,
+     "country": "Austria",
+     "share_then": 1.0,
+     "share_now": 0.7
+    },
+    {
+     "country_code": "MO",
+     "map_id": 446,
+     "country": "Macao",
+     "share_then": 0.0,
+     "share_now": 0.6
+    },
+    {
+     "country_code": "PL",
+     "map_id": 616,
+     "country": "Poland",
+     "share_then": 0.1,
+     "share_now": 0.6
+    },
+    {
+     "country_code": "RU",
+     "map_id": 643,
+     "country": "Russia",
+     "share_then": 0.0,
+     "share_now": 0.6
+    },
+    {
+     "country_code": "BE",
+     "map_id": 56,
+     "country": "Belgium",
+     "share_then": 0.8,
+     "share_now": 0.5
+    },
+    {
+     "country_code": "IE",
+     "map_id": 372,
+     "country": "Ireland",
+     "share_then": 0.2,
+     "share_now": 0.5
+    },
+    {
+     "country_code": "NO",
+     "map_id": 578,
+     "country": "Norway",
+     "share_then": 0.0,
+     "share_now": 0.4
+    },
+    {
+     "country_code": "CZ",
+     "map_id": 203,
+     "country": "Czechia",
+     "share_then": 0.1,
+     "share_now": 0.4
+    },
+    {
+     "country_code": "GR",
+     "map_id": 300,
+     "country": "Greece",
+     "share_then": 0.2,
+     "share_now": 0.3
+    },
+    {
+     "country_code": "SA",
+     "map_id": 682,
+     "country": "Saudi Arabia",
+     "share_then": 0.0,
+     "share_now": 0.3
+    },
+    {
+     "country_code": "BR",
+     "map_id": 76,
+     "country": "Brazil",
+     "share_then": 0.0,
+     "share_now": 0.2
+    },
+    {
+     "country_code": "LU",
+     "map_id": 442,
+     "country": "Luxembourg",
+     "share_then": 0.0,
+     "share_now": 0.2
+    },
+    {
+     "country_code": "TR",
+     "map_id": 792,
+     "country": "Türkiye",
+     "share_then": 0.2,
+     "share_now": 0.2
+    },
+    {
+     "country_code": "MY",
+     "map_id": 458,
+     "country": "Malaysia",
+     "share_then": 0.0,
+     "share_now": 0.2
+    },
+    {
+     "country_code": "PT",
+     "map_id": 620,
+     "country": "Portugal",
+     "share_then": 0.3,
+     "share_now": 0.2
+    },
+    {
+     "country_code": "YE",
+     "map_id": 887,
+     "country": "Yemen",
+     "share_then": 0.0,
+     "share_now": 0.2
+    },
+    {
+     "country_code": "ZA",
+     "map_id": 710,
+     "country": "South Africa",
+     "share_then": 0.0,
+     "share_now": 0.1
+    },
+    {
+     "country_code": "SV",
+     "map_id": 222,
+     "country": "El Salvador",
+     "share_then": 0.0,
+     "share_now": 0.1
+    },
+    {
+     "country_code": "SK",
+     "map_id": 703,
+     "country": "Slovakia",
+     "share_then": 0.0,
+     "share_now": 0.1
+    },
+    {
+     "country_code": "SI",
+     "map_id": 705,
+     "country": "Slovenia",
+     "share_then": 0.1,
+     "share_now": 0.1
+    },
+    {
+     "country_code": "QA",
+     "map_id": 634,
+     "country": "Qatar",
+     "share_then": 0.0,
+     "share_now": 0.1
+    },
+    {
+     "country_code": "TH",
+     "map_id": 764,
+     "country": "Thailand",
+     "share_then": 0.0,
+     "share_now": 0.1
+    },
+    {
+     "country_code": "BD",
+     "map_id": 50,
+     "country": "Bangladesh",
+     "share_then": 0.0,
+     "share_now": 0.1
+    },
+    {
+     "country_code": "BG",
+     "map_id": 100,
+     "country": "Bulgaria",
+     "share_then": 0.0,
+     "share_now": 0.1
+    },
+    {
+     "country_code": "EG",
+     "map_id": 818,
+     "country": "Egypt",
+     "share_then": 0.0,
+     "share_now": 0.1
+    },
+    {
+     "country_code": "NZ",
+     "map_id": 554,
+     "country": "New Zealand",
+     "share_then": 0.0,
+     "share_now": 0.1
+    },
+    {
+     "country_code": "IR",
+     "map_id": 364,
+     "country": "Iran",
+     "share_then": 0.1,
+     "share_now": 0.1
+    },
+    {
+     "country_code": "PK",
+     "map_id": 586,
+     "country": "Pakistan",
+     "share_then": 0.0,
+     "share_now": 0.1
+    },
+    {
+     "country_code": "RO",
+     "map_id": 642,
+     "country": "Romania",
+     "share_then": 0.0,
+     "share_now": 0.1
+    },
+    {
+     "country_code": "AM",
+     "map_id": 51,
+     "country": "Armenia",
+     "share_then": 0.0,
+     "share_now": 0.1
+    },
+    {
+     "country_code": "TZ",
+     "map_id": 834,
+     "country": "Tanzania",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "AZ",
+     "map_id": 31,
+     "country": "Azerbaijan",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "KE",
+     "map_id": 404,
+     "country": "Kenya",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "UG",
+     "map_id": 800,
+     "country": "Uganda",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "AR",
+     "map_id": 32,
+     "country": "Argentina",
+     "share_then": 0.1,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "FO",
+     "map_id": 234,
+     "country": "Faroe Islands",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "KY",
+     "map_id": 136,
+     "country": "Cayman Islands",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "SJ",
+     "map_id": 744,
+     "country": "Svalbard and Jan Mayen",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "CL",
+     "map_id": 152,
+     "country": "Chile",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "ID",
+     "map_id": 360,
+     "country": "Indonesia",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "ML",
+     "map_id": 466,
+     "country": "Mali",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "EE",
+     "map_id": 233,
+     "country": "Estonia",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "CY",
+     "map_id": 196,
+     "country": "Cyprus",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "LK",
+     "map_id": 144,
+     "country": "Sri Lanka",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "UA",
+     "map_id": 804,
+     "country": "Ukraine",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "KG",
+     "map_id": 417,
+     "country": "Kyrgyzstan",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "GH",
+     "map_id": 288,
+     "country": "Ghana",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "MA",
+     "map_id": 504,
+     "country": "Morocco",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "CO",
+     "map_id": 170,
+     "country": "Colombia",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "LT",
+     "map_id": 440,
+     "country": "Lithuania",
+     "share_then": 0.1,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "PH",
+     "map_id": 608,
+     "country": "Philippines",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "TN",
+     "map_id": 788,
+     "country": "Tunisia",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "IS",
+     "map_id": 352,
+     "country": "Iceland",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "MX",
+     "map_id": 484,
+     "country": "Mexico",
+     "share_then": 0.1,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "ET",
+     "map_id": 231,
+     "country": "Ethiopia",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "HR",
+     "map_id": 191,
+     "country": "Croatia",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "KZ",
+     "map_id": 398,
+     "country": "Kazakhstan",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "LI",
+     "map_id": 438,
+     "country": "Liechtenstein",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "UY",
+     "map_id": 858,
+     "country": "Uruguay",
+     "share_then": 0.1,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "CU",
+     "map_id": 192,
+     "country": "Cuba",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "HU",
+     "map_id": 348,
+     "country": "Hungary",
+     "share_then": 0.1,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "RW",
+     "map_id": 646,
+     "country": "Rwanda",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "NP",
+     "map_id": 524,
+     "country": "Nepal",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "LB",
+     "map_id": 422,
+     "country": "Lebanon",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "MN",
+     "map_id": 496,
+     "country": "Mongolia",
+     "share_then": 0.0,
+     "share_now": 0.0
+    },
+    {
+     "country_code": "MT",
+     "map_id": 470,
+     "country": "Malta",
+     "share_then": 0.0,
+     "share_now": 0.0
+    }
+   ],
+   "metadata": {
+    "country_code": {
+     "type": "string",
+     "levels": []
+    },
+    "map_id": {
+     "type": "integer",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "share_then": {
+     "type": "number",
+     "levels": []
+    },
+    "share_now": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with institution_country as (\n    select i.institution,\n           coalesce(i.ror_country_code, i.openalex_country_code, o.country_code) as country_code\n    from read_parquet('data/institutions.parquet') i\n    left join (select institution, country_code from read_parquet('data/institution_orgs.parquet')\n               where org_index = 1) o using (institution)\n),\n            paper_countries as (\n                select distinct case when a.year = 2026 then 'now' else 'then' end as period, a.paper_id,\n                       ic.country_code\n                from read_parquet('data/authorships.parquet') a\n                join institution_country ic using (institution)\n                where (a.year between 2008 and 2012 or a.year = 2026) and ic.country_code is not null\n            ),\n            known as (select period, count(distinct paper_id) as n from paper_countries group by period),\n            shares as (\n                select period, country_code, 100.0 * count(*) / any_value(k.n) as share\n                from paper_countries join known k using (period) group by period, country_code\n            )\n            select c.country_code, c.map_id, c.country,\n                   round(coalesce(max(share) filter (where period = 'then'), 0), 1) as share_then,\n                   round(coalesce(max(share) filter (where period = 'now'), 0), 1) as share_now\n            from shares join read_parquet('data/countries.parquet') c using (country_code)\n            where c.map_id is not null\n            group by c.country_code, c.map_id, c.country\n            order by share_now desc\n\"\"\").df()\n",
+    "outputVariable": "out",
+    "source": [
+     "authorships",
+     "countries",
+     "institution_orgs",
+     "institutions"
+    ],
+    "trigger": {
+     "tableId": "authorships",
+     "resultTableId": "country_shares_then_now",
+     "chart": {
+      "id": "chart-trigger-country_shares_then_now",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "authorships",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "country_shares_then_now",
+    "rowCount": 90
+   },
+   "description": "For each country, the share of NeurIPS papers (with known affiliations) with at least one author working there, in 2008–2012 together and in 2026. Earlier affiliations only for papers OpenAlex records. Source: NeurIPS proceedings and neurips.cc; affiliations from neurips.cc (2020 on) and OpenAlex; ROR.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794704200000_step_2",
+   "createdAt": 1794703616000
+  },
+  {
+   "kind": "table",
+   "id": "conference_route",
+   "displayId": "Where NeurIPS met, year by year",
+   "names": [
+    "year",
+    "city",
+    "country",
+    "lat",
+    "lng",
+    "papers"
+   ],
+   "rows": [
+    {
+     "year": 1987,
+     "city": "Denver",
+     "country": "US",
+     "lat": 39.74,
+     "lng": -104.99,
+     "papers": 90
+    },
+    {
+     "year": 1988,
+     "city": "Denver",
+     "country": "US",
+     "lat": 39.74,
+     "lng": -104.99,
+     "papers": 94
+    },
+    {
+     "year": 1989,
+     "city": "Denver",
+     "country": "US",
+     "lat": 39.74,
+     "lng": -104.99,
+     "papers": 101
+    },
+    {
+     "year": 1990,
+     "city": "Denver",
+     "country": "US",
+     "lat": 39.74,
+     "lng": -104.99,
+     "papers": 143
+    },
+    {
+     "year": 1991,
+     "city": "Denver",
+     "country": "US",
+     "lat": 39.74,
+     "lng": -104.99,
+     "papers": 144
+    },
+    {
+     "year": 1992,
+     "city": "Denver",
+     "country": "US",
+     "lat": 39.74,
+     "lng": -104.99,
+     "papers": 127
+    },
+    {
+     "year": 1993,
+     "city": "Denver",
+     "country": "US",
+     "lat": 39.74,
+     "lng": -104.99,
+     "papers": 158
+    },
+    {
+     "year": 1994,
+     "city": "Denver",
+     "country": "US",
+     "lat": 39.74,
+     "lng": -104.99,
+     "papers": 140
+    },
+    {
+     "year": 1995,
+     "city": "Denver",
+     "country": "US",
+     "lat": 39.74,
+     "lng": -104.99,
+     "papers": 152
+    },
+    {
+     "year": 1996,
+     "city": "Denver",
+     "country": "US",
+     "lat": 39.74,
+     "lng": -104.99,
+     "papers": 152
+    },
+    {
+     "year": 1997,
+     "city": "Denver",
+     "country": "US",
+     "lat": 39.74,
+     "lng": -104.99,
+     "papers": 150
+    },
+    {
+     "year": 1998,
+     "city": "Denver",
+     "country": "US",
+     "lat": 39.74,
+     "lng": -104.99,
+     "papers": 151
+    },
+    {
+     "year": 1999,
+     "city": "Denver",
+     "country": "US",
+     "lat": 39.74,
+     "lng": -104.99,
+     "papers": 150
+    },
+    {
+     "year": 2000,
+     "city": "Denver",
+     "country": "US",
+     "lat": 39.74,
+     "lng": -104.99,
+     "papers": 152
+    },
+    {
+     "year": 2001,
+     "city": "Vancouver",
+     "country": "Canada",
+     "lat": 49.28,
+     "lng": -123.12,
+     "papers": 197
+    },
+    {
+     "year": 2002,
+     "city": "Vancouver",
+     "country": "Canada",
+     "lat": 49.28,
+     "lng": -123.12,
+     "papers": 207
+    },
+    {
+     "year": 2003,
+     "city": "Vancouver",
+     "country": "Canada",
+     "lat": 49.28,
+     "lng": -123.12,
+     "papers": 198
+    },
+    {
+     "year": 2004,
+     "city": "Vancouver",
+     "country": "Canada",
+     "lat": 49.28,
+     "lng": -123.12,
+     "papers": 207
+    },
+    {
+     "year": 2005,
+     "city": "Vancouver",
+     "country": "Canada",
+     "lat": 49.28,
+     "lng": -123.12,
+     "papers": 207
+    },
+    {
+     "year": 2006,
+     "city": "Vancouver",
+     "country": "Canada",
+     "lat": 49.28,
+     "lng": -123.12,
+     "papers": 204
+    },
+    {
+     "year": 2007,
+     "city": "Vancouver",
+     "country": "Canada",
+     "lat": 49.28,
+     "lng": -123.12,
+     "papers": 217
+    },
+    {
+     "year": 2008,
+     "city": "Vancouver",
+     "country": "Canada",
+     "lat": 49.28,
+     "lng": -123.12,
+     "papers": 250
+    },
+    {
+     "year": 2009,
+     "city": "Vancouver",
+     "country": "Canada",
+     "lat": 49.28,
+     "lng": -123.12,
+     "papers": 262
+    },
+    {
+     "year": 2010,
+     "city": "Vancouver",
+     "country": "Canada",
+     "lat": 49.28,
+     "lng": -123.12,
+     "papers": 292
+    },
+    {
+     "year": 2011,
+     "city": "Granada",
+     "country": "Spain",
+     "lat": 37.18,
+     "lng": -3.6,
+     "papers": 306
+    },
+    {
+     "year": 2012,
+     "city": "Lake Tahoe",
+     "country": "US",
+     "lat": 38.96,
+     "lng": -119.94,
+     "papers": 370
+    },
+    {
+     "year": 2013,
+     "city": "Lake Tahoe",
+     "country": "US",
+     "lat": 38.96,
+     "lng": -119.94,
+     "papers": 360
+    },
+    {
+     "year": 2014,
+     "city": "Montréal",
+     "country": "Canada",
+     "lat": 45.5,
+     "lng": -73.57,
+     "papers": 411
+    },
+    {
+     "year": 2015,
+     "city": "Montréal",
+     "country": "Canada",
+     "lat": 45.5,
+     "lng": -73.57,
+     "papers": 403
+    },
+    {
+     "year": 2016,
+     "city": "Barcelona",
+     "country": "Spain",
+     "lat": 41.39,
+     "lng": 2.17,
+     "papers": 569
+    },
+    {
+     "year": 2017,
+     "city": "Long Beach",
+     "country": "US",
+     "lat": 33.77,
+     "lng": -118.19,
+     "papers": 679
+    },
+    {
+     "year": 2018,
+     "city": "Montréal",
+     "country": "Canada",
+     "lat": 45.5,
+     "lng": -73.57,
+     "papers": 1009
+    },
+    {
+     "year": 2019,
+     "city": "Vancouver",
+     "country": "Canada",
+     "lat": 49.28,
+     "lng": -123.12,
+     "papers": 1428
+    },
+    {
+     "year": 2022,
+     "city": "New Orleans",
+     "country": "US",
+     "lat": 29.95,
+     "lng": -90.07,
+     "papers": 2905
+    },
+    {
+     "year": 2023,
+     "city": "New Orleans",
+     "country": "US",
+     "lat": 29.95,
+     "lng": -90.07,
+     "papers": 3584
+    },
+    {
+     "year": 2024,
+     "city": "Vancouver",
+     "country": "Canada",
+     "lat": 49.28,
+     "lng": -123.12,
+     "papers": 4537
+    },
+    {
+     "year": 2025,
+     "city": "San Diego",
+     "country": "US",
+     "lat": 32.72,
+     "lng": -117.16,
+     "papers": 5858
+    },
+    {
+     "year": 2026,
+     "city": "Sydney",
+     "country": "Australia",
+     "lat": -33.87,
+     "lng": 151.21,
+     "papers": 9097
+    }
+   ],
+   "metadata": {
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "city": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "lat": {
+     "type": "number",
+     "levels": []
+    },
+    "lng": {
+     "type": "number",
+     "levels": []
+    },
+    "papers": {
+     "type": "integer",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    select c.year, c.city, n.country, c.lat, c.lng, p.papers\nfrom read_parquet('data/conferences.parquet') c\njoin read_parquet('data/countries.parquet') n using (country_code)\njoin (select year, count(*) as papers from read_parquet('data/papers.parquet') group by year) p\n    using (year)\nwhere c.main and c.lat is not null\norder by c.year\n\"\"\").df()\n",
+    "outputVariable": "out",
+    "source": [
+     "conferences",
+     "countries",
+     "papers"
+    ],
+    "trigger": {
+     "tableId": "conferences",
+     "resultTableId": "conference_route",
+     "chart": {
+      "id": "chart-trigger-conference_route",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "conferences",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "conference_route",
+    "rowCount": 38
+   },
+   "description": "NeurIPS's main city each year it met in person (2020 and 2021 were online; in 2025 it also met in Mexico City, in 2026 in Atlanta and Paris), with its papers. Source: NeurIPS.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794704500000_step_1",
+   "createdAt": 1794703621000
+  }
+ ],
+ "charts": [],
+ "conceptShelfItems": [],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794703600000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794703600000_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "How has NeurIPS grown since 1987?",
+   "parentNodeId": "conversation-root:8afcd58b-e5e1-5a1f-ab8b-845089c8a81e",
+   "actionId": "exploreDataFromNL_1794703600000",
+   "createdAt": 1794703600000
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794703600000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794703600000_step_1",
+   "textKind": "explain",
+   "content": "Starting with how many papers each year accepted, and how big author teams were.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794703600000_prompt",
+   "actionId": "exploreDataFromNL_1794703600000",
+   "createdAt": 1794703601000,
+   "startedAt": 1794703600000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794703600000-1-1",
+     "kind": "tool",
+     "status": "completed",
+     "tool": "create_data",
+     "label": "Querying: conferences, papers"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794703600000-1-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "App created: From 90 papers to 9,000"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794703600000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794703600000_closing",
+   "textKind": "explain",
+   "content": "**From 90 papers in 1987 to 9,097 in 2026.** The story follows the years in Denver, the slow climb, the deep learning boom and the move to three cities.",
+   "parentNodeId": "file-growth.app.jsx",
+   "actionId": "exploreDataFromNL_1794703600000",
+   "createdAt": 1794703604000,
+   "startedAt": 1794703600000,
+   "answered": true
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794703900000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794703900000_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Which ideas rose and fell?",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794703600000_closing_turn",
+   "actionId": "exploreDataFromNL_1794703900000",
+   "createdAt": 1794703605000
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794703900000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794703900000_step_1",
+   "textKind": "explain",
+   "content": "Next, each year's mix of topic areas, to see which ideas grew and which faded.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794703900000_prompt",
+   "actionId": "exploreDataFromNL_1794703900000",
+   "createdAt": 1794703606000,
+   "startedAt": 1794703605000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794703900000-1-1",
+     "kind": "tool",
+     "status": "completed",
+     "tool": "create_data",
+     "label": "Querying: papers"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794703900000_step_2",
+   "displayId": "textTurn_exploreDataFromNL_1794703900000_step_2",
+   "textKind": "explain",
+   "content": "Tracking a few telling words in paper titles across the decades.",
+   "parentNodeId": "topic_areas_by_year",
+   "actionId": "exploreDataFromNL_1794703900000",
+   "createdAt": 1794703608000,
+   "startedAt": 1794703605000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794703900000-2-1",
+     "kind": "tool",
+     "status": "completed",
+     "tool": "create_data",
+     "label": "Querying: papers"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794703900000-2-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "App created: Forty years of ideas at NeurIPS"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794703900000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794703900000_closing",
+   "textKind": "explain",
+   "content": "**Forty years of ideas: neural networks first, then probabilistic methods and theory, then deep learning; in 2026, 14% of titles name language models.** The story shows each topic area as a stream (topics classified by an AI model, so broad trends) and how words in titles rose and fell.",
+   "parentNodeId": "file-ideas.app.jsx",
+   "actionId": "exploreDataFromNL_1794703900000",
+   "createdAt": 1794703611000,
+   "startedAt": 1794703605000,
+   "answered": true
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794704200000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794704200000_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "How has the geography of NeurIPS changed?",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794703900000_closing_turn",
+   "actionId": "exploreDataFromNL_1794704200000",
+   "createdAt": 1794703612000
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794704200000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794704200000_step_1",
+   "textKind": "explain",
+   "content": "Following each year's share of papers by where authors work.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794704200000_prompt",
+   "actionId": "exploreDataFromNL_1794704200000",
+   "createdAt": 1794703613000,
+   "startedAt": 1794703612000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794704200000-1-1",
+     "kind": "tool",
+     "status": "completed",
+     "tool": "create_data",
+     "label": "Querying: authorships, countries, institution_orgs, institutions"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794704200000_step_2",
+   "displayId": "textTurn_exploreDataFromNL_1794704200000_step_2",
+   "textKind": "explain",
+   "content": "Comparing a decade ago with 2026 to make the shift concrete.",
+   "parentNodeId": "country_shares_by_year",
+   "actionId": "exploreDataFromNL_1794704200000",
+   "createdAt": 1794703615000,
+   "startedAt": 1794703612000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794704200000-2-1",
+     "kind": "tool",
+     "status": "completed",
+     "tool": "create_data",
+     "label": "Querying: authorships, countries, institution_orgs, institutions"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794704200000-2-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "App created: Where NeurIPS authors work"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794704200000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794704200000_closing",
+   "textKind": "explain",
+   "content": "**33.9% of NeurIPS 2026 papers have an author working in China, up from 2.2% in 2010; the US share went from 65.8% to 46.1%.** The story compares the map then and now. Before 2020, affiliations are known only for the papers OpenAlex records, so early shares are estimates.",
+   "parentNodeId": "file-geography.app.jsx",
+   "actionId": "exploreDataFromNL_1794704200000",
+   "createdAt": 1794703618000,
+   "startedAt": 1794703612000,
+   "answered": true
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794704500000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794704500000_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Where has NeurIPS met over the years?",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794704200000_closing_turn",
+   "actionId": "exploreDataFromNL_1794704500000",
+   "createdAt": 1794703619000
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794704500000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794704500000_step_1",
+   "textKind": "explain",
+   "content": "Listing every host city in order, so the conference's travels can go on a map.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794704500000_prompt",
+   "actionId": "exploreDataFromNL_1794704500000",
+   "createdAt": 1794703620000,
+   "startedAt": 1794703619000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794704500000-1-1",
+     "kind": "tool",
+     "status": "completed",
+     "tool": "create_data",
+     "label": "Querying: conferences, countries, papers"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794704500000-1-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "Map created: Where NeurIPS met"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794704500000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794704500000_closing",
+   "textKind": "explain",
+   "content": "**NeurIPS met in Denver from 1987 to 2000, then mostly in Vancouver and Montréal; in 2026 its main city is Sydney, with Atlanta and Paris at the same time.** Follow the arrows on the map, year by year; 2020 and 2021 were online.",
+   "parentNodeId": "file-conference_route.map.json",
+   "actionId": "exploreDataFromNL_1794704500000",
+   "createdAt": 1794703623000,
+   "startedAt": 1794703619000,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "papers_per_year",
+   "fields": {
+    "year": {
+     "semanticType": "Year",
+     "displayName": "Year",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Year"
+     }
+    },
+    "papers": {
+     "semanticType": "Count",
+     "displayName": "Papers",
+     "authored": {
+      "semanticType": "Count",
+      "displayName": "Papers"
+     }
+    },
+    "authors_per_paper": {
+     "semanticType": "Number",
+     "displayName": "Authors per paper",
+     "authored": {
+      "semanticType": "Number",
+      "displayName": "Authors per paper"
+     }
+    },
+    "city": {
+     "semanticType": "City",
+     "displayName": "Where NeurIPS met",
+     "authored": {
+      "semanticType": "City",
+      "displayName": "Where NeurIPS met"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "topic_areas_by_year",
+   "fields": {
+    "year": {
+     "semanticType": "Year",
+     "displayName": "Year",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Year"
+     }
+    },
+    "area": {
+     "semanticType": "Category",
+     "displayName": "Topic area (AI-classified)",
+     "authored": {
+      "semanticType": "Category",
+      "displayName": "Topic area (AI-classified)"
+     }
+    },
+    "papers": {
+     "semanticType": "Count",
+     "displayName": "Papers",
+     "authored": {
+      "semanticType": "Count",
+      "displayName": "Papers"
+     }
+    },
+    "share": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Share of papers",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Share of papers"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "title_words_by_year",
+   "fields": {
+    "year": {
+     "semanticType": "Year",
+     "displayName": "Year",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Year"
+     }
+    },
+    "term": {
+     "semanticType": "Category",
+     "displayName": "Word in the title",
+     "authored": {
+      "semanticType": "Category",
+      "displayName": "Word in the title"
+     }
+    },
+    "papers": {
+     "semanticType": "Count",
+     "displayName": "Papers",
+     "authored": {
+      "semanticType": "Count",
+      "displayName": "Papers"
+     }
+    },
+    "share": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Share of titles",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Share of titles"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "country_shares_by_year",
+   "fields": {
+    "year": {
+     "semanticType": "Year",
+     "displayName": "Year",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Year"
+     }
+    },
+    "place": {
+     "semanticType": "Region",
+     "displayName": "Where authors work",
+     "authored": {
+      "semanticType": "Region",
+      "displayName": "Where authors work"
+     }
+    },
+    "papers": {
+     "semanticType": "Count",
+     "displayName": "Papers",
+     "authored": {
+      "semanticType": "Count",
+      "displayName": "Papers"
+     }
+    },
+    "share": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Share of papers",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Share of papers"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "country_shares_then_now",
+   "fields": {
+    "country_code": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
+    },
+    "map_id": {
+     "semanticType": "ID",
+     "displayName": "Map id",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Map id"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "share_then": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Share of papers, 2008–2012",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Share of papers, 2008–2012"
+     }
+    },
+    "share_now": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Share of papers, 2026",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Share of papers, 2026"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "conference_route",
+   "fields": {
+    "year": {
+     "semanticType": "Year",
+     "displayName": "Year",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Year"
+     }
+    },
+    "city": {
+     "semanticType": "City",
+     "displayName": "City",
+     "authored": {
+      "semanticType": "City",
+      "displayName": "City"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "lat": {
+     "semanticType": "Latitude"
+    },
+    "lng": {
+     "semanticType": "Longitude"
+    },
+    "papers": {
+     "semanticType": "Count",
+     "displayName": "Papers",
+     "authored": {
+      "semanticType": "Count",
+      "displayName": "Papers"
+     }
+    }
+   }
+  }
+ ],
+ "fileNodes": [
+  {
+   "kind": "file",
+   "id": "file-growth.app.jsx",
+   "path": "growth.app.jsx",
+   "displayName": "From 90 papers to 9,000",
+   "contentHash": "4ca17c8c2513117a4822524f3dfe4ed09bc1f1d971a3d4ce36ad2a40aba453fd",
+   "parentNodeId": "papers_per_year",
+   "createdAt": 1794703603000
+  },
+  {
+   "kind": "file",
+   "id": "file-ideas.app.jsx",
+   "path": "ideas.app.jsx",
+   "displayName": "Forty years of ideas at NeurIPS",
+   "contentHash": "3c12570bbcdce438e88a1af3b42a11457c900be468b27348599a065f0ae607e3",
+   "parentNodeId": "title_words_by_year",
+   "createdAt": 1794703610000
+  },
+  {
+   "kind": "file",
+   "id": "file-geography.app.jsx",
+   "path": "geography.app.jsx",
+   "displayName": "Where NeurIPS authors work",
+   "contentHash": "12702ce86d7c2af72b0aeafdf467b618a83de1644b9bb29aac1dc1ba8c810df8",
+   "parentNodeId": "country_shares_then_now",
+   "createdAt": 1794703617000
+  },
+  {
+   "kind": "file",
+   "id": "file-conference_route.map.json",
+   "path": "conference_route.map.json",
+   "displayName": "Where NeurIPS met",
+   "contentHash": "22c7b9aa3a1e7e007d62193792cb683b4ccc10e2604e97bab726dd0046fe2f63",
+   "parentNodeId": "conference_route",
+   "createdAt": 1794703622000
+  }
+ ],
+ "focusedId": {
+  "type": "file",
+  "fileName": "growth.app.jsx"
+ },
+ "canvasTabs": [
+  {
+   "key": "file:growth.app.jsx",
+   "target": {
+    "type": "file",
+    "fileName": "growth.app.jsx"
+   },
+   "addedAt": 1794700000000,
+   "viewedAt": 1794700000004
+  },
+  {
+   "key": "file:ideas.app.jsx",
+   "target": {
+    "type": "file",
+    "fileName": "ideas.app.jsx"
+   },
+   "addedAt": 1794700000001,
+   "viewedAt": 1794700000001
+  },
+  {
+   "key": "file:geography.app.jsx",
+   "target": {
+    "type": "file",
+    "fileName": "geography.app.jsx"
+   },
+   "addedAt": 1794700000002,
+   "viewedAt": 1794700000002
+  },
+  {
+   "key": "file:conference_route.map.json",
+   "target": {
+    "type": "file",
+    "fileName": "conference_route.map.json"
+   },
+   "addedAt": 1794700000003,
+   "viewedAt": 1794700000003
+  }
+ ],
+ "canvasTabActive": "file:growth.app.jsx"
+}

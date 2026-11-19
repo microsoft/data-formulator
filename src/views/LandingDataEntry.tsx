@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, Box, Button, Chip, Typography, alpha } from '@mui/material';
+import { Alert, Box, Button, Chip, Typography } from '@mui/material';
 import type { Theme } from '@mui/material/styles';
 import BoltOutlinedIcon from '@mui/icons-material/BoltOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
@@ -13,7 +13,9 @@ import { ConnectorInstance } from '../components/ComponentType';
 import { apiRequest } from '../app/apiClient';
 import { getUrls } from '../app/utils';
 import { iconVar, textVar } from '../app/layout';
+import { frameColor, heroInputLine, inkColor } from '../app/look';
 import { DEMO_COLUMN, demoText } from '../sites/layout';
+import { ambientShadow, cardRadius, metaText } from '../app/tokens';
 
 /** A demo's landing (design-docs/69): its own suggested questions and datasets, no other data paths. */
 export interface LandingDemo {
@@ -65,23 +67,24 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
         display: 'inline-flex', alignItems: 'center', gap: 0.5, p: 0, border: 'none', borderRadius: 0,
         background: 'none', maxWidth: '100%', minWidth: 0, minHeight: 0, textTransform: 'none', whiteSpace: 'normal',
         fontWeight: 400, fontSize: '0.8125rem', lineHeight: 1.4, textAlign: 'left', overflowWrap: 'anywhere',
-        color: (theme: Theme) => alpha(theme.palette.text.primary, 0.76), transition: 'color 120ms ease',
+        color: (theme: Theme) => inkColor(theme, 0.76), transition: 'color 120ms ease',
         '& .MuiButton-startIcon': { m: 0, flexShrink: 0, '& .MuiSvgIcon-root': { fontSize: iconVar.md } },
         '&:hover': { background: 'none', color: 'primary.main', textDecoration: 'underline', textUnderlineOffset: 2 },
     } as const;
-    const labelStyle = { fontSize: '0.8rem', fontWeight: 600,
-        color: (theme: Theme) => alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 } as const;
+    const labelStyle = { fontWeight: 600, ...metaText({ fontSize: '0.8rem' }),
+        color: (theme: Theme) => inkColor(theme, 0.72), mr: 0.25, flexShrink: 0 } as const;
     return <Box sx={{ width: '100%', maxWidth: demo ? DEMO_COLUMN : 800, mx: 'auto', textAlign: 'left' }}>
         <Box sx={{ mb: 1.75, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75 }}>
             {(demo
                 ? demo.suggestions.map(text => ({ kind: text, label: text, onClick: () => submit(text, [], []) }))
                 : buildDataLoadingQuickActions(suggestionArgs, quickActionContext, quickActionSeed)).map(action => <Chip key={action.kind}
                 icon={<BoltOutlinedIcon />} label={action.label} onClick={action.onClick} disabled={disabled}
-                variant="outlined" size="small" sx={{ fontSize: demo ? demoText.body : textVar.md, minHeight: demo ? 34 : 30, height: { xs: 'auto', sm: demo ? 34 : 30 }, maxWidth: '100%', borderRadius: 2,
-                    color: 'text.secondary', borderColor: theme => alpha(theme.palette.text.primary, 0.12),
+                variant="outlined" size="small" sx={{ fontSize: demo ? demoText.body : textVar.md, minHeight: demo ? 34 : 30, height: { xs: 'auto', sm: demo ? 34 : 30 }, maxWidth: '100%', borderRadius: cardRadius('8px'),
+                    // Sharp: the input below is the one near-black box; its suggestions sit a level lighter, as in the workspace.
+                    color: demo ? theme => inkColor(theme, 0.8) : 'text.secondary', borderColor: theme => frameColor(theme, 0.12, 'divider'),
                     '& .MuiChip-label': { whiteSpace: 'normal' },
                     '& .MuiChip-icon': { fontSize: textVar.lg, ml: 0.5, color: 'text.disabled' },
-                    '&:hover': { bgcolor: 'action.hover', borderColor: theme => alpha(theme.palette.text.primary, 0.2) } }} />)}
+                    '&:hover': { bgcolor: 'action.hover', borderColor: theme => frameColor(theme, 0.2) } }} />)}
         </Box>
         {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 1 }}>{error}</Alert>}
         <AgentChatInput value={input} onChange={setInput} images={images} onImagesChange={setImages}
@@ -109,10 +112,10 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
             placeholder={demo ? demo.placeholder || t('upload.demoChatPlaceholder', { defaultValue: 'Ask a question about the data…' })
                 : t('upload.agentChatPlaceholder', { defaultValue: 'Ask the agent to find datasets, or extract data from an image or text...' })}
             sendTooltip={t('upload.agentChatSendTooltip', { defaultValue: 'Start chatting with the agent' })}
-            sx={{ borderColor: (theme: Theme) => alpha(theme.palette.primary.main, 0.38),
+            sx={{ borderColor: (theme: Theme) => heroInputLine(theme),
                 ...(demo && { '& textarea': { fontSize: demoText.input } }),
-                boxShadow: '0 5px 18px rgba(32, 33, 36, 0.11), 0 1px 4px rgba(32, 33, 36, 0.07)',
-                '&:hover': { boxShadow: '0 6px 20px rgba(32, 33, 36, 0.11), 0 2px 6px rgba(32, 33, 36, 0.06)' } }} />
+                boxShadow: ambientShadow('0 5px 18px rgba(32, 33, 36, 0.11), 0 1px 4px rgba(32, 33, 36, 0.07)'),
+                '&:hover': { boxShadow: ambientShadow('0 6px 20px rgba(32, 33, 36, 0.11), 0 2px 6px rgba(32, 33, 36, 0.06)') } }} />
         {demo ? demo.datasets : <Box sx={{ mt: 4, display: 'flex', flexDirection: 'column', gap: 1 }}>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 1.5, rowGap: 0.75 }}>
                 <Typography variant="body2" sx={labelStyle}>

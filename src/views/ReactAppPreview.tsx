@@ -3,6 +3,7 @@
 
 import React, { FC, useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
+import { useTheme } from '@mui/material/styles';
 
 import vegaSource from '../../node_modules/vega/build/vega.min.js?raw';
 import vegaLiteSource from '../../node_modules/vega-lite/build/vega-lite.min.js?raw';
@@ -14,7 +15,8 @@ import { dfSelectors, type DataFormulatorState } from '../app/dfSlice';
 import type { Chart, DictTable, FieldItem, FieldSemanticsInfo } from '../components/ComponentType';
 import { appChartSpecs } from '../app/sessionFiles';
 import { appThemes, useSavedThemes } from '../app/savedThemes';
-import { AppSandbox, useAppSourceResolver, useAppTheme } from './AppSandbox';
+import { AppSandbox, useAppSourceResolver, useAppTheme, type AppCapture } from './AppSandbox';
+import { appLook } from '../app/look';
 import type { Density } from '../app/reactApp/runtime/density';
 
 const APP_DOCUMENT = '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="df-app-root"></div></body></html>';
@@ -53,10 +55,13 @@ export const ReactAppPreview: FC<{
     workspaceId?: string;
     /** That session's tables, fields, semantics, and charts, in place of the open session's. */
     session?: { tables: DictTable[]; fields: FieldItem[]; tableSemantics: DataFormulatorState['tableSemantics']; charts: Chart[] };
-}> = ({ source, title, reloadKey = 0, reserveTopRight = false, onAskFix, autoFix, onHealthy, fixPending, density, workspaceId, session }) => {
+    /** Draw the app as a picture once it settles (see AppSandbox). */
+    capture?: AppCapture;
+}> = ({ source, title, reloadKey = 0, reserveTopRight = false, onAskFix, autoFix, onHealthy, fixPending, density, workspaceId, session, capture }) => {
     const compiled = useMemo(() => compileReactApp(source), [source]);
     const { manifest } = compiled;
     const theme = useAppTheme();
+    const { look } = appLook(useTheme());
     const resolveSource = useAppSourceResolver();
     const paletteKey = useSelector((state: DataFormulatorState) => state.config.paletteKey);
     const openTables = useSelector(dfSelectors.getAllTables);
@@ -102,13 +107,13 @@ export const ReactAppPreview: FC<{
             runtimeScripts: [vegaSource, vegaLiteSource, bridgeSource, reactRuntimeSource, ...optional.sources, mountScript(compiled.code)],
             theme,
             kitStylesheet: hostVariablesStylesheet(),
-            config: { channel, hostOrigin: window.location.origin, manifest, theme, paletteKey, semantics, charts, themes, density },
+            config: { channel, hostOrigin: window.location.origin, manifest, theme, paletteKey, look, semantics, charts, themes, density },
         });
     // `chartsKey` stands for `charts`: the app reloads only when a chart it can draw really changes.
-    }, [compiled, optional, manifest, theme, paletteKey, semantics, chartsKey, themes, density]);
+    }, [compiled, optional, manifest, theme, paletteKey, look, semantics, chartsKey, themes, density]);
     return <AppSandbox title={title} manifest={manifest} buildDocument={buildDocument} initialErrors={initialErrors}
         reloadKey={reloadKey} reserveTopRight={reserveTopRight} onAskFix={onAskFix} autoFix={autoFix} onHealthy={onHealthy} fixPending={fixPending}
-        resolveSource={resolveSource} workspaceId={workspaceId} />;
+        resolveSource={resolveSource} workspaceId={workspaceId} capture={capture} />;
 };
 
 export default ReactAppPreview;

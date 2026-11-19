@@ -19,6 +19,7 @@
  */
 
 import type MarkdownIt from 'markdown-it';
+import { isMapPath, parseItemName, workspaceFileName } from '../app/itemNames';
 
 export type BlockAttrs = Record<string, string>;
 
@@ -102,11 +103,13 @@ export function safeHttpUrl(url: string | undefined | null): string | undefined 
 
 /** A session path's file in the app: `files/x` opens as workspace file `x`, `scratch/…` as itself. */
 export function sessionFileName(path: string | undefined | null): string | undefined {
-    const trimmed = (path || '').trim();
-    if (trimmed.startsWith('files/')) return trimmed.slice('files/'.length) || undefined;
-    if (trimmed.startsWith('scratch/')) return trimmed;
-    return undefined;
+    const target = parseItemName(path);
+    return target?.kind === 'file' ? workspaceFileName(target.path) : undefined;
 }
+
+/** Links the report editor keeps: web and mail links as usual, and links to the session's items (`session://…`). */
+export const isReportLinkAllowed = (url: string, defaultValidate: (url: string) => boolean): boolean =>
+    defaultValidate(url) || (parseItemName(url)?.kind ?? 'web') !== 'web';
 
 /** Where an excerpt's source opens: its session file in a canvas tab, and/or a web page. */
 export function excerptLinks(attrs: { source?: string | null; url?: string | null }): { fileName?: string; href?: string } {
@@ -337,14 +340,19 @@ export function streamingReportText(text: string): string {
     return body.replace(CITE_REF, (ref, key: string) => defined.has(key) ? ref : '');
 }
 
-/** A map file embedded in a report: `![caption](map://files/<name>.map.json)`. */
-export const MAP_EMBED = /!\[([^\]]*)\]\(map:\/\/([^)\s]+)\)/g;
+/** An item embedded in a report: `![caption](name)`, by any of its names (see app/itemNames.ts). */
+export const EMBED = /!\[([^\]]*)\]\(([^)\s]+)\)/g;
+/** The map file an embed draws: `files/<name>.map.json`, or the old `map://files/<name>.map.json`. */
+export const embeddedMapPath = (name: string): string | undefined => {
+    const target = parseItemName(name);
+    return target?.kind === 'file' && isMapPath(target.path) ? target.path : undefined;
+};
 /** The image cache key (and `data-chart-id`, which edited reports keep) of an embedded map. */
 export const mapEmbedKey = (path: string) => `map:${path}`;
 
 /** The map files a report embeds: in its Markdown, or as images an edit kept. */
 export function reportMapPaths(text: string): string[] {
-    const paths = [...text.matchAll(MAP_EMBED)].map(match => match[2]);
+    const paths = [...text.matchAll(EMBED)].map(match => embeddedMapPath(match[2])).filter((path): path is string => !!path);
     paths.push(...[...text.matchAll(/data-chart-id="map:([^"]+)"/g)].map(match => match[1]));
     return Array.from(new Set(paths));
 }

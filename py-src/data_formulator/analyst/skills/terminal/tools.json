@@ -17,7 +17,7 @@
           },
           "cwd": {
             "type": "string",
-            "description": "Absolute working directory, or ~ for the user's home directory."
+            "description": "Working directory. Omit for the workspace root (where Python runs, so scratch/... names the same file in both); a workspace folder such as scratch/; or an absolute path or ~ for the user's own folders."
           },
           "purpose": {
             "type": "string",
@@ -35,7 +35,6 @@
         },
         "required": [
           "argv",
-          "cwd",
           "purpose"
         ],
         "additionalProperties": false
@@ -60,7 +59,7 @@
           },
           "cwd": {
             "type": "string",
-            "description": "Absolute working directory, or ~ for the user's home directory."
+            "description": "Working directory. Omit for the workspace root (where Python runs, so scratch/... names the same file in both); a workspace folder such as scratch/; or an absolute path or ~ for the user's own folders."
           },
           "purpose": {
             "type": "string",
@@ -78,7 +77,6 @@
         },
         "required": [
           "argv",
-          "cwd",
           "purpose"
         ],
         "additionalProperties": false

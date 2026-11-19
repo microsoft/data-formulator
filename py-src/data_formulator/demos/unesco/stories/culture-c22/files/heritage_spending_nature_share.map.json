@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "title": "Monuments or nature: where heritage money goes",
+  "subtitle": "Natural heritage's share of spending on cultural and natural heritage, public and private; latest year with both, 2020–2024; more on nature above 50%",
+  "source": "UIS, February 2026 release; indicators HEXPCSTPPPCAP.CULHER, HEXPCSTPPPCAP.NATHER",
+  "template": "choropleth",
+  "data": {
+    "table": "heritage_spending_nature_share"
+  },
+  "encoding": {
+    "region": "country_id",
+    "color": "nature_share",
+    "tooltip": [
+      "country",
+      "nature_share",
+      "latest_year"
+    ]
+  },
+  "properties": {
+    "geography": "world",
+    "keyType": "iso3"
+  },
+  "fields": {
+    "country_id": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+    },
+    "country": {
+      "semanticType": "Country",
+      "displayName": "Country"
+    },
+    "latest_year": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+    },
+    "cultural": {
+      "semanticType": "Price",
+      "unit": "PPP$ per person",
+      "displayName": "Spending on cultural heritage per person"
+    },
+    "natural": {
+      "semanticType": "Price",
+      "unit": "PPP$ per person",
+      "displayName": "Spending on natural heritage per person"
+    },
+    "nature_share": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Nature's share of heritage spending",
+      "divergingMidpoint": 50
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

@@ -118,7 +118,7 @@ const selectableProps = (output: ThreadOutput, selected: boolean, onSelect?: () 
     onClick: onSelect ? (event: React.MouseEvent) => { event.stopPropagation(); onSelect(); } : undefined,
 }) as const;
 const selectableSx = (selected: boolean, tone: 'primary' | 'secondary' = 'primary', tinted = false) => ({
-    boxSizing: 'border-box', m: 0, font: 'inherit', cursor: 'pointer', borderRadius: '6px', overflow: 'hidden',
+    boxSizing: 'border-box', m: 0, font: 'inherit', cursor: 'pointer', borderRadius: 1.5, overflow: 'hidden',
     bgcolor: (theme: Theme) => tinted ? theme.palette[tone].bgcolor || alpha(theme.palette[tone].main, 0.08) : theme.palette.background.paper,
     border: '1px solid', borderColor: (theme: Theme) => selected ? theme.palette[tone].main
         : tinted ? alpha(theme.palette[tone].main, 0.2) : 'rgba(0,0,0,0.08)',

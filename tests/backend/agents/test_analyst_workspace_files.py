@@ -105,7 +105,7 @@ def test_agent_data_create_update_and_protected_sources(tmp_path):
     assert ctx.payload["workspace_inputs"].data[0].display_name == "measurements"
     # A table made in the run is readable by path before the session shows it.
     ctx.payload["session_layer"] = SessionLayer({}, workspace)
-    read = json.loads(skill.handle_tool("read_file", {"files": [{"path": "session/tables/measurements.json",
+    read = json.loads(skill.handle_tool("read_file", {"files": [{"path": "session://tables/measurements",
                                                                   "rows": "1-5"}]}, ctx).text)["files"][0]
     assert read["total_rows"] == 1 and "| 1 | 3 |" in read["content"]
     with pytest.raises(ValueError, match="changed"):
@@ -212,6 +212,51 @@ def test_agent_acquisition_refresh_preserves_metadata_and_checks_hash(tmp_path):
 
 
 @pytest.mark.slow
+@pytest.mark.parametrize("assignment", ["output_variable", "frame"])
+def test_acquired_data_code_saves_its_last_variable_when_output_variable_is_left_out(tmp_path, assignment):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    workspace.save_scratch_file("quotes.json", json.dumps([{"symbol": "^DJI", "change_pct": -1.1}]).encode())
+    skill = WorkspaceSkill()
+    ctx = SkillContext(client=None, workspace=workspace, runtime=_agent(workspace))
+    skill.handle_tool("create_data", {
+        "table_name": "quotes", "input_sources": [{"id": "scratch/quotes.json", "kind": "file"}],
+        "acquisition": {"source": "Yahoo Finance chart API", "scope": "Major US indices today"},
+        "code": f"import json\nimport pandas as pd\n{assignment} = pd.DataFrame(json.load(open('scratch/quotes.json')))",
+    }, ctx)
+    assert workspace.read_data_as_df("quotes")["symbol"].tolist() == ["^DJI"]
+
+
+def test_every_write_names_its_full_path_and_a_scratch_file_is_cited_by_it(tmp_path):
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    skill = WorkspaceSkill()
+    ctx = SkillContext(client=None, workspace=workspace)
+    written = json.loads(skill.handle_tool("create_file", {"path": "scratch/raw/quotes.json", "content": '[{"v": 1}]'}, ctx).text)
+    assert written["path"] == "scratch/raw/quotes.json" and written["temporary"] is True
+    assert workspace.resolve_scratch_file("raw/quotes.json").read_bytes() == b'[{"v": 1}]'
+    assert not workspace.get_metadata().files
+    # It is cited and acquired from by that same path.
+    created = json.loads(skill.handle_tool("create_data", {
+        "table_name": "quotes", "rows": [{"v": 1}], "input_sources": [{"id": "scratch/raw/quotes.json", "kind": "file"}],
+        "acquisition": {"source": "Quotes API", "scope": "Today"},
+    }, ctx).text)
+    assert created["input_sources"][0]["id"] == "scratch/raw/quotes.json"
+    # And revised in place with edit_file.
+    edited = json.loads(skill.handle_tool("edit_file", {"path": "scratch/raw/quotes.json", "content": "[]",
+                                                        "expected_content_hash": written["content_hash"]}, ctx).text)
+    assert edited["path"] == "scratch/raw/quotes.json" and workspace.resolve_scratch_file("raw/quotes.json").read_bytes() == b"[]"
+    # files/ paths and older bare filenames make the same durable file.
+    assert json.loads(skill.handle_tool("create_file", {"path": "files/notes.md", "content": "a"}, ctx).text)["path"] == "files/notes.md"
+    assert json.loads(skill.handle_tool("create_file", {"filename": "plan.md", "content": "b"}, ctx).text)["path"] == "files/plan.md"
+    for path, message in (("files/scratch/x.json", "confused with scratch/"), ("files/files/x.md", "repeats the root")):
+        with pytest.raises(ValueError, match=message):
+            skill.handle_tool("create_file", {"path": path, "content": "x"}, ctx)
+    with pytest.raises(ValueError, match="scratch/gone.json does not exist"):
+        skill.handle_tool("create_data", {
+            "table_name": "gone", "rows": [{"value": 1}], "input_sources": [{"id": "scratch/gone.json", "kind": "file"}],
+        }, ctx)
+
+
+@pytest.mark.slow
 def test_agent_data_python_provenance_staleness_and_failed_update(tmp_path):
     workspace = Workspace("test-user", root_dir=tmp_path)
     skill = WorkspaceSkill()
@@ -256,7 +301,7 @@ def test_agent_data_can_be_computed_from_a_derived_table_outside_the_scoped_inpu
     skill = WorkspaceSkill()
     ctx = SkillContext(client=None, workspace=workspace, runtime=_agent(workspace), payload={"input_tables": []})
     created = json.loads(skill.handle_tool("create_data", {
-        "table_name": "tripled", "input_sources": [{"id": "session/tables/d_result_5.json", "kind": "data"}],
+        "table_name": "tripled", "input_sources": [{"id": "session://tables/d_result_5", "kind": "data"}],
         "code": "import pandas as pd\nresult = pd.read_parquet('data/d_result_5.parquet')\nresult['value'] *= 3",
         "output_variable": "result",
     }, ctx).text)
@@ -602,21 +647,21 @@ def test_external_table_reference_is_session_context_not_file_or_computation_dat
     from data_formulator.analyst.session_layer import SessionLayer
     layer = SessionLayer({"externalTableReferences": [reference],
                           "focusedId": {"type": "external-table", "referenceId": reference["id"]}}, workspace)
-    view = json.loads(layer.view(f"session/references/{reference['id']}.json")["content"])
+    view = json.loads(layer.view(f"session://references/{reference['id']}")["content"])
 
     assert not manifest.data
     assert not manifest.files
     assert view["tableKey"] == "events-key" and view["summary"]["columns"][0]["name"] == "timestamp"
     assert view["summary"]["sampleRows"] == reference["summary"]["sampleRows"]
     assert "query_capabilities" in view
-    assert f"Focus: `session/references/{reference['id']}.json` is on the canvas" in layer.index()
+    assert f"Focus: `session://references/{reference['id']}` is on the canvas" in layer.index()
     guidance = (Path(__file__).resolve().parents[3] / "py-src/data_formulator/analyst/skills/workspace/SKILL.md").read_text()
     assert "use its `connectorId` as `source_id`" in guidance and "not a Python input" in guidance
     context = SkillContext(client=None, workspace=workspace,
                            payload={"external_references": [reference], "session_layer": layer})
     skill = WorkspaceSkill()
-    path = f"session/references/{reference['id']}.json"
-    listed = json.loads(skill.handle_tool("list_files", {"path": "session/references/"}, context).text)
+    path = f"session://references/{reference['id']}"
+    listed = json.loads(skill.handle_tool("list_files", {"path": "session://references/"}, context).text)
     assert [item["path"] for item in listed["files"]] == [path]
     assert listed["files"][0]["kind"] == "reference" and listed["files"][0]["name"] == "Events"
     read = json.loads(skill.handle_tool("read_file", {"files": [{"path": path}]}, context).text)["files"][0]
@@ -627,8 +672,8 @@ def test_external_table_reference_is_session_context_not_file_or_computation_dat
     assert f"## {path}" in searched and "cached metadata only" in searched and "probe_data" in searched
     assert "## files/notes.txt" in searched
     only_files = skill.handle_tool("search", {"query": "timestamp", "path": ["files/"]}, context).text
-    assert "session/references" not in only_files and "## files/notes.txt" in only_files
-    missing = skill.handle_tool("search", {"query": "unknown value", "path": ["session/references/"]}, context).text
+    assert "session://references" not in only_files and "## files/notes.txt" in only_files
+    missing = skill.handle_tool("search", {"query": "unknown value", "path": ["session://references/"]}, context).text
     assert missing.startswith("No matches")
 
 
@@ -641,7 +686,7 @@ def test_external_reference_view_bounds_large_ui_samples() -> None:
     }
     from data_formulator.analyst.session_layer import SessionLayer
     view = json.loads(SessionLayer({"externalTableReferences": [reference]}).view(
-        f"session/references/{reference['id']}.json")["content"])
+        f"session://references/{reference['id']}")["content"])
     assert len(view["summary"]["sampleRows"]) == 5
     assert view["summary"]["cachedSampleRowCount"] == 50
     assert len(reference["summary"]["sampleRows"]) == 50
@@ -714,24 +759,24 @@ def test_workspace_list_read_and_search_use_paths(tmp_path: Path) -> None:
 
     listed = {item["path"]: item for item in json.loads(
         workspace_skill.handle_tool("list_files", {}, context).text)["files"]}
-    assert listed["session/tables/orders.json"]["kind"] == "table"
-    assert listed["session/tables/orders.json"]["detail"] == "2 rows × 2 columns"
+    assert listed["session://tables/orders"]["kind"] == "table"
+    assert listed["session://tables/orders"]["detail"] == "2 rows × 2 columns"
     assert listed["files/notes.txt"]["kind"] == "text"
 
     read = json.loads(workspace_skill.handle_tool("read_file", {"files": [
         {"path": "files/notes.txt", "offset": 2, "limit": 1},
-        {"path": "session/tables/orders.json", "rows": "2", "columns": ["code"]},
+        {"path": "session://tables/orders", "rows": "2", "columns": ["code"]},
     ]}, context).text)["files"]
     assert read[0]["content"] == "needle value\n"
     assert read[1]["content"] == "| row | code |\n| 2 | B2 |"
 
     searched = workspace_skill.handle_tool("search", {"query": "needle"}, context).text
-    assert "## session/tables/orders.json" in searched and "| 2 | B2 | Needle bundles |" in searched
+    assert "## session://tables/orders" in searched and "| 2 | B2 | Needle bundles |" in searched
     assert "## files/notes.txt" in searched and "- line 2: needle value" in searched
     # The table section comes first, and only the files when asked.
-    assert searched.index("orders.json") < searched.index("notes.txt")
+    assert searched.index("session://tables/orders") < searched.index("notes.txt")
     files_only = workspace_skill.handle_tool("search", {"query": "needle", "path": ["files/"]}, context).text
-    assert "orders.json" not in files_only
+    assert "session://tables/orders" not in files_only
 
 
 def test_edit_file_patches_replaces_and_rejects_stale_writes(tmp_path):
@@ -1039,4 +1084,4 @@ def test_index_lists_connected_sources_for_discovery(monkeypatch):
     from data_formulator.analyst.session_layer import SessionLayer
 
     monkeypatch.setattr(data_connector, "list_available_connector_ids", lambda: ["powerbi:sales", "kusto:logs"])
-    assert "Catalogs under sources/ (search covers them; list_files sources/ to browse): powerbi:sales, kusto:logs" in SessionLayer({}).index()
+    assert "Catalogs under sources:// (search covers them; list_files sources:// to browse): powerbi:sales, kusto:logs" in SessionLayer({}).index()

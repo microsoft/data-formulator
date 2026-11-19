@@ -105,7 +105,7 @@ export const SignInFormCard = ({ turn, form, embedded = false }: {
 
     return <Box data-signin-card={signin.provider} sx={{
         display: 'flex', flexDirection: 'column', gap: 0.75, fontSize: 'inherit', lineHeight: 1.5,
-        px: 1.25, py: 1, borderRadius: '8px', bgcolor: 'background.paper',
+        px: 1.25, py: 1, borderRadius: 2, bgcolor: 'background.paper',
         border: `1px solid ${alpha(theme.palette.primary.main, answered ? 0.15 : 0.3)}`,
     }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>

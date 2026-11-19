@@ -133,7 +133,7 @@ export const formatAnalystToolProgress = (
             detail = values.path || '';
             break;
         case 'create_file':
-            detail = values.filename || '';
+            detail = values.path || values.filename || '';
             break;
         case 'create_data':
         case 'update_data':

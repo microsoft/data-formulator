@@ -421,7 +421,7 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
         </Box>
         <Box role="group" aria-label={t('workflow.actions')} sx={{ display: 'flex', justifyContent: 'center', flexShrink: 0, px: 2, pt: 1.5, pb: canvas ? 3 : 1, bgcolor: 'background.paper' }}>
             <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 0.5,
-                px: 1, py: 0.5, borderRadius: '8px', border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}>
+                px: 1, py: 0.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}>
                 <Button size="small" variant="text" startIcon={<SaveIcon />} disabled={saving}
                     sx={{ textTransform: 'none', flexShrink: 0, color: 'primary.main' }} onClick={openSave}>{t('workflow.saveWorkflow')}</Button>
                 <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.75 }} />

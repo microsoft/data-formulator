@@ -16,6 +16,7 @@ import GlobalStyles from '@mui/material/GlobalStyles';
 import { ThemeProvider } from '@mui/material/styles';
 
 import { createDfTheme } from '../../theme';
+import { applyLookVariables } from '../../look';
 import { appConfig, bridge, errorMessage, reportError } from './bridge';
 import * as chart from './chart';
 import * as data from './data';
@@ -115,9 +116,12 @@ export function mount(factory: (require: (name: string) => unknown, module: { ex
         App = () => <MUI.Box sx={{ p: 2 }}><ErrorState error={errorMessage(error)} /></MUI.Box>;
     }
     const AppComponent = App as React.ComponentType;
+    // The host's look: its MUI theme here, and its variables behind the DF tokens the app's components use.
+    const look = appConfig().look ?? 'soft';
+    applyLookVariables(document.documentElement.style, look);
     const root = createRoot(target);
     root.render(
-        <ThemeProvider theme={boardTheme(densityTheme(createDfTheme(appConfig().paletteKey ?? ''), appConfig().density ?? DEFAULT_DENSITY))}>
+        <ThemeProvider theme={boardTheme(densityTheme(createDfTheme(appConfig().paletteKey ?? '', look), appConfig().density ?? DEFAULT_DENSITY))}>
             <GlobalStyles styles={theme => ({
                 // The scrollbar's colors; a dark AppTheme page sets its own (appTheme.tsx).
                 ':root': { '--df-scrollbar': 'rgba(0, 0, 0, 0.15)', '--df-scrollbar-hover': 'rgba(0, 0, 0, 0.3)' },

@@ -6,7 +6,7 @@
 The analyst shell decides to write a report (the ``write_report`` **action**),
 then dispatches here. The model assembles the report in the **main agent loop**:
 it loads this skill, reads whatever charts and data it needs with ``read_file``
-(a chart's ``session/charts/<id>.json`` and its table's view), and then emits ``write_report`` — a committing tool call carrying the **full
+(a chart's ``session://charts/<id>`` and its table's view), and then emits ``write_report`` — a committing tool call carrying the **full
 Markdown** in its ``report`` argument.
 
 ``write_report`` is the one *streaming* action (``stream_field="report"`` on
@@ -23,7 +23,7 @@ and frontend contract is unchanged. ``write_report`` does not end the run on its
 own — the shell feeds the returned observation back and the agent stops on the
 next turn by committing no action.
 
-  - ``{"type": "action", "action": "write_report"}``              — commitment
+  - ``{"type": "action", "action": "write_report", "report_id": …}`` — commitment, naming the report
   - ``{"type": "text_delta", "channel": "report", "content": …}`` — report prose
 """
 
@@ -33,9 +33,11 @@ import logging
 import re
 from typing import Any, Generator
 
-from data_formulator.analyst.replacement import resolve_replacement
-from data_formulator.analyst.session_edits import report_map_paths, workspace_map_paths
+from data_formulator.analyst import names, references
+from data_formulator.analyst.replacement import record_run_artifact, resolve_replacement
+from data_formulator.analyst.session_edits import run_chart_ids
 from data_formulator.analyst.session_files import SessionFiles
+from data_formulator.analyst.session_layer import session_layer
 from data_formulator.analyst.skills.report.excerpts import check_report_excerpts, summarize_checks
 from data_formulator.analyst.skills.base import (
     Event,
@@ -136,10 +138,14 @@ class ReportWritingSkill:
                 yield {"type": "error", "message": str(exc), "message_code": "agent.parseActionFailed"}
                 return f"[REPORT NOT DELIVERED] {exc}"
 
+        # The report's id, chosen here (or by the agent loop when it streamed the report) so this run can patch
+        # it by name: session://reports/<id>.
+        report_id = str(spec.get("report_id") or new_report_id())
         # Announce the commitment (mirrors how visualize emits an action event).
         yield {
             "type": "action",
             "action": "write_report",
+            "report_id": report_id,
             **({"replaces": replaces} if replaces else {}),
         }
 
@@ -157,17 +163,29 @@ class ReportWritingSkill:
             excerpt_note = summarize_checks(check_report_excerpts(report, SessionFiles(ctx)))
         except Exception:
             logger.warning("Could not check the report's excerpts", exc_info=True)
-        # Embedded maps must be map files in the workspace; a missing one shows as a placeholder.
-        maps = workspace_map_paths(ctx)
-        missing_maps = sorted(report_map_paths(report) - maps) if maps is not None else []
-        if missing_maps:
-            map_note = (f"These embedded maps are not map files in the workspace and show as placeholders: {', '.join(missing_maps)}. "
-                        "Write the map with write_map, then fix the report's map://files/<name>.map.json paths.")
-            excerpt_note = f"{excerpt_note}\n{map_note}" if excerpt_note else map_note
+        content = _strip_leaked_tool_syntax(report)
+        title = next((line[2:].strip() for line in content.splitlines() if line.startswith("# ")), "") or report_id
+        layer = session_layer(ctx.payload)
+        if layer is not None:
+            layer.record_report(report_id, content, title)
+        record_run_artifact(ctx, "report", report_id, title)
+        # Every embed, link and excerpt source must name something in the session; one that doesn't shows as its
+        # caption until the agent patches it.
+        known = references.known_names(layer, ctx.workspace, run_chart_ids(ctx.payload or {}))
+        missing = references.unresolved(references.find(content), known)
+        if missing:
+            reference_note = (references.describe(missing, known) + " They show as their captions until fixed: patch "
+                              f"them with edit_file on {names.report(report_id)} (read_file it for its content_hash).")
+            excerpt_note = f"{excerpt_note}\n{reference_note}" if excerpt_note else reference_note
 
-        return "[REPORT DELIVERED] The report was written and shown to the user." + (
+        return f"[REPORT DELIVERED] The report {names.report(report_id)} was written and shown to the user." + (
             f" It replaced {replaces['name']} ({replaces['id']}), which is deleted." if replaces else "") + (
             f"\n{excerpt_note}" if excerpt_note else "")
+
+
+def new_report_id() -> str:
+    import secrets
+    return f"report-{secrets.token_hex(6)}"
 
 
 def get_skill() -> ReportWritingSkill:

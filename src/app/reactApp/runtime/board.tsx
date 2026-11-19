@@ -15,7 +15,7 @@ import React, { useMemo, useRef } from 'react';
 import GlobalStyles from '@mui/material/GlobalStyles';
 import { alpha, createTheme, useTheme, type Theme } from '@mui/material/styles';
 
-import { fontSans } from '../../tokens';
+import { ambientShadow, cardRadius, fontSans } from '../../tokens';
 
 /** Categorical colours: distinct, even in weight, and readable on white (Observable's 10). */
 export const BOARD_PALETTE = ['#4269d0', '#efb118', '#ff725c', '#6cc5b0', '#3ca951', '#ff8ab7', '#a463f2', '#97bbf5', '#9c6b4e', '#9498a0'];
@@ -93,13 +93,13 @@ export function boardSpec(theme: 'board' | Record<string, unknown>, accent: stri
     return mergeSpec(boardChartTheme(own), over);
 }
 
-/** The board's MUI: rounded cards with a hairline and a faint lift, tight headings, and light tables. */
+/** The board's MUI: rounded cards with a hairline and a faint lift (square and flat in the sharp look), tight headings, and light tables. */
 export function boardTheme(outer: Theme): Theme {
     return createTheme(outer as object, {
         dfPalette: BOARD_PALETTE,
         dfGrid: BOARD_GRID,
         palette: { background: { default: BOARD_PAGE, paper: BOARD_TILE } },
-        shape: { borderRadius: 8 },
+        shape: { borderRadius: Number(outer.shape.borderRadius) * 2 },
         typography: {
             h4: { letterSpacing: '-0.02em' },
             h5: { letterSpacing: '-0.015em' },
@@ -111,9 +111,9 @@ export function boardTheme(outer: Theme): Theme {
                 styleOverrides: {
                     // Read at render, so a dark AppTheme's divider and paper apply.
                     outlined: ({ theme }: { theme: Theme }) => ({
-                        borderRadius: 10,
+                        borderRadius: cardRadius('10px'),
                         borderColor: theme.palette.mode === 'dark' ? theme.palette.divider : 'rgba(15, 23, 42, 0.08)',
-                        boxShadow: theme.palette.mode === 'dark' ? 'none' : '0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.03)',
+                        boxShadow: theme.palette.mode === 'dark' ? 'none' : ambientShadow('0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.03)'),
                     }),
                 },
             },
@@ -123,7 +123,7 @@ export function boardTheme(outer: Theme): Theme {
                     head: ({ theme }: { theme: Theme }) => ({ borderBottomColor: alpha(theme.palette.text.primary, 0.12) }),
                 },
             },
-            MuiAlert: { styleOverrides: { root: { borderRadius: 8 } } },
+            MuiAlert: { styleOverrides: { root: ({ theme }: { theme: Theme }) => ({ borderRadius: theme.shape.borderRadius }) } },
         },
     } as object);
 }
@@ -208,7 +208,7 @@ export function tokenVars(theme: Theme): Record<string, string> {
         '--df-text-xl': px(type.h5?.fontSize ?? '1.25rem'),
         '--df-space': theme.spacing(1),
         '--df-radius': `${theme.shape.borderRadius}px`,
-        '--df-radius-tile': '10px',
+        '--df-radius-tile': cardRadius('10px'),
         ...Object.fromEntries(inks.palette.slice(0, 10).map((color, index) => [`--df-palette-${index + 1}`, color])),
     };
 }

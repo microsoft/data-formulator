@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "title": "The rich–poor gap in finishing school",
+  "subtitle": "Upper secondary completion, richest minus poorest fifth of households, percentage points; latest survey, 2018–2025",
+  "source": "UIS, November 2026 release; indicators CR.3.Q1, CR.3.Q5",
+  "template": "choropleth",
+  "data": {
+    "table": "completion_by_wealth"
+  },
+  "encoding": {
+    "region": "country_id",
+    "color": [
+      "gap",
+      "poorest",
+      "richest"
+    ],
+    "tooltip": [
+      "country",
+      "gap",
+      "poorest",
+      "richest",
+      "latest_year"
+    ]
+  },
+  "properties": {
+    "geography": "world",
+    "keyType": "iso3"
+  },
+  "fields": {
+    "country_id": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+    },
+    "country": {
+      "semanticType": "Country",
+      "displayName": "Country"
+    },
+    "latest_year": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+    },
+    "poorest": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Completion, poorest fifth",
+      "thresholds": [
+        20,
+        40,
+        60,
+        80
+      ]
+    },
+    "richest": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Completion, richest fifth",
+      "thresholds": [
+        20,
+        40,
+        60,
+        80
+      ]
+    },
+    "gap": {
+      "semanticType": "Number",
+      "unit": "percentage points",
+      "displayName": "Rich–poor gap"
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

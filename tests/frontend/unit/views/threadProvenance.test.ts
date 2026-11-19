@@ -17,6 +17,7 @@ import { LayoutProvider } from '../../../../src/app/LayoutProvider';
 const CONVERSATION_ROOT_ID = 'conversation-root:test';
 import * as workspaceService from '../../../../src/app/workspaceService';
 import { buildThreads } from '../../../../src/app/threadGraph';
+import { iconTone } from '../../../../src/app/tokens';
 import type { TextTurn } from '../../../../src/components/ComponentType';
 
 vi.mock('../../../../src/views/SimpleChartRecBox', () => ({ SimpleChartRecBox: () => null }));
@@ -31,8 +32,8 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 const THEME = createTheme({ palette: { custom: { main: '#a34d16' } } } as any);
-const threadElement = (store: any, props: { denseColumns?: boolean } = {}) => React.createElement(Provider, { store, children:
-  React.createElement(ThemeProvider, { theme: THEME, children:
+const threadElement = (store: any, props: { denseColumns?: boolean } = {}, theme = THEME) => React.createElement(Provider, { store, children:
+  React.createElement(ThemeProvider, { theme, children:
     React.createElement(LayoutProvider, { children: React.createElement(DataThread, props) }),
   }),
 });
@@ -128,7 +129,7 @@ it('keeps a shown thread open when a new thread appears and only collapses on re
   expect(summary).toHaveTextContent('expand');
   const gutter = summary.closest('[data-thread-entry]')!.querySelector('[data-thread-collapsed-gutter]')!;
   expect(gutter).toHaveAttribute('aria-hidden', 'true');
-  expect(gutter.firstElementChild).toHaveStyle({ borderLeftWidth: '2px', borderLeftStyle: 'dashed' });
+  expect(gutter.firstElementChild).toHaveStyle({ borderLeftWidth: 'var(--df-rail-width, 2px)', borderLeftStyle: 'dashed' });
   fireEvent.click(summary);
   expect(store.getState().focusedId).toEqual(previousFocus);
   expect(screen.getByText('old response')).toBeTruthy();
@@ -244,7 +245,7 @@ it.each([
   expect(container.querySelector('[data-thread-active="true"]')).toBeTruthy();
   if (producesTable) {
     // The open conversation shows on the timeline: the whole thread's line and dots turn blue.
-    expect(container.querySelector('[data-thread-table-dot]')).not.toHaveStyle({ backgroundColor: 'rgba(0, 0, 0, 0.15)' });
+    expect(container.querySelector('[data-thread-table-dot]')).not.toHaveStyle({ backgroundColor: iconTone.muted });
   }
   act(() => { store.dispatch(dfActions.setFocused(undefined)); });
   expect(container.querySelector('[data-thread-active="true"]')).toBeNull();
@@ -1245,8 +1246,8 @@ it('keeps a collapsed thread grey when the focus is only further down its chain'
   const entry = container.querySelector('[data-thread-entry^="thread-ask"]')!;
   expect(entry.getAttribute('data-thread-entry')).toContain('collapsed');
   // The line and the head each keep one grey tone throughout.
-  expect(entry.querySelector('[data-thread-collapsed-gutter]')).toHaveStyle({ color: 'rgba(0, 0, 0, 0.12)' });
-  expect(entry.querySelector('[data-thread-flow-header] [aria-hidden="true"]')).toHaveStyle({ color: 'rgba(0, 0, 0, 0.15)' });
+  expect(entry.querySelector('[data-thread-collapsed-gutter]')).toHaveStyle({ color: 'var(--df-line-rail, rgba(0,0,0,0.12))' });
+  expect(entry.querySelector('[data-thread-flow-header] [aria-hidden="true"]')).toHaveStyle({ color: iconTone.muted });
 });
 
 it('deletes a stranded tool step, then the reply nothing answers, reopening the question', () => {
@@ -1311,6 +1312,30 @@ it('shows the chart that led to a conclusion, not an empty placeholder a later d
   store.dispatch(agentMessage('conclusion', 'Combined conclusion', 'adjusted', 5));
   store.dispatch(dfActions.setFocused({ type: 'text', textId: 'conclusion' }));
   expect(dfSelectors.selectCanvasTarget(store.getState())).toEqual({ type: 'chart', chartId: 'real' });
+});
+
+it('keeps the result a message asked about in view until its run brings a new item', () => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  store.dispatch(dfActions.addTableToStore(derivedTable('asked', 'Asked', CONVERSATION_ROOT_ID)));
+  store.dispatch(dfActions.addChart({ id: 'asked-chart', chartType: 'Bar Chart', tableRef: 'asked', source: 'user', encodingMap: {} } as any));
+  store.dispatch(dfActions.addTableToStore(derivedTable('latest', 'Latest', 'asked')));
+  store.dispatch(dfActions.addChart({ id: 'latest-chart', chartType: 'Bar Chart', tableRef: 'latest', source: 'user', encodingMap: {} } as any));
+  store.dispatch(userMessage('ask', 'Which are companies?', 'latest', 3, { references: [{ kind: 'chart', id: 'asked-chart', label: 'Asked' }] }));
+  const canvas = () => dfSelectors.selectCanvasTarget(store.getState());
+
+  store.dispatch(dfActions.createDraftNode({ id: 'failed', displayId: 'failed', parentNodeId: 'ask', parentTableId: 'latest', source: [], interaction: [] }));
+  store.dispatch(dfActions.updateDeriveStatus({ nodeId: 'failed', status: 'error' }));
+  store.dispatch(dfActions.setFocused({ type: 'draft', draftId: 'failed' }));
+  expect(canvas()).toEqual({ type: 'chart', chartId: 'asked-chart' });
+
+  store.dispatch(agentMessage('reply', 'Only text', 'ask', 4));
+  store.dispatch(dfActions.setFocused({ type: 'text', textId: 'reply' }));
+  expect(canvas()).toEqual({ type: 'chart', chartId: 'asked-chart' });
+
+  store.dispatch(dfActions.addTableToStore(derivedTable('made', 'Made', 'ask')));
+  store.dispatch(agentMessage('summary', 'Made a table', 'made', 5));
+  store.dispatch(dfActions.setFocused({ type: 'text', textId: 'summary' }));
+  expect(canvas()).toEqual({ type: 'table', tableId: 'made' });
 });
 
 it('wraps a thread into sub-threads by what its blocks made, keeping breaks already made', () => {
@@ -1406,6 +1431,22 @@ it('drops a finished "creating chart" row that has nothing else to say', () => {
   renderDataThread(store);
   expect(screen.queryByText('creating chart...')).toBeNull();
   expect(screen.getByText('Result')).toBeVisible();
+});
+
+it('marks the thread\'s steps with sharp glyphs by kind only in the sharp look', () => {
+  const store = configureStore({ reducer: dataFormulatorReducer });
+  store.dispatch(userMessage('ask', 'Show the trend', CONVERSATION_ROOT_ID, 1));
+  store.dispatch(agentMessage('reply', 'Here is the trend', 'ask', 2));
+  store.dispatch(dfActions.addTableToStore(derivedTable('result', 'Result', 'reply')));
+  const glyphs = (root: HTMLElement) => [...root.querySelectorAll('[data-thread-item] [data-sharp-glyph]')].map(node => node.getAttribute('data-sharp-glyph'));
+
+  const soft = renderDataThread(store);
+  expect(glyphs(soft.container)).toEqual([]);
+  soft.unmount();
+
+  const sharp = render(threadElement(store, {}, createTheme({ palette: { custom: { main: '#a34d16' } }, look: 'sharp' } as any)));
+  expect(glyphs(sharp.container)).toEqual(expect.arrayContaining(['user', 'agent', 'table']));
+  expect(glyphs(sharp.container).indexOf('user')).toBeLessThan(glyphs(sharp.container).indexOf('table'));
 });
 
 it('draws apps in the report purple, with their own icons', () => {

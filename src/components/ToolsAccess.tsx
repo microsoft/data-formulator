@@ -9,7 +9,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton,
+import { Alert, Box, Button, ButtonBase, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton,
     LinearProgress, Radio, RadioGroup, TextField, Tooltip, Typography } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector, useStore } from 'react-redux';
 import { dfActions, type DataFormulatorState } from '../app/dfSlice';
 import { iconVar, textVar } from '../app/layout';
+import { metaText } from '../app/tokens';
 import { loadToolsPolicy, onToolsDialogRequest, saveToolsPolicy, toolsConfig, type ToolsChange, type ToolsMode, type ToolsPolicy } from '../app/toolsSettings';
 import { AddServerForm, setupPanelSx, StatusLine, ToolPage, ToolSwitch, toolkitIcon, useMcpSettings, type McpServer } from './McpServers';
 import { ItemCard, itemCardGridSx } from './ItemCard';
@@ -31,6 +32,7 @@ import { TerminalFilesystemSummary } from './TerminalApprovalDialog';
 import { BrowserDetails, BrowserStatusLabel } from './BrowserAccess';
 import { browserConfig, browserOn, checkBrowser, loadBrowserStatus, saveBrowserSettings, type BrowserChoice, type BrowserStatus } from '../app/browserSettings';
 import LoginIcon from '@mui/icons-material/Login';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { accountsApi, type AccountState } from '../app/accounts';
 import { AccountSignIn } from './AccountSignIn';
 
@@ -130,6 +132,40 @@ const ToolCard = ({ icon, name, about, status, onOpen, toggle, available }: {
             status,
         ]} />
 </Box>;
+
+/**
+ * Sign-ins as a plain list, not cards: they are credentials the tools use, not tools. Each row names the site,
+ * says who is signed in (or what signing in gives), and opens its page.
+ */
+const AccountList = ({ accounts, onOpen }: { accounts: AccountState[]; onOpen: (id: string) => void }) => {
+    const { t } = useTranslation();
+    return <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none', border: 1, borderColor: 'divider', borderRadius: 1,
+        '& > li + li': { borderTop: 1, borderColor: 'divider' } }}>
+        {accounts.map(account => {
+            const detail = account.signed_in
+                ? [account.login ? t('accounts.signedInShort', { defaultValue: 'Signed in as @{{login}}', login: account.login })
+                    : t('accounts.keyShort', { defaultValue: 'Key {{hint}} saved', hint: account.secret_hint || '' }),
+                account.send_to.join(', ')].filter(Boolean).join(' · ')
+                : t(`accounts.about.${account.id}`, { defaultValue: ACCOUNT_ABOUT[account.id] ?? account.send_to.join(', ') });
+            return <li key={account.id}>
+                <ButtonBase onClick={() => onOpen(account.id)} sx={{ width: '100%', display: 'flex', alignItems: 'center', gap: 1.5,
+                    px: 1.5, py: 1, textAlign: 'left', borderRadius: 1, '&:hover': { bgcolor: 'action.hover' } }}>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{account.name}</Typography>
+                        <Typography variant="caption" title={detail} sx={{ display: 'block', color: 'text.secondary',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{detail}</Typography>
+                    </Box>
+                    <Typography component="span" variant="caption" sx={{ flexShrink: 0, fontWeight: 500,
+                        color: account.signed_in ? 'text.secondary' : 'primary.main' }}>
+                        {account.signed_in ? t('accounts.manage', { defaultValue: 'Manage' })
+                            : t('accounts.signIn', { defaultValue: 'Sign in' })}
+                    </Typography>
+                    <ChevronRightIcon sx={{ fontSize: 18, color: 'text.disabled', flexShrink: 0 }} />
+                </ButtonBase>
+            </li>;
+        })}
+    </Box>;
+};
 
 /** A home-page section's heading. */
 const HomeHeading = ({ children }: { children: React.ReactNode }) =>
@@ -389,22 +425,6 @@ export const ToolsAccessButton = () => {
                                         label={t('mcp.serverEnabled', { defaultValue: 'Use {{name}}', name: server.name })} />} />;
                             })}
                         </Box>
-                        {!!accounts?.length && <>
-                            <HomeHeading>{t('tools.home.accounts', { defaultValue: 'Accounts' })}</HomeHeading>
-                            <Box sx={itemCardGridSx}>
-                                {accounts.map(account => <ToolCard key={account.id} icon={<LoginIcon />} name={account.name}
-                                    available={!account.signed_in}
-                                    about={t(`accounts.about.${account.id}`, { defaultValue: ACCOUNT_ABOUT[account.id] ?? account.send_to.join(', ') })}
-                                    status={<Typography component="span" variant="caption"
-                                        sx={{ color: account.signed_in ? 'text.secondary' : 'primary.main' }}>
-                                        {account.signed_in
-                                            ? account.login
-                                                ? t('accounts.signedInShort', { defaultValue: 'Signed in as @{{login}}', login: account.login })
-                                                : t('accounts.keyShort', { defaultValue: 'Key {{hint}} saved', hint: account.secret_hint || '' })
-                                            : t('accounts.signInShort', { defaultValue: '+ Sign in' })}</Typography>}
-                                    onOpen={() => go(`account:${account.id}`)} />)}
-                            </Box>
-                        </>}
                         {canAdd && <>
                             <HomeHeading>{t('tools.home.more', { defaultValue: 'Add more' })}</HomeHeading>
                             <Box sx={itemCardGridSx}>
@@ -420,6 +440,10 @@ export const ToolsAccessButton = () => {
                                         {t('tools.home.paste', { defaultValue: '+ Paste its configuration' })}</Typography>}
                                     onOpen={() => go('custom')} />
                             </Box>
+                        </>}
+                        {!!accounts?.length && <>
+                            <HomeHeading>{t('tools.home.signIns', { defaultValue: 'Your sign-ins' })}</HomeHeading>
+                            <AccountList accounts={accounts} onOpen={id => go(`account:${id}`)} />
                         </>}
                     </>}
                 </>}
@@ -453,6 +477,6 @@ export const ToolsChipFace = ({ count, mode }: { count: number; mode: ToolsMode 
                     : mode === 'auto' ? <BoltIcon sx={{ fontSize: 10 }} /> : <EditIcon sx={{ fontSize: 8 }} />}
             </Box>
         </Box>
-        {label}
+        <Box component="span" sx={metaText({ fontSize: textVar.xs })}>{label}</Box>
     </Box>;
 };

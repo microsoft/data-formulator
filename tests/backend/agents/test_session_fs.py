@@ -96,8 +96,8 @@ def test_search_returns_whole_rows_codebook_first_with_the_shared_budget(workspa
     result = _files(workspace).search("ofst.1.cp", max_results=6)
 
     sections = [line for line in result.splitlines() if line.startswith("## ")]
-    assert sections[0].startswith("## session/tables/indicators.json")     # the small codebook first
-    assert sections[1].startswith("## session/tables/facts.json")
+    assert sections[0].startswith("## session://tables/indicators")     # the small codebook first
+    assert sections[1].startswith("## session://tables/facts")
     assert "| 1 | OFST.1.CP | Out-of-school children, primary |" in result  # whole row, 1-based row number
     assert "Matched in: 30 rows" in result
     assert "… 5 of 30 rows shown" in result                                 # the codebook took its 1 row
@@ -129,7 +129,7 @@ def test_search_covers_table_names_descriptions_and_code_of_tables_without_rows(
     }]}
     files = _files(workspace, state)
     result = files.search("groupby")
-    assert '## session/tables/d_sales.json "Sales by region" — table, data missing from the workspace' in result
+    assert '## session://tables/d_sales "Sales by region" — table, data missing from the workspace' in result
     assert "Matched in: code (1 line)" in result
     assert "- code line 1: df = sales.groupby('region').sum()" in result
     assert '"Sales by region"' in files.search("sales by region")
@@ -144,16 +144,16 @@ def test_a_session_table_without_workspace_data_reads_as_missing_not_empty(works
     files = _files(workspace, state)
 
     with pytest.raises(ValueError, match="data is missing from the workspace"):
-        files.read_item({"path": "session/tables/d_sales.json", "rows": "1-5"})
-    assert "data is missing from the workspace" in files.read_item({"path": "session/tables/d_sales.json"})["note"]
+        files.read_item({"path": "session://tables/d_sales", "rows": "1-5"})
+    assert "data is missing from the workspace" in files.read_item({"path": "session://tables/d_sales"})["note"]
     listed = {item["path"]: item for item in files.list("")["files"]}
-    assert listed["session/tables/d_sales.json"]["detail"] == \
+    assert listed["session://tables/d_sales"]["detail"] == \
         "data missing from the workspace (listed as 3 rows × 2 columns)"
 
     workspace.write_parquet(pd.DataFrame({"region": ["East", "West", "North"], "sales": [1, 2, 3]}), "d_sales")
     files = _files(workspace, state)
-    assert files.read_item({"path": "session/tables/d_sales.json", "rows": "1-5"})["total_rows"] == 3
-    assert "note" not in files.read_item({"path": "session/tables/d_sales.json"})
+    assert files.read_item({"path": "session://tables/d_sales", "rows": "1-5"})["total_rows"] == 3
+    assert "note" not in files.read_item({"path": "session://tables/d_sales"})
 
 
 def test_search_shows_a_column_window_for_wide_tables(workspace) -> None:
@@ -217,7 +217,7 @@ def test_read_items_use_the_unit_that_fits_each_kind(workspace) -> None:
     files = _files(workspace)
 
     read = files.read_items([
-        {"path": "session/tables/facts.json", "rows": "250-"},
+        {"path": "session://tables/facts", "rows": "250-"},
         {"path": "files/games.xlsx#Platforms", "rows": "1"},
         {"path": "files/games.xlsx"},
         {"path": "files/small.csv"},
@@ -238,7 +238,7 @@ def test_read_items_use_the_unit_that_fits_each_kind(workspace) -> None:
 
 def test_read_rows_are_capped(workspace) -> None:
     workspace.write_parquet(pd.DataFrame({"value": range(500)}), "many")
-    read = _files(workspace).read_item({"path": "session/tables/many.json", "rows": "1-500"})
+    read = _files(workspace).read_item({"path": "session://tables/many", "rows": "1-500"})
     assert read["content"].count("\n") <= session_fs.ROW_LIMIT
     assert read["total_rows"] == 500
 
@@ -256,11 +256,14 @@ def test_large_text_files_are_read_in_pages(workspace, monkeypatch) -> None:
     assert "- line 42: line 42" in files.search('"line 42"')
 
 
-def test_read_refuses_images_and_binaries_and_reports_missing_paths(workspace) -> None:
-    workspace.save_workspace_file(b"\x89PNG", "chart.png", "image/png")
+def test_read_refuses_binaries_and_unseen_images_and_reports_missing_paths(workspace) -> None:
+    workspace.save_workspace_file(b"PK", "bundle.zip", "application/zip")
+    workspace.save_workspace_file(b"II*", "scan.tiff", "image/tiff")
     files = _files(workspace)
     with pytest.raises(ValueError, match="execute_python_script"):
-        files.read_item({"path": "files/chart.png"})
+        files.read_item({"path": "files/bundle.zip"})
+    with pytest.raises(ValueError, match="execute_python_script"):
+        files.read_item({"path": "files/scan.tiff"})
     with pytest.raises(ValueError, match="does not exist"):
         files.read_item({"path": "files/missing.txt"})
 
@@ -275,8 +278,8 @@ def test_list_shows_kinds_details_ui_names_and_accepts_globs(workspace) -> None:
     files = _files(workspace)
 
     listed = {item["path"]: item for item in files.list()["files"]}
-    assert listed["session/tables/sales.json"]["kind"] == "table"
-    assert listed["session/tables/sales.json"]["detail"] == "2 rows × 2 columns"
+    assert listed["session://tables/sales"]["kind"] == "table"
+    assert listed["session://tables/sales"]["detail"] == "2 rows × 2 columns"
     assert listed["files/notes/plan.md"]["name"] == "Plan"
     assert listed["files/raw.csv"]["kind"] == "CSV"
     assert [item["path"] for item in files.list("files/*.csv")["files"]] == ["files/raw.csv"]
@@ -323,9 +326,10 @@ def test_a_chart_view_names_the_table_it_shows(workspace) -> None:
     }
     layer = SessionLayer(state, workspace)
     files = SessionFiles(SkillContext(client=None, workspace=workspace, payload={"session_layer": layer}))
-    assert "Its data: session/tables/d_sales.json" in files.read("session/charts/chart-1.json")["note"]
+    note = files.read("session://charts/chart-1")["note"]
+    assert "Its data: table d_sales. session://tables/d_sales" in note and "in code" in note
     layer.add_run_chart("chart-2", {"chart_type": "Bar Chart", "table": "d_made", "encodings": {}}, ["a"])
-    assert "Its data: session/tables/d_made.json" in files.read("session/charts/chart-2.json")["note"]
+    assert "Its data: table d_made. session://tables/d_made" in files.read("session://charts/chart-2")["note"]
 
 
 @pytest.fixture()
@@ -346,27 +350,27 @@ def test_workflows_are_read_only_files_listed_and_searched_only_when_named(works
     files = SessionFiles(ctx)
 
     root = files.list()
-    assert not any(item["path"].startswith("workflows/") for item in root["files"])
-    assert "workflows/: the user's saved" in root["also"]
-    listed = {item["path"]: item for item in files.list("workflows/")["files"]}
-    assert listed["workflows/fuel.workflow.yaml"]["name"].startswith("My")
-    assert listed["workflows/fuel.workflow.yaml"]["detail"].startswith("saved by the user")
-    assert listed["workflows/demo/gas-price-review.yaml"]["detail"].startswith("built-in example")
-    assert listed["workflows/schedules.json"]["detail"].startswith("scheduling unavailable")
+    assert not any(item["path"].startswith("workflows://") for item in root["files"])
+    assert "workflows://: the user's saved" in root["also"]
+    listed = {item["path"]: item for item in files.list("workflows://")["files"]}
+    assert listed["workflows://fuel.workflow.yaml"]["name"].startswith("My")
+    assert listed["workflows://fuel.workflow.yaml"]["detail"].startswith("saved by the user")
+    assert listed["workflows://demo/gas-price-review.yaml"]["detail"].startswith("built-in example")
+    assert listed["workflows://schedules.json"]["detail"].startswith("scheduling unavailable")
 
-    read = files.read_item({"path": "workflows/demo/gas-price-review.yaml", "limit": 3})
+    read = files.read_item({"path": "workflows://demo/gas-price-review.yaml", "limit": 3})
     assert read["content"].startswith("version: 1") and "not replaced" in read["note"] and "editable" not in read
     assert "No matches" in files.search("fuel price")
-    assert "## workflows/fuel.workflow.yaml" in files.search("fuel price", path="workflows/")
+    assert "## workflows://fuel.workflow.yaml" in files.search("fuel price", path="workflows://")
     with pytest.raises(ValueError):
-        WorkspaceSkill().handle_tool("edit_file", {"path": "workflows/fuel.workflow.yaml",
+        WorkspaceSkill().handle_tool("edit_file", {"path": "workflows://fuel.workflow.yaml",
                                                    "expected_content_hash": read["content_hash"], "content": "x"}, ctx)
 
     in_run = SessionFiles(SkillContext(client=None, workspace=workspace, payload={"in_workflow_run": True}))
-    assert in_run.list("workflows/")["files"] == [] and "workflows/" not in in_run.list().get("also", "")
+    assert in_run.list("workflows://")["files"] == [] and "workflows://" not in in_run.list().get("also", "")
 
 
-# ── sources/ ─────────────────────────────────────────────────────────────
+# ── sources:// ─────────────────────────────────────────────────────────────
 
 
 @pytest.fixture()
@@ -393,35 +397,35 @@ def catalogs(workspace):
 
 def test_sources_list_one_level_with_escaped_segments_and_globs(catalogs) -> None:
     files = _files(catalogs)
-    root = {item["path"]: item for item in files.list("sources/")["files"]}
-    assert root["sources/kusto:samples/"]["detail"] == "14 tables in 2 top-level folders"
-    assert root["sources/powerbi:sales/"]["detail"] == "1 table"
-    level = files.list("sources/kusto:samples/")["files"]
-    assert [item["path"] for item in level] == ["sources/kusto:samples/logs/", "sources/kusto:samples/odd/",
-                                                 "sources/kusto:samples/StormEvents"]
+    root = {item["path"]: item for item in files.list("sources://")["files"]}
+    assert root["sources://kusto:samples/"]["detail"] == "14 tables in 2 top-level folders"
+    assert root["sources://powerbi:sales/"]["detail"] == "1 table"
+    level = files.list("sources://kusto:samples/")["files"]
+    assert [item["path"] for item in level] == ["sources://kusto:samples/logs/", "sources://kusto:samples/odd/",
+                                                 "sources://kusto:samples/StormEvents"]
     assert level[2]["detail"] == "2 columns · 59,066 rows" and level[2]["kind"] == "source table"
-    assert files.list("sources/kusto:samples/odd/")["files"][0]["path"] == "sources/kusto:samples/odd/a%2Fb"
-    assert len(files.list("sources/kusto:samples/*storm_log*")["files"]) == 12
-    assert files.list("sources/kusto:samples/StormEvents")["files"] == [level[2]]
-    assert "sources/" in files.list()["also"]
+    assert files.list("sources://kusto:samples/odd/")["files"][0]["path"] == "sources://kusto:samples/odd/a%2Fb"
+    assert len(files.list("sources://kusto:samples/*storm_log*")["files"]) == 12
+    assert files.list("sources://kusto:samples/StormEvents")["files"] == [level[2]]
+    assert "sources://" in files.list()["also"]
 
 
 def test_a_source_table_reads_as_lines_with_its_identity(catalogs) -> None:
     files = _files(catalogs)
-    view = files.read_item({"path": "sources/powerbi:sales/Sales Model"})
+    view = files.read_item({"path": "sources://powerbi:sales/Sales Model"})
     content = view["content"]
     assert "source_id: powerbi:sales\ntable_key: c798-guid" in content
     assert "Semantic model: 1 measures, 30 dimensions, 1 time dimensions" in content
     assert "- Order Date (time_dimension, granularities=month)" in content
     assert 'Inspection: {"schema_source": "inferred", "columns_omitted": 2}' in content
     assert '- {"from": "Sales[Key]", "to": "Date[Key]"}' in content
-    page = files.read_item({"path": "sources/powerbi:sales/Sales Model", "offset": 15, "limit": 5})
+    page = files.read_item({"path": "sources://powerbi:sales/Sales Model", "offset": 15, "limit": 5})
     assert page["start_line"] == 15 and len(page["content"].splitlines()) == 5 and "more" in page
-    assert "time_dimension" in files.search("time_dimension", path="sources/powerbi:sales/")
+    assert "time_dimension" in files.search("time_dimension", path="sources://powerbi:sales/")
     with pytest.raises(ValueError, match="folder"):
-        files.read_item({"path": "sources/kusto:samples/logs"})
+        files.read_item({"path": "sources://kusto:samples/logs"})
     with pytest.raises(ValueError, match="does not exist"):
-        files.read_item({"path": "sources/kusto:samples/Missing"})
+        files.read_item({"path": "sources://kusto:samples/Missing"})
 
 
 def test_a_default_search_covers_catalogs_after_the_session(catalogs) -> None:
@@ -430,13 +434,57 @@ def test_a_default_search_covers_catalogs_after_the_session(catalogs) -> None:
 
     result = files.search("storm", max_results=10)
     headers = [line for line in result.splitlines() if line.startswith("## ")]
-    assert headers[0].startswith("## session/tables/storms.json")
-    assert headers[1].startswith("## sources/kusto:samples/StormEvents")   # name hits first among catalog tables
-    assert len([header for header in headers if header.startswith("## sources/")]) == 10
+    assert headers[0].startswith("## session://tables/storms")
+    assert headers[1].startswith("## sources://kusto:samples/StormEvents")   # name hits first among catalog tables
+    assert len([header for header in headers if header.startswith("## sources://")]) == 10
     assert "… 3 more connected-source tables match" in result
     # The session's rows take the budget first; catalog tables show what is left.
     assert "… 10 of 30 rows shown" in result and "- description:" not in result
-    named = files.search("storm", path="sources/")
-    assert "more connected-source tables" not in named and "session/tables" not in named
+    named = files.search("storm", path="sources://")
+    assert "more connected-source tables" not in named and "session://tables" not in named
     assert "- description: US storm events" in named
-    assert "sources/" not in files.search("storm", path="session/")
+    assert "sources://" not in files.search("storm", path="session://")
+
+
+def test_a_tables_data_file_reads_as_the_table_in_read_file_and_python(workspace) -> None:
+    """data/ is on disk: the same path works in read_file and in code (design-docs/73)."""
+    workspace.write_parquet(pd.DataFrame({"region": ["N", "S"], "sales": [5, 3]}), "d_sales")
+    state = {"derivedTables": [{"kind": "table", "id": "t-sales", "displayId": "Sales", "names": ["region", "sales"],
+                                "metadata": {}, "virtual": {"tableId": "d_sales", "rowCount": 2},
+                                "derive": {"source": [], "code": "df = sales", "trigger": {}}}]}
+    files = _files(workspace, state)
+    data_file = workspace.get_relative_data_file_path("d_sales")
+
+    listed = files.list("data/")
+    assert [item["path"] for item in listed["files"]] == [data_file]
+    assert "d_sales" in listed["files"][0]["note"]
+    assert "data/" in files.list()["also"]
+
+    view = files.read_item({"path": data_file})
+    assert view["table"] == "d_sales" and data_file in view["content"]
+    rows = files.read_item({"path": data_file, "rows": "1-2"})
+    assert "N" in rows["content"] and "S" in rows["content"]
+    assert pd.read_parquet(workspace._path / data_file)["sales"].tolist() == [5, 3]
+
+    with pytest.raises(ValueError, match="list_files data/"):
+        files.read_item({"path": "data/not-a-table.parquet"})
+
+
+def test_errors_from_code_say_where_a_tables_data_is(workspace) -> None:
+    """The logged failures: a session:// path opened in code, a data path joined to session://tables/, a stale file."""
+    workspace.write_parquet(pd.DataFrame({"a": [1]}), "pnw_snow")
+    state = {"derivedTables": [{"kind": "table", "id": "t-1", "displayId": "Snow", "names": ["a"], "metadata": {},
+                                "virtual": {"tableId": "pnw_snow", "rowCount": 1},
+                                "derive": {"source": [], "code": "", "trigger": {}}}]}
+    layer = SessionLayer(state, workspace)
+    data_file = workspace.get_relative_data_file_path("pnw_snow")
+    missing = "Error: FileNotFoundError - [Errno 2] No such file or directory: '{}'"
+    for opened in ("session://tables/pnw_snow", "session/tables/pnw_snow.json", f"session/tables/{data_file}",
+                   "data/pnw_snow-0ld.parquet", f"{workspace._path}/session/tables/pnw_snow.json"):
+        hinted = session_files.path_error_hint(missing.format(opened), workspace, layer)
+        assert f"pd.read_parquet('{data_file}')" in hinted, opened
+    for opened in ("session://charts/chart-1", "session/charts/chart-1.json"):
+        assert "session://charts/chart-1 is an object, read with read_file" in session_files.path_error_hint(
+            missing.format(opened), workspace, layer)
+    unrelated = missing.format("scratch/nope.csv")
+    assert session_files.path_error_hint(unrelated, workspace, layer) == unrelated

@@ -209,6 +209,25 @@ it('cannot override a deployment restriction on user connectors', async () => {
     expect(screen.getByRole('button', { name: 'Add data connection' })).toBeTruthy();
 });
 
+it('turns sharing images to the web off, unless the deployment decides it', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { ...snapshot, share_links: { enabled: true, locked: false } } });
+    render(<ConfigurationView />);
+    const toggle = await screen.findByRole('switch', { name: 'Put shared images on the web (QR codes and links)' });
+    expect(toggle).toBeChecked();
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/configurations', expect.objectContaining({
+        method: 'PUT', body: JSON.stringify({ revision: 2, overrides: { share_links: false } }),
+    })));
+    cleanup();
+
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { ...snapshot, share_links: { enabled: false, locked: true } } });
+    render(<ConfigurationView />);
+    const locked = await screen.findByRole('switch', { name: 'Put shared images on the web (QR codes and links)' });
+    expect(locked).toBeDisabled();
+    expect(locked).not.toBeChecked();
+});
+
 it('stages the user model restriction while keeping administrator setup available', async () => {
     render(<ConfigurationView />);
     const policy = await screen.findByRole('radiogroup', { name: 'User models' });

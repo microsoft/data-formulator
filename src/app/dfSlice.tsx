@@ -5,7 +5,7 @@ import { createAsyncThunk, createSlice, PayloadAction, createSelector, original 
 import { shallowEqual } from 'react-redux';
 import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, DraftNode, InteractionEntry, DeriveStatus, TextTurn, DraftWriting, TerminalExecution, ToolCall, InputTable, TableSemanticsInfo, LoadedTableNode, ProgressStep } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
-import { ArtifactSetNode, DictTable, FileNode, ReplacedArtifact, ExternalTableReference, ComputationInputSource, createConversationRootId, isConversationRootId } from "../components/ComponentType";
+import { ArtifactSetNode, DictTable, FileNode, ReplacedArtifact, ExternalTableReference, ComputationInputSource, ThreadReference, createConversationRootId, isConversationRootId } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
 import { vlAdaptChart, vlRecommendEncodings } from 'flint-chart';
@@ -111,6 +111,10 @@ export interface ServerConfig {
     DATA_FORMULATOR_HOME?: string;
     DEV_MODE: boolean;
     WORKSPACE_BACKEND: 'local' | 'azure_blob' | 'ephemeral';
+    /** The installed Data Formulator's version, e.g. "0.8.0b1" ("" when not installed as a package). */
+    VERSION?: string;
+    /** Shares can go on the web by link and QR code (hosted servers; see data_formulator/shares.py). */
+    SHARE_LINKS?: boolean;
     AUTH_PROVIDER?: string;
     AUTH_INFO?: {
         action: 'frontend' | 'redirect' | 'transparent' | 'none';
@@ -3248,6 +3252,22 @@ export const dfSelectors = {
                         return undefined;
                 }
             };
+            // A message about an earlier result adds the request at its thread's end, so the nearest item is
+            // whatever came last. Until the run brings a new item, its answer or failure keeps the result asked
+            // about in view.
+            const referenceCanvas = (reference: ThreadReference): FocusedId => {
+                if (reference.kind === 'chart') return allCharts.some(chart => chart.id === reference.id) ? { type: 'chart', chartId: reference.id } : undefined;
+                if (reference.kind === 'table') return tables.some(table => table.id === reference.id) ? { type: 'table', tableId: reference.id } : undefined;
+                return itemCanvas(reference.id);
+            };
+            for (const id of graph.ancestors(startId, { includeSelf: true })) {
+                if (graph.isItem(id)) break;
+                const reference = textTurns.find(item => item.id === id)?.references?.[0];
+                if (!reference) continue;
+                const referenced = referenceCanvas(reference);
+                if (referenced) return referenced;
+                break;
+            }
             const canvas = itemCanvas(graph.nearestItem(startId));
             if (canvas || !turn?.sourceChartId) return canvas;
             // A conversation with no item before it keeps the chart it was asked from.

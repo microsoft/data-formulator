@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "title": "Where adults who cannot read live",
+  "subtitle": "Adults aged 15 and over who cannot read and write; latest figure, 2016–2025",
+  "source": "UIS, November 2026 release; indicator ILLPOP.AG15T99",
+  "template": "bubbles",
+  "data": {
+    "table": "adults_who_cannot_read_by_country"
+  },
+  "encoding": {
+    "region": "country_id",
+    "size": "adults",
+    "tooltip": [
+      "country",
+      "adults",
+      "latest_year"
+    ]
+  },
+  "properties": {
+    "geography": "world",
+    "keyType": "iso3"
+  },
+  "fields": {
+    "country_id": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+    },
+    "country": {
+      "semanticType": "Country",
+      "displayName": "Country"
+    },
+    "latest_year": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+    },
+    "adults": {
+      "semanticType": "Count",
+      "displayName": "Adults who cannot read"
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

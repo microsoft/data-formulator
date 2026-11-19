@@ -56,6 +56,7 @@ from data_formulator.datalake.parquet_utils import (
     DEFAULT_COMPRESSION,
 )
 from data_formulator.datalake.workspace import Workspace, get_data_formulator_home, run_sql_over_parquet_file
+from data_formulator.datalake.workspace_migrations import run_workspace_migrations
 from data_formulator.security.path_safety import ConfinedDir
 
 if TYPE_CHECKING:
@@ -67,6 +68,12 @@ logger = logging.getLogger(__name__)
 def get_azure_workspace_scratch_path(blob_prefix: str, safe_id: str) -> Path:
     safe_scratch_rel = blob_prefix.strip("/").replace("/", os.sep) or safe_id
     return get_data_formulator_home() / "scratch" / safe_scratch_rel
+
+
+def get_azure_workspace_internal_path(blob_prefix: str, safe_id: str) -> Path:
+    """The local ``_internal/`` of a blob workspace: beside its local scratch, not inside it (design-docs/73)."""
+    safe_rel = blob_prefix.strip("/").replace("/", os.sep) or safe_id
+    return get_data_formulator_home() / "internal" / safe_rel
 
 
 def _data_cache_ttl() -> float:
@@ -161,6 +168,10 @@ class AzureBlobWorkspace(Workspace):
         scratch_base.mkdir(parents=True, exist_ok=True)
         self._scratch_dir = scratch_base
         self._confined_scratch = ConfinedDir(scratch_base, mkdir=False)
+        internal_base = get_azure_workspace_internal_path(self._prefix, self._safe_id)
+        internal_base.mkdir(parents=True, exist_ok=True)
+        self._internal_dir = internal_base
+        self._confined_internal = ConfinedDir(internal_base, mkdir=False)
         # Blob storage has no local workspace root, so ``confined_root``
         # (inherited from :class:`Workspace`, returns ``self._confined_root``)
         # would otherwise be undefined. Point it at the same local scratch jail
@@ -197,6 +208,7 @@ class AzureBlobWorkspace(Workspace):
         if get_blob_disk_cache().get(self._cache_key(METADATA_FILENAME)) is None:
             if not self._blob_exists(METADATA_FILENAME):
                 self._init_metadata()
+        run_workspace_migrations(self)
 
         logger.debug("Initialized AzureBlobWorkspace at %s", self._prefix)
 
@@ -337,10 +349,10 @@ class AzureBlobWorkspace(Workspace):
             self._temp_file_cache.clear()
 
     def _cleanup_scratch(self) -> None:
-        """Remove the local scratch directory (sandbox working files)."""
-        scratch_dir = getattr(self, "_scratch_dir", None)
-        if scratch_dir and scratch_dir.exists():
-            shutil.rmtree(scratch_dir, ignore_errors=True)
+        """Remove the local scratch and internal directories (sandbox working files, the app's session state)."""
+        for directory in (getattr(self, "_scratch_dir", None), getattr(self, "_internal_dir", None)):
+            if directory and directory.exists():
+                shutil.rmtree(directory, ignore_errors=True)
 
     def __del__(self) -> None:
         self._cleanup_temp_files()

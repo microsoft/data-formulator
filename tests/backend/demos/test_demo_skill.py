@@ -268,7 +268,7 @@ def test_nothing_the_demo_analyst_sees_offers_other_data_paths(tmp_path):
     assert "connector_inputs" not in visualize["function"]["parameters"]["properties"]
     text = "\n".join([prompt, preloads, json.dumps(tools)])
     for offer in ("connected_data", "configure", "propose_data_operation", "probe_data", "connector_inputs", "html_app",
-                  "connector forms", "connected-source catalogs", "sources/<source_id>", "acquire remote data",
+                  "connector forms", "connected-source catalogs", "sources://<source_id>", "acquire remote data",
                   "run_terminal"):
         assert offer not in text, offer
     assert "Do not fetch data from the internet on this demo" in prompt

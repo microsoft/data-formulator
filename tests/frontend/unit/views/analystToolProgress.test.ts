@@ -27,6 +27,12 @@ describe('formatAnalystToolProgress', () => {
             .toBe('Reading: session/charts/*, session/tables/sales.json');
     });
 
+    it('names the path a file is created at, or the old bare filename', () => {
+        const t = (key: string) => key;
+        expect(formatAnalystToolProgress('create_file', { path: 'scratch/raw.json' }, t)).toContain('scratch/raw.json');
+        expect(formatAnalystToolProgress('create_file', { filename: 'notes.md' }, t)).toContain('notes.md');
+    });
+
     it('names each read item with the rows or pages it reads', () => {
         expect(formatAnalystToolProgress('read_file', {
             files: [{ path: 'session/tables/t.json', rows: '1-50' }, { path: 'files/r.pdf', pages: '3' }],

@@ -51,7 +51,7 @@ class DataOperationRepository:
 
     @classmethod
     def for_workspace(cls, workspace) -> DataOperationRepository:
-        return cls(workspace.confined_scratch.root / "data_operations")
+        return cls(workspace.confined_internal.root / "data_operations")
 
     def create(
         self,

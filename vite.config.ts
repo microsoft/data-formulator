@@ -81,6 +81,11 @@ export default defineConfig({
         target: `http://localhost:${apiPort}`,
         changeOrigin: true,
       },
+      // A share's phone page and image (only these exact paths: Vite serves /src/… itself).
+      '^/s/[A-Za-z0-9_-]+(\\.png)?$': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: false,
+      },
       '/auth/callback': {
         target: `http://localhost:${apiPort}`,
         changeOrigin: true,

@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "title": "Where NeurIPS 2026 papers are written",
+  "subtitle": "Universities, companies and institutes by NeurIPS 2026 papers with an author there (5 or more)",
+  "source": "neurips.cc, NeurIPS 2026 schedule (November 2026); ROR",
+  "template": "bubbles",
+  "data": {
+    "table": "organization_places_2026"
+  },
+  "encoding": {
+    "lat": "lat",
+    "lon": "lng",
+    "size": "papers",
+    "color": "kind",
+    "label": "organization",
+    "tooltip": [
+      "organization",
+      "country",
+      "papers"
+    ]
+  },
+  "properties": {
+    "geography": "world"
+  },
+  "fields": {
+    "organization": {
+      "semanticType": "Name",
+      "displayName": "Organization"
+    },
+    "kind": {
+      "semanticType": "Category",
+      "displayName": "Kind"
+    },
+    "country": {
+      "semanticType": "Country",
+      "displayName": "Country"
+    },
+    "papers": {
+      "semanticType": "Count",
+      "displayName": "Papers"
+    },
+    "lat": {
+      "semanticType": "Latitude"
+    },
+    "lng": {
+      "semanticType": "Longitude"
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

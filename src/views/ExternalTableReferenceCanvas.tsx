@@ -188,7 +188,7 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
                 </Typography>}
                 <Box role="region" aria-label={t('chatConnector.sampleData', { defaultValue: 'Sample data' })}
                     sx={{ width: '100%', height: initialLoading ? 320 : Math.max(160, (sample?.length || 0) * 25 + 64), maxHeight: 'calc(100dvh - 280px)', minHeight: 160,
-                        border: 1, borderColor: 'divider', borderRadius: '8px', overflow: 'hidden', bgcolor: 'action.hover' }}>
+                        border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden', bgcolor: 'action.hover' }}>
                     {initialLoading ? <LoadingStatus
                         label={loadingLabel}
                         sx={{ height: '100%', p: 2, boxSizing: 'border-box' }} />

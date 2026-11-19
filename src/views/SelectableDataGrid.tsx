@@ -3,7 +3,8 @@
 
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
-import { shadow, transition } from '../app/tokens';
+import { ambientShadow, identText, shadow, transition } from '../app/tokens';
+import { tableHeaderSurface } from '../app/look';
 import { TableVirtuoso } from 'react-virtuoso';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -169,15 +170,9 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
         }),
     }), [field]);
 
-    let backgroundColor: string;
-    let borderBottomColor = theme.palette.primary.main;
-    if (columnDef.source == "custom") {
-        backgroundColor = theme.palette.custom.bgcolor || alpha(theme.palette.custom.main, 0.1);
-        borderBottomColor = theme.palette.custom.main;
-    } else {
-        backgroundColor = theme.palette.primary.bgcolor || alpha(theme.palette.primary.main, 0.1);
-        borderBottomColor = theme.palette.primary.main;
-    }
+    // Underlined in its field's colour (derived orange, original blue); tinted where the look fills headers.
+    const headerSurface = tableHeaderSurface(theme, columnDef.source == "custom" ? theme.palette.custom : theme.palette.primary);
+    const backgroundColor = headerSurface.backgroundColor;
 
     const opacity = isDragging ? 0.3 : 1;
     const cursorStyle = field ? (isDragging ? "grabbing" : "grab") : "default";
@@ -192,9 +187,7 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
             className="data-view-header-container" 
             ref={dragPreview}
             sx={{ 
-                backgroundColor: backgroundColor, 
-                borderBottomColor, 
-                borderBottomWidth: '2px', 
+                ...headerSurface,
                 borderBottomStyle: 'solid',
                 opacity,
                 display: 'flex',
@@ -208,7 +201,7 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
                 ...(field && {
                     '&:hover': {
                         backgroundColor: hoverBackgroundColor,
-                        boxShadow: shadow.md,
+                        boxShadow: ambientShadow(shadow.md),
                     },
                 }),
             }}
@@ -258,7 +251,7 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
                     arrow
                     placement="top"
                 >
-                    <Typography sx={{fontSize: textVar.sm, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>
+                    <Typography sx={{fontSize: textVar.sm, ...identText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>
                         {columnDef.label}
                     </Typography>
                 </Tooltip>

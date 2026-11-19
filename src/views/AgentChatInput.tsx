@@ -24,7 +24,8 @@ import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutl
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import StopIcon from '@mui/icons-material/Stop';
 import { useTranslation } from 'react-i18next';
-import { borderColor, transition } from '../app/tokens';
+import { borderColor, transition, ambientShadow, cardRadius } from '../app/tokens';
+import { inputFocusShadow } from '../app/look';
 import { iconVar, textVar } from '../app/layout';
 import { pastedTextFile } from '../app/pastedText';
 import { FileDropOverlay, useFileDrop } from '../components/FileDrop';
@@ -328,16 +329,16 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                 sx={{
                     position: 'relative',
                     border: `1px solid ${borderColor.divider}`,
-                    borderRadius: '12px',
+                    borderRadius: cardRadius('12px'),
                     bgcolor: theme.palette.background.paper,
-                    boxShadow: '0 1px 6px rgba(32, 33, 36, 0.10), 0 1px 2px rgba(32, 33, 36, 0.06)',
+                    boxShadow: ambientShadow('0 1px 6px rgba(32, 33, 36, 0.10), 0 1px 2px rgba(32, 33, 36, 0.06)'),
                     transition: transition.fast,
                     '&:hover': {
-                        boxShadow: '0 2px 10px rgba(32, 33, 36, 0.14), 0 1px 3px rgba(32, 33, 36, 0.08)',
+                        boxShadow: ambientShadow('0 2px 10px rgba(32, 33, 36, 0.14), 0 1px 3px rgba(32, 33, 36, 0.08)'),
                     },
                     '&:focus-within': {
                         borderColor: theme.palette.primary.main,
-                        boxShadow: `0 0 0 2px ${alpha(theme.palette.primary.main, 0.15)}, 0 2px 10px rgba(32, 33, 36, 0.14)`,
+                        boxShadow: inputFocusShadow(theme),
                     },
                     display: 'flex',
                     flexDirection: 'column',
@@ -471,7 +472,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                         left: 0,
                         right: 0,
                         zIndex: 20,
-                        borderRadius: '12px',
+                        borderRadius: 3,
                         border: `1px solid ${borderColor.divider}`,
                         bgcolor: theme.palette.background.paper,
                         boxShadow: '0 4px 16px rgba(32, 33, 36, 0.16), 0 2px 6px rgba(32, 33, 36, 0.08)',

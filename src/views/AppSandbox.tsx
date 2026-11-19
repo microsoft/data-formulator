@@ -27,7 +27,8 @@ import {
 import { apiRequest } from '../app/apiClient';
 import type { DataFormulatorState } from '../app/dfSlice';
 import { useLayout } from '../app/LayoutProvider';
-import { borderColor, readingTypography } from '../app/tokens';
+import { borderColorValue, readingTypography } from '../app/tokens';
+import { appLook } from '../app/look';
 import { getUrls } from '../app/utils';
 
 const MAX_CONCURRENT_QUERIES = 4;
@@ -64,7 +65,7 @@ export function useAppTheme(): HtmlAppTheme {
             bg: '#ffffff',
             canvas: '#f6f7f9',
             surface: '#ffffff',
-            border: borderColor.divider,
+            border: borderColorValue.divider,
             primary: muiTheme.palette.primary.main,
             primarySoft: palette.primary.bgcolor ?? alpha(muiTheme.palette.primary.main, 0.1),
             primaryText: palette.primary.textColor ?? muiTheme.palette.primary.main,
@@ -75,6 +76,7 @@ export function useAppTheme(): HtmlAppTheme {
             warning: muiTheme.palette.warning.main,
             textSize: { xxs: tokens.text.xxs, xs: tokens.text.xs, sm: tokens.text.sm, md: tokens.text.md, lg: tokens.text.lg, xl: tokens.text.xl, xxl: tokens.text.xxl },
             palette: APP_PALETTE,
+            lookVars: appLook(muiTheme).vars,
         };
         // Tokens only change with density; the object identity changes on every resize.
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -106,13 +108,29 @@ export interface AppSandboxProps {
     resolveSource?: (source: string) => AppSource | undefined;
     /** The session the app's queries read (by default the open one), e.g. a sample shown outside its session. */
     workspaceId?: string;
+    /** Draw the app as a picture once it has loaded its data and gone quiet (for the agent's view requests):
+     *  `script` is the capture library's source, which the app frame cannot load itself. */
+    capture?: AppCapture;
 }
+
+export interface AppCapture {
+    script: string;
+    /** Pixels per CSS pixel of the picture (1 by default). */
+    scale?: number;
+    onImage: (dataUrl: string) => void;
+    onError: (message: string) => void;
+}
+
+/** An app is captured once it has gone this long without a data request (and has run at least as long). */
+const CAPTURE_QUIET_MS = 1200;
+/** An app that never goes quiet (or never starts) is not captured. */
+const CAPTURE_TIMEOUT_MS = 30_000;
 
 /** Errors within this long after an app opens are failures of the app as written, not of later use. */
 const AUTO_FIX_WINDOW_MS = 8000;
 
 export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument, initialErrors, reloadKey = 0, reserveTopRight = false, onAskFix,
-    autoFix = false, onHealthy, fixPending = false, resolveSource, workspaceId }) => {
+    autoFix = false, onHealthy, fixPending = false, resolveSource, workspaceId, capture }) => {
     const { t } = useTranslation();
     const containerRef = useRef<HTMLIFrameElement>(null);
     const [containerReady, setContainerReady] = useState(false);
@@ -127,6 +145,8 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
     // Read when a query runs, so a change to the session's sources does not reload the app.
     const resolveSourceRef = useRef(resolveSource);
     resolveSourceRef.current = resolveSource;
+    const captureRef = useRef(capture);
+    captureRef.current = capture;
     useEffect(() => {
         const containerWindow = containerRef.current?.contentWindow;
         const containerDocument = containerRef.current?.contentDocument;
@@ -136,12 +156,48 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
         setAutoFixing(false);
         setOpenedAt(Date.now());
         setStopped(false);
+        if (initialErrors?.length) captureRef.current?.onError(initialErrors[0]);
         if (!containerReady || !containerWindow || !containerDocument || !buildDocument) return;
         let disposed = false;
         let loads = 0;
         let active = 0;
         const queue: QueryJob[] = [];
         const channel = newChannel();
+        // Capturing for a view request: when the app last asked for data, and whether it was captured.
+        let startedAt = Date.now();
+        let hiddenSince: number | undefined;
+        let lastActivity = startedAt;
+        let captured = false;
+        const captureId = newChannel();
+        const finishCapture = (result: { image?: string; error?: string }) => {
+            if (captured) return;
+            captured = true;
+            window.clearInterval(captureTimer);
+            if (result.image) captureRef.current?.onImage(result.image);
+            else captureRef.current?.onError(result.error || 'The app could not be drawn.');
+        };
+        const captureTimer = captureRef.current === undefined ? undefined : window.setInterval(() => {
+            const request = captureRef.current;
+            if (!request || captured || disposed) return;
+            const now = Date.now();
+            // A hidden page does not lay out, so charts sized to their container are not drawn: only time spent
+            // visible counts, toward going quiet and toward giving up.
+            if (document.visibilityState !== 'visible') {
+                hiddenSince = hiddenSince ?? now;
+                return;
+            }
+            if (hiddenSince !== undefined) {
+                startedAt += now - hiddenSince;
+                if (lastActivity !== Infinity) lastActivity = now;
+                hiddenSince = undefined;
+            }
+            if (now - startedAt > CAPTURE_TIMEOUT_MS) {
+                finishCapture({ error: 'The app did not finish loading.' });
+            } else if (!active && !queue.length && now - lastActivity >= CAPTURE_QUIET_MS && now - startedAt >= CAPTURE_QUIET_MS) {
+                lastActivity = Infinity;
+                post({ type: 'capture', id: captureId, script: request.script, scale: request.scale });
+            }
+        }, 250);
 
         const frame = containerDocument.createElement('iframe');
         frame.setAttribute('sandbox', APP_SANDBOX);
@@ -203,7 +259,7 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
                         reportError(`${request.label}: ${message}`);
                         post({ type: 'result', id: job.id, error: message });
                     })
-                    .finally(() => { active -= 1; pump(); });
+                    .finally(() => { active -= 1; if (lastActivity !== Infinity) lastActivity = Date.now(); pump(); });
             }
         };
         const onMessage = (event: MessageEvent) => {
@@ -212,6 +268,10 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
             if (!data || typeof data !== 'object' || data.dfApp !== channel) return;
             if (data.type === 'hello') {
                 post({ type: 'init' });
+                if (lastActivity !== Infinity) lastActivity = Date.now();
+            } else if (data.type === 'captured' && data.id === captureId) {
+                finishCapture({ image: typeof data.image === 'string' && data.image.startsWith('data:image/png') ? data.image : undefined,
+                    error: typeof data.error === 'string' ? data.error : undefined });
             } else if ((data.type === 'query' || data.type === 'sql' || data.type === 'source') && typeof data.id === 'number') {
                 if (queue.length >= MAX_QUEUED_QUERIES) {
                     post({ type: 'result', id: data.id, error: t('htmlApp.tooManyQueries') });
@@ -220,10 +280,14 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
                 queue.push(data.type === 'query' ? { kind: 'query', id: data.id, table: data.table, options: data.options }
                     : data.type === 'sql' ? { kind: 'sql', id: data.id, sql: data.sql, params: data.params, options: data.options }
                     : { kind: 'source', id: data.id, source: data.source, query: data.query, options: data.options });
+                if (lastActivity !== Infinity) lastActivity = Date.now();
                 pump();
             } else if (data.type === 'error') {
                 reportError(String(data.message || '').slice(0, 500));
-                if (data.fatal === true && !disposed) setFatal(true);
+                if (data.fatal === true && !disposed) {
+                    setFatal(true);
+                    finishCapture({ error: String(data.message || 'The app crashed.').slice(0, 300) });
+                }
             }
         };
         frame.addEventListener('load', () => {
@@ -241,6 +305,7 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
         containerDocument.body.appendChild(frame);
         return () => {
             disposed = true;
+            window.clearInterval(captureTimer);
             queue.length = 0;
             containerWindow.removeEventListener('message', onMessage);
             frame.remove();

@@ -355,7 +355,7 @@ def test_workflow_uses_analyst_discovery_and_skill_loading(agent, monkeypatch):
     assert not {"find_data", "describe_data", "list_data", "summarize_data_sources"} & names
     skill = agent._loaded_skill_tool_map()["search"]
     monkeypatch.setattr(skill, "handle_tool", lambda *args: SimpleNamespace(text="Found connected prices"))
-    assert "Found connected prices" in agent._execute("search", {"query": "prices", "path": ["sources/"]}, "discovery")
+    assert "Found connected prices" in agent._execute("search", {"query": "prices", "path": ["sources://"]}, "discovery")
     assert "loaded" in agent._execute("load_skill", {"name": "terminal"}, "skill")
     assert "terminal" in agent._loaded_skills
     assert "sandbox.filesystem.allowWrite" in agent._build_system_prompt()
@@ -1810,7 +1810,7 @@ def test_checkpoint_directory_cannot_escape_session(workflow_client, tmp_path):
     client, workspaces = workflow_client
     outside = tmp_path / "outside"
     outside.mkdir()
-    (workspaces["first"].confined_scratch.root / "_workflow_runs").symlink_to(outside, target_is_directory=True)
+    (workspaces["first"].confined_internal.root / "workflow_runs").symlink_to(outside, target_is_directory=True)
     headers = {"X-Workspace-Id": "first"}
     assert client.post("/api/workflows/list", json={}, headers=headers).status_code == 400
     assert client.post("/api/workflows/run", json={"run_id": uuid4().hex, "model": {}}, headers=headers).status_code == 400
@@ -1861,14 +1861,14 @@ def test_a_workflow_sees_its_session_as_files_and_hears_what_changed_on_restart(
     list(agent.run_workflow())
     first = next(message["content"] for message in agent.state["trajectory"]
                  if message["role"] == "user" and "[SESSION INDEX]" in str(message.get("content")))
-    assert "# Session: Grocery study" in first and "`session/tables/d_prices.json`" in first and "- weekly" in first
+    assert "# Session: Grocery study" in first and "`session://tables/d_prices`" in first and "- weekly" in first
     assert "Current workspace inventory" not in json.dumps(agent.state["trajectory"])
 
     saved["derivedTables"][0]["displayId"] = "Prices (revised)"
     agent.state["status"] = "running"
     list(agent.run_workflow())
     changes = [message["content"] for message in agent.state["trajectory"] if str(message.get("content")).startswith("[SESSION CHANGES]")]
-    assert len(changes) == 1 and "- changed `session/tables/d_prices.json`" in changes[0]
+    assert len(changes) == 1 and "- changed `session://tables/d_prices`" in changes[0]
     assert sum(message["role"] == "user" and "[SESSION INDEX]" in str(message.get("content"))
                for message in agent.state["trajectory"]) == 1
 
@@ -1879,10 +1879,10 @@ def test_a_workflow_reads_and_changes_session_files_like_the_analyst(agent):
     agent.workspace.save_workspace_file(b"# Plan\n", "notes/plan.md", "text/markdown", agent_managed=True)
     agent.workspace.save_workspace_file(b"old\n", "draft.md", "text/markdown", agent_managed=True)
 
-    read = agent._execute("read_file", {"files": [{"path": "session/tables/d_prices.json"},
+    read = agent._execute("read_file", {"files": [{"path": "session://tables/d_prices"},
                                                   {"path": "files/notes/*"}]}, "read-1")
     files = json.loads(read.split("\n", 2)[2])["files"]
-    assert [item["path"] for item in files] == ["session/tables/d_prices.json", "files/notes/plan.md"]
+    assert [item["path"] for item in files] == ["session://tables/d_prices", "files/notes/plan.md"]
     assert json.loads(files[0]["content"])["rows"] == [{"item": "eggs", "price": 3.5}, {"item": "milk", "price": 4.1}]
     agent.state["plan_review_pending"] = True
     assert "read_file" in {spec["function"]["name"] for spec in agent._current_tools()}

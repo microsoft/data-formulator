@@ -35,6 +35,8 @@
         if (!data || data.dfApp !== channel) return;
         if (data.type === 'init') {
             resolveReady();
+        } else if (data.type === 'capture') {
+            capture(data);
         } else if (data.type === 'result' && pending.has(data.id)) {
             var request = pending.get(data.id);
             pending.delete(data.id);
@@ -51,6 +53,48 @@
     function describe(error) {
         if (error && typeof error === 'object') return String(error.message || error);
         return String(error);
+    }
+
+    // The app as a picture, for the agent to look at (the host's view request): the host sends the capture
+    // library's source, since the app frame loads nothing itself. It draws the page through an SVG image of
+    // itself, in place: a sandboxed frame cannot read a copy of itself in another frame.
+    function capture(request) {
+        function reply(payload) { send('captured', Object.assign({ id: request.id }, payload)); }
+        try {
+            if (!window.htmlToImage && typeof request.script === 'string') (0, eval)(request.script);
+            if (!window.htmlToImage || typeof window.htmlToImage.toPng !== 'function') throw new Error('The capture library did not load.');
+            var root = document.documentElement;
+            var body = document.body || root;
+            var width = Math.max(root.clientWidth, 1);
+            var height = Math.min(Math.max(root.scrollHeight, body.scrollHeight, root.clientHeight, 1), request.maxHeight || 2400);
+            var background = getComputedStyle(body).backgroundColor;
+            background = background && background !== 'rgba(0, 0, 0, 0)' ? background : '#ffffff';
+            // toSvg, then drawn here: the library's own PNG step waits for an animation frame, which a hidden page
+            // never gets.
+            window.htmlToImage.toSvg(body, { width: width, height: height, skipFonts: true, cacheBust: false, backgroundColor: background })
+                .then(function (svg) {
+                    return new Promise(function (resolve, reject) {
+                        var image = new Image();
+                        image.onload = function () {
+                            var scale = Math.min(Math.max(Number(request.scale) || 1, 1), 3);
+                            var canvas = document.createElement('canvas');
+                            canvas.width = Math.round(width * scale);
+                            canvas.height = Math.round(height * scale);
+                            var context = canvas.getContext('2d');
+                            context.fillStyle = background;
+                            context.fillRect(0, 0, canvas.width, canvas.height);
+                            context.drawImage(image, 0, 0, canvas.width, canvas.height);
+                            resolve(canvas.toDataURL('image/png'));
+                        };
+                        image.onerror = function () { reject(new Error('The app picture could not be drawn.')); };
+                        image.src = svg;
+                    });
+                })
+                .then(function (image) { reply({ image: image }); },
+                    function (error) { reply({ error: describe(error) }); });
+        } catch (error) {
+            reply({ error: describe(error) });
+        }
     }
 
     window.addEventListener('error', function (event) {

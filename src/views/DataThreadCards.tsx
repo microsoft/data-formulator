@@ -12,6 +12,7 @@ import {
     Tooltip,
     useTheme,
     alpha,
+    type Theme,
 } from '@mui/material';
 
 import { dfActions } from '../app/dfSlice';
@@ -21,7 +22,8 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AddchartIcon from '@mui/icons-material/Addchart';
 
-import { ComponentBorderStyle, shadow, sidebarRowActionSx, sidebarRowDangerActionSx } from '../app/tokens';
+import { ComponentBorderStyle, cardRadius, shadow, sidebarRowActionSx, sidebarRowDangerActionSx } from '../app/tokens';
+import { chartHoverRing, focusColor, toneFill, toneHoverLine, toneLine } from '../app/look';
 import { iconVar, textVar } from '../app/layout';
 
 
@@ -40,7 +42,8 @@ export let buildChartCard = (
             display: 'flex',
             alignItems: 'flex-start',
             width: 'fit-content',
-            mx: 1,
+            // Inset from the row's edge; the look may set it flush with the cards above and below.
+            mx: 'var(--df-thread-inset, 8px)',
             '& .data-thread-chart-delete-btn-external': { opacity: 0, transition: 'opacity 0.15s' },
             '&:hover .data-thread-chart-delete-btn-external': { opacity: 1 },
             '@keyframes unreadPulse': {
@@ -54,10 +57,12 @@ export let buildChartCard = (
                 display: 'flex',
                 position: 'relative',
                 border: 'none',
-                borderRadius: '6px',
+                borderRadius: cardRadius('6px'),
                 backgroundColor: 'transparent',
                 zIndex: 1,
                 overflow: 'hidden',
+                // A thin ring in the chart's blue (where the look draws one) says it can be opened.
+                '&:hover:not(.selected-card)': { boxShadow: (theme: Theme) => chartHoverRing(theme) },
             }}>
             {chartElement.element}
             {isUnread && (
@@ -146,15 +151,22 @@ export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, a
     return <Card
     className={`data-thread-card ${selected ? 'selected-artifact-card' : ''}`} elevation={0}
     sx={{ width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', position: 'relative',
-        ...ComponentBorderStyle, borderRadius: '6px',
-        // The card's tint and the paper under it, so the actions can fade into the card's exact colour.
+        ...ComponentBorderStyle, borderRadius: cardRadius('6px'),
+        // A tinted card is outlined in the look's line for its tint.
+        ...(artifactType !== 'file' && artifactType !== 'workflow'
+            ? { borderColor: (theme: Theme) => toneLine(theme, theme.palette[tone].main) } : {}),
+        // The card's tint (none where the look keeps cards on the paper) and the paper under it, so the actions can
+        // fade into the card's exact colour.
         '--artifact-paper': theme => theme.palette.background.paper,
         '--artifact-tint': theme => artifactType === 'file' || artifactType === 'workflow' ? 'transparent'
-            : theme.palette[tone].bgcolor || alpha(theme.palette[tone].main, 0.08),
+            : toneFill(theme, theme.palette[tone]),
         backgroundColor: theme => artifactType === 'file' || artifactType === 'workflow' ? theme.palette.background.paper
-            : theme.palette[tone].bgcolor || alpha(theme.palette[tone].main, 0.08),
-        '--artifact-selection-color': theme => warning ? theme.palette.warning.main : theme.palette[tone].light,
+            : toneFill(theme, theme.palette[tone], theme.palette.background.paper),
+        '--artifact-selection-color': theme => warning ? theme.palette.warning.main : focusColor(theme, theme.palette[tone]),
         ...(warning ? { borderColor: 'warning.main', boxShadow: '0 0 0 1px var(--artifact-selection-color)' } : {}),
+        // Hover may deepen the outline to the card's own colour, instead of lifting it.
+        ...(warning ? {} : { transition: 'border-color 0.15s',
+            '&:hover:not(.selected-artifact-card)': { borderColor: (theme: Theme) => toneHoverLine(theme, theme.palette[tone].main) } }),
         '& .artifact-actions': { opacity: 0, transition: 'opacity 0.15s' },
         '&:hover .artifact-actions, &:focus-within .artifact-actions': { opacity: 1 },
         '@media (hover: none)': { '& .artifact-actions': { opacity: 1 } },
@@ -174,7 +186,7 @@ export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, a
     </ButtonBase>
     {/* Actions float over the card's right edge, so the title keeps the full width; the title fades out under them. */}
     {actions && <Box className="artifact-actions" sx={{ display: 'flex', alignItems: 'center', position: 'absolute', zIndex: 1,
-        top: 0, bottom: 0, right: 0, pl: 2.5, pr: 0.25, borderRadius: '0 6px 6px 0', pointerEvents: 'none',
+        top: 0, bottom: 0, right: 0, pl: 2.5, pr: 0.25, borderRadius: `0 ${cardRadius('6px')} ${cardRadius('6px')} 0`, pointerEvents: 'none',
         background: 'linear-gradient(to right, transparent, var(--artifact-tint) 20px), linear-gradient(to right, transparent, var(--artifact-paper) 20px)',
         '& > *': { pointerEvents: 'auto' },
         // A workflow card holds a tall summary; its actions stay in the top corner.
@@ -246,6 +258,8 @@ export interface ThreadChip {
 /** Rows of chips shown before a group folds; the rest open with "Show all". */
 const CHIP_ROWS = 3;
 const CHIP_GAP = 4;
+/** Room for a selected chip's ring (`selectionRing`, at most 2px) around a folded group's clip. */
+const CHIP_RING = 2;
 
 /** Tables and documents brought in together, shown as one wrapping row of small chips instead of a card each;
  *  past three rows they fold, and open on click (or when one of the hidden chips is selected). */
@@ -281,18 +295,19 @@ export const ThreadChipGroup = ({ label, chips }: {
     const folded = !!foldHeight && !expanded;
     return <Box data-thread-chips sx={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
     {label && <Typography sx={{ px: 0.5, fontSize: textVar.xs, color: 'text.secondary', lineHeight: 1.4 }}>{label}</Typography>}
+    {/* Folded, it clips past three rows; 2px of padding (taken back by a negative margin) keeps the selected
+        chip's ring inside the clip. */}
     <Box ref={rows} sx={{ display: 'flex', flexWrap: 'wrap', gap: `${CHIP_GAP}px`, minWidth: 0,
-        ...(folded && { maxHeight: foldHeight, overflow: 'hidden' }) }}>
+        ...(folded && { boxSizing: 'content-box', maxHeight: foldHeight, overflow: 'hidden', p: `${CHIP_RING}px`, m: `-${CHIP_RING}px` }) }}>
         {chips.map(chip => <Box key={chip.key} data-thread-item={chip.key} data-table-id={chip.tableId} data-chip-kind={chip.kind}
             className={`data-thread-card ${chip.selected ? 'selected-artifact-card' : ''}`}
             sx={{
                 position: 'relative', display: 'inline-flex', alignItems: 'center', minWidth: 0, maxWidth: '100%',
-                ...ComponentBorderStyle, borderRadius: '4px',
+                ...ComponentBorderStyle, borderRadius: 1,
                 '--artifact-paper': theme => theme.palette.background.paper,
                 // Tables are tinted, documents plain, as their full cards are.
-                '--artifact-tint': theme => chip.kind === 'file' ? 'transparent'
-                    : theme.palette.primary.bgcolor || alpha(theme.palette.primary.main, 0.08),
-                '--artifact-selection-color': theme => theme.palette.primary.light,
+                '--artifact-tint': theme => chip.kind === 'file' ? 'transparent' : toneFill(theme, theme.palette.primary),
+                '--artifact-selection-color': theme => focusColor(theme, theme.palette.primary),
                 background: 'linear-gradient(var(--artifact-tint), var(--artifact-tint)), var(--artifact-paper)',
                 '& .chip-delete': { opacity: 0, transition: 'opacity 0.15s' },
                 '&:hover .chip-delete, &:focus-within .chip-delete': { opacity: 1 },
@@ -326,7 +341,7 @@ export const ThreadChipGroup = ({ label, chips }: {
         </Box>)}
     </Box>
     {foldHeight !== undefined && <ButtonBase disableRipple onClick={() => setExpanded(open => !open)} aria-expanded={expanded}
-        sx={{ alignSelf: 'flex-start', px: 0.5, fontSize: textVar.xs, color: 'primary.main', borderRadius: '4px',
+        sx={{ alignSelf: 'flex-start', px: 0.5, fontSize: textVar.xs, color: 'primary.main', borderRadius: 1,
             '&:hover': { textDecoration: 'underline' } }}>
         {expanded ? 'Show less' : `Show all (${hiddenCount} more)`}
     </ButtonBase>}

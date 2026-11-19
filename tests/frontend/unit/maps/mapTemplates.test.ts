@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import * as d3 from 'd3';
+import { colorScale } from '../../../../src/maps/scales';
 import { parseMapSpec } from '../../../../src/maps/spec';
 import { bindChannel, compatibleTemplates, compileTemplate, switchTemplate, templateErrors } from '../../../../src/maps/templates';
 
@@ -142,6 +144,26 @@ describe('template colours', () => {
         expect(compileTemplate({ template: 'density', data: { table: 't' }, encoding: { lat: 'y', lon: 'x' }, properties: { scheme: 'ylOrRd' } }).layers[0].color)
             .toEqual({ scheme: 'ylOrRd' });
         expect(templateErrors({ ...flows, properties: { color: 'not a colour' } })).toContain('properties.color must be a CSS colour, such as "#4e79a7" or "darkslategray".');
+    });
+
+    it('runs a scheme the other way with properties.reverse', () => {
+        const anomaly = (reverse: boolean) => compileTemplate({ template: 'choropleth', data: { table: 't' },
+            encoding: { region: 'state', color: 'anom' },
+            properties: { geography: 'us-states', keyType: 'us-state', scheme: 'rdBu', domain: [-4, 4], method: 'continuous', reverse } }).layers[0].color!;
+        expect(anomaly(true)).toMatchObject({ scheme: 'rdBu', reverse: true });
+        expect(anomaly(false)).not.toHaveProperty('reverse');
+        // rdBu is red for low values; reversed, a cooler-than-normal −4 is blue and a warmer +4 red.
+        const redness = (color: string) => { const rgb = d3.rgb(color); return rgb.r - rgb.b; };
+        const plain = colorScale(anomaly(false), [-4, 4], 'anom');
+        const reversed = colorScale(anomaly(true), [-4, 4], 'anom');
+        expect(redness(plain.color(-4))).toBeGreaterThan(0);
+        expect(redness(reversed.color(-4))).toBeLessThan(0);
+        expect(redness(reversed.color(4))).toBeGreaterThan(0);
+        // Density ramps flip too; a reverse that is not true or false is refused.
+        expect(compileTemplate({ template: 'density', data: { table: 't' }, encoding: { lat: 'y', lon: 'x' }, properties: { reverse: true } }).layers[0].color)
+            .toEqual({ reverse: true });
+        expect(templateErrors({ template: 'choropleth', data: { table: 't' }, encoding: { region: 's', color: 'v' }, properties: { reverse: 'yes' } }))
+            .toContain('properties.reverse must be true or false.');
     });
 
     it('highlights notable rows as points above the map, with layer toggles', () => {

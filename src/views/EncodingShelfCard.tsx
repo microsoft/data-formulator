@@ -365,7 +365,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     return (
                                         <Box key={`config-${propDef.key}`} sx={{
                                             display: 'flex', alignItems: 'center', 
-                                            borderRadius: '12px',
+                                            borderRadius: 3,
                                             minHeight: '18px',
                                             overflow: 'hidden', padding: '0px 10px 0px 0px',
                                         }}>
@@ -388,7 +388,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     return (
                                         <Box key={`config-${propDef.key}`} sx={{
                                             display: 'flex', alignItems: 'center',
-                                            borderRadius: '12px',
+                                            borderRadius: 3,
                                             minHeight: '18px',
                                             overflow: 'hidden', padding: '0px 8px',
                                             cursor: 'pointer',
@@ -430,7 +430,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 return (
                                     <Box key={`config-${propDef.key}`} sx={{
                                         display: 'flex', alignItems: 'center', 
-                                        borderRadius: '12px',
+                                        borderRadius: 3,
                                         minHeight: '22px',
                                         overflow: 'hidden',
                                     }}>
@@ -452,7 +452,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                             sx={{
                                                 flex: 1, fontSize: textVar.xs, height: '22px',
                                                 backgroundColor: 'rgba(0,0,0,0.04)',
-                                                borderRadius: '6px',
+                                                borderRadius: 1.5,
                                                 '&:hover': { backgroundColor: 'rgba(0,0,0,0.07)' },
                                                 '& .MuiSelect-select': { padding: '1px 20px 1px 6px !important', fontSize: textVar.xs },
                                                 '& .MuiSvgIcon-root': { fontSize: iconVar.sm, right: 2 },

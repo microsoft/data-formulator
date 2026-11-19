@@ -8,6 +8,9 @@ export interface SiteStory {
     id: string;
     /** A short name for the story's tab, e.g. "The wealth gap". */
     label?: string;
+    /** What the story's map or dashboard shows, e.g. "Completion rates for the richest and poorest households". */
+    title?: string;
+    /** The story's finding. */
     headline: string;
     dek?: string;
     /** The dataset's lead story, shown large. */
@@ -24,6 +27,22 @@ export interface SiteStory {
     image?: string | null;
     /** A few of the story's findings, each a chart image with a short label, shown as a stack of cards. */
     stack?: { label: string; image: string }[];
+    /** For a session holding several findings: its stories and maps, listed on its card. */
+    chapters?: SiteChapter[];
+}
+
+/** One finding of a story's session: a dashboard, map or chart in it. */
+export interface SiteChapter {
+    /** A short name, e.g. "Three cities". */
+    label: string;
+    /** 'story', 'dashboard', 'map' or 'chart'. */
+    kind?: string;
+    /** Its finding. */
+    headline?: string;
+    /** Its key figure, short ("67%", "101×"), shown large on the card with `message`, in place of the headline. */
+    stat?: string;
+    /** What the figure counts, a short phrase ("of the posters are shown in Sydney"). */
+    message?: string;
 }
 
 /** A dataset on the site's front page, with a starter session (see demos/README.md). */
@@ -32,6 +51,9 @@ export interface SiteStarter {
     title: string;
     subtitle?: string;
     description?: string;
+    /** What the dataset holds, in a couple of plain sentences for the page; the description (for the analyst)
+     *  shows on hover. */
+    summary?: string;
     questions: string[];
     /** False until the starter-session ZIP has been built into the site's content folder. */
     available: boolean;
@@ -41,6 +63,8 @@ export interface SiteStarter {
     kicker?: string;
     /** The dataset's page at its source, linked from its section. */
     source_url?: string;
+    /** The dataset's name at its source (e.g. UIS's), shown as the source link's label. */
+    source_name?: string;
     /** The quick link's icon: 'school', 'science', 'landmark', 'chart' or 'table' (the default). */
     icon?: string;
     /** A line on the new-session card about what it starts from; defaults to "Start from the full dataset". */

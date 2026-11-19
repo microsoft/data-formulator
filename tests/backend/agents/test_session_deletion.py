@@ -79,7 +79,7 @@ def test_refuses_what_would_leave_a_dependent_broken(targets, message) -> None:
 
 def test_a_chart_can_go_once_the_report_is_edited_in_the_same_run() -> None:
     ctx = _ctx()
-    ctx.payload["session_layer"].record_edit("session/reports/r1.md", "# Findings\n\nNo chart any more.\n")
+    ctx.payload["session_layer"].record_edit("session://reports/r1", "# Findings\n\nNo chart any more.\n")
     plan = plan_deletion(["chart-top"], ctx)
     assert [chart["id"] for chart in plan["charts"]] == ["chart-top"]
 
@@ -136,6 +136,6 @@ def test_delete_items_tool_returns_the_plan_and_drops_the_items_from_the_run(tmp
     assert payload["charts"] == [{"chart_id": "chart-sales"}]
     assert payload["external_references"] == [] and payload["replaceable_artifacts"] == []
     assert "table-mix" not in {table["node_id"] for table in layer.items()["tables"]}
-    assert "session/charts/chart-mix-1.json" not in layer.paths()
+    assert "session://charts/chart-mix-1" not in layer.paths()
     with pytest.raises(ValueError, match="Not in this session: 'd_mix'"):
         skill.handle_tool("delete_items", {"items": ["d_mix"]}, ctx)

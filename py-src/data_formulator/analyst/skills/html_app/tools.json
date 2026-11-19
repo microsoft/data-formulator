@@ -3,7 +3,7 @@
     "type": "function",
     "function": {
       "name": "write_app",
-      "description": "Create an interactive React app (dashboard, explorer) and open it on the canvas: a new file (filename), or a full rewrite of an existing app (path + expected_content_hash), saved in place. It runs in a sandbox without network access and reads the declared workspace tables live through @df/data hooks. For small changes to an existing app, use edit_file replacements instead.",
+      "description": "Create an interactive React app (dashboard, explorer) and open it on the canvas at path: a new file, or a full rewrite of an existing app (with expected_content_hash), saved in place. It runs in a sandbox without network access and reads the declared workspace tables live through @df/data hooks. For small changes to an existing app, use edit_file replacements instead.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -12,18 +12,14 @@
             "type": "string",
             "description": "The app's files/... path, equal to path. Only to fix an app the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the fixed app moves to after the latest request and the thread notes that it replaced the old one. Omit it for ordinary changes the user asks for."
           },
-          "filename": {
-            "type": "string",
-            "description": "For a new app: a visible filename ending in .app.jsx, without directories, for example sales_explorer.app.jsx."
-          },
           "path": {
             "type": "string",
-            "description": "To rewrite an existing agent-editable app in place: its files/... path (ending in .app.jsx). Omit filename when you pass path."
+            "description": "The app's files/... path, ending in .app.jsx, for example files/sales_explorer.app.jsx. A new path creates the app; an existing agent-editable app is rewritten in place (pass its expected_content_hash)."
           },
           "expected_content_hash": {
             "type": "string",
             "pattern": "^[0-9a-f]{64}$",
-            "description": "With path: the app's current content_hash. On conflict, reread the app before retrying."
+            "description": "To rewrite an existing app: its current content_hash. On conflict, reread the app before retrying."
           },
           "title": {
             "type": "string",
@@ -49,6 +45,7 @@
           }
         },
         "required": [
+          "path",
           "title",
           "tables",
           "code"
@@ -60,7 +57,7 @@
     "type": "function",
     "function": {
       "name": "write_html_app",
-      "description": "Create an interactive HTML app and open it on the canvas: a new file (filename), or a full rewrite of an existing app (path + expected_content_hash), saved in place. The app runs in a sandbox without network access and reads the declared workspace tables live through the DF runtime. For small changes to an existing app, use edit_file replacements instead.",
+      "description": "Create an interactive HTML app and open it on the canvas at path: a new file, or a full rewrite of an existing app (with expected_content_hash), saved in place. The app runs in a sandbox without network access and reads the declared workspace tables live through the DF runtime. For small changes to an existing app, use edit_file replacements instead.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -69,18 +66,14 @@
             "type": "string",
             "description": "The app's files/... path, equal to path. Only to fix an app the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the fixed app moves to after the latest request and the thread notes that it replaced the old one. Omit it for ordinary changes the user asks for."
           },
-          "filename": {
-            "type": "string",
-            "description": "For a new app: a visible filename ending in .html, without directories, for example sales_explorer.html."
-          },
           "path": {
             "type": "string",
-            "description": "To rewrite an existing agent-editable app in place: its files/... path (ending in .html). Omit filename when you pass path."
+            "description": "The app's files/... path, ending in .html, for example files/sales_explorer.html. A new path creates the app; an existing agent-editable app is rewritten in place (pass its expected_content_hash)."
           },
           "expected_content_hash": {
             "type": "string",
             "pattern": "^[0-9a-f]{64}$",
-            "description": "With path: the app's current content_hash. On conflict, reread the app before retrying."
+            "description": "To rewrite an existing app: its current content_hash. On conflict, reread the app before retrying."
           },
           "title": {
             "type": "string",
@@ -106,6 +99,7 @@
           }
         },
         "required": [
+          "path",
           "title",
           "tables",
           "html"

@@ -41,7 +41,7 @@ def test_builtin_meta_bundle_has_concrete_hidden_owners() -> None:
     assert {
         spec["function"]["name"] for spec in registry.action_tools_for(["meta"])
     } == {
-        "visualize", "ask_user", "long_response", "propose_data_operation", "write_report",
+        "visualize", "ask_user", "long_response", "propose_data_operation", "view", "write_report",
     }
     assert registry.action_owner("long_response") == "meta"
 
@@ -117,7 +117,7 @@ def test_setup_actions_are_owned_by_the_gated_configure_skill() -> None:
     assert tool_names == {
         "list_connectors", "read_connector_form", "list_sessions", "list_mcp_servers",
     }
-    assert {spec["function"]["name"] for spec in registry.action_tools_for(["workspace"])} == {"propose_data_operation"}
+    assert {spec["function"]["name"] for spec in registry.action_tools_for(["workspace"])} == {"propose_data_operation", "view"}
     configure = registry.load_body("configure")
     for section in ("## Connections", "## Workflows", "## Schedules", "## Sessions", "## MCP servers"):
         assert configure.count(section) == 1

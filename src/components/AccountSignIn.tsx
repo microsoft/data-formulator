@@ -83,7 +83,7 @@ export const AccountSignIn = ({ account, onChange, prefer, sessionScope = true, 
     // A plain bordered box on white: clearly a field, in the surrounding text's size.
     const fieldSx = {
         flex: '1 1 150px', minWidth: 0,
-        '& .MuiInputBase-root': { fontSize: 'inherit', bgcolor: 'background.paper', borderRadius: '6px' },
+        '& .MuiInputBase-root': { fontSize: 'inherit', bgcolor: 'background.paper', borderRadius: 1.5 },
         '& .MuiInputBase-input': { py: '6px', px: '10px', height: '1.5em' },
         '& .MuiOutlinedInput-notchedOutline': { borderColor: alpha(theme.palette.text.primary, 0.23) },
         '& .MuiInputBase-input::placeholder': { color: theme.palette.text.secondary, opacity: 1 },

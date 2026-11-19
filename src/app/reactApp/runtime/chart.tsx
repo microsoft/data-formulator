@@ -21,7 +21,9 @@ import { resolveAppTheme, usePageChartTheme, type AppTheme } from './appTheme';
 import { boardChartTheme, useSize } from './board';
 import { ErrorState, FILL_SX, QueryView, useStable } from './states';
 
-type Encoding = string | { field: string; type?: string; aggregate?: string; sortOrder?: string; sortBy?: string; scheme?: string };
+type Encoding = string | { field: string; type?: string; aggregate?: string; sortOrder?: string; sortBy?: string; scheme?: string;
+    /** A colour channel's extent, shared by charts that should read on one scale. */
+    domain?: [number, number] };
 
 /**
  * A chart takes the width its column gives it and never asks for more: its content does not count toward
@@ -243,7 +245,7 @@ export function fitChartToWidth(spec: Record<string, any>, width: number, rows: 
 export type ChartInteraction = string | { type: string; id?: string; options?: Record<string, unknown> };
 
 /**
- * A chart in the shape of the session's chart files (`session/charts/<id>.json`): copy one and change
+ * A chart in the shape of the session's chart files (`session://charts/<id>`): copy one and change
  * what the app needs, or write one. `config` is Flint's chartProperties.
  */
 export interface ChartSpec {
@@ -274,7 +276,7 @@ export interface ChartAnnotation {
 
 export interface FlintChartProps {
     /**
-     * A chart on the user's canvas, by id (`session/charts/<id>.json`): drawn as there (type, fields,
+     * A chart on the user's canvas, by id (`session://charts/<id>`): drawn as there (type, fields,
      * title, settings, theme) from its table. Other props change it: `focus`, `select`, `height`, `title`,
      * `encodings` (by channel; `null` drops one), `data`/`query` (other rows, e.g. filtered).
      */

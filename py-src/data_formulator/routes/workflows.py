@@ -54,7 +54,7 @@ def run_path(workspace, identifier: str) -> Path:
     except (ValueError, TypeError, AttributeError) as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, "Invalid workflow run ID.") from exc
     try:
-        directory = workspace.confined_scratch.resolve("_workflow_runs")
+        directory = workspace.confined_internal.resolve("workflow_runs")
         directory.mkdir(exist_ok=True)
         path = directory / f"{identifier}.json"
         for candidate in (path, path.with_suffix(".tmp"), path.with_suffix(".pause"), Path(str(path) + ".lock"),
@@ -128,7 +128,7 @@ def list_instances():
     _, store, workspace = context(False)
     runs = []
     try:
-        directory = workspace.confined_scratch.resolve("_workflow_runs") if workspace else None
+        directory = workspace.confined_internal.resolve("workflow_runs") if workspace else None
     except ValueError as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, "Workflow checkpoint path is unavailable.") from exc
     if directory and directory.exists():

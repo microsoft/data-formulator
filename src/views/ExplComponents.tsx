@@ -173,7 +173,7 @@ const renderWithMath = (text: string) => {
                         fontSize: '0.92em',
                         px: 0.5,
                         py: '1px',
-                        borderRadius: '3px',
+                        borderRadius: 0.75,
                         backgroundColor: (theme) => alpha(theme.palette.text.primary, 0.045),
                         color: 'text.primary',
                         // Allow long code spans (e.g. summed field lists) to wrap

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import json
 from pathlib import Path
 import secrets
@@ -12,6 +13,7 @@ import time
 from typing import Any, Generator
 from urllib.parse import urlsplit
 
+from data_formulator.analyst import names
 from data_formulator.analyst import process_io
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
 
@@ -127,13 +129,41 @@ def require_local_terminal_request(*, check_policy: bool = True) -> None:
         raise ValueError("Terminal requires a same-origin request to the local application.")
 
 
+def resolve_cwd(cwd: Any, workspace_root: Path | None) -> Path:
+    """A command's working directory: the workspace root when omitted, a workspace path (``scratch/``)
+    within it, or an absolute path (``~`` allowed) for the user's own folders (design-docs/73)."""
+    if cwd is None or cwd == "":
+        if workspace_root is None:
+            raise ValueError("cwd must be an absolute directory path.")
+        directory = workspace_root
+    elif not isinstance(cwd, str):
+        raise ValueError("cwd must be a workspace path such as scratch/ or an absolute directory path.")
+    else:
+        directory = Path(cwd).expanduser()
+        if not directory.is_absolute():
+            if workspace_root is None:
+                raise ValueError("cwd must be an absolute directory path.")
+            root = workspace_root.resolve(strict=True)
+            directory = (root / directory).resolve()
+            if directory != root and root not in directory.parents:
+                raise ValueError("A relative cwd is a folder of the workspace, such as scratch/; use an absolute "
+                                 "path for other folders.")
+    try:
+        directory = directory.resolve(strict=True)
+    except OSError:
+        raise ValueError(f"cwd {cwd!r} does not exist.") from None
+    if not directory.is_dir():
+        raise ValueError("cwd must be a directory.")
+    return directory
+
+
 class TerminalRequests:
     def __init__(self) -> None:
         self._pending: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
 
     def propose(self, owner: str, conversation: str, spec: dict[str, Any], *, workspace_id: str = "", mode: str = "ask",
-                background: bool = False) -> dict[str, Any]:
+                background: bool = False, workspace_root: Path | None = None) -> dict[str, Any]:
         from data_formulator.configuration import read_configuration
 
         argv = spec.get("argv")
@@ -141,12 +171,11 @@ class TerminalRequests:
                 or any(not isinstance(arg, str) or "\0" in arg for arg in argv)
                 or not argv[0] or sum(map(len, argv)) > 16000):
             raise ValueError("argv must be a non-empty list of command arguments (maximum 16000 characters).")
-        cwd = spec.get("cwd")
-        if not isinstance(cwd, str) or not Path(cwd).expanduser().is_absolute():
-            raise ValueError("cwd must be an absolute directory path.")
-        directory = Path(cwd).expanduser().resolve(strict=True)
-        if not directory.is_dir():
-            raise ValueError("cwd must be a directory.")
+        objects = [arg for arg in argv if names.is_object(arg)]
+        if objects:
+            raise ValueError(f"{objects[0]} is an app object, not a file, so commands cannot open it; read it with "
+                             "read_file. Commands work on files under files/, data/ and scratch/.")
+        directory = resolve_cwd(spec.get("cwd"), workspace_root)
         purpose = spec.get("purpose")
         if not isinstance(purpose, str) or not purpose.strip() or len(purpose) > 2000:
             raise ValueError("Explain the data discovery or connection purpose (maximum 2000 characters).")
@@ -253,8 +282,11 @@ def confined_command(argv: list[str], scratch_dir: Path, *, write_paths: list[st
             matcher = "subpath" if Path(path).is_dir() else "literal"
             profile += f'(allow file-write* ({matcher} {json.dumps(path)}))'
         # macOS shells keep here-documents in the system temp directory whatever TMPDIR says (bash 3.2,
-        # /bin/sh: /tmp/sh-thd-<n>); allow just those files there, so `cmd <<EOF` works.
-        profile += '(allow file-write* (regex #"^/private/(var/)?tmp/sh-thd-[0-9]+$"))'
+        # /bin/sh: /private/var/tmp/sh-thd-<n>). Bash first checks that the directory is writable, which the
+        # sandbox sees as a data write to the directory itself; allow that check and just those files, so
+        # `cmd <<EOF` works without opening the shared temp directory.
+        profile += ('(allow file-write-data (literal "/private/var/tmp") (literal "/private/tmp"))'
+                    '(allow file-write* (regex #"^/private/(var/)?tmp/sh-thd-[0-9]+$"))')
         # Redirections to the standard devices (`2>/dev/null`, `> /dev/stderr`, `/dev/fd/N`) write no files.
         profile += ('(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty")'
                     ' (literal "/dev/stdout") (literal "/dev/stderr") (regex #"^/dev/fd/[0-9]+$"))')
@@ -439,6 +471,10 @@ def _run_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir: Pa
             "OS permissions, or a remote service; it does not establish invalid credentials. "
             "Inspect the failure and any partial effects before proposing a retry."
         )
+        if re.search(r"(?<![\w.$])/(private/)?tmp/", decoded_output):
+            result["error"] += (" Sandboxed commands cannot write the shared /tmp: write files you or Python need "
+                                "later to scratch/ (the same path in Python and read_file), and throwaway files "
+                                "to $TMPDIR.")
     yield {"type": "terminal_result", "result": result}
 
 
@@ -537,7 +573,8 @@ class TerminalSkill:
         broker = current_app.extensions.setdefault("terminal_requests", TerminalRequests())
         try:
             proposal = broker.propose(owner, conversation, spec, workspace_id=workspace_id, mode=terminal_mode(),
-                                      background=action == "start_task")
+                                      background=action == "start_task",
+                                      workspace_root=ctx.workspace.confined_root.root if ctx.workspace else None)
         except (ValueError, OSError) as exc:
             return str(exc)
         mode = terminal_mode()

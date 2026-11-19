@@ -78,6 +78,18 @@ describe('buildAppDocument', () => {
         expect(output.indexOf('.df-card{}')).toBeLessThan(output.indexOf('.author{}'));
     });
 
+    it("applies the host look's variables after the kit and before author styles, keeping only --df- names", () => {
+        const output = buildAppDocument('<head><style>.author{}</style></head><body></body>', {
+            runtimeScripts: [], config: {}, kitStylesheet: ':root{--df-radius-md:8px}',
+            theme: { ...theme, lookVars: { '--df-radius-md': '2px', 'color': 'red', '--df-shadow-sm': 'none;}body{x:1' } },
+        });
+        const look = output.indexOf('--df-radius-md:2px');
+        expect(look).toBeGreaterThan(output.indexOf('--df-radius-md:8px'));
+        expect(look).toBeLessThan(output.indexOf('.author{}'));
+        expect(output).not.toContain('color:red');
+        expect(output).not.toContain('}body{');
+    });
+
     it('blocks network access and keeps the container from framing external pages', () => {
         expect(APP_CSP).toContain("connect-src 'none'");
         expect(APP_CSP).toContain("default-src 'none'");

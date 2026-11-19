@@ -28,6 +28,7 @@ type Overrides = { models?: Record<string, Entry>; connectors?: Record<string, E
     terminal_mode?: 'off' | 'ask' | 'auto';
     disable_user_connectors?: boolean;
     disable_user_models?: boolean;
+    share_links?: boolean;
     default_model?: string; limits?: Record<string, number>; allowed_api_bases?: string[];
     connections?: Partial<Record<'models' | 'connectors', Record<string, string | ConnectionSettings>>> };
 type CatalogItem = { id: string; model?: string; endpoint?: string; display_name?: string; description?: string; name?: string; content?: string; source?: string; type?: string;
@@ -36,6 +37,7 @@ type Snapshot = { version?: number; revision: number; overrides: Overrides; cata
     terminal?: { available: boolean; mode: 'off' | 'ask' | 'auto'; locked: boolean };
     user_connectors?: { disabled: boolean; locked: boolean };
     user_models?: { disabled: boolean; locked: boolean };
+    share_links?: { enabled: boolean; locked: boolean };
     loader_types?: React.ComponentProps<typeof ConnectorSetupForm>['loaderTypes'];
     allowed_api_bases?: { locked: boolean; value: string[] | null };
     limits: Record<string, { value: number; default: number; locked: boolean; source: string }> };
@@ -485,6 +487,20 @@ export const ConfigurationView = () => {
                     <PublishedExamplesPanel />
                 </Box>}
                 {tab === 'connectors' && !cardRows.length && <Typography variant="body2" color="text.secondary">{t('administration.noDataSources')}</Typography>}
+                {tab === 'limits' && saved.share_links && <Box sx={{ mb: 1.5 }}>
+                    <Typography component="h3" sx={{ fontSize: textVar.md, fontWeight: 600, mb: 0.75 }}>{t('administration.sharing')}</Typography>
+                    <Box sx={{ pl: 2 }}>
+                    <FormControlLabel sx={{ mx: 0, gap: 1 }} label={t('administration.shareLinks')}
+                        control={<Switch size="small" disabled={saved.share_links.locked}
+                            checked={saved.share_links.locked ? saved.share_links.enabled : draft.share_links ?? saved.share_links.enabled}
+                            slotProps={{ input: { role: 'switch', 'aria-describedby': 'configuration-share-links-description' } }}
+                            onChange={(_, enabled) => setDraft(previous => ({ ...previous, share_links: enabled }))} />} />
+                    <Typography id="configuration-share-links-description" variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, lineHeight: 1.5 }}>
+                        {t('administration.shareLinksHint')}
+                        {saved.share_links.locked && ` ${t('administration.setByServer')}`}
+                    </Typography>
+                    </Box>
+                </Box>}
                 {tab === 'limits' && Object.entries(saved.limits).map(([name, setting]) => {
                     const divisor = name.endsWith('_bytes') ? 1048576 : 1;
                     const label = t(`administration.limits.${name}.label`, { defaultValue: name });

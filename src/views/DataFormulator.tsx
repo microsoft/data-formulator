@@ -33,11 +33,14 @@ import {
     Tabs,
     Tab,
 } from '@mui/material';
-import { borderColor, radius, transition } from '../app/tokens';
+import { borderColor, canvasPattern, cardRadius, metaText, radius, transition } from '../app/tokens';
+import { inkColor } from '../app/look';
+
 
 
 import { VisualizationViewFC } from './VisualizationView';
 import { AnvilLoader } from '../components/AnvilLoader';
+import { VersionTag } from '../components/VersionTag';
 
 import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
@@ -101,8 +104,8 @@ const CANVAS_TRANSITION_MS = 140;
 /** A thread-pane drag at least this far moves a whole column in its direction. */
 const DRAG_INTENT_PX = 24;
 const INITIAL_SESSION_COUNT = 12;
-const homeSessionGroupHeaderSx = { m: 0, mb: 1, textAlign: 'left', fontSize: textVar.xs, fontWeight: 600, letterSpacing: '0.04em',
-    textTransform: 'uppercase', color: 'text.secondary' } as const;
+const homeSessionGroupHeaderSx = { m: 0, mb: 1, textAlign: 'left', fontWeight: 600, color: 'text.secondary',
+    ...metaText({ fontSize: textVar.xs, textTransform: 'uppercase', letterSpacing: '0.04em' }) } as const;
 
 type LibraryTab = 'sessions' | 'workflows' | 'schedules';
 
@@ -583,7 +586,7 @@ export const DataFormulatorFC = ({ }) => {
 
     let borderBoxStyle = {
         border: `1px solid ${borderColor.view}`, 
-        borderRadius: radius.pill, 
+        borderRadius: cardRadius(radius.pill), 
         //boxShadow: '0 0 5px rgba(0,0,0,0.1)',
     }
 
@@ -1005,13 +1008,47 @@ export const DataFormulatorFC = ({ }) => {
                 </>} />
             </Box>;
 
+    const tagline = site?.tagline || serverConfig.APP_TAGLINE || t('landing.tagline');
+    const taglineSx = {
+        fontSize: { xs: site ? 15 : 16, sm: site ? 16 : 21 },
+        // A demo's tagline reads as its subtitle, so it is darker than the app's.
+        color: inkColor(theme, site ? 0.82 : 0.7),
+        lineHeight: 1.4,
+        minWidth: 0,
+        overflowWrap: 'anywhere',
+        whiteSpace: 'pre-line',
+        textWrap: 'balance',
+    } as const;
+    const lockup = !!site?.logo;
+    // The version, small and muted, at the end of the tagline; an update button when a newer release is out.
+    const versionTag = <VersionTag version={serverConfig.VERSION} />;
+    const heading = (size: number) => <Typography component="h1" sx={{
+        fontSize: { xs: 28, sm: size },
+        lineHeight: 1.05,
+        letterSpacing: 0,
+        overflowWrap: 'anywhere',
+        textWrap: 'balance',
+    }}>
+        {site ? headingLines.map((line, index) => <Box component="span" key={index} sx={{ display: 'block' }}>
+            {/* The badge hangs off the last line's end, so the title stays centred on its words. */}
+            <Box component="span" sx={{ position: 'relative' }}>
+                {line}
+                {site.badge && index === headingLines.length - 1 && <Box component="span" sx={{ position: 'absolute', left: '100%', top: '50%',
+                    transform: 'translateY(-50%)', ml: 1.5, px: 1, py: '2px', whiteSpace: 'nowrap',
+                    fontSize: { xs: 12, sm: 14 }, fontWeight: 600, lineHeight: 1.3, letterSpacing: 0,
+                    color: 'primary.main', borderRadius: 1, bgcolor: alpha(theme.palette.primary.main, 0.1) }}>
+                    {site.badge}
+                </Box>}
+            </Box>
+        </Box>) : appName}
+    </Typography>;
+
     let dataUploadRequestBox = <Box sx={{
             margin: '4px 4px 4px 8px', 
-            background: `
+            ...canvasPattern(`
                 linear-gradient(90deg, ${alpha(theme.palette.text.primary, 0.02)} 1px, transparent 1px),
                 linear-gradient(0deg, ${alpha(theme.palette.text.primary, 0.02)} 1px, transparent 1px)
-            `,
-            backgroundSize: '24px 24px',
+            `, '24px 24px'),
             flex: 1, minWidth: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
         }}>
         <Box sx={{mx:'auto', pb: 8, display: "flex", flexDirection: "column", textAlign: "center", maxWidth: site ? DEMO_PAGE : 1024, width: '100%', px: 2, boxSizing: 'border-box' }}>
@@ -1023,29 +1060,24 @@ export const DataFormulatorFC = ({ }) => {
                 ? { minHeight: DEMO_CHAT_CENTRE, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', boxSizing: 'border-box', pt: 3 }
                 : { minHeight: 'calc(100vh - 140px)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <Box sx={{ mx: 'auto', width: '100%', minWidth: 0 }}>
-                {site?.logo && <Box component="img" src={site.logo} alt="" sx={{ display: 'block', height: { xs: 36, sm: 48 }, width: 'auto', mx: 'auto', mb: 2 }} />}
-                <Typography component="h1" sx={{
-                    fontSize: { xs: 28, sm: headingSize },
-                    lineHeight: 1.05,
-                    letterSpacing: 0,
-                    overflowWrap: 'anywhere',
-                    textWrap: 'balance',
-                }}>
-                    {site ? headingLines.map((line, index) => <Box component="span" key={index} sx={{ display: 'block' }}>
-                        {/* The badge hangs off the last line's end, so the title stays centred on its words. */}
-                        <Box component="span" sx={{ position: 'relative' }}>
-                            {line}
-                            {site.badge && index === headingLines.length - 1 && <Box component="span" sx={{ position: 'absolute', left: '100%', top: '50%',
-                                transform: 'translateY(-50%)', ml: 1.5, px: 1, py: '2px', whiteSpace: 'nowrap',
-                                fontSize: { xs: 12, sm: 14 }, fontWeight: 600, lineHeight: 1.3, letterSpacing: 0,
-                                color: 'primary.main', borderRadius: 1, bgcolor: alpha(theme.palette.primary.main, 0.1) }}>
-                                {site.badge}
-                            </Box>}
+                {lockup ? (
+                    // A demo with its own logo: its logo and Data Formulator's, a rule, then the title and tagline
+                    // read from the left, as a co-branded lockup centred on the page (stacked on a narrow screen).
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: { xs: 'column', sm: 'row' },
+                        gap: { xs: 2, sm: 3.5 }, textAlign: { xs: 'center', sm: 'left' } }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+                            <Box component="img" src={site?.logo ?? undefined} alt="" sx={{ display: 'block', height: { xs: 40, sm: 64 }, width: 'auto' }} />
+                            <Box component="img" src={dfLogo} alt="Data Formulator" sx={{ display: 'block', height: { xs: 36, sm: 56 }, width: 'auto' }} />
                         </Box>
-                    </Box>) : appName}
-                </Typography>
+                        <Box aria-hidden sx={{ display: { xs: 'none', sm: 'block' }, width: '1px', alignSelf: 'stretch', bgcolor: 'divider' }} />
+                        <Box sx={{ minWidth: 0 }}>
+                            {heading(Math.min(headingSize, 40))}
+                            <Typography sx={{ ...taglineSx, mt: 1, textAlign: 'inherit' }}>{tagline}{versionTag}</Typography>
+                        </Box>
+                    </Box>
+                ) : heading(headingSize)}
             </Box>
-            <Box sx={{
+            {!lockup && <Box sx={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -1058,19 +1090,8 @@ export const DataFormulatorFC = ({ }) => {
                     alt=""
                     sx={{ width: 25, height: 23, flexShrink: 0, display: 'block', transform: 'translateY(-2px)' }}
                 />
-                <Typography sx={{
-                    fontSize: { xs: site ? 15 : 16, sm: site ? 16 : 21 },
-                    color: alpha(theme.palette.text.primary, 0.7),
-                    lineHeight: 1.4,
-                    textAlign: 'center',
-                    minWidth: 0,
-                    overflowWrap: 'anywhere',
-                    whiteSpace: 'pre-line',
-                    textWrap: 'balance',
-                }}>
-                    {site?.tagline || serverConfig.APP_TAGLINE || t('landing.tagline')}
-                </Typography>
-            </Box>
+                <Typography sx={{ ...taglineSx, textAlign: 'center' }}>{tagline}{versionTag}</Typography>
+            </Box>}
 
             {/* Hosted-demo notice — borderless strip (it's prose, not a
                 button) placed before the Import Data section. The rocket

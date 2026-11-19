@@ -10,8 +10,8 @@
           "table_name": { "type": "string", "description": "New workspace table identifier, using letters, digits and underscores." },
           "display_name": { "type": "string", "maxLength": 80, "description": "Short human-readable table title, supplied when creating the table. Describe its contents; do not use the internal identifier or wait for background naming." },
           "rows": { "type": "array", "items": { "type": "object" }, "description": "Literal records. Omit when using code." },
-          "code": { "type": "string", "description": "Python that reads listed inputs and computes output_variable; do not write files directly." },
-          "output_variable": { "type": "string", "description": "Variable containing the resulting pandas DataFrame." },
+          "code": { "type": "string", "description": "Python that reads listed inputs (data/, files/, scratch/ paths) and assigns the resulting DataFrame to a variable; the last assigned variable is saved unless output_variable names another." },
+          "output_variable": { "type": "string", "description": "Optional: the variable holding the resulting DataFrame, when it is not the last one the code assigns." },
           "acquisition": { "type": "object", "description": "Supply for acquired analysis inputs, not derived results or synthetic data. Declare the acquired files in input_sources. Store only non-sensitive source and coverage details, never credentials. The server records acquired_at when registering the dataset.", "properties": {
             "source": { "type": "string", "minLength": 1, "maxLength": 8000, "description": "Non-secret source URL, local file, or service/resource identity." },
             "scope": { "type": "string", "minLength": 1, "maxLength": 8000, "description": "Dataset coverage: subjects, dates, grain, measures, and units." },
@@ -21,7 +21,7 @@
           "field_metadata": {"type": "object", "description": "Semantic types for the table's columns, as in visualize: a SemanticType name, or an object with semantic_type and optional unit, intrinsic_domain, sort_order, diverging_midpoint, colors. Annotate years, dates, IDs, ranks and measures so tables and charts show them right (a Year reads 2022, not 2,022). Never invent a unit.", "additionalProperties": {"oneOf": [{"type": "string", "enum": ["DateTime", "Date", "Time", "Timestamp", "Year", "Quarter", "Month", "Week", "Day", "Hour", "YearMonth", "YearQuarter", "YearWeek", "Decade", "Duration", "Amount", "Price", "Quantity", "Temperature", "Percentage", "Profit", "PercentageChange", "Sentiment", "Correlation", "Count", "Number", "Rank", "Score", "ID", "Latitude", "Longitude", "Country", "State", "City", "Region", "Address", "ZipCode", "Category", "Name", "Status", "Boolean", "Direction", "Range", "Unknown"]}, {"type": "object", "properties": {"semantic_type": {"type": "string", "enum": ["DateTime", "Date", "Time", "Timestamp", "Year", "Quarter", "Month", "Week", "Day", "Hour", "YearMonth", "YearQuarter", "YearWeek", "Decade", "Duration", "Amount", "Price", "Quantity", "Temperature", "Percentage", "Profit", "PercentageChange", "Sentiment", "Correlation", "Count", "Number", "Rank", "Score", "ID", "Latitude", "Longitude", "Country", "State", "City", "Region", "Address", "ZipCode", "Category", "Name", "Status", "Boolean", "Direction", "Range", "Unknown"]}, "unit": {"type": "string", "description": "Unit or currency code, e.g. USD, kg, °C."}, "intrinsic_domain": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2, "description": "[min, max] of a bounded scale, e.g. [1, 5] for a 5-point rating."}, "sort_order": {"type": "array", "items": {"type": "string"}, "description": "Natural order of ordered categories, e.g. [\"Low\", \"Medium\", \"High\"]."}, "diverging_midpoint": {"type": "number", "description": "Baseline a diverging color scale pivots on, e.g. 100 for an index."}, "colors": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Hex colors pinned to category values that have a conventional color, e.g. {\"Republican\": \"#d62728\", \"Democratic\": \"#1f5fbf\", \"No race\": \"#d9d9d9\"}. Stored with the table, so later charts and maps of the column agree. Omit for categories without one."}}, "required": ["semantic_type"], "additionalProperties": false}]}},
           "input_sources": { "type": "array", "items": { "type": "object", "properties": {
             "id": { "type": "string" }, "kind": { "type": "string", "enum": ["data", "file"] }
-          }, "required": ["id", "kind"], "additionalProperties": false }, "description": "Inputs materially used: a table name or its session/tables/<name>.json path (kind data); a files/... or scratch/... path (kind file)." }
+          }, "required": ["id", "kind"], "additionalProperties": false }, "description": "Inputs materially used: a table name or its session://tables/<name> (kind data); a files/... or scratch/... path (kind file)." }
         },
         "required": ["table_name", "display_name", "input_sources"],
         "additionalProperties": false
@@ -40,8 +40,8 @@
           "expected_content_hash": { "type": "string", "pattern": "^[0-9a-f]{32}$", "description": "Current table content_hash from inventory or the latest create/update result." },
           "display_name": { "type": "string", "maxLength": 80 },
           "rows": { "type": "array", "items": { "type": "object" } },
-          "code": { "type": "string", "description": "Recompute replacement data from listed inputs. Do not write files directly." },
-          "output_variable": { "type": "string", "description": "Resulting pandas DataFrame." },
+          "code": { "type": "string", "description": "Recompute the replacement DataFrame from listed inputs; the last assigned variable is saved unless output_variable names another." },
+          "output_variable": { "type": "string", "description": "Optional: the variable holding the replacement DataFrame, when it is not the last one the code assigns." },
           "acquisition": { "type": "object", "description": "For explicitly refreshing an acquired dataset from file inputs. Non-sensitive metadata only; the server records the new acquired_at timestamp.", "properties": {
             "source": { "type": "string", "minLength": 1, "maxLength": 8000 },
             "scope": { "type": "string", "minLength": 1, "maxLength": 8000 },
@@ -62,16 +62,16 @@
     "type": "function",
     "function": {
       "name": "create_file",
-      "description": "Create an agent-managed durable workspace file from literal text OR a sandboxed Python output variable. Python may read listed workspace and scratch inputs. A DataFrame becomes a Parquet file; str becomes UTF-8; bytes are saved as-is. Rejects existing filenames: use edit_file for revisions. Files appear immediately in the workspace and input inventory. For registered analysis tables use create_data; a file extension never registers data.",
+      "description": "Create a file from literal text OR a sandboxed Python output variable, at a path from the workspace root: files/... is a durable workspace file the user sees; scratch/... is a temporary file (a download, an intermediate) that code and input_sources then name by that same path. Python may read listed workspace and scratch inputs. A DataFrame becomes a Parquet file; str becomes UTF-8; bytes are saved as-is. Rejects existing paths: use edit_file for revisions. Workspace files appear immediately in the workspace and input inventory. For registered analysis tables use create_data; a file extension never registers data.",
       "parameters": {
         "type": "object",
         "properties": {
-          "filename": { "type": "string", "description": "File path including extension, optionally in folders, e.g. summary.md, notes/plan.md, lib/cleaning.py." },
+          "path": { "type": "string", "description": "The file's path from the workspace root, with extension, optionally in folders: files/summary.md, files/notes/plan.md, files/lib/cleaning.py, or scratch/raw.json. The result returns this same path." },
           "display_name": {
             "type": "string",
             "minLength": 1,
             "maxLength": 80,
-            "description": "Always provide a concise human-readable title for the Workspace card: 2-5 meaningful words, preserving acronyms, e.g. UNESCO Education. Omit extensions, underscores, and redundant details. This is separate from the actual filename."
+            "description": "Always provide a concise human-readable title for the Workspace card: 2-5 meaningful words, preserving acronyms, e.g. UNESCO Education. Omit extensions, underscores, and redundant details. This is separate from the file's path."
           },
           "content": {
             "type": "string",
@@ -79,15 +79,15 @@
           },
           "code": {
             "type": "string",
-            "description": "Python producing output_variable. Read either source or scratch inputs, but do not write files directly."
+            "description": "Python producing the content; the last assigned variable is saved unless output_variable names another. Read workspace, data/ or scratch/ inputs."
           },
           "output_variable": {
             "type": "string",
-            "description": "Variable produced by code containing a DataFrame (requires .parquet filename), str, or bytes. Binary artifacts are limited to 128 MB."
+            "description": "Optional: the variable holding a DataFrame (requires a .parquet path), str, or bytes, when it is not the last one the code assigns. Binary artifacts are limited to 128 MB."
           }
         },
         "required": [
-          "filename"
+          "path"
         ],
         "additionalProperties": false
       }
@@ -97,7 +97,7 @@
     "type": "function",
     "function": {
       "name": "edit_file",
-      "description": "Edit an existing agent-managed workspace file. Provide exactly one of replacement content, Python code/output_variable, or text replacements/append_text. Requires the current content_hash from creation, editing, or read_file. Also edits the session's chart specs (session/charts/<id>.json) and reports (session/reports/<id>.md); those edits are validated and rejected, changing nothing, if they are invalid. User-managed sources and internal files are protected; create a copy instead. Preserves filename and display name unless a new display_name is supplied; an app is edited in place.",
+      "description": "Edit an existing agent-managed workspace file or a scratch/ file. Provide exactly one of replacement content, Python code/output_variable, or text replacements/append_text. Requires the current content_hash from creation, editing, or read_file. Also edits the session's chart specs (session://charts/<id>) and reports (session://reports/<id>); those edits are validated and rejected, changing nothing, if they are invalid. User-managed sources and internal files are protected; create a copy instead. Preserves filename and display name unless a new display_name is supplied; an app is edited in place.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -105,7 +105,7 @@
             "type": "string",
             "description": "The file's files/... path, equal to path. Only to fix an artifact the user says is wrong, broken, or unwanted (or one this run made that turned out wrong): the fixed file moves to after the latest request and the thread notes that it replaced the old one. Omit it for ordinary changes the user asks for."
           },
-          "path": { "type": "string", "description": "Exact existing path: files/... from list_files, the input inventory, or create_file; or session/charts/<id>.json or session/reports/<id>.md." },
+          "path": { "type": "string", "description": "Exact existing name: a files/... or scratch/... path from list_files, the input inventory, or create_file; or session://charts/<id> or session://reports/<id>." },
           "display_name": {
             "type": "string",
             "minLength": 1,
@@ -114,11 +114,11 @@
           },
           "code": {
             "type": "string",
-            "description": "Python producing output_variable. Read sources or scratch but do not write files directly."
+            "description": "Python producing the content; the last assigned variable is saved unless output_variable names another. Read workspace, data/ or scratch/ inputs."
           },
           "output_variable": {
             "type": "string",
-            "description": "DataFrame (requires .parquet), str, or bytes for full replacement. Binary artifacts are limited to 128 MB."
+            "description": "Optional: the variable holding a DataFrame (requires .parquet), str, or bytes for full replacement, when it is not the last one the code assigns. Binary artifacts are limited to 128 MB."
           },
           "content": {
             "type": "string",
@@ -172,13 +172,13 @@
     "type": "function",
     "function": {
       "name": "list_files",
-      "description": "List the session's files with the name the user sees, kind and size: workspace files (files/: documents, PDFs, spreadsheets, data files, apps, your notes and Python helpers), the session (session/: index.md, tables/<name>.json for every table, charts/<id>.json and reports/<id>.md you can edit, references/<id>.json for connected-source tables, threads/<n>.md), and scratch/ intermediates. sources/ holds connected-source catalogs (sources/<source_id>/<path>), listed one level at a time; workflows/ (saved and built-in workflows and schedules, read-only) is listed only when path names it. The kind and detail (rows, pages, sheets) tell which read_file parameters apply.",
+      "description": "List the session's files with the name the user sees, kind and size: workspace files (files/: documents, PDFs, spreadsheets, data files, apps, your notes and Python helpers), the session's objects (session://index, session://tables/<name> for every table, session://charts/<id> and session://reports/<id> you can edit, session://references/<id> for connected-source tables, session://threads/<n>), and scratch/ intermediates. data/ (each table's data file, the path code reads) is listed only when path names it. sources:// holds connected-source catalogs (sources://<source_id>/<path>), listed one level at a time; workflows:// (saved and built-in workflows and schedules, read-only) is listed only when path names it. The kind and detail (rows, pages, sheets) tell which read_file parameters apply.",
       "parameters": {
         "type": "object",
         "properties": {
           "path": {
             "type": "string",
-            "description": "Folder, prefix or glob to list, e.g. files/docs, session/tables, files/*.pdf. Omit for everything."
+            "description": "Folder, prefix or glob to list, e.g. files/docs, session://tables, files/*.pdf. Omit for everything."
           }
         },
         "additionalProperties": false
@@ -189,7 +189,7 @@
     "type": "function",
     "function": {
       "name": "read_file",
-      "description": "Read session files: any path from the session index or list_files (files/..., session/..., scratch/..., sources/..., workflows/...), several in one call within a size budget. Each item takes only the parameters for its kind; omit them for the default. Text and session views: offset/limit lines (default: the first 400). Tables (session/tables/<name>.json): the view with description, columns, samples and the parquet file for Python; rows=\"1790-1800\" (and columns) reads rows, at most 200 per item. Excel: its sheets; sheet + rows reads rows. Parquet files: shape and samples; rows reads rows. CSV: text by lines; rows reads it as a table. PDF: whole when short, else the first pages; pages=\"6-10\" reads pages (at most 20). A connected-source table (sources/...): its source_id, table_key, description and columns one per line (offset/limit page wide tables). Large text files are paged with a notice. A parameter that does not fit is ignored with a warning. Returns content_hash for edit_file and whether you may edit each file.",
+      "description": "Read session files: any path from the session index or list_files (files/..., data/..., session://..., scratch/..., sources://..., workflows://...), several in one call within a size budget. Each item takes only the parameters for its kind; omit them for the default. Text and session views: offset/limit lines (default: the first 400). Tables (session://tables/<name>): the view with description, columns, samples and its data_file (data/..., which reads the same way) for code; rows=\"1790-1800\" (and columns) reads rows, at most 200 per item. Excel: its sheets; sheet + rows reads rows. Parquet files: shape and samples; rows reads rows. CSV: text by lines; rows reads it as a table. PDF: whole when short, else the first pages; pages=\"6-10\" reads pages (at most 20). A connected-source table (sources://...): its source_id, table_key, description and columns one per line (offset/limit page wide tables). Images (PNG, JPEG, GIF, WebP; up to 3 MB, 4 per call) are shown to you as pictures. Large text files are paged with a notice. A parameter that does not fit is ignored with a warning. Returns content_hash for edit_file and whether you may edit each file.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -197,13 +197,13 @@
             "type": "array",
             "minItems": 1,
             "maxItems": 20,
-            "description": "Items to read, e.g. [{\"path\": \"session/tables/sales.json\"}, {\"path\": \"session/tables/sales.json\", \"rows\": \"1-50\"}, {\"path\": \"files/report.pdf\", \"pages\": \"3-5\"}]. Globs in path read every match with the same parameters.",
+            "description": "Items to read, e.g. [{\"path\": \"session://tables/sales\"}, {\"path\": \"session://tables/sales\", \"rows\": \"1-50\"}, {\"path\": \"files/report.pdf\", \"pages\": \"3-5\"}]. Globs in path read every match with the same parameters.",
             "items": {
               "type": "object",
               "properties": {
                 "path": {
                   "type": "string",
-                  "description": "A path or glob, e.g. files/notes/plan.md, session/charts/*."
+                  "description": "A path or glob, e.g. files/notes/plan.md, session://charts/*."
                 },
                 "offset": {
                   "type": "integer",
@@ -254,7 +254,7 @@
     "type": "function",
     "function": {
       "name": "search",
-      "description": "Search this session: tables (name, description, column names and every row), files (text, PDF, Excel, notes) and session items (charts, reports, threads, references), then connected-source catalogs (sources/: table names, descriptions and columns, not rows), so one search tells whether data is already here or must be loaded. Every word must appear, in any order (case-insensitive); quote a phrase to match it exactly. A table match returns whole rows, so use it to look up a code or ID by its label (for example in a codebook or lookup table) before querying the data; a file match returns the line. Words must match within one row or line, so search for one thing at a time. Searches everything except workflows/ by default, catalog matches last; pass path (e.g. session/tables/, files/docs/, sources/ or sources/<source_id>/) when you know where to look. Connected sources match on cached metadata only; probe_data queries their values.",
+      "description": "Search this session: tables (name, description, column names and every row), files (text, PDF, Excel, notes) and session items (charts, reports, threads, references), then connected-source catalogs (sources://: table names, descriptions and columns, not rows), so one search tells whether data is already here or must be loaded. Every word must appear, in any order (case-insensitive); quote a phrase to match it exactly. A table match returns whole rows, so use it to look up a code or ID by its label (for example in a codebook or lookup table) before querying the data; a file match returns the line. Words must match within one row or line, so search for one thing at a time. Searches everything except workflows:// by default, catalog matches last; pass path (e.g. session://tables/, files/docs/, sources:// or sources://<source_id>/) when you know where to look. Connected sources match on cached metadata only; probe_data queries their values.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -267,7 +267,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Where to search: folders, items or globs, e.g. [\"session/tables/\"] or [\"files/report.pdf\"]. Omit for everything."
+            "description": "Where to search: folders, items or globs, e.g. [\"session://tables/\"] or [\"files/report.pdf\"]. Omit for everything."
           },
           "regex": {
             "type": "boolean",
@@ -311,7 +311,7 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "items": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "type": "string" }, "description": "Ids of the items to delete: table names, chart ids (session/charts/<id>.json in the index), external reference ids, or files/... paths (a folder path deletes its files). Display names also match. An unknown id returns the session's items." }
+          "items": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "type": "string" }, "description": "Ids of the items to delete: table names, chart ids (session://charts/<id> in the index), external reference ids, or files/... paths (a folder path deletes its files). Display names also match. An unknown id returns the session's items." }
         },
         "required": ["items"],
         "additionalProperties": false
@@ -322,7 +322,7 @@
     "type": "function",
     "function": {
       "name": "probe_data",
-      "description": "Resolve unknown values or coverage with a bounded read-only query against a connected table or semantic model. Use known schema from context or the table's sources/ file (read_file). Semantic queries select dimensions and measures in columns; native uses an advertised language and its query_capabilities.native_query_guidance. A small result does not guarantee a cheap scan; check query_capabilities. Results are inspection evidence, not workspace inputs; use propose_data_operation to load data for analysis.",
+      "description": "Resolve unknown values or coverage with a bounded read-only query against a connected table or semantic model. Use known schema from context or the table's sources:// file (read_file). Semantic queries select dimensions and measures in columns; native uses an advertised language and its query_capabilities.native_query_guidance. A small result does not guarantee a cheap scan; check query_capabilities. Results are inspection evidence, not workspace inputs; use propose_data_operation to load data for analysis.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -601,6 +601,31 @@
         "required": [
           "options"
         ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "view",
+      "description": "Look at what you made as the user sees it: the application draws charts (session://charts/<id>), maps (files/*.map.json) and apps (files/*.app.jsx, files/*.html) in the user's browser and shows you the pictures. Use it to check a visual change you cannot confirm from the spec (a theme, gridlines, a layout, labels that may overlap) or when the user asks how something looks; not after every chart. At most 4 items per call. Image files are shown by read_file instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "items": {
+              "type": "string"
+            },
+            "description": "Items to draw, e.g. [\"session://charts/chart-12\", \"files/sales.app.jsx\"]."
+          }
+        },
+        "required": [
+          "paths"
+        ],
+        "additionalProperties": false
       }
     }
   }

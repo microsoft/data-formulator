@@ -385,6 +385,8 @@ export class MapRenderer {
     private transform = d3.zoomIdentity;
     private zoom: d3.ZoomBehavior<SVGSVGElement, unknown>;
     private fitKey = '';
+    /** What the map was last fitted to (null for a set centre and zoom). */
+    private fitted: d3.GeoPermissibleObjects | null = null;
     private frame = 0;
     private animate = false;
     private spinTimer: d3.Timer | null = null;
@@ -408,6 +410,13 @@ export class MapRenderer {
     /** Path data per element, keyed by the projection that produced it. */
     private pathKeys = new WeakMap<Element, { key: string; geometry: unknown }>();
     private projectionKey = '';
+    /** Between a zoom gesture's start and end. */
+    private gesturing = false;
+    /** The street-tile style and zoom level being drawn; earlier levels stay under it until it has loaded. */
+    private tileStyle: string | null = null;
+    private tileLevel: number | null = null;
+    private tilesCovered = false;
+    private loadedTiles = new WeakSet<Element>();
 
     constructor(svgElement: SVGSVGElement, canvas: HTMLCanvasElement, private callbacks: RendererCallbacks, private strings: RendererStrings = ENGLISH) {
         this.svg = d3.select(svgElement);
@@ -423,14 +432,18 @@ export class MapRenderer {
             .constrain((transform, viewport, extent) => constrainPan(transform, viewport, extent, this.width, this.height))
             .filter(event => (!event.ctrlKey || event.type === 'wheel') && !event.button && event.type !== 'dblclick'
                 && (event.type === 'wheel' || (!event.shiftKey && !this.lassoMode)))
-            .on('start', () => { this.stopSpin(); this.callbacks.onInteract?.(); this.callbacks.onHover(null, [0, 0]); })
+            .on('start', () => { this.gesturing = true; this.stopSpin(); this.callbacks.onInteract?.(); this.callbacks.onHover(null, [0, 0]); })
             .on('zoom', event => {
                 this.transform = event.transform;
                 // Big flat maps follow the gesture with a transform and redraw when it ends.
                 if (this.heavy && !this.isGlobe) this.applyGestureTransform();
                 else this.schedule(false);
             })
-            .on('end', () => { if (this.heavy && !this.isGlobe) this.schedule(false); });
+            .on('end', () => {
+                this.gesturing = false;
+                // Street tiles fetch the level the gesture settled on.
+                if ((this.heavy && !this.isGlobe) || this.tileStyle) this.schedule(false);
+            });
         this.svg.call(this.zoom).on('dblclick.zoom', null);
         this.svg.on('dblclick', (event: MouseEvent) => this.onDoubleClick(event));
         this.svg.on('click', (event: MouseEvent) => {
@@ -583,6 +596,28 @@ export class MapRenderer {
         this.svg.transition().duration(700).call(this.zoom.transform, transform);
     }
 
+    /**
+     * Where what the map is fitted to (its data, or its basemap) falls at the panel's current size, in its pixels:
+     * [x0, y0, x1, y1]. Fitted now, so it holds before the next drawing.
+     */
+    fittedBounds(): [number, number, number, number] | null {
+        if (!this.scene || !this.width || !this.height) return null;
+        const projection = this.baseProjection();
+        if (!this.fitted) return null;
+        const [[x0, y0], [x1, y1]] = d3.geoPath(projection).bounds(this.fitted);
+        return [x0, y0, x1, y1].every(Number.isFinite) ? [x0, y0, x1, y1] : null;
+    }
+
+    /** Draw now what waits for the next frame (a still picture is taken from what is drawn). */
+    drawNow() {
+        if (!this.frame) return;
+        cancelAnimationFrame(this.frame);
+        this.frame = 0;
+        const animate = this.animate;
+        this.animate = false;
+        this.draw(animate);
+    }
+
     /** The current projection, for placing HTML overlays. */
     project(point: LonLat): [number, number] | null {
         if (!this.visible(point)) return null;
@@ -620,6 +655,7 @@ export class MapRenderer {
             return projection;
         }
         const { projection, fitted, collision } = this.prepareFit();
+        this.fitted = fitted;
         if (fitted && collision && obstacles.length) {
             const shape = this.fitShape(projection, fitted, collision);
             const placed = shape && this.placeAround(shape, obstacles);
@@ -1244,33 +1280,82 @@ export class MapRenderer {
         }
     }
 
+    /**
+     * Street tiles, one group per zoom level. A new level draws over the last, which stays (scaled) until
+     * every new tile in view has loaded, so zooming never flashes blank. Mid-gesture the drawn level is
+     * scaled rather than fetching every level passed; the gesture's end fetches the level it settled on.
+     */
     private drawTiles(style: string | null, projection: d3.GeoProjection) {
         const group = this.root.select<SVGGElement>('.df-map-tiles');
         const definition = style ? TILE_STYLES[style] : null;
-        if (!definition) { group.selectAll('image').remove(); return; }
+        if (!definition || style !== this.tileStyle) {
+            group.selectAll('*').remove();
+            this.tileStyle = definition ? style : null;
+            this.tileLevel = null;
+            this.tilesCovered = false;
+        }
+        if (!definition) return;
         const origin = projection([-180, 85.05112878]);
         if (!origin) return;
         const size = 2 * Math.PI * projection.scale();
-        const z = Math.max(0, Math.min(definition.maxZoom, Math.round(Math.log2(size / 256))));
-        const count = 2 ** z;
-        const tileSize = size / count;
-        const tiles: { key: string; url: string; x: number; y: number }[] = [];
-        const x0 = Math.floor(-origin[0] / tileSize);
-        const x1 = Math.floor((this.width - origin[0]) / tileSize);
-        const y0 = Math.max(0, Math.floor(-origin[1] / tileSize));
-        const y1 = Math.min(count - 1, Math.floor((this.height - origin[1]) / tileSize));
-        if ((x1 - x0 + 1) * (y1 - y0 + 1) > 400) return;
-        for (let x = x0; x <= x1; x++) {
-            for (let y = y0; y <= y1; y++) {
-                const wrapped = ((x % count) + count) % count;
-                tiles.push({ key: `${z}/${x}/${y}`, url: definition.url(z, wrapped, y), x: origin[0] + x * tileSize, y: origin[1] + y * tileSize });
+        const target = Math.max(0, Math.min(definition.maxZoom, Math.round(Math.log2(size / 256))));
+        const level = this.gesturing && this.tileLevel !== null ? this.tileLevel : target;
+        this.tileLevel = level;
+        const levels = () => group.selectAll<SVGGElement, number>(':scope > g');
+        if (levels().filter(z => z === level).empty()) group.append('g').datum(level);
+        levels().filter(z => z === level).raise();
+        // Two earlier levels are enough to cover a quick zoom; farther ones go.
+        levels().filter(z => z !== level).nodes()
+            .sort((a, b) => Math.abs(d3.select<SVGGElement, number>(a).datum() - level) - Math.abs(d3.select<SVGGElement, number>(b).datum() - level))
+            .slice(2).forEach(node => node.remove());
+
+        const { width, height, loadedTiles } = this;
+        const prune = () => this.pruneTiles();
+        let covered = false;
+        levels().each(function (z) {
+            const count = 2 ** z;
+            const tileSize = size / count;
+            const x0 = Math.floor(-origin[0] / tileSize);
+            const x1 = Math.floor((width - origin[0]) / tileSize);
+            const y0 = Math.max(0, Math.floor(-origin[1] / tileSize));
+            const y1 = Math.min(count - 1, Math.floor((height - origin[1]) / tileSize));
+            const current = z === level;
+            const place = (image: d3.Selection<SVGImageElement, { x: number; y: number }, null, undefined>) => image
+                // Overlap by a pixel so tile seams do not show.
+                .attr('x', tile => origin[0] + tile.x * tileSize - 0.25).attr('y', tile => origin[1] + tile.y * tileSize - 0.25)
+                .attr('width', tileSize + 0.5).attr('height', tileSize + 0.5);
+            const drawn = new Set<string>();
+            d3.select(this).selectAll<SVGImageElement, { x: number; y: number }>('image').each(function (tile) {
+                // An earlier level keeps only what it shows: loaded tiles in view.
+                if (tile.x < x0 || tile.x > x1 || tile.y < y0 || tile.y > y1 || (!current && !loadedTiles.has(this))) { this.remove(); return; }
+                drawn.add(`${tile.x}/${tile.y}`);
+                place(d3.select(this));
+            });
+            // Zoomed out mid-gesture, the drawn tiles shrink rather than fetch many small ones.
+            if (!current || level > target || (x1 - x0 + 1) * (y1 - y0 + 1) > 400) return;
+            for (let x = x0; x <= x1; x++) {
+                for (let y = y0; y <= y1; y++) {
+                    if (drawn.has(`${x}/${y}`)) continue;
+                    const wrapped = ((x % count) + count) % count;
+                    d3.select(this).append('image').datum({ x, y }).attr('href', definition.url(z, wrapped, y)).attr('preserveAspectRatio', 'none')
+                        .on('load error', function () { loadedTiles.add(this); prune(); })
+                        .call(place);
+                }
             }
-        }
-        group.selectAll<SVGImageElement, typeof tiles[number]>('image').data(tiles, tile => tile.key)
-            .join(enter => enter.append('image').attr('href', tile => tile.url).attr('preserveAspectRatio', 'none'))
-            // Overlap by a pixel so tile seams do not show.
-            .attr('x', tile => tile.x - 0.25).attr('y', tile => tile.y - 0.25)
-            .attr('width', tileSize + 0.5).attr('height', tileSize + 0.5);
+            covered = true;
+        });
+        this.tilesCovered = covered;
+        this.pruneTiles();
+    }
+
+    /** Once the current level covers the view and has loaded, the earlier levels under it go. */
+    private pruneTiles() {
+        if (!this.tilesCovered || this.tileLevel === null) return;
+        const level = this.tileLevel;
+        const groups = this.root.select('.df-map-tiles').selectAll<SVGGElement, number>(':scope > g');
+        const current = groups.filter(z => z === level);
+        if (current.selectAll<SVGImageElement, unknown>('image').nodes().some(node => !this.loadedTiles.has(node))) return;
+        groups.filter(z => z !== level).remove();
     }
 
     private markState(model: LayerModel, mark: Mark): { dim: boolean; selected: boolean; hidden: boolean } {
@@ -1966,6 +2051,12 @@ export class MapRenderer {
             .filter(item => {
                 if (!item.place && dataBudget <= 0) return false;
                 const width = textWidth(item.text, item.size ?? (item.place ? 9.5 : 11)) + (item.place ? 16 : 4 + 2 * LABEL_PAD.x);
+                // A mark's name at the frame's edge slides inside it rather than being cut off.
+                if (!item.place && item.x >= 0 && item.x <= this.width) {
+                    const inside = (x: number) => Math.min(this.width - width / 2, Math.max(width / 2, x));
+                    item.x = inside(item.x);
+                    if (item.alt) item.alt = { ...item.alt, x: inside(item.alt.x) };
+                }
                 if (named.get(item.text)?.some(([x, y]) => Math.hypot(x - item.x, y - item.y) < Math.max(80, width))) return false;
                 const fits = ({ x, y }: { x: number; y: number }) => {
                     const pad = item.place ? 0 : LABEL_PAD.y;

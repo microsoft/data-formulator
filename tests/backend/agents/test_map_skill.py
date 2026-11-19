@@ -59,7 +59,7 @@ def test_registry_exposes_write_map_and_routes_maps_to_it() -> None:
     registry = build_registry()
     assert registry.action_owner("write_map") == "map"
     schema = {tool["function"]["name"]: tool["function"] for tool in registry.action_tools_for(["map"])}["write_map"]
-    assert set(schema["parameters"]["required"]) == {"title", "map"}
+    assert set(schema["parameters"]["required"]) == {"path", "title", "map"}
     body = registry.load_body("map")
     assert all(term in body for term in ("write_map", "keyType", "bivariate", "selectionFilter", "dorling", "great-circle", "semanticType", "theme"))
     assert "load `map`" in registry.load_body("meta")
@@ -192,6 +192,12 @@ def test_styles_themes_and_field_annotations_validate() -> None:
     assert errors == []
     # Totals on a choropleth favour big regions; rates do not.
     assert len(warnings) == 1 and "pop" in warnings[0] and "bubbles" in warnings[0]
+    # A field may carry its own colour scale, so maps and switch options that compare share it.
+    errors, _ = check_structure({"fields": {"rate": {"semanticType": "Percentage", "thresholds": [20, 40, 60, 80]},
+                                            "share": {"domain": [0, 100]}}, "layers": []})
+    assert errors == []
+    errors, _ = check_structure({"fields": {"rate": {"thresholds": []}, "share": {"domain": [100, 0]}}, "layers": []})
+    assert any("fields.rate.thresholds" in error for error in errors) and any("fields.share.domain" in error for error in errors)
     errors, _ = check_structure({"view": {"style": "neon", "labels": "yes"}, "fields": {"x": 3}, "layers": []})
     assert any("view.style" in error for error in errors)
     assert any("view.labels" in error for error in errors)
@@ -328,6 +334,13 @@ def test_fixed_scales_for_comparable_maps_are_checked() -> None:
     errors, _ = check_structure({"data": {"t": {"table": "t"}}, "layers": [
         {"type": "bubbles", "data": "t", "key": "country", "size": {"field": "pop", "domain": [0, True]}}]})
     assert any("size.domain must be [low, high]" in error for error in errors)
+
+
+def test_a_reversed_scheme_is_true_or_false() -> None:
+    from data_formulator.analyst.skills.map.templates import template_errors
+    base = {"template": "choropleth", "data": {"table": "t"}, "encoding": {"region": "state", "color": "anomaly"}}
+    assert template_errors({**base, "properties": {"scheme": "rdBu", "reverse": True}}) == []
+    assert template_errors({**base, "properties": {"reverse": "yes"}}) == ["properties.reverse must be true or false."]
 
 
 def test_size_range_and_mark_size_are_checked() -> None:

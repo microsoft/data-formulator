@@ -37,7 +37,7 @@ PLAN_REVIEW_TOOLS = {"adapt_plan", "review_plan", "load_skill", "list_files", "r
                      "probe_data",
                      "list_connectors", "ask_user", "request_help"}
 TOOLS = [
-    tool("execute_python_script", "Inspect, analyze, or independently verify workspace data using the analyst Python sandbox. Print evidence. Return files via outputs = {'comparison.csv': dataframe, 'notes.md': text}; the host saves them. Scripts cannot write files.",
+    tool("execute_python_script", "Inspect, analyze, or independently verify workspace data using the analyst Python sandbox. Print evidence. Return files via outputs = {'comparison.csv': dataframe, 'notes.md': text}; the host saves them to the run. Scripts write only to scratch/.",
          {"code": TEXT, "purpose": TEXT}, ["code", "purpose"]),
     tool("record_check", "Record an agent-evaluated check against observed tool evidence. Never invent evidence IDs.",
          {"check_id": TEXT, "status": {"type": "string", "enum": ["passed", "failed", "inconclusive"]},
@@ -122,7 +122,7 @@ for inspection and analysis. Follow the workspace's Choose an Acquisition Route 
 inputs and continue from acquired data to delivery. Print concise evidence. Request_help only when
 required inputs remain inaccessible through available authorized routes or essential intent is unresolved;
 do not claim that a source was fetched merely because it is named in the instance.
-Scripts cannot write files. To save results assign outputs = {'comparison.csv': dataframe, 'notes.md': text}.
+Scripts write only to scratch/. To save results for this run assign outputs = {'comparison.csv': dataframe, 'notes.md': text}.
 The host writes these inside the run directory. Each script starts with a fresh namespace; reread needed files.
 These scratch outputs are intermediates, NOT user-facing deliverables. For a visualization, transform the
 available inputs directly with visualize: it publishes both the derived table and chart. Retain supporting
@@ -133,10 +133,10 @@ Also use create_data for an independently needed data deliverable (or update_dat
 create_file/edit_file for other durable files. Do not ask the user to import your downloads.
 create_data and visualize accept code that reads available inputs. Include their actual workspace IDs
 or file paths as input_sources; never invent a preloaded source path.
-Read published results back with read_file (session/tables/<name>.json, session/charts/<id>.json). For CSV files, create_file can
+Read published results back with read_file (session://tables/<name>, session://charts/<id>). For CSV files, create_file can
 return dataframe.to_csv(index=False) as text. visualize uses chart_type such as Line Chart, Bar Chart,
-Scatter Plot, with encodings mapping x/y/color to field names. Embed returned chart IDs in reports as
-![caption](chart://<chart-id>). write_report publishes directly into Data Formulator's report view.
+Scatter Plot, with encodings mapping x/y/color to field names. Embed returned charts in reports as
+![caption](session://charts/<chart-id>). write_report publishes directly into Data Formulator's report view.
 All outputs belong to the single workflow execution conversation, not new user prompts.
 Retain raw acquisition data unchanged. No network calls,
 credential reads, package installation, cloud changes, or shell commands in analysis scripts.
@@ -213,6 +213,7 @@ def model_retry_delay(exc: Exception, attempt: int) -> float | None:
 
 
 class WorkflowAgent(AnalystAgent):
+    FAILURE_AGENT = "workflow"
     # Its run loop executes one call per response (it records only the first).
     PARALLEL_TOOL_CALLS = False
 
@@ -229,8 +230,6 @@ class WorkflowAgent(AnalystAgent):
         self.read_messages = lambda: []
         self.run_dir = workspace.confined_scratch.resolve("workflow-" + state["id"])
         self.run_dir.mkdir(exist_ok=True)
-        if hasattr(workspace, "migrate_legacy_memory"):
-            workspace.migrate_legacy_memory()
         from data_formulator.analyst.session_layer import SessionLayer, load_saved_state
         # The session it runs in, as the analyst sees it (design-docs/61): from the saved session state.
         # in_workflow_run: runs do not see workflows/ (they never author workflows).
@@ -911,6 +910,7 @@ class WorkflowAgent(AnalystAgent):
                     tool_response = {"role": "tool", "tool_call_id": call.id,
                                      "content": "Execution interrupted before the result was recorded. Inspect existing artifacts before retrying."}
                     trajectory.append(tool_response)
+                    args = None
                     try:
                         args = json.loads(call.function.arguments)
                         if not isinstance(args, dict):
@@ -936,9 +936,13 @@ class WorkflowAgent(AnalystAgent):
                             raise WorkflowInterrupted()
                         self._run_payload["action_narration"] = message.content or ""
                         observation = self._execute(call.function.name, args, call.id)
+                        from data_formulator.agents.failure_log import observation_failure
+                        if (failure := observation_failure(observation)) is not None:
+                            self._log_failure(call.function.name, failure, args, call.id)
                     except WorkflowInterrupted:
                         raise
                     except Exception as exc:
+                        self._log_failure(call.function.name, exc, args, call.id)
                         observation = f"Tool failed: {str(exc)[:2000]}. Inspect the failure and repair, or request_help."
                         self._evidence(call.id, call.function.name, observation)
                         state["evidence"][call.id]["status"] = "failed"

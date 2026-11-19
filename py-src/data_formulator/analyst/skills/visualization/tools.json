@@ -34,7 +34,7 @@
             "items": {
               "type": "object",
               "properties": {
-                "id": {"type": "string", "description": "A table name, loaded or derived, or its session/tables/<name>.json path (kind data), or a files/... path (kind file)."},
+                "id": {"type": "string", "description": "A table name, loaded or derived, or its session://tables/<name> (kind data), or a files/... path (kind file)."},
                 "kind": {"type": "string", "enum": ["data", "file"]}
               },
               "required": ["id", "kind"],

@@ -5,6 +5,8 @@
 
 import os
 import socket
+import subprocess
+from pathlib import Path
 from contextlib import contextmanager
 
 import pandas as pd
@@ -279,3 +281,34 @@ class TestSeatbeltWorker:
         result = self._run(workspace, "import os\nos.mkdir(os.path.join(os.getcwd(), 'made_by_code'))")
         assert result["status"] == "error"
         assert not os.path.exists(os.path.join(workspace._path, "made_by_code"))
+
+    def test_code_writes_its_scratch_folder_under_the_os_sandbox(self, workspace):
+        (Path(workspace._path) / "scratch").mkdir(exist_ok=True)
+        result = LocalSandbox().run_python_code(
+            "import os, pandas as pd\nos.makedirs('scratch/sub', exist_ok=True)\n"
+            "pd.DataFrame({'a': [1]}).to_parquet('scratch/sub/x.parquet')\n"
+            "out = pd.read_parquet('scratch/sub/x.parquet')\n", workspace, "out")
+        assert result["status"] == "ok", result
+        assert (Path(workspace._path) / "scratch" / "sub" / "x.parquet").is_file()
+
+
+@confined
+@pytest.mark.parametrize("target, allowed", [
+    ("users/u/workspaces/s/scratch/x.txt", True),
+    ("users/u/workspaces/s/scratch/deep/x.txt", True),
+    ("users/u/workspaces/s/files/x.txt", False),
+    ("users/u/workspaces/s/scratchy.txt", False),
+    ("users/u/workspaces/s/_internal/x.txt", False),
+])
+def test_shared_worker_profile_allows_only_scratch_folders(tmp_path, target, allowed):
+    """The shared worker's OS rule (one pattern per Data Formulator folder) admits writes in scratch/ only."""
+    root = (tmp_path / "users").resolve()
+    path = tmp_path / target
+    path.parent.mkdir(parents=True, exist_ok=True)
+    profile = confinement.seatbelt_profile(
+        [str(root)], str(tmp_path / "private"), allow_network=False,
+        write_patterns=[f"^{confinement._sbpl_regex(str(root))}/([^/]+/)+scratch(/|$)"])
+    (tmp_path / "private").mkdir()
+    result = subprocess.run([confinement.SEATBELT, "-p", profile, "/usr/bin/touch", str(path.resolve())],
+                            capture_output=True, text=True)
+    assert (result.returncode == 0) is allowed, result.stderr

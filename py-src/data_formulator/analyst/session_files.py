@@ -1,44 +1,57 @@
 """The session as files (design-docs/60, 65): one view the agent lists, reads, and searches.
 
 - ``files/<path>``: workspace files, in folders.
-- ``session/<path>``: the session's state as files, from the snapshot the
+- ``session://<folder>/<item>``: the session's objects, from the snapshot the
   application sends with the request (``session_files``): charts and reports the
   agent may edit, tables and threads it may read.
 - ``scratch/<path>``: execution intermediates and terminal output.
-- ``sources/<source_id>/<path>``: connected-source catalogs, one level per listing; a table's file is its
+- ``sources://<source_id>/<path>``: connected-source catalogs, one level per listing; a table's item is its
   metadata view (``session_sources``). Searched with everything, after the session, from the cache.
-- ``workflows/<path>``: the user's saved workflows, the built-in examples and server workflows (read-only),
-  with ``workflows/schedules.json``; listed and searched only when a path names the folder.
+- ``workflows://<path>``: the user's saved workflows, the built-in examples and server workflows (read-only),
+  with ``workflows://schedules.json``; listed and searched only when a name reaches them.
 
-Each path is read in the unit that fits it (lines, table rows, PDF pages, Excel sheets); see
+Older names (``session/charts/<id>.json``, ``sources/…``, ``workflows/…``) are accepted and normalized
+(``analyst/names.py``, design-docs/74). Each item is read in the unit that fits it (lines, table rows, PDF pages, Excel sheets); see
 ``session_fs`` for formats and search.
 """
 
 from __future__ import annotations
 
+import base64
 import fnmatch
 import hashlib
 import json
 import logging
+import mimetypes
 import re
 from dataclasses import dataclass
 from itertools import islice
+from pathlib import PurePosixPath
 from typing import Any, Iterator
 
-from data_formulator.analyst import session_fs
+from data_formulator.analyst import names, session_fs
 
 logger = logging.getLogger(__name__)
 
 MAX_TEXT_BYTES = 2_000_000
 READ_LINES = 400
+# Characters one read returns at most, so a minified JSON line or a long log can't fill the context.
+MAX_READ_CHARS = 50_000
 MAX_BATCH_FILES = 20
 MAX_BATCH_CHARS = 60_000
 MAX_MATCHES = 100
 MAX_LISTED = 500
-WORKFLOWS = "workflows/"
-SOURCES = "sources/"
+# Images read_file shows as pictures: the formats vision models take, and how many and how big per call.
+VISION_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+MAX_IMAGE_BYTES = 3_000_000
+MAX_BATCH_IMAGES = 4
+# The key a read result carries an image's data URL under, taken out before the results go to the model.
+IMAGE_KEY = "_image"
+WORKFLOWS = names.WORKFLOWS
+DATA = "data/"
+SOURCES = names.SOURCES
 DEFAULT_ROOTS = ("files", "session", "scratch")
-SCHEDULES = "workflows/schedules.json"
+SCHEDULES = f"{names.WORKFLOWS}schedules.json"
 _TEXT_SUFFIXES = (
     ".md", ".markdown", ".txt", ".csv", ".tsv", ".json", ".jsonl", ".yaml", ".yml", ".toml", ".ini", ".cfg",
     ".py", ".sql", ".r", ".js", ".jsx", ".ts", ".tsx", ".html", ".htm", ".css", ".xml", ".svg", ".log", ".sh",
@@ -79,7 +92,7 @@ class SessionFiles:
         self._sources: Any = None
         self._workflow_store: Any = None
 
-    # -- session/ snapshot ---------------------------------------------------
+    # -- session:// objects --------------------------------------------------
 
     @property
     def layer(self):
@@ -164,11 +177,25 @@ class SessionFiles:
             return json.dumps(item["scheduling"], indent=2, ensure_ascii=False, default=str)
         return self._workflow_store.read(path[len(WORKFLOWS):])
 
+    def data_files(self) -> dict[str, str]:
+        """Each session table's data file (``data/<file>.parquet``, relative to the workspace root, where Python
+        runs) and the table it holds."""
+        if self.workspace is None or self.layer is None:
+            return {}
+        found: dict[str, str] = {}
+        for table in self.layer.tables:
+            name = self.layer.table_name(table)
+            try:
+                found[self.workspace.get_relative_data_file_path(name)] = name
+            except Exception:
+                continue
+        return found
+
     # -- listing -------------------------------------------------------------
 
     def entries(self, roots: Any = None) -> Iterator[Entry]:
-        """The paths under the top-level folders ``roots`` (default: files/, session/ and scratch/;
-        workflows/ only when named)."""
+        """The names under the roots ``roots`` (default: files/, session:// and scratch/;
+        data/ and workflows/ only when named)."""
         roots = set(DEFAULT_ROOTS if roots is None else roots)
         if self.workspace is not None and "files" in roots:
             for item in sorted(self.workspace.list_workspace_files(), key=lambda item: item.name.lower()):
@@ -183,7 +210,7 @@ class SessionFiles:
         layer = self.layer if "session" in roots else None
         for path in layer.paths() if layer is not None else []:
             # Views are built when read; listing names them without building them.
-            editable = path.startswith(("session/charts/", "session/reports/"))
+            editable = path.startswith(("session://charts/", "session://reports/"))
             yield Entry(path, None, editable)
         if self.workspace is not None and "scratch" in roots:
             for path in self.workspace.list_scratch_files():
@@ -192,6 +219,9 @@ class SessionFiles:
                 except (OSError, ValueError):
                     continue
                 yield Entry(path, size, False)
+        if "data" in roots:
+            for path, table in sorted(self.data_files().items()):
+                yield Entry(path, None, False, None, f"data of table {table}; {names.table(table)} describes it")
         if "workflows" in roots:
             for path, item in self.workflows().items():
                 yield Entry(path, None, False, item.get("name"))
@@ -199,26 +229,26 @@ class SessionFiles:
     def list(self, path: str = "") -> dict[str, Any]:
         """Every path under ``path`` (a folder, prefix or glob) with the name the user sees, its kind and size.
         ``workflows/`` is listed only when ``path`` names it."""
-        pattern = _normalize(path) if isinstance(path, str) and any(char in path for char in "*?[") else None
+        pattern = _glob(path) if isinstance(path, str) and any(char in path for char in "*?[") else None
         prefix = "" if pattern else _prefix(path)
         if (pattern or prefix).startswith(SOURCES):
             # Catalogs are listed one level at a time; a glob lists matching tables at any depth.
             found = self.sources.list(pattern or prefix) if self.sources.available else []
             return {"path": pattern or prefix, "count": len(found), "files": found[:MAX_LISTED],
                     **({"truncated": True} if len(found) > MAX_LISTED else {})}
-        named = (pattern or prefix).startswith(WORKFLOWS[:-1])
+        named = (pattern or prefix).startswith(WORKFLOWS)
         listed = [entry for entry in self.entries(roots_of([pattern or prefix]))
-                  if (fnmatch.fnmatch(entry.path, pattern) if pattern else entry.path.startswith(prefix))]
+                  if (fnmatch.fnmatch(entry.path, pattern) if pattern else _within(entry.path, prefix))]
         items = [self._listing(entry) for entry in listed[:MAX_LISTED]]
         result = {"path": pattern or prefix or "", "count": len(listed), "files": items,
                   **({"truncated": True} if len(listed) > MAX_LISTED else {})}
         if not named and not prefix and not pattern:
-            also = []
+            also = ["data/: each table's data file, the path code reads (list_files path data/)."]
             if self.sources.available:
-                also.append("sources/: connected-source catalogs, one level per listing (list_files path sources/).")
+                also.append("sources://: connected-source catalogs, one level per listing (list_files path sources://).")
             if self.workflows_available():
-                also.append("workflows/: the user's saved and built-in workflows and their schedules, listed "
-                            "only when named (list_files path workflows/).")
+                also.append("workflows://: the user's saved and built-in workflows and their schedules, listed "
+                            "only when named (list_files path workflows://).")
             if also:
                 result["also"] = " ".join(also)
         return result
@@ -245,8 +275,12 @@ class SessionFiles:
         """Rows, pages or sheets: what tells the agent which read_file parameters apply."""
         if path.startswith(WORKFLOWS):
             return self._workflow_detail(path)
+        if path.startswith(DATA) and self.layer is not None:
+            table = self.data_files().get(path)
+            rows, columns = self.layer.table_shape(table) if table else (None, None)
+            return f"{rows:,} rows × {columns} columns" if rows is not None else ""
         if kind == "table" and self.layer is not None:
-            name = path[len("session/tables/"):-len(".json")]
+            name = names.leaf_of(path, "tables")
             rows, columns = self.layer.table_shape(name)
             shape = f"{rows:,} rows × {columns} columns" if rows is not None else ""
             if self.layer.table_data_missing(name):
@@ -278,7 +312,7 @@ class SessionFiles:
 
     def display_name(self, path: str) -> str | None:
         """The name the user sees for ``path``."""
-        if path.startswith("session/"):
+        if path.startswith(names.SESSION):
             layer = self.layer
             try:
                 return layer.name_of(path) if layer is not None else None
@@ -296,7 +330,7 @@ class SessionFiles:
 
     def iter_lines(self, path: str, max_bytes: int | None = None) -> Iterator[tuple[int, str]]:
         """(number, line) of a text path, streamed from disk where it can be, without the size limit."""
-        path = _normalize(path)
+        path = _normalize(path, app=True)
         if session_fs.kind_of(path) == "Word":
             yield from enumerate(self.text(path).splitlines(), start=1)
             return
@@ -326,6 +360,12 @@ class SessionFiles:
             except (OSError, ValueError):
                 return None
             return local if local.is_file() else None
+        if is_app_file(path):
+            try:
+                local = self.workspace.confined_root.resolve(path)
+            except (AttributeError, OSError, ValueError):
+                return None
+            return local if local.is_file() else None
         return None
 
     def _raw(self, path: str) -> bytes:
@@ -352,8 +392,8 @@ class SessionFiles:
 
     def text(self, path: str) -> str:
         """A file's full text; raises ``FileNotFoundError`` or ``ValueError`` (not text)."""
-        path = _normalize(path)
-        if path.startswith("session/"):
+        path = _normalize(path, app=True)
+        if path.startswith(names.SESSION):
             item = self.session_view(path)
             if item is None:
                 raise FileNotFoundError(path)
@@ -377,58 +417,64 @@ class SessionFiles:
                     return extract_workspace_file_text(metadata.name, content, metadata.media_type).content
                 except Exception as error:
                     raise ValueError(f"{path} could not be read as a document: {error}") from None
-        elif path.startswith("scratch/"):
-            try:
-                content = self.workspace.resolve_scratch_file(path[len("scratch/"):]).read_bytes()
-            except (OSError, ValueError):
-                raise FileNotFoundError(path) from None
+        elif path.startswith("scratch/") or is_app_file(path):
+            local = self._local_path(path)
+            if local is None:
+                raise FileNotFoundError(path)
+            content = local.read_bytes()
         else:
             raise FileNotFoundError(path)
         return _decode(path, content)
 
     def read(self, path: str, offset: int = 1, limit: int = READ_LINES) -> dict[str, Any]:
         """Lines ``offset`` .. ``offset + limit - 1`` of a text path; a large file is paged, never loaded whole."""
-        path = _normalize(path)
+        path = _normalize(path, app=True)
         if not isinstance(offset, int) or offset < 1:
             raise ValueError("offset is the first line to read, starting at 1")
         if not isinstance(limit, int) or not 1 <= limit <= 2000:
             raise ValueError("limit must be between 1 and 2000 lines")
-        size = self._size(path) if path.startswith(("files/", "scratch/")) and session_fs.kind_of(path) != "Word" else None
+        app_note = app_file_note(path)
+        size = (self._size(path) if (path.startswith(("files/", "scratch/")) or app_note)
+                and session_fs.kind_of(path) != "Word" else None)
         if size is not None and size > MAX_TEXT_BYTES:
-            return self._read_large(path, offset, limit, size)
+            result = self._read_large(path, offset, limit, size)
+            return {**result, "note": app_note} if app_note else result
         try:
             text = self.text(path)
         except FileNotFoundError:
-            raise ValueError(f"{path} does not exist. Use list_files to see the session's files.") from None
+            raise ValueError(f"{path} does not exist. "
+                             + (app_note or "Use list_files to see the session's files.")) from None
         lines = text.splitlines(keepends=True)
-        chunk = lines[offset - 1:offset - 1 + limit]
+        chunk, cut = _fit(lines[offset - 1:offset - 1 + limit])
         editable = self._editable(path)
         result: dict[str, Any] = {
             "path": path, "content": "".join(chunk), "start_line": offset,
             "end_line": offset - 1 + len(chunk), "total_lines": len(lines),
-            "content_hash": content_hash(text) if path.startswith("session/") else self._file_hash(path, text),
+            "content_hash": content_hash(text) if path.startswith(names.SESSION) else self._file_hash(path, text),
             **({"editable": True} if editable else {}),
         }
-        if offset - 1 + len(chunk) < len(lines):
-            result["more"] = f"Read on with offset={offset + len(chunk)}."
-        note = (self.session_view(path) or {}).get("note") if path.startswith("session/") else None
+        if cut is not None or offset - 1 + len(chunk) < len(lines):
+            result["more"] = _more(offset, len(chunk), len(lines), cut)
+        note = (self.session_view(path) or {}).get("note") if path.startswith(names.SESSION) else None
         if path.startswith(WORKFLOWS) and path != SCHEDULES:
             origin = (self.workflows().get(path) or {}).get("origin")
             note = ("Read-only. To revise it, propose the complete revised definition with propose_workflow"
                     + (f' and replaces="{path}".' if origin == "user" else
                        "; built-in and server workflows are not replaced, so the user saves the revision as a new workflow."))
+        note = note or app_note
         if note:
             result["note"] = note
         return result
 
     def _read_large(self, path: str, offset: int, limit: int, size: int) -> dict[str, Any]:
-        chunk = [line for _, line in islice(self.iter_lines(path), offset - 1, offset - 1 + limit)]
+        chunk, cut = _fit([line + "\n" for _, line in islice(self.iter_lines(path), offset - 1, offset - 1 + limit)])
         total = sum(1 for _ in self.iter_lines(path))
         end = offset - 1 + len(chunk)
         result: dict[str, Any] = {
-            "path": path, "content": "\n".join(chunk) + ("\n" if chunk else ""), "start_line": offset,
+            "path": path, "content": "".join(chunk), "start_line": offset,
             "end_line": end, "total_lines": total,
-            "more": (f"PARTIAL view of a large file ({size:,} bytes, {total:,} lines): lines {offset}-{end}. "
+            "more": (_more(offset, len(chunk), total, cut) if cut is not None else
+                     f"PARTIAL view of a large file ({size:,} bytes, {total:,} lines): lines {offset}-{end}. "
                      f"Read on with offset={end + 1}, search it with search, or process it with Python."
                      if end < total else f"Large file ({size:,} bytes); this is its end."),
         }
@@ -443,7 +489,7 @@ class SessionFiles:
         if isinstance(items, (str, dict)):
             items = [items]
         if not isinstance(items, list) or not items:
-            raise ValueError('files is a list of items such as [{"path": "session/tables/sales.json", "rows": "1-50"}, '
+            raise ValueError('files is a list of items such as [{"path": "session://tables/sales", "rows": "1-50"}, '
                              '{"path": "files/report.pdf", "pages": "3-5"}]')
         wanted: list[dict[str, Any]] = []
         unmatched = []
@@ -453,7 +499,7 @@ class SessionFiles:
                 raise ValueError('Each item needs a path, e.g. {"path": "files/notes/plan.md"}')
             pattern = item["path"].strip()
             if any(char in pattern for char in "*?["):
-                glob = _normalize(pattern)
+                glob = _glob(pattern)
                 found = [entry.path for entry in self.entries() if fnmatch.fnmatch(entry.path, glob)]
                 unmatched += [] if found else [pattern]
                 wanted += [{**item, "path": path} for path in found]
@@ -462,6 +508,7 @@ class SessionFiles:
         seen: set[str] = set()
         results: list[dict[str, Any]] = []
         used = 0
+        images = 0
         for index, item in enumerate(wanted):
             key = json.dumps(item, sort_keys=True, default=str)
             if key in seen:
@@ -479,6 +526,11 @@ class SessionFiles:
             if used + size > MAX_BATCH_CHARS and results:
                 results.append({"path": item["path"], "not_read": "over this call's size budget; read it separately"})
                 continue
+            if IMAGE_KEY in result:
+                if images >= MAX_BATCH_IMAGES:
+                    results.append({"path": item["path"], "not_read": f"more than {MAX_BATCH_IMAGES} images; read it separately"})
+                    continue
+                images += 1
             used += size
             results.append(result)
         response: dict[str, Any] = {"files": results}
@@ -492,8 +544,12 @@ class SessionFiles:
         sheet = item.get("sheet")
         if "#" in raw_path and session_fs.kind_of(raw_path.split("#", 1)[0]) == "Excel":
             raw_path, sheet = raw_path.split("#", 1)
-        path = _normalize(raw_path)
+        path = _normalize(raw_path, app=True)
+        if path.startswith(DATA):
+            return self._data_table(path, item)
         kind = session_fs.kind_of(path)
+        if kind == "image" and PurePosixPath(path.lower()).suffix in VISION_SUFFIXES:
+            return self._image(path)
         if kind in ("image", "binary"):
             raise ValueError(f"{path} is a {kind} file read_file cannot show; process it with execute_python_script "
                              f"(for example PIL for images, zipfile for archives, python-docx for Word files).")
@@ -535,6 +591,31 @@ class SessionFiles:
             result["warning"] = f"Ignored {', '.join(ignored)}: this is {unit} ({fits}); read with the defaults."
         return result
 
+    def _data_table(self, path: str, item: dict[str, Any]) -> dict[str, Any]:
+        """A table's data file reads as the table: its description, or rows with ``rows``."""
+        table = self.data_files().get(path)
+        if table is None:
+            raise ValueError(f"{path} is not the data file of a session table. list_files data/ lists them; a table's "
+                             "description (session://tables/<name>) gives its data_file.")
+        result = self.read_item({**item, "path": names.table(table)})
+        result.pop("path", None)
+        return {"path": path, "table": table, **result}
+
+    def _image(self, path: str) -> dict[str, Any]:
+        """An image file, shown to the model as a picture (``IMAGE_KEY`` holds its data URL until the tool takes it)."""
+        if not path.startswith(("files/", "scratch/")):
+            raise ValueError(f"{path} does not exist. Use list_files to see the session's files.")
+        try:
+            content = self._raw(path)
+        except FileNotFoundError:
+            raise ValueError(f"{path} does not exist. Use list_files to see the session's files.") from None
+        if len(content) > MAX_IMAGE_BYTES:
+            raise ValueError(f"{path} is {len(content) // 1_000_000} MB, over the {MAX_IMAGE_BYTES // 1_000_000} MB "
+                             "read_file shows; save a smaller copy with execute_python_script (PIL) and read that.")
+        mime = mimetypes.guess_type(path)[0] or "image/png"
+        return {"path": path, "kind": "image", "size": len(content), "shown": "as a picture after these results",
+                IMAGE_KEY: f"data:{mime};base64,{base64.b64encode(content).decode('ascii')}"}
+
     def _data_file_view(self, path: str, kind: str) -> dict[str, Any]:
         """An Excel or parquet file's shape: sheets or columns, and a few sample rows."""
         name = path[len("files/"):]
@@ -565,7 +646,7 @@ class SessionFiles:
         return content_hash(text)
 
     def _editable(self, path: str) -> bool:
-        if path.startswith("session/"):
+        if path.startswith(names.SESSION):
             return bool((self.session_view(path) or {}).get("editable"))
         if path.startswith("files/") and self.workspace is not None:
             item = self.workspace.get_metadata().files.get(path[len("files/"):])
@@ -579,21 +660,127 @@ class SessionFiles:
         return session_fs.search(self, query, path, regex=regex, max_results=max_results)
 
 
-def _normalize(path: Any) -> str:
+_MISSING_PATH = re.compile(r"No such file or directory: '([^']+)'|read outside workspace forbidden: (\S+)")
+_LEGACY_VIEW_ROOTS = ("session/", "sources/", "workflows/")
+# The app's own files in the workspace: readable, never listed or searched; a read says what the file is and
+# where the agent normally looks instead (design-docs/74, "Shown versus readable").
+APP_FILES = {
+    "session_state.json": "the browser's autosave of this session in the app's raw format. It can lag what this run "
+                          "sees and has no data files or provenance; session://index and the items under it "
+                          "(session://tables/…, session://charts/…) are current and smaller, so use this file only "
+                          "for what they don't give",
+    "workspace.yaml": "the app's metadata for this workspace; list_files shows the workspace's files",
+    "workspace_meta.json": "the app's metadata for this workspace; list_files shows the workspace's files",
+}
+_APP_FOLDERS = {
+    "_internal": "the app's internals for this session (the agent's conversation history, run records, Python "
+                 "state); not a session file",
+    "memory": "the old memory store, moved to files/memory/",
+}
+_APP_FILES_POINTER = ("The session's files are under files/ (notes kept across threads in files/notes/), scratch/ "
+                      "and data/; its items are session:// objects.")
+
+
+def is_app_file(path: str) -> bool:
+    path = path.strip().lstrip("/").removeprefix("./")
+    return path in APP_FILES or (path.split("/", 1)[0] in _APP_FOLDERS and ".." not in path.split("/"))
+
+
+def app_file_note(path: str) -> str | None:
+    """What one of the app's own files is (``_internal/``, ``session_state.json``…) and where to look instead."""
+    path = path.strip().lstrip("/").removeprefix("./")
+    if path in APP_FILES:
+        return f"{path} is {APP_FILES[path]}."
+    if is_app_file(path):
+        return f"{path} is {_APP_FOLDERS[path.split('/', 1)[0]]}. {_APP_FILES_POINTER}"
+    return None
+
+
+def path_error_hint(error: str, workspace: Any, layer: Any) -> str:
+    """``error`` from sandboxed code, with where to look instead when it opened an object name (``session://…``,
+    ``sources://…``, ``workflows://…``, or their older ``session/…`` forms), which is not a file, or an outdated
+    table data file (design-docs/73, 74). Paths are relative to the workspace root, where code runs."""
+    match = _MISSING_PATH.search(error or "")
+    if match is None or workspace is None:
+        return error
+    path = (match.group(1) or match.group(2) or "").rstrip(".")
+    root = str(getattr(getattr(workspace, "confined_root", None), "root", "") or "")
+    if root and path.startswith(root.rstrip("/") + "/"):
+        path = path[len(root.rstrip("/")) + 1:]
+    path = path.removeprefix("./")
+    data_files: dict[str, str] = {}
+    if layer is not None:
+        for table in layer.tables:
+            name = layer.table_name(table)
+            data_file = layer.data_file(name)
+            if data_file:
+                data_files[data_file] = name
+    tables = {name: data_file for data_file, name in data_files.items()}
+
+    def table_for(candidate: str) -> str | None:
+        stem = PurePosixPath(candidate).name
+        for suffix in (".json", ".parquet"):
+            stem = stem.removesuffix(suffix)
+        if stem in tables:
+            return stem
+        found = [name for name in tables if stem.startswith(name + "-")]
+        return max(found, key=len) if found else None
+
+    named = names.canonical(path) if path.startswith(_LEGACY_VIEW_ROOTS) or names.is_object(path) else path
+    hint = ""
+    if named.startswith("session://tables/") or (path.startswith("data/") and path not in data_files):
+        name = table_for(names.leaf_of(named, "tables") or path)
+        lead = (f"{path} is not a file: {named} is a session object, read with read_file."
+                if named.startswith(names.SESSION) else f"{path} is not a current table data file.")
+        hint = (f" {lead} In code, table {name} is pd.read_parquet('{tables[name]}') (relative to the workspace "
+                "root, where code runs; copy a table's data_file as written)." if name else
+                f" {lead} A table's description (session://tables/<name>) gives its data_file; list_files data/ "
+                "lists them.")
+    elif names.is_object(named):
+        hint = (f" {path} is not a file: {named} is an object, read with read_file. Code reads files/, data/ and "
+                "scratch/.")
+    return error + hint if hint else error
+
+
+def _normalize(path: Any, *, app: bool = False) -> str:
+    """A name in its current form (``session/charts/c1.json`` -> ``session://charts/c1``); raises for anything
+    that is neither a workspace file path nor an object name. ``app`` lets the app's own files through (reads)."""
     if not isinstance(path, str) or not path.strip():
-        raise ValueError("path is required, e.g. files/notes/plan.md or session/charts/<id>.json")
-    path = path.strip().lstrip("/")
-    if path.split("/")[0] not in ("files", "session", "scratch", "sources", "workflows") or ".." in path.split("/"):
-        raise ValueError(f"{path} is not a session file; paths start with files/, session/, scratch/, sources/, "
-                         "or workflows/")
+        raise ValueError("path is required, e.g. files/notes/plan.md or session://charts/<id>")
+    path = path.strip()
+    if not names.is_object(path):
+        path = path.lstrip("/")
+    path = names.canonical(path)
+    if names.is_object(path):
+        if ".." in path.split("://", 1)[1].split("/"):
+            raise ValueError(f"{path} is not a session item")
+        return path
+    if (note := app_file_note(path)) is not None:
+        if app:
+            return path.removeprefix("./")
+        raise ValueError(note)
+    if path.split("/")[0] not in ("files", "data", "scratch") or ".." in path.split("/"):
+        raise ValueError(f"{path} is not a session file or item: files are under files/, data/ or scratch/; "
+                         "items are session://, sources:// or workflows:// names")
     return path
 
 
+def _glob(pattern: str) -> str:
+    """A glob in current names; one that starts with a wildcard (``*report*``) matches across every listed root."""
+    text = pattern.strip()
+    if any(char in text.split("/", 1)[0] for char in "*?[") and "://" not in text:
+        if ".." in text.split("/"):
+            raise ValueError(f"{text} is not a session file or item")
+        return text.lstrip("/")
+    return _normalize(text)
+
+
 def roots_of(paths: list[Any]) -> list[str] | None:
-    """The top-level folders a set of paths or globs can reach; None for the default folders."""
+    """The top-level roots a set of names or globs can reach; None for the default roots."""
     roots: list[str] = []
     for path in paths:
-        first = str(path or "").strip().lstrip("/").split("/", 1)[0]
+        text = str(path or "").strip()
+        first = names.root_of(text) if text else ""
         if not first or any(char in first for char in "*?["):
             return None
         roots.append(first)
@@ -601,10 +788,44 @@ def roots_of(paths: list[Any]) -> list[str] | None:
 
 
 def _prefix(path: Any) -> str:
+    """What a listing covers: a folder (``files/notes/``, ``session://charts/``, ``sources://kusto/``) or one item
+    (``session://charts/c1``, ``files/notes.md``)."""
     if path in (None, "", "/"):
         return ""
     prefix = _normalize(path)
-    return prefix if prefix.endswith("/") or "." in prefix.rsplit("/", 1)[-1] else prefix + "/"
+    if prefix in names.SCHEMES or prefix.endswith("/"):
+        return prefix
+    if prefix.startswith(names.SESSION):
+        # session://charts is a folder; session://charts/c1 and session://index are items.
+        return prefix + "/" if prefix.count("/") == 2 and names.folder_of(prefix) in names.FOLDERS else prefix
+    return prefix if "." in prefix.rsplit("/", 1)[-1] else prefix + "/"
+
+
+def _within(path: str, prefix: str) -> bool:
+    return not prefix or path == prefix or path.startswith(prefix if prefix.endswith("/") else prefix + "/")
+
+
+def _fit(chunk: list[str]) -> tuple[list[str], int | None]:
+    """The lines of ``chunk`` that fit in ``MAX_READ_CHARS``, and the full length of a first line cut to fit."""
+    kept: list[str] = []
+    used = 0
+    for line in chunk:
+        if used + len(line) > MAX_READ_CHARS:
+            break
+        kept.append(line)
+        used += len(line)
+    if not kept and chunk:
+        return [chunk[0][:MAX_READ_CHARS]], len(chunk[0])
+    return kept, None
+
+
+def _more(offset: int, shown: int, total: int, cut: int | None) -> str:
+    end = offset - 1 + shown
+    if cut is None:
+        return f"Read on with offset={end + 1}."
+    rest = f" The next line is offset={offset + 1}." if offset < total else ""
+    return (f"PARTIAL: line {offset} is {cut:,} characters; this shows its first {MAX_READ_CHARS:,}. Find text in "
+            f"it with search, or process it with Python (json.load for JSON).{rest}")
 
 
 def _decode(path: str, content: bytes) -> str:
@@ -704,14 +925,14 @@ def render_turn_context(ctx: Any, history: list[dict[str, Any]]) -> str:
         room = MAX_TABLES_CHARS
         for table in layer.tables_behind(path):
             # Tables the conversation already has (the agent made or read them) are not repeated.
-            name = table.rsplit("/", 1)[-1][:-len(".json")]
+            name = names.leaf_of(table, "tables") or table
             if room <= 0 or re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", said):
                 continue
             block = _inline("[ITS DATA]", table, files, min(MAX_TABLE_CHARS, room))
             if block:
                 parts.append(block)
                 room -= len(block)
-    thread_path = f"session/threads/{thread}.md" if thread else None
+    thread_path = names.thread(thread) if thread else None
     focus_lines = [line for line in said.replace("\\n", "\n").split("\n") if line.startswith("Focus: ")]
     if thread_path and (not focus_lines or thread_path not in focus_lines[-1]):
         parts.append(_inline("[THE THREAD YOU ARE CONTINUING]", thread_path, files, MAX_THREAD_CHARS, tail=True))
@@ -749,6 +970,6 @@ def render_session_context(ctx: Any, *, focus: bool = True) -> str:
                     parts.append(block)
                     room -= len(block)
         if thread:
-            parts.append(_inline("[THE THREAD YOU ARE CONTINUING]", f"session/threads/{thread}.md", files,
+            parts.append(_inline("[THE THREAD YOU ARE CONTINUING]", names.thread(thread), files,
                                  MAX_THREAD_CHARS, tail=True))
     return "\n\n".join(part for part in parts if part)

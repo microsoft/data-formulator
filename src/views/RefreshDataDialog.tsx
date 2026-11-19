@@ -379,7 +379,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                                 p: 1,
                                 backgroundColor: alpha(theme.palette.error.main, 0.08),
                                 borderLeft: `3px solid ${theme.palette.error.main}`,
-                                borderRadius: '4px',
+                                borderRadius: 1,
                             }}
                         >
                             <Typography variant="caption" sx={{ color: 'error.main', fontSize: '0.75rem', lineHeight: 1.5 }}>

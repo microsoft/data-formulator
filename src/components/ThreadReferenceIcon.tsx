@@ -10,6 +10,7 @@ import { dfActions, dfSelectors, DataFormulatorState } from '../app/dfSlice';
 import { textVar } from '../app/layout';
 import { ThreadReference } from './ComponentType';
 import { chartFamilyIcon, FileTypeIcon, TableIcon } from '../icons';
+import { PreviewTooltip, TablePreview } from './AttachmentPreview';
 
 /** The icon of an item a request refers to: its chart family, a table, a report, or the file's type. */
 export const ThreadReferenceIcon: React.FC<{ reference: ThreadReference; size?: number; sx?: SxProps }> = ({ reference, size = 12, sx }) => {
@@ -31,6 +32,7 @@ export const ThreadReferenceIcon: React.FC<{ reference: ThreadReference; size?: 
 export const ThreadReferenceChips: React.FC<{ references: ThreadReference[]; sx?: SxProps }> = ({ references, sx }) => {
     const dispatch = useDispatch();
     const fileNodes = useSelector((state: DataFormulatorState) => state.fileNodes);
+    const tables = useSelector(dfSelectors.getAllTables);
     const focus = (reference: ThreadReference) => {
         if (reference.kind === 'chart') dispatch(dfActions.setFocused({ type: 'chart', chartId: reference.id }));
         else if (reference.kind === 'table') dispatch(dfActions.setFocused({ type: 'table', tableId: reference.id }));
@@ -41,17 +43,23 @@ export const ThreadReferenceChips: React.FC<{ references: ThreadReference[]; sx?
         }
     };
     return <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px', ...sx } as SxProps}>
-        {references.map(reference => <ButtonBase key={`${reference.kind}:${reference.id}`} data-thread-reference
+        {references.map(reference => {
+        const chip = <ButtonBase key={`${reference.kind}:${reference.id}`} data-thread-reference
             onClick={event => { event.stopPropagation(); focus(reference); }}
             sx={theme => ({
                 display: 'inline-flex', alignItems: 'center', gap: '3px', maxWidth: '100%', fontSize: textVar.xxs,
                 fontFamily: theme.typography.fontFamily, color: 'text.secondary', bgcolor: alpha(theme.palette.text.primary, 0.05),
-                border: `1px solid ${theme.palette.divider}`, borderRadius: '4px', px: '5px', py: '1px',
+                border: `1px solid ${theme.palette.divider}`, borderRadius: 1, px: '5px', py: '1px',
                 '&:hover': { color: 'text.primary', bgcolor: alpha(theme.palette.text.primary, 0.08) },
                 '&.Mui-focusVisible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1 },
             })}>
             <ThreadReferenceIcon reference={reference} />
             <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{reference.label}</Box>
-        </ButtonBase>)}
+        </ButtonBase>;
+        // A table shows its size and first rows on hover; a click still opens it.
+        return reference.kind === 'table' && tables.some(table => table.id === reference.id)
+            ? <PreviewTooltip key={`${reference.kind}:${reference.id}`} title={<TablePreview tableId={reference.id} />}>{chip}</PreviewTooltip>
+            : chip;
+        })}
     </Box>;
 };

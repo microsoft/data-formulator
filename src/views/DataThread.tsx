@@ -34,7 +34,7 @@ import { buildThreads, type ThreadSpec } from '../app/threadGraph';
 import { classifyInputSourceTransition, shouldShowInputSourceTransition } from '../app/agentInteractionPolicy';
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
-import { ScrollFadeEdge, useScrollFade } from '../components/ScrollFade';
+import { hiddenScrollbarSx, OverlayScrollbar, ScrollFadeEdge, useScrollFade } from '../components/ScrollFade';
 import { CHAT_RUN_MIN_ENTRIES, THREAD_SEGMENT_BUDGET, weighThreadBlocks, wrapThreadBlocks } from './threadLayout';
 import { loadTable } from '../app/tableThunks';
 import { AppDispatch } from '../app/store';
@@ -85,7 +85,7 @@ import CodeIcon from '@mui/icons-material/Code';
 import { alpha } from '@mui/material/styles';
 
 import { buildTableCard, buildTableRefChip, buildChartCards, BuildTableCardProps, ThreadArtifactCard, ArtifactDeleteButton, ThreadChipGroup, ThreadChip } from './DataThreadCards';
-import { SourceTableShelf } from './SourceTableShelf';
+import { SourceTableShelf, useFittingItems } from './SourceTableShelf';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { AgentRulesDialog } from './AgentRulesDialog';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
@@ -104,7 +104,10 @@ import SearchIcon from '@mui/icons-material/Search';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import CallMergeIcon from '@mui/icons-material/CallMerge';
 
-import { transition, radius, borderColor, conversationWidth, iconTone } from '../app/tokens';
+import { transition, radius, borderColor, cardRadius, conversationWidth, iconTone, metaText, quietText, selectionMark, selectionOutline } from '../app/tokens';
+import { focusColor, quietOffChainSteps } from '../app/look';
+import { StepMarker } from '../components/look/StepMarker';
+import { fileGlyphKind, type GlyphKind } from '../components/look/SharpGlyphs';
 
 import { SimpleChartRecBox } from './SimpleChartRecBox';
 import { InteractionEntryCard, getEntryGutterIcon, getDefaultGutterIcon, PlanStepsView, RunPlanChecklist } from './InteractionEntryCard';
@@ -150,7 +153,7 @@ const ToolActivityRow: React.FC<{ steps: ToolStep[]; label: string; active?: boo
                 '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' }, ...sx }}>
             {'code' in execution ? <CodeIcon sx={{ width: 10, height: 10, flexShrink: 0 }} />
                 : <TerminalIcon sx={{ width: 10, height: 10, flexShrink: 0 }} />}
-            <Typography component="span" sx={{ flex: 1, minWidth: 0, fontSize: textVar.xxs, fontStyle: 'italic',
+            <Typography component="span" sx={{ flex: 1, minWidth: 0, fontSize: textVar.xxs, ...quietText,
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</Typography>
             <Tooltip title={statusLabel}>
                 <Box component="span" role={execution.status === 'running' ? undefined : 'img'}
@@ -176,7 +179,7 @@ const ToolActivityRow: React.FC<{ steps: ToolStep[]; label: string; active?: boo
             '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
         <ChevronRightIcon sx={{ width: 10, height: 10, flexShrink: 0, transform: expanded ? 'rotate(90deg)' : undefined }} />
         {active && <CircularProgress size={8} color="inherit" sx={{ flexShrink: 0 }} />}
-        <Typography component="span" sx={{ minWidth: 0, fontSize: textVar.xxs, fontStyle: 'italic',
+        <Typography component="span" sx={{ minWidth: 0, fontSize: textVar.xxs, ...quietText,
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</Typography>
         <Typography component="span" sx={{ flexShrink: 0, fontSize: textVar.xxs, color: 'text.disabled', whiteSpace: 'nowrap' }}>
             {t('dataThread.toolCallCount', { count: calls.length, defaultValue: '{{count}} calls' })}
@@ -244,7 +247,7 @@ const WorkspacePanel: FC<{
         gap: 0.5,
         px: 0.75,
         py: '3px',
-        borderRadius: '3px',
+        borderRadius: 0.75,
         cursor: 'pointer',
         fontSize: textVar.xs,
         transition: transition.fast,
@@ -329,11 +332,11 @@ const WorkspacePanel: FC<{
                     alignItems: 'center',
                     px: 0.75,
                     py: '4px',
-                    borderRadius: '3px',
+                    borderRadius: 0.75,
                 }}
             >
                 <Box
-                    sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', borderRadius: '3px',
+                    sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', borderRadius: 0.75,
                         '&:hover': { backgroundColor: 'rgba(0,0,0,0.04)' },
                         pr: 0.5, py: 0.5,
                     }}
@@ -352,7 +355,7 @@ const WorkspacePanel: FC<{
                     onClick={(e) => { e.stopPropagation(); setUploadDialogOpen(true); }}
                     sx={{
                         display: 'flex', alignItems: 'center', gap: '2px',
-                        ml: 'auto', px: '5px', py: '2px', borderRadius: '3px',
+                        ml: 'auto', px: '5px', py: '2px', borderRadius: 0.75,
                         cursor: 'pointer', 
                         color: theme.palette.primary.textColor || theme.palette.primary.main,
                         '&:hover': { backgroundColor: alpha(theme.palette.primary.main, 0.08) },
@@ -558,14 +561,14 @@ const ThreadResponseCard: FC<ThreadResponseCardProps> = ({
             onClick={onSelect}
             data-selected={selected || undefined}
             sx={{
-                width: '100%',
                 minWidth: 0,
                 cursor: 'pointer',
                 position: 'relative',
                 boxSizing: 'border-box',
                 padding: '4px 8px 4px 6px',
-                borderRadius: '6px',
-                boxShadow: selected ? `0 0 0 2px ${theme.palette.primary.light}` : 'none',
+                width: '100%',
+                borderRadius: cardRadius('6px'),
+                ...(selected ? selectionMark(focusColor(theme, theme.palette.primary)) : { boxShadow: 'none' }),
                 backgroundColor: 'transparent',
                 '&:hover': {
                     backgroundColor: selected ? 'transparent' : 'action.hover',
@@ -577,7 +580,7 @@ const ThreadResponseCard: FC<ThreadResponseCardProps> = ({
             <Box sx={{ minWidth: 0 }}>
                 {prompt && (
                     <Typography sx={{
-                        fontSize: textVar.xs, color: 'text.secondary', fontStyle: 'italic', mb: '1px',
+                        fontSize: textVar.xs, color: 'text.secondary', ...quietText, mb: '1px',
                         display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical',
                         overflow: 'hidden', wordBreak: 'break-word',
                     }}>
@@ -645,6 +648,20 @@ type ThreadPreviewLine = { role: 'user' | 'agent' | 'item'; text: string };
 type LiveStatus = 'running' | 'waiting';
 /** What a collapsed thread, or part of one, shows: its charts, counts and lines. */
 type ThreadNodeSummary = { outputs: ThreadOutput[]; lines: ThreadPreviewLine[] };
+
+/** A derivation's sources on one line ("Using ⊞ papers ⊞ countries +2"): the ones that fit, then how many more,
+ *  with every name in the tooltip of the count. */
+const SourcesLine: FC<{ label: string; names: string[]; sources: React.ReactNode[] }> = ({ label, names, sources }) => {
+    const fitting = useFittingItems(sources, names.join('\n'));
+    return <Box ref={fitting.ref} sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', minWidth: 0, maxWidth: '100%',
+        columnGap: '6px', rowGap: 0, pl: 0.5, color: 'text.secondary', fontSize: textVar.xs, lineHeight: 1.4 }}>
+        <Typography component="span" sx={{ fontSize: 'inherit', lineHeight: 'inherit', color: 'inherit', flexShrink: 0 }}>{label}</Typography>
+        {fitting.shown}
+        {fitting.more > 0 && <Tooltip title={names.slice(sources.length - fitting.more).join(', ')}>
+            <Box component="span" sx={{ flexShrink: 0, color: 'text.disabled', cursor: 'default' }}>+{fitting.more}</Box>
+        </Tooltip>}
+    </Box>;
+};
 
 let SingleThreadGroupView: FC<{
     // The thread to render: its nodes in order (design-docs/58).
@@ -774,7 +791,9 @@ let SingleThreadGroupView: FC<{
         deleteLabel: t('dataThread.deleteTable'),
     });
 
-    type TimelineItem = { outputNodeId?: string; turnId?: string; live?: LiveStatus; key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'artifact' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; gutterIcon?: React.ReactNode; artifactTone?: 'agent' | 'error'; secondaryActivity?: boolean; memberKeys?: string[] };
+    type TimelineItem = { outputNodeId?: string; turnId?: string; live?: LiveStatus; key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'artifact' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; gutterIcon?: React.ReactNode; artifactTone?: 'agent' | 'error'; secondaryActivity?: boolean; memberKeys?: string[];
+        /** A file row's file, for its rail mark's kind (StepMarker). */ filePath?: string;
+        /** Who a message row comes from, where its rail mark is just that (StepMarker). */ actor?: 'user' | 'agent' };
     let timelineItems: (TimelineItem & { exchangeId?: string })[] = [];
     // The open row of consecutive tool-only steps (see activityRow).
     let toolGroup: { item: TimelineItem; steps: ToolStep[]; labels: TextTurn[] } | null = null;
@@ -833,17 +852,17 @@ let SingleThreadGroupView: FC<{
             );
         if (!shouldShowInputSourceTransition(transition, table.derive?.trigger.tableId, inputSources.map(source => sourceTableOf(source)?.id))) return;
         const provenanceColor = highlighted ? (theme.palette.primary.textColor ?? theme.palette.primary.main) : theme.palette.text.secondary;
+        const sourceName = (source: ComputationInputSource) => source.kind === 'file'
+            ? source.displayName.replace(/^\/?scratch\//, '') : sourceTableOf(source)?.displayId || source.displayName;
         timelineItems.push({
             key: `sources-${table.id}`,
             outputNodeId: table.id,
             type: 'merge',
             highlighted,
             element: (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', minWidth: 0, maxWidth: '100%', columnGap: '6px', rowGap: 0, pl: 0.5, color: theme.palette.text.secondary, fontSize: textVar.xs, lineHeight: 1.4 }}>
-                    <Typography component="span" sx={{ fontSize: 'inherit', lineHeight: 'inherit', color: 'inherit' }}>
-                        {t(transition === 'switch' ? 'dataThread.switchingSources' : 'dataThread.usingSources')}
-                    </Typography>
-                    {inputSources.map((source, idx) => (
+                <SourcesLine label={t(transition === 'switch' ? 'dataThread.switchingSources' : 'dataThread.usingSources')}
+                    names={inputSources.map(sourceName)}
+                    sources={inputSources.map((source, idx) => (
                         <Box key={`${source.id}-${idx}`} component="button" type="button" title={source.displayName}
                             disabled={source.kind === 'data' && !sourceTableOf(source)}
                             onClick={() => focusComputationSource(source)}
@@ -860,11 +879,10 @@ let SingleThreadGroupView: FC<{
                                 ? <FileTypeIcon path={source.displayName} size={textVar.xs} sx={{ color: 'inherit' }} />
                                 : <TableIcon sx={{ fontSize: textVar.xs, color: 'inherit' }} />}
                             <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {source.kind === 'file' ? source.displayName.replace(/^\/?scratch\//, '') : sourceTableOf(source)?.displayId || source.displayName}
+                                {sourceName(source)}
                             </Box>
                         </Box>
-                    ))}
-                </Box>
+                    ))} />
             ),
         });
     };
@@ -889,8 +907,10 @@ let SingleThreadGroupView: FC<{
         });
     };
     const pushChartsOf = (tableId: string, outputNodeId: string, keyPrefix: string, highlighted: boolean) => {
-        buildChartCards(chartElements.filter(ce => ce.tableId === tableId), focusedChartId, false)
-            .forEach((el, i) => timelineItems.push({ key: `${keyPrefix}-${tableId}-${i}`, outputNodeId, type: 'chart', highlighted, element: el }));
+        const tableCharts = chartElements.filter(ce => ce.tableId === tableId);
+        buildChartCards(tableCharts, focusedChartId, false)
+            .forEach((el, i) => timelineItems.push({ key: `${keyPrefix}-${tableId}-${i}`, outputNodeId, type: 'chart', highlighted, element: el,
+                chartType: charts.find(chart => chart.id === tableCharts[i]?.chartId)?.chartType }));
     };
     const pushSourceRoot = (tableId: string, highlighted: boolean) => {
         timelineItems.push({ key: `origin-ref-${tableId}`, outputNodeId: tableId, type: 'table', tableId, highlighted, element: _buildRefChip(tableId) });
@@ -962,7 +982,7 @@ let SingleThreadGroupView: FC<{
             key: `report-${report.id}`, outputNodeId: report.id, type: 'artifact' as const, highlighted: rowHL,
             reportId: report.id, gutterIcon,
             element: <ThreadArtifactCard artifactType="report" title={report.title || t('report.untitled')}
-                selected={isFocused} preview={<ReportMiniature chartIds={report.selectedChartIds || []} />}
+                selected={isFocused} preview={<ReportMiniature chartIds={report.selectedChartIds || []} width={48} peek />}
                 notes={isGenerating ? t('report.composing') : undefined}
                 onClick={() => dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }))}
                 actions={<ArtifactDeleteButton label={t('dataThread.deleteReport')}
@@ -975,7 +995,7 @@ let SingleThreadGroupView: FC<{
         const isApp = isAppFile(file.path);
         const rowHL = highlighted || selected;
         timelineItems.push({
-            key: file.id, outputNodeId: file.id, type: 'artifact', highlighted: rowHL,
+            key: file.id, outputNodeId: file.id, type: 'artifact', highlighted: rowHL, filePath: file.path,
             gutterIcon: <FileTypeIcon path={file.path} size={14}
                 sx={{ color: rowHL ? (isApp ? 'secondary.main' : 'primary.main') : iconTone.muted }} />,
             element: <Box className="data-thread-card-wrapper" sx={{ display: 'flex', width: '100%', minWidth: 0 }}>
@@ -1007,6 +1027,7 @@ let SingleThreadGroupView: FC<{
         const content = turn.workflowMessage?.kind === 'steering' ? `(steering) ${turn.prompt}` : turn.prompt!;
         const entry: InteractionEntry = { from: 'user', to: 'data-agent', role: 'prompt', content,
             ...(turn.attachments?.length ? { attachments: turn.attachments } : {}),
+            ...(turn.attachmentPaths ? { attachmentPaths: turn.attachmentPaths } : {}),
             ...(turn.references?.length ? { references: turn.references } : {}), timestamp: turn.createdAt };
         // A repair the app sent on its own (the app the agent just wrote failed when it opened) is a step of the
         // work, not something the user said.
@@ -1029,7 +1050,7 @@ let SingleThreadGroupView: FC<{
         const card = <InteractionEntryCard entry={entry} highlighted={focusedId?.type !== 'conversation' && highlighted} />;
         // A prompt nothing answers (its replies were deleted) can be removed too.
         timelineItems.push({
-            key: `textturn-prompt-${turn.id}-0`, turnId: turn.id, type: 'trigger', highlighted, interactionEntry: entry,
+            key: `textturn-prompt-${turn.id}-0`, turnId: turn.id, type: 'trigger', highlighted, interactionEntry: entry, actor: 'user',
             element: threadGraph.childrenOf(turn.id).length ? card : <Box data-user-message sx={{ position: 'relative', minWidth: 0,
                 '& [data-message-delete]': { opacity: 0, transition: transition.fast },
                 '&:hover [data-message-delete], &:focus-within [data-message-delete]': { opacity: 1 } }}>
@@ -1064,6 +1085,9 @@ let SingleThreadGroupView: FC<{
         const awaitingAnswer = !turn.answered && ((turn.options?.length ?? 0) > 0 || !!turn.form);
         const iconColor = focusedId?.type !== 'conversation' && rowHL
             ? theme.palette.primary.main : iconTone.muted;
+        // Off the focused chain an agent's reply may be just a dot on the rail (drawn in currentColor, so the
+        // timeline can still recolour it when the chain reaches it); a reply waiting for an answer keeps its face.
+        const quietReply = quietOffChainSteps(theme) && !workflow && !turn.form && !rowHL && !awaitingAnswer;
         const gutterIcon = workflow
             ? <WorkflowGears running={workflow.status === 'running'} color={workflow.status === 'paused'
                 ? theme.palette.warning.main : rowHL ? theme.palette.primary.main : theme.palette.text.secondary} />
@@ -1071,6 +1095,8 @@ let SingleThreadGroupView: FC<{
             ? <WorkflowGears running={false} color={iconColor} />
             : turn.form
             ? <FormIcon sx={{ width: 14, height: 14, color: iconColor }} />
+            : quietReply
+            ? <Box sx={{ width: 6, height: 6, borderRadius: '50%', color: iconColor, backgroundColor: 'currentColor' }} />
             : getEntryGutterIcon(
                 { from: 'data-agent', to: 'user', role: turn.textKind === 'clarify' && turn.answered ? 'explain' : turn.textKind, content: '' },
                 iconColor,
@@ -1101,6 +1127,8 @@ let SingleThreadGroupView: FC<{
         return {
             key: `textturn-${turn.id}`, turnId: turn.id, live, type: 'artifact' as const, highlighted: rowHL,
             artifactTone: 'agent' as const, gutterIcon,
+            // A plain reply is marked as the agent's; workflows, forms and replies waiting on the user keep their icons.
+            actor: !workflow && !turn.form && !live ? 'agent' as const : undefined,
             element: <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '6px', width: '100%', minWidth: 0 }}>
                 <Box sx={{ flex: 1, minWidth: 0 }}>{card}</Box>
             </Box>,
@@ -1332,7 +1360,7 @@ let SingleThreadGroupView: FC<{
         if (!replaced || !threadRunning) return;
         timelineItems.push({
             key: `replaced-${id}`, type: 'trigger', highlighted, secondaryActivity: true,
-            element: <Typography data-replaced-note sx={{ fontSize: textVar.xxs, fontStyle: 'italic', color: 'text.disabled', py: '1px',
+            element: <Typography data-replaced-note sx={{ fontSize: textVar.xxs, ...quietText, color: 'text.disabled', py: '1px',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {inPlace ? t('dataThread.replacedVersion', { defaultValue: 'Replaced the earlier version' })
                     : t('dataThread.replaced', { defaultValue: 'Replaced {{name}}', name: replaced.name })}
@@ -1501,13 +1529,14 @@ let SingleThreadGroupView: FC<{
     // Timeline rendering helper
     const TIMELINE_WIDTH = 14;
     // The timeline's grey, off the focused chain.
-    const RAIL_GREY = 'rgba(0,0,0,0.12)';
+    // A CSS variable, so the look (app/look/looks.ts) can firm up the rail off the focused chain.
+    const RAIL_GREY = 'var(--df-line-rail, rgba(0,0,0,0.12))';
     const TIMELINE_GAP = '4px'; // gap between timeline and card content
     const DOT_SIZE = 6;
     const CARD_PY = '6px'; // vertical padding for each timeline row
-    // Mirror the left timeline gutter on the right so cards sit visually
-    // centred in their column instead of hugging the right edge.
-    const CARD_CONTENT_PR = `${TIMELINE_WIDTH}px`;
+    // Mirror the left timeline gutter on the right so cards sit visually centred in their column; the look may run
+    // them to the column's edge instead.
+    const CARD_CONTENT_PR = `var(--df-thread-row-pr, ${TIMELINE_WIDTH}px)`;
 
 
     // Gutter icon for clarify/explain pause entries.
@@ -1568,7 +1597,7 @@ let SingleThreadGroupView: FC<{
         if (isTable && item.tableId) {
             const tableForDot = tableById.get(item.tableId);
             const iconSx = { width: 14, height: 14, color };
-            const isStreaming = tableForDot && (tableForDot.source?.type === 'stream' || tableForDot.source?.type === 'database') && tableForDot.source?.autoRefresh;
+            const isStreaming = isStreamingTable(item.tableId);
 
             if (isStreaming) {
                 return <StreamIcon sx={{ 
@@ -1623,9 +1652,31 @@ let SingleThreadGroupView: FC<{
     // A collapsed thread's timeline takes the highlight only when it holds the focused item.
     let timelineHL = historyCollapsed ? containsFocus : headerHL;
 
+    // What a row stands for, for its rail mark where the look draws sharp glyphs (StepMarker).
+    const stepKind = (item: typeof timelineItems[0]): GlyphKind | undefined => item.actor
+        ?? (item.type === 'chart' ? 'chart'
+            : item.reportId ? 'report'
+            : item.filePath ? fileGlyphKind(item.filePath)
+            : item.tableId && item.type !== 'used-table' ? 'table' : undefined);
+    const isStreamingTable = (tableId?: string) => {
+        const table = tableId ? tableById.get(tableId) : undefined;
+        return !!table && (table.source?.type === 'stream' || table.source?.type === 'database') && !!table.source?.autoRefresh;
+    };
+    // A step whose rail mark shows a state (running, waiting, done, streaming, a report being written) keeps it.
+    const isLiveStep = (item: typeof timelineItems[0]) => !!(item.isRunning || item.isClarifying || item.isCompleted
+        || isStreamingTable(item.tableId)
+        || (item.reportId && generatedReports.find(report => report.id === item.reportId)?.status === 'generating'));
+    const stepMarker = (item: typeof timelineItems[0], icon: React.ReactNode, live = isLiveStep(item),
+        kind = stepKind(item)) => <StepMarker icon={icon} on={item.highlighted} live={live} kind={kind} chartType={item.chartType} />;
+
     // One timeline line: blue on the focused chain, grey elsewhere; dashed all along a collapsed thread.
     const railColor = (on: boolean) => on ? alpha(theme.palette.primary.main, 0.6) : RAIL_GREY;
-    const rail = (on: boolean) => `2px ${historyCollapsed ? 'dashed' : 'solid'} ${railColor(on)}`;
+    // A rail segment on one side of a box, as separate properties: its colour can be a CSS variable, which a
+    // `border` shorthand would not survive everywhere.
+    const rail = (on: boolean, side: 'Left' | 'Bottom' | 'Top' | 'Right' = 'Left', style?: 'solid' | 'dashed') => ({
+        [`border${side}Width`]: 'var(--df-rail-width, 2px)', [`border${side}Style`]: style ?? (historyCollapsed ? 'dashed' : 'solid'),
+        [`border${side}Color`]: railColor(on),
+    });
     const renderTimelineItem = (item: typeof timelineItems[0], index: number, isLast: boolean, nextHighlighted: boolean) => {
         const isTrigger = item.type === 'trigger' || item.type === 'leaf-trigger';
         const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
@@ -1641,7 +1692,7 @@ let SingleThreadGroupView: FC<{
             return <Box key={`timeline-row-${item.key}`} data-thread-item={item.key} data-thread-on-chain={item.highlighted || undefined} data-secondary-activity
                 sx={{ display: 'flex', minWidth: 0 }}>
                 <Box data-activity-gutter sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
-                    <Box sx={{ borderLeft: topRail }} />
+                    <Box sx={{ ...topRail }} />
                 </Box>
                 <Box sx={{ flex: 1, minWidth: 0, py: 0.25, pl: TIMELINE_GAP, pr: CARD_CONTENT_PR }}>{item.element}</Box>
             </Box>;
@@ -1658,11 +1709,11 @@ let SingleThreadGroupView: FC<{
                         width: TIMELINE_WIDTH, flexShrink: 0,
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                     }}>
-                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: topRail }} />
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, ...topRail }} />
                         <Box sx={{ flexShrink: 0, zIndex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <CallMergeIcon sx={{ fontSize: iconVar.xs, color: item.highlighted ? theme.palette.primary.main : iconTone.muted, transform: 'rotate(180deg)' }} />
                         </Box>
-                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: bottomRail }} />}
+                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, ...bottomRail }} />}
                         {isLast && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, py: '4px', pl: TIMELINE_GAP, pr: CARD_CONTENT_PR, display: 'flex', alignItems: 'center' }}>
@@ -1679,10 +1730,14 @@ let SingleThreadGroupView: FC<{
             const iconColor = item.highlighted
                 ? (isFromUser ? theme.palette.custom.main : theme.palette.primary.main)
                 : iconTone.muted;
+            // Off the focused chain an agent step may be just a dot on the rail; its face returns on the chain.
+            const quietAgentStep = quietOffChainSteps(theme) && !item.highlighted && !!entry && !isFromUser && !item.gutterIcon;
             const gutterIcon = item.isRunning
                 ? <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />
                 : item.isClarifying
                     ? getClarifyIcon(item)
+                    : quietAgentStep
+                        ? <Box sx={{ width: DOT_SIZE, height: DOT_SIZE, borderRadius: '50%', backgroundColor: iconColor }} />
                     : item.gutterIcon
                             ? React.isValidElement(item.gutterIcon)
                                 ? React.cloneElement(item.gutterIcon as React.ReactElement<any>, {
@@ -1702,11 +1757,12 @@ let SingleThreadGroupView: FC<{
                         width: TIMELINE_WIDTH, flexShrink: 0, 
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                     }}>
-                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: topRail }} />
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, ...topRail }} />
                         <Box sx={{ flexShrink: 0, zIndex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {gutterIcon}
+                            {stepMarker(item, gutterIcon, !!(item.isRunning || item.isClarifying),
+                                stepKind(item) ?? (entry && !item.gutterIcon ? (isFromUser ? 'user' : 'agent') : undefined))}
                         </Box>
-                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: bottomRail }} />}
+                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, ...bottomRail }} />}
                         {isLast && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP, pr: CARD_CONTENT_PR }}>
@@ -1724,11 +1780,11 @@ let SingleThreadGroupView: FC<{
                         width: TIMELINE_WIDTH, flexShrink: 0,
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                     }}>
-                        <Box sx={{ width: 0, flex: '1 1 0', borderLeft: topRail }} />
+                        <Box sx={{ width: 0, flex: '1 1 0', ...topRail }} />
                         <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {getTimelineDot(item)}
+                            {stepMarker(item, getTimelineDot(item))}
                         </Box>
-                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: bottomRail }} />}
+                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, ...bottomRail }} />}
                         {isLast && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP, pr: CARD_CONTENT_PR }}>
@@ -1747,12 +1803,12 @@ let SingleThreadGroupView: FC<{
                     display: 'flex', flexDirection: 'column', alignItems: 'center',
                     position: 'relative',
                 }}>
-                    <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: topRail }} />
+                    <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, ...topRail }} />
                     <Box sx={{ flexShrink: 0, zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        {getTimelineDot(item)}
+                        {stepMarker(item, getTimelineDot(item))}
                     </Box>
                     {!isLast && (
-                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: bottomRail }} />
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, ...bottomRail }} />
                     )}
                     {isLast && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
                 </Box>
@@ -1776,11 +1832,11 @@ let SingleThreadGroupView: FC<{
             ...(moving(stack, false) ? { '& [data-stack-card]': { animation: `${settleStack} 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both`,
                 transformOrigin: 'top' }, ...noMotion } : {}) }}>
             <Box sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
-                <Box sx={{ borderLeft: rail(onChain) }} />
+                <Box sx={{ ...rail(onChain) }} />
             </Box>
             <Box sx={{ flex: 1, minWidth: 0, pt: '4px', pb: '10px', pl: TIMELINE_GAP, pr: CARD_CONTENT_PR }}>
                 <ButtonBase data-stack-card onClick={() => toggleStack(stack)} aria-expanded={false} aria-label={label}
-                    sx={{ width: '100%', justifyContent: 'flex-start', gap: 0.5, px: 1, py: 0.5, borderRadius: '6px',
+                    sx={{ width: '100%', justifyContent: 'flex-start', gap: 0.5, px: 1, py: 0.5, borderRadius: 1.5,
                         border: `1px solid ${edge}`, bgcolor: paper, color: 'text.secondary', fontSize: textVar.xs,
                         // Two sheets peeking out underneath.
                         boxShadow: `0 3px 0 -1px ${paper}, 0 3px 0 0 ${edge}, 0 6px 0 -2px ${paper}, 0 6px 0 -1px ${edge}`,
@@ -1796,12 +1852,12 @@ let SingleThreadGroupView: FC<{
     const renderStackFold = (stack: { key: string; indices: number[] }, onChain: boolean) =>
         <Box key={`stack-fold-${stack.key}`} sx={{ display: 'flex', minWidth: 0 }}>
             <Box sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
-                <Box sx={{ borderLeft: rail(onChain) }} />
+                <Box sx={{ ...rail(onChain) }} />
             </Box>
             <ButtonBase onClick={() => { setFoldPreview(undefined); toggleStack(stack); }} aria-expanded
                 onMouseEnter={() => setFoldPreview(stack.key)} onMouseLeave={() => setFoldPreview(undefined)}
                 onFocus={() => setFoldPreview(stack.key)} onBlur={() => setFoldPreview(undefined)}
-                sx={{ ml: TIMELINE_GAP, my: '2px', gap: 0.5, px: 0.5, borderRadius: '4px', color: 'text.secondary', fontSize: textVar.xxs,
+                sx={{ ml: TIMELINE_GAP, my: '2px', gap: 0.5, px: 0.5, borderRadius: 1, color: 'text.secondary', fontSize: textVar.xxs,
                     '&:hover': { color: 'primary.main' },
                     '&.Mui-focusVisible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1 } }}>
                 <UnfoldLessIcon sx={{ fontSize: 14 }} />
@@ -1955,7 +2011,7 @@ let SingleThreadGroupView: FC<{
     // only while the thread is hovered (or the button has keyboard focus).
     const threadEndToggle = (arrowColor: string) => onToggleHistory && <ButtonBase data-thread-expand={historyCollapsed || undefined}
         data-thread-collapse={!historyCollapsed || undefined} aria-expanded={!historyCollapsed} onClick={onToggleHistory}
-        sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', pr: 0.75, borderRadius: '4px',
+        sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', pr: 0.75, borderRadius: 1,
             fontSize: textVar.xxs, color: 'text.secondary', transition: transition.fast,
             '& [data-expand-arrow]': { color: arrowColor, transition: transition.fast },
             '&:hover': { color: 'primary.main', '& [data-expand-arrow]': { color: 'primary.main' } },
@@ -1967,18 +2023,21 @@ let SingleThreadGroupView: FC<{
             {historyCollapsed ? t('dataThread.expand', { defaultValue: 'expand' }) : t('dataThread.collapse', { defaultValue: 'collapse' })}</Box>
     </ButtonBase>;
     // A part of a long thread ends by naming the part that continues it, quietly; a click goes there.
-    // Its elbow is the timeline itself turning toward the label.
+    // Its elbow is the timeline itself turning toward the label: centred on the rail at whatever width the contrast
+    // draws it, and coloured as the line it continues (an open thread's is all blue; past the focused item it is grey).
+    const continuationHL = historyCollapsed ? lineHL : threadActive;
+    const elbowLeft = `calc((${TIMELINE_WIDTH}px - var(--df-rail-width, 2px)) / 2)`;
     const continuation = continuesIn && <ButtonBase data-thread-continues onClick={onContinue}
-        sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', width: '100%', pr: 0.75, borderRadius: '4px',
-            fontSize: textVar.xxs, fontStyle: 'italic', color: 'text.disabled', transition: transition.fast,
+        sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', width: '100%', pr: 0.75, borderRadius: 1,
+            fontSize: textVar.xxs, ...quietText, color: 'text.disabled', transition: transition.fast,
             '&:hover': { color: 'primary.main' },
             '&.Mui-focusVisible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1 } }}>
         <Box component="span" aria-hidden="true" data-thread-continues-elbow sx={{ width: TIMELINE_WIDTH, flexShrink: 0,
             alignSelf: 'stretch', position: 'relative', minHeight: 18 }}>
-            <Box component="span" sx={{ position: 'absolute', left: (TIMELINE_WIDTH - 2) / 2, top: 0, height: '50%', width: 8,
-                borderLeft: rail(lineHL), borderBottom: rail(lineHL), borderBottomLeftRadius: '4px' }} />
-            <Box component="span" sx={{ position: 'absolute', left: (TIMELINE_WIDTH - 2) / 2 + 3, top: 'calc(50% - 2.5px)',
-                width: 5, height: 5, borderTop: `2px solid ${lineTone}`, borderRight: `2px solid ${lineTone}`,
+            <Box component="span" sx={{ position: 'absolute', left: elbowLeft, top: 0, height: '50%', width: 8,
+                ...rail(continuationHL), ...rail(continuationHL, 'Bottom'), borderBottomLeftRadius: '4px' }} />
+            <Box component="span" sx={{ position: 'absolute', left: `calc(${elbowLeft} + 3px)`, top: 'calc(50% - 2.5px)',
+                width: 5, height: 5, ...rail(continuationHL, 'Top', 'solid'), ...rail(continuationHL, 'Right', 'solid'),
                 transform: 'rotate(45deg)' }} />
         </Box>
         <Box component="span" sx={{ ml: '6px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1991,22 +2050,22 @@ let SingleThreadGroupView: FC<{
             backgroundColor: 'background.paper',
             ...(showItemFocus ? {
                 '& .selected-card': {
-                    boxShadow: `0 0 0 2px ${theme.palette.primary.light}`,
+                    ...selectionOutline(focusColor(theme, theme.palette.primary)),
                     borderColor: 'transparent',
                     margin: '1px 0',
                 },
                 '& .selected-artifact-card': {
-                    boxShadow: '0 0 0 2px var(--artifact-selection-color)',
+                    ...selectionMark('var(--artifact-selection-color)', 1),
                     borderColor: 'transparent',
                 },
             } : {}),
-            padding: '6px',
+            padding: '6px var(--df-thread-entry-pr, 6px) 6px 6px',
             '& [data-thread-collapse]': { opacity: 0, transition: transition.fast },
             '&:hover [data-thread-collapse], & [data-thread-collapse].Mui-focusVisible': { opacity: 1 },
             '@media (hover: none)': { '& [data-thread-collapse]': { opacity: 1 } },
         }}
         >
-        <div style={{ padding: '2px 4px', marginTop: 0, direction: 'ltr' }}>
+        <div style={{ padding: '2px var(--df-thread-inner-pr, 4px) 2px 4px', marginTop: 0, direction: 'ltr' }}>
             {(() => {
                 // A sub-thread continues its thread: the line runs in from above instead of starting at a
                 // circle, and its label is quieter.
@@ -2018,7 +2077,7 @@ let SingleThreadGroupView: FC<{
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                     }}>
                         {continued
-                            ? <Box aria-hidden="true" sx={{ width: 0, flex: '1 1 0', minHeight: 14, borderLeft: rail(lineHL) }} />
+                            ? <Box aria-hidden="true" sx={{ width: 0, flex: '1 1 0', minHeight: 14, ...rail(lineHL) }} />
                             : <>
                                 <Box sx={{ flex: '1 1 0', minHeight: 6 }} />
                                 <Box aria-hidden="true" sx={{ width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -2027,7 +2086,7 @@ let SingleThreadGroupView: FC<{
                                         border: '1.5px solid currentColor', boxSizing: 'content-box' }} />
                                 </Box>
                             </>}
-                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 10, borderLeft: rail(lineHL) }} />
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 10, ...rail(lineHL) }} />
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', pl: 0.5, gap: 0.5 }}>
                         <ButtonBase disabled={!onToggleHistory} onClick={onToggleHistory} aria-expanded={!historyCollapsed}
@@ -2037,8 +2096,8 @@ let SingleThreadGroupView: FC<{
                                 '&:hover': { color: lineHL ? headTone : 'text.primary' },
                                 '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
                             <Typography component="span" sx={{ minWidth: 0, color: 'inherit',
-                                fontSize: textVar.xs, fontWeight: continued ? 600 : 700,
-                                textTransform: 'uppercase', letterSpacing: 0,
+                                fontWeight: continued ? 600 : 700,
+                                ...metaText({ fontSize: textVar.xs, textTransform: 'uppercase', letterSpacing: 0 }),
                                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                             }}>
                                 {threadLabel}
@@ -2067,7 +2126,7 @@ let SingleThreadGroupView: FC<{
                     <Box sx={{ display: 'flex', alignItems: 'stretch', minWidth: 0 }}>
                         <Box component="span" aria-hidden="true" data-thread-collapsed-gutter sx={{ width: TIMELINE_WIDTH, flexShrink: 0,
                             display: 'flex', justifyContent: 'center', color: lineColor }}>
-                            <Box component="span" sx={{ width: 0, height: '100%', borderLeft: rail(lineHL) }} />
+                            <Box component="span" sx={{ width: 0, height: '100%', ...rail(lineHL) }} />
                         </Box>
                         <Box sx={{ flex: 1, minWidth: 0, ml: '4px', mr: `${TIMELINE_WIDTH}px`, mt: 0.5, mb: 0.5 }}>
                             <ThreadDeck outputs={threadOutputs} heading={threadLines.find(line => line.role === 'user')?.text || threadSummary}
@@ -2100,14 +2159,15 @@ let SingleThreadGroupView: FC<{
                         if (stack && !stackOpen(stack)) {
                             return index === stack.indices[0] ? renderChatStack(stack, onChain) : null;
                         }
-                        // With its conversation open, the whole thread's line is highlighted.
+                        // With its conversation open, the whole thread's line is highlighted. A part that continues
+                        // elsewhere keeps its line running past the last item, down into the continuation's elbow.
                         const row = renderTimelineItem(threadActive ? { ...item, highlighted: true } : showItemFocus ? item : { ...item, highlighted: false },
-                            index, index === timelineItems.length - 1,
+                            index, index === timelineItems.length - 1 && !continuesIn,
                             threadActive || (showItemFocus && (timelineItems[index + 1]?.highlighted ?? false)));
                         if (!stack) return row;
                         // An opened stack's entries: they drop into place one after another when just opened,
                         // and tint while its fold link is hovered.
-                        const shown = <Box key={`stack-entry-${item.key}`} data-stack-entry={stack.key} sx={{ minWidth: 0, borderRadius: '6px',
+                        const shown = <Box key={`stack-entry-${item.key}`} data-stack-entry={stack.key} sx={{ minWidth: 0, borderRadius: 1.5,
                             transition: transition.fast,
                             bgcolor: foldPreview === stack.key ? alpha(theme.palette.primary.main, 0.07) : 'transparent',
                             ...(moving(stack, true) ? { ...noMotion,
@@ -2141,7 +2201,7 @@ const ChartThumbnail: FC<{
     const pendingOverlay = status == 'pending' ? <Box sx={{
         position: "absolute", top: 0, left: -8, right: -8, bottom: 0, zIndex: 20,
         backgroundColor: "rgba(243, 243, 243, 0.8)", cursor: "pointer",
-        borderRadius: '6px', display: 'flex', flexDirection: 'column',
+        borderRadius: 1.5, display: 'flex', flexDirection: 'column',
     }}>
         <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
     </Box> : null;
@@ -3091,6 +3151,8 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             direction: 'ltr',
             height: 'calc(100% - 16px)',
             width: panelWidth,
+            // A slim overlay thumb instead of the native bar, which beside the canvas read as a second border.
+            ...hiddenScrollbarSx,
         }}>
             <Box data-thread-column-flow sx={{
                 display: 'grid',
@@ -3196,6 +3258,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
                 <ToolActivitySelectionContext.Provider value={activitySelection}>{view}</ToolActivitySelectionContext.Provider>
                 <ScrollFadeEdge visible={moreThreadContentAbove} edge="top" />
                 <ScrollFadeEdge visible={moreThreadContentBelow} />
+                {hasContent && <OverlayScrollbar scrollRef={threadScrollRef} resetKey={allThreadEntries.length} />}
             </Box>
             <SimpleChartRecBox />
         </Box>

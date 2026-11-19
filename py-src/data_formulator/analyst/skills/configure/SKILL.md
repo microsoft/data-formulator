@@ -7,7 +7,7 @@ when_to_use: >-
   The user wants to connect or repair a data source, create or revise a reusable
   workflow, schedule a workflow or change a schedule, find, open, rename, or
   delete sessions, or add, fix, or switch MCP servers and their tools. Not for loading data from an already connected source or for analysis,
-  or for only reading saved workflows and schedules: they are files under workflows/
+  or for only reading saved workflows and schedules: they are files under workflows://
   (list_files, read_file).
 always_on: false
 tools:
@@ -47,9 +47,9 @@ dialogs. Every setup task follows the same flow:
 | Setup task | Inspect | Action | Done when |
 |---|---|---|---|
 | Connect or repair a data source | `list_connectors`, `read_connector_form` | `propose_connection`, `update_connector_form` | The form shows Connected. |
-| Create or revise a workflow | Conversation, workspace inputs, `workflows/` | `propose_workflow` | The user saves or runs the proposal. |
-| Create a workflow and schedule it | Conversation, workspace inputs, `workflows/schedules.json` | `propose_workflow` with `schedule` | The user saves the workflow and its schedule together. |
-| Schedule a workflow or change a schedule | `workflows/` | `propose_schedule` | The form shows the saved schedule. |
+| Create or revise a workflow | Conversation, workspace inputs, `workflows://` | `propose_workflow` | The user saves or runs the proposal. |
+| Create a workflow and schedule it | Conversation, workspace inputs, `workflows://schedules.json` | `propose_workflow` with `schedule` | The user saves the workflow and its schedule together. |
+| Schedule a workflow or change a schedule | `workflows://` | `propose_schedule` | The form shows the saved schedule. |
 | Find, open, rename, or delete sessions | `list_sessions` | `propose_session_changes` | The session panel lists the sessions for the user to act on. |
 | Add, fix, or switch MCP servers | `list_mcp_servers` | `propose_mcp_changes` | The form shows the server connected or the change applied. |
 
@@ -103,8 +103,8 @@ complete structured definition with `propose_workflow`, following its schema. Pr
 saves nor runs it: the user chooses Save or Run. Revisions are new proposals,
 not changes to an active run.
 
-Saved, built-in and server workflows are read-only files under `workflows/`:
-`list_files` with path `workflows/` lists them (name, origin, parameters,
+Saved, built-in and server workflows are read-only files under `workflows://`:
+`list_files` with path `workflows://` lists them (name, origin, parameters,
 schedules), `read_file` shows a full definition, and `search` with that path finds
 one by its content. For revisions, use the latest relevant complete definition in
 the conversation, or read the saved one, unless the user identifies another
@@ -148,14 +148,14 @@ check results.
 ## Schedules
 
 A schedule runs a saved workflow unattended in a new session at a time of day on
-selected weekdays. `list_files` with path `workflows/` gives each workflow's path,
-parameters, and schedules; `workflows/schedules.json` gives schedule IDs, recent
+selected weekdays. `list_files` with path `workflows://` gives each workflow's path,
+parameters, and schedules; `workflows://schedules.json` gives schedule IDs, recent
 runs, whether scheduling is available, and the server model connections. If scheduling is unavailable, explain why instead of proposing.
 
 When the user wants a new or revised workflow to run on a schedule, propose both
 at once: pass `schedule` to `propose_workflow` (timing, inputs, options; no
 workflow path). Saving the proposal then creates the workflow and its schedule,
-so do not defer scheduling to a later turn. Read `workflows/schedules.json` first
+so do not defer scheduling to a later turn. Read `workflows://schedules.json` first
 for availability and server model connections; if scheduling is unavailable, propose
 the workflow alone and explain why. For a workflow that exists only as an earlier
 proposal in the conversation, propose it again with `schedule`.

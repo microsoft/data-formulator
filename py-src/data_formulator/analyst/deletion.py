@@ -15,6 +15,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from data_formulator.analyst import names as item_names
+
 logger = logging.getLogger(__name__)
 
 MAX_TARGETS = 50
@@ -36,6 +38,11 @@ def _names(item: dict[str, Any]) -> set[str]:
 
 
 def _resolve(target: str, inventory: dict[str, list[dict[str, Any]]]) -> tuple[str, dict[str, Any]] | None:
+    # A session name (session://charts/<id>, or its older session/charts/<id>.json) names the item by its id.
+    if item_names.is_session(target):
+        folder = item_names.folder_of(target)
+        if folder in ("tables", "charts", "references"):
+            target = item_names.leaf_of(target, folder) or target
     # Ids win over display names, which can repeat.
     for exact in (True, False):
         for kind in ("tables", "charts", "references"):

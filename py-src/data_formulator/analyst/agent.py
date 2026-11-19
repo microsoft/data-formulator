@@ -637,6 +637,9 @@ class AnalystAgent:
         from data_formulator.mcp_servers.config import mcp_available
         if not (mcp and not demo and mcp_available()):
             self.registry = self.registry.without_tools(MCP_SETUP_TOOLS)
+        # view draws in the user's browser: runs without one (workflows) do not get it.
+        if not mcp:
+            self.registry = self.registry.without_tools(frozenset({"view"}))
         # Sign-ins to data providers need a person at hand, like MCP tools (design-docs/72).
         from data_formulator.accounts import accounts_available
         from data_formulator.configuration import tools_mode
@@ -690,6 +693,8 @@ class AnalystAgent:
         # is set just before dispatching such an action so the router drops the
         # skill's duplicate (buffered) emission of the same content.
         self._streamed_channels: dict[str, str] = {}
+        # The report id announced with a streamed write_report, by tool call id: the skill delivers under it.
+        self._streamed_report_ids: dict[str, str] = {}
         self._suppress_stream_channel: str | None = None
         # Trajectory indexes for the soft progress reminder: where the current request/step began and
         # where the last reminder was sent. New user input or a new workflow step resets both.
@@ -705,9 +710,28 @@ class AnalystAgent:
     # Helpers
     # ------------------------------------------------------------------
 
+    # Which agent a failed call is recorded under in the failure log (agents/failure_log.py).
+    FAILURE_AGENT = "analyst"
+
+    def _log_failure(self, tool: str, error: Any, args: Any = None, call_id: str | None = None) -> None:
+        """Record a failed tool call or action in the cross-session failure log."""
+        from data_formulator.agents.failure_log import log_failure
+        log_failure(agent=self.FAILURE_AGENT, tool=tool, error=error, args=args, workspace=self.workspace,
+                    model=getattr(self.client, "model", None), call_id=call_id)
+
+    def _with_path_hint(self, error: Any) -> str:
+        """A sandbox error, plus where to look when code opened a view path or an outdated data file."""
+        from data_formulator.analyst.session_files import path_error_hint
+        layer = (getattr(self, "_run_payload", None) or {}).get("session_layer")
+        try:
+            return path_error_hint(str(error), self.workspace, layer)
+        except Exception:
+            logger.debug("Could not add a path hint", exc_info=True)
+            return str(error)
+
     def _explore_ns_dir(self) -> Path:
         """Directory for cross-turn namespace serialisation."""
-        return self.workspace.confined_scratch.root / "_explore_ns"
+        return self.workspace.confined_internal.root / "explore_ns"
 
     def _legal_actions(self) -> frozenset[str]:
         """The set of committing actions currently legal to emit.
@@ -802,9 +826,6 @@ class AnalystAgent:
         completed_steps: list[dict[str, Any]] = []
         iteration = completed_step_count
         final_status = "success"
-        if hasattr(self.workspace, "migrate_legacy_memory"):
-            # Legacy memory becomes ordinary files the agent lists, reads and searches (design-docs/65).
-            self.workspace.migrate_legacy_memory()
         workspace_files = sorted(
             self.workspace.list_workspace_files(), key=lambda item: item.name.lower(),
         )
@@ -1001,6 +1022,7 @@ class AnalystAgent:
                 owner = self.registry.action_owner(action_type)
                 if owner is None:
                     legal = ", ".join(sorted(self._legal_actions()))
+                    self._log_failure(str(action_type), f"[ERROR] Unknown action '{action_type}'", action, action_tool_call_id)
                     self._set_action_observation(
                         trajectory, action_tool_call_id,
                         f"[ERROR] Unknown action '{action_type}'. Choose one of: "
@@ -1034,6 +1056,8 @@ class AnalystAgent:
                 self._suppress_stream_channel = self._streamed_channels.get(
                     action_tool_call_id
                 )
+                if action_type == "write_report" and action_tool_call_id in self._streamed_report_ids:
+                    action["report_id"] = self._streamed_report_ids[action_tool_call_id]
                 self._last_run_chart_id = None
                 try:
                     observation = yield from self._dispatch_skill_action(
@@ -1045,6 +1069,9 @@ class AnalystAgent:
                 self._set_action_observation(
                     trajectory, action_tool_call_id, observation,
                 )
+                from data_formulator.agents.failure_log import observation_failure
+                if (failure := observation_failure(observation)) is not None:
+                    self._log_failure(action_type, failure, action, action_tool_call_id)
                 if action_type in _DELIVERY_ACTIONS and observation and not observation.lstrip().startswith("[ERROR]"):
                     self._delivered = True
                     result_id = (self._last_run_chart_id or action_type) if action_type == "visualize" else action_type
@@ -1366,7 +1393,7 @@ class AnalystAgent:
 
         The entry mirrors the shape the frontend forwards for pre-existing charts
         (``chart_id`` / ``chart_type`` / ``encodings`` / ``table_ref``), so a report
-        edit may embed it. The agent reads the chart as ``session/charts/<id>.json``
+        edit may embed it. The agent reads the chart as ``session://charts/<id>``
         (added to the session layer below). The mutation lands on
         ``self._run_payload['charts']`` so the next dispatched skill ctx sees it.
         """
@@ -1434,7 +1461,7 @@ class AnalystAgent:
             if result.get("status") != "ok":
                 return {
                     "status": "error",
-                    "error": str(result.get("content", "Unknown error")),
+                    "error": self._with_path_hint(result.get("content", "Unknown error")),
                 }
             frame = result.get("content")
             if not isinstance(frame, pd.DataFrame):
@@ -1530,7 +1557,7 @@ class AnalystAgent:
                 return {"status": "interrupted", "error": raw.get("error_message", "Python execution interrupted."),
                         "stdout": raw.get("stdout", "")}
             else:
-                err = raw.get("error_message", raw.get("content", "Unknown error"))
+                err = self._with_path_hint(raw.get("error_message", raw.get("content", "Unknown error")))
                 logger.warning(
                     "[AnalystAgent] explore code failed: %s\n--- code ---\n%s",
                     err, code[:2000],
@@ -1587,7 +1614,7 @@ class AnalystAgent:
                     "[AnalystAgent] visualize code failed: %s\n--- code ---\n%s",
                     error_message, code[:2000],
                 )
-                return {"status": "error", "error_message": str(error_message)}
+                return {"status": "error", "error_message": self._with_path_hint(error_message)}
 
             full_df = execution_result['content']
             # Pivots often yield int/float labels (years); workspace storage and
@@ -1672,8 +1699,8 @@ class AnalystAgent:
                 "status": "ok",
                 # Backend-minted, run-stable chart id. Forwarded to the frontend
                 # in the ``result`` event so it adopts this id verbatim — the same
-                # id the agent can embed in a same-run report (``chart://<id>``)
-                # and read as ``session/charts/<id>.json``. NOT derived from the table name
+                # id the agent can embed in a same-run report and read, as ``session://charts/<id>``.
+                # NOT derived from the table name
                 # (one table may back many charts).
                 "chart_id": f"chart-{uuid.uuid4().hex[:12]}",
                 "code": code,
@@ -1735,8 +1762,8 @@ class AnalystAgent:
             "equivalent chart. When asked to deliver a report or narrative document, write it with `write_report` "
             "and embed those charts by id rather than producing equivalent visualizations. An ordinary "
             "summary can be answered directly without report delivery.",
-            "- Cite inputs by the name or path you see (a table name or `session/tables/<name>.json`, a "
-            "`files/...` path).",
+            "- Cite inputs by the name you see (a table name or `session://tables/<name>`, a `files/...` or "
+            "`scratch/...` path).",
         ]
         context_lines.append(
             "- **[USER ATTACHMENT(S)]**, when present, are images the user attached to the request. "
@@ -2271,6 +2298,8 @@ class AnalystAgent:
                                 error=tool_content, status=tool_status, started=tool_t0, ended=time.time()),
                         }
 
+                    if tool_status not in ("ok", "interrupted"):
+                        self._log_failure(tool_name, tool_content, tool_args, tc.id)
                     tool_latency = int((time.time() - tool_t0) * 1000)
                     output_summary = (tool_content[:200] + "...") if len(tool_content) > 200 else tool_content
                     rlog.log("tool_execution", iteration=outer_iteration,
@@ -2617,6 +2646,7 @@ class AnalystAgent:
         # Each LLM call starts a fresh streamed-channel map; only the round that
         # actually commits a streaming action leaves an entry for the run loop.
         self._streamed_channels = {}
+        self._streamed_report_ids = {}
         # Whether this call streamed text the provider marked as the final answer (``answer`` channel).
         self._answer_streamed = False
 
@@ -2751,7 +2781,10 @@ class AnalystAgent:
 
         if not st["announced"]:
             # Preserve the buffered order (action first, then report text).
-            yield {"type": "action", "action": name}
+            if name == "write_report":
+                from data_formulator.analyst.skills.report.skill import new_report_id
+                st["report_id"] = new_report_id()
+            yield {"type": "action", "action": name, **({"report_id": st["report_id"]} if st.get("report_id") else {})}
             st["announced"] = True
 
         new_text = st["extractor"].feed(slot["arguments"])
@@ -2760,6 +2793,8 @@ class AnalystAgent:
             tcid = slot.get("id")
             if tcid:
                 self._streamed_channels[tcid] = st["channel"]
+                if st.get("report_id"):
+                    self._streamed_report_ids[tcid] = st["report_id"]
 
 
     # ------------------------------------------------------------------

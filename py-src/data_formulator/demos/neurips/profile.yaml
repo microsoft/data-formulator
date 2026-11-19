@@ -1,0 +1,288 @@
+# The NeurIPS demo's profile, served at /demo/neurips; see ../README.md and README.md.
+# Its content (dataset and story sessions, images) is installed by build.py from the dataset that
+# crawl.py, enrich.py and assemble.py collect.
+
+name: NeurIPS in Data Formulator
+# Two lines on the front page: the subject, then where it is explored (the badge follows the second).
+headline: "NeurIPS in\nData Formulator"
+badge: Preview
+# Shared images (Share on an app, map or chart): words posted after the image's title.
+share:
+  hashtags: "#NeurIPS2026"
+tagline: Explore 40 years of NeurIPS papers with AI.
+chat_placeholder: Ask about NeurIPS papers, topics and where their authors work…
+about:
+  - >-
+    [Data Formulator](https://github.com/microsoft/data-formulator) is an open-source AI tool from
+    Microsoft Research for exploring data with charts, maps, reports and dashboards.
+  - >-
+    This site holds every paper published at NeurIPS from 1987 to 2026, about 40,000, with their
+    abstracts, authors and where the authors work, and the schedule of NeurIPS 2026 in Sydney, Atlanta
+    and Paris.
+intro: >-
+  Ask a question above and the AI analyst loads the data it needs, or open an example session to see
+  a question it already answered, on a map or a small dashboard, and keep asking your own.
+release: "2026-11"
+workspace_collapsed: true
+# A screenshot of the app with an example session open, in the release's content folder.
+hero_image: hero.png
+# The NeurIPS logo (neurips.cc/About: "may be used on presentations"; a NeurIPS Foundation trademark), above the
+# page title and beside the name in the app bar.
+logo: logo.svg
+install_note: >-
+  Installing builds the example sessions from the NeurIPS dataset collected on this computer
+  (see demos/neurips/README.md), about 300 MB.
+chart_theme:
+  id: neurips-df
+  label: NeurIPS in Data Formulator
+  description: Clear blues with warm accents and Segoe UI, for the NeurIPS in Data Formulator demo.
+  extends: datawrapper
+  ink:
+    text: {primary: "#1b1f3b"}
+    series:
+      single: "#2f5bea"
+      categorical: ["#2f5bea", "#f2a03d", "#18a87b", "#e0457b", "#7b5cd6", "#3cb7d8"]
+      categoricalExtended: ["#2f5bea", "#f2a03d", "#18a87b", "#e0457b", "#7b5cd6", "#3cb7d8", "#1b1f3b", "#9aa5c4", "#c97c2b"]
+      sequential: {stops: ["#dfe7fd", "#a9bdf8", "#7193f2", "#4170ec", "#2246c7"], space: lab}
+      diverging: {stops: ["#e0457b", "#f0a3bd", "#f2f2f2", "#9db3f5", "#2f5bea"], space: lab}
+    accent: "#2f5bea"
+  type:
+    headline: {family: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif", weight: bold}
+    deck: {family: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif"}
+    axisLabel: {family: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif"}
+    axisTitle: {family: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif"}
+    keyLabel: {family: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif"}
+    valueLabel: {family: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif"}
+# Standing guidance for the analyst on this site: Microsoft staff show it to conference-goers at a booth.
+analyst_rules: >-
+  Microsoft staff show this demo to researchers and curious conference-goers at a booth, on a large
+  screen or a phone: keep answers short (the finding first, then one or two supporting sentences) and pick a
+  sensible reading of short questions rather than asking them to choose; say what you chose. Use plain
+  words, never show table or column names in answers, charts or reports, and put years on a time
+  (temporal) axis. Count papers, not authorships, unless the question is about people: a paper counts
+  for a country or organization when at least one author works there; say so in a subtitle. Countries
+  are where authors work, not their nationality; never guess nationality, gender or ethnicity from
+  names. Show organizations, countries and topics, not rankings of individual people. Institutions are
+  stored as authors wrote them: group spellings of one organization (with the organizations table)
+  before counting it, and say which group you used (for example "Microsoft, including Microsoft
+  Research and its labs"). Topics labelled by the AI model (topic_llm) are estimates: say "topics as
+  classified by an AI model" when you use them. Before 2020 affiliations are known only for papers
+  OpenAlex records: compare shares, not counts, across those years. In ranked bar charts, sort from
+  largest to smallest and keep about 15 bars. When a question is about where, show a world map made
+  with the map skill (a choropleth keyed by country_code with keyType iso2, or bubbles at
+  institutions' coordinates) with a ranking chart beside it; when it has a few parts that belong
+  together, show them in one small dashboard made with the html_app skill. Cite the source with each
+  result, for example "Source: neurips.cc; OpenAlex".
+attribution: >-
+  Data: NeurIPS virtual site and schedule (neurips.cc) and proceedings (papers.nips.cc), collected
+  November 2026; OpenAlex and the Research Organization Registry (ROR), CC0. Topics for every year and
+  readings of affiliations are by an AI model and marked as such.
+disclaimer: >-
+  An independent demo, not affiliated with or endorsed by NeurIPS or the NeurIPS Foundation. The
+  analyses are by an AI analyst and can be wrong; check them against the papers on neurips.cc.
+links:
+  - label: NeurIPS 2026
+    url: https://neurips.cc/virtual/2026/index.html
+  - label: NeurIPS proceedings
+    url: https://papers.nips.cc/
+  - label: OpenAlex
+    url: https://openalex.org/
+  - label: ROR
+    url: https://ror.org/
+
+starters:
+  - id: neurips-2026
+    source_url: https://neurips.cc/virtual/2026/index.html
+    kicker: NeurIPS 2026 papers
+    icon: science
+    start_note: Every NeurIPS 2026 paper, its authors and its poster session
+    title: "NeurIPS 2026"
+    source_name: "neurips.cc"
+    subtitle: Sydney, Atlanta and Paris
+    summary: "The 9,000 papers of NeurIPS 2026, the first held in three cities: their topics, their authors and their posters."
+    description: >-
+      NeurIPS 2026's accepted papers (main, Datasets & Benchmarks, position and journal tracks) with
+      abstracts, the topic authors chose, orals and spotlights, authors and their institutions as
+      given on neurips.cc, and each poster's city, session, local time and position.
+    file: neurips-2026.zip
+    questions:
+      - >-
+        What is NeurIPS 2026 about? Compare the topic areas authors chose, show which areas have the
+        most orals and spotlights, and find the subareas that grew most since 2025.
+      - >-
+        Where do NeurIPS 2026 authors work? Map papers by the country of their authors' institutions,
+        compare universities and companies, and show which organizations have the most papers.
+      - >-
+        Plan a visit: which poster sessions in Sydney have the most papers on language models and
+        agents, and when are they?
+    stories:
+      - id: this-year
+        label: NeurIPS 2026
+        headline: "NeurIPS 2026: 90 countries, three cities"
+        dek: ""
+        featured: true
+        prompt: "How is NeurIPS 2026 spread across Sydney, Atlanta and Paris?"
+        file: stories/this-year.zip
+        image: stories/this-year.png
+        chapters:
+        - id: n3
+          label: Three cities
+          kind: story
+          prompt: "How is NeurIPS 2026 spread across Sydney, Atlanta and Paris?"
+          headline: "Sydney shows 67% of NeurIPS 2026's posters"
+          stat: "67%"
+          message: "of the posters are shown in Sydney"
+          file: "three_cities.app.jsx"
+        - id: n1
+          label: Where authors work
+          kind: map
+          prompt: "Where do NeurIPS 2026 authors work?"
+          headline: "32% of NeurIPS 2026 authors work in the US"
+          stat: "32%"
+          message: "of authors work in the US"
+          file: "papers_by_country_2026.map.json"
+        - id: n2
+          label: What it is about
+          kind: story
+          prompt: "What are NeurIPS 2026 papers about?"
+          headline: "Applications is NeurIPS 2026's biggest area; Vision Models & Multimodal its biggest
+            topic"
+          stat: "623"
+          message: "papers on vision models & multimodal"
+          file: "topics_2026.app.jsx"
+        - id: n4
+          label: Who publishes most
+          kind: map
+          prompt: "Which universities and companies have the most papers?"
+          headline: "Tsinghua University is on the most NeurIPS 2026 papers; Google leads companies"
+          stat: "477"
+          message: "papers from Tsinghua University, #1"
+          file: "organizations_2026.map.json"
+        follow_ups:
+        - Which Sydney sessions have the most papers on reinforcement learning?
+        - How many papers have authors in both the US and China?
+        - Which topics grew the most since 2025?
+  - id: neurips-history
+    source_url: https://papers.nips.cc/
+    kicker: NeurIPS trends 1987–2026
+    icon: chart
+    start_note: Every NeurIPS paper since 1987, with authors and institutions
+    title: "NeurIPS over the years"
+    source_name: "NeurIPS proceedings"
+    subtitle: Forty years of papers
+    summary: "Every NeurIPS paper since Denver in 1987: how the conference grew, and how its ideas and authors changed."
+    description: >-
+      All NeurIPS papers 1987–2026 from the proceedings and neurips.cc, with abstracts, authors and
+      their institutions (neurips.cc from 2020, OpenAlex before), OpenAlex citation counts, the topic
+      authors chose (2023 on) and an AI model's topic from the same list for every year.
+    file: neurips-history.zip
+    questions:
+      - >-
+        How has NeurIPS grown? Show papers per year since 1987, authors per paper, and the share of
+        papers with authors from companies.
+      - >-
+        Which ideas rose and fell? Track words in titles such as kernel, Bayesian, deep, transformer,
+        diffusion and language model, and the topic areas over time.
+      - >-
+        How has the geography of NeurIPS changed? Compare the share of papers with authors in the US,
+        China and Europe since 2000.
+    stories:
+      - id: since-1987
+        label: NeurIPS since 1987
+        headline: "Forty years of NeurIPS, since 1987"
+        dek: ""
+        featured: true
+        prompt: "How has NeurIPS grown since 1987?"
+        file: stories/since-1987.zip
+        image: stories/since-1987.png
+        chapters:
+        - id: h1
+          label: Growth
+          kind: story
+          prompt: "How has NeurIPS grown since 1987?"
+          headline: "NeurIPS has 101 times as many papers as in 1987"
+          stat: "101×"
+          message: "as many papers as in 1987"
+          file: "growth.app.jsx"
+        - id: h2
+          label: Ideas
+          kind: story
+          prompt: "Which ideas rose and fell?"
+          headline: "Neural networks, then probability, then deep learning; language models are in 14% of 2026
+            titles"
+          stat: "14%"
+          message: "of 2026 titles name language models"
+          file: "ideas.app.jsx"
+        - id: h3
+          label: Where authors work
+          kind: story
+          prompt: "How has the geography of NeurIPS changed?"
+          headline: "China's share of NeurIPS papers rose from 2% to 34% since 2010"
+          stat: "34%"
+          message: "of papers now have an author in China"
+          file: "geography.app.jsx"
+        - id: h4
+          label: Where NeurIPS met
+          kind: map
+          prompt: "Where has NeurIPS met over the years?"
+          headline: "NeurIPS met 14 times in Denver; in 2026 it goes to Sydney"
+          stat: "10"
+          message: "host cities, from Denver to Sydney"
+          file: "conference_route.map.json"
+        follow_ups:
+        - When did "transformer" take off in titles?
+        - Which countries grew fastest since 2015?
+        - How did the share of single-author papers change?
+  - id: microsoft
+    source_url: https://www.microsoft.com/en-us/research/
+    kicker: Microsoft at NeurIPS
+    icon: landmark
+    start_note: All NeurIPS papers, to find Microsoft's
+    title: "Microsoft at NeurIPS"
+    source_name: "Microsoft Research"
+    subtitle: Papers, labs and collaborators
+    summary: "Microsoft's NeurIPS papers, what they are about, who it writes them with, and where to see them this year."
+    description: >-
+      The same NeurIPS papers 1987–2026 and NeurIPS 2026 schedule, for questions about Microsoft:
+      its authors appear under many institution strings (Microsoft, Microsoft Research, MSR Asia,
+      GitHub, LinkedIn, ...), which the organizations table groups.
+    file: microsoft.zip
+    questions:
+      - >-
+        How many NeurIPS 2026 papers have Microsoft authors? Break them down by Microsoft lab and
+        topic, and list their poster sessions by city and day.
+      - >-
+        Who does Microsoft write NeurIPS papers with? Show the universities and companies that
+        co-author with Microsoft most, and where they are.
+      - >-
+        How has Microsoft's presence at NeurIPS changed since 2000?
+    stories:
+      - id: microsoft-at-neurips
+        label: Microsoft at NeurIPS
+        headline: "Microsoft at NeurIPS, and who it writes with"
+        dek: ""
+        featured: true
+        prompt: "Which NeurIPS 2026 papers have Microsoft authors, and where can I see them?"
+        file: stories/microsoft-at-neurips.zip
+        image: stories/microsoft-at-neurips.png
+        chapters:
+        - id: m1
+          label: Microsoft in 2026
+          kind: story
+          prompt: "Which NeurIPS 2026 papers have Microsoft authors, and where can I see them?"
+          headline: "205 NeurIPS 2026 papers have Microsoft authors"
+          stat: "205"
+          message: "2026 papers with Microsoft authors"
+          file: "microsoft_2026.app.jsx"
+        - id: m2
+          label: Collaborators
+          kind: map
+          prompt: "Who does Microsoft write NeurIPS papers with?"
+          headline: "Microsoft's most frequent NeurIPS co-authors are at Google and Tsinghua University"
+          stat: "261"
+          message: "co-author organizations, 2+ papers each"
+          file: "microsoft_partners.map.json"
+        follow_ups:
+        - Which Microsoft papers are in Sydney on the first day?
+        - What topics do Microsoft Research Asia papers cover?
+        - Compare Microsoft with Google and Meta.

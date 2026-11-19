@@ -24,17 +24,18 @@ const frameSx = {
 const lines = (widths: number[]) => widths.map((width, index) =>
     <Box key={index} sx={{ height: 3, width: `${width}%`, flexShrink: 0, bgcolor: 'rgba(0,0,0,0.14)', borderRadius: 1 }} />);
 
-/** A tiny page: heading, text lines, and the report's first chart (text lines while there is none yet). */
-export const MiniPage: React.FC<{ chartSrc?: string; width?: number }> = ({ chartSrc, width = 40 }) =>
-    <Box aria-hidden sx={{ ...frameSx, width, height: Math.round(width * 1.3), borderRadius: '3px', p: '4px',
-        display: 'flex', flexDirection: 'column', gap: '3px', overflow: 'hidden' }}>
+/** A tiny page: heading, text lines, and the report's first chart (text lines while there is none yet). A `peek` shows
+ *  only the page's top, as tall as an app's window, so report cards in the thread are no taller than app cards. */
+export const MiniPage: React.FC<{ chartSrc?: string; width?: number; peek?: boolean }> = ({ chartSrc, width = 40, peek = false }) =>
+    <Box aria-hidden sx={{ ...frameSx, width, height: Math.round(width * (peek ? 0.78 : 1.3)), borderRadius: 0.75, p: '4px',
+        ...(peek ? { pb: 0 } : {}), display: 'flex', flexDirection: 'column', gap: '3px', overflow: 'hidden' }}>
         <Box sx={{ height: 4, width: '70%', flexShrink: 0, bgcolor: 'rgba(0,0,0,0.35)', borderRadius: 1 }} />
-        {lines([100, 85])}
+        {lines(peek ? [100] : [100, 85])}
         {chartSrc
             ? <Box component="img" src={chartSrc} alt="" sx={{ display: 'block', width: '100%', height: Math.round(width * 0.42),
                 flexShrink: 0, objectFit: 'cover', objectPosition: 'top', borderRadius: '1px' }} />
             : lines([100, 92, 70])}
-        {lines([100, 60])}
+        {!peek && lines([100, 60])}
     </Box>;
 
 // ── App layout outline ──
@@ -102,7 +103,7 @@ const MiniRow: React.FC<{ row: AppRow }> = ({ row }) => {
 /** A tiny app window: title-bar dots over an outline of the app (or a generic dashboard). */
 export const MiniWindow: React.FC<{ width?: number; layout?: AppLayout }> = ({ width = 48, layout }) => {
     const rows = (layout?.length ? layout : DEFAULT_LAYOUT).slice(0, MAX_ROWS);
-    return <Box aria-hidden sx={{ ...frameSx, width, height: Math.round(width * 0.78), borderRadius: '4px', overflow: 'hidden',
+    return <Box aria-hidden sx={{ ...frameSx, width, height: Math.round(width * 0.78), borderRadius: 1, overflow: 'hidden',
         display: 'flex', flexDirection: 'column' }}>
         <Box sx={{ height: 7, flexShrink: 0, display: 'flex', alignItems: 'center', gap: '2px', px: '3px', bgcolor: 'rgba(0,0,0,0.05)' }}>
             {[0, 1, 2].map(index => <Box key={index} sx={{ width: 3, height: 3, borderRadius: '50%', bgcolor: 'rgba(0,0,0,0.22)' }} />)}
@@ -148,7 +149,7 @@ function loadMapOutline(source: string): Promise<MapOutline | null> {
 
 /** A tiny map: the basemap's land in the app tint (a globe draws its sphere too). */
 export const MiniMap: React.FC<{ width?: number; outline?: MapOutline | null }> = ({ width = 48, outline }) =>
-    <Box aria-hidden data-mini-map sx={{ ...frameSx, width, height: Math.round(width * 0.75), borderRadius: '4px', overflow: 'hidden',
+    <Box aria-hidden data-mini-map sx={{ ...frameSx, width, height: Math.round(width * 0.75), borderRadius: 1, overflow: 'hidden',
         bgcolor: '#f3f6f9', display: 'flex' }}>
         <svg viewBox="0 0 48 36" width="100%" height="100%">
             {outline?.globe && <circle cx={24} cy={18} r={16} fill="#fff" stroke="rgba(0,0,0,0.12)" strokeWidth={0.5} />}
@@ -196,5 +197,5 @@ export const useChartThumbnail = (chartId: string | undefined): string | undefin
 };
 
 /** A report's page, showing the thumbnail of the first chart it includes. */
-export const ReportMiniature: React.FC<{ chartIds: string[]; width?: number }> = ({ chartIds, width }) =>
-    <MiniPage chartSrc={useChartThumbnail(chartIds[0])} width={width} />;
+export const ReportMiniature: React.FC<{ chartIds: string[]; width?: number; peek?: boolean }> = ({ chartIds, width, peek }) =>
+    <MiniPage chartSrc={useChartThumbnail(chartIds[0])} width={width} peek={peek} />;

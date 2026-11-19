@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Callable, Iterable
 
+from data_formulator.analyst import names
+
 if TYPE_CHECKING:
     import pandas as pd
 
@@ -59,15 +61,16 @@ UNIT_PARAMS = ("offset", "limit", "rows", "columns", "sheet", "pages")
 def kind_of(path: str) -> str:
     """What a session path holds: table, chart, report, thread, reference, index, workflow, schedules, PDF, Excel,
     data file, CSV, Word, app, image, binary, or text."""
-    lower = path.lower()
-    if lower.startswith("sources/"):
-        return "source" if lower.count("/") <= 1 or lower.endswith("/") else "source table"
-    if lower.startswith("workflows/"):
-        return "schedules" if lower == "workflows/schedules.json" else "workflow"
-    if lower.startswith("session/"):
-        folder = lower[len("session/"):].split("/", 1)[0]
+    lower = names.canonical(path).lower()
+    if lower.startswith(names.SOURCES):
+        rest = lower[len(names.SOURCES):]
+        return "source" if "/" not in rest.rstrip("/") or lower.endswith("/") else "source table"
+    if lower.startswith(names.WORKFLOWS):
+        return "schedules" if lower == f"{names.WORKFLOWS}schedules.json" else "workflow"
+    if lower.startswith(names.SESSION):
+        folder = names.folder_of(lower)
         return {"tables": "table", "charts": "chart", "reports": "report", "threads": "thread",
-                "references": "reference", "index.md": "index"}.get(folder, "text")
+                "references": "reference", "index": "index"}.get(folder or "", "text")
     suffix = PurePosixPath(lower).suffix
     if lower.endswith((".app.jsx", ".html")):
         return "app"
@@ -468,14 +471,15 @@ class Section:
 
 
 # Folders outside the session are searched only when a path names them.
-NAMED_ONLY = ("workflows/",)
+NAMED_ONLY = (names.WORKFLOWS,)
 
 
 def _selected(path: str, scopes: list[str]) -> bool:
     if not scopes:
         return not path.startswith(NAMED_ONLY)
     for scope in scopes:
-        scope = scope.strip().lstrip("/")
+        scope = scope.strip()
+        scope = names.canonical(scope if names.is_object(scope) else scope.lstrip("/"))
         if not scope:
             return True
         if any(char in scope for char in "*?["):
@@ -628,7 +632,7 @@ def _text_section(files: "SessionFiles", path: str, kind: str, matcher: Matcher,
     label = {"reference": "connected-source reference (cached metadata only; use probe_data with its source_id "
                           "and table_key for remote rows)", "PDF": "PDF"}.get(kind, kind)
     header = f"## {path}" + (f' "{ui}"' if ui and ui != PurePosixPath(path).name else "") + f" — {label}"
-    group = {"files": 2, "session": 3, "scratch": 4, "workflows": 5}.get(path.split("/", 1)[0], 6)
+    group = {"files": 2, "session": 3, "scratch": 4, "workflows": 5}.get(names.root_of(path), 6)
     section = Section(path, header, (group, 0 if name_hit else 1, count), count=count, lines=lines)
     if name_hit:
         section.matched_in.append("file name")
@@ -643,11 +647,12 @@ def search(files: "SessionFiles", query: str, path: Any = None, regex: bool = Fa
     if not isinstance(max_results, int) or not 1 <= max_results <= 100:
         raise ValueError("max_results must be between 1 and 100")
     scopes = [path] if isinstance(path, str) else list(path or [])
+    scopes = [names.canonical(scope) if isinstance(scope, str) else scope for scope in scopes]
     sections: list[Section] = []
     errors: list[str] = []
     from data_formulator.analyst.session_files import roots_of
     for entry in files.entries(roots_of(scopes)):
-        if entry.path == "session/index.md" or not _selected(entry.path, scopes):
+        if entry.path == names.INDEX or not _selected(entry.path, scopes):
             continue
         kind = kind_of(entry.path)
         try:
@@ -678,13 +683,13 @@ def search(files: "SessionFiles", query: str, path: Any = None, regex: bool = Fa
     more_tables = 0
     sources = files.sources
     if sources.available and (not scopes or any(
-            isinstance(scope, str) and scope.strip().lstrip("/").startswith("sources") for scope in scopes)):
+            isinstance(scope, str) and names.root_of(scope) == "sources" for scope in scopes)):
         try:
             found, more_tables = sources.search_sections(matcher, scopes, max_results)
             sections += found
         except Exception as exc:
             logger.debug("catalog search failed", exc_info=True)
-            errors.append(f"sources/: {str(exc)[:160]}")
+            errors.append(f"sources://: {str(exc)[:160]}")
     if not sections:
         where = ", ".join(scopes) if scopes else "the session and connected-source catalogs"
         how = ("the pattern must match a line or a table cell" if matcher.regex else
@@ -694,11 +699,11 @@ def search(files: "SessionFiles", query: str, path: Any = None, regex: bool = Fa
 
     sections.sort(key=lambda section: section.order)
     # Share the row and line budget: small result sets get all of theirs first. Catalog tables
-    # (sources/) come last and get what the session leaves.
+    # (sources://) come last and get what the session leaves.
     remaining = max_results
     for in_catalog in (False, True):
         with_hits = sorted((section for section in sections
-                            if section.count and section.path.startswith("sources/") == in_catalog),
+                            if section.count and section.path.startswith(names.SOURCES) == in_catalog),
                            key=lambda section: section.count)
         for index, section in enumerate(with_hits):
             share = max(remaining // max(len(with_hits) - index, 1), 1 if remaining else 0)
@@ -739,7 +744,7 @@ def search(files: "SessionFiles", query: str, path: Any = None, regex: bool = Fa
             if section.count > section.shown:
                 out.append(f"… {section.shown} of {section.count} shown")
     if more_tables:
-        out += ["", f"… {more_tables} more connected-source tables match; search with path [\"sources/\"] to see them."]
+        out += ["", f"… {more_tables} more connected-source tables match; search with path [\"sources://\"] to see them."]
     if errors:
         out += ["", "Could not search: " + "; ".join(errors[:5])]
     return "\n".join(out)

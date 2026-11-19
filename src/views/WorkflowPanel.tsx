@@ -1255,7 +1255,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
             anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }} transformOrigin={{ vertical: 'top', horizontal: 'left' }}
             transitionDuration={{ enter: 180, exit: 120 }} onClick={event => event.stopPropagation()}
             slotProps={{ paper: { sx: { mt: 0.75, width: 380, maxWidth: 'calc(100vw - 32px)', px: 1.25, pt: 1, pb: 0.5,
-                borderRadius: '12px', border: 1, borderColor: 'divider', overflow: 'visible',
+                borderRadius: 3, border: 1, borderColor: 'divider', overflow: 'visible',
                 boxShadow: '0 4px 18px rgba(32, 33, 36, 0.16), 0 1px 3px rgba(32, 33, 36, 0.08)',
                 transition: 'border-color 120ms ease, box-shadow 120ms ease',
                 '&:focus-within': { borderColor: 'primary.main',

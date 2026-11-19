@@ -38,6 +38,47 @@ describe('field semantics', () => {
         expect(pivot).toMatchObject({ colorType: 'diverging', midpoint: 18 });
     });
 
+    it('gives switch options that compare one scale, while another keeps its own', () => {
+        const fields = { poorest: { semanticType: 'Percentage', thresholds: [20, 40, 60, 80] },
+            richest: { semanticType: 'Percentage', thresholds: [20, 40, 60, 80] }, gap: { semanticType: 'Number' } };
+        const breaks = (field: 'poorest' | 'richest' | 'gap', values: number[]) => {
+            const encoding = colorDefaults({ field }, resolveField(field, values, fields[field]));
+            const legend = colorScale(encoding, values, field).legend;
+            return legend.kind === 'classes' ? legend.items.slice(1).map(item => item.from) : [];
+        };
+        // The two groups' rates, far apart in their values, are classed alike.
+        expect(breaks('poorest', [2, 10, 30, 50, 70])).toEqual([20, 40, 60, 80]);
+        expect(breaks('richest', [60, 80, 90, 95, 99])).toEqual([20, 40, 60, 80]);
+        // The gap, another kind of measure, fits its own data.
+        expect(breaks('gap', [5, 10, 20, 40, 70])).not.toEqual([20, 40, 60, 80]);
+        // A field's extent instead spans the ramp in equal steps; a scale on the encoding itself wins.
+        expect(colorDefaults({ field: 'poorest' }, resolveField('poorest', [1], { domain: [0, 100] })))
+            .toMatchObject({ domain: [0, 100], method: 'equal' });
+        expect(colorDefaults({ field: 'poorest', thresholds: [50] }, resolveField('poorest', [1], fields.poorest)).thresholds).toEqual([50]);
+        expect(parseMapSpec(JSON.stringify({ fields: { rate: { domain: [100, 0] }, share: { thresholds: 'x' } }, layers: [] })).errors)
+            .toEqual(expect.arrayContaining([expect.stringContaining('fields.rate.domain'), expect.stringContaining('fields.share.thresholds')]));
+    });
+
+    it('keeps a share held as 0–100 out of a fraction format, even when most values are under 1', () => {
+        // Most countries hold under 1% of papers, which reads as a 0–1 share; 46 then showed as "4600%".
+        const values = [46.1, 33.9, 10.8, 8.5, 4, 2.5, 1.2, ...Array(80).fill(0.3)];
+        const resolved = resolveField('share', values, { semanticType: 'Percentage', unit: '%' });
+        expect(resolved.format?.pattern ?? '').not.toContain('%');
+        const legend = colorScale(colorDefaults({ field: 'share', thresholds: [5, 15, 30] }, resolved), values, 'Share').legend;
+        expect(legend.kind === 'classes' ? legend.items.map(item => item.label) : []).toEqual(['< 5', '5 – 15', '15 – 30', '≥ 30']);
+    });
+
+    it('ignores a stored 0–1 domain that the values plainly exceed', () => {
+        // An inferred [0, 1] on a share held as 0–100 would format 30 as "3000%" and colour it as diverging.
+        const values = [46, 31.2, 8.5, 2.1, 0.4];
+        const resolved = resolveField('share', values, { semanticType: 'Percentage', unit: '%', intrinsicDomain: [0, 1] });
+        expect(resolved.colorType).toBe('sequential');
+        const legend = colorScale(colorDefaults({ field: 'share', thresholds: [5, 15, 30] }, resolved), values, 'Share').legend;
+        expect(legend.kind === 'classes' ? legend.items.map(item => item.label) : []).toEqual(['< 5', '5 – 15', '15 – 30', '≥ 30']);
+        // A domain the values fit is kept.
+        expect(annotateField('share', [0.2, 0.5], { semanticType: 'Percentage', intrinsicDomain: [0, 1] }).intrinsicDomain).toEqual([0, 1]);
+    });
+
     it('formats with a currency before the sign', () => {
         expect(formatter(undefined, '$')(-1234567)).toBe('−$1.23M');
         expect(formatter(undefined, '', ' kt')(42)).toBe('42 kt');

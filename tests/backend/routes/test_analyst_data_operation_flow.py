@@ -195,6 +195,30 @@ def test_analyst_request_resolves_execution_defaults(agents_client, tmp_path: Pa
     assert "max_repair_attempts" not in analyst_agent.call_args.kwargs
 
 
+def test_a_paused_run_finishes_after_its_interact_event(agents_client, tmp_path: Path) -> None:
+    """The run records where its paused turn began after it yields ``interact``, so its resumed run can join the
+    conversation; the stream must not close it at that event."""
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    finished = []
+
+    def run(**_kwargs):
+        yield {"type": "interact", "view_request": {"id": "v1", "targets": []}}
+        finished.append(True)
+
+    with (
+        patch("data_formulator.routes.agents.get_identity_id", return_value="test-user"),
+        patch("data_formulator.routes.agents.get_client"),
+        patch("data_formulator.routes.agents.get_workspace", return_value=workspace),
+        patch("data_formulator.routes.agents.AnalystAgent") as analyst_agent,
+    ):
+        analyst_agent.return_value.run.side_effect = run
+        response = agents_client.post("/api/agent/analyst-streaming", json={
+            "model": {}, "input_tables": [], "user_question": "Check the chart",
+        }, buffered=True)
+    assert json.loads(response.data.decode("utf-8"))["type"] == "interact"
+    assert finished == [True]
+
+
 @pytest.mark.parametrize("max_iterations", [0, True, "10", 1.5, None])
 def test_invalid_action_budget_is_rejected_before_execution(agents_client, max_iterations) -> None:
     with (

@@ -13,6 +13,7 @@ from urllib.parse import quote, unquote
 import pandas as pd
 from pypdf import PdfReader
 
+from data_formulator.analyst import names
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.datalake.workspace_file_content import (
     MAX_FILE_BYTES,
@@ -202,14 +203,15 @@ def _data_input(name: str, metadata: Any | None) -> WorkspaceInputRef:
 def workspace_table_input(workspace: Any, input_id: str) -> WorkspaceInputRef | None:
     """Any workspace table named by `input_id`, including derived ones the run's scoped data leaves out.
 
-    Accepts a table name, a `session/tables/<name>.json` or `data/<file>` path, or a `data:[<hash>:]<name>` id.
+    Accepts a table name, its `session://tables/<name>` (or older `session/tables/<name>.json`), a `data/<file>`
+    path, or a `data:[<hash>:]<name>` id.
     A hash that no longer matches the table is refused, like a stale scoped input.
     """
     if workspace is None or not input_id:
         return None
     text, expected_hash = input_id.strip(), None
-    if text.startswith("session/tables/") and text.endswith(".json"):
-        text = text.removeprefix("session/tables/").removesuffix(".json")
+    if (table := names.leaf_of(text, "tables")) is not None:
+        text = table
     elif text.startswith("data:"):
         parts = text.split(":", 2)
         if len(parts) == 3:
@@ -220,10 +222,10 @@ def workspace_table_input(workspace: Any, input_id: str) -> WorkspaceInputRef | 
     elif text.startswith("data/"):
         filename = text.removeprefix("data/")
         try:
-            names = workspace.list_tables()
+            table_names = workspace.list_tables()
         except Exception:
             return None
-        text = next((name for name in names if getattr(workspace.get_table_metadata(name), "filename", None) == filename),
+        text = next((name for name in table_names if getattr(workspace.get_table_metadata(name), "filename", None) == filename),
                     Path(filename).stem)
     metadata = workspace.get_table_metadata(text) if text else None
     if metadata is None:
@@ -518,14 +520,14 @@ class WorkspaceInputEngine:
             if len(matches) < max_results and query.casefold() in metadata.casefold():
                 matches.append({
                     **source, "match_type": "metadata", "locator": {"metadata": True},
-                    "text": f"{reference['displayName']}: cached metadata matches; read session/references/{reference['id']}.json with read_file for details.",
+                    "text": f"{reference['displayName']}: cached metadata matches; read {names.reference(reference['id'])} with read_file for details.",
                 })
 
         return json.dumps(
             {"matches": matches, "count": len(matches), "errors": errors,
              **({"metadata_only_sources": reference_sources,
                  "note": "External references were searched only in cached metadata, not remote rows. "
-                         "No metadata match does not mean no matching records. Read the table's sources/ file for missing "
+                         "No metadata match does not mean no matching records. Read the table's sources:// item for missing "
                          "schema and probe_data with source_id and table_key to search remote values."}
                 if reference_sources else {})},
             ensure_ascii=False,

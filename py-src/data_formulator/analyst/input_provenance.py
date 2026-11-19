@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from data_formulator.analyst import names
 from data_formulator.analyst.workspace_inputs import WorkspaceInputManifest, workspace_table_input
 from data_formulator.datalake.workspace_metadata import MemorySource
 
@@ -14,13 +15,16 @@ def _resolve_input(manifest: WorkspaceInputManifest, input_id: str, kind: Any, w
     earlier (in this run or before) is a valid input too.
     """
     items = [item for item in manifest.inputs if item.kind == kind]
+    # A table's session name (session://tables/<name>, or its older session/tables/<name>.json) is its name.
+    if kind == "data" and (table := names.leaf_of(input_id, "tables")) is not None:
+        input_id = table
     exact = next((item for item in items if item.id == input_id), None)
     if exact is not None:
         return exact
     # A name or a session path the agent read also identifies an input.
     matches = [item for item in items if input_id in (
         item.display_name, item.content_hash, item.id.rsplit(":", 1)[0], f"{item.kind}:{item.content_hash}",
-        item.path, f"session/tables/{item.display_name}.json")]
+        item.path, names.table(item.display_name))]
     if len(matches) == 1:
         return matches[0]
     if not matches and kind == "data":
@@ -28,7 +32,7 @@ def _resolve_input(manifest: WorkspaceInputManifest, input_id: str, kind: Any, w
         if table is not None:
             return table
     if kind == "data":
-        raise ValueError(f"Unknown or mismatched input source: {input_id}. Use a table name from session/tables/.")
+        raise ValueError(f"Unknown or mismatched input source: {input_id}. Use a table name or its session://tables/<name>.")
     listed = ", ".join(item.path or item.id for item in items[:12]) or "none"
     raise ValueError(f"Unknown or mismatched input source: {input_id}. Use a {kind} input path: {listed}")
 

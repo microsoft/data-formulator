@@ -43,7 +43,9 @@ import { buildDictTableFromWorkspace } from '../app/tableThunks';
 import { codeCallsOf, isCodeCall } from '../app/toolCalls';
 import { toAnalystTableRef } from '../app/tableResolution';
 
-import { alpha, lighten } from '@mui/material/styles';
+import { alpha } from '@mui/material/styles';
+import { inputFocusShadow, lineColor } from '../app/look';
+
 import { WorkflowGears, WritingPencil } from '../components/FunComponents';
 import { FileTypeIcon } from '../icons';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
@@ -60,7 +62,7 @@ import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
 
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
-import { borderColor, transition, conversationWidth } from '../app/tokens';
+import { borderColor, transition, conversationWidth, ambientShadow, cardRadius } from '../app/tokens';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { applySessionDeletion, type DeletionPlan } from '../app/sessionDeletion';
@@ -79,6 +81,8 @@ import { requestToolsDialog } from '../app/toolsSettings';
 import { onTurnResumeRequest } from '../app/accounts';
 import { SignInFormCard } from '../components/SignInFormCard';
 import { MCP_CALL_TOOL, McpApprovalDialog, McpDecision, McpProposal, mcpCallArgs, mcpCallRecord } from '../components/McpServers';
+import { VIEW_TOOL, viewCallRecord, viewItemName, type ViewRequest, type ViewResult } from './agentView';
+const AgentViewHost = React.lazy(() => import('./AgentViewHost'));
 import { selectChatWorkflow, WorkflowProgress, WORKFLOW_AUTHORING_PROMPT } from './WorkflowPanel';
 import { formArtifactFromEvent, requestAutoSubmit } from '../app/setupForms';
 import { threadChatNodeIds, threadOfNode } from '../app/threadGraph';
@@ -124,7 +128,7 @@ const StarterChip: FC<{ label: string; onClick: () => void; sx: any }> = ({ labe
 /** "N new · Show latest": results the run produced after the user took over the focus. */
 const ShowLatestLink: FC<{ count: number; onShow: () => void }> = ({ count, onShow }) => {
     const { t } = useTranslation();
-    return <ButtonBase onClick={onShow} sx={{ fontSize: textVar.xs, color: 'primary.main', borderRadius: '4px', px: 0.5,
+    return <ButtonBase onClick={onShow} sx={{ fontSize: textVar.xs, color: 'primary.main', borderRadius: 1, px: 0.5,
         '&:hover': { textDecoration: 'underline' } }}>
         {t('chartRec.showLatest', { count, defaultValue: count === 1 ? '1 new result · Show latest' : '{{count}} new results · Show latest' })}
     </ButtonBase>;
@@ -294,6 +298,16 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     }, [isChatFormulating, exampleFollowUps, dispatch]);
     const [pendingTerminal, setPendingTerminal] = useState<{
         proposal: TerminalProposal;
+        trajectory: any[];
+        completedStepCount: number;
+        actionId: string;
+        parentNodeId: string;
+        lastCreatedTableId: string | null;
+        sourceTableIds: string[];
+    } | null>(null);
+    // Items the agent asked to view, being drawn; the run resumes with their pictures.
+    const [pendingView, setPendingView] = useState<{
+        request: ViewRequest;
         trajectory: any[];
         completedStepCount: number;
         actionId: string;
@@ -766,6 +780,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         retry?: boolean;
         terminalResponse?: { request_id: string; decision: 'approve' | 'reject' };
         mcpResponse?: { request_id: string; decision: McpDecision };
+        // What the agent asked to view, drawn by the browser (AgentViewHost); resumes the paused run.
+        viewResponse?: { request_id: string; results: ViewResult[]; problems?: string[] };
         interactionResponse?: {
             operation_id: string;
             plan_id?: string;
@@ -795,6 +811,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             ...files.map(file => file.name),
             ...images.map((_, index) => images.length > 1 ? `image ${index + 1}` : 'image'),
         ];
+        // Where each attachment lives in scratch/, so its chip can preview it (images handed over without an
+        // upload, e.g. from the landing page, have none).
+        const imagePaths = explicitAttachments ? [] : attachedImages.map(image => image.scratchPath);
+        const attachmentPaths = Object.fromEntries([
+            ...files.map(file => [file.name, file.scratchPath] as const),
+            ...images.map((_, index) => [images.length > 1 ? `image ${index + 1}` : 'image', imagePaths[index]] as const),
+        ].filter((entry): entry is readonly [string, string] => !!entry[1]));
 
         // Every input table is in play, with the focused table's own inputs first.
         const priorityIds = currentTable?.derive
@@ -913,7 +936,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             if (!turn?.prompt || turn.workflowMessage) return false;
             return threadGraph.childrenOf(nodeId).length === failedDraftIds(nodeId).length;
         };
-        const continuesStopped = !clarificationContext?.terminalResponse && !clarificationContext?.mcpResponse && !clarificationContext?.retry && !isResume;
+        const continuesStopped = !clarificationContext?.terminalResponse && !clarificationContext?.mcpResponse && !clarificationContext?.viewResponse
+            && !clarificationContext?.retry && !isResume;
         const stoppedMessage = continuesStopped
             ? threadGraph.childrenOf(requestedParentNode).filter(node => isUnanswered(node.id))
                 .sort((left, right) => right.createdAt - left.createdAt)[0]?.id
@@ -963,7 +987,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         };
 
         // ── Route through the unified AnalystAgent (design-35/36) ──
-        // The chart ids a report edit may embed (chart://<id>). The agent reads
+        // The chart ids a report edit may embed (session://charts/<id>). The agent reads
         // charts and their data as session files, so no rows or code are sent.
         const streamUrl = getUrls().ANALYST_STREAMING;
         const availableCharts = charts
@@ -1020,6 +1044,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             }
             if (clarificationContext!.mcpResponse) {
                 requestBody.mcp_response = clarificationContext!.mcpResponse;
+            }
+            if (clarificationContext!.viewResponse) {
+                requestBody.view_response = clarificationContext!.viewResponse;
             }
         } else {
             requestBody.user_question = agentPrompt;
@@ -1086,7 +1113,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         // and a retry re-runs a message that is already in the thread.
         let draftParentId = askedFromNode;
         let promptTurnId: string | null = null;
-        if (!clarificationContext?.terminalResponse && !clarificationContext?.mcpResponse && !clarificationContext?.retry) {
+        if (!clarificationContext?.terminalResponse && !clarificationContext?.mcpResponse && !clarificationContext?.viewResponse
+            && !clarificationContext?.retry) {
             const promptId = `textTurn_${runKey}_prompt`;
             promptTurnId = promptId;
             const auto = autoPromptRef.current;
@@ -1095,6 +1123,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 prompt: cleanDisplay || agentPrompt,
                 ...(auto ? { auto } : {}),
                 ...(attachmentNames.length ? { attachments: attachmentNames } : {}),
+                ...(Object.keys(attachmentPaths).length ? { attachmentPaths } : {}),
                 ...(clarificationContext?.references?.length ? { references: clarificationContext.references } : {}),
                 externalReferenceId, parentNodeId: askedFromNode, actionId, createdAt: Date.now(),
             }));
@@ -1237,7 +1266,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         let reportFlushTimer: ReturnType<typeof setTimeout> | null = null;
         // Ids of charts created during THIS run, adopted from the backend's
         // forwarded chart_id. Merged into the report's selectedChartIds so a
-        // same-run report can embed them via chart://<id>.
+        // same-run report can embed them via session://charts/<id>.
         const runCreatedChartIds: string[] = [];
         const reportFlushNow = () => {
             if (reportFlushTimer) { clearTimeout(reportFlushTimer); reportFlushTimer = null; }
@@ -1254,9 +1283,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             if (reportFlushTimer) return;
             reportFlushTimer = setTimeout(() => { reportFlushTimer = null; reportFlushNow(); }, 90);
         };
-        const ensureReport = (replaces?: { id?: string; node_id?: string }) => {
+        const ensureReport = (replaces?: { id?: string; node_id?: string }, serverId?: string) => {
             if (reportId) return reportId;
-            const newId = `report-${Date.now()}`;
+            // The server names the report (session://reports/<id>) so the run can patch it by that name.
+            const newId = serverId || `report-${Date.now()}`;
             // The report this one fixes (`replaces`), deleted once this one is in place.
             const replacedReport = replaces ? (currentStore.getState() as DataFormulatorState).generatedReports
                 .find(report => report.id === (replaces.node_id || replaces.id)) : undefined;
@@ -1601,6 +1631,23 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     execution_id: clarificationContext.terminalResponse.request_id });
                 return;
             }
+            // The agent asked to see what it made: the browser draws it and the run resumes with the pictures.
+            // Looking is one of the run's tool calls, not something it says: a tool line on the step, which
+            // leaves the thread once the run goes on, as reads and searches do.
+            if (result.type === 'interact' && result.view_request) {
+                const request = result.view_request as ViewRequest;
+                const state = currentStore.getState() as DataFormulatorState;
+                const charts = dfSelectors.getAllCharts(state);
+                const label = t('dataThread.viewing', { defaultValue: 'Looking at {{items}}',
+                    items: request.targets.map(target => viewItemName(target, charts, state.fileNodes)).join(', ') });
+                const turnId = addToolCall('', { toolCall: viewCallRecord(request, 'running') }, false);
+                const steps = (currentStore.getState() as DataFormulatorState).textTurns.find(turn => turn.id === turnId)?.progressSteps || [];
+                dispatch(dfActions.updateTextTurn({ id: turnId, progressSteps: [...steps,
+                    { id: `progress-${request.id}`, kind: 'tool', tool: VIEW_TOOL, toolCallId: request.id, label, status: 'running' }] }));
+                setPendingView({ request, trajectory: result.trajectory, completedStepCount: result.completed_step_count || 0,
+                    actionId, parentNodeId: turnId, lastCreatedTableId, sourceTableIds: selectedTableIds });
+                return;
+            }
             if (result.type === 'mcp_started' || result.type === 'mcp_result' || (result.type === 'interact' && result.mcp_request)) {
                 const proposal = (result.mcp_request || result.request) as McpProposal;
                 const label = proposal.kind === 'browser' ? proposal.title : t('dataThread.callingMcp', { defaultValue: 'Calling {{server}} · {{tool}}',
@@ -1841,7 +1888,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             // ── report streaming (AnalystAgent only) ──
             // write_report commitment → create the report + switch view.
             if (result.type === "action" && result.action === "write_report") {
-                ensureReport(result.replaces);
+                ensureReport(result.replaces, typeof result.report_id === 'string' ? result.report_id : undefined);
                 // Flush any buffered agent reasoning as its own step. We do NOT
                 // add an "outputting write_report" step — the live generating
                 // report card already indicates that the report is being
@@ -2108,7 +2155,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     } catch {
                         update = undefined;
                     }
+                    // The run's own report: its streamed text is in the store before the edit is checked against it,
+                    // and the patch is what the run finalizes.
+                    if (update?.kind === 'report' && update.id === reportId) reportFlushNow();
                     const applied = update && applySessionUpdate(update, dispatch, () => currentStore.getState() as DataFormulatorState);
+                    if (update?.kind === 'report' && applied?.applied && update.id === reportId) {
+                        accumulatedReportMarkdown = update.content;
+                    }
                     if (update && applied?.applied) {
                         addProgressStep(t(update.kind === 'chart' ? 'dataThread.editedChart' : 'dataThread.editedReport',
                             { defaultValue: update.kind === 'chart' ? 'Edited chart {{name}}' : 'Edited report {{name}}', name: applied.name }), 'info');
@@ -3004,28 +3057,31 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         <>
         <Card ref={inputCardRef} variant="outlined" {...fileDropHandlers} sx={{
             display: 'flex', flexDirection: 'column',
-            mx: 1, mb: 1, mt: 0.5,
+            // No bottom margin: the box ends level with the canvas beside it.
+            mx: 1, mb: 0, mt: 0.5,
             px: 1.25, pt: 1, pb: 0.5,
-            borderRadius: '12px',
+            borderRadius: cardRadius('12px'),
             // Standard single-tone input style (matches AgentChatInput): a
             // solid divider border that turns the accent color on focus.
-            border: `1px solid ${borderColor.divider}`,
+            // The workspace's one strong frame when the contrast is sharp; the canvas beside it stays a step lighter.
+            border: `1px solid ${lineColor(theme, 0.12)}`,
             outline: 'none',
             position: 'relative',
             overflow: isChatFormulating ? 'hidden' : 'visible',
             flexShrink: 0,
             transition: transition.fast,
-            borderColor: chatInputFocused ? theme.palette.primary.main : borderColor.divider,
+            borderColor: chatInputFocused ? theme.palette.primary.main : lineColor(theme, 0.12),
             backgroundColor: theme.palette.background.paper,
             // Neutral elevation shadow recipe shared with AgentChatInput;
             // hover lifts the card a touch without shifting any colors.
+            // Sharp: flat, its outline is enough; focus is a crisp blue edge.
             boxShadow: chatInputFocused
-                ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.15)}, 0 2px 10px rgba(32, 33, 36, 0.14)`
-                : '0 1px 6px rgba(32, 33, 36, 0.10), 0 1px 2px rgba(32, 33, 36, 0.06)',
+                ? inputFocusShadow(theme)
+                : ambientShadow('0 1px 6px rgba(32, 33, 36, 0.10), 0 1px 2px rgba(32, 33, 36, 0.06)'),
             '&:hover': {
                 boxShadow: chatInputFocused
-                    ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.15)}, 0 2px 10px rgba(32, 33, 36, 0.14)`
-                    : '0 2px 10px rgba(32, 33, 36, 0.14), 0 1px 3px rgba(32, 33, 36, 0.08)',
+                    ? inputFocusShadow(theme)
+                    : ambientShadow('0 2px 10px rgba(32, 33, 36, 0.14), 0 1px 3px rgba(32, 33, 36, 0.08)'),
             },
         }}
         >
@@ -3117,7 +3173,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             color: theme.palette.text.secondary,
                             backgroundColor: 'rgba(0,0,0,0.04)',
                             border: 'none',
-                            borderRadius: '4px',
+                            borderRadius: 1,
                             '& .MuiChip-label': { px: '4px', overflow: 'hidden', textOverflow: 'ellipsis' },
                             '& .MuiChip-icon': { ml: '4px', mr: '-2px', color: theme.palette.text.secondary },
                             '& .MuiChip-deleteIcon': { fontSize: iconVar.xs, color: theme.palette.text.disabled, mr: '2px' },
@@ -3137,7 +3193,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                     color: theme.palette.text.secondary,
                                     backgroundColor: 'rgba(0,0,0,0.04)',
                                     border: 'none',
-                                    borderRadius: '4px',
+                                    borderRadius: 1,
                                     '& .MuiChip-label': { px: '6px' },
                                     '& .MuiChip-deleteIcon': { fontSize: iconVar.xs, color: theme.palette.text.disabled, mr: '2px' },
                                 }}
@@ -3157,7 +3213,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 color: theme.palette.text.secondary,
                                 backgroundColor: 'rgba(0,0,0,0.04)',
                                 border: 'none',
-                                borderRadius: '4px',
+                                borderRadius: 1,
                                 '& .MuiChip-label': { px: '4px' },
                                 '& .MuiChip-icon': { ml: '4px', mr: '-2px' },
                                 '& .MuiChip-deleteIcon': { fontSize: iconVar.xs, color: theme.palette.text.disabled, mr: '2px' },
@@ -3178,7 +3234,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 color: theme.palette.text.secondary,
                                 backgroundColor: 'rgba(0,0,0,0.04)',
                                 border: 'none',
-                                borderRadius: '4px',
+                                borderRadius: 1,
                                 '& .MuiChip-label': { px: '4px', overflow: 'hidden', textOverflow: 'ellipsis' },
                                 '& .MuiChip-icon': { ml: '4px', mr: '-2px' },
                                 '& .MuiChip-deleteIcon': { fontSize: iconVar.xs, color: theme.palette.text.disabled, mr: '2px' },
@@ -3472,7 +3528,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         && (starterLoading || (focusedStarterEntry?.questions?.length ?? 0) > 0);
 
     const starterChipSx = {
-        height: 24, borderRadius: '6px', fontSize: textVar.xs,
+        height: 24, borderRadius: 1.5, fontSize: textVar.xs,
         color: 'text.secondary',
         backgroundColor: 'transparent',
         border: `1px solid ${borderColor.divider}`,
@@ -3502,7 +3558,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     onClick={() => setStarterCollapsed(c => !c)}
                     sx={{
                         flexShrink: 0,
-                        p: 0.5, borderRadius: '6px', color: 'text.disabled',
+                        p: 0.5, borderRadius: 1.5, color: 'text.disabled',
                         transition: 'background-color 0.15s, color 0.15s',
                         '&:hover': { color: 'text.secondary', backgroundColor: alpha(theme.palette.text.primary, 0.06) },
                     }}
@@ -3548,9 +3604,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // analysis with their own question or click one of these. It floats above
     // the panes, starting over the input and reaching across into the canvas,
     // with its pointer on the input.
-    // A faint tint of the theme's primary colour, no border or shadow (design-docs/69).
-    const calloutFill = lighten(theme.palette.primary.main, 0.94);
+    // An overlay layer, so it keeps a soft elevation shadow and a faint hairline in either contrast
+    // rather than the near-black anchor outline.
+    const calloutFill = theme.palette.background.paper;
     const calloutText = theme.palette.text.primary;
+    const calloutLine = alpha(theme.palette.text.primary, 0.08);
+    const calloutShadow = '0 8px 24px rgba(32, 33, 36, 0.14), 0 2px 6px rgba(32, 33, 36, 0.08)';
+    const calloutPillShadow = '0 4px 12px rgba(32, 33, 36, 0.14), 0 1px 3px rgba(32, 33, 36, 0.08)';
     const showFollowUps = !!exampleFollowUps && !workspaceReadOnly && !chatWorkflow && !isChatFormulating;
     const followUpsBlock = showFollowUps && exampleFollowUps ? (
         <Popper open={!!followUpsAnchor} anchorEl={followUpsAnchor} placement="top-start" style={{ zIndex: 1250 }}
@@ -3563,30 +3623,30 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     ? [20, followUpsFolded ? 6 : 12] : [Math.max(20, reference.width - 0.3 * popper.width), 12] } }, { name: 'preventOverflow', options: { padding: 12 } }, { name: 'flip', enabled: false }]}>
         <Box ref={followUpsRef}>
         {followUpsFolded ? <ButtonBase onClick={() => setFollowUpsFolded(false)} sx={{
-            display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.375, borderRadius: '4px',
-            bgcolor: calloutFill, color: calloutText,
+            display: 'inline-flex', alignItems: 'center', gap: 0.5, pl: 1, pr: 1.25, py: 0.5, borderRadius: '999px',
+            bgcolor: calloutFill, color: calloutText, border: `1px solid ${calloutLine}`, boxShadow: calloutPillShadow,
             fontFamily: 'inherit', fontSize: textVar.xs, fontWeight: 500,
-            '&:hover, &.Mui-focusVisible': { bgcolor: lighten(theme.palette.primary.main, 0.88) },
+            transition: 'box-shadow 0.15s ease, transform 0.15s ease',
+            '&:hover, &.Mui-focusVisible': { boxShadow: calloutShadow, transform: 'translateY(-1px)' },
         }}>
             <TipsAndUpdatesOutlinedIcon sx={{ fontSize: iconVar.sm, color: 'primary.main' }} />
             {t('chartRec.followUpsFolded', { defaultValue: 'Follow-up ideas' })}
         </ButtonBase> :
         <Box role="note" aria-label={t('chartRec.followUpsTitle', { defaultValue: 'Follow-up suggestions' })} sx={{
             position: 'relative', width: 'min(440px, calc(100vw - 32px))', boxSizing: 'border-box',
-            px: 1.5, pt: 1, pb: 1.125, borderRadius: '8px',
-            bgcolor: calloutFill, color: calloutText,
+            px: 1.5, pt: 1, pb: 1.125, borderRadius: '12px',
+            bgcolor: calloutFill, color: calloutText, border: `1px solid ${calloutLine}`, boxShadow: calloutShadow,
             animation: 'followUpsIn 0.22s ease-out',
             '@keyframes followUpsIn': { from: { opacity: 0, transform: 'translateY(4px)' }, to: { opacity: 1, transform: 'none' } },
             // The pointer toward the input box below, as on a tooltip arrow.
             '&::after': {
-                content: '""', position: 'absolute', left: 24, bottom: -4, width: 8, height: 8, transform: 'rotate(45deg)',
-                bgcolor: calloutFill,
+                content: '""', position: 'absolute', left: 24, bottom: -5, width: 8, height: 8, transform: 'rotate(45deg)',
+                bgcolor: calloutFill, borderRight: `1px solid ${calloutLine}`, borderBottom: `1px solid ${calloutLine}`,
             },
         }}>
             <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75 }}>
-                <TipsAndUpdatesOutlinedIcon sx={{ fontSize: iconVar.sm, mt: '2px', flexShrink: 0, color: 'primary.main' }} />
-                <Typography sx={{ flex: 1, minWidth: 0, fontSize: textVar.xs, lineHeight: 1.5, color: 'inherit' }}>
-                    {exampleFollowUps.intro || t('chartRec.followUpsBody', { defaultValue: 'You can ask follow-up questions in the chat to continue the analysis: ask for new charts, explanations or a new report. Try these examples:' })}
+                <Typography sx={{ flex: 1, minWidth: 0, fontSize: textVar.xs, lineHeight: 1.5, color: 'text.secondary' }}>
+                    {exampleFollowUps.intro || t('chartRec.followUpsBody', { defaultValue: 'Follow-ups:' })}
                 </Typography>
                 <Tooltip title={t('chartRec.followUpsDismiss', { defaultValue: 'Dismiss suggestions' })}>
                     <IconButton size="small" aria-label={t('chartRec.followUpsDismiss', { defaultValue: 'Dismiss suggestions' })}
@@ -3597,14 +3657,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     </IconButton>
                 </Tooltip>
             </Box>
-            <Box sx={{ mt: 0.5, pl: 2.5, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+            <Box sx={{ mt: 0.25, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
                 {exampleFollowUps.questions.map(question => <ButtonBase key={question} onClick={() => submitChat(question)} sx={{
-                    display: 'inline-flex', alignItems: 'baseline', gap: 0.5, py: 0.25, borderRadius: '4px',
+                    display: 'inline-flex', alignItems: 'baseline', gap: 0.5, py: 0.25, borderRadius: 1,
                     fontFamily: 'inherit', fontSize: textVar.xs, lineHeight: 1.45, textAlign: 'left',
-                    color: 'primary.dark', fontWeight: 500,
-                    '& .follow-up-arrow': { transition: 'transform 0.12s' },
-                    '&:hover, &.Mui-focusVisible': { textDecoration: 'underline', textUnderlineOffset: '2px' },
-                    '&:hover .follow-up-arrow, &.Mui-focusVisible .follow-up-arrow': { transform: 'translateX(2px)' },
+                    color: 'text.primary',
+                    '& .follow-up-arrow': { transition: 'transform 0.12s', color: 'text.secondary' },
+                    '&:hover, &.Mui-focusVisible': { color: 'primary.main', textDecoration: 'underline', textUnderlineOffset: '2px' },
+                    '&:hover .follow-up-arrow, &.Mui-focusVisible .follow-up-arrow': { transform: 'translateX(2px)', color: 'primary.main' },
                 }}>
                     <ArrowForwardRoundedIcon className="follow-up-arrow" sx={{ fontSize: iconVar.xs, alignSelf: 'center', flexShrink: 0 }} />
                     {question}
@@ -3680,6 +3740,21 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             terminalResponse: { request_id: pending.proposal.id, decision },
                         }, undefined, { images: [], files: [] });
                     }} />}
+                {pendingView && !isChatFormulating && <React.Suspense fallback={null}><AgentViewHost key={pendingView.request.id} request={pendingView.request}
+                    onDone={results => {
+                        const pending = pendingView;
+                        setPendingView(null);
+                        const status = results.some(item => item.image) ? 'completed' : 'failed';
+                        dispatch(dfActions.upsertTurnExecution({ turnId: pending.parentNodeId,
+                            toolCall: viewCallRecord(pending.request, status, results) }));
+                        const turn = (currentStore.getState() as DataFormulatorState).textTurns.find(item => item.id === pending.parentNodeId);
+                        if (turn?.progressSteps) dispatch(dfActions.updateTextTurn({ id: turn.id, progressSteps: turn.progressSteps
+                            .map(step => step.toolCallId === pending.request.id ? { ...step, status } : step) }));
+                        exploreFromChat('Continue with the drawn items.', {
+                            ...pending,
+                            viewResponse: { request_id: pending.request.id, results, problems: pending.request.problems },
+                        }, undefined, { images: [], files: [] });
+                    }} /></React.Suspense>}
                 {followUpsBlock}
                 {!followUpsBlock && gettingStartedBlock}
                 {/* The input box */}

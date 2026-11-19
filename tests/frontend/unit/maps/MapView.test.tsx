@@ -6,6 +6,7 @@ import { beforeAll, expect, it } from 'vitest';
 
 import '../../../../src/i18n';
 import { loadGeoSet, type GeoSet } from '../../../../src/maps/geography';
+import { textWidth } from '../../../../src/maps/MapRenderer';
 import { MapView } from '../../../../src/maps/MapView';
 import { parseMapSpec } from '../../../../src/maps/spec';
 
@@ -419,6 +420,39 @@ it('draws a map on light street tiles in the light look unless it names a style'
     expect(await titleColor('light')).not.toBe('rgb(232, 234, 236)');
 });
 
+it('keeps the street tiles it has under a new zoom level until that level loads', async () => {
+    const places = [{ name: 'Oakland', lon: -122.2, lat: 37.75 }];
+    const spec = parseMapSpec(JSON.stringify({ title: 'Places', view: { basemap: 'world', tiles: 'light' },
+        data: { p: { values: places } }, layers: [{ id: 'p', type: 'points', data: 'p', lon: 'lon', lat: 'lat' }] })).spec!;
+    const { container, unmount } = render(<MapView spec={spec} data={{ p: places }} geoSets={{ countries }} />);
+    await flush();
+    const tiles = () => Array.from(container.querySelectorAll<SVGImageElement>('.df-map-tiles image'));
+    const level = (image: SVGImageElement) => Number(image.getAttribute('href')!.match(/tile\/(\d+)\//)![1]);
+    const levels = () => [...new Set(tiles().map(level))].sort((a, b) => a - b);
+    const [start] = levels();
+    expect(levels()).toEqual([start]);
+    tiles().forEach(image => image.dispatchEvent(new Event('load')));
+
+    const zoomIn = async () => {
+        const before = levels();
+        fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+        // Mid-gesture the drawn level is scaled, not refetched.
+        await act(() => new Promise(resolve => setTimeout(resolve, 100)));
+        expect(levels()).toEqual(before);
+        await act(() => new Promise(resolve => setTimeout(resolve, 300)));
+        await flush();
+    };
+    await zoomIn();
+    await zoomIn();
+    const [, next] = levels();
+    expect(levels()).toEqual([start, next]);
+    expect(next).toBeGreaterThan(start);
+
+    tiles().filter(image => level(image) === next).forEach(image => image.dispatchEvent(new Event('load')));
+    expect(levels()).toEqual([next]);
+    unmount();
+});
+
 it('names marks close together that share a name once', async () => {
     const turbines = [{ farm: 'Moose Lake', lon: -110, lat: 52 }, { farm: 'Moose Lake', lon: -110.02, lat: 52.01 }, { farm: 'Moose Lake', lon: -110.01, lat: 51.99 },
         { farm: 'Blue Trail', lon: -100, lat: 50 }];
@@ -429,6 +463,24 @@ it('names marks close together that share a name once', async () => {
     const labels = Array.from(container.querySelectorAll('.df-map-labels text')).map(text => text.textContent);
     expect(labels.filter(text => text === 'Moose Lake')).toHaveLength(1);
     expect(labels).toContain('Blue Trail');
+    unmount();
+});
+
+it('slides names of marks at the edge of the frame inside it', async () => {
+    const ends = [{ city: 'Westernmost Long Name', lon: -120, lat: 40 }, { city: 'Easternmost Long Name', lon: 10, lat: 45 }];
+    const spec = parseMapSpec(JSON.stringify({ template: 'points', data: { values: ends }, encoding: { lat: 'lat', lon: 'lon', label: 'city' } })).spec!;
+    const { container, unmount } = render(<MapView spec={spec} data={{ main: ends }} geoSets={{ countries }} />);
+    await flush();
+    await flush();
+    const width = Number(container.querySelector('svg.df-map, svg')!.getAttribute('width'));
+    const labels = Array.from(container.querySelectorAll('.df-map-labels text')).filter(label => label.textContent!.endsWith('Long Name'));
+    expect(labels).toHaveLength(2);
+    for (const label of labels) {
+        const half = textWidth(label.textContent!, 11) / 2;
+        const x = Number(label.getAttribute('x'));
+        expect(x - half).toBeGreaterThanOrEqual(0);
+        expect(x + half).toBeLessThanOrEqual(width);
+    }
     unmount();
 });
 
@@ -501,6 +553,21 @@ it('frames bubbles keyed to countries by the countries, not their centres', asyn
         .flatMap(path => (path.getAttribute('d')!.match(/-?[\d.]+/g) ?? []).filter((_, index) => index % 2 === 0).map(Number));
     expect(Math.min(...xs)).toBeGreaterThanOrEqual(-1);
     unmount();
+});
+
+it('puts a still picture\'s legend in a thin strip under the map, not over it', async () => {
+    panelSize = { width: 360, height: 260 };
+    const { container, unmount } = render(<MapView spec={map} data={{ d: rows }} geoSets={{ countries }} still legendBelow />);
+    await flush();
+    const strip = container.querySelector('[data-map-strip]') as HTMLElement;
+    expect(strip.querySelector('[data-map-legend]')).not.toBeNull();
+    expect(container.querySelector('[data-map-corner]')).toBeNull();
+    // Small as the picture is, the legend under it keeps its full size.
+    expect(container.querySelector('[data-map-legend-compact]')).toBeNull();
+    // The strip sits outside the map's own box.
+    expect(container.querySelector('[data-map-view]')!.contains(strip)).toBe(false);
+    unmount();
+    panelSize = { width: 900, height: 600 };
 });
 
 it('folds the legend into a chip on a small interactive map, and keeps a compact one in a small still picture', async () => {

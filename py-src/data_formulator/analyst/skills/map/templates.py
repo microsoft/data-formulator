@@ -172,6 +172,8 @@ def template_errors(spec: dict[str, Any]) -> list[str]:
     if "domain" in properties and not (isinstance(domain, list) and len(domain) == 2 and all(_finite(item) for item in domain)
                                        and domain[0] < domain[1]):
         errors.append("properties.domain must be [min, max] numbers with min < max.")
+    if "reverse" in properties and not isinstance(properties["reverse"], bool):
+        errors.append("properties.reverse must be true or false.")
     if "sizeDomain" in properties and not size_domain_ok(properties["sizeDomain"]):
         errors.append("properties.sizeDomain must be [low, high] numbers with 0 ≤ low < high.")
     if "sizeRange" in properties and not size_range_ok(properties["sizeRange"]):

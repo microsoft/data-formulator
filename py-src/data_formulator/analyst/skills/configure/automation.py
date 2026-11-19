@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, Generator
 
+from data_formulator.analyst import names
 from data_formulator.analyst.skills.base import Event, SkillContext
 
 from .forms import form_event, form_payload, identity_of, review_requested
@@ -30,8 +31,12 @@ def workflow_store(ctx: SkillContext):
 
 
 def store_path(path: Any) -> Any:
-    """A workflow path as the store and schedules know it: ``workflows/demo/x.yaml`` -> ``demo/x.yaml``."""
-    return path.strip()[len("workflows/"):] if isinstance(path, str) and path.strip().startswith("workflows/") else path
+    """A workflow path as the store and schedules know it: ``workflows://demo/x.yaml`` (or the older
+    ``workflows/demo/x.yaml``) -> ``demo/x.yaml``."""
+    if not isinstance(path, str):
+        return path
+    path = names.canonical(path)
+    return path[len(names.WORKFLOWS):] if path.startswith(names.WORKFLOWS) else path
 
 
 def propose_workflow(spec: dict[str, Any], ctx: SkillContext) -> Generator[Event, None, str | None]:

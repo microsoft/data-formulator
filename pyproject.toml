@@ -120,6 +120,7 @@ include = ["data_formulator*"]
     "demos/*/assets/**/*.png",
     "demos/*/stories/*/state.json",
     "demos/*/stories/*/*.parquet",
+    "demos/*/stories/*/files/*",
 ]
 
 [project.scripts]

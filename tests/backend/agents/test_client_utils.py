@@ -297,6 +297,32 @@ class TestModelNamePrefixing:
             "APIConnectionError - gpt-5-mini unable to complete request: max_output_tokens")))
         Client("azure", "gpt-5-mini", api_key="k", api_base="https://df.openai.azure.com").ping()
 
+    @pytest.mark.parametrize("failures,succeeds", [(2, True), (5, False)])
+    def test_requests_whose_connection_never_opened_are_resent(self, monkeypatch, failures, succeeds):
+        import httpx
+        from unittest.mock import Mock
+
+        def dropped_handshake():
+            try:
+                raise httpx.ConnectError("[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol")
+            except httpx.ConnectError:
+                # LiteLLM re-raises its own error type while handling the transport error.
+                try:
+                    raise Exception("AzureException APIError - [SSL: UNEXPECTED_EOF_WHILE_READING]")
+                except Exception as wrapped:
+                    return wrapped
+
+        completion = Mock(side_effect=[dropped_handshake() for _ in range(failures)] + ["reply"])
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        monkeypatch.setattr(client_utils, "CONNECT_RETRY_DELAYS", (0, 0, 0, 0))
+        client = Client("azure", "gpt-4.1", api_key="k", api_base="https://apim.example.test")
+        if succeeds:
+            assert client.get_completion([{"role": "user", "content": "hi"}]) == "reply"
+        else:
+            with pytest.raises(Exception, match="UNEXPECTED_EOF"):
+                client.get_completion([{"role": "user", "content": "hi"}])
+        assert completion.call_count == min(failures, 4) + 1
+
     @pytest.mark.parametrize("model,api_base,sent,forced", [
         ("gpt-6.1-sol", "https://df.openai.azure.com", True, False),
         ("gpt-4.1", "https://df.openai.azure.com", False, False),

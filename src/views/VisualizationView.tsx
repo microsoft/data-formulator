@@ -40,7 +40,7 @@ import {
 
 import _ from 'lodash';
 
-import { floatingPillSx } from '../app/tokens';
+import { cardRadius, floatingPillSx } from '../app/tokens';
 import { CHART_SIZE_STOPS, chartSizeStopIndex, chartStretchCeiling, defaultChartSizeStop, gridSizeCaps, iconVar, textVar } from '../app/layout';
 import { useContainerSize, useLayout, useSettledValue } from '../app/LayoutProvider';
 
@@ -67,6 +67,8 @@ import { ConversationCanvas } from './ConversationCanvas';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
 import TuneIcon from '@mui/icons-material/Tune';
+import IosShareIcon from '@mui/icons-material/IosShare';
+const ShareDialog = React.lazy(() => import('../components/ShareDialog'));
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
@@ -957,6 +959,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     // panel (not inside the chart's <Fade>), so it never remounts or shifts
     // when the chart re-renders. We anchor the popover to that button via a ref.
     const [encodingOpen, setEncodingOpen] = useState<boolean>(false);
+    const [shareOpen, setShareOpen] = useState(false);
     const editButtonRef = useRef<HTMLButtonElement | null>(null);
 
     // State for the compact action dock that sits below the chart-mode data
@@ -1176,7 +1179,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     
     const actionBtnSx = {
         padding: '4px',
-        borderRadius: '6px',
+        borderRadius: 1.5,
         color: 'text.secondary',
         transition: 'all 0.15s ease',
         '&:hover': {
@@ -1427,7 +1430,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             >
                 <Paper
                     elevation={8}
-                    sx={{ width: 280, maxHeight: '78vh', overflowY: 'auto', mt: 0.5, py: 0.5, borderRadius: '10px', overflowX: 'visible' }}
+                    sx={{ width: 280, maxHeight: '78vh', overflowY: 'auto', mt: 0.5, py: 0.5, borderRadius: 2.5, overflowX: 'visible' }}
                 >
                     <EncodingShelfCard chartId={focusedChart.id} />
                     {/* Footer: low-emphasis link to inspect the assembled
@@ -1532,7 +1535,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             display: 'flex', alignItems: 'center', gap: 0.5, pl: 1, pr: 2.5, py: '8px',
             pointerEvents: 'none', '& > *': { pointerEvents: 'auto' },
         }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', borderRadius: '10px', bgcolor: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(2px)' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', borderRadius: 2.5, bgcolor: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(2px)' }}>
                 {chartResizer}
                 {focusedChart && focusedChart.chartType !== 'Table' && focusedChart.chartType !== 'Auto' && (
                     <ChartThemePicker
@@ -1569,6 +1572,17 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         </IconButton>
                     </Tooltip>
                 )}
+                {focusedChart && !['Table', 'Auto', '?'].includes(focusedChart.chartType) && <>
+                    <Tooltip title={t('share.button', { defaultValue: 'Share as an image' })} placement="bottom">
+                        <IconButton size="small" aria-label={t('share.button', { defaultValue: 'Share as an image' })}
+                            onClick={() => setShareOpen(true)} sx={floatingPillSx}>
+                            <IosShareIcon sx={{ fontSize: iconVar.lg }} />
+                        </IconButton>
+                    </Tooltip>
+                    {shareOpen && <React.Suspense fallback={null}><ShareDialog open={shareOpen} onClose={() => setShareOpen(false)}
+                        title={focusedChart.title || table?.displayId || table?.id || t('share.chart', { defaultValue: 'Chart' })}
+                        target={{ path: `session://charts/${focusedChart.id}`, kind: 'chart', id: focusedChart.id }} /></React.Suspense>}
+                </>}
                 {/* Edit-chart (encoding shelf) button — opens the encoding shelf
                     popover; stays available even when the chart can't render yet,
                     so users can fix the encoding. */}
@@ -1769,7 +1783,7 @@ const TableActionDock: FC<{
         }}>
             <Box sx={{
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 0.5,
-                px: 1, py: compact ? 0.25 : 0.5, borderRadius: '8px',
+                px: 1, py: compact ? 0.25 : 0.5, borderRadius: cardRadius('8px'),
                 backgroundColor: 'background.paper',
                 border: '1px solid', borderColor: 'divider',
             }}>

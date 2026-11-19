@@ -76,6 +76,8 @@ export interface HtmlAppTheme {
     /** Density-aware type ramp in px, mirroring the host's `--df-text-*`. */
     textSize: { xxs: number; xs: number; sm: number; md: number; lg: number; xl: number; xxl: number };
     palette: string[];
+    /** The host look's overrides of the app kit's variables (corners, shadows, lines); applied after the kit. */
+    lookVars?: Record<string, string>;
 }
 
 export interface SampleTableRequest {
@@ -125,6 +127,12 @@ export function themeStylesheet(theme: HtmlAppTheme): string {
     return `:root{${variables.map(([name, value]) => `--df-${name}:${cssValue(value)}`).join(';')};color-scheme:light}`;
 }
 
+/** The host look's variables, after the kit so they win; empty for a look that keeps the kit as it is. */
+function lookStylesheet(theme: HtmlAppTheme): string {
+    const entries = Object.entries(theme.lookVars ?? {}).filter(([name]) => /^--df-[a-z0-9-]+$/.test(name));
+    return entries.length ? `<style>:root{${entries.map(([name, value]) => `${name}:${cssValue(value)}`).join(';')}}</style>` : '';
+}
+
 /** Assemble the sandboxed app document; the CSP precedes all author content. */
 export function buildAppDocument(html: string, options: {
     runtimeScripts: string[];
@@ -148,6 +156,7 @@ export function buildAppDocument(html: string, options: {
         + '<meta name="referrer" content="no-referrer">'
         + `<style>${themeStylesheet(options.theme)}</style>`
         + (options.kitStylesheet ? `<style>${options.kitStylesheet.replace(/<\/(style)/gi, '<\\/$1')}</style>` : '')
+        + lookStylesheet(options.theme)
         + `<script>window.__DF_APP_CONFIG__=${config};</script>`
         + runtime
         + author.head.innerHTML

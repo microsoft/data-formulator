@@ -185,7 +185,7 @@ independently guaranteed by the runtime.
 Raw acquisition and intermediate artifacts live under session scratch
 `workflow-<run-id>/`; published data and files use normal workspace storage, and
 chart/report/turn state uses normal session persistence. Private checkpoints
-live under `_workflow_runs/` and include the original instance and active plan, model
+live under the session's `_internal/workflow_runs/` (outside scratch, never exported) and include the original instance and active plan, model
 trajectory, transition history, evidence, and cumulative budgets. Editing the
 instance affects future runs only. Resume continues the same run; a fresh run
 uses the latest saved instance and its specified data requirements.

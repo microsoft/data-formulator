@@ -313,7 +313,7 @@ def test_input_sources_resolve_unique_shortened_ids_and_refuse_unknown_tables():
     shortened = data_ids[0].rsplit(":", 1)[0]
     resolved = normalize_input_sources({"input_sources": [{"id": shortened, "kind": "data"}]}, manifest)
     assert resolved[0]["id"] == data_ids[0]
-    with pytest.raises(ValueError, match="Use a table name from session/tables/"):
+    with pytest.raises(ValueError, match="Use a table name or its session://tables/<name>"):
         normalize_input_sources({"input_sources": [{"id": "d_result", "kind": "data"}]}, manifest)
 
 
@@ -327,7 +327,7 @@ def _workspace_with_derived_table(tmp_path):
 
 
 @pytest.mark.parametrize("reference", [
-    "d_result_5", "session/tables/d_result_5.json", "data/d_result_5.parquet", "data:d_result_5",
+    "d_result_5", "session://tables/d_result_5", "data/d_result_5.parquet", "data:d_result_5",
 ])
 def test_input_sources_accept_derived_workspace_tables_outside_the_scoped_inputs(tmp_path, reference):
     from data_formulator.analyst.input_provenance import normalize_input_sources
@@ -360,7 +360,7 @@ def test_visualize_builds_on_a_table_derived_in_an_earlier_request(tmp_path):
                        payload={"workspace_inputs": _manifest()})
 
     events = list(VisualizationSkill()._handle_visualize(_action(input_sources=[
-        {"id": "orders", "kind": "data"}, {"id": "session/tables/d_result_5.json", "kind": "data"},
+        {"id": "orders", "kind": "data"}, {"id": "session://tables/d_result_5", "kind": "data"},
     ]), ctx))
 
     assert events[0]["type"] == "action"

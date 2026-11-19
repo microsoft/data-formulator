@@ -330,34 +330,55 @@ def _declared_tables(spec: dict[str, Any], ctx: SkillContext) -> list[str]:
     return tables
 
 
-def _app_target(spec: dict[str, Any], suffix: str, ctx: SkillContext) -> tuple[str, str | None]:
-    """Resolve the file a write targets: a new ``filename`` or an existing ``path`` plus its hash."""
-    path = spec.get("path")
-    expected = spec.get("expected_content_hash")
-    if path is None:
-        filename = spec.get("filename")
-        problem = _invalid_filename(filename, suffix)
-        if problem:
-            raise ValueError(problem)
-        if expected is not None:
-            raise ValueError("expected_content_hash is only for revisions; pass path with it")
-        if ctx.workspace is not None and any(item.name == filename for item in ctx.workspace.list_workspace_files()):
-            raise ValueError(
-                f"files/{filename} already exists; to revise it pass path=\"files/{filename}\" and its "
-                "expected_content_hash, or use edit_file for small changes"
-            )
-        return filename, None
-    if not isinstance(path, str) or not path.startswith("files/"):
-        raise ValueError("path must be the files/... path of an existing app")
-    filename = path.removeprefix("files/")
-    problem = _invalid_filename(filename, suffix)
+def _target_name(spec: dict[str, Any], suffix: str) -> str:
+    """The workspace file name a write targets: ``path`` (``files/<name>``), or a bare ``filename`` from older
+    calls, which means the same file."""
+    path, filename = spec.get("path"), spec.get("filename")
+    target = path if path is not None else filename
+    if not isinstance(target, str) or not target.strip():
+        raise ValueError(f"path is required: the files/ path of the app, e.g. files/sales{suffix}")
+    if path is not None and filename is not None and str(filename).strip().removeprefix("files/") != path.strip().removeprefix("files/"):
+        raise ValueError("Give path, not both path and filename")
+    target = target.strip()
+    if path is not None and not target.startswith("files/"):
+        raise ValueError(f"path must be the app's files/... path, e.g. files/sales{suffix}")
+    name = target.removeprefix("files/")
+    problem = _invalid_filename(name, suffix)
     if problem:
         raise ValueError(problem.replace("filename", "path"))
-    if spec.get("filename") not in (None, filename):
-        raise ValueError("Give filename for a new app or path for an existing app, not both")
+    return name
+
+
+def target_exists(spec: dict[str, Any], ctx: SkillContext, suffix: str) -> bool:
+    """Whether the target file exists, so a write rewrites it (else it creates one)."""
+    try:
+        name = _target_name(spec, suffix)
+    except ValueError:
+        return False
+    return ctx.workspace is not None and ctx.workspace.get_metadata().files.get(name) is not None
+
+
+def rewriting(spec: dict[str, Any], ctx: SkillContext, suffix: str) -> bool:
+    """Whether a write means to rewrite an existing file: it passes the file's hash, or the file exists."""
+    return spec.get("expected_content_hash") is not None or target_exists(spec, ctx, suffix)
+
+
+def _app_target(spec: dict[str, Any], suffix: str, ctx: SkillContext) -> tuple[str, str | None]:
+    """The file a write targets, and for a rewrite the hash it rewrites: a new path creates the file; an existing
+    one is rewritten in place, given its ``expected_content_hash``."""
+    name = _target_name(spec, suffix)
+    expected = spec.get("expected_content_hash")
+    if not target_exists(spec, ctx, suffix):
+        if expected is not None:
+            raise ValueError(f"files/{name} does not exist yet; omit expected_content_hash to create it")
+        return name, None
+    if expected is None:
+        raise ValueError(f'files/{name} already exists; to rewrite it pass path="files/{name}" with its '
+                         "expected_content_hash (read_file shows it), use edit_file for small changes, or choose a new path")
     if not isinstance(expected, str) or not _CONTENT_HASH_RE.match(expected):
         raise ValueError("expected_content_hash must be the app's current SHA-256 content hash")
-    return filename, expected
+    return name, expected
+
 
 
 def read_react_manifest(code: str) -> dict[str, Any] | None:
@@ -468,9 +489,9 @@ def _save_app(ctx: SkillContext, encoded: bytes, filename: str, media_type: str,
         # A revision checks the hash of the app it revises, then rewrites it in place.
         current = ctx.workspace.get_metadata().files.get(filename)
         if current is None:
-            raise ValueError(f"files/{filename} does not exist; create a new app with filename instead")
+            raise ValueError(f"files/{filename} does not exist; create it without expected_content_hash")
         if current.origin != "agent" or current.edit_policy != "agent_editable":
-            raise ValueError("This workspace file is protected; create a new app with filename instead")
+            raise ValueError("This workspace file is protected; write the app to a new path instead")
         if current.content_hash != expected_hash:
             raise ValueError("File changed; read it again before revising it")
     try:
@@ -479,7 +500,7 @@ def _save_app(ctx: SkillContext, encoded: bytes, filename: str, media_type: str,
             expected_content_hash=expected_hash,
         )
     except FileNotFoundError as error:
-        raise ValueError(f"files/{filename} does not exist; create a new app with filename instead") from error
+        raise ValueError(f"files/{filename} does not exist; create it without expected_content_hash") from error
     try:
         from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine
         ctx.payload["workspace_inputs"] = WorkspaceInputEngine(
@@ -514,7 +535,7 @@ class HtmlAppSkill:
                    "message_code": "agent.unknownAction"}
             return f"html_app cannot handle action '{action}'."
         react = action == "write_app"
-        updating = spec.get("path") is not None
+        updating = rewriting(spec, ctx, REACT_APP_SUFFIX if react else ".html")
         try:
             replaces = replace_file_in_place(spec, ctx)
             file, warnings, tables = self._write_react(spec, ctx) if react else self._write_html(spec, ctx)

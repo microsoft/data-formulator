@@ -408,7 +408,7 @@ def test_terminal_confines_writes_and_child_processes_to_scratch(tmp_path):
     assert (scratch / "result.txt").read_text() == "allowed"
 
 
-@pytest.mark.parametrize("shell", ["/bin/sh", "/bin/zsh"])
+@pytest.mark.parametrize("shell", ["/bin/sh", "/bin/bash", "/bin/zsh"])
 def test_terminal_shells_can_use_here_documents_and_devices_but_not_write_to_tmp(tmp_path, shell):
     if not terminal.Path(shell).exists():
         pytest.skip(f"{shell} is not installed")
@@ -418,7 +418,9 @@ def test_terminal_shells_can_use_here_documents_and_devices_but_not_write_to_tmp
     script = (f"cat <<'EOF'\nfrom a here-document\nEOF\n"
               "echo hidden > /dev/null; echo to-stdout > /dev/stdout; echo to-stderr > /dev/stderr\n"
               f"{{ echo x > {marker}; }} 2>/dev/null && echo escaped || echo blocked")
-    result = list(terminal.run_command({"argv": [shell, "-c", script], "cwd": str(scratch), "timeout_seconds": 10},
+    # From the workspace root, which is not writable: a writable cwd would hide a broken heredoc rule, as bash
+    # falls back to the working directory when the system temp directory is refused.
+    result = list(terminal.run_command({"argv": [shell, "-c", script], "cwd": str(tmp_path), "timeout_seconds": 10},
                                        scratch_dir=scratch))[-1]["result"]
     assert result["exit_code"] == 0, result
     assert result["output"].splitlines() == ["from a here-document", "to-stdout", "to-stderr", "blocked"]
@@ -725,6 +727,12 @@ def test_terminal_rejects_invalid_commands(tmp_path, argv):
         })
 
 
+@pytest.mark.parametrize("argv", [["cat", "session://charts/chart-1"], ["head", "sources://kusto/db/t"]])
+def test_terminal_refuses_object_names_with_where_to_read_them(tmp_path, argv):
+    with pytest.raises(ValueError, match="is an app object, not a file.*read_file"):
+        terminal.TerminalRequests().propose("owner", "chat", {"argv": argv, "cwd": str(tmp_path), "purpose": "Read"})
+
+
 @pytest.mark.parametrize("local,origin,host,allowed", [
     (True, "http://localhost", "http://localhost", True),
     (False, "http://localhost", "http://localhost", False),
@@ -753,8 +761,8 @@ def test_terminal_registered_as_committing_action():
     assert registry.action_owner("start_task") == "terminal"
     # Following and stopping background tasks are inspection tools.
     assert [tool["function"]["name"] for tool in registry.tools_for(["terminal"])] == ["wait_tasks", "stop_task"]
-    assert registry.action_required_fields("run_terminal") == ("argv", "cwd", "purpose")
-    assert registry.action_required_fields("start_task") == ("argv", "cwd", "purpose")
+    assert registry.action_required_fields("run_terminal") == ("argv", "purpose")
+    assert registry.action_required_fields("start_task") == ("argv", "purpose")
 
 
 def test_closing_terminal_stream_kills_process_group(tmp_path):
@@ -917,3 +925,29 @@ def test_terminal_route_denies_untrusted_approval(tmp_path, case):
                                           headers={} if case == "no-origin" else {"Origin": origin}, buffered=True)
         assert response.get_json()["error"]["code"] == "INVALID_REQUEST"
         run.assert_not_called()
+
+def test_cwd_defaults_to_the_workspace_and_accepts_workspace_paths(tmp_path):
+    """Commands run where Python runs, so scratch/... names the same file in both (design-docs/73)."""
+    root = tmp_path / "ws"
+    (root / "scratch").mkdir(parents=True)
+    (tmp_path / "elsewhere").mkdir()
+    assert terminal.resolve_cwd(None, root) == root.resolve()
+    assert terminal.resolve_cwd("scratch/", root) == (root / "scratch").resolve()
+    assert terminal.resolve_cwd(str(tmp_path / "elsewhere"), root) == (tmp_path / "elsewhere").resolve()
+    for bad in ("../elsewhere", "missing", 3):
+        with pytest.raises(ValueError):
+            terminal.resolve_cwd(bad, root)
+    with pytest.raises(ValueError):
+        terminal.resolve_cwd(None, None)
+
+
+def test_denied_tmp_writes_point_to_scratch(tmp_path):
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    marker = f"/tmp/df-hint-{terminal.secrets.token_hex(4)}"
+    result = list(terminal.run_command({"argv": ["/bin/sh", "-c", f"echo x > {marker}"], "cwd": str(tmp_path),
+                                        "timeout_seconds": 10}, scratch_dir=scratch))[-1]["result"]
+    if terminal.terminal_sandbox() is None:
+        pytest.skip("no terminal sandbox on this host")
+    assert result["error_code"] == "TERMINAL_ACCESS_DENIED"
+    assert "scratch/" in result["error"] and "$TMPDIR" in result["error"]

@@ -32,6 +32,8 @@ export interface ChartCacheEntry {
      */
     canvasWidth?: number;
     canvasHeight?: number;
+    /** The Vega-Lite spec it was drawn from, to draw it again sharper (renderChartPng). */
+    spec?: any;
 }
 
 const cache = new Map<string, ChartCacheEntry>();

@@ -81,7 +81,7 @@ def test_a_later_request_continues_the_conversation_with_what_changed(workspace)
     turn = second_call[-1]["content"]
     assert turn.startswith("[SESSION CHANGES]") and turn.endswith("[USER QUESTION]\n\nWhy?")
     assert "[SESSION INDEX]" not in turn
-    assert "Focus: `session/tables/d_sales.json` is now on the canvas, the user is working in `session/threads/1.md`" in turn
+    assert "Focus: `session://tables/d_sales` is now on the canvas, the user is working in `session://threads/1`" in turn
     # A skill loaded earlier stays loaded, so the tool list (and the cached prompt) stays the same.
     assert "report" in second._loaded_skills and "write_report" in second._legal_actions()
     assert [message["content"] for message in SessionHistory(workspace).load()["messages"]][-1] == "Because of Q4."
@@ -270,19 +270,19 @@ def test_a_continued_turn_shows_what_is_new_to_the_conversation(workspace) -> No
         return render_turn_context(SimpleNamespace(workspace=workspace, payload={"session_layer": layer}), history)
 
     seen = [{"role": "user", "content": "[SESSION INDEX]\n" + SessionLayer(json.loads(json.dumps(STATE)), workspace).index()},
-            {"role": "assistant", "content": "Read session/tables/d_sales.json"}]
+            {"role": "assistant", "content": "Read session://tables/d_sales"}]
     # Same canvas, same thread: only the changes and where the user is.
     same = context(STATE, seen)
-    assert same.startswith("[SESSION CHANGES]") and "Focus: `session/charts/chart-1.json`" in same
+    assert same.startswith("[SESSION CHANGES]") and "Focus: `session://charts/chart-1`" in same
     assert "[ON THE CANVAS]" not in same and "[THE THREAD YOU ARE CONTINUING]" not in same
     # The user edited the chart: it is shown again; its table, already in the conversation, is not.
     edited = json.loads(json.dumps(STATE))
     edited["charts"][0]["chartType"] = "Line Chart"
     changed = context(edited, seen)
-    assert "[ON THE CANVAS] `session/charts/chart-1.json`" in changed and "[ITS DATA]" not in changed
+    assert "[ON THE CANVAS] `session://charts/chart-1`" in changed and "[ITS DATA]" not in changed
     # The user moved to another thread since: its latest steps come along.
-    elsewhere = [{**seen[0], "content": seen[0]["content"].replace("session/threads/1.md", "session/threads/2.md")}, seen[1]]
-    assert "[THE THREAD YOU ARE CONTINUING] `session/threads/1.md`" in context(STATE, elsewhere)
+    elsewhere = [{**seen[0], "content": seen[0]["content"].replace("session://threads/1", "session://threads/2")}, seen[1]]
+    assert "[THE THREAD YOU ARE CONTINUING] `session://threads/1`" in context(STATE, elsewhere)
 
 
 def test_the_model_stream_reports_what_the_agent_is_doing(workspace, monkeypatch) -> None:

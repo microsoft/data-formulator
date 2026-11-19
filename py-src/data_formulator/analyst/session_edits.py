@@ -1,6 +1,6 @@
-"""Editing the session's charts and reports as files (design-docs/60).
+"""Editing the session's charts and reports (design-docs/60, 74).
 
-``session/charts/<id>.json`` and ``session/reports/<id>.md`` are edited like
+``session://charts/<id>`` and ``session://reports/<id>`` are edited like
 workspace files (full content or text replacements against the content hash).
 An edit is validated before it lands; a rejected edit changes nothing and lists
 every problem. The application applies an accepted edit from the tool result.
@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import difflib
 import json
-import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from data_formulator.analyst import names, references
 from data_formulator.analyst.session_files import content_hash
 from data_formulator.datalake.text_edit import TextEditConflictError, apply_text_patch
 
@@ -24,13 +24,12 @@ ENCODING_KEYS = ("field", "type", "aggregate", "sortOrder", "sortBy", "scheme")
 TYPES = ("quantitative", "nominal", "ordinal", "temporal")
 AGGREGATES = ("count", "sum", "average")
 SORT_ORDERS = ("ascending", "descending")
-_CHART_REF = re.compile(r"chart://([A-Za-z0-9_.:-]+)")
-_MAP_REF = re.compile(r"map://([^)\s]+)")
 
 
 def report_map_paths(text: str) -> set[str]:
-    """The map files a report embeds (``![caption](map://files/<name>.map.json)``)."""
-    return set(_MAP_REF.findall(text))
+    """The map files a report embeds (``![caption](files/<name>.map.json)``, or the older ``map://files/…``)."""
+    return {reference.name for reference in references.find(text)
+            if reference.form == "embed" and reference.name.endswith(".map.json")}
 
 
 def workspace_map_paths(ctx: Any) -> set[str] | None:
@@ -164,19 +163,28 @@ def validate_chart(text: str, previous: dict[str, Any], columns: list[str], save
     return normalized
 
 
-def validate_report(text: str, chart_ids: set[str], map_paths: set[str] | None = None) -> None:
-    """Raises ``ValueError`` for an empty report or one embedding charts (or, when ``map_paths`` is given,
-    map files) the session does not have."""
+def run_chart_ids(payload: dict[str, Any]) -> list[str]:
+    """Charts made earlier in this run, which a report may refer to before the session lists them."""
+    return [str(chart.get("chart_id")) for chart in payload.get("charts") or [] if isinstance(chart, dict)]
+
+
+def validate_report(text: str, known: dict[str, str], previous: str = "") -> str | None:
+    """Raises ``ValueError`` for an empty report, or one that adds references to names the session does not have
+    (``known``, from ``references.known_names``), listing every one with the closest real names. References that
+    already did not resolve in ``previous`` do not block the edit; the returned note names them."""
     if not text.strip():
         raise ValueError("Report not changed: it would be empty.")
-    unknown = sorted({chart_id for chart_id in _CHART_REF.findall(text) if chart_id not in chart_ids})
-    if unknown:
-        raise ValueError(f"Report not changed: it embeds charts that are not in the session: {', '.join(unknown)}. "
-                         "Embed charts by id with ![caption](chart://<id>); list_files session/charts shows them.")
-    missing = sorted(report_map_paths(text) - map_paths) if map_paths is not None else []
-    if missing:
-        raise ValueError(f"Report not changed: it embeds maps that are not in the workspace: {', '.join(missing)}. "
-                         "Embed a map file by its path with ![caption](map://files/<name>.map.json); write it with write_map first.")
+    missing = references.unresolved(references.find(text), known)
+    before = {reference.name for reference, _ in references.unresolved(references.find(previous), known)}
+    added = [(reference, close) for reference, close in missing if reference.name not in before]
+    if added:
+        raise ValueError("Report not changed: " + references.describe(added, known)
+                         + " Refer to items by their names in list_files or the session index "
+                           "(![caption](session://charts/<id>), [text](session://tables/<name>), "
+                           "![caption](files/<name>.map.json)), then edit again.")
+    kept = [(reference, close) for reference, close in missing if reference.name in before]
+    return ("Still unresolved from before this edit: " + references.describe(kept, known)
+            + " They show as their captions; patch or remove them.") if kept else None
 
 
 def _saved_theme_ids(ctx: Any) -> list[str]:
@@ -191,15 +199,15 @@ def _saved_theme_ids(ctx: Any) -> list[str]:
 
 
 def edit_session_file(args: dict[str, Any], ctx: Any) -> dict[str, Any]:
-    """Edit ``session/charts/<id>.json`` or ``session/reports/<id>.md``; returns the result for the agent."""
+    """Edit ``session://charts/<id>`` or ``session://reports/<id>``; returns the result for the agent."""
     from data_formulator.analyst.session_layer import session_layer
 
     payload = ctx.payload or {}
     layer = session_layer(payload)
-    path = args.get("path")
+    path = names.canonical(args["path"]) if isinstance(args.get("path"), str) else args.get("path")
     entry = layer.view(path) if layer is not None and isinstance(path, str) else None
     if entry is None:
-        raise ValueError(f"{path} is not in this session. Use list_files session/ to see the session's files.")
+        raise ValueError(f"{path} is not in this session. Use list_files session:// to see the session's items.")
     if not entry.get("editable"):
         raise ValueError(f"{path} is read-only; it describes the session. Edit charts and reports instead.")
     current = str(entry.get("content", ""))
@@ -217,20 +225,20 @@ def edit_session_file(args: dict[str, Any], ctx: Any) -> dict[str, Any]:
         if not isinstance(text, str) or len(text) > MAX_SESSION_TEXT:
             raise ValueError(f"content must be text under {MAX_SESSION_TEXT:,} characters")
 
-    if path.startswith("session/charts/"):
-        chart_id = path[len("session/charts/"):-len(".json")]
+    note = None
+    if (chart_id := names.leaf_of(path, "charts")) is not None:
         base = json.loads(current)
         spec = validate_chart(text, base, [str(column) for column in entry.get("columns") or []], _saved_theme_ids(ctx))
         text = chart_text(spec)
         # `base` is what the edit was made against: the application skips an edit to a chart changed meanwhile.
         update: dict[str, Any] = {"kind": "chart", "id": chart_id, "spec": spec,
                                   **({} if entry.get("made_in_run") else {"base": base})}
-    elif path.startswith("session/reports/"):
-        chart_ids = {key[len("session/charts/"):-len(".json")] for key in layer.paths() if key.startswith("session/charts/")}
-        chart_ids |= {str(chart.get("chart_id")) for chart in payload.get("charts") or [] if isinstance(chart, dict)}
-        validate_report(text, chart_ids, workspace_map_paths(ctx))
-        update = {"kind": "report", "id": path[len("session/reports/"):-len(".md")], "content": text, "base": current}
+    elif (report_id := names.leaf_of(path, "reports")) is not None:
+        note = validate_report(text, references.known_names(layer, getattr(ctx, "workspace", None), run_chart_ids(payload)),
+                               current)
+        update = {"kind": "report", "id": report_id, "content": text, "base": current}
     else:
         raise ValueError(f"{path} cannot be edited")
     layer.record_edit(path, text)
-    return {"path": path, "content_hash": content_hash(text), "session_update": update}
+    return {"path": path, "content_hash": content_hash(text), "session_update": update,
+            **({"note": note} if note else {})}

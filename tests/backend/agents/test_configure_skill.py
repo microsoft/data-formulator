@@ -22,12 +22,12 @@ def _context(**payload) -> SkillContext:
 
 def _workflow_files(ctx: SkillContext | None = None) -> dict[str, dict]:
     from data_formulator.analyst.session_files import SessionFiles
-    return {item["path"]: item for item in SessionFiles(ctx or _context()).list("workflows/")["files"]}
+    return {item["path"]: item for item in SessionFiles(ctx or _context()).list("workflows://")["files"]}
 
 
 def _schedules(ctx: SkillContext | None = None) -> dict:
     from data_formulator.analyst.session_files import SessionFiles
-    return json.loads(SessionFiles(ctx or _context()).read("workflows/schedules.json")["content"])
+    return json.loads(SessionFiles(ctx or _context()).read("workflows://schedules.json")["content"])
 
 
 def _action(name: str, spec: dict, ctx: SkillContext | None = None) -> tuple[list[dict], str | None]:
@@ -122,7 +122,7 @@ def test_list_sessions_can_find_every_empty_session(sessions) -> None:
 
 
 def test_schedule_proposal_validates_workflow_and_gates_direct_saves(scheduling) -> None:
-    assert "workflows/demo/gas-price-review.yaml" in _workflow_files()
+    assert "workflows://demo/gas-price-review.yaml" in _workflow_files()
 
     events, _ = _action("propose_schedule", {
         "workflow": "demo/gas-price-review.yaml", "time": "09:00", "weekdays": [4, 0, 1, 2, 3],
@@ -195,16 +195,16 @@ def test_schedule_edits_merge_existing_config(scheduling) -> None:
                                        "time": "08:00", "timezone": "UTC", "weekdays": [0]})
     listed = _workflow_files()
     # Each workflow lists its schedules; scheduling itself is described once, in schedules.json.
-    fuel = listed["workflows/demo/gas-price-review.yaml"]
+    fuel = listed["workflows://demo/gas-price-review.yaml"]
     assert f'schedule "Fuel" ({saved["id"]}): Mon at 08:00 (UTC)' in fuel["detail"]
     assert all("schedule " not in item.get("detail", "") for path, item in listed.items()
-               if path not in ("workflows/demo/gas-price-review.yaml", "workflows/schedules.json"))
+               if path not in ("workflows://demo/gas-price-review.yaml", "workflows://schedules.json"))
     scheduling = _schedules()
     assert scheduling["available"] is True and [item["id"] for item in scheduling["schedules"]] == [saved["id"]]
     assert scheduling["server_models"] == [{"id": "server-model", "model": "gpt", "provider": "openai"}]
 
     events, _ = _action("propose_schedule", {"schedule_id": saved["id"], "enabled": False,
-                                             "workflow": "workflows/demo/gas-price-review.yaml"})
+                                             "workflow": "workflows://demo/gas-price-review.yaml"})
     form = events[0]["form"]
     assert form["title"] == "Update Fuel"
     assert form["schedule"]["target"] == {"id": saved["id"], "name": "Fuel"}
@@ -222,13 +222,13 @@ def test_workflow_revision_targets_only_saved_user_workflows(scheduling) -> None
     WorkflowStore(get_user_home(IDENTITY)).save("fuel.workflow.yaml", yaml.safe_dump(definition))
 
     listed = _workflow_files()
-    assert listed["workflows/fuel.workflow.yaml"]["detail"] == "saved by the user"
+    assert listed["workflows://fuel.workflow.yaml"]["detail"] == "saved by the user"
     from data_formulator.analyst.session_files import SessionFiles
-    read = SessionFiles(_context()).read("workflows/fuel.workflow.yaml")
-    assert yaml.safe_load(read["content"]) == definition and 'replaces="workflows/fuel.workflow.yaml"' in read["note"]
+    read = SessionFiles(_context()).read("workflows://fuel.workflow.yaml")
+    assert yaml.safe_load(read["content"]) == definition and 'replaces="workflows://fuel.workflow.yaml"' in read["note"]
 
     events, _ = _action("propose_workflow", {"definition": definition, "summary": "Revised",
-                                             "replaces": "workflows/fuel.workflow.yaml"})
+                                             "replaces": "workflows://fuel.workflow.yaml"})
     form = events[0]["content"]["form"]
     assert events[0]["type"] == "completion" and form["kind"] == "workflow" and form["title"] == "Fuel"
     assert form["workflow"]["definition"] == definition

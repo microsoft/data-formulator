@@ -14,6 +14,8 @@ import { CompactMarkdown, RunPlanChecklist } from './InteractionEntryCard';
 import { ConversationWorkLog, workEntriesOf } from './ConversationWorkLog';
 import { codeCallsOf } from '../app/toolCalls';
 import { conversationNodeIds } from '../app/threadGraph';
+import { parseItemName, workspaceFileName } from '../app/itemNames';
+import { useItemOpener } from './ItemReferences';
 import { DataFrameTable } from './DataFrameTable';
 import { HorizontalScrollFade } from '../components/ScrollFade';
 import { apiRequest } from '../app/apiClient';
@@ -76,19 +78,13 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label, anchorId }: {
     const drafts = useSelector((state: DataFormulatorState) => state.draftNodes);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     // A path a tool call named opens what it names on the canvas, while that still exists.
+    const openItem = useItemOpener();
     const openSessionPath = (path: string): (() => void) | undefined => {
-        const match = (prefix: string, suffix: string) => path.startsWith(prefix) && path.endsWith(suffix)
-            ? path.slice(prefix.length, path.length - suffix.length) : undefined;
-        const tableName = match('session/tables/', '.json');
-        const table = tableName ? tables.find(item => (item.virtual?.tableId || item.id) === tableName || item.id === tableName) : undefined;
-        if (table) return () => dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }));
-        const chartId = match('session/charts/', '.json');
-        if (chartId && charts.some(chart => chart.id === chartId)) return () => dispatch(dfActions.setFocused({ type: 'chart', chartId }));
-        const reportId = match('session/reports/', '.md');
-        if (reportId && reports.some(report => report.id === reportId)) return () => dispatch(dfActions.setFocused({ type: 'report', reportId }));
-        const fileName = path.startsWith('files/') ? path.slice('files/'.length) : undefined;
-        if (fileName && fileNodes.some(file => file.path === fileName)) return () => dispatch(dfActions.setFocused({ type: 'file', fileName }));
-        return undefined;
+        const target = parseItemName(path);
+        if (target?.kind === 'web') return undefined;
+        // Only workspace files the session lists open from a tool call (not scratch files).
+        if (target?.kind === 'file' && !(target.path.startsWith('files/') && fileNodes.some(file => file.path === workspaceFileName(target.path)))) return undefined;
+        return openItem(target);
     };
     const selectedRef = useRef<HTMLDivElement>(null);
     // Rows load only once a result's rows are opened.
@@ -113,7 +109,7 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label, anchorId }: {
     const reportArtifact = (report: typeof reports[number]) => <Box key={report.id} data-conversation-artifact sx={{ maxWidth: 320, my: 1.5 }}>
         <ThreadArtifactCard artifactType="report" title={report.title || t('conversation.report', { defaultValue: 'Report' })}
             selected={focusedId?.type === 'report' && focusedId.reportId === report.id}
-            preview={<ReportMiniature chartIds={report.selectedChartIds || []} />}
+            preview={<ReportMiniature chartIds={report.selectedChartIds || []} width={48} peek />}
             onClick={() => { dispatch(dfActions.setFocused({ type: 'report', reportId: report.id })); dispatch(dfActions.setViewMode('report')); }} />
     </Box>;
     const fileArtifact = (file: typeof fileNodes[number]) => {

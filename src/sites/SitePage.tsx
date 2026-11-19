@@ -2,10 +2,12 @@
 // Licensed under the MIT License.
 
 import React, { useEffect, useState } from 'react';
-import { Box, ButtonBase, Link, Typography, alpha } from '@mui/material';
+import { Box, ButtonBase, Link, Typography } from '@mui/material';
 import { apiRequest } from '../app/apiClient';
 import { textVar } from '../app/layout';
 import { DEMO_COLUMN, demoText } from './layout';
+import { inkColor } from '../app/look';
+
 import { safeUrl } from './links';
 import type { SiteConfig, SiteLandingProps } from './types';
 
@@ -112,7 +114,7 @@ const SitePage: React.FC<SiteLandingProps> = ({ site, sessions }) => {
         </Box>}
 
         <Box component="section" aria-label="About this demo" sx={{ mt: 6, pt: 3, borderTop: '1px solid', borderColor: 'divider',
-            color: theme => alpha(theme.palette.text.primary, 0.72), fontSize: demoText.small, lineHeight: 1.65 }}>
+            color: theme => inkColor(theme, 0.8), fontSize: demoText.small, lineHeight: 1.65 }}>
             {!!site.about?.length && <Box component="ul" sx={{ m: 0, pl: 2.5, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                 {site.about.map(item => <li key={item}><LinkedText text={fillRelease(item, site.release)} /></li>)}
             </Box>}

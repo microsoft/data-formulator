@@ -5,15 +5,20 @@ import { alpha, createTheme, type Theme } from '@mui/material/styles';
 
 import { menuPaperSlotProps } from './LayoutProvider';
 import { buttonVar, iconVar, textVar } from './layout';
+import { LOOKS, type Look } from './look';
+import { lookComponents } from './look/muiOverrides';
 import { bgAlpha, defaultPaletteKey, fontSans, palettes } from './tokens';
 
 /**
- * Data Formulator's MUI theme for a palette. Shared by the app shell and by
+ * Data Formulator's MUI theme for a palette and look. Shared by the app shell and by
  * sandboxed React apps so both render with identical components and tokens.
  * Sizes resolve through the `--df-*` CSS variables that LayoutProvider sets.
  */
-export function createDfTheme(paletteKey: string): Theme {
+export function createDfTheme(paletteKey: string, look: Look = 'soft'): Theme {
+    const { palette: lookPalette, corner } = LOOKS[look];
     return createTheme({
+    look,
+    shape: { borderRadius: corner.unit },
     typography: {
         fontFamily: fontSans
     },
@@ -30,13 +35,16 @@ export function createDfTheme(paletteKey: string): Theme {
             derived:   { main: p.derived.main,   bgcolor: bg(p.derived),   textColor: tc(p.derived)   },
             custom:    { main: p.custom.main,    bgcolor: bg(p.custom),    textColor: tc(p.custom)    },
             warning:   { main: p.warning.main },
+            // The look's text and divider strength (sharp draws quiet text and dividers darker everywhere).
+            ...(lookPalette ? { text: lookPalette.text, divider: lookPalette.divider } : {}),
         };
     })(),
     components: {
+        ...lookComponents(look),
         MuiMenu: {
             defaultProps: { slotProps: { paper: menuPaperSlotProps } },
             styleOverrides: {
-                paper: { maxWidth: 'calc(100vw - 32px)', borderRadius: 4, fontSize: 'var(--df-menu-font-size, max(0.875rem, var(--df-text-md, 13px)))' },
+                paper: { maxWidth: 'calc(100vw - 32px)', borderRadius: corner.control, fontSize: 'var(--df-menu-font-size, max(0.875rem, var(--df-text-md, 13px)))' },
                 list: { paddingTop: 4, paddingBottom: 4 },
             },
         },
@@ -109,7 +117,7 @@ export function createDfTheme(paletteKey: string): Theme {
             styleOverrides: {
                 root: {
                     textTransform: 'none',
-                    borderRadius: 4,
+                    borderRadius: corner.control,
                     fontWeight: 500,
                     lineHeight: 1.4,
                     minWidth: 0,

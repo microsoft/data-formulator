@@ -35,6 +35,7 @@ from data_formulator.agents.client_utils import Client, effective_api_base
 from data_formulator.model_registry import model_registry
 from data_formulator.knowledge.store import KnowledgeStore
 from data_formulator.data_operations import DataOperationExecutor, DataOperationRepository
+from data_formulator.analyst.viewing import view_resume_message
 from data_formulator.datalake.parquet_utils import make_json_safe
 
 from data_formulator.analyst.agent import AnalystAgent
@@ -662,6 +663,16 @@ def analyst_streaming():
     workspace = get_workspace(identity_id)
     active_workspace_id = get_active_workspace_id()
 
+    # The browser drew what the agent asked to view (workspace skill ``view``): the pictures resume the run.
+    view_message = None
+    view_response = content.get("view_response")
+    if view_response is not None:
+        try:
+            view_message = view_resume_message(view_response, resume_trajectory,
+                                               other_responses=(interaction_response, terminal_response, mcp_response))
+        except ValueError as exc:
+            return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, str(exc)))
+
     if resume_trajectory is not None and not str(user_question or "").strip():
         return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "user_question is required to resume after interaction"))
 
@@ -897,7 +908,7 @@ def analyst_streaming():
                 # message; the LLM correlates the selections back to the
                 # questions in the immediately preceding assistant turn.
                 trajectory = list(resume_trajectory)
-                trajectory.append({
+                trajectory.append(view_message or {
                     "role": "user",
                     "content": user_question,
                 })
@@ -929,7 +940,9 @@ def analyst_streaming():
             ):
                 yield json.dumps(event, ensure_ascii=False) + '\n'
 
-                if event.get("type") in ("completion", "interact"):
+                # A pause (interact) is the stream's last event, but the run still records where its turn
+                # began, so its resumed run can join the conversation: let it finish.
+                if event.get("type") == "completion":
                     break
 
         except Exception as e:

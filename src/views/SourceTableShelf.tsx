@@ -33,7 +33,7 @@ import {
     SxProps,
     useTheme,
 } from '@mui/material';
-import { alpha } from '@mui/material/styles';
+import { alpha, type Theme } from '@mui/material/styles';
 
 import AddIcon from '@mui/icons-material/Add';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
@@ -60,7 +60,8 @@ import {
     type WorkspaceFile,
 } from '../app/workspaceService';
 import { useDataRefresh } from '../app/useDataRefresh';
-import { iconTone, ViewBorderStyle } from '../app/tokens';
+import { cardRadius, iconTone, metaText, ViewBorderStyle, borderColor, selectionMark, selectionOutline } from '../app/tokens';
+import { focusColor, frameColor } from '../app/look';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { FileTypeIcon, StreamIcon, TableIcon } from '../icons';
 import { ArtifactMenuButton } from './DataThreadCards';
@@ -83,7 +84,8 @@ const ROW_INDENT_PX = 18;
 // thread rails below it.
 const GUTTER_WIDTH = 14;          // DataThread's TIMELINE_WIDTH
 const GUTTER_GAP = '4px';         // DataThread's TIMELINE_GAP
-const RAIL_LINE = '2px solid rgba(0,0,0,0.1)';
+// Width and colour follow the contrast setting, like the thread rails below it.
+const RAIL_LINE = 'var(--df-rail-width, 2px) solid var(--df-line-rail, rgba(0,0,0,0.1))';
 // Left offset that puts the 2px rail on the gutter's centre line.
 const RAIL_OFFSET = '6px';
 
@@ -131,7 +133,7 @@ const WorkspaceRow: FC<{
         color: selected ? 'primary.main' : action ? 'text.secondary' : 'text.primary', textAlign: 'left' } as const;
     return <RailRow rowProps={rowProps}>
         <Box sx={{
-            display: 'flex', alignItems: 'center', minWidth: 0, overflow: 'hidden', borderRadius: '4px', opacity: dimmed ? 0.55 : 1,
+            display: 'flex', alignItems: 'center', minWidth: 0, overflow: 'hidden', borderRadius: 1, opacity: dimmed ? 0.55 : 1,
             bgcolor: selected ? alpha(theme.palette.primary.main, 0.08) : undefined,
             '&:hover': { bgcolor: selected ? alpha(theme.palette.primary.main, 0.12) : 'action.hover' },
             ...(action && { '&:hover .MuiButtonBase-root, &:hover .MuiSvgIcon-root': { color: 'primary.main' } }),
@@ -453,9 +455,10 @@ const RenameTablePopup = memo<{
 });
 
 /** The workspace's root name, as a file explorer shows its root folder: bold, after a chevron. */
+// A named workspace shows its name; the default heading is a section label, in the meta voice.
 const workspaceRootSx = (titled: boolean) => ({
     flex: 1, minWidth: 0, fontSize: textVar.sm, fontWeight: 600, lineHeight: 1.4, color: 'text.primary',
-    ...(titled ? {} : { textTransform: 'capitalize' }),
+    ...(titled ? {} : metaText({ fontSize: textVar.sm, textTransform: 'capitalize' })),
 } as const);
 const ROOT_CHEVRON_PX = 16;
 const ROOT_CHEVRON_GAP_PX = 4;
@@ -466,7 +469,7 @@ const WorkspaceHeader: FC<{ title?: string | null; onCollapse: () => void }> = (
     const heading = title || t('dataThread.workspace', { defaultValue: 'Workspace' });
     return <ButtonBase aria-expanded aria-controls="data-source-shelf-content" onClick={onCollapse}
         sx={{ width: '100%', display: 'flex', alignItems: 'center', gap: `${ROOT_CHEVRON_GAP_PX}px`, minHeight: 20, mb: 0.5, pr: 0.5,
-            textAlign: 'left', borderRadius: '4px', '&:hover': { bgcolor: 'action.hover' },
+            textAlign: 'left', borderRadius: 1, '&:hover': { bgcolor: 'action.hover' },
             '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
         <KeyboardArrowDownIcon sx={{ fontSize: ROOT_CHEVRON_PX, color: 'text.secondary', flexShrink: 0 }} />
         <Typography component="span" noWrap title={heading} sx={workspaceRootSx(!!title)}>{heading}</Typography>
@@ -476,7 +479,7 @@ const WorkspaceHeader: FC<{ title?: string | null; onCollapse: () => void }> = (
 const SUMMARY_ROWS = 1;
 
 /** Item names that fit on one line, then how many more. */
-const useFittingItems = <T,>(items: T[], key: string) => {
+export const useFittingItems = <T,>(items: T[], key: string) => {
     const ref = useRef<HTMLElement | null>(null);
     const [visible, setVisible] = useState(items.length);
     const [width, setWidth] = useState(0);
@@ -509,9 +512,10 @@ export const WorkspaceSummary: FC<{ tables: string[]; documents: string[]; onExp
     const fitting = useFittingItems(items, items.map(item => item.name).join('\n'));
     return <ButtonBase aria-expanded={false} aria-controls="data-source-shelf-content" aria-label={`${heading}: ${counts}`} onClick={onExpand}
         sx={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 0.5, px: 1, py: 0.75, textAlign: 'left',
-            borderRadius: '8px', bgcolor: 'background.paper', border: '1px solid rgba(0,0,0,0.1)',
+            // A section of the thread pane: its frame line where the look draws sections firmer than cards.
+            borderRadius: cardRadius('8px'), bgcolor: 'background.paper', border: 1, borderColor: (theme: Theme) => frameColor(theme, 0.1),
             transition: 'background-color 120ms ease, border-color 120ms ease',
-            '&:hover': { borderColor: 'rgba(0,0,0,0.18)', bgcolor: 'rgba(0,0,0,0.025)' },
+            '&:hover': { borderColor: borderColor.view, bgcolor: 'rgba(0,0,0,0.025)' },
             '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
         <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: `${ROOT_CHEVRON_GAP_PX}px`, minHeight: 20 }}>
             <KeyboardArrowRightIcon sx={{ fontSize: ROOT_CHEVRON_PX, color: 'text.secondary', flexShrink: 0 }} />
@@ -528,7 +532,7 @@ export const WorkspaceSummary: FC<{ tables: string[]; documents: string[]; onExp
                     : <TableIcon sx={{ fontSize: textVar.xs, color: 'inherit', flexShrink: 0 }} />}
                 <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</Box>
             </Box>)}
-            {fitting.more > 0 && <Box component="span" sx={{ flexShrink: 0, color: 'text.disabled' }}>+{fitting.more}</Box>}
+            {fitting.more > 0 && <Box component="span" sx={{ flexShrink: 0, ...metaText(), color: 'text.disabled' }}>+{fitting.more}</Box>}
         </Box>
     </ButtonBase>;
 };
@@ -1069,15 +1073,15 @@ export const SourceTableShelf: FC<{
     return <Box data-thread-shelf sx={{
         ...sx,
         '& .selected-card': {
-            boxShadow: `0 0 0 2px ${theme.palette.primary.light}`,
+            ...selectionOutline(focusColor(theme, theme.palette.primary)),
             borderColor: 'transparent',
             margin: '1px 0',
         },
         '& .selected-artifact-card': {
-            boxShadow: '0 0 0 2px var(--artifact-selection-color)',
+            ...selectionMark('var(--artifact-selection-color)', 1),
             borderColor: 'transparent',
         },
-        padding: '6px',
+        padding: '6px var(--df-thread-entry-pr, 6px) 6px 6px',
     }}>
         {/* Match DataThread's inner padding so the shelf shares its grid. */}
         <Box sx={{ padding: '2px 4px 2px 4px', display: 'flex', flexDirection: 'column' }}>

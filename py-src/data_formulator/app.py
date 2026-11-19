@@ -276,6 +276,7 @@ def _register_blueprints():
     from data_formulator.routes.workspace_files import workspace_files_bp
     from data_formulator.routes.apps import apps_bp
     from data_formulator.sites.routes import site_bp
+    from data_formulator.routes.shares import shares_bp
 
     # Register blueprints
     app.register_blueprint(tables_bp)
@@ -287,6 +288,7 @@ def _register_blueprints():
     app.register_blueprint(model_endpoints_bp)
     app.register_blueprint(workspace_files_bp)
     app.register_blueprint(site_bp)
+    app.register_blueprint(shares_bp)
     from data_formulator.sites import warn_about_missing_sites
     warn_about_missing_sites()
 
@@ -441,6 +443,29 @@ def get_auth_info():
     return json_ok({"action": "none"})
 
 
+def _app_version() -> str:
+    """The installed Data Formulator's version (pyproject.toml), or "" when it is not installed as a package."""
+    from data_formulator.updates import current_version
+    return current_version()
+
+
+def _share_links() -> bool:
+    from data_formulator.shares import shares_available
+    return shares_available()
+
+
+@app.route('/api/update-check', methods=['GET'])
+def get_update_check():
+    """Whether a newer Data Formulator is out (see updates.py). Only a person's own copy asks: a shared server
+    is updated by whoever runs it."""
+    from data_formulator.auth.identity import is_local_mode
+    from data_formulator.error_handler import json_ok
+    from data_formulator.updates import check, install_kind
+    if not (is_local_mode() or install_kind() == 'desktop'):
+        return json_ok({"current": _app_version(), "update_available": False})
+    return json_ok(check())
+
+
 @app.route('/api/app-config', methods=['GET'])
 def get_app_config():
     """Provide frontend configuration settings from CLI arguments"""
@@ -474,6 +499,8 @@ def get_app_config():
         "EXTERNAL_TABLE_MAX_BYTES": effective_limit('external_table_max_bytes'),
         "DEV_MODE": args.get('dev', False),
         "WORKSPACE_BACKEND": workspace_backend,
+        "VERSION": _app_version(),
+        "SHARE_LINKS": _share_links(),
     }
 
     from data_formulator.sites import current_site, default_demo, demo_status, site_frontend_config

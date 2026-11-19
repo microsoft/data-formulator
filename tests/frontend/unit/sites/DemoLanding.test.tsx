@@ -5,7 +5,7 @@ import { Provider } from 'react-redux';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataFormulatorReducer, dfActions } from '../../../../src/app/dfSlice';
 import { LandingDataEntry } from '../../../../src/views/LandingDataEntry';
-import { DemoDatasetTabs } from '../../../../src/sites/DemoDatasetTabs';
+import { DemoDatasetTabs, inSentence } from '../../../../src/sites/DemoDatasetTabs';
 import type { SiteConfig, SiteStarter } from '../../../../src/sites/types';
 
 vi.mock('../../../../src/app/apiClient', () => ({ apiRequest: vi.fn() }));
@@ -56,7 +56,7 @@ describe('the dataset tabs', () => {
         const panel = screen.getByRole('tabpanel', { name: 'Data a' });
         expect(panel).toHaveTextContent('Title a');
         expect(panel).toHaveTextContent('About a.');
-        expect(screen.getByRole('link', { name: /View the source/ })).toHaveAttribute('href', 'https://source.example/a');
+        expect(screen.getByRole('link', { name: 'View source' })).toHaveAttribute('href', 'https://source.example/a');
         // Its example sessions, the lead one first, each with its chart, open their sessions.
         expect([...panel.querySelectorAll('img')].map(img => img.getAttribute('src'))).toEqual(['/a2.png', '/a1.png']);
         const examples = screen.getByRole('list', { name: 'Example sessions' });
@@ -64,14 +64,39 @@ describe('the dataset tabs', () => {
             expect.stringContaining('Lead'), expect.stringContaining('Headline a')]);
         fireEvent.click(within(examples).getByRole('button', { name: 'Headline a' }));
         expect(onOpenStory).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'a' }), expect.objectContaining({ id: 'a-s' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Load dataset' }));
+        // Starting one's own analysis is a quiet link after them.
+        fireEvent.click(screen.getByRole('button', { name: 'Or start your own analysis with this dataset' }));
         expect(onLoad).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'a' }));
 
         fireEvent.click(screen.getByRole('tab', { name: 'Data b' }));
         expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'b' }));
         expect(screen.getByRole('tabpanel', { name: 'Data b' })).toHaveTextContent('Not available yet');
-        expect(screen.getByRole('button', { name: 'Load dataset' })).toBeDisabled();
+        // Without examples, starting an analysis is the main action.
+        expect(screen.getByRole('button', { name: 'Start an analysis with this dataset' })).toBeDisabled();
         // Without examples, its questions to start from.
         expect(within(screen.getByRole('list', { name: 'Questions' })).getByText('Ask b?')).toBeInTheDocument();
     });
+
+    it('shows a session with chapters as one card that opens it, listing what is inside', () => {
+        const onOpenStory = vi.fn();
+        const a = starter('a');
+        a.stories = [{ id: 'topic', headline: 'Three findings', prompt: 'What is in it?', available: true, session: '', image: '/cover.png',
+            chapters: [{ label: 'Map', kind: 'map', headline: 'Where it is', stat: '67%', message: 'of it is here' },
+                { label: 'Story', kind: 'story', headline: 'What it is' }] }];
+        render(<DemoDatasetTabs starters={[a]} onLoad={vi.fn()} onOpenStory={onOpenStory} />);
+        expect(screen.queryByRole('list', { name: 'Example sessions' })).toBeNull();
+        const chapters = screen.getByRole('list', { name: 'Inside this session' });
+        // A chapter's key figure, with its message, in place of its name and headline (on hover).
+        expect(within(chapters).getAllByRole('listitem').map(item => item.textContent)).toEqual(['67%of it is here', 'Story · What it is']);
+        expect(within(chapters).getAllByRole('listitem')[0]).toHaveAttribute('title', 'Where it is');
+        fireEvent.click(within(chapters).getByText('Story'));
+        expect(onOpenStory).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'a' }), expect.objectContaining({ id: 'topic' }));
+        expect(screen.getByRole('button', { name: 'Open: Three findings' })).toBeInTheDocument();
+    });
+});
+
+it('names a dataset mid-sentence in lower case, unless it reads as a proper name', () => {
+    expect(inSentence('School and learning')).toBe('school and learning');
+    expect(inSentence('SDG 4 education')).toBe('SDG 4 education');
+    expect(inSentence('Microsoft at NeurIPS')).toBe('Microsoft at NeurIPS');
 });

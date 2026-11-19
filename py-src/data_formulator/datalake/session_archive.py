@@ -10,10 +10,10 @@ session is shared the same way whichever channel carries it:
 - ``state.json`` is the saved state without credentials, model settings or
   in-flight requests (:func:`share_state`);
 - ``workspace/`` holds the session's tables, files, reports and memory, but not
-  its bookkeeping or the agent's working area (:func:`is_shared_workspace_file`).
-  From ``scratch/`` only the files a user attached in chat travel with it; the
-  agent's conversation (``scratch/_agent``) stays with the session it happened
-  in (design-docs/63).
+  its bookkeeping, the app's state or the agent's working area
+  (:func:`is_shared_workspace_file`). From ``scratch/`` only the files a user
+  attached in chat travel with it; ``_internal/`` (the agent's conversation,
+  workflow runs, design-docs/63 and 73) stays with the session it belongs to.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ import os
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from data_formulator.datalake.workspace import INTERNAL_DIR
 from data_formulator.datalake.workspace_manager import _strip_sensitive
 
 # Server-provided or in-flight fields: the model deployments this server offers
@@ -76,6 +77,8 @@ def is_shared_workspace_file(relative: PurePosixPath, path: Path) -> bool:
     if name == _LOCK_FILE or name.startswith(_TEMPORARY_PREFIXES):
         return False
     if len(parts) == 1 and name in _WORKSPACE_BOOKKEEPING:
+        return False
+    if parts[0] == INTERNAL_DIR:
         return False
     if parts[0] == "scratch":
         return len(parts) == 2 and is_chat_attachment(path)

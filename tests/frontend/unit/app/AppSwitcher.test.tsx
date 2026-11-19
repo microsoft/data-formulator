@@ -30,6 +30,17 @@ describe('AppSwitcher', () => {
         expect(screen.getByRole('button', { name: 'Data Formulator' })).toBeInTheDocument();
     });
 
+    it('leaves out "in Data Formulator" from a demo name after the breadcrumb', () => {
+        const named = [destinations[0], { ...destinations[1], name: 'NeurIPS in Data Formulator' }];
+        const { unmount } = render(<AppSwitcher appName="NeurIPS in Data Formulator" destinations={named} onGoHome={vi.fn()} />);
+        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^NeurIPS$/);
+        expect(screen.getByRole('heading', { level: 1 })).toHaveAttribute('title', 'NeurIPS in Data Formulator');
+        unmount();
+        // Without the breadcrumb (a narrow bar), the whole name.
+        render(<AppSwitcher appName="NeurIPS in Data Formulator" destinations={named} onGoHome={vi.fn()} compact />);
+        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('NeurIPS in Data Formulator');
+    });
+
     it('takes the current one to its front page instead of reloading it', async () => {
         const onGoHome = vi.fn((event: React.MouseEvent) => event.preventDefault());
         render(<AppSwitcher appName="UIS Data Explorer" destinations={destinations} onGoHome={onGoHome} />);

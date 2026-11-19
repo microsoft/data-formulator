@@ -250,6 +250,6 @@ def test_a_referenced_request_may_open_a_new_thread_with_its_first_message_only(
 def test_the_reference_note_names_the_result_by_its_session_path():
     agent, _ = _agent([])
     agent._references = [{"id": "chart-1", "label": "Weekly prices"}]
-    agent._run_payload = {"session_layer": SimpleNamespace(output_path=lambda id: f"session/charts/{id}.json")}
+    agent._run_payload = {"session_layer": SimpleNamespace(output_path=lambda id: f"session://charts/{id}")}
     note = agent._reference_note()
-    assert '- `session/charts/chart-1.json` "Weekly prices"' in note and "New thread:" in note
+    assert '- `session://charts/chart-1` "Weekly prices"' in note and "New thread:" in note

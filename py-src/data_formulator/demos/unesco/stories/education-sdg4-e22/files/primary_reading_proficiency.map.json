@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "title": "Where children learn to read by the end of primary school",
+  "subtitle": "Share of pupils reaching minimum reading proficiency by the end of primary school; latest assessment, 2018–2025",
+  "source": "UIS, November 2026 release; indicator READ.PRIMARY",
+  "template": "choropleth",
+  "data": {
+    "table": "primary_reading_proficiency"
+  },
+  "encoding": {
+    "region": "country_id",
+    "color": "reading",
+    "tooltip": [
+      "country",
+      "reading",
+      "latest_year"
+    ]
+  },
+  "properties": {
+    "geography": "world",
+    "keyType": "iso3"
+  },
+  "fields": {
+    "country_id": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+    },
+    "country": {
+      "semanticType": "Country",
+      "displayName": "Country"
+    },
+    "latest_year": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+    },
+    "reading": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Pupils reaching minimum reading proficiency"
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

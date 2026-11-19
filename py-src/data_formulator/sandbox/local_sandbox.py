@@ -61,11 +61,12 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
         if any(p in _upper for p in _SENSITIVE_PATTERNS) or _upper.startswith(_SENSITIVE_PREFIXES):
             del os.environ[_key]
 
-    # Mutable container: the audit hook reads this to know which
-    # workspace directory is currently allowed for file reads.
-    # Set before each exec(), cleared after. When None, only
-    # library/runtime reads are permitted.
+    # Mutable containers the audit hook reads: the workspace directory code may
+    # read, and its scratch/ folder, the one place code may write
+    # (design-docs/73). Set before each exec(), cleared after. When None, only
+    # library/runtime reads (and the worker's own temp folder) are permitted.
     _allowed_workspace = [None]
+    _allowed_scratch = [None]
 
     # Build a set of directories that should always be readable
     # (Python stdlib, site-packages, etc.) so that library imports
@@ -81,6 +82,8 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
         getattr(_sys, "_MEIPASS", None),
         # Import directories handed over by the server (e.g. App Service's Oryx virtualenv).
         *os.environ.get("PYTHONPATH", "").split(os.pathsep),
+        # The system time zone database, which pandas, dateutil and zoneinfo read for tz-aware data.
+        "/usr/share/zoneinfo", "/usr/lib/zoneinfo", "/private/var/db/timezone",
     ):
         if _p:
             _rp = os.path.realpath(_p)
@@ -91,6 +94,22 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
 
     # PyInstaller serves bundled pure-Python modules from the app executable itself.
     _allowed_runtime_files = frozenset({os.path.realpath(_sys.executable)})
+
+    # A temp folder of the worker's own, for libraries that write temporary
+    # files (tempfile, caches). Inside an OS-confined worker it lies in the
+    # worker's private write directory, which the host removes on exit.
+    import tempfile as _tempfile
+    try:
+        _private_tmp = os.path.realpath(_tempfile.mkdtemp(prefix="df-py-"))
+        _tempfile.tempdir = _private_tmp
+        os.environ["TMPDIR"] = _private_tmp
+        _private_tmp += os.sep
+    except OSError:
+        _private_tmp = None
+
+    def _writable(resolved):
+        return ((_allowed_scratch[0] is not None and resolved.startswith(_allowed_scratch[0]))
+                or (_private_tmp is not None and resolved.startswith(_private_tmp)))
 
     # Pre-import heavy libraries BEFORE audit hooks so that libraries
     # needing ctypes/dlopen (e.g., scipy/sklearn -> BLAS) can load freely.
@@ -144,22 +163,35 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
             path, mode, flags = arg
             # os.open() supplies mode=None; the flags must be checked even
             # when a string mode is present.
-            if (type(flags) is not int or flags & _write_open_flags
-                    or (mode is not None and (type(mode) is not str or mode not in ("r", "rb")))):
+            writing = (type(flags) is not int or flags & _write_open_flags
+                       or (mode is not None and (type(mode) is not str or mode not in ("r", "rb"))))
+            if type(flags) is not int or (mode is not None and type(mode) is not str):
                 raise OSError("file write forbidden")
             if not isinstance(path, (str, bytes)):
-                raise OSError("file read via an unverified descriptor forbidden")
+                raise OSError("file write forbidden" if writing else "file read via an unverified descriptor forbidden")
             path = os.fsdecode(path)
             # The audit event omits dir_fd. A relative low-level open could
             # refer to a different directory than the worker's cwd.
             if mode is None and not os.path.isabs(path):
                 raise OSError("file read requires an absolute path for low-level opens")
             resolved = os.path.realpath(path)
-            if (not (_allowed_workspace[0] is not None
-                     and resolved.startswith(_allowed_workspace[0]))
+            if writing:
+                if not _writable(resolved):
+                    raise OSError(f"file write forbidden: {path} (code writes only to scratch/; save outputs "
+                                  "with create_data or create_file)")
+            elif (not (_allowed_workspace[0] is not None
+                       and resolved.startswith(_allowed_workspace[0]))
                     and not resolved.startswith(_allowed_lib_prefixes)
                     and resolved not in _allowed_runtime_files):
                 raise OSError(f"file read outside workspace forbidden: {path}")
+        # Renames and removals stay inside the writable folders (os.replace audits as os.rename).
+        if event in ("os.remove", "os.rmdir", "os.rename"):
+            paths, dir_fds = (arg[:2], arg[2:]) if event == "os.rename" else (arg[:1], arg[1:])
+            # dir_fd is None or AT_FDCWD (negative) unless code passed a real descriptor.
+            if (all(fd is None or (type(fd) is int and fd < 0) for fd in dir_fds)
+                    and all(isinstance(p, (str, bytes)) and _writable(os.path.realpath(os.fsdecode(p)))
+                            for p in paths)):
+                return
         # Block dangerous filesystem / process operations
         _blocked_prefixes = ("subprocess", "_posixsubprocess", "shutil", "winreg", "webbrowser")
         if event.split(".")[0] in _blocked_prefixes:
@@ -246,8 +278,10 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
             if not _ws.endswith(os.sep):
                 _ws += os.sep
             _allowed_workspace[0] = _ws
+            _allowed_scratch[0] = os.path.join(os.path.realpath(os.path.join(workspace_path, "scratch")), "")
         else:
             _allowed_workspace[0] = None
+            _allowed_scratch[0] = None
 
         # Change working directory to workspace before executing user
         # code.  Done here (not via a code preamble) so that ``import os``
@@ -278,10 +312,10 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
             return
         except Exception as err:
             conn.send({"status": "error", "error_message": f"Error: {type(err).__name__} - {err}"})
-            _allowed_workspace[0] = None
+            _allowed_workspace[0] = _allowed_scratch[0] = None
             continue
 
-        _allowed_workspace[0] = None
+        _allowed_workspace[0] = _allowed_scratch[0] = None
 
         result_objs = {k: namespace[k] for k in allowed_objects}
         response_msg = {"status": "ok", "allowed_objects": result_objs}
@@ -299,6 +333,17 @@ def _warm_worker_loop(conn, allow_network=False, announce_ready=False):
 
         conn.send(response_msg)
 
+    if _private_tmp is not None:
+        for _dir, _subdirs, _names in os.walk(_private_tmp, topdown=False):
+            for _name in _names:
+                try:
+                    os.remove(os.path.join(_dir, _name))
+                except OSError:
+                    pass
+            try:
+                os.rmdir(_dir)
+            except OSError:
+                pass
     conn.close()
 
 

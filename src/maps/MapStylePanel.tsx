@@ -134,7 +134,7 @@ const setSizeRange = (range: unknown, min: unknown, max: unknown, type: string):
 /** A style's water, land, and border in one chip. */
 const StyleSwatch: FC<{ name: MapStyleName }> = ({ name }) => {
     const style = mapStyle(name);
-    return <Box sx={{ width: 22, height: 14, flexShrink: 0, borderRadius: '3px', border: '1px solid', borderColor: 'divider', overflow: 'hidden',
+    return <Box sx={{ width: 22, height: 14, flexShrink: 0, borderRadius: 0.75, border: '1px solid', borderColor: 'divider', overflow: 'hidden',
         // Water shows only where the style paints it (filling the frame, or as a sphere).
         background: style.ocean !== 'none' && (style.sphere || style.background === style.ocean) ? style.ocean : style.background, position: 'relative' }}>
         <Box sx={{ position: 'absolute', left: 3, top: 3, width: 11, height: 8, borderRadius: '2px 4px 3px 5px', bgcolor: style.land,
@@ -281,7 +281,7 @@ export const MapStylePanel: FC<{
                     : color.type === 'diverging' || (color.scheme && color.scheme in DIVERGING_SCHEMES) ? 'diverging' : 'sequential';
                 const schemes = Object.keys(schemeGroup === 'categorical' ? CATEGORICAL_SCHEMES : schemeGroup === 'diverging' ? DIVERGING_SCHEMES : SEQUENTIAL_SCHEMES);
                 const sized = ['bubbles', 'points', 'spikes', 'flows', 'paths'].includes(layer.type);
-                return <Box key={id} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: '6px', mb: 1 }}>
+                return <Box key={id} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, mb: 1 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, pl: 0.25, pr: 0.5, py: 0.25 }}>
                         <Checkbox size="small" checked={layer.visible !== false} disabled={readOnly} sx={{ p: 0.5 }}
                             slotProps={{ input: { 'aria-label': t('map.showLayer', { name: layer.name ?? id }) } }}
@@ -498,6 +498,10 @@ const TemplateEditor: FC<{ raw: Raw; readOnly?: boolean; patch: (mutate: (draft:
                 <MenuItem value="" sx={itemSx}>{t('map.themeColors')}</MenuItem>
                 {schemes.map(scheme => <MenuItem key={scheme} value={scheme} sx={{ ...itemSx, gap: 1 }}>{!bivariate && <Swatch scheme={scheme} />}{scheme}</MenuItem>)}
             </Select>
+        </Row>}
+        {offered.includes('scheme') && (colorNumeric || name === 'density') && <Row label={t('map.reverse')}>
+            <Switch size="small" checked={!!properties.reverse} disabled={readOnly} slotProps={{ input: { 'aria-label': t('map.reverse') } }}
+                onChange={event => setProperty('reverse', event.target.checked || undefined)} />
         </Row>}
         {offered.includes('classes') && colorNumeric && <>
             <Row label={t('map.classes')}>

@@ -60,10 +60,11 @@ def test_registry_exposes_gated_app_actions() -> None:
     assert registry.action_owner("write_html_app") == "html_app"
     assert "html_app" in registry.gated_skill_names()
     schemas = {tool["function"]["name"]: tool["function"] for tool in registry.action_tools_for(["html_app"])}
-    # filename (new app) or path + expected_content_hash (rewrite in place); the handler enforces one.
-    assert set(schemas["write_app"]["parameters"]["required"]) == {"title", "tables", "code"}
-    assert set(schemas["write_html_app"]["parameters"]["required"]) == {"title", "tables", "html"}
-    assert {"filename", "path", "expected_content_hash"} <= set(schemas["write_app"]["parameters"]["properties"])
+    # One files/ path for a new app or a rewrite in place (with expected_content_hash); filename is not offered.
+    assert set(schemas["write_app"]["parameters"]["required"]) == {"path", "title", "tables", "code"}
+    assert set(schemas["write_html_app"]["parameters"]["required"]) == {"path", "title", "tables", "html"}
+    assert {"path", "expected_content_hash"} <= set(schemas["write_app"]["parameters"]["properties"])
+    assert "filename" not in schemas["write_app"]["parameters"]["properties"]
     body = registry.load_body("html_app")
     assert "useQuery" in body and "FlintChart" in body and "edit_file" in body and "no network" in body
     assert "DF.query" in body and "df-card" in body

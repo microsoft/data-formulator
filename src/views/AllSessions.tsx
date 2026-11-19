@@ -26,6 +26,7 @@ import i18n from '../i18n';
 import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { iconVar, textVar } from '../app/layout';
+import { metaText } from '../app/tokens';
 import { openSession, renameSession } from '../app/sessionThunks';
 import { openSessionInNewTab } from '../app/sessionTabs';
 import { requestWormholeDialog } from '../app/wormholeService';
@@ -78,8 +79,8 @@ export const sessionGroupLabelsFor = (t: TFunction): Record<SessionDateGroup, st
     older: t('sidebar.groupOlder', { defaultValue: 'Older' }),
 });
 
-export const sessionGroupHeaderSx = { m: 0, pb: 0.5, fontSize: textVar.xxs, fontWeight: 600, letterSpacing: '0.04em',
-    textTransform: 'uppercase', color: 'text.disabled' } as const;
+export const sessionGroupHeaderSx = { m: 0, pb: 0.5, fontWeight: 600, color: 'text.disabled',
+    ...metaText({ fontSize: textVar.xxs, textTransform: 'uppercase', letterSpacing: '0.04em' }) } as const;
 
 /**
  * All sessions in a searchable dialog. With `groupTime`, sessions (already sorted by that time)

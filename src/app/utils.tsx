@@ -20,6 +20,8 @@ import { DEMO_HEADER, DEMO_ID } from './demo';
 export function getUrls() {
     return {
         APP_CONFIG: `/api/app-config`,
+        UPDATE_CHECK: `/api/update-check`,
+        SHARES: `/api/shares`,
         AUTH_INFO_PREFIX: `/api/.auth/`,
 
         // these functions involves ai agents

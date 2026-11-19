@@ -1,185 +1,170 @@
 {
- "__stateVersion": 14,
+ "__stateVersion": 15,
+ "activeWorkspace": {
+  "id": "culture-c22",
+  "displayName": "Only four countries spend more on nature than on monuments"
+ },
  "derivedTables": [
   {
    "kind": "table",
-   "id": "d_out_2",
-   "displayId": "Nature share of heritage spending",
+   "id": "heritage_spending_nature_share",
+   "displayId": "Nature's share of heritage spending by country",
    "names": [
-    "COUNTRY_ID",
+    "country_id",
     "country",
-    "year",
+    "latest_year",
     "cultural",
     "natural",
-    "share",
-    "map_id"
+    "nature_share"
    ],
    "rows": [
     {
-     "COUNTRY_ID": "AUS",
-     "country": "Australia",
-     "year": 2020,
-     "cultural": 43.58126,
-     "natural": 12.90812,
-     "share": 22.8505251784,
-     "map_id": 36
-    },
-    {
-     "COUNTRY_ID": "LKA",
-     "country": "Sri Lanka",
-     "year": 2020,
-     "cultural": 4.87033,
-     "natural": 3.65309,
-     "share": 42.8594390515,
-     "map_id": 144
-    },
-    {
-     "COUNTRY_ID": "GEO",
-     "country": "Georgia",
-     "year": 2021,
-     "cultural": 5.88678,
-     "natural": 13.1648,
-     "share": 69.1008304823,
-     "map_id": 268
-    },
-    {
-     "COUNTRY_ID": "EST",
-     "country": "Estonia",
-     "year": 2021,
-     "cultural": 14.65849,
-     "natural": 37.50067,
-     "share": 71.8966141326,
-     "map_id": 233
-    },
-    {
-     "COUNTRY_ID": "DNK",
-     "country": "Denmark",
-     "year": 2022,
-     "cultural": 166.43634,
-     "natural": 79.83993,
-     "share": 32.4188481497,
-     "map_id": 208
-    },
-    {
-     "COUNTRY_ID": "CHE",
-     "country": "Switzerland",
-     "year": 2022,
-     "cultural": 155.70224,
-     "natural": 119.55954,
-     "share": 43.4348495458,
-     "map_id": 756
-    },
-    {
-     "COUNTRY_ID": "BIH",
-     "country": "Bosnia and Herzegovina",
-     "year": 2023,
-     "cultural": 58.32403,
-     "natural": 3.38693,
-     "share": 5.488376781,
-     "map_id": 70
-    },
-    {
-     "COUNTRY_ID": "BLR",
-     "country": "Belarus",
-     "year": 2023,
-     "cultural": 59.31282,
-     "natural": 0.30417,
-     "share": 0.5102069058,
-     "map_id": 112
-    },
-    {
-     "COUNTRY_ID": "COL",
+     "country_id": "COL",
      "country": "Colombia",
-     "year": 2023,
-     "cultural": 1.71849,
-     "natural": 15.29125,
-     "share": 89.8970237052,
-     "map_id": 170
+     "latest_year": 2023,
+     "cultural": 1.7,
+     "natural": 15.3,
+     "nature_share": 89.9
     },
     {
-     "COUNTRY_ID": "FRA",
-     "country": "France",
-     "year": 2023,
-     "cultural": 78.44111,
-     "natural": 70.35298,
-     "share": 47.2821064331,
-     "map_id": 250
+     "country_id": "EST",
+     "country": "Estonia",
+     "latest_year": 2021,
+     "cultural": 14.7,
+     "natural": 37.5,
+     "nature_share": 71.9
     },
     {
-     "COUNTRY_ID": "MDA",
-     "country": "Republic of Moldova",
-     "year": 2023,
-     "cultural": 2.82581,
-     "natural": 0.01799,
-     "share": 0.6326042619,
-     "map_id": 498
+     "country_id": "GEO",
+     "country": "Georgia",
+     "latest_year": 2021,
+     "cultural": 5.9,
+     "natural": 13.2,
+     "nature_share": 69.1
     },
     {
-     "COUNTRY_ID": "ESP",
-     "country": "Spain",
-     "year": 2023,
-     "cultural": 81.26901,
-     "natural": 14.0195,
-     "share": 14.7126867657,
-     "map_id": 724
-    },
-    {
-     "COUNTRY_ID": "FIN",
-     "country": "Finland",
-     "year": 2023,
-     "cultural": 297.09326,
-     "natural": 6.43149,
-     "share": 2.1189342879,
-     "map_id": 246
-    },
-    {
-     "COUNTRY_ID": "MEX",
-     "country": "Mexico",
-     "year": 2024,
-     "cultural": 28.70342,
-     "natural": 3.93572,
-     "share": 12.0582833984,
-     "map_id": 484
-    },
-    {
-     "COUNTRY_ID": "LUX",
-     "country": "Luxembourg",
-     "year": 2024,
-     "cultural": 198.05829,
-     "natural": 34.42758,
-     "share": 14.8084612626,
-     "map_id": 442
-    },
-    {
-     "COUNTRY_ID": "ECU",
+     "country_id": "ECU",
      "country": "Ecuador",
-     "year": 2024,
-     "cultural": 26.49959,
-     "natural": 28.79056,
-     "share": 52.0717704691,
-     "map_id": 218
+     "latest_year": 2024,
+     "cultural": 26.5,
+     "natural": 28.8,
+     "nature_share": 52.1
     },
     {
-     "COUNTRY_ID": "MUS",
-     "country": "Mauritius",
-     "year": 2024,
-     "cultural": 15.09688,
-     "natural": 4.8554,
-     "share": 24.3350634614,
-     "map_id": 480
+     "country_id": "FRA",
+     "country": "France",
+     "latest_year": 2023,
+     "cultural": 78.4,
+     "natural": 70.4,
+     "nature_share": 47.3
     },
     {
-     "COUNTRY_ID": "SWE",
+     "country_id": "CHE",
+     "country": "Switzerland",
+     "latest_year": 2022,
+     "cultural": 155.7,
+     "natural": 119.6,
+     "nature_share": 43.4
+    },
+    {
+     "country_id": "LKA",
+     "country": "Sri Lanka",
+     "latest_year": 2020,
+     "cultural": 4.9,
+     "natural": 3.7,
+     "nature_share": 42.9
+    },
+    {
+     "country_id": "SWE",
      "country": "Sweden",
-     "year": 2024,
-     "cultural": 67.58386,
-     "natural": 47.36843,
-     "share": 41.207034675,
-     "map_id": 752
+     "latest_year": 2024,
+     "cultural": 67.6,
+     "natural": 47.4,
+     "nature_share": 41.2
+    },
+    {
+     "country_id": "DNK",
+     "country": "Denmark",
+     "latest_year": 2022,
+     "cultural": 166.4,
+     "natural": 79.8,
+     "nature_share": 32.4
+    },
+    {
+     "country_id": "MUS",
+     "country": "Mauritius",
+     "latest_year": 2024,
+     "cultural": 15.1,
+     "natural": 4.9,
+     "nature_share": 24.3
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "latest_year": 2020,
+     "cultural": 43.6,
+     "natural": 12.9,
+     "nature_share": 22.9
+    },
+    {
+     "country_id": "LUX",
+     "country": "Luxembourg",
+     "latest_year": 2024,
+     "cultural": 198.1,
+     "natural": 34.4,
+     "nature_share": 14.8
+    },
+    {
+     "country_id": "ESP",
+     "country": "Spain",
+     "latest_year": 2023,
+     "cultural": 81.3,
+     "natural": 14.0,
+     "nature_share": 14.7
+    },
+    {
+     "country_id": "MEX",
+     "country": "Mexico",
+     "latest_year": 2024,
+     "cultural": 28.7,
+     "natural": 3.9,
+     "nature_share": 12.1
+    },
+    {
+     "country_id": "BIH",
+     "country": "Bosnia and Herzegovina",
+     "latest_year": 2023,
+     "cultural": 58.3,
+     "natural": 3.4,
+     "nature_share": 5.5
+    },
+    {
+     "country_id": "FIN",
+     "country": "Finland",
+     "latest_year": 2023,
+     "cultural": 297.1,
+     "natural": 6.4,
+     "nature_share": 2.1
+    },
+    {
+     "country_id": "MDA",
+     "country": "Moldova",
+     "latest_year": 2023,
+     "cultural": 2.8,
+     "natural": 0.0,
+     "nature_share": 0.6
+    },
+    {
+     "country_id": "BLR",
+     "country": "Belarus",
+     "latest_year": 2023,
+     "cultural": 59.3,
+     "natural": 0.3,
+     "nature_share": 0.5
     }
    ],
    "metadata": {
-    "COUNTRY_ID": {
+    "country_id": {
      "type": "string",
      "levels": []
     },
@@ -187,7 +172,7 @@
      "type": "string",
      "levels": []
     },
-    "year": {
+    "latest_year": {
      "type": "integer",
      "levels": []
     },
@@ -199,105 +184,53 @@
      "type": "number",
      "levels": []
     },
-    "share": {
+    "nature_share": {
      "type": "number",
-     "levels": []
-    },
-    "map_id": {
-     "type": "integer",
      "levels": []
     }
    },
    "derive": {
-    "code": "import pandas as pd\nx=pd.read_parquet('data/sdg11_national.parquet')\np=x[x.indicator_id.isin(['HEXPCSTPPPCAP.CULHER','HEXPCSTPPPCAP.NATHER'])].pivot(index=['COUNTRY_ID','country','year'],columns='indicator_id',values='value').dropna().reset_index()\np=p[(p.year>=2020)&(p.COUNTRY_ID!='AND')].sort_values('year').drop_duplicates('COUNTRY_ID',keep='last')\np=p.rename(columns={'HEXPCSTPPPCAP.CULHER':'cultural','HEXPCSTPPPCAP.NATHER':'natural'})\np['share']=100*p.natural/(p.natural+p.cultural)\nout=p.merge(pd.read_parquet('data/countries.parquet')[['COUNTRY_ID','map_id']],on='COUNTRY_ID');out['map_id']=out.map_id.astype(int)",
-    "codeSignature": "1aefa0de69641cfafa72a7de5a88b04ce024f8e055f610fbee012fc880bffca7",
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with pairs as (\n        select a.COUNTRY_ID as country_id, a.country, a.year, a.value as cultural, b.value as natural\n        from read_parquet('data/sdg11_national.parquet') a\n        join read_parquet('data/sdg11_national.parquet') b using (COUNTRY_ID, year)\n        where a.indicator_id = 'HEXPCSTPPPCAP.CULHER' and b.indicator_id = 'HEXPCSTPPPCAP.NATHER'\n          and a.year between 2020 and 2024\n          and a.value is not null and b.value is not null\n          and coalesce(a.magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n          and coalesce(b.magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by a.COUNTRY_ID order by a.year desc) = 1\n    ),\n    population as (\n        select COUNTRY_ID as country_id, value as thousands\n        from read_parquet('data/dem_national.parquet')\n        where indicator_id = '200101'\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    )\n    select p.country_id, p.country, p.year as latest_year, round(p.cultural, 1) as cultural,\n           round(p.natural, 1) as natural, round(100 * p.natural / (p.natural + p.cultural), 1) as nature_share\n    from pairs p join population using (country_id)\n    where population.thousands >= 100\n    order by nature_share desc, p.country\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
     "outputVariable": "out",
     "source": [
-     "sdg11_national",
-     "countries"
-    ],
-    "inputSources": [
-     {
-      "id": "data:dde8cde108f63babea4b427160284e38:sdg11_national",
-      "kind": "data",
-      "displayName": "sdg11_national"
-     },
-     {
-      "id": "data:3bfeafe1536e0211b109193b1e492f81:countries",
-      "kind": "data",
-      "displayName": "countries"
-     }
+     "dem_national",
+     "sdg11_national"
     ],
     "trigger": {
-     "tableId": "sdg11_national",
-     "resultTableId": "d_out_2",
+     "tableId": "dem_national",
+     "resultTableId": "heritage_spending_nature_share",
      "chart": {
-      "id": "chart-1792308908011",
+      "id": "chart-trigger-heritage_spending_nature_share",
       "chartType": "Auto",
       "encodingMap": {},
-      "tableRef": "sdg11_national",
+      "tableRef": "dem_national",
       "source": "trigger"
      }
-    },
-    "explanation": {
-     "status": "ok",
-     "concepts": [
-      {
-       "field": "share",
-       "explanation": "Natural heritage spending as a percentage of combined natural and cultural heritage spending: `share = 100 * natural / (natural + cultural)`"
-      }
-     ],
-     "agent": "CodeExplanationAgent"
     }
    },
    "virtual": {
-    "tableId": "d_out_2",
+    "tableId": "heritage_spending_nature_share",
     "rowCount": 18
    },
-   "description": "",
-   "parentNodeId": "textTurn_exploreDataFromNL_1792308820533_step_1",
-   "createdAt": 1792308908842
+   "description": "Public and private spending on cultural and on natural heritage per person (constant 2017 PPP$), from each country's latest year in 2020–2024 with both (latest_year), and nature's share of the two (%). Source: UIS, February 2026 release; indicators HEXPCSTPPPCAP.CULHER, HEXPCSTPPPCAP.NATHER.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794708400000_step_1",
+   "createdAt": 1794708402000
   }
  ],
  "charts": [
   {
-   "id": "chart-587a3edbc8cd",
-   "chartType": "Choropleth",
-   "encodingMap": {
-    "id": {
-     "fieldID": "concept-map_id-1792308908842-0.17485681244472118"
-    },
-    "color": {
-     "fieldID": "concept-share-1792308908842-0.09056523469846312",
-     "dtype": "quantitative",
-     "scheme": "blueorange"
-    },
-    "detail": {
-     "channel": "detail",
-     "bin": false
-    }
-   },
-   "tableRef": "d_out_2",
-   "source": "user",
-   "title": "Nature’s share of heritage spending",
-   "subtitle": "Latest matched reporting year, 2020–2024; public and private spending; Andorra excluded",
-   "titleKey": "Choropleth|color:concept-share-1792308908842-0.09056523469846312:|detail::|id:concept-map_id-1792308908842-0.17485681244472118:",
-   "unread": false,
-   "themeId": "datawrapper"
-  },
-  {
-   "id": "chart-13b825eb27a9",
+   "id": "chart-20fad670a393",
    "chartType": "Bar Chart",
    "encodingMap": {
     "x": {
-     "fieldID": "concept-share-1792308908842-0.09056523469846312",
+     "fieldID": "concept-nature_share-968430450684-0.11098050717124500561",
      "dtype": "quantitative"
     },
     "y": {
-     "fieldID": "concept-country-1792308808537-0.878238105955122",
+     "fieldID": "concept-country-851277032375-0.14671375448667544041",
      "dtype": "nominal",
-     "sortOrder": "descending",
-     "sortBy": "x"
+     "sortBy": "x",
+     "sortOrder": "descending"
     },
     "color": {
      "channel": "color",
@@ -316,30 +249,24 @@
      "bin": false
     }
    },
-   "tableRef": "d_out_2",
+   "tableRef": "heritage_spending_nature_share",
    "source": "user",
-   "title": "Nature’s share of heritage spending: highest first",
-   "subtitle": "Latest matched reporting year, 2020–2024; public and private spending; Andorra excluded",
+   "title": "Nature's share of heritage spending",
+   "subtitle": "Natural heritage's share of spending on cultural and natural heritage, public and private; latest year with both, 2020–2024; UIS, February 2026 release; indicators HEXPCSTPPPCAP.CULHER, HEXPCSTPPPCAP.NATHER",
    "unread": false,
    "themeId": "datawrapper",
-   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-share-1792308908842-0.09056523469846312:|y:concept-country-1792308808537-0.878238105955122:"
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-nature_share-968430450684-0.11098050717124500561:|y:concept-country-851277032375-0.14671375448667544041:"
   }
  ],
  "conceptShelfItems": [
   {
-   "id": "concept-share-1792308908842-0.09056523469846312",
-   "name": "share",
+   "id": "concept-nature_share-968430450684-0.11098050717124500561",
+   "name": "nature_share",
    "source": "custom",
    "tableRef": "custom"
   },
   {
-   "id": "concept-map_id-1792308908842-0.17485681244472118",
-   "name": "map_id",
-   "source": "custom",
-   "tableRef": "custom"
-  },
-  {
-   "id": "concept-country-1792308808537-0.878238105955122",
+   "id": "concept-country-851277032375-0.14671375448667544041",
    "name": "country",
    "source": "custom",
    "tableRef": "custom"
@@ -348,122 +275,142 @@
  "textTurns": [
   {
    "kind": "text",
-   "id": "textTurn_exploreDataFromNL_1792308820533_prompt",
-   "displayId": "textTurn_exploreDataFromNL_1792308820533_prompt",
+   "id": "textTurn_exploreDataFromNL_1794708400000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794708400000_prompt",
    "textKind": "explain",
    "content": "",
    "prompt": "Where does nature get the bigger share of heritage spending?",
-   "parentNodeId": "conversation-root:30e6864d-3c4b-4ee8-a1f5-2d177d1ff193",
-   "actionId": "exploreDataFromNL_1792308820533",
-   "createdAt": 1792308820534
+   "parentNodeId": "conversation-root:1b59faa8-9492-5b3b-b223-adbffc25b656",
+   "actionId": "exploreDataFromNL_1794708400000",
+   "createdAt": 1794708400000
   },
   {
    "kind": "text",
-   "id": "textTurn_exploreDataFromNL_1792308820533_step_1",
-   "displayId": "textTurn_exploreDataFromNL_1792308820533_step_1",
+   "id": "textTurn_exploreDataFromNL_1794708400000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794708400000_step_1",
    "textKind": "explain",
-   "content": "",
-   "parentNodeId": "textTurn_exploreDataFromNL_1792308820533_prompt",
-   "actionId": "exploreDataFromNL_1792308820533",
-   "createdAt": 1792308908841,
-   "startedAt": 1792308820534,
+   "content": "Seeing how much of it goes to natural rather than cultural heritage.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794708400000_prompt",
+   "actionId": "exploreDataFromNL_1794708400000",
+   "createdAt": 1794708401000,
+   "startedAt": 1794708400000,
    "progressSteps": [
     {
-     "id": "progress-exploreDataFromNL_1792308820533-1",
+     "id": "progress-exploreDataFromNL_1794708400000-1-1",
      "kind": "tool",
-     "label": "inspecting source data... countries",
+     "label": "Querying: dem_national, sdg11_national",
      "status": "completed",
-     "tool": "inspect_source_data",
-     "toolCallId": "call_kcSJsxxhhOPwXlMR9AVfH605"
+     "tool": "create_data"
     },
     {
-     "id": "progress-exploreDataFromNL_1792308820533-2",
-     "kind": "chart",
-     "label": "creating chart...",
-     "status": "completed"
+     "id": "progress-exploreDataFromNL_1794708400000-1-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "Map created: Monuments or nature: where heritage money goes"
     }
    ]
   },
   {
    "kind": "text",
-   "id": "textTurn_exploreDataFromNL_1792308820533_1792308913449",
-   "displayId": "textTurn_exploreDataFromNL_1792308820533_closing",
+   "id": "textTurn_exploreDataFromNL_1794708400000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794708400000_closing",
    "textKind": "explain",
-   "content": "**Nature gets the bigger share of heritage spending in only four countries:**\n\n- **Colombia:** 90% (2023)\n- **Estonia:** 72% (2021)\n- **Georgia:** 69% (2021)\n- **Ecuador:** 52% (2024)\n\nIn the other 14 of the 18 countries with comparable data, cultural heritage gets more. Blank countries have no comparable data. Source: UIS, February 2026 release.",
-   "parentNodeId": "d_out_2",
-   "actionId": "exploreDataFromNL_1792308820533",
-   "createdAt": 1792308913449,
-   "startedAt": 1792308820534,
+   "content": "**Only four of the 18 reporting countries spend more on natural heritage than on cultural heritage:**\n\n- **Colombia:** 89.9% (2023)\n- **Estonia:** 71.9% (2021)\n- **Georgia:** 69.1% (2021)\n- **Ecuador:** 52.1% (2024)\n\nThe other 14 spend more on cultural heritage such as monuments, museums and historic sites. The map shades countries by nature's share, from mostly culture to mostly nature. Public and private spending, each country's latest year from 2020–2024 with both figures. Source: UIS, February 2026 release; indicators HEXPCSTPPPCAP.CULHER, HEXPCSTPPPCAP.NATHER.",
+   "parentNodeId": "file-heritage_spending_nature_share.map.json",
+   "actionId": "exploreDataFromNL_1794708400000",
+   "createdAt": 1794708404000,
+   "startedAt": 1794708400000,
    "answered": true
   }
  ],
  "tableSemantics": [
   {
-   "tableId": "d_out_2",
+   "tableId": "heritage_spending_nature_share",
    "fields": {
-    "COUNTRY_ID": {
-     "semanticType": "ID"
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
     },
     "country": {
      "semanticType": "Country",
      "displayName": "Country",
      "authored": {
+      "semanticType": "Country",
       "displayName": "Country"
      }
     },
-    "year": {
+    "latest_year": {
      "semanticType": "Year",
-     "displayName": "Reporting year",
+     "displayName": "Latest year with data",
      "authored": {
-      "displayName": "Reporting year"
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
      }
     },
     "cultural": {
-     "semanticType": "Number",
-     "displayName": "Cultural heritage spending per person",
+     "semanticType": "Price",
+     "unit": "PPP$ per person",
+     "displayName": "Spending on cultural heritage per person",
      "authored": {
-      "displayName": "Cultural heritage spending per person"
+      "semanticType": "Price",
+      "unit": "PPP$ per person",
+      "displayName": "Spending on cultural heritage per person"
      }
     },
     "natural": {
-     "semanticType": "Number",
-     "displayName": "Natural heritage spending per person",
+     "semanticType": "Price",
+     "unit": "PPP$ per person",
+     "displayName": "Spending on natural heritage per person",
      "authored": {
-      "displayName": "Natural heritage spending per person"
+      "semanticType": "Price",
+      "unit": "PPP$ per person",
+      "displayName": "Spending on natural heritage per person"
      }
     },
-    "share": {
+    "nature_share": {
      "semanticType": "Percentage",
-     "intrinsicDomain": [
-      0,
-      100
-     ],
      "unit": "%",
+     "displayName": "Nature's share of heritage spending",
      "divergingMidpoint": 50,
-     "displayName": "Nature’s share (%)",
      "authored": {
       "semanticType": "Percentage",
       "unit": "%",
-      "intrinsicDomain": [
-       0,
-       100
-      ],
-      "divergingMidpoint": 50,
-      "displayName": "Nature’s share (%)"
+      "displayName": "Nature's share of heritage spending",
+      "divergingMidpoint": 50
      }
-    },
-    "map_id": {
-     "semanticType": "ID"
     }
    }
   }
  ],
- "activeWorkspace": {
-  "id": "culture-c22",
-  "displayName": "Only four countries spend more on nature than on monuments"
- },
+ "fileNodes": [
+  {
+   "kind": "file",
+   "id": "file-heritage_spending_nature_share.map.json",
+   "path": "heritage_spending_nature_share.map.json",
+   "displayName": "Monuments or nature: where heritage money goes",
+   "contentHash": "2f9c3406f6c6bce7f2e773f37c4163b4293484a8e41d7c13e1a225870ff3a152",
+   "parentNodeId": "heritage_spending_nature_share",
+   "createdAt": 1794708403000
+  }
+ ],
  "focusedId": {
-  "type": "chart",
-  "chartId": "chart-587a3edbc8cd"
- }
+  "type": "file",
+  "fileName": "heritage_spending_nature_share.map.json"
+ },
+ "canvasTabs": [
+  {
+   "key": "file:heritage_spending_nature_share.map.json",
+   "target": {
+    "type": "file",
+    "fileName": "heritage_spending_nature_share.map.json"
+   },
+   "addedAt": 1794700000000,
+   "viewedAt": 1794700000000
+  }
+ ],
+ "canvasTabActive": "file:heritage_spending_nature_share.map.json"
 }

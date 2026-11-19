@@ -5,7 +5,7 @@ stored history, then what changed in the session and where the user is working, 
 question. The provider caches the conversation up to the new turn, and the agent keeps what
 it read, ran, and loaded.
 
-The history lives in the session's workspace (``scratch/_agent/history.json``, hidden from
+The history lives in the session's workspace (``_internal/agent/history.json``, hidden from
 the agent's file listings and left out of exports), so deleting the session deletes it.
 Losing it is harmless: a missing, unreadable, or unwritable history means a fresh start,
 which shows the whole session as files again.
@@ -25,8 +25,8 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-HISTORY_FILE = "_agent/history.json"
-PAUSED_FILE = "_agent/paused.json"
+HISTORY_FILE = "agent/history.json"
+PAUSED_FILE = "agent/paused.json"
 PAUSED_SECONDS = 7 * 24 * 3_600
 VERSION = 1
 # Older tool output is shortened once past COMPACT_TOKENS; past MAX_TOKENS the next request
@@ -81,11 +81,11 @@ class SessionHistory:
         self.workspace = workspace
 
     def _path(self):
-        return self.workspace.confined_scratch.resolve(HISTORY_FILE)
+        return self.workspace.confined_internal.resolve(HISTORY_FILE)
 
     def _lock(self):
         from data_formulator.datalake.workspace import WorkspaceLock
-        return WorkspaceLock(self.workspace.confined_scratch.root)
+        return WorkspaceLock(self.workspace.confined_internal.resolve("agent"))
 
     def load(self) -> dict[str, Any] | None:
         try:
@@ -155,7 +155,7 @@ class SessionHistory:
     # history keeps where its turn began in the trajectory the client holds.
 
     def _paused_path(self):
-        return self.workspace.confined_scratch.resolve(PAUSED_FILE)
+        return self.workspace.confined_internal.resolve(PAUSED_FILE)
 
     def _paused(self) -> dict[str, Any]:
         try:

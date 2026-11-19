@@ -118,10 +118,12 @@ and `intro` reads as the release's month and year (e.g. `2026-02` → February 2
 | `id` | The dataset's id for the analyst, its example-sessions anchor (`#<id>`) and download name |
 | `title` | The heading in its tab under the chat and of its example sessions |
 | `kicker` | A short name: its tab's label |
-| `description` | A paragraph in its tab; also tells the analyst what the dataset holds |
+| `description` | What the dataset holds, for the analyst; shown in its tab when there is no `summary` |
+| `summary` | What the dataset holds, in a couple of plain sentences for visitors, shown in its tab instead of the description (which shows on hover) |
 | `source_url` | A "View the source" link in its tab |
+| `source_name` | The dataset's name at its source (e.g. "UIS SDG 4 Global and Thematic Indicators"), as the label of that link, so titles can stay in plain words |
 | `icon` | Its tab's icon: `school`, `science`, `landmark`, `chart` or `table` (default) |
-| `file` | The dataset session ZIP in the release folder: what **Load dataset** opens and the analyst loads; until it exists, the dataset shows "Not available yet" |
+| `file` | The dataset session ZIP in the release folder: what **Analyze in Data Formulator** opens and the analyst loads; until it exists, the dataset shows "Not available yet" |
 | `start_note` | A line on the new-session card (default "With <kicker> loaded") |
 | `questions` | Questions to start from, shown while the dataset has no stories |
 | `stories` | Example analyses, below |
@@ -138,11 +140,13 @@ deployment's model, and can differ from run to run.
 | `id` | Required; unique across the demo |
 | `prompt` | Required: the question the story starts from, shown on the lead card ("Question: …") and on hover for the others; asked live when there is no session |
 | `file` | The story's session ZIP, under the release folder |
-| `headline` | Its card's title; the analyst sees it too |
+| `title` | Its card's title: what its map or dashboard shows, in plain words |
+| `headline` | Its finding: the card's title when there is no `title` (on hover otherwise); the analyst sees it too |
 | `dek` | A summary (not shown on the page) |
 | `featured` | `true` for the dataset's lead analysis: its chart is in front of the stack in the dataset's tab |
 | `image` | Its cover chart: on its card and in the dataset's tab |
 | `stack` | Images of the lead analysis's findings, `{label, image}` (not shown on the page) |
+| `chapters` | For a session holding several findings: each `{label, kind, headline, stat, message}` (`kind`: story, dashboard, map or chart; `stat`, optional, a short key figure such as "67%" shown large beside `message`, in place of the headline). A story with chapters shows as one large card listing them; it opens on the session |
 | `follow_ups` | Questions offered to continue the analysis |
 
 ## The analyst on a demo

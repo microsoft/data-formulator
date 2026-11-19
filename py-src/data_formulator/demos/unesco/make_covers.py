@@ -1,91 +1,166 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-"""Redraw the UIS demo's story covers from the story seeds (maintainers).
+"""Redraw the UIS demo's story covers from the stories as the app shows them (maintainers).
 
-A story's cover (``image``) is its seed's first chart; its stack (``stack``) shows the seed's charts in order.
-Each is drawn as the app draws it, in the site's chart theme, at the size of the image it replaces, by
-``render_covers.mjs`` (beside this script) (needs the frontend's ``node_modules``):
+A story's cover (``image``) is a picture of what its session opens on, its map or app, taken in a running
+Data Formulator with the demo installed, by Playwright's Chromium (``uv run playwright install chromium``
+once):
 
-    uv run python py-src/data_formulator/demos/unesco/make_covers.py                      # every story
-    uv run python py-src/data_formulator/demos/unesco/make_covers.py --only education-sdg4-e20
-    uv run python py-src/data_formulator/demos/unesco/make_covers.py --out /tmp/covers    # to review first
+    uv run python py-src/data_formulator/demos/unesco/build.py --sites-dir /tmp/uis-sites
+    DF_SITES_DIR=/tmp/uis-sites uv run data_formulator --port 5600 --data-dir /tmp/uis-home   # in another shell
+    uv run python py-src/data_formulator/demos/unesco/make_covers.py --url http://localhost:5600
+    uv run python py-src/data_formulator/demos/unesco/make_covers.py --url … --only culture-c20 --out /tmp/covers
 
-World maps load their outlines from the Vega datasets site, so drawing them needs network access.
+Use a scratch ``--data-dir``: opening a story adds its session there. Maps draw their boundaries offline; a
+map is pictured filling the card with its countries, without its title, legend or controls (the card shows
+what the story is about); an app as the canvas shows its top, without the canvas's toolbar.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import struct
-import subprocess
-import tempfile
+import re
 from pathlib import Path
 
-import pyarrow.parquet as pq
 import yaml
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[3]
 ASSETS = HERE / "assets"
 STORIES = HERE / "stories"
-RENDERER = Path(__file__).with_name("render_covers.mjs")
-# A new image without one to replace: a map card, or a ranking card (cut to its first rows).
-DEFAULT_SIZE = (665, 480)
-RANKING_SIZE = (440, 480)
+# Covers fill a 16:10 card. The page opens at this size (CSS pixels, pictured at 2x), then its height is set
+# so the canvas is 16:10.
+VIEWPORT = {"width": 1680, "height": 1050}
+RATIO = 16 / 10
+# The canvas: what follows the strip of open items' tabs.
+CANVAS = '[aria-label="Open items"] + div'
+# Controls a picture leaves out: the canvas toolbar and a map's zoom, search and collapse buttons.
+CHROME = ['[aria-label="Style"]', '[aria-label="Reload app"]', '[aria-label="More"]', '[aria-label="Zoom in"]',
+          '[aria-label="Minimize controls"]', '[role="combobox"]']
+HIDE_CHROME = """selectors => {
+    const canvas = document.querySelector('%s');
+    for (const selector of selectors) {
+        for (const element of canvas.querySelectorAll(selector)) {
+            // The control's group (a toolbar, the zoom buttons, the search box): up to what holds the drawing.
+            let group = element;
+            while (group.parentElement && group.parentElement !== canvas) {
+                if (group.parentElement.querySelector('[role="img"], iframe, .vega-embed')) break;
+                group = group.parentElement;
+            }
+            group.style.visibility = 'hidden';
+        }
+    }
+}""" % CANVAS
 
 
-def png_size(path: Path) -> tuple[int, int] | None:
-    """An existing image's size in CSS pixels (it is drawn at 2x)."""
-    if not path.is_file():
-        return None
-    with path.open("rb") as file:
-        header = file.read(24)
-    if header[:8] != b"\x89PNG\r\n\x1a\n":
-        return None
-    width, height = struct.unpack(">II", header[16:24])
-    return width // 2, height // 2
+# A map's frame: its title, legend (with the source) and attribution are hidden, as the card names the story and
+# a legend is too small to read there; returns the box of its countries and marks, for the picture to fill.
+MAP_FRAME = """() => {
+    const canvas = document.querySelector('%s');
+    const svg = canvas.querySelector('svg[role="img"]');
+    if (!svg || canvas.querySelector('iframe')) return null;
+    const hide = element => {
+        let group = element;
+        while (group.parentElement && group.parentElement !== canvas && !group.parentElement.contains(svg)) group = group.parentElement;
+        group.style.visibility = 'hidden';
+    };
+    canvas.querySelectorAll('h2').forEach(hide);
+    canvas.querySelectorAll('a[href*="worldbank"]').forEach(hide);
+    Array.from(canvas.querySelectorAll('p')).filter(p => /^UIS, /.test(p.textContent)).forEach(hide);
+    const frame = svg.getBoundingClientRect();
+    // Regions and marks, not the sphere or background that span the whole map.
+    const marks = Array.from(svg.querySelectorAll('path, circle')).map(mark => mark.getBoundingClientRect())
+        .filter(box => box.width * box.height > 9 && box.width < frame.width * 0.7);
+    if (!marks.length) return null;
+    return { frame: { x: frame.x, y: frame.y, width: frame.width, height: frame.height },
+        x0: Math.min(...marks.map(box => box.left)), x1: Math.max(...marks.map(box => box.right)),
+        y0: Math.min(...marks.map(box => box.top)), y1: Math.max(...marks.map(box => box.bottom)) };
+}""" % CANVAS
 
 
-def story_jobs(story: dict, rows_dir: Path, out: Path) -> list[dict]:
-    seed = STORIES / story["id"]
-    state = json.loads((seed / "state.json").read_text(encoding="utf-8"))
-    charts = state.get("charts") or []
-    targets = [(0, story.get("image"), False)] + [(index, item.get("image"), True)
-                                                  for index, item in enumerate(story.get("stack") or [])]
-    jobs = []
-    for index, image, stacked in targets:
-        if not image or index >= len(charts):
-            continue
-        table = charts[index].get("tableRef")
-        rows = rows_dir / f"{story['id']}-{table}.json"
-        if not rows.is_file():
-            records = pq.read_table(seed / f"{table}.parquet").to_pylist()
-            rows.write_text(json.dumps(records, default=str), encoding="utf-8")
-        ranking = charts[index].get("chartType") == "Bar Chart"
-        width, height = png_size(ASSETS / image) or (RANKING_SIZE if ranking else DEFAULT_SIZE)
-        target = out / Path(image).name
-        # A ranking in a story's stack is a card of its first rows; a cover shows its whole chart.
-        jobs.append({"state": str(seed / "state.json"), "chart": index, "rows": str(rows), "out": str(target),
-                     "width": width, "height": height, "crop": ranking and stacked})
-    return jobs
+def map_clip(found: dict, padding: float = 0.04, trim: float = 0.1) -> dict:
+    """A 16:10 box around a map's marks (with a margin), kept within the map.
+
+    A world map is wider than 16:10: rather than leave bands above and below, the box may leave out up to
+    ``trim`` of its width at the sides (mostly open ocean).
+    """
+    frame = found["frame"]
+    width = (found["x1"] - found["x0"]) * (1 + 2 * padding)
+    height = (found["y1"] - found["y0"]) * (1 + 2 * padding)
+    width = min(width, max(height * RATIO, width * (1 - trim)))
+    width, height = max(width, height * RATIO), max(height, width / RATIO)
+    width, height = min(width, frame["width"], frame["height"] * RATIO), min(height, frame["height"], frame["width"] / RATIO)
+    centre_x, centre_y = (found["x0"] + found["x1"]) / 2, (found["y0"] + found["y1"]) / 2
+    x = min(max(centre_x - width / 2, frame["x"]), frame["x"] + frame["width"] - width)
+    y = min(max(centre_y - height / 2, frame["y"]), frame["y"] + frame["height"] - height)
+    return {"x": x, "y": y, "width": width, "height": height}
+
+
+def fit_canvas(page) -> None:
+    """Make the canvas 16:10, the card's shape; maps and apps lay themselves out again for it."""
+    box = page.locator(CANVAS).bounding_box()
+    size = page.viewport_size
+    page.set_viewport_size({"width": size["width"], "height": round(size["height"] - box["height"] + box["width"] / RATIO)})
+    page.wait_for_timeout(3000)
+
+
+def picture(page, out: Path, title: str) -> None:
+    """The story's map, cropped to its countries, or its app as the canvas shows it (its top), without controls."""
+    # The story's own tab, in case the visitor's session (reopened, not imported again) shows something else.
+    # Its name, at the start: a canvas tab's name also has its close button's, and another file's may contain it.
+    page.get_by_role("tab", name=re.compile("^" + re.escape(title) + r"(\s|$)")).first.click()
+    page.wait_for_timeout(3000)
+    page.evaluate(HIDE_CHROME, CHROME)
+    page.evaluate("() => document.querySelector('[aria-label=\"View system messages\"]')?.style.setProperty('visibility', 'hidden')")
+    found = page.evaluate(MAP_FRAME)
+    page.wait_for_timeout(300)
+    if found:
+        page.screenshot(path=str(out), clip=map_clip(found))
+    else:
+        page.locator(CANVAS).screenshot(path=str(out))
+    print(out)
+
+
+def open_story(browser, url: str, starter: dict, story: dict):
+    context = browser.new_context(viewport=VIEWPORT, device_scale_factor=2)
+    page = context.new_page()
+    page.goto(f"{url}/demo/unesco", wait_until="networkidle")
+    page.get_by_role("tab", name=starter["kicker"]).click()
+    # A card is named by its title (what it shows), else its headline.
+    page.get_by_role("button", name=story.get("title") or story["headline"], exact=True).last.click()
+    page.wait_for_selector(f'{CANVAS} svg, {CANVAS} iframe', timeout=60_000)
+    page.wait_for_load_state("networkidle")
+    # Maps and apps draw after their data arrives; give them time to settle.
+    page.wait_for_timeout(6000)
+    fit_canvas(page)
+    return context, page
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--url", required=True, help="A running Data Formulator with the demo installed.")
     parser.add_argument("--only", nargs="*", help="Story ids to redraw (default: all with a seed).")
     parser.add_argument("--out", type=Path, default=ASSETS / "stories", help="Folder to write the images to.")
     args = parser.parse_args()
+    from playwright.sync_api import sync_playwright
+
     profile = yaml.safe_load((HERE / "profile.yaml").read_text(encoding="utf-8"))
-    stories = [story for starter in profile.get("starters") or [] for story in starter.get("stories") or []
-               if (STORIES / story["id"] / "state.json").is_file() and (not args.only or story["id"] in args.only)]
+    stories = [(starter, story) for starter in profile.get("starters") or [] for story in starter.get("stories") or []
+               if story.get("image") and (STORIES / story["id"] / "state.json").is_file()
+               and (not args.only or story["id"] in args.only)]
     args.out.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="uis-covers-") as tmp:
-        jobs = [job for story in stories for job in story_jobs(story, Path(tmp), args.out)]
-        spec = Path(tmp) / "jobs.json"
-        spec.write_text(json.dumps({"theme": profile.get("chart_theme"), "jobs": jobs}), encoding="utf-8")
-        subprocess.run(["node", "--no-warnings", str(RENDERER), str(spec)], cwd=REPO, check=True)
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        for starter, story in stories:
+            context, page = open_story(browser, args.url.rstrip("/"), starter, story)
+            try:
+                state = json.loads((STORIES / story["id"] / "state.json").read_text(encoding="utf-8"))
+                lead = next(node for node in state["fileNodes"] if node["path"] == state["focusedId"]["fileName"])
+                picture(page, args.out / Path(story["image"]).name, lead["displayName"])
+            finally:
+                context.close()
+        browser.close()
 
 
 if __name__ == "__main__":

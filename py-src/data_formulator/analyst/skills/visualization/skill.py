@@ -245,9 +245,8 @@ class VisualizationSkill:
         chart_ref = ""
         if chart_id:
             chart_ref = (
-                f"\n\n**Chart id**: `{chart_id}` — to embed this chart in a report, "
-                f"write `![caption](chart://{chart_id})`; to read it again, read "
-                f"`session/charts/{chart_id}.json`."
+                f"\n\n**Chart**: `session://charts/{chart_id}` — to embed it in a report, "
+                f"write `![caption](session://charts/{chart_id})`; to read it again, read that name."
             )
         return (
             f"[OBSERVATION – Step {step_index}]\n\n"

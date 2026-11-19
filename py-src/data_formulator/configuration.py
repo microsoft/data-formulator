@@ -145,7 +145,7 @@ def resource_enabled(section: str, identifier: str) -> bool:
 
 def validate_overrides(overrides: dict) -> None:
     if not isinstance(overrides, dict) or set(overrides) - {'models', 'connectors', 'workflows', 'default_model', 'limits', 'allowed_api_bases', 'connections', 'disable_user_connectors', 'disable_user_models', 'app_name', 'app_tagline', 'terminal_mode', 'terminal_enabled', 'sandbox',
-                                                             'browser_enabled', 'browser_name', 'browser_allowed_sites'}:
+                                                             'browser_enabled', 'browser_name', 'browser_allowed_sites', 'share_links'}:
         raise ValueError('Unknown configuration fields.')
     if 'sandbox' in overrides:
         sandbox = overrides['sandbox']
@@ -185,6 +185,8 @@ def validate_overrides(overrides: dict) -> None:
         raise ValueError('Disable user connectors must be a boolean.')
     if 'disable_user_models' in overrides and type(overrides['disable_user_models']) is not bool:
         raise ValueError('Disable user models must be a boolean.')
+    if 'share_links' in overrides and type(overrides['share_links']) is not bool:
+        raise ValueError('Share links must be a boolean.')
     connections = overrides.get('connections', {})
     if not isinstance(connections, dict) or set(connections) - {'models', 'connectors'}:
         raise ValueError('Invalid connection collections.')

@@ -234,6 +234,7 @@ def _story_config(site_id: str, story: dict[str, Any], content: Path) -> dict[st
     return {
         "id": story_id,
         "label": story.get("label", ""),
+        "title": story.get("title", ""),
         "headline": story.get("headline", ""),
         "dek": story.get("dek", ""),
         "featured": bool(story.get("featured")),
@@ -247,6 +248,12 @@ def _story_config(site_id: str, story: dict[str, Any], content: Path) -> dict[st
         "stack": [{"label": str(item.get("label") or ""), "image": f"/api/demos/{site_id}/stories/{story_id}/stack/{index}{_version(content / str(item['image']))}"}
                   for index, item in enumerate(story.get("stack") or [])
                   if isinstance(item, dict) and item.get("image") and (content / str(item["image"])).is_file()],
+        # A session holding several findings: its chapters (stories, maps), each with its finding and, optionally, its
+        # key figure (a short stat and the message it goes with), listed on its card.
+        "chapters": [{"label": str(item.get("label") or ""), "kind": str(item.get("kind") or ""),
+                      "headline": str(item.get("headline") or ""), "stat": str(item.get("stat") or ""),
+                      "message": str(item.get("message") or "")}
+                     for item in story.get("chapters") or [] if isinstance(item, dict)],
     }
 
 
@@ -262,11 +269,13 @@ def site_frontend_config(site_id: str) -> dict[str, Any]:
             "title": starter.get("title", ""),
             "subtitle": starter.get("subtitle", ""),
             "description": starter.get("description", ""),
+            "summary": starter.get("summary", ""),
             "questions": list(starter.get("questions") or []),
             "available": bool(file_name) and (content / file_name).is_file(),
             "workspace": f"/api/demos/{site_id}/starters/{starter.get('id')}",
             "kicker": starter.get("kicker", ""),
             "source_url": starter.get("source_url", ""),
+            "source_name": starter.get("source_name", ""),
             "icon": starter.get("icon", ""),
             "start_note": starter.get("start_note", ""),
             "stories": [_story_config(site_id, story, content) for story in starter.get("stories") or []],

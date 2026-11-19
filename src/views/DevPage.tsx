@@ -137,11 +137,11 @@ const iconCells = (icons: [string, React.ElementType][]) => icons.map(([label, I
 const REPORT_TITLE = 'U.S. gasoline grade prices and premium surcharge';
 const ARTIFACT_CARDS: [string, React.ReactNode][] = [
     ['report', <ThreadArtifactCard key="report" artifactType="report" title={REPORT_TITLE} selected={false} onClick={() => {}} actions={<ArtifactDeleteButton label="Delete" onClick={() => {}} />}
-        preview={<MiniPage chartSrc="/demos/gas_prices-thumbnail.webp" />} />],
+        preview={<MiniPage chartSrc="/demos/gas_prices-thumbnail.webp" width={48} peek />} />],
     ['report · writing', <ThreadArtifactCard key="report · writing" artifactType="report" title={REPORT_TITLE} selected={false} onClick={() => {}} actions={<ArtifactDeleteButton label="Delete" onClick={() => {}} />}
-        preview={<MiniPage />} notes="Composing…" />],
+        preview={<MiniPage width={48} peek />} notes="Composing…" />],
     ['report · selected', <ThreadArtifactCard key="report · selected" artifactType="report" title={REPORT_TITLE} selected onClick={() => {}} actions={<ArtifactDeleteButton label="Delete" onClick={() => {}} />}
-        preview={<MiniPage chartSrc="/demos/movies-thumbnail.webp" />} />],
+        preview={<MiniPage chartSrc="/demos/movies-thumbnail.webp" width={48} peek />} />],
     ['table', <ThreadArtifactCard key="table" artifactType="table" title="Premium Surcharge by Decade" selected={false} onClick={() => {}}
         actions={<ArtifactDeleteButton label="Delete" onClick={() => {}} />} />],
     ['app · filters, KPIs, main grid', <ThreadArtifactCard key="app-a" artifactType="app" title="Sales explorer" selected={false} onClick={() => {}}

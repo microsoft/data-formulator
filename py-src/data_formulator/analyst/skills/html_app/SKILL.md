@@ -36,7 +36,7 @@ that work together, and only the controls that change them.
 Use what the session already shows, as ideas rather than rules:
 
 - Continue the analysis: earlier questions, findings, and the session's charts
-  ([SESSION INDEX], session/charts) show what the user cares about. Reuse the
+  ([SESSION INDEX], session://charts) show what the user cares about. Reuse the
   tables behind those charts.
 - Dimensions, metrics, and periods the user switched between make natural
   controls; default them to what was discussed.
@@ -531,7 +531,13 @@ without tiles; **slides** use `maxWidth="md"` and one tile per slide.
   stored colours apply on their own (Color in the visualization guidance).
 - Keep it legible: about 12 categories on an axis and 8 colours at most; cut
   the rest in the query (`orderBy` with `limit`). One measure per chart.
-- Give a chart room of its shape. A chart's file (`session/charts/<id>.json`)
+- Comparable scales: charts fit their own data. When charts compare the same
+  measure (two groups, two years), put the series in one chart (on `color`, or
+  facets on `column`, which share an axis), or, where colour carries the
+  measure, give each the same `color` `domain`. Otherwise let each fit. To
+  match a map or app made earlier in the session, read its file and reuse its
+  scale (a map's `fields` or `properties` thresholds or domain).
+- Give a chart room of its shape. A chart (`session://charts/<id>`)
   says the size it draws at on the canvas, e.g. "412×618 px (tall)": keep that
   width-to-height ratio in the app. Set `height` from the width its card will
   have (a tall chart gets a full row or a taller card; a wide one a full-width
@@ -551,7 +557,7 @@ without tiles; **slides** use `maxWidth="md"` and one tile per slide.
 
 ### Reusing the session's charts
 
-The user's canvas charts are in `session/charts/<id>.json`. An app can draw
+The user's canvas charts are in `session://charts/<id>`. An app can draw
 them rather than rebuild them:
 
 - `<FlintChart chart="<id>" />` draws the chart as it is on the canvas (type,
@@ -1311,9 +1317,9 @@ export default function App() {
 
 ## Delivery
 
-Call `write_app` once with a new `.app.jsx` filename, a short `title`, the
+Call `write_app` once with a new `path` (`files/<name>.app.jsx`), a short `title`, the
 declared `tables`, and the complete `code`. A successful call opens the app on
-the canvas and returns its `path`, `content_hash`, and any `warnings`; fix
+the canvas and returns that `path`, its `content_hash`, and any `warnings`; fix
 warnings by revising the app. Briefly tell the user what the app shows and how
 to use it.
 
@@ -1322,7 +1328,7 @@ to use it.
 When the user asks to change an app, including the selected one or one marked
 agent-editable in the inventory, revise that app: the revision rewrites it in
 place under the same path, and the result gives its new `content_hash`. Make a
-separate app with a new filename only when the user asks for a new or another
+separate app at a new path only when the user asks for a new or another
 app. When the user wants a broken or unwanted app fixed (including errors from
 its banner), also pass `replaces` with the app's path.
 
@@ -1330,8 +1336,8 @@ its banner), also pass `replaces` with the app's path.
   app's path, `expected_content_hash`, and targeted `replacements`. Keep the
   first-line `// @df-app` manifest; edit its `title` or `tables` there when they
   change.
-- Larger restructuring: `write_app` with `path` and `expected_content_hash`
-  instead of `filename`, plus the new `title`, `tables`, and complete `code`.
+- Larger restructuring: `write_app` with the app's `path` and `expected_content_hash`,
+  plus the new `title`, `tables`, and complete `code`.
 
 Apps are saved as written: the server checks only imports, the manifest, and the
 default export, so check the code before writing. Close every brace (a JSX

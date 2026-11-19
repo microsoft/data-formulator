@@ -55,6 +55,9 @@ export const AppSwitcher: React.FC<{ appName: string; destinations: AppDestinati
     const standard = destinations.find(destination => destination.key === 'app');
     const inDemo = !!standard && !standard.current;
     const nameSx = { fontWeight: 400, lineHeight: 1.2, letterSpacing: 0, ...(compact && { fontSize: textVar.xl }) };
+    // After "Data Formulator /", a demo named "… in Data Formulator" needs only its first part.
+    const shown = inDemo && !compact && standard && appName.endsWith(` in ${standard.name}`)
+        ? appName.slice(0, -` in ${standard.name}`.length) : appName;
     return (
         <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
             {inDemo && !compact && <>
@@ -70,7 +73,7 @@ export const AppSwitcher: React.FC<{ appName: string; destinations: AppDestinati
                     '& .MuiButton-endIcon': { ml: 0.25 }, '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' } }}>
                 {logo && <Box component="img" src={logo} alt="" sx={{ height: compact ? 22 : 28, width: 'auto', mr: 0.75, display: 'block', flexShrink: 0 }} />}
                 <Typography noWrap component="h1" title={appName} sx={{ maxWidth: compact ? { xs: 160, sm: 320 } : 360, ...nameSx }}>
-                    {appName}
+                    {shown}
                 </Typography>
             </Button>
             <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}

@@ -8,11 +8,11 @@ A front page for exploring UNESCO Institute for Statistics (UIS) data with Data 
 |---|---|
 | `profile.yaml` | The page: text, datasets (starters), example analyses (stories), analyst guidance |
 | `assets/` | Front-page images: the hero picture and story covers |
-| `stories/<story>/` | Story seeds: one answered question, its table (parquet) and two charts |
+| `stories/<story>/` | Story seeds: one answered question, its tables (parquet), its map or app (`files/`) and a ranking chart |
 | `build.py` | Downloads the UIS data, builds the dataset and story sessions, installs the demo |
-| `make_seeds.py` | Cuts full story sessions exported from the app down to seeds (maintainers) |
-| `make_covers.py` | Redraws the story covers in `assets/stories/` from the seeds, in the site's chart theme (maintainers) |
-| `story_answers.yaml` | The shortened answer each story seed shows (used by `make_seeds.py`) |
+| `make_stories.py` | Computes the story seeds from the built dataset sessions (maintainers) |
+| `apps/` | The React code of the stories' dashboards, used by `make_stories.py` |
+| `make_covers.py` | Pictures the story covers in `assets/stories/` from the stories as the app shows them (maintainers) |
 | `iso3166_numeric.csv` | Country codes for world maps, used by `build.py` |
 
 ## Install
@@ -25,40 +25,45 @@ uv run python py-src/data_formulator/demos/unesco/build.py --sites-dir /some/dir
 uv run python py-src/data_formulator/demos/unesco/build.py --only culture --rebuild
 ```
 
-It downloads the UIS bulk release (cached in `~/.cache/data-formulator/uis-raw`), builds the
-four dataset sessions (about 46 MB; no AI models involved), adds each story's seed to its dataset
-to make the 16 story sessions, and copies `profile.yaml` and `assets/` beside them. Datasets
+It downloads the UIS bulk release (cached in `~/.cache/data-formulator/uis-raw/<release>/`), builds
+the four dataset sessions (about 50 MB; no AI models involved), adds each story's seed to its
+dataset to make the 16 story sessions, and copies `profile.yaml` and `assets/` beside them. Datasets
 already built are kept unless you pass `--rebuild` or `--only`; stories are always rebuilt.
 
 ## Stories
 
-Each story opens on one question an AI analyst already answered: the table it made and two
-charts of it (a map and a ranking where the story has one). Visitors ask the next question
-themselves. The seeds in `stories/` (about 50 KB each) were cut from full curated sessions,
-which are kept outside the repository; to change a story, export its session from the app as
-`<folder>/stories/<story id>.zip` and run:
+Each story opens on one question an AI analyst would answer on the site, already answered: the
+tables it made and what it drew from them, a map (a map file, often with a ranking chart), a small
+dashboard (an app), or both, opening on the one its card shows (`Story.lead` in `make_stories.py`).
+The stories under one dataset vary their form so its cards do not all look alike. Visitors ask the
+next question themselves.
+
+The seeds in `stories/` (about 20–50 KB each) are computed from the data by `make_stories.py`, not
+written by an AI model: each story there says how its tables are computed (Python that the app runs
+again when a visitor refreshes a table), its map spec or app (in `apps/`), and how its answer,
+headline and dek read, with every figure taken from the computed rows. Maps and apps are checked as
+the analyst's `write_map` and `write_app` check them. To change or add a story, edit it there, then
+build the datasets and run it:
 
 ```bash
-uv run python py-src/data_formulator/demos/unesco/make_seeds.py <folder> --only <story id>
+uv run python py-src/data_formulator/demos/unesco/build.py --sites-dir /tmp/uis-sites
+uv run python py-src/data_formulator/demos/unesco/make_stories.py --sites-dir /tmp/uis-sites --only <story id>
 ```
 
-It keeps one simple question (the one set in `QUESTIONS`, else the one that made the story's
-map, else its first), applies the page's wording (`STANDALONE` questions, `WORDING` and `SOURCES` for
-titles, field names and source notes), adds the ranking chart, drops model settings, UI state and agent
-transcripts, swaps in the shortened answer from `story_answers.yaml`, and writes the question
-into `profile.yaml` as the story's `prompt`. Then update the story's `headline` and `dek` in
-`profile.yaml`, and redraw its cover images from the new seed:
+It rewrites the story's seed and its `headline` and `dek` in `profile.yaml`; the `title`, `prompt`
+and `follow_ups` are edited by hand. Then install the stories again (`build.py --sites-dir …`) and
+redraw their covers, pictures of the story's map or app in a running Data Formulator (Playwright's
+Chromium: `uv run playwright install chromium` once):
 
 ```bash
-uv run python py-src/data_formulator/demos/unesco/make_covers.py --only <story id>
+DF_SITES_DIR=/tmp/uis-sites uv run data_formulator --port 5600 --data-dir /tmp/uis-home   # a scratch home
+uv run python py-src/data_formulator/demos/unesco/make_covers.py --url http://localhost:5600 --only <story id>
 ```
 
-`make_covers.py` draws each cover as the app draws the seed's charts, in the profile's `chart_theme`
-(`--out <folder>` writes them elsewhere for review). It runs `render_covers.mjs` (beside it), so it
-needs the frontend's `node_modules`, and network access for the world map outline.
-
-Data: UIS Bulk Data Download Service, February 2026 release
-(<https://download.uis.unesco.org/bdds/202602/>), licensed CC BY-SA 3.0 IGO.
+Data: UIS Bulk Data Download Service (<https://databrowser.uis.unesco.org/resources/bulk>):
+education (SDG 4, OPRI) and demographic data from the November 2026 release, research and
+development (SCN) and heritage spending (SDG 11) from the February 2026 release, their latest;
+licensed CC BY-SA 3.0 IGO.
 
 ## Run locally
 
@@ -74,5 +79,9 @@ that way). The demo is then at `/demo/unesco`; set `DF_SITE=unesco` to make it t
 
 ## New UIS release
 
-Update `BASE_URL` and the file names in `build.py`, `release` in `profile.yaml`, then rebuild.
-Seeds hold their answers' tables, so redo the stories on the new data and run `make_seeds.py`.
+UIS updates its datasets on their own schedules. Update the dataset's folder in `RELEASES` (and the
+background notes in `DOCS`) in `build.py`, `release` in `profile.yaml` when education moves (it names
+the content folder and the page's "{release}"), and the release dates in `profile.yaml`'s `about`
+and `attribution` and in `skill/SKILL.md`, and the years in each dataset's `summary`. Rebuild the datasets, then run `make_stories.py`: its
+checks stop on a story whose text no longer fits the data (for example when another country ranks
+first), to reword. Redraw the covers last.

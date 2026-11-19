@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "title": "Research spending as a share of GDP",
+  "subtitle": "Spending on research and development as a share of GDP; latest figure, 2020–2024",
+  "source": "UIS, February 2026 release; indicator EXPGDP.TOT",
+  "template": "choropleth",
+  "data": {
+    "table": "research_spending"
+  },
+  "encoding": {
+    "region": "country_id",
+    "color": "rd_share",
+    "tooltip": [
+      "country",
+      "rd_share",
+      "latest_year"
+    ]
+  },
+  "properties": {
+    "geography": "world",
+    "keyType": "iso3"
+  },
+  "fields": {
+    "country_id": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+    },
+    "country": {
+      "semanticType": "Country",
+      "displayName": "Country"
+    },
+    "latest_year": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+    },
+    "rd_share": {
+      "semanticType": "Percentage",
+      "unit": "% of GDP",
+      "displayName": "Research spending (% of GDP)"
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

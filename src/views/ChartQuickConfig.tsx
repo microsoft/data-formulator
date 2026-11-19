@@ -217,7 +217,7 @@ export const ChartQuickConfig: FC<ChartQuickConfigProps> = function ({ chartId, 
             px: 1.5,
             py: 0.5,
             maxWidth: 900,
-            borderRadius: '8px',
+            borderRadius: 2,
             backgroundColor: 'rgba(0,0,0,0.025)',
         }}>
             {controls.map((propDef) => {
@@ -331,7 +331,7 @@ export const ChartQuickConfig: FC<ChartQuickConfigProps> = function ({ chartId, 
                     transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
                     slotProps={{ paper: { sx: {
                         p: 1.25,
-                        borderRadius: '8px',
+                        borderRadius: 2,
                         mt: '-10px',
                         ml: '-14px',
                         overflow: 'visible',

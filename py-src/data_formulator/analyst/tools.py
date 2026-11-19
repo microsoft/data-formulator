@@ -28,7 +28,7 @@ EXECUTE_PYTHON_SCRIPT_TOOL: dict[str, Any] = {
             "Execute a general-purpose Python script in the sandbox. Here you "
             "use it to inspect data, compute statistics, or verify assumptions "
             "before you act — print() to stdout, which is returned to you and is "
-            "not shown to the user. pandas, numpy, duckdb, sklearn, scipy are available."
+            "not shown to the user. pandas, numpy, duckdb, sklearn, scipy are available." + " It runs at the workspace root: it reads files/, data/ (a table's data_file) and scratch/; session://, sources:// and workflows:// names are app objects read with read_file, not files. It writes only to scratch/."
         ),
         "parameters": {
             "type": "object",

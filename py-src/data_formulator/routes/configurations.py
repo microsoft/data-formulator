@@ -56,6 +56,7 @@ def can_configure() -> bool:
 
 
 def snapshot() -> dict:
+    from data_formulator.shares import share_links_locked, shares_available
     from pathlib import Path
     from data_formulator.model_registry import model_registry
     from data_formulator.data_connector import DATA_CONNECTORS, _ADMIN_CONNECTOR_IDS
@@ -101,6 +102,7 @@ def snapshot() -> dict:
             'user_connectors': {'disabled': user_connectors_disabled(),
                                 'locked': user_connectors_locked()},
             'user_models': {'disabled': user_models_disabled(), 'locked': user_models_locked()},
+            'share_links': {'enabled': shares_available(), 'locked': share_links_locked()},
             'loader_types': [{'type': key, 'name': loader.DISPLAY_NAME or key, 'params': loader.list_params(), 'auth_mode': loader.auth_mode()}
                              for key, loader in DATA_LOADERS.items() if key != 'sample_datasets'
                              and (key != 'local_folder' or is_local_mode()) and loader.auth_mode() in ('credentials', 'connection')],

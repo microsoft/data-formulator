@@ -13,26 +13,35 @@ import { buttonVar, iconVar, textVar } from './layout';
 
 // ── Border colors ──────────────────────────────────────────────────────
 
+/** The border colours as plain values, for places CSS variables do not reach (a sandboxed app's iframe). */
+export const borderColorValue = {
+    divider: 'rgba(0, 0, 0, 0.12)',
+    component: 'rgba(0, 0, 0, 0.10)',
+    view: 'rgba(0, 0, 0, 0.12)',
+} as const;
+
+/** Border colours as CSS variables over the plain values, so the look (look/looks.ts) can
+ *  darken every border at once. */
 export const borderColor = {
     /** 0.12 — section dividers, table borders, tab underlines, sidebar edges
     *  ExplComponents, RefreshDataDialog, ReportView tables,
      *  TableSelectionView, DataLoadingThread, DBTableManager */
-    divider: 'rgba(0, 0, 0, 0.12)',
+    divider: `var(--df-line-divider, ${borderColorValue.divider})`,
 
     /** 0.10 — inner components: cards, chips, inputs, thumbnails
      *  DataThreadCards table card, EncodingShelfCard tab divider */
-    component: 'rgba(0, 0, 0, 0.10)',
+    component: `var(--df-line-component, ${borderColorValue.component})`,
 
     /** 0.12 — outer containers: panels, dialogs, popovers, drop zones
      *  DataThread popups, UnifiedDataUploadDialog, AgentRulesDialog */
-    view: 'rgba(0, 0, 0, 0.12)',
+    view: `var(--df-line-view, ${borderColorValue.view})`,
 } as const;
 
 /** Right edge of the collapsible sidebar: quiet when docked, clearer when it
  *  floats over the workspace. Kept separate from generic view borders because
  *  this edge is also a resize affordance. */
 export const sidebarEdge = {
-    border: 'rgba(0, 0, 0, 0.08)',
+    border: 'var(--df-line-edge, rgba(0, 0, 0, 0.08))',
     dockedShadow: '3px 0 10px -8px rgba(0, 0, 0, 0.32)',
     overlayShadow: '5px 0 16px -8px rgba(0, 0, 0, 0.32)',
 } as const;
@@ -42,7 +51,7 @@ export const sidebarEdge = {
 /** Icon colours at rest. Selected and focused icons take the theme's (or their file type's) colour. */
 export const iconTone = {
     /** 0.15 — thread rail icons off the focused chain, as quiet as the rail itself. */
-    muted: 'rgba(0, 0, 0, 0.15)',
+    muted: 'var(--df-icon-muted, rgba(0, 0, 0, 0.15))',
     /** 0.40 — row icons in lists (workspace items, tables). */
     rest: 'rgba(0, 0, 0, 0.4)',
 } as const;
@@ -181,10 +190,70 @@ export const transition = {
  */
 export const floatingAppControlsRight = 24;
 
+/** A decorative shadow (resting elevation, hover glow) that the sharp contrast drops: flat surfaces, edges drawn by
+ *  their lines. Real overlays (menus, dialogs, a tab being dragged) and focus rings keep theirs. */
+export const ambientShadow = (shadow: string) => `var(--df-ambient-shadow, ${shadow})`;
+
+/** A card's hover lift; the sharp contrast makes it a small, even 1px with no shadow, its outline changing colour too. */
+export const hoverLift = (px: number) => `var(--df-hover-lift, translateY(-${px}px))`;
+
+/** An outlined surface's corner: `soft` in the soft look, one shared small corner when sharp. */
+export const cardRadius = (soft: string) => `var(--df-card-radius, ${soft})`;
+
+/** A selection ring around a focused thread card: 2px, finer and in the full colour when sharp. */
+export const selectionRing = (color: string) => `0 0 0 var(--df-ring-width, 2px) ${color}`;
+
+/** A selected picture (a chart thumbnail): only its ring, or where the look draws one, a full outline on its edge. A
+ *  rule or wash would lie over the picture itself. The outline is `--df-selection-outline` wide, laid over the item's
+ *  `border` (px; 0 for a borderless item, which takes it just outside). */
+export const selectionOutline = (color: string, border = 0) => ({
+    boxShadow: selectionRing(color),
+    outlineStyle: 'solid', outlineColor: color,
+    outlineWidth: 'var(--df-selection-outline, 0px)', outlineOffset: `-${border}px`,
+});
+
+/** The selected item: its outline (`selectionOutline`), plus where the look draws them, a solid rule down its left
+ *  side and a faint wash, both in `color` (overflow cannot clip them away from the box). The rule
+ *  (`--df-selection-rule` wide) and wash (`--df-selection-tint` of the colour, multiplied so text keeps its contrast)
+ *  are an `::after` overlay. All are 0 in the soft look. The item must be positioned. */
+export const selectionMark = (color: string, border = 0) => ({
+    ...selectionOutline(color, border),
+    '&::after': {
+        // Drawn only where the look turns it on, so the soft look composites exactly as before.
+        display: 'var(--df-selection-overlay, none)',
+        content: '""', position: 'absolute', inset: `-${border}px`, pointerEvents: 'none', zIndex: 2, mixBlendMode: 'multiply',
+        background: `linear-gradient(${color}, ${color}) left / var(--df-selection-rule, 0px) 100% no-repeat, `
+            + `color-mix(in srgb, ${color} var(--df-selection-tint, 0%), transparent)`,
+    },
+});
+
+/** The meta voice: short system text (section labels, counts, kinds, key hints). The soft look keeps the call
+ *  site's own sans styling (`soft`); the sharp look speaks it in mono, uppercase, tracked and a touch smaller. */
+export const metaText = (soft: { fontSize?: string; textTransform?: string; letterSpacing?: string | number } = {}) => ({
+    fontFamily: `var(--df-meta-font, ${fontSans})`,
+    letterSpacing: `var(--df-meta-tracking, ${soft.letterSpacing ?? 'normal'})`,
+    textTransform: `var(--df-meta-case, ${soft.textTransform ?? 'none'})`,
+    ...(soft.fontSize ? { fontSize: `calc(${soft.fontSize} * var(--df-meta-scale, 1))` } : {}),
+});
+
+/** A name that is data (a field, table, model): in the meta font where the look has one, never re-cased. */
+export const identText = { fontFamily: `var(--df-meta-font, ${fontSans})` } as const;
+
+/** A quiet aside (an agent's thinking, a note that something was replaced): italic, or upright where the look
+ *  avoids italics. */
+export const quietText = { fontStyle: 'var(--df-quiet-style, italic)' } as const;
+
+/** A canvas behind content: the call site's soft pattern, or the look's (a dot grid when sharp). */
+export const canvasPattern = (soft: string, softSize: string) => ({
+    background: `var(--df-canvas-pattern, ${soft})`,
+    backgroundSize: `var(--df-canvas-pattern-size, ${softSize})`,
+});
+
 export const floatingPillSx: SxProps = {
     backgroundColor: 'background.paper',
-    border: `1px solid ${borderColor.divider}`,
-    boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
+    // Sharp: no outline or shadow, a plain icon button that shows a background on hover.
+    border: `1px solid var(--df-pill-line, ${borderColor.divider})`,
+    boxShadow: ambientShadow('0 1px 4px rgba(0,0,0,0.12)'),
     color: 'text.secondary',
     transition: transition.normal,
     '&:hover': { backgroundColor: 'action.hover', color: 'primary.main' },

@@ -525,7 +525,7 @@ const SessionDistillFromPanel: React.FC<{
                     maxHeight: 360, overflowY: 'auto',
                     px: 1, py: 0.75,
                     border: theme => `1px solid ${theme.palette.divider}`,
-                    borderRadius: '6px',
+                    borderRadius: 1.5,
                 }}
             >
                 {threads.map((thread, idx) => {
@@ -537,7 +537,7 @@ const SessionDistillFromPanel: React.FC<{
                                 onClick={() => toggle(idx)}
                                 sx={{
                                     display: 'flex', alignItems: 'center', gap: 0.5,
-                                    cursor: 'pointer', borderRadius: '4px', px: 0.5, py: 0.25,
+                                    cursor: 'pointer', borderRadius: 1, px: 0.5, py: 0.25,
                                     '&:hover': { bgcolor: 'action.hover' },
                                 }}
                             >
@@ -717,7 +717,7 @@ const EventRow: React.FC<{ ev: Record<string, any> }> = ({ ev }) => {
         <Box sx={{
             display: 'flex', alignItems: 'flex-start', gap: 0.75,
             px: 1, py: 0.6,
-            bgcolor: bg, borderRadius: '6px',
+            bgcolor: bg, borderRadius: 1.5,
         }}>
             <Box sx={{ flexShrink: 0, mt: '2px' }}>
                 <Icon sx={{ width: 14, height: 14, color: iconColor }} />

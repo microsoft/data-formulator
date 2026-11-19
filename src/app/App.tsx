@@ -49,6 +49,7 @@ import {
     TextField,
     IconButton,
     Select,
+    Switch,
     FormControl,
     InputLabel,
     ListItemIcon,
@@ -68,6 +69,7 @@ import { DataFormulatorFC } from '../views/DataFormulator';
 import { themeIconUrl, useThemeChoices } from '../views/ChartThemePicker';
 import { LayoutProvider, useLayout, type DensityPreference } from './LayoutProvider';
 import { createDfTheme } from './theme';
+import { applyLookVariables, saveLook, useLook, type Look } from './look';
 import { MIN_SUPPORTED } from './layout';
 import { useAutoSave } from './useAutoSave';
 import { useWorkspaceConsistency } from './workspaceConsistency';
@@ -692,6 +694,9 @@ const ConfigDialog: React.FC<{
     const [paletteKey, setPaletteKey] = useState(
         (config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey
     );
+    // The look, like the display size, is this browser's preference, not the session's.
+    const savedLook = useLook();
+    const [look, setLook] = useState<Look>(savedLook);
     const siteThemeId = useSelector(siteChartThemeId);
     const configChartThemeId = resolveDefaultChartTheme(config, siteThemeId) ?? '';
     const [defaultChartThemeId, setDefaultChartThemeId] = useState(configChartThemeId);
@@ -707,6 +712,7 @@ const ConfigDialog: React.FC<{
                       frontendRowLimit !== config.frontendRowLimit ||
                       paletteKey !== ((config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey) ||
                       defaultChartThemeId !== configChartThemeId ||
+                      look !== savedLook ||
                       displaySize !== densityPreference;
 
     return (
@@ -798,6 +804,23 @@ const ConfigDialog: React.FC<{
                                 {t('config.defaultChartThemeHint')}
                             </Typography>
                         </FormControl>
+                        <Box>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography id="contrast-label" sx={{ flex: 1, fontSize: textVar.md }}>{t('config.contrast')}</Typography>
+                                <Typography component="span" aria-hidden sx={{ fontSize: textVar.sm, color: look === 'soft' ? 'text.primary' : 'text.secondary' }}>
+                                    {t('config.contrastSoft')}
+                                </Typography>
+                                <Switch size="small" checked={look === 'sharp'}
+                                    onChange={(e) => setLook(e.target.checked ? 'sharp' : 'soft')}
+                                    slotProps={{ input: { 'aria-labelledby': 'contrast-label' } }} />
+                                <Typography component="span" aria-hidden sx={{ fontSize: textVar.sm, color: look === 'sharp' ? 'text.primary' : 'text.secondary' }}>
+                                    {t('config.contrastSharp')}
+                                </Typography>
+                            </Box>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                                {t('config.contrastHint')}
+                            </Typography>
+                        </Box>
                         <FormControl fullWidth size="small">
                             <InputLabel id="display-size-label" sx={{ fontSize: textVar.md }}>{t('config.displaySize')}</InputLabel>
                             <Select
@@ -969,6 +992,7 @@ const ConfigDialog: React.FC<{
                         setMaxStretchFactor(2.0);
                         setFrontendRowLimit(rowLimitDefault);
                         setPaletteKey(defaultPaletteKey);
+                        setLook('soft');
                         setDefaultChartThemeId(siteThemeId ?? DEFAULT_CHART_THEME_ID);
                         setDisplaySize('auto');
                     }}>{t('session.resetToDefault')}</Button>
@@ -982,6 +1006,7 @@ const ConfigDialog: React.FC<{
                             || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > rowLimitMax}
                         onClick={() => {
                             dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey, defaultChartThemeId}));
+                            saveLook(look);
                             setDensityPreference(displaySize);
                             setOpen(false);
                         }}
@@ -1348,6 +1373,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     const { t, i18n } = useTranslation();
     const rawPaletteKey = useSelector((state: DataFormulatorState) => state.config.paletteKey);
     const activePaletteKey = (rawPaletteKey && palettes[rawPaletteKey]) ? rawPaletteKey : defaultPaletteKey;
+    const look = useLook();
 
     const [configLoaded, setConfigLoaded] = useState(false);
     const [startupLogsOpen, setStartupLogsOpen] = useState(false);
@@ -1508,7 +1534,11 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         dispatch(fetchGlobalModelList());
     }, []);
 
-    let theme = createDfTheme(activePaletteKey);
+    useEffect(() => {
+        applyLookVariables(document.documentElement.style, look);
+    }, [look]);
+
+    let theme = createDfTheme(activePaletteKey, look);
 
     const router = useMemo(() => createBrowserRouter([
         {
@@ -1538,6 +1568,10 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         {
             path: "/dev/design",
             lazy: () => import('../views/DevDesignPage').then(module => ({ Component: module.default })),
+        },
+        {
+            path: "/dev/look",
+            lazy: () => import('../components/look/LookGallery').then(module => ({ Component: module.default })),
         },
         {
             path: "/",

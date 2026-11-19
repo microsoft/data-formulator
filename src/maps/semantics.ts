@@ -24,6 +24,13 @@ export interface FieldAnnotation {
     /** Ordered levels (Flint `sortOrder`): a ranked category, not identities. */
     sortOrder?: (string | number)[];
     displayName?: string;
+    /**
+     * The field's colour scale on maps, so maps (and a measure switch's options) of the same measure compare:
+     * class breaks, or the extent the ramp spans (in equal steps). Where the map's own encoding sets a scale,
+     * that wins.
+     */
+    thresholds?: number[];
+    domain?: [number, number];
 }
 
 export interface FormatSpec { pattern?: string; prefix?: string; suffix?: string }
@@ -48,7 +55,7 @@ const isNumber = (value: unknown) => typeof value === 'number' && Number.isFinit
 
 /** A field's annotation: declared, else guessed from its name and values. */
 export function annotateField(field: string, values: unknown[], declared?: FieldAnnotation): FieldAnnotation {
-    if (declared?.semanticType) return declared;
+    if (declared?.semanticType) return withoutContradictedDomain(declared, values);
     const numeric = values.length > 0 && values.filter(value => value !== null && value !== undefined && value !== '').every(isNumber);
     const guess = numeric ? NAME_HINTS.find(([pattern]) => pattern.test(field))?.[1] : undefined;
     const unit = declared?.unit ?? NAME_UNITS.find(([pattern]) => pattern.test(field))?.[1];
@@ -60,6 +67,22 @@ export function annotateField(field: string, values: unknown[], declared?: Field
         if (numbers.length && numbers.every(value => value >= 0 && value <= 1)) annotation.intrinsicDomain = [0, 1];
     }
     return annotation;
+}
+
+/**
+ * A stored domain the values plainly exceed is dropped: an inferred `[0, 1]` on a share held as 0–100 would format
+ * 30 as "3000%" and colour it as diverging around 50%. Sampling noise (a value just past a bound) is tolerated.
+ */
+function withoutContradictedDomain(annotation: FieldAnnotation, values: unknown[]): FieldAnnotation {
+    const domain = annotation.intrinsicDomain;
+    if (!domain) return annotation;
+    const numbers = values.filter(isNumber) as number[];
+    if (!numbers.length) return annotation;
+    const [low, high] = domain;
+    const slack = Math.abs(high - low) * 0.05;
+    if (numbers.every(value => value >= low - slack && value <= high + slack)) return annotation;
+    const { intrinsicDomain: _dropped, ...rest } = annotation;
+    return rest;
 }
 
 /** `life_expectancy` → "Life expectancy". */
@@ -78,6 +101,9 @@ export interface ResolvedField {
     midpoint?: number;
     /** Flint's recommended (Vega) scheme name, used when no theme sets the ramps. */
     scheme?: string;
+    /** The field's declared colour scale (FieldAnnotation thresholds / domain). */
+    thresholds?: number[];
+    domain?: [number, number];
     /** Additive measures (counts, amounts) make misleading choropleths; rates do not. */
     additive: boolean;
     /** Colours pinned to category values. */
@@ -117,11 +143,20 @@ export function resolveField(field: string, values: unknown[], declared?: FieldA
     const unitWord = annotation.unit?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const name = annotation.displayName ?? (unitWord ? humanize(field).replace(new RegExp(`\\s+${unitWord}$`, 'i'), '') : humanize(field));
     const currency = annotation.unit ? UNIT_LABELS[annotation.unit.toUpperCase()] : undefined;
+    // Flint guesses a share stored as 0–1 when most values are under 1 (most countries hold under 1% of papers); a
+    // value well past 1 says it is held as 0–100, so a fraction format (46 → "4600%") is dropped.
+    let format = plainInteger ? { pattern: 'd' } : semantics?.tooltipFormat ?? semantics?.format;
+    if (format?.pattern?.includes('%') && values.some(value => isNumber(value) && Math.abs(value as number) > 1.05)) {
+        const { pattern: _fraction, ...rest } = format;
+        format = rest;
+    }
     return {
         label: unit && !name.toLowerCase().includes(unit.toLowerCase()) ? `${name} (${unit})` : currency && !/\$|€|£/.test(name) ? `${name} (${currency})` : name,
-        format: plainInteger ? { pattern: 'd' } : semantics?.tooltipFormat ?? semantics?.format,
+        format,
         aggregate: aggregation === 'sum' ? 'sum' : aggregation === 'average' ? 'mean' : undefined,
         colorType, midpoint, scheme,
+        ...(annotation.thresholds?.length ? { thresholds: annotation.thresholds } : {}),
+        ...(annotation.domain ? { domain: annotation.domain } : {}),
         additive: entry?.aggRole === 'additive' || entry?.aggRole === 'signed-additive',
         ...(annotation.colors ? { colors: annotation.colors } : {}),
     };
@@ -162,6 +197,11 @@ export function colorDefaults(encoding: ColorEncoding, resolved: ResolvedField):
         aggregate: encoding.aggregate ?? resolved.aggregate,
         title: encoding.title ?? resolved.label,
         ...(resolved.colors && !encoding.colors ? { colors: resolved.colors } : {}),
+        // The field's own scale, unless the encoding sets one: breaks as given, or equal steps over its extent.
+        ...(!encoding.thresholds && !encoding.domain && resolved.thresholds
+            ? { thresholds: resolved.thresholds, method: encoding.method ?? 'threshold' as const } : {}),
+        ...(!encoding.thresholds && !encoding.domain && !resolved.thresholds && resolved.domain
+            ? { domain: resolved.domain, method: encoding.method ?? (diverging ? 'continuous' as const : 'equal' as const) } : {}),
         ...(encoding.format === undefined ? semanticFormat(encoding, resolved) : {}),
     };
 }

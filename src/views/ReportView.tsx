@@ -33,10 +33,12 @@ import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from '../app/store';
 import { TiptapReportEditor } from './TiptapReportEditor';
 import { getCachedChart } from '../app/chartCache';
+import { parseItemName } from '../app/itemNames';
+import { useItemOpener } from './ItemReferences';
 import { floatingPillSx } from '../app/tokens';
 import { iconVar, textVar } from '../app/layout';
 import { useTranslation } from 'react-i18next';
-import { MAP_EMBED, mapEmbedKey, reportMapPaths, resolveCitations, splitFrontMatter, streamingReportText } from './reportBlocks';
+import { EMBED, embeddedMapPath, mapEmbedKey, reportMapPaths, resolveCitations, splitFrontMatter, streamingReportText } from './reportBlocks';
 import { requestSourceLocation } from '../app/sourceLocation';
 import { onWorkspaceFilesChanged } from '../app/workspaceService';
 import {
@@ -67,6 +69,7 @@ export const ReportView: FC = () => {
     const focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     const theme = useTheme();
     const { t } = useTranslation();
+    const openItem = useItemOpener();
 
     const [currentReportId, setCurrentReportId] = useState<string | undefined>(undefined);
     const [generatedReport, setGeneratedReport] = useState<string>('');
@@ -481,16 +484,20 @@ ${styles}
             return `<img src="${url}" alt="${caption || t('report.chartAlt')}" data-chart-id="${chartId}" width="${width}" height="${height}" style="max-width:100%;" />`;
         };
 
-        // Process ![caption](map://files/<name>.map.json): the map file as a still picture
-        processed = processed.replace(MAP_EMBED, (_match, caption: string, path: string) => {
-            const cached = cachedReportImages[mapEmbedKey(path)];
-            if (cached) return makeImg(mapEmbedKey(path), cached.url, cached.width, cached.height, escapeHtml(caption));
-            const failure = mapFailures[path];
-            return `<p style="text-align:center;color:#999;padding:16px 0;">🗺️ ${escapeHtml(caption || path)}${failure ? ` (${escapeHtml(failure)})` : ''}</p>`;
-        });
-
-        // Process ![caption](chart://chart_id) syntax
-        processed = processed.replace(/!\[([^\]]*)\]\(chart:\/\/([^)]+)\)/g, (_match, caption, chartId) => {
+        // Process ![caption](name): a map file (files/<name>.map.json, or the old map://files/…) as a still picture,
+        // a chart (session://charts/<id>, or the old chart://<id>) as its image. Other embeds (a table's rows, an
+        // image file, a link) are drawn by the editor's image view, keeping their names when the report is edited.
+        processed = processed.replace(EMBED, (match, caption: string, name: string) => {
+            const target = parseItemName(name);
+            const mapPath = embeddedMapPath(name);
+            if (mapPath) {
+                const cached = cachedReportImages[mapEmbedKey(mapPath)];
+                if (cached) return makeImg(mapEmbedKey(mapPath), cached.url, cached.width, cached.height, escapeHtml(caption));
+                const failure = mapFailures[mapPath];
+                return `<p style="text-align:center;color:#999;padding:16px 0;">🗺️ ${escapeHtml(caption || mapPath)}${failure ? ` (${escapeHtml(failure)})` : ''}</p>`;
+            }
+            if (target?.kind !== 'chart') return match;
+            const chartId = target.id;
             const cached = cachedReportImages[chartId];
             if (cached) {
                 return makeImg(chartId, cached.url, cached.width, cached.height, caption);
@@ -783,7 +790,7 @@ ${styles}
                                 paper: {
                                     sx: {
                                         mt: 0.5,
-                                        borderRadius: '6px',
+                                        borderRadius: 1.5,
                                         boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
                                         border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
                                     }
@@ -820,7 +827,7 @@ ${styles}
                                 paper: {
                                     sx: {
                                         mt: 0.5,
-                                        borderRadius: '6px',
+                                        borderRadius: 1.5,
                                         boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
                                         border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
                                     }
@@ -884,6 +891,7 @@ ${styles}
                                 inspectionSteps={currentReport?.inspectionSteps}
                                 reportId={currentReportId}
                                 reportLook={reportLook}
+                                onOpenItem={target => openItem(target)?.()}
                                 onOpenSource={(fileName, location) => {
                                     requestSourceLocation(fileName, location);
                                     dispatch(dfActions.setFocused({ type: 'file', fileName }));

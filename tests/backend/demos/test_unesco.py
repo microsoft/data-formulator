@@ -1,5 +1,6 @@
 """The UIS demo shipped in data_formulator/demos/unesco: its profile, images and build script."""
 
+import hashlib
 import importlib.util
 import io
 import json
@@ -82,11 +83,30 @@ def _fake_uis_download(raw: Path) -> None:
             "DEM_DATA_NATIONAL.csv": "indicator_id,country_id,year,value,magnitude,qualifier\nPOP,FRA,2022,68000000,,\n",
         },
     }
-    raw.mkdir()
     for code, members in files.items():
-        with zipfile.ZipFile(raw / f"{code}.zip", "w") as archive:
+        path = build.raw_path(raw, f"{code}.zip")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(path, "w") as archive:
             for name, text in members.items():
                 archive.writestr(name, text)
+
+
+def test_download_takes_each_dataset_from_its_own_release(tmp_path, monkeypatch):
+    urls = []
+
+    def urlopen(url):
+        urls.append(url)
+        return io.BytesIO(b"zip")
+
+    monkeypatch.setattr(build.urllib.request, "urlopen", urlopen)
+    build.download(tmp_path)
+    assert f"{build.BASE_URL}202611/SDG.zip" in urls and f"{build.BASE_URL}202602/SDG11.zip" in urls
+    # Cached by release, so a newer release never reuses an older download.
+    assert (tmp_path / "202611" / "SDG.zip").is_file() and (tmp_path / "202602" / "SDG11.zip").is_file()
+    assert not list(tmp_path.rglob("*.part"))
+    urls.clear()
+    build.download(tmp_path)
+    assert urls == []
 
 
 def test_build_makes_a_session_data_formulator_can_open(tmp_path):
@@ -126,7 +146,7 @@ def test_each_story_has_a_seed_that_holds_together(story_id):
     assert story["file"] == f"stories/{story_id}.zip"
     # Only the analysis: no model or connection settings, UI layout, messages or agent transcripts.
     assert set(seed) <= {"__stateVersion", "activeWorkspace", "derivedTables", "charts", "conceptShelfItems",
-                         "textTurns", "tableSemantics", "focusedId"}
+                         "textTurns", "tableSemantics", "fileNodes", "focusedId", "canvasTabs", "canvasTabActive"}
     assert not any("dialog" in (table.get("derive") or {}) for table in seed["derivedTables"])
     tables = {table["id"] for table in seed["derivedTables"]}
     assert {path.stem for path in seed_dir.glob("*.parquet")} == {t["virtual"]["tableId"] for t in seed["derivedTables"]}
@@ -134,15 +154,30 @@ def test_each_story_has_a_seed_that_holds_together(story_id):
     prompts = [turn for turn in seed["textTurns"] if turn.get("prompt")]
     assert len(prompts) == 1 and prompts[0]["prompt"] == story["prompt"]
     assert prompts[0]["parentNodeId"].startswith("conversation-root:")
-    ids = {turn["id"] for turn in seed["textTurns"]} | tables
+    files = {node["id"]: node for node in seed["fileNodes"]}
+    ids = {turn["id"] for turn in seed["textTurns"]} | tables | set(files)
     assert all(turn["parentNodeId"] in ids for turn in seed["textTurns"] if turn is not prompts[0])
-    # Charts draw the seed's tables with fields it defines, and the first is focused.
+    assert all(node["parentNodeId"] in ids for node in [*seed["derivedTables"], *files.values()])
+    # Its map or app: the files it names are in the seed, as made; it opens on the last, where the answer follows.
+    assert files and {node["path"] for node in files.values()} == {path.name for path in (seed_dir / "files").iterdir()}
+    for node in files.values():
+        content = (seed_dir / "files" / node["path"]).read_bytes()
+        assert hashlib.sha256(content).hexdigest() == node["contentHash"]
+        if node["path"].endswith(".app.jsx"):
+            manifest = json.loads(content.decode().split("\n", 1)[0].removeprefix("// @df-app "))
+            assert manifest["title"] == node["displayName"] and set(manifest["tables"]) <= tables
+        else:
+            assert node["path"].endswith(".map.json") and json.loads(content)["data"]["table"] in tables
+    lead = seed["fileNodes"][-1]
+    assert seed["focusedId"] == {"type": "file", "fileName": lead["path"]}
+    # Every map and app keeps a tab; the lead's is open.
+    assert [tab["key"] for tab in seed["canvasTabs"]] == [f"file:{node['path']}" for node in seed["fileNodes"]]
+    assert seed["canvasTabActive"] == f"file:{lead['path']}"
+    assert seed["textTurns"][-1]["parentNodeId"] == lead["id"]
+    # Charts draw the seed's tables with fields it defines.
     concepts = {item["id"] for item in seed["conceptShelfItems"]}
-    assert seed["charts"] and all(chart["tableRef"] in tables for chart in seed["charts"])
+    assert all(chart["tableRef"] in tables for chart in seed["charts"])
     assert all(enc["fieldID"] in concepts for chart in seed["charts"] for enc in chart["encodingMap"].values() if enc.get("fieldID"))
-    assert seed["focusedId"] == {"type": "chart", "chartId": seed["charts"][0]["id"]}
-    if seed["charts"][0]["chartType"] == "Choropleth":
-        assert [chart["chartType"] for chart in seed["charts"]] == ["Choropleth", "Bar Chart"]
 
 
 def test_build_adds_a_story_to_its_dataset_session(tmp_path):
@@ -164,6 +199,11 @@ def test_build_adds_a_story_to_its_dataset_session(tmp_path):
     assert all(table["virtual"]["tableId"] in tables for table in state["derivedTables"])
     assert state["charts"] == seed["charts"] and state["textTurns"] == seed["textTurns"]
     assert state["activeWorkspace"] == {"id": "culture-c20", "displayName": story["headline"]}
+    # Its map is in the workspace as the analyst saves one: under its title, for the analyst to revise.
+    (node,) = state["fileNodes"]
+    saved = workspace.get_metadata().files[node["path"]]
+    assert saved.content_hash == node["contentHash"] and saved.display_name == node["displayName"]
+    assert saved.origin == "agent" and saved.media_type == "application/json"
     # The seed's code is signed by this installation, so the app can refresh its tables.
     from data_formulator.security.code_signing import verify_code
     derives = [table["derive"] for table in state["derivedTables"] if (table.get("derive") or {}).get("code")]
@@ -191,25 +231,3 @@ def test_install_builds_and_reports_what_is_still_missing(tmp_path):
 def test_install_rejects_unknown_datasets(tmp_path):
     with pytest.raises(build.InstallError, match="unknown datasets: nope"):
         build.install(tmp_path, tmp_path / "raw", only=["nope"], download_missing=False, log=lambda line: None)
-
-
-def test_cutting_a_seed_again_keeps_the_page_wording():
-    spec = importlib.util.spec_from_file_location("unesco_make_seeds", DEMO / "make_seeds.py")
-    make_seeds = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(make_seeds)
-    # As the curated session has it.
-    state = {
-        "derivedTables": [{"displayId": "Recent high school completion by country"}],
-        "charts": [{"title": "High school completion across countries", "subtitle": "Latest estimates, 2020–2025"}],
-        "tableSemantics": [{"fields": {"value": {"displayName": "High school completion (%)",
-                                                 "authored": {"displayName": "High school completion (%)"}}}}],
-    }
-    make_seeds.reword(state, "education-sdg4-e20")
-    assert state["derivedTables"][0]["displayId"] == "Recent upper secondary completion by country"
-    assert state["charts"][0] == {"title": "Upper secondary completion across countries",
-                                  "subtitle": "Latest modelled estimates, 2020–2025; indicator CR.MOD.3"}
-    field = state["tableSemantics"][0]["fields"]["value"]
-    assert field["displayName"] == field["authored"]["displayName"] == "Upper secondary completion (%)"
-    # Running it again changes nothing.
-    make_seeds.reword(state, "education-sdg4-e20")
-    assert state["charts"][0]["subtitle"] == "Latest modelled estimates, 2020–2025; indicator CR.MOD.3"

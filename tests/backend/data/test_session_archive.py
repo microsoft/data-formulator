@@ -102,3 +102,28 @@ def test_import_refuses_oversized_archives(tmp_path, monkeypatch):
     archive.seek(0)
     with pytest.raises(ValueError, match="too large"):
         workspace.import_session_zip(archive)
+
+
+def test_app_state_never_leaves_or_enters_a_session(tmp_path):
+    """_internal/ (history, runs) is not exported, and an archive cannot plant it, old layout included."""
+    source = Workspace("user:a", root_dir=tmp_path / "a")
+    source.confined_internal.write("agent/history.json", b'{"messages": []}')
+    with zipfile.ZipFile(build_session_archive(source, {})) as zf:
+        assert not any("_internal" in name for name in zf.namelist())
+
+    crafted = io.BytesIO()
+    with zipfile.ZipFile(crafted, "w") as zf:
+        zf.writestr("state.json", "{}")
+        zf.writestr("workspace/files/notes.md", "kept")
+        zf.writestr("workspace/_internal/agent/history.json", '{"injected": 1}')
+        zf.writestr("workspace/scratch/_agent/history.json", '{"injected": 2}')
+        zf.writestr("workspace/scratch/_workflow_runs/run.json", "{}")
+    crafted.seek(0)
+    target = Workspace("user:b", root_dir=tmp_path / "b")
+    target.import_session_zip(crafted)
+    reopened = Workspace("user:b", root_dir=tmp_path / "b")
+
+    assert (reopened._path / "files" / "notes.md").read_text() == "kept"
+    internal = reopened.confined_internal.root
+    assert not (internal / "agent").exists() and not (internal / "workflow_runs").exists()
+    assert not (reopened._path / "scratch" / "_agent").exists()

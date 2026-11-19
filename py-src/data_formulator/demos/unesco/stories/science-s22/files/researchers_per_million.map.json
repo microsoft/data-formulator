@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "title": "Researchers per million people",
+  "subtitle": "Full-time equivalent researchers per million people; latest figure, 2020–2024",
+  "source": "UIS, February 2026 release; indicator RESDEN.INHAB.TFTE",
+  "template": "choropleth",
+  "data": {
+    "table": "research_rankings"
+  },
+  "encoding": {
+    "region": "country_id",
+    "color": [
+      "researchers_per_million",
+      "rd_share"
+    ],
+    "tooltip": [
+      "country",
+      "researchers_per_million",
+      "rd_share",
+      "researchers_year"
+    ]
+  },
+  "properties": {
+    "geography": "world",
+    "keyType": "iso3"
+  },
+  "fields": {
+    "researchers_per_million": {
+      "semanticType": "Number",
+      "unit": "per million people",
+      "displayName": "Researchers per million people"
+    },
+    "rd_share": {
+      "semanticType": "Percentage",
+      "unit": "% of GDP",
+      "displayName": "Research spending (% of GDP)"
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

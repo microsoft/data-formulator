@@ -47,10 +47,10 @@ def _tool(name, args, ctx):
 
 
 def test_session_views_are_listed_and_only_charts_and_reports_are_editable(workspace) -> None:
-    listed = {item["path"]: item for item in _tool("list_files", {"path": "session/"}, _ctx(workspace))["files"]}
-    assert set(listed) == {"session/index.md", "session/charts/chart-1.json", "session/reports/report-1.md",
-                           "session/tables/d_sales.json", "session/threads/1.md"}
-    assert listed["session/charts/chart-1.json"].get("editable") and not listed["session/tables/d_sales.json"].get("editable")
+    listed = {item["path"]: item for item in _tool("list_files", {"path": "session://"}, _ctx(workspace))["files"]}
+    assert set(listed) == {"session://index", "session://charts/chart-1", "session://reports/report-1",
+                           "session://tables/d_sales", "session://threads/1"}
+    assert listed["session://charts/chart-1"].get("editable") and not listed["session://tables/d_sales"].get("editable")
 
 
 def test_list_read_and_search_span_files_session_and_scratch(workspace) -> None:
@@ -59,13 +59,13 @@ def test_list_read_and_search_span_files_session_and_scratch(workspace) -> None:
     ctx = _ctx(workspace)
     listed = _tool("list_files", {}, ctx)
     paths = [item["path"] for item in listed["files"]]
-    assert {"files/notes/plan.md", "session/charts/chart-1.json", "session/threads/1.md", "scratch/probe.txt"} <= set(paths)
+    assert {"files/notes/plan.md", "session://charts/chart-1", "session://threads/1", "scratch/probe.txt"} <= set(paths)
     assert [item["path"] for item in _tool("list_files", {"path": "files/notes"}, ctx)["files"]] == ["files/notes/plan.md"]
 
     read = _tool("read_file", {"files": [{"path": "files/notes/plan.md", "offset": 2, "limit": 1}]}, ctx)["files"][0]
     assert read["content"] == "Compare regions by month\n" and read["total_lines"] == 2 and read["editable"] is True
     assert read["content_hash"] == workspace.get_metadata().files["notes/plan.md"].content_hash
-    chart = _tool("read_file", {"files": [{"path": "session/charts/chart-1.json"}]}, ctx)["files"][0]
+    chart = _tool("read_file", {"files": [{"path": "session://charts/chart-1"}]}, ctx)["files"][0]
     assert json.loads(chart["content"]) == CHART and chart["content_hash"] == content_hash(chart["content"])
     assert chart["name"] == "Sales by region"
     # Older conversations call read_file with path/offset/limit.
@@ -74,13 +74,13 @@ def test_list_read_and_search_span_files_session_and_scratch(workspace) -> None:
 
     skill = build_registry().get_skill("workspace")
     found = skill.handle_tool("search", {"query": "region"}, ctx).text
-    for path in ("files/notes/plan.md", "session/charts/chart-1.json", "session/tables/d_sales.json",
-                 "session/threads/1.md", "scratch/probe.txt"):
+    for path in ("files/notes/plan.md", "session://charts/chart-1", "session://tables/d_sales",
+                 "session://threads/1", "scratch/probe.txt"):
         assert f"## {path}" in found
     # A table's code is searched with it.
-    regex = skill.handle_tool("search", {"query": r"groupby\('(\w+)'\)", "regex": True, "path": ["session/"]}, ctx).text
-    assert "## session/tables/d_sales.json" in regex and "code line 1:" in regex
-    assert "## session/charts/" not in regex
+    regex = skill.handle_tool("search", {"query": r"groupby\('(\w+)'\)", "regex": True, "path": ["session://"]}, ctx).text
+    assert "## session://tables/d_sales" in regex and "code line 1:" in regex
+    assert "## session://charts/" not in regex
     with pytest.raises(ValueError, match="not a session file"):
         SessionFiles(ctx).read("../etc/passwd")
 
@@ -89,25 +89,25 @@ def test_several_files_are_read_in_one_call(workspace, monkeypatch) -> None:
     import data_formulator.analyst.session_files as session_files
     workspace.save_workspace_file(b"# Plan\n", "notes/plan.md", "text/markdown", agent_managed=True)
     ctx = _ctx(workspace)
-    read = _tool("read_file", {"files": [{"path": "files/notes/plan.md"}, {"path": "session/charts/*"},
-                                         {"path": "session/tables/d_sales.json"}, {"path": "session/charts/chart-1.json"},
+    read = _tool("read_file", {"files": [{"path": "files/notes/plan.md"}, {"path": "session://charts/*"},
+                                         {"path": "session://tables/d_sales"}, {"path": "session://charts/chart-1"},
                                          {"path": "files/missing.md"}, {"path": "session/apps/*"}]}, ctx)
     files = {item["path"]: item for item in read["files"]}
-    assert list(files) == ["files/notes/plan.md", "session/charts/chart-1.json", "session/tables/d_sales.json",
+    assert list(files) == ["files/notes/plan.md", "session://charts/chart-1", "session://tables/d_sales",
                            "files/missing.md"]
-    assert json.loads(files["session/charts/chart-1.json"]["content"]) == CHART
-    assert files["session/charts/chart-1.json"]["editable"] and files["session/tables/d_sales.json"]["content_hash"]
+    assert json.loads(files["session://charts/chart-1"]["content"]) == CHART
+    assert files["session://charts/chart-1"]["editable"] and files["session://tables/d_sales"]["content_hash"]
     assert "does not exist" in files["files/missing.md"]["error"] and read["no_match"] == ["session/apps/*"]
     monkeypatch.setattr(session_files, "MAX_BATCH_CHARS", 10)
-    over = _tool("read_file", {"files": [{"path": "session/charts/chart-1.json"},
-                                         {"path": "session/tables/d_sales.json"}]}, ctx)["files"]
+    over = _tool("read_file", {"files": [{"path": "session://charts/chart-1"},
+                                         {"path": "session://tables/d_sales"}]}, ctx)["files"]
     assert "content" in over[0] and "size budget" in over[1]["not_read"]
 
 
 def _edit_chart(ctx, change):
-    current = SessionFiles(ctx).text("session/charts/chart-1.json")
+    current = SessionFiles(ctx).text("session://charts/chart-1")
     spec = {**json.loads(current), **change}
-    return _tool("edit_file", {"path": "session/charts/chart-1.json", "content": json.dumps(spec),
+    return _tool("edit_file", {"path": "session://charts/chart-1", "content": json.dumps(spec),
                                "expected_content_hash": content_hash(current)}, ctx)
 
 
@@ -124,9 +124,9 @@ def test_a_valid_chart_edit_lands_and_is_returned_for_the_application(workspace)
     # The application skips an edit to a chart the user changed meanwhile; it gets what the edit was made against.
     assert result["session_update"]["base"] == CHART
     # Later reads see the edit; a patch against it works.
-    current = SessionFiles(ctx).text("session/charts/chart-1.json")
+    current = SessionFiles(ctx).text("session://charts/chart-1")
     assert json.loads(current) == spec and result["content_hash"] == content_hash(current)
-    patched = _tool("edit_file", {"path": "session/charts/chart-1.json", "expected_content_hash": content_hash(current),
+    patched = _tool("edit_file", {"path": "session://charts/chart-1", "expected_content_hash": content_hash(current),
                                   "replacements": [{"old_text": '"Sales by region"', "new_text": '"Monthly sales"'}]}, ctx)
     assert patched["session_update"]["spec"]["title"] == "Monthly sales"
 
@@ -145,39 +145,107 @@ def test_a_valid_chart_edit_lands_and_is_returned_for_the_application(workspace)
 ])
 def test_an_invalid_chart_edit_is_rejected_with_every_problem_and_changes_nothing(workspace, change, messages) -> None:
     ctx = _ctx(workspace)
-    before = SessionFiles(ctx).text("session/charts/chart-1.json")
+    before = SessionFiles(ctx).text("session://charts/chart-1")
     with pytest.raises(ValueError) as error:
         _edit_chart(ctx, change)
     assert str(error.value).startswith("Chart not changed: ")
     for message in messages:
         assert message in str(error.value)
-    assert SessionFiles(ctx).text("session/charts/chart-1.json") == before
+    assert SessionFiles(ctx).text("session://charts/chart-1") == before
 
 
 def test_chart_edits_need_json_and_the_current_hash(workspace) -> None:
     ctx = _ctx(workspace)
-    current = SessionFiles(ctx).text("session/charts/chart-1.json")
+    current = SessionFiles(ctx).text("session://charts/chart-1")
     with pytest.raises(ValueError, match="not valid JSON"):
-        _tool("edit_file", {"path": "session/charts/chart-1.json", "content": "{", "expected_content_hash": content_hash(current)}, ctx)
+        _tool("edit_file", {"path": "session://charts/chart-1", "content": "{", "expected_content_hash": content_hash(current)}, ctx)
     with pytest.raises(TextEditConflictError):
-        _tool("edit_file", {"path": "session/charts/chart-1.json", "content": current, "expected_content_hash": "0" * 64}, ctx)
+        _tool("edit_file", {"path": "session://charts/chart-1", "content": current, "expected_content_hash": "0" * 64}, ctx)
     with pytest.raises(ValueError, match="read-only"):
-        _tool("edit_file", {"path": "session/tables/d_sales.json", "content": "{}", "expected_content_hash": "x"}, ctx)
+        _tool("edit_file", {"path": "session://tables/d_sales", "content": "{}", "expected_content_hash": "x"}, ctx)
 
 
 def test_report_edits_must_embed_session_charts(workspace) -> None:
     ctx = _ctx(workspace)
-    current = SessionFiles(ctx).text("session/reports/report-1.md")
-    with pytest.raises(ValueError, match="embeds charts that are not in the session: chart-9"):
-        _tool("edit_file", {"path": "session/reports/report-1.md", "expected_content_hash": content_hash(current),
+    current = SessionFiles(ctx).text("session://reports/report-1")
+    with pytest.raises(ValueError, match=r"Report not changed: 1 reference does not resolve: `chart://chart-9` \(did you mean `session://charts/chart-1`"):
+        _tool("edit_file", {"path": "session://reports/report-1", "expected_content_hash": content_hash(current),
                             "append_text": "\n![More](chart://chart-9)\n"}, ctx)
-    result = _tool("edit_file", {"path": "session/reports/report-1.md", "expected_content_hash": content_hash(current),
+    result = _tool("edit_file", {"path": "session://reports/report-1", "expected_content_hash": content_hash(current),
                                  "replacements": [{"old_text": "# Findings", "new_text": "# Regional findings"}]}, ctx)
     assert result["session_update"] == {"kind": "report", "id": "report-1",
                                         "content": "# Regional findings\n\n![Sales](chart://chart-1)\n", "base": current}
 
 
 @pytest.mark.slow
+def test_older_names_reach_the_same_items_and_tools_answer_in_current_names(workspace) -> None:
+    """design-docs/74: saved trajectories and workflows hold session/… names; they keep working."""
+    ctx = _ctx(workspace)
+    for older, current in (("session/charts/chart-1.json", "session://charts/chart-1"),
+                           ("session/tables/d_sales.json", "session://tables/d_sales"),
+                           ("session/reports/report-1.md", "session://reports/report-1"),
+                           ("session/index.md", "session://index")):
+        read = _tool("read_file", {"files": [{"path": older}]}, ctx)["files"][0]
+        assert read["path"] == current and read["content"] == _tool("read_file", {"files": [{"path": current}]}, ctx)["files"][0]["content"]
+    assert [item["path"] for item in _tool("list_files", {"path": "session/charts"}, ctx)["files"]] == ["session://charts/chart-1"]
+    assert [item["path"] for item in _tool("list_files", {"path": "session://charts/*"}, ctx)["files"]] == ["session://charts/chart-1"]
+    current = SessionFiles(ctx).text("session://charts/chart-1")
+    edited = _tool("edit_file", {"path": "session/charts/chart-1.json", "expected_content_hash": content_hash(current),
+                                 "replacements": [{"old_text": '"Sales by region"', "new_text": '"Regional sales"'}]}, ctx)
+    assert edited["path"] == "session://charts/chart-1"
+
+
+def test_app_files_are_readable_but_not_shown(workspace) -> None:
+    ctx = _ctx(workspace)
+    (workspace.confined_root.root / "session_state.json").write_text('{"tables": []}')
+    read = _tool("read_file", {"files": [{"path": "session_state.json"}, {"path": "_internal/agent/history.json"}]}, ctx)["files"]
+    assert read[0]["content"] == '{"tables": []}' and "session://index" in read[0]["note"]
+    assert "does not exist" in read[1]["error"] and "files/notes/" in read[1]["error"]
+    with pytest.raises(ValueError, match="files/ or scratch/"):
+        _tool("edit_file", {"path": "session_state.json", "expected_content_hash": read[0]["content_hash"],
+                            "replacements": [{"old_text": "[]", "new_text": "[1]"}]}, ctx)
+    assert (workspace.confined_root.root / "session_state.json").read_text() == '{"tables": []}'
+    # One long line (the autosave is a single line of JSON) is cut, not returned whole.
+    (workspace.confined_root.root / "session_state.json").write_text('{"x": "' + "a" * 80_000 + '"}')
+    long = _tool("read_file", {"files": [{"path": "session_state.json"}]}, ctx)["files"][0]
+    assert len(long["content"]) == 50_000 and "PARTIAL: line 1 is 80,009 characters" in long["more"]
+    assert not any(item["path"].startswith(("session_state", "_internal", "workspace")) for item in _tool("list_files", {}, ctx)["files"])
+    # A glob that starts with a wildcard looks across every listed root, and finds no app file.
+    workspace.save_workspace_file(b"x", "notes/report_plan.md", "text/markdown")
+    assert _tool("list_files", {"path": "*session_state.json"}, ctx)["count"] == 0
+    assert "files/notes/report_plan.md" in [item["path"] for item in _tool("list_files", {"path": "*report*"}, ctx)["files"]]
+
+
+def test_items_are_deleted_by_their_session_names(workspace) -> None:
+    from data_formulator.analyst.deletion import plan_deletion
+    for name in ("session://charts/chart-1", "session/charts/chart-1.json"):
+        plan = plan_deletion([name], _ctx(workspace, {**_state(), "generatedReports": []}, replaceable_artifacts=[]))
+        assert [chart["id"] for chart in plan["charts"]] == ["chart-1"]
+    # A report that previews or links a table keeps it too.
+    linked = {**_state(), "generatedReports": [{"id": "report-2", "title": "Notes", "parentNodeId": "t-sales", "createdAt": 4,
+                                                "content": "[the data](session://tables/d_sales)"}]}
+    with pytest.raises(ValueError, match="the report Notes uses Sales"):
+        plan_deletion(["session://tables/d_sales"], _ctx(workspace, linked, replaceable_artifacts=[]))
+    # A report that embeds it in the older chart:// form still keeps it.
+    with pytest.raises(ValueError, match="the report Findings shows the chart Sales by region"):
+        plan_deletion(["session://charts/chart-1"], _ctx(workspace, _state(), replaceable_artifacts=[]))
+
+
+def test_report_references_are_found_in_every_form() -> None:
+    from data_formulator.analyst import references
+    text = ("![A](session://charts/c1)\n![B](chart://c2)\n![M](map://files/m.map.json)\n[t](session://tables/sales)\n"
+            "[old](session/tables/old.json)\n[web](https://example.com)\n:::excerpt{source=\"files/p.pdf\" page=2}\nq\n:::\n")
+    assert [(item.form, item.name) for item in references.find(text)] == [
+        ("embed", "session://charts/c1"), ("embed", "session://charts/c2"), ("embed", "files/m.map.json"),
+        ("link", "session://tables/sales"), ("link", "session://tables/old"), ("source", "files/p.pdf")]
+    assert references.refers_to(text, "session/charts/c2.json")
+    # A report the user edited is saved as HTML.
+    edited = ('<p><img src="blob:x" data-chart-id="c3" alt="C"></p><p><img data-item-src="session://tables/sales"></p>'
+              '<p><a href="session://threads/2">thread</a></p>')
+    assert [(item.form, item.name) for item in references.find(edited)] == [
+        ("embed", "session://charts/c3"), ("embed", "session://tables/sales"), ("link", "session://threads/2")]
+
+
 def test_helpers_the_agent_writes_are_importable_and_moves_keep_them(workspace) -> None:
     ctx = _ctx(workspace, input_tables=[])
     written = _tool("create_file", {"filename": "lib/cleaning.py", "display_name": "Cleaning",

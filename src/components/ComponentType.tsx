@@ -131,6 +131,8 @@ export interface InteractionEntry {
      *  chips in the message bubble (the file bytes live in workspace scratch/,
      *  not here). */
     attachments?: string[];
+    /** Each attachment's path in scratch/, by name, so its chip can show a preview (absent for older messages). */
+    attachmentPaths?: Record<string, string>;
     references?: ThreadReference[];
     inputTableNames?: string[]; // table names actually used for this derivation step
     clarificationQuestions?: ClarificationQuestion[];
@@ -354,6 +356,8 @@ export interface TextTurn {
     auto?: 'app-repair';
     /** Files and images the user attached to `prompt`. */
     attachments?: string[];
+    /** Each attachment's path in scratch/, by name, so its chip can show a preview (absent for older messages). */
+    attachmentPaths?: Record<string, string>;
     /** Earlier results the user's message is about, shown with it like attachments. */
     references?: ThreadReference[];
     /** A workflow run's outputs, in the order the run produced them. */

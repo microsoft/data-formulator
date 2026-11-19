@@ -56,10 +56,10 @@ _DEMO_RULES: dict[str, tuple[tuple[str, str], ...]] = {
          "local folders."),
         ("not listed there has not been loaded — find it in a connected source and load it",
          "not listed there has not been loaded — load its dataset with `load_datasets`"),
-        ("A connected-source reference (`session/references/<id>.json`)…", ""),
+        ("A connected-source reference (`session://references/<id>`)…", ""),
         ("| Data in a connected source |", ""),
         ("| External reference schema or evidence |", ""),
-        ("sources/    connected-source catalogs", ""),
+        ("sources://   object · connected-source catalogs", ""),
     ),
 }
 
@@ -86,23 +86,23 @@ def _rule_edit(text: str, start: str, new: str) -> tuple[str, str]:
 # ``demo_tool_specs`` fails if a phrase no longer matches.
 _DEMO_TOOL_EDITS: dict[str, tuple[tuple[str, str], ...]] = {
     "search": (
-        (", then connected-source catalogs (sources/: table names, descriptions and columns, not rows), so one search "
+        (", then connected-source catalogs (sources://: table names, descriptions and columns, not rows), so one search "
          "tells whether data is already here or must be loaded.",
          ", so one search tells whether data is already here or must be loaded with load_datasets."),
-        ("Searches everything except workflows/ by default, catalog matches last; pass path (e.g. session/tables/, "
-         "files/docs/, sources/ or sources/<source_id>/) when you know where to look. Connected sources match on cached "
+        ("Searches everything except workflows:// by default, catalog matches last; pass path (e.g. session://tables/, "
+         "files/docs/, sources:// or sources://<source_id>/) when you know where to look. Connected sources match on cached "
          "metadata only; probe_data queries their values.",
-         "Searches everything except workflows/ by default; pass path (e.g. session/tables/, files/docs/) when you know "
+         "Searches everything except workflows:// by default; pass path (e.g. session://tables/, files/docs/) when you know "
          "where to look."),
     ),
     "list_files": (
-        (", references/<id>.json for connected-source tables", ""),
-        (" sources/ holds connected-source catalogs (sources/<source_id>/<path>), listed one level at a time; workflows/",
-         " workflows/"),
+        (", session://references/<id> for connected-source tables", ""),
+        (" sources:// holds connected-source catalogs (sources://<source_id>/<path>), listed one level at a time; workflows://",
+         " workflows://"),
     ),
     "read_file": (
-        ("scratch/..., sources/..., workflows/...", "scratch/..., workflows/..."),
-        (" A connected-source table (sources/...): its source_id, table_key, description and columns one per line "
+        ("scratch/..., sources://..., workflows://...", "scratch/..., workflows://..."),
+        (" A connected-source table (sources://...): its source_id, table_key, description and columns one per line "
          "(offset/limit page wide tables).", ""),
     ),
     "visualize": (

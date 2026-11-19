@@ -4,17 +4,20 @@ import json
 import io
 import hashlib
 import mimetypes
+import secrets
 from urllib.parse import quote
 from typing import Any, Generator
 
+from data_formulator.agents.agent_utils import ensure_output_variable_in_code
 from data_formulator.datalake.text_edit import apply_text_patch, TextEditConflictError
+from data_formulator.analyst import names, session_fs
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
 from data_formulator.analyst.input_provenance import normalize_input_sources
 from data_formulator.analyst.replacement import record_run_artifact
 from data_formulator.datalake.workspace import agent_file_path_error
 from data_formulator.analyst.deletion import delete_files, file_imported, forget_deleted, plan_deletion
 from data_formulator.analyst.session_edits import edit_session_file
-from data_formulator.analyst.session_files import SessionFiles, helper_module_name
+from data_formulator.analyst.session_files import IMAGE_KEY, SessionFiles, helper_module_name
 from data_formulator.sandbox.session_imports import helper_warnings, sign_helper
 from data_formulator.analyst.skills.html_app.skill import (
     REACT_APP_SUFFIX, check_app_revision, replace_file_in_place,
@@ -22,6 +25,23 @@ from data_formulator.analyst.skills.html_app.skill import (
 from data_formulator.analyst.skills.map.skill import MAP_SUFFIX, check_map_revision
 from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine, workspace_table_input
 from .data_loading import WorkspaceDataLoading
+
+# Items one view call draws: each becomes an image the model reads.
+VIEW_LIMIT = 4
+# The result's name when code leaves output_variable out: the code's last assignment is aliased to it
+# (ensure_output_variable_in_code), so `df = ...` and `output_variable = ...` both work.
+DEFAULT_OUTPUT_VARIABLE = "output_variable"
+
+
+def code_output(args: dict[str, Any]) -> tuple[str, str]:
+    """The code to run and the variable it leaves its result in."""
+    name = args.get("output_variable")
+    if name is None or name == "":
+        code, _, _ = ensure_output_variable_in_code(args["code"], DEFAULT_OUTPUT_VARIABLE)
+        return code, DEFAULT_OUTPUT_VARIABLE
+    if not isinstance(name, str) or not name.isidentifier():
+        raise ValueError("output_variable must be the name of a Python variable the code assigns")
+    return args["code"], name
 
 
 class WorkspaceSkill:
@@ -45,7 +65,10 @@ class WorkspaceSkill:
                 # Older conversations read with path/paths/offset/limit.
                 items = ([{key: args[key] for key in ("path", "offset", "limit") if args.get(key) is not None}]
                          if args.get("path") else []) + [{"path": path} for path in args.get("paths") or []]
-            return ToolResult(text=json.dumps(files.read_items(items), ensure_ascii=False, default=str))
+            result = files.read_items(items)
+            # Images go to the model as pictures, after the results that name them.
+            images = tuple(item.pop(IMAGE_KEY) for item in result["files"] if IMAGE_KEY in item)
+            return ToolResult(text=json.dumps(result, ensure_ascii=False, default=str), images=images)
         if name == "search":
             return ToolResult(text=SessionFiles(ctx).search(
                 args.get("query") or args.get("pattern") or "", args.get("path"), regex=bool(args.get("regex")),
@@ -78,7 +101,7 @@ class WorkspaceSkill:
             elif expected_hash is not None:
                 raise ValueError("create_data does not accept expected_content_hash")
             if ("rows" in args) == ("code" in args):
-                raise ValueError("Provide exactly one of rows or code with output_variable")
+                raise ValueError("Provide exactly one of rows or code")
             display_name = args.get("display_name")
             if display_name is not None and (not isinstance(display_name, str) or not display_name.strip()
                     or len(display_name) > 80 or any(ord(character) < 32 for character in display_name)):
@@ -89,7 +112,11 @@ class WorkspaceSkill:
             sources = []
             for source in normalize_input_sources(args, None):
                 if source["kind"] == "file" and source["id"].startswith("scratch/"):
-                    path = ctx.workspace.resolve_scratch_file(source["id"].removeprefix("scratch/"))
+                    try:
+                        path = ctx.workspace.resolve_scratch_file(source["id"].removeprefix("scratch/"))
+                    except FileNotFoundError:
+                        raise ValueError(f"{source['id']} does not exist: scratch/ holds only what code or commands "
+                                         "wrote there; a file made with create_file is files/<filename>") from None
                     with path.open("rb") as content:
                         source["content_hash"] = hashlib.file_digest(content, "sha256").hexdigest()
                     sources.append(source)
@@ -106,10 +133,11 @@ class WorkspaceSkill:
                 if item.kind == "data":
                     source["table_name"] = item.display_name
             if "code" in args:
-                if ctx.runtime is None or not str(args.get("output_variable", "")).isidentifier():
-                    raise ValueError("Python runtime and output_variable are required")
+                if ctx.runtime is None:
+                    raise ValueError("Python is unavailable here; provide rows instead")
+                code, output_variable = code_output(args)
                 execution = ctx.runtime.run_explore_code(
-                    args["code"], ctx.payload.get("input_tables", []), output_variable=args["output_variable"],
+                    code, ctx.payload.get("input_tables", []), output_variable=output_variable,
                 )
                 if execution.get("status") != "ok":
                     raise ValueError(execution.get("error", "Python execution failed"))
@@ -148,22 +176,33 @@ class WorkspaceSkill:
                 **({"field_metadata": field_metadata} if field_metadata else {}),
                 **({"acquisition": metadata.import_options["acquisition"]} if metadata.import_options and "acquisition" in metadata.import_options else {}),
             }, ensure_ascii=False))
-        if name == "edit_file" and str(args.get("path") or "").startswith("session/"):
+        if name == "edit_file" and names.is_session(str(args.get("path") or "")):
             return ToolResult(text=json.dumps(edit_session_file(args, ctx), ensure_ascii=False))
         if name in {"create_file", "edit_file"}:
             editing = name == "edit_file"
-            filename = args.get("filename")
+            # One path form for every write (design-docs/74): files/… is a durable workspace file, scratch/… a
+            # temporary one; a bare filename (older create_file calls) means files/<filename>.
+            target = args.get("path") if editing or args.get("path") is not None else args.get("filename")
+            if not isinstance(target, str) or not target.strip():
+                raise ValueError("path is required, e.g. files/notes/plan.md or scratch/raw.json")
+            target = target.strip()
+            to_scratch = target.startswith("scratch/")
+            filename = target.removeprefix("scratch/") if to_scratch else target.removeprefix("files/")
             content = args.get("content")
             expected_hash = args.get("expected_content_hash")
             patching = "replacements" in args or "append_text" in args
             if editing:
-                raw_path = args.get("path")
-                if not isinstance(raw_path, str) or not raw_path.startswith("files/"):
-                    raise ValueError("path must identify a workspace file under files/")
-                filename = raw_path.removeprefix("files/")
-                metadata, original = ctx.workspace.read_workspace_file(filename)
-                if metadata.origin != "agent" or metadata.edit_policy != "agent_editable":
-                    raise ValueError("This workspace file is protected; create a copy instead")
+                if not to_scratch and not target.startswith("files/"):
+                    raise ValueError("path must be a files/ or scratch/ path, or a session:// chart or report")
+                if to_scratch:
+                    try:
+                        original = ctx.workspace.resolve_scratch_file(filename).read_bytes()
+                    except (OSError, ValueError):
+                        raise ValueError(f"{target} does not exist; create it with create_file") from None
+                else:
+                    metadata, original = ctx.workspace.read_workspace_file(filename)
+                    if metadata.origin != "agent" or metadata.edit_policy != "agent_editable":
+                        raise ValueError("This workspace file is protected; create a copy instead")
                 if not isinstance(expected_hash, str) or len(expected_hash) != 64 or any(
                     character not in "0123456789abcdef" for character in expected_hash
                 ):
@@ -183,8 +222,8 @@ class WorkspaceSkill:
                     )
             elif patching:
                 raise ValueError("Text patches require edit_file")
-            if args.get("replaces") is not None and not editing:
-                raise ValueError("To replace a file, revise it with edit_file and replaces set to its path")
+            if args.get("replaces") is not None and (not editing or to_scratch):
+                raise ValueError("To replace a file, revise it with edit_file and replaces set to its files/ path")
             # Fixing a file the user wants replaced rewrites it in place, even an app.
             replaces = replace_file_in_place(args, ctx) if editing else None
             display_name = args.get("display_name")
@@ -197,13 +236,14 @@ class WorkspaceSkill:
             if not editing and (problem := agent_file_path_error(filename)):
                 raise ValueError(problem)
             if "code" in args:
-                if content is not None or not args.get("code") or not str(args.get("output_variable", "")).isidentifier():
-                    raise ValueError("Provide either content or code with an output_variable")
+                if content is not None or not args.get("code"):
+                    raise ValueError("Provide either content or code")
                 if ctx.runtime is None:
                     raise RuntimeError("Python runtime is unavailable")
+                code, output_variable = code_output(args)
                 result = ctx.runtime.run_explore_code(
-                    args["code"], ctx.payload.get("input_tables", []),
-                    output_variable=args["output_variable"],
+                    code, ctx.payload.get("input_tables", []),
+                    output_variable=output_variable,
                 )
                 if result.get("status") != "ok":
                     raise ValueError(result.get("error", "Python execution failed"))
@@ -225,6 +265,17 @@ class WorkspaceSkill:
                 raise ValueError("Output must be a DataFrame, bytes, or UTF-8 text without null bytes")
             if len(encoded) > 128 * 1024 * 1024:
                 raise ValueError("Files must be under 128 MB")
+            if to_scratch:
+                ctx.workspace.save_scratch_file(filename, encoded, expected_content_hash=expected_hash if editing else None,
+                                                display_name=display_name)
+                ctx.payload["workspace_inputs"] = WorkspaceInputEngine(
+                    ctx.workspace, ctx.payload.get("input_tables", []),
+                ).manifest
+                return ToolResult(text=json.dumps({
+                    "path": target, "file_size": len(encoded), "content_hash": hashlib.sha256(encoded).hexdigest(),
+                    **({"display_name": display_name} if display_name else {}),
+                    "temporary": True, "note": f"Cite it as {target}; code reads it there.",
+                }, ensure_ascii=False))
             app = None
             if editing:
                 previous = original.decode("utf-8", errors="replace") if len(original) <= 2_000_000 else None
@@ -305,8 +356,57 @@ class WorkspaceSkill:
     ) -> Generator[Event, None, str | None]:
         if action == "propose_data_operation":
             return (yield from self._data_loading.handle_action(action, spec, ctx))
+        if action == "view":
+            return (yield from self._view(spec, ctx))
         yield {"type": "error", "message": f"workspace has no action '{action}'."}
         return f"workspace has no action '{action}'."
+
+    @staticmethod
+    def _view(spec: dict[str, Any], ctx: SkillContext) -> Generator[Event, None, str | None]:
+        """Ask the user's browser to draw charts, maps and apps as the user sees them; the run pauses until the
+        application resumes it with the pictures (routes/agents.py ``view_response``)."""
+        paths = spec.get("paths")
+        if isinstance(paths, str):
+            paths = [paths]
+        if not isinstance(paths, list) or not paths or not all(isinstance(path, str) for path in paths):
+            message = 'view takes names, e.g. {"paths": ["session://charts/chart-1", "files/sales.app.jsx"]}.'
+            yield {"type": "error", "message": message}
+            return f"[ERROR] {message}"
+        files = SessionFiles(ctx)
+        layer = files.layer
+        charts = {path for path in (layer.paths() if layer is not None else []) if path.startswith("session://charts/")}
+        targets: list[dict[str, str]] = []
+        problems: list[str] = []
+        for raw in paths:
+            path = names.canonical(raw.strip() if names.is_object(raw.strip()) else raw.strip().lstrip("/"))
+            if any(target["path"] == path for target in targets):
+                continue
+            if len(targets) >= VIEW_LIMIT:
+                problems.append(f"{path}: not drawn; view shows at most {VIEW_LIMIT} items at a time.")
+                continue
+            kind = session_fs.kind_of(path)
+            if kind == "chart":
+                if path in charts:
+                    targets.append({"path": path, "kind": "chart", "id": names.leaf_of(path, "charts")})
+                else:
+                    problems.append(f"{path}: no such chart; list_files session://charts shows them.")
+            elif path.startswith("files/") and (kind == "app" or path.lower().endswith(MAP_SUFFIX)):
+                if files._size(path) is None:
+                    problems.append(f"{path}: no such file; list_files shows the session's files.")
+                else:
+                    targets.append({"path": path, "kind": "app" if kind == "app" else "map", "name": path[len("files/"):]})
+            elif kind == "image":
+                problems.append(f"{path}: an image file; read_file shows it.")
+            else:
+                problems.append(f"{path}: view draws charts (session://charts/...), maps (files/*.map.json) "
+                                "and apps (files/*.app.jsx, files/*.html).")
+        if not targets:
+            message = "Nothing to draw. " + " ".join(problems)
+            yield {"type": "error", "message": message}
+            return f"[ERROR] {message}"
+        yield {"type": "interact", "view_request": {"id": secrets.token_urlsafe(12), "targets": targets,
+                                                    "problems": problems}}
+        return None
 
 
 def get_skill() -> WorkspaceSkill:

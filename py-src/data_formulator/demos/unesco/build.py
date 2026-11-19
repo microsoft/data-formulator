@@ -3,12 +3,13 @@
 
 """Install the UIS demo (``unesco``) into the sites folder; see ../README.md.
 
-Downloads the UIS Bulk Data Download Service zips and background PDFs, turns them into
-one Data Formulator session per dataset (starter) in profile.yaml, then one session per
-example analysis (story): its dataset plus the story's seed from stories/<id>/ (a question,
-its answer and charts; see make_seeds.py). It installs those sessions with profile.yaml and
-the front-page images (assets/) into ``<sites dir>/unesco/`` (default ``DF_SITES_DIR``,
-``~/.data_formulator/site-content``). No AI models are involved.
+Downloads the UIS Bulk Data Download Service zips and background PDFs (each dataset from its
+latest release, see RELEASES), turns them into one Data Formulator session per dataset (starter)
+in profile.yaml, then one session per example analysis (story): its dataset plus the story's
+seed from stories/<id>/ (a question, its answer, tables, and map or app; see make_stories.py).
+It installs those sessions with profile.yaml and the front-page images (assets/) into
+``<sites dir>/unesco/`` (default ``DF_SITES_DIR``, ``~/.data_formulator/site-content``). No AI
+models are involved.
 
 Data Formulator runs ``install()`` when a local user installs the demo from its page; from a
 checkout, run this file:
@@ -47,11 +48,13 @@ HERE = Path(__file__).resolve().parent
 PROFILE = HERE / "profile.yaml"
 # Front-page images, laid out as the profile names them (relative to the release folder).
 ASSETS = HERE / "assets"
-# Story seeds: stories/<story id>/state.json and the parquet files of its tables.
+# Story seeds: stories/<story id>/state.json, the parquet files of its tables and files/ (its map or app).
 STORIES = HERE / "stories"
+# Media types of the files a story seed carries, by suffix.
+FILE_TYPES = {".map.json": "application/json", ".app.jsx": "text/jsx"}
 # ISO 3166-1 alpha-3 → numeric, the country ids of the world map Flint draws choropleths on.
 ISO_NUMERIC = HERE / "iso3166_numeric.csv"
-BASE_URL = "https://download.uis.unesco.org/bdds/202602/"
+BASE_URL = "https://download.uis.unesco.org/bdds/"
 
 # Bulk dataset code -> (table prefix, display name, display name of its `<prefix>_indicators` table).
 # The indicators table lists every indicator, so its name says it is the whole catalog, not a query result.
@@ -69,12 +72,19 @@ DATASETS = {
 # Table name -> the name the app shows for it (tables not listed show their name).
 DISPLAY_NAMES = {f"{prefix}_indicators": catalog for prefix, _, catalog in DATASETS.values()}
 
-# Background notes: local name -> download name
+# Bulk dataset code -> the UIS release folder it is downloaded from (<BASE_URL><release>/<code>.zip). UIS updates
+# datasets on their own schedules: one not in a newer release keeps its last one.
+RELEASES = {"SDG": "202611", "OPRI": "202611", "DEM": "202611",
+            "SCN-SDG": "202602", "SCN-OPRI": "202602", "SDG11": "202602"}
+
+# Background notes: local name -> (release folder, download name)
 DOCS = {
-    "education-background.pdf": "UIS - Data Release Background Doc -EN-Feb 2026.pdf",
-    "science-background.pdf": "UIS-RD-Database-Background-Information SDG 9.5-EN-Feb-2026.pdf",
-    "culture-background.pdf": "UIS-CLT-Database-Background-Information SDG 11.4.1-EN-Feb-2026.pdf",
+    "education-background.pdf": ("202611", "UIS-Data-Release-Background-Doc-EN-Nov-2026.pdf"),
+    "science-background.pdf": ("202602", "UIS-RD-Database-Background-Information SDG 9.5-EN-Feb-2026.pdf"),
+    "culture-background.pdf": ("202602", "UIS-CLT-Database-Background-Information SDG 11.4.1-EN-Feb-2026.pdf"),
 }
+MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+          "November", "December")
 
 # Starter id -> bulk datasets and background notes it carries (DEM is added to every starter)
 STARTERS = {
@@ -100,23 +110,42 @@ Every value row carries two UIS flags (empty when not applicable):
 """
 
 
+def raw_path(raw: Path, name: str) -> Path:
+    """Where a download is cached: ``<raw>/<release>/<name>``, so a new release never reuses an older file."""
+    release = DOCS[name][0] if name in DOCS else RELEASES[name.removesuffix(".zip")]
+    return raw / release / name
+
+
+def release_name(release: str) -> str:
+    """A release folder as people say it: ``202611`` -> ``November 2026``."""
+    return f"{MONTHS[int(release[4:]) - 1]} {release[:4]}"
+
+
+def starter_release(starter_id: str) -> str:
+    """The release a dataset's values come from (its own bulk datasets, not the shared demographic one)."""
+    codes, _ = STARTERS[starter_id]
+    return release_name(max(RELEASES[code] for code in codes))
+
+
 def download(raw: Path) -> None:
-    raw.mkdir(parents=True, exist_ok=True)
-    targets = {f"{code}.zip": f"{code}.zip" for code in DATASETS} | DOCS
-    for local, remote in targets.items():
-        path = raw / local
+    targets = {f"{code}.zip": (release, f"{code}.zip") for code, release in RELEASES.items()} | DOCS
+    for local, (release, remote) in targets.items():
+        path = raw_path(raw, local)
         if path.exists():
             continue
-        url = BASE_URL + urllib.request.quote(remote)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        url = f"{BASE_URL}{release}/{urllib.request.quote(remote)}"
         _log(f"downloading {url}")
-        with urllib.request.urlopen(url) as response, open(path, "wb") as out:
+        partial = path.with_name(path.name + ".part")
+        with urllib.request.urlopen(url) as response, open(partial, "wb") as out:
             shutil.copyfileobj(response, out)
+        partial.replace(path)
 
 
 def extract(raw: Path, work: Path, code: str) -> Path:
     target = work / code
     if not target.exists():
-        with zipfile.ZipFile(raw / f"{code}.zip") as archive:
+        with zipfile.ZipFile(raw_path(raw, f"{code}.zip")) as archive:
             archive.extractall(target)
     return target
 
@@ -264,9 +293,10 @@ def data_guide(starter: dict, profile: dict, tables: list[tuple[str, int, str]],
         "Labels ending \"(modelled data)\" (indicator_id with `MOD`) are UIS modelled estimates, often beside an "
         "observed series: say which one you used, and call modelled values \"modelled estimates\" in the chart or "
         "map subtitle and in the answer.",
-        "Cite the year range and \"UIS, February 2026 release\" with each result, with the indicator_id code(s) "
-        "used in that source line (for example \"Source: UIS, February 2026 release; indicator CR.MOD.3\"). Keep "
-        "titles and axis labels in plain words, and table and column names to your code.",
+        "Cite the year range and \"UIS, {release} release\" with each result, with the indicator_id code(s) "
+        "used in that source line (for example \"Source: UIS, {release} release; indicator CR.MOD.3\"). Keep "
+        "titles and axis labels in plain words, and table and column names to your code.".format(
+            release=starter_release(starter["id"])),
     ]
     lines = [
         f"# Data guide: {starter['title']}",
@@ -344,10 +374,12 @@ def build_starter(starter: dict, profile: dict, raw: Path, work: Path, out: Path
             workspace.save_workspace_file(path.read_bytes(), name, "text/markdown")
             files.append(name)
     for doc in docs:
-        if (raw / doc).is_file():
+        path = raw_path(raw, doc)
+        if path.is_file():
             name = f"docs/{doc.removesuffix('.pdf')}.md"
-            title = doc.removesuffix(".pdf").replace("-", " ").capitalize() + " (UIS, February 2026)"
-            workspace.save_workspace_file(pdf_markdown(raw / doc, title).encode("utf-8"), name, "text/markdown")
+            title = (doc.removesuffix(".pdf").replace("-", " ").capitalize()
+                     + f" (UIS, {release_name(DOCS[doc][0])})")
+            workspace.save_workspace_file(pdf_markdown(path, title).encode("utf-8"), name, "text/markdown")
             files.append(name)
         else:
             _log(f"  skipping missing {doc}")
@@ -377,7 +409,7 @@ def signed_here(table: dict) -> dict:
 
 
 def build_story(story: dict, starter: dict, work: Path, content: Path, theme_id: str | None = None) -> Path:
-    """A story's session: its dataset's session with the story's seed (question, answer, charts) added.
+    """A story's session: its dataset's session with the story's seed (question, answer, tables, map or app) added.
 
     With the site's chart theme (``theme_id``), the seed's charts are drawn in it, like charts made on the site.
     """
@@ -387,6 +419,11 @@ def build_story(story: dict, starter: dict, work: Path, content: Path, theme_id:
     dataset = workspace.import_session_zip(io.BytesIO((content / starter["file"]).read_bytes()))
     for path in sorted(seed.glob("*.parquet")):
         workspace.write_parquet_from_arrow(pq.read_table(path), path.stem)
+    # The story's maps and apps, as the analyst saves them: files it may revise when the visitor asks.
+    titles = {node["path"]: node.get("displayName") for node in state.get("fileNodes") or []}
+    for path in sorted((seed / "files").glob("*")):
+        workspace.save_workspace_file(path.read_bytes(), path.name, FILE_TYPES.get("".join(path.suffixes[-2:])),
+                                      display_name=titles.get(path.name), agent_managed=True)
     state = {**state, "derivedTables": [signed_here(table) for table in state.get("derivedTables") or []],
              "inputTables": dataset["inputTables"], "workspaceItemOrder": dataset["workspaceItemOrder"]}
     if theme_id:

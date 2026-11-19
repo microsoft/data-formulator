@@ -74,6 +74,8 @@ export interface TemplateProperties {
     classes?: number;
     method?: NonNullable<Layer['color']>['method'];
     scheme?: string;
+    /** Run the colour scheme the other way (e.g. `rdBu` blue for low values and red for high). */
+    reverse?: boolean;
     /** Colour class breaks (method threshold), e.g. those of an earlier map of the same measure, so the two compare. */
     thresholds?: number[];
     /** The colour scale's value range `[min, max]` instead of the data's (continuous, equal, log and diverging scales). */
@@ -231,6 +233,9 @@ export function templateErrors(raw: Record<string, unknown>): string[] {
         && (properties.domain as number[])[0] < (properties.domain as number[])[1])) {
         errors.push('properties.domain must be [min, max] numbers with min < max.');
     }
+    if (properties.reverse !== undefined && typeof properties.reverse !== 'boolean') {
+        errors.push('properties.reverse must be true or false.');
+    }
     if (properties.sizeDomain !== undefined && !validSizeDomain(properties.sizeDomain)) {
         errors.push('properties.sizeDomain must be [low, high] numbers with 0 ≤ low < high.');
     }
@@ -325,13 +330,14 @@ export function compileTemplate(spec: TemplateSpec): { data: Record<string, Data
             ...(properties.thresholds ? { thresholds: properties.thresholds } : {}),
             ...(properties.domain ? { domain: properties.domain } : {}),
             ...(properties.scheme ? { scheme: properties.scheme } : {}),
+            ...(properties.reverse ? { reverse: true } : {}),
             ...(properties.colors ? { colors: properties.colors } : {}),
         };
     } else if (properties.color && template !== 'density') {
         layer.color = { value: properties.color };
-    } else if (properties.scheme && template === 'density') {
+    } else if ((properties.scheme || properties.reverse) && template === 'density') {
         // Hexbins and heatmaps colour by count: the scheme sets their ramp.
-        layer.color = { scheme: properties.scheme };
+        layer.color = { ...(properties.scheme ? { scheme: properties.scheme } : {}), ...(properties.reverse ? { reverse: true } : {}) };
     }
     const sizeRange = validSizeRange(properties.sizeRange);
     if (encoding.size) layer.size = { field: fieldOf('size'), ...(sizeRange ? { range: sizeRange } : properties.sizeMax ? { max: properties.sizeMax } : {}),

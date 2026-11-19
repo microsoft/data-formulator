@@ -339,8 +339,18 @@ export function parseMapSpec(text: string): ParsedMap {
     if (raw.fields !== undefined && !isRecord(raw.fields)) errors.push('fields must map field names to annotations.');
     for (const [name, annotation] of Object.entries(isRecord(raw.fields) ? raw.fields : {})) {
         if (typeof annotation === 'string') fields[name] = { semanticType: annotation };
-        else if (isRecord(annotation)) fields[name] = annotation as FieldAnnotation;
-        else errors.push(`fields.${name} must be a semantic type or an annotation object.`);
+        else if (isRecord(annotation)) {
+            fields[name] = annotation as FieldAnnotation;
+            if (annotation.thresholds !== undefined && !(Array.isArray(annotation.thresholds) && annotation.thresholds.length > 0
+                && annotation.thresholds.every(value => typeof value === 'number'))) {
+                errors.push(`fields.${name}.thresholds must list colour class breaks as numbers, such as [20, 40, 60, 80].`);
+            }
+            const domain = annotation.domain;
+            if (domain !== undefined && !(Array.isArray(domain) && domain.length === 2 && domain.every(value => typeof value === 'number')
+                && (domain[0] as number) < (domain[1] as number))) {
+                errors.push(`fields.${name}.domain must be [min, max] numbers with min < max.`);
+            }
+        } else errors.push(`fields.${name} must be a semantic type or an annotation object.`);
     }
     for (const key of ['center', 'rotate'] as const) {
         const value = view[key];

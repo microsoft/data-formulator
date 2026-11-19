@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import Any
 
 from data_formulator.analyst.skills.map.geo import layer_geo_set, normalize_key, region_id
@@ -43,6 +44,10 @@ MAX_LAYERS = 12
 MAX_CONTROLS = 12
 MAX_INLINE_ROWS = 2000
 VALIDATION_ROWS = 20_000
+
+
+def _number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def _is_param(value: Any) -> bool:
@@ -88,6 +93,13 @@ def check_structure(spec: Any) -> tuple[list[str], list[str]]:
             errors.append(f"fields.{name}.divergingMidpoint must be a number.")
         elif "colors" in annotation and not colors_ok(annotation["colors"]):
             errors.append(f"fields.{name}.colors must map category values to colours, e.g. {{\"Republican\": \"#d62728\"}}.")
+        elif "thresholds" in annotation and not (isinstance(annotation["thresholds"], list) and annotation["thresholds"]
+                                                 and all(_number(value) for value in annotation["thresholds"])):
+            errors.append(f"fields.{name}.thresholds must list colour class breaks as numbers, such as [20, 40, 60, 80].")
+        elif "domain" in annotation and not (isinstance(annotation["domain"], list) and len(annotation["domain"]) == 2
+                                             and all(_number(value) for value in annotation["domain"])
+                                             and annotation["domain"][0] < annotation["domain"][1]):
+            errors.append(f"fields.{name}.domain must be [min, max] numbers with min < max.")
     if view.get("tiles") not in (None, "none") and view.get("projection") not in (None, "mercator"):
         warnings.append("Street tiles draw only in the Mercator projection; the map uses Mercator.")
 

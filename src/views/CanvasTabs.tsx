@@ -23,7 +23,7 @@ import { useTranslation } from 'react-i18next';
 import { arrangeCanvasTabs, CanvasTab, canvasTabKey, DataFormulatorState, dfActions, dfSelectors, FocusedId, isCanvasTabPinned, RECENT_CANVAS_TABS } from '../app/dfSlice';
 import { chartTitleFits } from '../components/ComponentType';
 import { externalReferenceTitle } from '../app/workspaceService';
-import { borderColor } from '../app/tokens';
+import { borderColor, cardRadius } from '../app/tokens';
 
 export const CANVAS_TABS_HEIGHT = 32;
 const TAB_MIN_WIDTH = 96;
@@ -263,7 +263,7 @@ export const CanvasTabs: FC<{ target: FocusedId; viewMode: 'editor' | 'report'; 
     const moreTabs = <ButtonBase data-more-tabs aria-label={moreLabel} title={moreLabel} onClick={event => setMenuAnchor(event.currentTarget)}
         // Quieter than the tabs, and kept clear of the canvas box's rounded corner.
         sx={{ alignSelf: 'center', flexShrink: 0, position: 'relative', ml: 0.5, mr: 1.5, mt: '2px', height: 22, px: 0.75,
-            borderRadius: '6px', color: 'text.disabled', fontSize: '0.6875rem', whiteSpace: 'nowrap',
+            borderRadius: 1.5, color: 'text.disabled', fontSize: '0.6875rem', whiteSpace: 'nowrap',
             '&:hover': { bgcolor: 'rgba(0,0,0,0.04)', color: 'text.secondary' } }}>
         {t('canvas.moreCount', { defaultValue: '+{{count}} more', count: hidden.length })}
         {hidden.some(tab => tab.unseen) && <Box sx={{ position: 'absolute', top: 0, right: 0, display: 'flex' }}><UnseenDot /></Box>}
@@ -295,7 +295,7 @@ export const CanvasTabs: FC<{ target: FocusedId; viewMode: 'editor' | 'report'; 
                     sx={{
                         position: 'relative', display: 'flex', alignItems: 'center', gap: 0.5, minWidth: TAB_MIN_WIDTH, flex: `0 1 ${TAB_MAX_WIDTH}px`,
                         height: 'calc(100% - 4px)', boxSizing: 'border-box', pl: 0.75, pr: 0.5,
-                        borderRadius: '8px 8px 0 0', fontSize: '0.75rem',
+                        borderRadius: `${cardRadius('8px')} ${cardRadius('8px')} 0 0`, fontSize: '0.75rem',
                         color: active && isPinned ? 'text.primary' : 'text.secondary', bgcolor: active ? 'background.paper' : 'transparent',
                         border: '1px solid', borderBottom: 0, borderColor: active ? borderColor.view : 'transparent',
                         // As in VS Code, every tab keeps the close slot, so nothing shifts on hover: the active

@@ -88,6 +88,17 @@ async function renderHeadless(
     return { svg, pngDataUrl, width, height };
 }
 
+/** A Vega-Lite spec drawn as a PNG at `scale` times its size (e.g. sharper than the cache's, for sharing). */
+export async function renderChartPng(vlSpec: any, scale: number): Promise<string> {
+    const view = new View(parse(compile(vlSpec as any).spec), { renderer: 'none' });
+    try {
+        await view.runAsync();
+        return await view.toImageURL('png', scale);
+    } finally {
+        view.finalize();
+    }
+}
+
 /** The size a Vega-Lite spec lays out at (axes, legends and titles included), without drawing an image. */
 async function measureHeadless(vlSpec: any): Promise<{ width: number; height: number }> {
     const view = new View(parse(compile(vlSpec as any).spec), { renderer: 'none' });
@@ -266,6 +277,7 @@ export const ChartRenderService: FC = () => {
                 displayWidth: Math.round(fullResult.width * fit),
                 displayHeight: Math.round(fullResult.height * fit),
                 ...(canvasSize ? { canvasWidth: canvasSize.width, canvasHeight: canvasSize.height } : {}),
+                spec: fullSpec,
             };
             setCachedChart(chart.id, entry);
 

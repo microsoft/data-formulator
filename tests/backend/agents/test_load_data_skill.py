@@ -36,6 +36,10 @@ class _Workspace:
     def confined_scratch(self):
         return ConfinedDir(self.user_home / "scratch")
 
+    @property
+    def confined_internal(self):
+        return ConfinedDir(self.user_home / "_internal")
+
 
 class _Loader:
     def __init__(self):
@@ -82,7 +86,7 @@ def test_workspace_owns_discovery_and_loading_without_an_extra_skill_gate() -> N
     assert "delegate" not in registry.metas["meta"].action_names
     meta = registry.metas["workspace"]
     assert meta.always_on is False
-    assert meta.action_names == ("propose_data_operation",)
+    assert meta.action_names == ("propose_data_operation", "view")
     assert set(meta.tool_names) == {
         "create_file", "edit_file", "delete_items", "list_files", "read_file", "search", "move_file",
         "create_data", "update_data",
@@ -149,7 +153,7 @@ def test_workspace_baseline_includes_loading_guidance(tmp_path: Path) -> None:
     assert "Retaining useful columns\nor finer detail" in prompt
     assert "are the only data that can be read directly" not in prompt
     assert "propose_data_operation" in agent._legal_actions()
-    assert "`list_files` of `sources/` (every connected source with its table count)" in prompt
+    assert "`list_files` of `sources://` (every connected source with its table count)" in prompt
     assert "Do not ask which source to inspect for a broad availability question" in prompt
 
 
@@ -180,7 +184,10 @@ def test_workflow_guidance_matches_tool_effects(tmp_path: Path) -> None:
         "Plain text with no tool calls ends the run",
         "The namespace persists within an inspection cycle",
         "Visualization code must be standalone",
-        "never by writing files from sandboxed Python",
+        # One name per thing in the always-on prompt (design-docs/73, 74).
+        "Code may write intermediates to `scratch/`; persist requested outputs with these tools",
+        "open only with the tools (`read_file`, `list_files`, `search`, `edit_file`, `view`), never from code",
+        "copy its `data_file` as written",
     ):
         assert rule in prompt
     # Discovery rules load with the connected_data skill.
@@ -197,7 +204,7 @@ def test_workflow_guidance_matches_tool_effects(tmp_path: Path) -> None:
     assert "An ordinary summary can be answered directly without report delivery" in prompt
     assert "write up / summarize / report" not in prompt
     assert "successful `visualize` result" in report
-    assert "read other threads (session/threads) only when relevant" in report
+    assert "read other threads (session://threads) only when relevant" in report
     assert "Reuse verified findings and charts" in report
     assert "Embed every chart you discuss" not in report
     assert "make the one `write_report` call" not in report
@@ -246,7 +253,7 @@ def test_discovery_to_import_policy_preserves_confirmation_and_optional_question
         spec["function"]["name"]: spec["function"]
         for spec in agent.registry.tools_for(["meta"]) + agent.registry.action_tools_for(["meta"])
     }
-    assert "then connected-source catalogs (sources/" in specs["search"]["description"]
+    assert "then connected-source catalogs (sources://" in specs["search"]["description"]
     assert not {"find_data", "describe_data", "list_data", "summarize_data_sources"} & set(specs)
     assert "following the connected_data skill" in specs["propose_data_operation"]["description"]
     assert "user_review_needed=false" in specs["propose_data_operation"]["description"]
@@ -259,11 +266,11 @@ def test_tool_progress_args_are_useful_and_credential_safe() -> None:
 
     assert _tool_progress_args("search", {
         "query": "orders",
-        "path": ["sources/warehouse/"],
+        "path": ["sources://warehouse/"],
         "password": "secret",
     }) == {
         "query": "orders",
-        "path": ["sources/warehouse/"],
+        "path": ["sources://warehouse/"],
     }
     assert _tool_progress_args("list_connectors", {
         "source_type": "databricks",
@@ -358,8 +365,8 @@ def test_resume_refreshes_instructions_and_preserves_conversation(tmp_path: Path
     assert observed == [{"role": "system", "content": "CURRENT BASELINE INSTRUCTIONS"}, *history[:3], *preloaded, changes,
                         *history[3:]]
     assert changes["content"].startswith("[SESSION CHANGES]")
-    assert f"Focus: `session/references/{reference['id']}.json` is now on the canvas" in changes["content"]
-    assert f"- added `session/references/{reference['id']}.json`" in changes["content"]
+    assert f"Focus: `session://references/{reference['id']}` is now on the canvas" in changes["content"]
+    assert f"- added `session://references/{reference['id']}`" in changes["content"]
     assert agent._run_payload["external_references"] == [reference]
     agent._build_system_prompt.assert_called_once()
     assert agent._loaded_skills == {"meta", "report", "connected_data", "configure"}
@@ -406,7 +413,7 @@ def test_proposal_persists_executable_plan_and_emits_display_only_pause(tmp_path
     }
     assert event["questions"][0]["options"][0]["value"]
     persisted = json.loads(
-        (tmp_path / "scratch" / "data_operations" / "data_operations.json").read_text()
+        (tmp_path / "_internal" / "data_operations" / "data_operations.json").read_text()
     )
     stored_step = persisted["operations"][0]["operation"]["plans"][0]["steps"][0]
     assert stored_step["source_id"] == "warehouse"
@@ -753,11 +760,11 @@ def test_connected_catalogs_are_files_under_sources(tmp_path: Path) -> None:
     skill = build_registry().get_skill("workspace")
     context = _context(_Workspace(tmp_path))
 
-    found = skill.handle_tool("search", {"query": "orders", "path": ["sources/"]}, context).text
-    assert "## sources/warehouse/public/orders — table in warehouse" in found
-    listed = json.loads(skill.handle_tool("list_files", {"path": "sources/warehouse/"}, context).text)
-    assert listed["files"] == [{"path": "sources/warehouse/public/", "kind": "folder", "detail": "1 table"}]
-    view = json.loads(skill.handle_tool("read_file", {"files": [{"path": "sources/warehouse/public/orders"}]},
+    found = skill.handle_tool("search", {"query": "orders", "path": ["sources://"]}, context).text
+    assert "## sources://warehouse/public/orders — table in warehouse" in found
+    listed = json.loads(skill.handle_tool("list_files", {"path": "sources://warehouse/"}, context).text)
+    assert listed["files"] == [{"path": "sources://warehouse/public/", "kind": "folder", "detail": "1 table"}]
+    view = json.loads(skill.handle_tool("read_file", {"files": [{"path": "sources://warehouse/public/orders"}]},
                                         context).text)["files"][0]["content"]
     assert "source_id: warehouse\ntable_key: public.orders" in view and "- order_id (int)" in view
 
@@ -771,7 +778,7 @@ def test_catalog_search_needs_every_word_or_a_regex(tmp_path: Path) -> None:
     skill = build_registry().get_skill("workspace")
 
     def search(query: str, regex: bool = False) -> str:
-        return skill.handle_tool("search", {"query": query, "path": ["sources/"], "regex": regex},
+        return skill.handle_tool("search", {"query": query, "path": ["sources://"], "regex": regex},
                                  _context(_Workspace(tmp_path))).text
 
     assert search("historical stock prices").startswith("No matches")
@@ -881,7 +888,7 @@ def test_reading_a_table_without_cached_columns_fetches_them_live_without_cachin
     loader = Loader()
     monkeypatch.setattr("data_formulator.data_connector.resolve_live_loader", lambda source_id: loader)
     skill = build_registry().get_skill("workspace")
-    view = json.loads(skill.handle_tool("read_file", {"files": [{"path": "sources/warehouse/sales_2025"}]},
+    view = json.loads(skill.handle_tool("read_file", {"files": [{"path": "sources://warehouse/sales_2025"}]},
                                         _context(_Workspace(tmp_path))).text)["files"][0]["content"]
 
     assert "metadata: live (fetched from the source; not cached)" in view and "- region (string)" in view

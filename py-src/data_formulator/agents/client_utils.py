@@ -1,8 +1,11 @@
 import json
 from collections import OrderedDict
+import httpcore
+import httpx
 import litellm
 import logging
 import os
+import time
 from types import SimpleNamespace
 from urllib.parse import urlparse
 from litellm.responses.utils import ResponsesAPIRequestUtils
@@ -33,6 +36,32 @@ GATEWAY_DEFAULT_API_BASES = {
     "orcarouter": "https://api.orcarouter.ai/v1",
     "cheaperinference": "https://api.cheaperinference.com/v1",
 }
+
+
+# Backoff before re-sending a request whose connection never opened (e.g. a dropped TLS handshake).
+CONNECT_RETRY_DELAYS = (0.5, 1.0, 2.0, 4.0)
+
+
+def _connection_failed(exc):
+    """Whether the request failed while opening the connection, so the provider never received it."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        if isinstance(exc, (httpx.ConnectError, httpcore.ConnectError)):
+            return True
+        seen.add(id(exc))
+        exc = exc.__cause__ or exc.__context__
+    return False
+
+
+def _retry_connect(send, call_kwargs):
+    for delay in (*CONNECT_RETRY_DELAYS, None):
+        try:
+            return send(call_kwargs)
+        except Exception as e:
+            if delay is None or not _connection_failed(e):
+                raise
+            logger.warning("Model connection failed; retrying in %gs: %s", delay, e)
+            time.sleep(delay)
 
 
 def effective_api_base(endpoint, api_base):
@@ -649,16 +678,16 @@ class Client(object):
                 call_kwargs["allowed_openai_params"] = ["reasoning_effort"]
         if self.api_type == "responses":
             try:
-                resp = self._dispatch_responses(call_kwargs)
+                resp = _retry_connect(self._dispatch_responses, call_kwargs)
             except Exception as e:
                 if not (self._auto_responses and self._responses_unavailable(str(e))):
                     raise
                 logger.warning("Responses API unavailable for %s; using Chat Completions", self.model)
                 _CHAT_ONLY.add(self._route_key())
                 self.api_type, self._auto_responses = None, False
-                resp = self._dispatch_chat_completions(call_kwargs)
+                resp = _retry_connect(self._dispatch_chat_completions, call_kwargs)
         else:
-            resp = self._dispatch_chat_completions(call_kwargs)
+            resp = _retry_connect(self._dispatch_chat_completions, call_kwargs)
         if is_ollama and tools:
             resp = _salvage_tool_calls_from_content(resp, tools)
         if is_ollama and stream:

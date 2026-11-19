@@ -30,17 +30,21 @@ require the user's authorization for the destination and operation.
 
 ## Execution contract
 
-Call `run_terminal` with `argv` (executable and exact arguments), `cwd` (absolute
-directory or `~`), and `purpose` (task and expected side effects). There is no
+Call `run_terminal` with `argv` (executable and exact arguments), `purpose` (task
+and expected side effects), and optionally `cwd`: the workspace root by default, where
+Python runs, so `scratch/…` names the same file in both; a workspace folder such as
+`scratch/`; or an absolute path or `~` for the user's own folders. There is no
 implicit shell expansion; invoke a shell explicitly when pipes or redirects are
 necessary. Approval covers the entire invocation, including any script.
 
 {terminal_policy}
 
-Sandboxed commands can write to `DF_SCRATCH_DIR`, private `DF_RUNTIME_DIR`, and
-the application's `sandbox.filesystem.allowWrite` paths. `cwd` grants no write
-access. Common disposable caches and temporary files are redirected to runtime
-storage, which is deleted after each command. Use scratch for files needed later.
+Sandboxed commands can write to `scratch/` (`$DF_SCRATCH_DIR`), private
+`DF_RUNTIME_DIR`, and the application's `sandbox.filesystem.allowWrite` paths. `cwd`
+grants no write access. Common disposable caches and temporary files (`$TMPDIR`) are
+redirected to runtime storage, which is deleted after each command. Write files you
+or Python need later to `scratch/…` and throwaway files to `$TMPDIR`; never hard-code
+`/tmp` or an absolute workspace path.
 Data Formulator's own credential store and configuration, and on macOS its local
 API, are unavailable to sandboxed commands; use the application's tools for them.
 The default persistent grants cover CLI state and token/discovery caches; a
@@ -99,7 +103,7 @@ available). Without `DF_PYTHON` (the desktop app), session packages are unavaila
 and `python3` in a command is the user's own Python (if any), which usually lacks
 pandas and Data Formulator's other packages: use terminal commands to fetch data into
 scratch files, and do the analysis in sandboxed Python.
-Sandboxed Python still has no network, no subprocesses, and no writes; a package
+Sandboxed Python still has no network, no subprocesses, and no writes outside `scratch/`; a package
 that needs them will not work there. The Docker sandbox does not see session packages.
 
 ## Data workflow
@@ -109,7 +113,7 @@ CLI acquisition -> scratch dataset -> workspace input -> analysis and delivery.
 1. Inspect only what is needed to identify the source and query. For analysis,
    retrieve actual records or aggregates, not just resource metadata. Bound scope,
    dates, fields, and volume; account for pagination and missing coverage.
-2. Save results under `DF_SCRATCH_DIR` without modifying source files. Check exit
+2. Save results under `scratch/` without modifying source files. Check exit
    code, timeout, truncation, and dataset validity. Return an acquisition summary
    and saved path, not rows reconstructed from truncated terminal output.
 3. Register the reusable dataset with `create_data`, referencing `scratch/...`

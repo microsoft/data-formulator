@@ -180,6 +180,29 @@ DataAgent 当前记录的主要事件：
 
 注意：当前 `on` 模式仍会记录 `user_question` / `query` 等问题文本；如果新增埋点涉及 credentials、连接串、tokens 或原始数据正文，必须先脱敏或只记录摘要。
 
+### 失败日志
+
+推理日志默认关闭，且按会话分文件；跨会话找出反复出现的失败（design-docs/73）需要另一份常开的记录。
+`agents/failure_log.py` 把 Agent 每次失败的工具调用或 action 追加为一行 JSON：
+
+```text
+DATA_FORMULATOR_HOME/logs/agent-failures.jsonl   # 超过 5 MB 轮转，保留 3 份
+```
+
+每行包含 `ts`、`agent`（`analyst` / `workflow`）、`workspace`、`model`、`tool`、`category`（按错误文本分类，
+如 `sandbox_write_denied`、`view_path_in_code`、`os_access_denied`）、`error`（截尾）和 `args`（截断，
+经 `sanitize_params` 与 `sanitize_text` 脱敏）。失败的判定：工具状态不是 `ok`，或 action 的 observation
+以 `[ERROR]` / `[… NOT CREATED]` 等开头，或终端结果带 `error_code`、非零退出码或超时。
+
+`DF_AGENT_FAILURE_LOG=off` 关闭。汇总：
+
+```bash
+uv run python -m data_formulator.agents.failure_log --days 30            # 按类别、工具计数，并列出常见错误
+uv run python -m data_formulator.agents.failure_log --category view_path_in_code --json
+```
+
+新增失败类型时，在 `CATEGORIES` 中按“具体在前”的顺序加一条正则。
+
 ## 6. Agent 知识集成
 
 路由层通过 `routes/agents.py` 的 `_get_knowledge_store(identity_id)` 创建 `KnowledgeStore`，并传给对应 Agent。知识不可用时必须优雅降级，不能影响原有 Agent 流程。

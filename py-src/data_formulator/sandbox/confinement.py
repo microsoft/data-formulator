@@ -34,6 +34,7 @@ from __future__ import annotations
 import functools
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -169,9 +170,18 @@ def _sbpl(path: str) -> str:
     return json.dumps(path)
 
 
-def seatbelt_profile(read_roots: list[str], write_dir: str, *, allow_network: bool) -> str:
-    """A ``sandbox-exec`` profile: narrow reads, one writable directory, internet without loopback."""
+def _sbpl_regex(path: str) -> str:
+    """``path`` as a literal inside an SBPL ``#"..."`` regular expression."""
+    return re.sub(r'([.^$*+?()\[\]{}|\\])', r'\\\1', path)
+
+
+def seatbelt_profile(read_roots: list[str], write_dir: str, *, allow_network: bool,
+                     write_paths: list[str] = (), write_patterns: list[str] = ()) -> str:
+    """A ``sandbox-exec`` profile: narrow reads, the private directory plus ``write_paths`` (folders) and
+    ``write_patterns`` (regular expressions) writable, internet without loopback."""
     reads = " ".join(f"(subpath {_sbpl(path)})" for path in [*_MACOS_SYSTEM_READS, *read_roots, write_dir])
+    writes = "".join([*(f" (subpath {_sbpl(path)})" for path in write_paths),
+                      *(f' (regex #"{pattern}")' for pattern in write_patterns)])
     profile = (
         "(version 1)(deny default)"
         "(allow process-exec process-fork)(allow signal (target self))"
@@ -179,7 +189,7 @@ def seatbelt_profile(read_roots: list[str], write_dir: str, *, allow_network: bo
         # Existence and metadata only; contents stay restricted to the reads below.
         "(allow file-read-metadata)"
         f'(allow file-read* (literal "/") {reads})'
-        f'(allow file-write* (subpath {_sbpl(write_dir)}) (literal "/dev/null"))'
+        f'(allow file-write* (subpath {_sbpl(write_dir)}) (literal "/dev/null"){writes})'
     )
     if allow_network:
         profile += (
@@ -202,8 +212,10 @@ def bwrap_can_mount_proc(bwrap: str = "bwrap") -> bool:
         return False
 
 
-def bwrap_prefix(read_roots: list[str], write_dir: str, *, mount_proc: bool = True) -> list[str]:
-    """``bwrap`` arguments: a read-only view of system and Python paths, no network, one writable directory."""
+def bwrap_prefix(read_roots: list[str], write_dir: str, *, mount_proc: bool = True,
+                 write_paths: list[str] = ()) -> list[str]:
+    """``bwrap`` arguments: a read-only view of system and Python paths, no network, the private directory
+    and ``write_paths`` writable."""
     # No --die-with-parent: Linux delivers that signal when the spawning *thread*
     # exits, which kills workers prewarmed from short-lived threads. Workers exit
     # on their own when the server's end of the pipe closes.
@@ -213,6 +225,8 @@ def bwrap_prefix(read_roots: list[str], write_dir: str, *, mount_proc: bool = Tr
     command += ["--tmpfs", "/tmp"]
     for path in [*_LINUX_SYSTEM_READS, *read_roots]:
         command += ["--ro-bind-try", path, path]
+    for path in write_paths:
+        command += ["--bind-try", path, path]
     command += ["--bind", write_dir, write_dir, "--chdir", write_dir]
     return command
 
@@ -224,7 +238,20 @@ def confined_worker_command(kind: str | None, key: str, write_dir: str,
     ``kind`` ``None`` starts the same isolated interpreter without an OS sandbox.
     """
     read_roots = python_read_roots()
-    read_roots += shared_read_roots() if key == SHARED else [key] if key else []
+    # Code writes to its workspace's scratch/ (design-docs/73); the audit hook narrows each call to the
+    # workspace it runs for. A shared worker serves every workspace, so the OS layer allows each scratch/
+    # under Data Formulator's folders (seatbelt), or those folders whole (bwrap cannot bind by pattern).
+    write_paths: list[str] = []
+    write_patterns: list[str] = []
+    bind_writable: list[str] = []
+    if key == SHARED:
+        shared = shared_read_roots()
+        read_roots += shared
+        write_patterns = [f"^{_sbpl_regex(root)}/([^/]+/)+scratch(/|$)" for root in shared if '"' not in root]
+        bind_writable = shared
+    elif key:
+        read_roots += [key]
+        write_paths = bind_writable = [os.path.join(key, "scratch")]
     write_dir = os.path.realpath(write_dir)
     allow_network = network_allowed(kind)
     # -s -P: no user site-packages, and never put the working directory on
@@ -236,10 +263,13 @@ def confined_worker_command(kind: str | None, key: str, write_dir: str,
     if kind is None:
         return worker
     if kind == "seatbelt":
-        return [SEATBELT, "-p", seatbelt_profile(read_roots, write_dir, allow_network=allow_network), *worker]
+        profile = seatbelt_profile(read_roots, write_dir, allow_network=allow_network,
+                                   write_paths=write_paths, write_patterns=write_patterns)
+        return [SEATBELT, "-p", profile, *worker]
     if kind == "bwrap":
         bwrap = bwrap_executable() or "bwrap"
-        prefix = bwrap_prefix(read_roots, write_dir, mount_proc=bwrap_can_mount_proc(bwrap))
+        prefix = bwrap_prefix(read_roots, write_dir, mount_proc=bwrap_can_mount_proc(bwrap),
+                              write_paths=bind_writable)
         return [bwrap, *prefix[1:], "--", *worker]
     raise ValueError(f"Unknown confinement: {kind}")
 

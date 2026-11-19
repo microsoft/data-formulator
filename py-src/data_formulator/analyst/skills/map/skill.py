@@ -18,7 +18,7 @@ from typing import Any, Generator
 
 from data_formulator.analyst.replacement import record_run_artifact
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
-from data_formulator.analyst.skills.html_app.skill import _app_target, _invalid_title, _save_app, replace_file_in_place
+from data_formulator.analyst.skills.html_app.skill import _app_target, _invalid_title, _save_app, replace_file_in_place, rewriting
 from data_formulator.analyst.skills.map.validate import validate_map
 
 MAP_SUFFIX = ".map.json"
@@ -62,7 +62,7 @@ class MapSkill:
         if action != "write_map":
             yield {"type": "error", "message": f"map cannot handle action '{action}'.", "message_code": "agent.unknownAction"}
             return f"map cannot handle action '{action}'."
-        updating = spec.get("path") is not None
+        updating = rewriting(spec, ctx, MAP_SUFFIX)
         try:
             replaces = replace_file_in_place(spec, ctx)
             file, result = self._write(spec, ctx)

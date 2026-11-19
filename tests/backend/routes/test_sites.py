@@ -208,6 +208,19 @@ def test_stories_carry_their_prompt_and_sessions_and_images_come_from_the_conten
         client.get("/api/demos/other/stories/heritage-spend/image")
 
 
+def test_a_story_with_chapters_lists_them_with_their_findings(monkeypatch):
+    profile = {"id": "demo", "release": "r1", "starters": [{
+        "id": "culture", "title": "Culture", "file": "culture.zip",
+        "stories": [{"id": "topic", "headline": "Two findings", "prompt": "What is in it?", "file": "stories/topic.zip",
+                     "chapters": [{"id": "a", "label": "Map", "kind": "map", "headline": "Where", "stat": "67%",
+                                   "message": "of them here", "file": "where.map.json"},
+                                  {"id": "b", "label": "Story", "kind": "story", "prompt": "What?"}]}]}]}
+    monkeypatch.setattr(sites, "site_profile", lambda site_id: profile if site_id == "demo" else None)
+    story = sites.site_frontend_config("demo")["starters"][0]["stories"][0]
+    assert story["chapters"] == [{"label": "Map", "kind": "map", "headline": "Where", "stat": "67%", "message": "of them here"},
+                                 {"label": "Story", "kind": "story", "headline": "", "stat": "", "message": ""}]
+
+
 def test_profiles_come_from_the_sites_folder_then_the_shipped_demos(tmp_path):
     checkout = tmp_path / "shipped"
     (checkout / "example").mkdir(parents=True)

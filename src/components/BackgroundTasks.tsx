@@ -78,7 +78,7 @@ export const BackgroundTasksPill: React.FC<{
     return <Box sx={sx}>
         <ButtonBase data-background-tasks-pill onClick={event => setAnchor(event.currentTarget)}
             aria-label={t('backgroundTasks.title')}
-            sx={theme => ({ display: 'inline-flex', alignItems: 'center', gap: '4px', px: '6px', py: '1px', borderRadius: '4px',
+            sx={theme => ({ display: 'inline-flex', alignItems: 'center', gap: '4px', px: '6px', py: '1px', borderRadius: 1,
                 fontSize: textVar.xxs, color: 'text.secondary', border: `1px solid ${theme.palette.divider}`,
                 bgcolor: 'background.paper', '&:hover': { color: 'text.primary', bgcolor: alpha(theme.palette.text.primary, 0.04) },
                 '&.Mui-focusVisible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1 } })}>

@@ -10,14 +10,14 @@ pytestmark = [pytest.mark.backend]
 
 
 def _record(**overrides):
-    values = dict(call_id="call-1", tool="read_file", args={"files": [{"path": "session/index.md"}]},
+    values = dict(call_id="call-1", tool="read_file", args={"files": [{"path": "session://index"}]},
                   output="ok", error=None, status="ok", started=10.0, ended=10.25)
     values.update(overrides)
     return tool_call_record(**values)
 
 
 def test_a_short_call_is_kept_whole():
-    assert _record() == {"id": "call-1", "tool": "read_file", "args": {"files": [{"path": "session/index.md"}]},
+    assert _record() == {"id": "call-1", "tool": "read_file", "args": {"files": [{"path": "session://index"}]},
                          "status": "completed", "createdAt": 10_000, "durationMs": 250, "output": "ok"}
 
 
@@ -44,9 +44,9 @@ def test_code_is_kept_longer_than_other_text_and_errors_keep_their_end():
 def test_a_read_keeps_each_file_as_plain_text_under_its_path():
     import json
     output = json.dumps({"files": [
-        {"path": "session/tables/sales.json", "name": "Sales", "content": '{\n  "name": "sales"\n}'},
+        {"path": "session://tables/sales", "name": "Sales", "content": '{\n  "name": "sales"\n}'},
         {"path": "files/missing.md", "error": "no such file"},
     ], "no_match": ["files/*.pdf"]})
     record = _record(output=output)
-    assert record["output"] == ('# session/tables/sales.json\n{\n  "name": "sales"\n}\n\n'
+    assert record["output"] == ('# session://tables/sales\n{\n  "name": "sales"\n}\n\n'
                                 '# files/missing.md (no such file)\n\n# No match: files/*.pdf')

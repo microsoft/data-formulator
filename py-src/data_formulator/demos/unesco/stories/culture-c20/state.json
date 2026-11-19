@@ -1,768 +1,114 @@
 {
- "__stateVersion": 14,
+ "__stateVersion": 15,
+ "activeWorkspace": {
+  "id": "culture-c20",
+  "displayName": "From pennies to hundreds: what governments spend on heritage"
+ },
  "derivedTables": [
   {
    "kind": "table",
-   "id": "d_output",
-   "displayId": "Recent government heritage spending",
+   "id": "most_public_heritage_spending",
+   "displayId": "15 countries spending the most on heritage per person",
    "names": [
-    "indicator_id",
-    "COUNTRY_ID",
+    "country_id",
     "country",
-    "year",
-    "value",
-    "magnitude",
-    "qualifier",
-    "map_id"
+    "latest_year",
+    "per_person"
    ],
    "rows": [
     {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "NIC",
-     "country": "Nicaragua",
-     "year": 2020,
-     "value": 0.73405,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 558
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "MMR",
-     "country": "Myanmar",
-     "year": 2020,
-     "value": 0.0661,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 104
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "LKA",
-     "country": "Sri Lanka",
-     "year": 2020,
-     "value": 8.45478,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 144
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "LCA",
-     "country": "Saint Lucia",
-     "year": 2020,
-     "value": 15.91033,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 662
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "GBR",
-     "country": "UK",
-     "year": 2020,
-     "value": 131.68022,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 826
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "KOR",
-     "country": "South Korea",
-     "year": 2020,
-     "value": 39.67997,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 410
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "GRC",
-     "country": "Greece",
-     "year": 2020,
-     "value": 10.87113,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 300
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "SLV",
-     "country": "El Salvador",
-     "year": 2021,
-     "value": 0.09048,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 222
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "ALB",
-     "country": "Albania",
-     "year": 2021,
-     "value": 26.29947,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 8
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "TKM",
-     "country": "Turkmenistan",
-     "year": 2021,
-     "value": 0.03737,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 795
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "EST",
-     "country": "Estonia",
-     "year": 2021,
-     "value": 31.21922,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 233
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "CYP",
-     "country": "Cyprus",
-     "year": 2021,
-     "value": 64.19111,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 196
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "PAN",
-     "country": "Panama",
-     "year": 2022,
-     "value": 3.4926,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 591
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "PAK",
-     "country": "Pakistan",
-     "year": 2022,
-     "value": 0.09815,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 586
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "UZB",
-     "country": "Uzbekistan",
-     "year": 2022,
-     "value": 0.16595,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 860
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "IRN",
-     "country": "Iran",
-     "year": 2022,
-     "value": 0.00022,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 364
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "CHE",
-     "country": "Switzerland",
-     "year": 2022,
-     "value": 240.28057,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 756
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "BGD",
-     "country": "Bangladesh",
-     "year": 2022,
-     "value": 0.14176,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 50
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "GMB",
-     "country": "Gambia",
-     "year": 2022,
-     "value": 0.02323,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 270
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "GEO",
-     "country": "Georgia",
-     "year": 2022,
-     "value": 16.6153,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 268
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "AUT",
-     "country": "Austria",
-     "year": 2023,
-     "value": 114.94677,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 40
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "HRV",
-     "country": "Croatia",
-     "year": 2023,
-     "value": 245.28271,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 191
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "SRB",
-     "country": "Serbia",
-     "year": 2023,
-     "value": 30.9865,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 688
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "BWA",
-     "country": "Botswana",
-     "year": 2023,
-     "value": 1.90218,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 72
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "PHL",
-     "country": "Philippines",
-     "year": 2023,
-     "value": 1.93361,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 608
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "HUN",
-     "country": "Hungary",
-     "year": 2023,
-     "value": 95.7704,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 348
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "BOL",
-     "country": "Bolivia",
-     "year": 2023,
-     "value": 296.95517,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 68
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "BLR",
-     "country": "Belarus",
-     "year": 2023,
-     "value": 57.31564,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 112
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "BIH",
-     "country": "Bosnia and Herzegovina",
-     "year": 2023,
-     "value": 61.37624,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 70
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "BHR",
-     "country": "Bahrain",
-     "year": 2023,
-     "value": 3.69131,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 48
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "PRT",
-     "country": "Portugal",
-     "year": 2023,
-     "value": 41.36112,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 620
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "BFA",
-     "country": "Burkina Faso",
-     "year": 2023,
-     "value": 2.20959,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 854
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "KAZ",
-     "country": "Kazakhstan",
-     "year": 2023,
-     "value": 0.07309,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 398
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "AND",
-     "country": "Andorra",
-     "year": 2023,
-     "value": 578.17987,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 20
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "ESP",
-     "country": "Spain",
-     "year": 2023,
-     "value": 60.76154,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 724
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "SYR",
-     "country": "Syria",
-     "year": 2023,
-     "value": 0.00027,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 760
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "DNK",
-     "country": "Denmark",
-     "year": 2023,
-     "value": 134.18625,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 208
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "MDA",
-     "country": "Moldova",
-     "year": 2023,
-     "value": 2.82197,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 498
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "CZE",
-     "country": "Czechia",
-     "year": 2023,
-     "value": 93.42295,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 203
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "FIN",
-     "country": "Finland",
-     "year": 2023,
-     "value": 265.14328,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 246
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "FRA",
-     "country": "France",
-     "year": 2023,
-     "value": 117.3667,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 250
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "BEL",
+     "country_id": "BEL",
      "country": "Belgium",
-     "year": 2023,
-     "value": 368.80479,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 56
+     "latest_year": 2023,
+     "per_person": 368.8
     },
     {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "MLT",
+     "country_id": "MLT",
      "country": "Malta",
-     "year": 2023,
-     "value": 350.48304,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 470
+     "latest_year": 2023,
+     "per_person": 350.48
     },
     {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "NAM",
-     "country": "Namibia",
-     "year": 2023,
-     "value": 2.57634,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 516
+     "country_id": "BOL",
+     "country": "Bolivia",
+     "latest_year": 2023,
+     "per_person": 296.96
     },
     {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "CIV",
-     "country": "Côte d'Ivoire",
-     "year": 2023,
-     "value": 3.5017,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 384
+     "country_id": "FIN",
+     "country": "Finland",
+     "latest_year": 2023,
+     "per_person": 265.14
     },
     {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "SWE",
-     "country": "Sweden",
-     "year": 2024,
-     "value": 89.64795,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 752
+     "country_id": "HRV",
+     "country": "Croatia",
+     "latest_year": 2023,
+     "per_person": 245.28
     },
     {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "SVK",
-     "country": "Slovakia",
-     "year": 2024,
-     "value": 72.30204,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 703
+     "country_id": "CHE",
+     "country": "Switzerland",
+     "latest_year": 2022,
+     "per_person": 240.28
     },
     {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "ARM",
-     "country": "Armenia",
-     "year": 2024,
-     "value": 20.92426,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 51
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "TUR",
-     "country": "Türkiye",
-     "year": 2024,
-     "value": 0.78856,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 792
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "AUS",
-     "country": "Australia",
-     "year": 2024,
-     "value": 56.90504,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 36
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "AZE",
-     "country": "Azerbaijan",
-     "year": 2024,
-     "value": 22.03876,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 31
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "CHL",
-     "country": "Chile",
-     "year": 2024,
-     "value": 12.96295,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 152
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "QAT",
-     "country": "Qatar",
-     "year": 2024,
-     "value": 23.36217,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 634
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "ISR",
-     "country": "Israel",
-     "year": 2024,
-     "value": 34.10461,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 376
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "JPN",
-     "country": "Japan",
-     "year": 2024,
-     "value": 6.99939,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 392
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "KEN",
-     "country": "Kenya",
-     "year": 2024,
-     "value": 4.17889,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 404
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "LTU",
-     "country": "Lithuania",
-     "year": 2024,
-     "value": 41.46906,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 440
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "ECU",
-     "country": "Ecuador",
-     "year": 2024,
-     "value": 53.26329,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 218
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "LUX",
+     "country_id": "LUX",
      "country": "Luxembourg",
-     "year": 2024,
-     "value": 230.89077,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 442
+     "latest_year": 2024,
+     "per_person": 230.89
     },
     {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "DOM",
-     "country": "Dominican Republic",
-     "year": 2024,
-     "value": 14.52464,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 214
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "MCO",
-     "country": "Monaco",
-     "year": 2024,
-     "value": 72.38562,
-     "magnitude": null,
-     "qualifier": "UIS_EST",
-     "map_id": 492
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "MEX",
-     "country": "Mexico",
-     "year": 2024,
-     "value": 10.05728,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 484
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "CRI",
-     "country": "Costa Rica",
-     "year": 2024,
-     "value": 12.17157,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 188
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "COL",
-     "country": "Colombia",
-     "year": 2024,
-     "value": 14.1084,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 170
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "CMR",
-     "country": "Cameroon",
-     "year": 2024,
-     "value": 1.45238,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 120
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "MUS",
-     "country": "Mauritius",
-     "year": 2024,
-     "value": 13.75007,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 480
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "IRQ",
-     "country": "Iraq",
-     "year": 2024,
-     "value": 0.56441,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 368
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "NOR",
-     "country": "Norway",
-     "year": 2024,
-     "value": 21.60196,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 578
-    },
-    {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "CAN",
+     "country_id": "CAN",
      "country": "Canada",
-     "year": 2024,
-     "value": 212.26366,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 124
+     "latest_year": 2024,
+     "per_person": 212.26
     },
     {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "PER",
-     "country": "Peru",
-     "year": 2024,
-     "value": 12.89864,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 604
+     "country_id": "DNK",
+     "country": "Denmark",
+     "latest_year": 2023,
+     "per_person": 134.19
     },
     {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "BRA",
-     "country": "Brazil",
-     "year": 2024,
-     "value": 20.4869,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 76
+     "country_id": "GBR",
+     "country": "UK",
+     "latest_year": 2020,
+     "per_person": 131.68
     },
     {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "POL",
-     "country": "Poland",
-     "year": 2024,
-     "value": 78.90847,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 616
+     "country_id": "FRA",
+     "country": "France",
+     "latest_year": 2023,
+     "per_person": 117.37
     },
     {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "RUS",
-     "country": "Russia",
-     "year": 2024,
-     "value": 105.43788,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 643
+     "country_id": "AUT",
+     "country": "Austria",
+     "latest_year": 2023,
+     "per_person": 114.95
     },
     {
-     "indicator_id": "HEXPCSTPPPCAP.HER.PU",
-     "COUNTRY_ID": "IRL",
+     "country_id": "IRL",
      "country": "Ireland",
-     "year": 2024,
-     "value": 109.37606,
-     "magnitude": null,
-     "qualifier": null,
-     "map_id": 372
+     "latest_year": 2024,
+     "per_person": 109.38
+    },
+    {
+     "country_id": "RUS",
+     "country": "Russia",
+     "latest_year": 2024,
+     "per_person": 105.44
+    },
+    {
+     "country_id": "HUN",
+     "country": "Hungary",
+     "latest_year": 2023,
+     "per_person": 95.77
     }
    ],
    "metadata": {
-    "indicator_id": {
-     "type": "string",
-     "levels": []
-    },
-    "COUNTRY_ID": {
+    "country_id": {
      "type": "string",
      "levels": []
     },
@@ -770,111 +116,546 @@
      "type": "string",
      "levels": []
     },
-    "year": {
+    "latest_year": {
      "type": "integer",
      "levels": []
     },
-    "value": {
+    "per_person": {
      "type": "number",
-     "levels": []
-    },
-    "magnitude": {
-     "type": "boolean",
-     "levels": []
-    },
-    "qualifier": {
-     "type": "string",
-     "levels": []
-    },
-    "map_id": {
-     "type": "integer",
      "levels": []
     }
    },
    "derive": {
-    "code": "import pandas as pd\nx=pd.read_parquet('data/sdg11_national.parquet')\nx=x[(x.indicator_id=='HEXPCSTPPPCAP.HER.PU') & (x.year>=2020) & x.value.notna() & (x.magnitude.fillna('')!='NA')].sort_values('year').drop_duplicates('COUNTRY_ID',keep='last')\noutput=x.merge(pd.read_parquet('data/countries.parquet')[['COUNTRY_ID','map_id']],on='COUNTRY_ID',how='left')\noutput['country']=output.country.replace({'United Kingdom of Great Britain and Northern Ireland':'UK','Bolivia (Plurinational State of)':'Bolivia','Russian Federation':'Russia','Republic of Korea':'South Korea','Iran (Islamic Republic of)':'Iran','Syrian Arab Republic':'Syria','Republic of Moldova':'Moldova'})",
-    "codeSignature": "d7f2f17ce237429c857bb0c18e28bf7223235955069af4755200c4ada9446992",
-    "outputVariable": "output",
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with v as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/sdg11_national.parquet')\n        where indicator_id = 'HEXPCSTPPPCAP.HER.PU' and year between 2020 and 2024\n          and value is not null and coalesce(magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    population as (\n        select COUNTRY_ID as country_id, value as thousands\n        from read_parquet('data/dem_national.parquet')\n        where indicator_id = '200101'\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    )\n    select v.country_id, v.country, v.year as latest_year, round(value, 2) as per_person\n    from v join population using (country_id)\n    where population.thousands >= 100\n    order by per_person desc, v.country\n    limit 15\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
+    "outputVariable": "out",
     "source": [
-     "sdg11_national",
-     "countries"
-    ],
-    "inputSources": [
-     {
-      "id": "data:dde8cde108f63babea4b427160284e38:sdg11_national",
-      "kind": "data",
-      "displayName": "sdg11_national"
-     },
-     {
-      "id": "data:3bfeafe1536e0211b109193b1e492f81:countries",
-      "kind": "data",
-      "displayName": "countries"
-     }
+     "dem_national",
+     "sdg11_national"
     ],
     "trigger": {
-     "tableId": "sdg11_national",
-     "resultTableId": "d_output",
+     "tableId": "dem_national",
+     "resultTableId": "most_public_heritage_spending",
      "chart": {
-      "id": "chart-1792309714165",
+      "id": "chart-trigger-most_public_heritage_spending",
       "chartType": "Auto",
       "encodingMap": {},
-      "tableRef": "sdg11_national",
+      "tableRef": "dem_national",
       "source": "trigger"
      }
-    },
-    "explanation": {
-     "status": "ok",
-     "concepts": [],
-     "agent": "CodeExplanationAgent"
     }
    },
    "virtual": {
-    "tableId": "d_output",
-    "rowCount": 74
+    "tableId": "most_public_heritage_spending",
+    "rowCount": 15
    },
-   "description": "",
-   "parentNodeId": "textTurn_exploreDataFromNL_1792309690825_step_1",
-   "createdAt": 1792309719155
+   "description": "Public spending on cultural and natural heritage per person, in constant 2017 purchasing-power dollars (PPP$), the 15 highest countries' latest figure in 2020–2024 (latest_year); territories under 100,000 people left out. Source: UIS, February 2026 release; indicator HEXPCSTPPPCAP.HER.PU.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794707200000_step_1",
+   "createdAt": 1794707202000
+  },
+  {
+   "kind": "table",
+   "id": "public_heritage_spending",
+   "displayId": "Public heritage spending per person by country",
+   "names": [
+    "country_id",
+    "country",
+    "latest_year",
+    "per_person"
+   ],
+   "rows": [
+    {
+     "country_id": "BEL",
+     "country": "Belgium",
+     "latest_year": 2023,
+     "per_person": 368.8
+    },
+    {
+     "country_id": "MLT",
+     "country": "Malta",
+     "latest_year": 2023,
+     "per_person": 350.48
+    },
+    {
+     "country_id": "BOL",
+     "country": "Bolivia",
+     "latest_year": 2023,
+     "per_person": 296.96
+    },
+    {
+     "country_id": "FIN",
+     "country": "Finland",
+     "latest_year": 2023,
+     "per_person": 265.14
+    },
+    {
+     "country_id": "HRV",
+     "country": "Croatia",
+     "latest_year": 2023,
+     "per_person": 245.28
+    },
+    {
+     "country_id": "CHE",
+     "country": "Switzerland",
+     "latest_year": 2022,
+     "per_person": 240.28
+    },
+    {
+     "country_id": "LUX",
+     "country": "Luxembourg",
+     "latest_year": 2024,
+     "per_person": 230.89
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "latest_year": 2024,
+     "per_person": 212.26
+    },
+    {
+     "country_id": "DNK",
+     "country": "Denmark",
+     "latest_year": 2023,
+     "per_person": 134.19
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "latest_year": 2020,
+     "per_person": 131.68
+    },
+    {
+     "country_id": "FRA",
+     "country": "France",
+     "latest_year": 2023,
+     "per_person": 117.37
+    },
+    {
+     "country_id": "AUT",
+     "country": "Austria",
+     "latest_year": 2023,
+     "per_person": 114.95
+    },
+    {
+     "country_id": "IRL",
+     "country": "Ireland",
+     "latest_year": 2024,
+     "per_person": 109.38
+    },
+    {
+     "country_id": "RUS",
+     "country": "Russia",
+     "latest_year": 2024,
+     "per_person": 105.44
+    },
+    {
+     "country_id": "HUN",
+     "country": "Hungary",
+     "latest_year": 2023,
+     "per_person": 95.77
+    },
+    {
+     "country_id": "CZE",
+     "country": "Czechia",
+     "latest_year": 2023,
+     "per_person": 93.42
+    },
+    {
+     "country_id": "SWE",
+     "country": "Sweden",
+     "latest_year": 2024,
+     "per_person": 89.65
+    },
+    {
+     "country_id": "POL",
+     "country": "Poland",
+     "latest_year": 2024,
+     "per_person": 78.91
+    },
+    {
+     "country_id": "SVK",
+     "country": "Slovakia",
+     "latest_year": 2024,
+     "per_person": 72.3
+    },
+    {
+     "country_id": "CYP",
+     "country": "Cyprus",
+     "latest_year": 2021,
+     "per_person": 64.19
+    },
+    {
+     "country_id": "BIH",
+     "country": "Bosnia and Herzegovina",
+     "latest_year": 2023,
+     "per_person": 61.38
+    },
+    {
+     "country_id": "ESP",
+     "country": "Spain",
+     "latest_year": 2023,
+     "per_person": 60.76
+    },
+    {
+     "country_id": "BLR",
+     "country": "Belarus",
+     "latest_year": 2023,
+     "per_person": 57.32
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "latest_year": 2024,
+     "per_person": 56.91
+    },
+    {
+     "country_id": "ECU",
+     "country": "Ecuador",
+     "latest_year": 2024,
+     "per_person": 53.26
+    },
+    {
+     "country_id": "LTU",
+     "country": "Lithuania",
+     "latest_year": 2024,
+     "per_person": 41.47
+    },
+    {
+     "country_id": "PRT",
+     "country": "Portugal",
+     "latest_year": 2023,
+     "per_person": 41.36
+    },
+    {
+     "country_id": "KOR",
+     "country": "South Korea",
+     "latest_year": 2020,
+     "per_person": 39.68
+    },
+    {
+     "country_id": "ISR",
+     "country": "Israel",
+     "latest_year": 2024,
+     "per_person": 34.1
+    },
+    {
+     "country_id": "EST",
+     "country": "Estonia",
+     "latest_year": 2021,
+     "per_person": 31.22
+    },
+    {
+     "country_id": "SRB",
+     "country": "Serbia",
+     "latest_year": 2023,
+     "per_person": 30.99
+    },
+    {
+     "country_id": "ALB",
+     "country": "Albania",
+     "latest_year": 2021,
+     "per_person": 26.3
+    },
+    {
+     "country_id": "QAT",
+     "country": "Qatar",
+     "latest_year": 2024,
+     "per_person": 23.36
+    },
+    {
+     "country_id": "AZE",
+     "country": "Azerbaijan",
+     "latest_year": 2024,
+     "per_person": 22.04
+    },
+    {
+     "country_id": "NOR",
+     "country": "Norway",
+     "latest_year": 2024,
+     "per_person": 21.6
+    },
+    {
+     "country_id": "ARM",
+     "country": "Armenia",
+     "latest_year": 2024,
+     "per_person": 20.92
+    },
+    {
+     "country_id": "BRA",
+     "country": "Brazil",
+     "latest_year": 2024,
+     "per_person": 20.49
+    },
+    {
+     "country_id": "GEO",
+     "country": "Georgia",
+     "latest_year": 2022,
+     "per_person": 16.62
+    },
+    {
+     "country_id": "LCA",
+     "country": "Saint Lucia",
+     "latest_year": 2020,
+     "per_person": 15.91
+    },
+    {
+     "country_id": "DOM",
+     "country": "Dominican Republic",
+     "latest_year": 2024,
+     "per_person": 14.52
+    },
+    {
+     "country_id": "COL",
+     "country": "Colombia",
+     "latest_year": 2024,
+     "per_person": 14.11
+    },
+    {
+     "country_id": "MUS",
+     "country": "Mauritius",
+     "latest_year": 2024,
+     "per_person": 13.75
+    },
+    {
+     "country_id": "CHL",
+     "country": "Chile",
+     "latest_year": 2024,
+     "per_person": 12.96
+    },
+    {
+     "country_id": "PER",
+     "country": "Peru",
+     "latest_year": 2024,
+     "per_person": 12.9
+    },
+    {
+     "country_id": "CRI",
+     "country": "Costa Rica",
+     "latest_year": 2024,
+     "per_person": 12.17
+    },
+    {
+     "country_id": "GRC",
+     "country": "Greece",
+     "latest_year": 2020,
+     "per_person": 10.87
+    },
+    {
+     "country_id": "MEX",
+     "country": "Mexico",
+     "latest_year": 2024,
+     "per_person": 10.06
+    },
+    {
+     "country_id": "LKA",
+     "country": "Sri Lanka",
+     "latest_year": 2020,
+     "per_person": 8.45
+    },
+    {
+     "country_id": "JPN",
+     "country": "Japan",
+     "latest_year": 2024,
+     "per_person": 7.0
+    },
+    {
+     "country_id": "KEN",
+     "country": "Kenya",
+     "latest_year": 2024,
+     "per_person": 4.18
+    },
+    {
+     "country_id": "BHR",
+     "country": "Bahrain",
+     "latest_year": 2023,
+     "per_person": 3.69
+    },
+    {
+     "country_id": "CIV",
+     "country": "Côte d'Ivoire",
+     "latest_year": 2023,
+     "per_person": 3.5
+    },
+    {
+     "country_id": "PAN",
+     "country": "Panama",
+     "latest_year": 2022,
+     "per_person": 3.49
+    },
+    {
+     "country_id": "MDA",
+     "country": "Moldova",
+     "latest_year": 2023,
+     "per_person": 2.82
+    },
+    {
+     "country_id": "NAM",
+     "country": "Namibia",
+     "latest_year": 2023,
+     "per_person": 2.58
+    },
+    {
+     "country_id": "BFA",
+     "country": "Burkina Faso",
+     "latest_year": 2023,
+     "per_person": 2.21
+    },
+    {
+     "country_id": "PHL",
+     "country": "Philippines",
+     "latest_year": 2023,
+     "per_person": 1.93
+    },
+    {
+     "country_id": "BWA",
+     "country": "Botswana",
+     "latest_year": 2023,
+     "per_person": 1.9
+    },
+    {
+     "country_id": "CMR",
+     "country": "Cameroon",
+     "latest_year": 2024,
+     "per_person": 1.45
+    },
+    {
+     "country_id": "TUR",
+     "country": "Türkiye",
+     "latest_year": 2024,
+     "per_person": 0.79
+    },
+    {
+     "country_id": "NIC",
+     "country": "Nicaragua",
+     "latest_year": 2020,
+     "per_person": 0.73
+    },
+    {
+     "country_id": "IRQ",
+     "country": "Iraq",
+     "latest_year": 2024,
+     "per_person": 0.56
+    },
+    {
+     "country_id": "UZB",
+     "country": "Uzbekistan",
+     "latest_year": 2022,
+     "per_person": 0.17
+    },
+    {
+     "country_id": "BGD",
+     "country": "Bangladesh",
+     "latest_year": 2022,
+     "per_person": 0.14
+    },
+    {
+     "country_id": "PAK",
+     "country": "Pakistan",
+     "latest_year": 2022,
+     "per_person": 0.1
+    },
+    {
+     "country_id": "SLV",
+     "country": "El Salvador",
+     "latest_year": 2021,
+     "per_person": 0.09
+    },
+    {
+     "country_id": "KAZ",
+     "country": "Kazakhstan",
+     "latest_year": 2023,
+     "per_person": 0.07
+    },
+    {
+     "country_id": "MMR",
+     "country": "Myanmar",
+     "latest_year": 2020,
+     "per_person": 0.07
+    },
+    {
+     "country_id": "TKM",
+     "country": "Turkmenistan",
+     "latest_year": 2021,
+     "per_person": 0.04
+    },
+    {
+     "country_id": "GMB",
+     "country": "Gambia",
+     "latest_year": 2022,
+     "per_person": 0.02
+    },
+    {
+     "country_id": "IRN",
+     "country": "Iran",
+     "latest_year": 2022,
+     "per_person": 0.0
+    },
+    {
+     "country_id": "SYR",
+     "country": "Syria",
+     "latest_year": 2023,
+     "per_person": 0.0
+    }
+   ],
+   "metadata": {
+    "country_id": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "latest_year": {
+     "type": "integer",
+     "levels": []
+    },
+    "per_person": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with v as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/sdg11_national.parquet')\n        where indicator_id = 'HEXPCSTPPPCAP.HER.PU' and year between 2020 and 2024\n          and value is not null and coalesce(magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    population as (\n        select COUNTRY_ID as country_id, value as thousands\n        from read_parquet('data/dem_national.parquet')\n        where indicator_id = '200101'\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    )\n    select v.country_id, v.country, v.year as latest_year, round(value, 2) as per_person\n    from v join population using (country_id)\n    where population.thousands >= 100\n    order by per_person desc, v.country\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
+    "outputVariable": "out",
+    "source": [
+     "dem_national",
+     "sdg11_national"
+    ],
+    "trigger": {
+     "tableId": "dem_national",
+     "resultTableId": "public_heritage_spending",
+     "chart": {
+      "id": "chart-trigger-public_heritage_spending",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "dem_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "public_heritage_spending",
+    "rowCount": 72
+   },
+   "description": "Public spending on cultural and natural heritage per person, in constant 2017 purchasing-power dollars (PPP$), each country's latest figure in 2020–2024 (latest_year); territories under 100,000 people left out. Source: UIS, February 2026 release; indicator HEXPCSTPPPCAP.HER.PU.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794707200000_step_2",
+   "createdAt": 1794707204000
   }
  ],
  "charts": [
   {
-   "id": "chart-9d6b471bb39a",
-   "chartType": "Choropleth",
-   "encodingMap": {
-    "id": {
-     "fieldID": "concept-map_id-1792309719155-0.10524550868567495"
-    },
-    "color": {
-     "fieldID": "concept-value-1792309719155-0.5440140744863095",
-     "dtype": "quantitative"
-    },
-    "detail": {
-     "channel": "detail",
-     "bin": false
-    }
-   },
-   "tableRef": "d_output",
-   "source": "user",
-   "title": "Government spending on cultural and natural heritage",
-   "subtitle": "Latest available, 2020–2024 • 2017 purchasing-power dollars per person • UIS, February 2026 release",
-   "titleKey": "Choropleth|color:concept-value-1792309719155-0.5440140744863095:|detail::|id:concept-map_id-1792309719155-0.10524550868567495:",
-   "unread": false,
-   "themeId": "datawrapper"
-  },
-  {
-   "id": "chart-de92eba699d3",
+   "id": "chart-d422c1967924",
    "chartType": "Bar Chart",
    "encodingMap": {
     "x": {
-     "fieldID": "concept-value-1792309719155-0.5440140744863095",
+     "fieldID": "concept-per_person-459426322686-0.8858436905330563678",
      "dtype": "quantitative"
     },
     "y": {
-     "fieldID": "concept-country-1792309719155-0.870827705246655",
+     "fieldID": "concept-country-639712262958-0.142098672645161447",
      "dtype": "nominal",
-     "sortOrder": "descending",
-     "sortBy": "x"
+     "sortBy": "x",
+     "sortOrder": "descending"
     },
     "color": {
      "channel": "color",
@@ -893,31 +674,25 @@
      "bin": false
     }
    },
-   "tableRef": "d_output",
+   "tableRef": "most_public_heritage_spending",
    "source": "user",
-   "title": "Government spending on cultural and natural heritage: highest first",
-   "subtitle": "Latest available, 2020–2024 • 2017 purchasing-power dollars per person • UIS, February 2026 release",
+   "title": "Who spends the most on heritage",
+   "subtitle": "Government spending on cultural and natural heritage per person, constant 2017 purchasing-power dollars; latest figure, 2020–2024; UIS, February 2026 release; indicator HEXPCSTPPPCAP.HER.PU",
    "unread": false,
    "themeId": "datawrapper",
-   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-value-1792309719155-0.5440140744863095:|y:concept-country-1792309719155-0.870827705246655:"
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-per_person-459426322686-0.8858436905330563678:|y:concept-country-639712262958-0.142098672645161447:"
   }
  ],
  "conceptShelfItems": [
   {
-   "id": "concept-country-1792309719155-0.870827705246655",
+   "id": "concept-per_person-459426322686-0.8858436905330563678",
+   "name": "per_person",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-country-639712262958-0.142098672645161447",
    "name": "country",
-   "source": "custom",
-   "tableRef": "custom"
-  },
-  {
-   "id": "concept-value-1792309719155-0.5440140744863095",
-   "name": "value",
-   "source": "custom",
-   "tableRef": "custom"
-  },
-  {
-   "id": "concept-map_id-1792309719155-0.10524550868567495",
-   "name": "map_id",
    "source": "custom",
    "tableRef": "custom"
   }
@@ -925,131 +700,179 @@
  "textTurns": [
   {
    "kind": "text",
-   "id": "textTurn_exploreDataFromNL_1792309690825_prompt",
-   "displayId": "textTurn_exploreDataFromNL_1792309690825_prompt",
+   "id": "textTurn_exploreDataFromNL_1794707200000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794707200000_prompt",
    "textKind": "explain",
    "content": "",
    "prompt": "How much do governments spend to protect their heritage?",
-   "parentNodeId": "conversation-root:a6b25c53-9573-4520-a30d-e1f4523d928a",
-   "actionId": "exploreDataFromNL_1792309690825",
-   "createdAt": 1792309690825
+   "parentNodeId": "conversation-root:a3145c71-d250-534a-aa8c-237e1f050b89",
+   "actionId": "exploreDataFromNL_1794707200000",
+   "createdAt": 1794707200000
   },
   {
    "kind": "text",
-   "id": "textTurn_exploreDataFromNL_1792309690825_step_1",
-   "displayId": "textTurn_exploreDataFromNL_1792309690825_step_1",
+   "id": "textTurn_exploreDataFromNL_1794707200000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794707200000_step_1",
    "textKind": "explain",
-   "content": "Check recent public heritage spending, coverage, and country differences.",
-   "parentNodeId": "textTurn_exploreDataFromNL_1792309690825_prompt",
-   "actionId": "exploreDataFromNL_1792309690825",
-   "createdAt": 1792309708805,
-   "startedAt": 1792309690825,
-   "codeExecutions": [
-    {
-     "id": "code_exploreDataFromNL_1792309690825_1",
-     "tool": "execute_python_script",
-     "purpose": "Check recent public heritage spending, coverage, and country differences.",
-     "code": "import pandas as pd\nx=pd.read_parquet('data/sdg11_national.parquet')\nx=x[(x.indicator_id=='HEXPCSTPPPCAP.HER.PU') & (x.year>=2020) & x.value.notna() & (x.magnitude.fillna('')!='NA')].sort_values('year').drop_duplicates('COUNTRY_ID',keep='last')\nprint(len(x),x.year.value_counts().sort_index().to_dict())\nprint(x.sort_values('value',ascending=False)[['country','year','value']].to_string(index=False))\nprint('median',x.value.median(),'under1',sum(x.value<1),'estimates',x.qualifier.notna().sum())",
-     "status": "completed",
-     "createdAt": 1792309708804,
-     "output": "74 {2020: 7, 2021: 5, 2022: 8, 2023: 25, 2024: 29}\n                                             country  year     value\n                                             Andorra  2023 578.17987\n                                             Belgium  2023 368.80479\n                                               Malta  2023 350.48304\n                    Bolivia (Plurinational State of)  2023 296.95517\n                                             Finland  2023 265.14328\n                                             Croatia  2023 245.28271\n                                         Switzerland  2022 240.28057\n                                          Luxembourg  2024 230.89077\n                                              Canada  2024 212.26366\n                                             Denmark  2023 134.18625\nUnited Kingdom of Great Britain and Northern Ireland  2020 131.68022\n                                              France  2023 117.36670\n                                             Austria  2023 114.94677\n                                             Ireland  2024 109.37606\n                                  Russian Federation  2024 105.43788\n                                             Hungary  2023  95.77040\n                                             Czechia  2023  93.42295\n                                              Sweden  2024  89.64795\n                                              Poland  2024  78.90847\n                                              Monaco  2024  72.38562\n                                            Slovakia  2024  72.30204\n                                              Cyprus  2021  64.19111\n                              Bosnia and Herzegovina  2023  61.37624\n                                               Spain  2023  60.76154\n                                             Belarus  2023  57.31564\n                                           Australia  2024  56.90504\n                                             Ecuador  2024  53.26329\n                                           Lithuania  2024  41.46906\n                                            Portugal  2023  41.36112\n                                   Republic of Korea  2020  39.67997\n                                              Israel  2024  34.10461\n                                             Estonia  2021  31.21922\n                                              Serbia  2023  30.98650\n                                             Albania  2021  26.29947\n                                               Qatar  2024  23.36217\n                                          Azerbaijan  2024  22.03876\n                                              Norway  2024  21.60196\n                                             Armenia  2024  20.92426\n                                              Brazil  2024  20.48690\n                                             Georgia  2022  16.61530\n                                         Saint Lucia  2020  15.91033\n                                  Dominican Republic  2024  14.52464\n                                            Colombia  2024  14.10840\n                                           Mauritius  2024  13.75007\n                                               Chile  2024  12.96295\n                                                Peru  2024  12.89864\n                                          Costa Rica  2024  12.17157\n                                              Greece  2020  10.87113\n                                              Mexico  2024  10.05728\n                                           Sri Lanka  2020   8.45478\n                                               Japan  2024   6.99939\n                                               Kenya  2024   4.17889\n                                             Bahrain  2023   3.69131\n                                       Côte d'Ivoire  2023   3.50170\n                                              Panama  2022   3.49260\n                                 Republic of Moldova  2023   2.82197\n                                             Namibia  2023   2.57634\n                                        Burkina Faso  2023   2.20959\n                                         Philippines  2023   1.93361\n                                            Botswana  2023   1.90218\n                                            Cameroon  2024   1.45238\n                                             Türkiye  2024   0.78856\n                                           Nicaragua  2020   0.73405\n                                                Iraq  2024   0.56441\n                                          Uzbekistan  2022   0.16595\n                                          Bangladesh  2022   0.14176\n                                            Pakistan  2022   0.09815\n                                         El Salvador  2021   0.09048\n                                          Kazakhstan  2023   0.07309\n                                             Myanmar  2020   0.06610\n                                        Turkmenistan  2021   0.03737\n                                              Gambia  2022   0.02323\n                                Syrian Arab Republic  2023   0.00027\n                          Iran (Islamic Republic of)  2022   0.00022\nmedian 21.263109999999998 under1 13 estimates 1\n"
-    }
-   ],
+   "content": "Then the 15 that spend the most.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794707200000_prompt",
+   "actionId": "exploreDataFromNL_1794707200000",
+   "createdAt": 1794707201000,
+   "startedAt": 1794707200000,
    "progressSteps": [
     {
-     "id": "progress-exploreDataFromNL_1792309690825-1",
+     "id": "progress-exploreDataFromNL_1794707200000-1-1",
      "kind": "tool",
-     "label": "Reading: session/tables/sdg11_indicators.json, session/tables/sd…",
+     "label": "Querying: dem_national, sdg11_national",
      "status": "completed",
-     "tool": "read_file",
-     "toolCallId": "call_1bledvoF2Vo09j3nSzSFLCFx"
-    },
-    {
-     "id": "progress-exploreDataFromNL_1792309690825-2",
-     "kind": "tool",
-     "label": "running code... Check recent public heritage spending, coverage, and country differences.",
-     "status": "completed",
-     "tool": "execute_python_script",
-     "toolCallId": "call_954lpdcTFKQPpFdZqAU2gMW8",
-     "executionId": "code_exploreDataFromNL_1792309690825_1"
-    },
-    {
-     "id": "progress-exploreDataFromNL_1792309690825-3",
-     "kind": "chart",
-     "label": "creating chart...",
-     "status": "completed"
+     "tool": "create_data"
     }
    ]
   },
   {
    "kind": "text",
-   "id": "textTurn_exploreDataFromNL_1792309690825_1792309726512",
-   "displayId": "textTurn_exploreDataFromNL_1792309690825_closing",
+   "id": "textTurn_exploreDataFromNL_1794707200000_step_2",
+   "displayId": "textTurn_exploreDataFromNL_1794707200000_step_2",
    "textKind": "explain",
-   "content": "**The typical reporting country's government spends about $21 per person a year on its heritage**, cultural and natural, using each country's latest figure from 2020–2024.\n\nSpending ranges widely: Belgium reported **$369 per person** (2023), Canada **$212** (2024) and Kenya **$4.18** (2024). Thirteen countries spent less than $1.\n\nOnly 74 countries report, so this is not a world average. Dollars are adjusted for price differences between countries. Source: UIS, February 2026 release.",
-   "parentNodeId": "d_output",
-   "actionId": "exploreDataFromNL_1792309690825",
-   "createdAt": 1792309726512,
-   "startedAt": 1792309690825,
+   "content": "Looking at what governments spend per person on heritage.",
+   "parentNodeId": "most_public_heritage_spending",
+   "actionId": "exploreDataFromNL_1794707200000",
+   "createdAt": 1794707203000,
+   "startedAt": 1794707200000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794707200000-2-1",
+     "kind": "tool",
+     "label": "Querying: dem_national, sdg11_national",
+     "status": "completed",
+     "tool": "create_data"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794707200000-2-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "Map created: What governments spend on heritage"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794707200000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794707200000_closing",
+   "textKind": "explain",
+   "content": "**Governments spend very different amounts on heritage: about $21 a person in the typical country of the 72 that report.** The highest:\n\n- **Belgium:** $369 a person (2023)\n- **Malta:** $350 a person (2023)\n- **Bolivia:** $297 a person (2023)\n- **Finland:** $265 a person (2023)\n- **Croatia:** $245 a person (2023)\n\nAt the other end, 13 countries spend under $1 a person. Figures are public spending on cultural and natural heritage in constant 2017 purchasing-power dollars, each country's latest from 2020–2024. Source: UIS, February 2026 release; indicator HEXPCSTPPPCAP.HER.PU.",
+   "parentNodeId": "file-public_heritage_spending.map.json",
+   "actionId": "exploreDataFromNL_1794707200000",
+   "createdAt": 1794707206000,
+   "startedAt": 1794707200000,
    "answered": true
   }
  ],
  "tableSemantics": [
   {
-   "tableId": "d_output",
+   "tableId": "public_heritage_spending",
    "fields": {
-    "indicator_id": {
-     "semanticType": "ID"
-    },
-    "COUNTRY_ID": {
-     "semanticType": "Country"
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
     },
     "country": {
      "semanticType": "Country",
      "displayName": "Country",
      "authored": {
+      "semanticType": "Country",
       "displayName": "Country"
      }
     },
-    "year": {
+    "latest_year": {
      "semanticType": "Year",
-     "displayName": "Reporting year",
+     "displayName": "Latest year with data",
      "authored": {
-      "displayName": "Reporting year"
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
      }
     },
-    "value": {
-     "semanticType": "Amount",
-     "unit": "2017 PPP$ per person",
-     "displayName": "Government spending per person",
+    "per_person": {
+     "semanticType": "Price",
+     "unit": "PPP$ per person",
+     "displayName": "Public heritage spending per person",
      "authored": {
-      "semanticType": "Amount",
-      "unit": "2017 PPP$ per person",
-      "displayName": "Government spending per person"
+      "semanticType": "Price",
+      "unit": "PPP$ per person",
+      "displayName": "Public heritage spending per person"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "most_public_heritage_spending",
+   "fields": {
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
      }
     },
-    "magnitude": {
-     "semanticType": "Unknown"
-    },
-    "qualifier": {
-     "semanticType": "Status",
-     "displayName": "Estimate flag",
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
      "authored": {
-      "displayName": "Estimate flag"
+      "semanticType": "Country",
+      "displayName": "Country"
      }
     },
-    "map_id": {
-     "semanticType": "ID"
+    "latest_year": {
+     "semanticType": "Year",
+     "displayName": "Latest year with data",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+     }
+    },
+    "per_person": {
+     "semanticType": "Price",
+     "unit": "PPP$ per person",
+     "displayName": "Public heritage spending per person",
+     "authored": {
+      "semanticType": "Price",
+      "unit": "PPP$ per person",
+      "displayName": "Public heritage spending per person"
+     }
     }
    }
   }
  ],
- "activeWorkspace": {
-  "id": "culture-c20",
-  "displayName": "From pennies to hundreds: what governments spend on heritage"
- },
+ "fileNodes": [
+  {
+   "kind": "file",
+   "id": "file-public_heritage_spending.map.json",
+   "path": "public_heritage_spending.map.json",
+   "displayName": "What governments spend on heritage",
+   "contentHash": "25a662d29a9c4f25f39462724757029c1c33b955f62360e890cba20c6d99dffb",
+   "parentNodeId": "public_heritage_spending",
+   "createdAt": 1794707205000
+  }
+ ],
  "focusedId": {
-  "type": "chart",
-  "chartId": "chart-9d6b471bb39a"
- }
+  "type": "file",
+  "fileName": "public_heritage_spending.map.json"
+ },
+ "canvasTabs": [
+  {
+   "key": "file:public_heritage_spending.map.json",
+   "target": {
+    "type": "file",
+    "fileName": "public_heritage_spending.map.json"
+   },
+   "addedAt": 1794700000000,
+   "viewedAt": 1794700000000
+  }
+ ],
+ "canvasTabActive": "file:public_heritage_spending.map.json"
 }

@@ -31,6 +31,11 @@ vi.mock('../../../../src/views/AgentPausePanel', () => ({
         <div>{prompt}<button disabled={retryDisabled} onClick={onRetry}>Retry</button></div>,
 }));
 
+vi.mock('../../../../src/views/AgentViewHost', () => ({
+    default: ({ onDone }: { onDone: (results: any[]) => void }) =>
+        <button onClick={() => onDone([{ path: 'files/orgs.map.json', image: 'data:image/png;base64,AA==' }])}>Drawn</button>,
+}));
+
 describe('Analyst landing attachment handoff', () => {
     beforeEach(() => {
         vi.mocked(apiRequest).mockReset();
@@ -237,11 +242,33 @@ describe('Analyst landing attachment handoff', () => {
         expect(buildThreads(dfSelectors.getThreadGraph(store.getState())).some(thread => thread.branchFromId)).toBe(false);
     });
 
+    it('records looking at an item as a tool step on the run, not as something the agent said', async () => {
+        const store = configureStore({ reducer: dataFormulatorReducer });
+        render(<Provider store={store}><SimpleChartRecBox /></Provider>);
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'interact', view_request: { id: 'look', targets: [{ path: 'files/orgs.map.json', kind: 'map', name: 'Where papers are written' }] },
+                trajectory: [{ role: 'user', content: 'check' }], completed_step_count: 1 } as any;
+        });
+        const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+        fireEvent.change(input, { target: { value: 'check the map' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        await waitFor(() => expect(turnWith(store, turn => turn.toolCalls?.some((call: any) => call.tool === 'view'))).toBeDefined());
+        const step = () => turnWith(store, turn => turn.toolCalls?.some((call: any) => call.tool === 'view'));
+        expect(step().content).toBe('');
+        expect(step().progressSteps).toEqual([expect.objectContaining({ kind: 'tool', tool: 'view', status: 'running',
+            label: 'Looking at Where papers are written' })]);
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Drawn' }));
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(2));
+        expect(step().progressSteps[0].status).toBe('completed');
+        expect(step().toolCalls[0].status).toBe('completed');
+    });
+
     it('offers an example session\'s follow-ups and asks the one clicked', async () => {
         const { store } = mountTask();
         act(() => { store.dispatch(dfActions.setExampleFollowUps({ title: 'Movies', questions: ['Which genres earn the most?', 'Who directs the hits?'] })); });
         const callout = screen.getByRole('note', { name: 'Follow-up suggestions' });
-        expect(callout).toHaveTextContent('Try these examples');
+        expect(callout).toHaveTextContent('Follow-ups:');
         fireEvent.click(screen.getByRole('button', { name: 'Which genres earn the most?' }));
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
         expect(requestBody().user_question).toBe('Which genres earn the most?');
@@ -1427,6 +1454,23 @@ describe('Analyst landing attachment handoff', () => {
             expect(dfSelectors.selectCanvasTarget(store.getState())?.type).not.toBe('text');
             expect(screen.getByTestId('explanation-panel').textContent).toBe(content);
         }
+    });
+
+    it('names a report by the id the server gives and keeps the agent\'s patch to it when the run ends', async () => {
+        const written = '# Findings\n\n![Trend](session://charts/chart-gone)';
+        const patched = '# Findings\n\n![Trend](session://charts/chart-1)';
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'action', action: 'write_report', report_id: 'report-abc' };
+            yield { type: 'text_delta', channel: 'report', content: written };
+            yield { type: 'tool_result', tool: 'edit_file', status: 'ok', stdout: JSON.stringify({
+                path: 'session://reports/report-abc',
+                session_update: { kind: 'report', id: 'report-abc', content: patched, base: written },
+            }) } as any;
+            yield { type: 'completion', status: 'success', content: { summary: 'Fixed the chart reference.' } };
+        });
+        const { store } = mountTask({ text: 'Write a report', images: [], attachments: [] });
+        await waitFor(() => expect(store.getState().generatedReports[0]?.status).toBe('completed'));
+        expect(store.getState().generatedReports[0]).toMatchObject({ id: 'report-abc', content: patched });
     });
 
     it.each(['clarify', 'terminal'])('settles a written report when the run then pauses (%s)', async pause => {

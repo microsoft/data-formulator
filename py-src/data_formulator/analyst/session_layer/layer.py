@@ -16,6 +16,8 @@ import re
 from typing import Any
 from urllib.parse import quote, unquote
 
+from data_formulator.analyst import names, references
+
 from .graph import ThreadGraph, Thread, build_threads
 from .state import normalize_state
 
@@ -133,9 +135,10 @@ def _drawn_size_note(drawn: Any) -> str:
             f"of the same shape: about {round(500 / aspect)} px tall in a 500 px card, or a full row if it is tall. ")
 
 
-def _chart_note(table: str, columns: list[str], drawn: Any = None) -> str:
-    data = (f"Its data: session/tables/{table}.json (transformation code and sample rows); read it with this chart "
-            "in one read_file call, or compute on it with Python. ") if table else ""
+def _chart_note(table: str, columns: list[str], drawn: Any = None, data_file: str | None = None) -> str:
+    in_code = f"in code, pd.read_parquet('{data_file}')" if data_file else "in code, read its data_file"
+    data = (f"Its data: table {table}. session://tables/{table} shows its transformation code and rows; read it "
+            f"with this chart in one read_file call; {in_code}. ") if table else ""
     return (data + _drawn_size_note(drawn) + f"Edit chart_type, encodings (fields are columns of {table or 'its table'}: "
             f"{', '.join(columns)}), config, title, subtitle, or theme; the table cannot change. Invalid edits are "
             "rejected with the reasons.")
@@ -206,9 +209,10 @@ class SessionLayer:
         return chart.get("title") or f"{chart.get('chartType')} of {(table or {}).get('displayId') or chart.get('tableRef')}"
 
     def name_of(self, path: str) -> str | None:
-        """The name the user sees for a session path, without building its view."""
-        folder, _, leaf = path[len("session/"):].partition("/") if path.startswith("session/") else ("", "", "")
-        stem = leaf.rsplit(".", 1)[0]
+        """The name the user sees for a session object, without building its view."""
+        path = names.canonical(path)
+        folder = names.folder_of(path)
+        stem = names.leaf_of(path, folder) if folder and folder != "index" else None
         if folder == "tables":
             table = next((table for table in self.tables if self.table_name(table) == stem), None)
             if table is not None:
@@ -226,7 +230,7 @@ class SessionLayer:
             return reference.get("displayName") if reference else None
         if folder == "threads":
             return f"Thread {stem}"
-        if path == "session/index.md":
+        if path == names.INDEX:
             return "Session index"
         return None
 
@@ -281,20 +285,24 @@ class SessionLayer:
 
     def report_content(self, report: dict[str, Any]) -> str:
         """A report's text as of now: an edit made earlier in this run counts."""
-        edited = self.overlay.get(f"session/reports/{report['id']}.md")
+        edited = self.overlay.get(f"session://reports/{report['id']}")
         return str(edited["content"]) if edited else (report.get("content") or "")
 
     def reports_showing(self, chart_id: str) -> list[str]:
-        return [self.report_name(report) for report in self.reports if f"chart://{chart_id}" in self.report_content(report)]
+        return [self.report_name(report) for report in self.reports
+                if references.refers_to(self.report_content(report), names.chart(chart_id))]
 
     def charts_of(self, table: dict[str, Any]) -> list[dict[str, Any]]:
         return [chart for chart in self.charts if chart.get("tableRef") == table["id"]]
 
     def reports_using(self, table: dict[str, Any]) -> list[str]:
-        names = [self.report_name(report) for report in self.reports if report.get("triggerTableId") == table["id"]]
+        """Reports made from a table, showing one of its charts, or embedding or linking it by name."""
+        name = names.table(self.table_name(table))
+        names_ = [self.report_name(report) for report in self.reports if report.get("triggerTableId") == table["id"]
+                  or references.refers_to(self.report_content(report), name)]
         for chart in self.charts_of(table):
-            names.extend(name for name in self.reports_showing(chart["id"]) if name not in names)
-        return names
+            names_.extend(report for report in self.reports_showing(chart["id"]) if report not in names_)
+        return names_
 
     def apps_reading(self, name: str) -> list[str]:
         if self._apps is None:
@@ -362,7 +370,8 @@ class SessionLayer:
             edited = bool(agent_chart) and bool(
                 agent_chart.get("titleKey") and agent_chart["titleKey"] != encoding_fingerprint(agent_chart))
             report = next((report for report in all_reports if report.get("triggerTableId") == table["id"]
-                           or any(f"chart://{id}" in self.report_content(report) for id in chart_ids)), None)
+                           or any(references.refers_to(self.report_content(report), names.chart(id))
+                                  for id in chart_ids)), None)
             name = self.table_name(table)
             blocked = (f"the table {derived_from.get('displayId') or derived_from['id']} was computed from it" if derived_from
                        else "another chart was made from it" if later
@@ -445,18 +454,21 @@ class SessionLayer:
         return None
 
     def paths(self) -> list[str]:
-        paths = ["session/index.md"]
-        paths += [f"session/charts/{chart['id']}.json" for chart in self.charts if self.chart_spec(chart) is not None]
-        paths += [path for path in self.overlay if path.startswith("session/charts/") and path not in paths]
-        paths += [f"session/reports/{report['id']}.md" for report in self.reports]
-        paths += [f"session/tables/{self.table_name(table)}.json" for table in self.tables]
-        paths += [f"session/tables/{name}.json" for name in self._unlisted_tables()]
-        paths += [f"session/references/{reference['id']}.json" for reference in self.references]
-        paths += [f"session/threads/{number}.md" for number in range(1, len(self.threads) + 1)]
+        paths = [names.INDEX]
+        paths += [f"session://charts/{chart['id']}" for chart in self.charts if self.chart_spec(chart) is not None]
+        paths += [path for path in self.overlay if path.startswith("session://charts/") and path not in paths]
+        paths += [f"session://reports/{report['id']}" for report in self.reports]
+        paths += [path for path in self.overlay if path.startswith("session://reports/") and path not in paths]
+        paths += [f"session://tables/{self.table_name(table)}" for table in self.tables]
+        paths += [f"session://tables/{name}" for name in self._unlisted_tables()]
+        paths += [f"session://references/{reference['id']}" for reference in self.references]
+        paths += [f"session://threads/{number}" for number in range(1, len(self.threads) + 1)]
         return paths
 
     def view(self, path: str) -> dict[str, Any] | None:
-        """The view at ``path`` ({content, editable?, name?, note?, columns?}), or None."""
+        """The view of a session object ({content, editable?, name?, note?, columns?}), or None; an older name
+        (``session/charts/<id>.json``) finds the same view."""
+        path = names.canonical(path)
         if path in self.overlay:
             return self.overlay[path]
         if self._cache.get(path) is None:
@@ -468,11 +480,13 @@ class SessionLayer:
         return self._cache[path]
 
     def _build(self, path: str) -> dict[str, Any] | None:
-        if path == "session/index.md":
+        if path == names.INDEX:
             return {"content": self.index(), "name": "Session index"}
-        folder, _, leaf = path[len("session/"):].partition("/")
-        stem = leaf.rsplit(".", 1)[0]
-        if folder == "charts" and leaf.endswith(".json"):
+        folder = names.folder_of(path)
+        stem = names.leaf_of(path, folder) if folder and folder != "index" else None
+        if stem is None:
+            return None
+        if folder == "charts":
             chart = next((chart for chart in self.charts if chart["id"] == stem), None)
             spec = self.chart_spec(chart) if chart else None
             if spec is None:
@@ -480,12 +494,12 @@ class SessionLayer:
             table = self.table_by_id[chart["tableRef"]]
             columns = [column["name"] for column in self.table_columns(table)]
             return {"content": _json(spec), "editable": True, "name": self.chart_name(chart), "columns": columns,
-                    "note": _chart_note(spec["table"], columns, chart.get("drawnSize"))}
-        if folder == "reports" and leaf.endswith(".md"):
+                    "note": _chart_note(spec["table"], columns, chart.get("drawnSize"), self.data_file(spec["table"]))}
+        if folder == "reports":
             report = next((report for report in self.reports if report["id"] == stem), None)
             return None if report is None else {"content": report.get("content") or "", "editable": True,
                                                 "name": self.report_name(report)}
-        if folder == "tables" and leaf.endswith(".json"):
+        if folder == "tables":
             table = next((table for table in self.tables if self.table_name(table) == stem), None)
             if table is None:
                 return self._unlisted_table_view(stem)
@@ -493,11 +507,11 @@ class SessionLayer:
             if self.table_data_missing(stem):
                 view["note"] = MISSING_TABLE_DATA
             return view
-        if folder == "references" and leaf.endswith(".json"):
+        if folder == "references":
             reference = next((reference for reference in self.references if reference["id"] == stem), None)
             return None if reference is None else {"content": _json(self._reference_view(reference)),
                                                    "name": reference.get("displayName") or stem}
-        if folder == "threads" and leaf.endswith(".md") and stem.isdigit() and 1 <= int(stem) <= len(self.threads):
+        if folder == "threads" and stem.isdigit() and 1 <= int(stem) <= len(self.threads):
             return {"content": self._thread_view(int(stem)), "name": f"Thread {stem}"}
         return None
 
@@ -524,15 +538,25 @@ class SessionLayer:
             self._description_cache = (tables, columns, provenance, extras, metas)
         return self._description_cache
 
+    def data_file(self, name: str) -> str | None:
+        """A table's data file, relative to the workspace root (where Python runs), or None."""
+        if self.workspace is None or not name:
+            return None
+        try:
+            return self.workspace.get_relative_data_file_path(name)
+        except Exception:
+            return None
+
     def _data_profile(self, name: str, columns: list[dict[str, Any]]) -> dict[str, Any]:
         """What the workspace knows about a table's data: file, descriptions, values, rows."""
         if self.workspace is None:
             return {}
         profile: dict[str, Any] = {}
-        try:
-            profile["file"] = self.workspace.get_relative_data_file_path(name)
-        except Exception:
-            pass
+        # Relative to the workspace root, where Python runs (not to session/tables/); code copies it as written.
+        data_file = self.data_file(name)
+        if data_file:
+            profile["data_file"] = data_file
+            profile["in_code"] = f"pd.read_parquet('{data_file}')"
         tables, described, provenance, extras, metas = self._descriptions()
         if tables.get(name):
             profile["description"] = tables[name]
@@ -587,12 +611,12 @@ class SessionLayer:
             **({"from_reference": derive["trigger"]["externalReferenceId"]}
                if (derive.get("trigger") or {}).get("externalReferenceId") else {}),
             **({"input_files": files} if (files := self._input_names(table, "file")) else {}),
-            "charts": [f"session/charts/{chart['id']}.json" if self.chart_spec(chart) else chart["id"]
+            "charts": [f"session://charts/{chart['id']}" if self.chart_spec(chart) else chart["id"]
                        for chart in self.charts_of(table)],
             **({"computed_into": [self.table_name(other) for other in computed]} if (computed := self.computed_into(table)) else {}),
             **({"reports_using": reports} if (reports := self.reports_using(table)) else {}),
             **({"apps_reading": apps} if (apps := self.apps_reading(name)) else {}),
-            **({"thread": f"session/threads/{number}.md"} if (number := self.thread_number(table["id"])) else {}),
+            **({"thread": f"session://threads/{number}"} if (number := self.thread_number(table["id"])) else {}),
         }
 
     def _unlisted_tables(self) -> list[str]:
@@ -654,18 +678,18 @@ class SessionLayer:
             table = self.table_by_id.get(node_id)
             if not table:
                 return []
-            charts = [f"session/charts/{chart['id']}.json" for chart in self.charts_of(table) if self.chart_spec(chart)]
-            return [f"- **Table** session/tables/{self.table_name(table)}.json \"{table.get('displayId')}\""
+            charts = [f"session://charts/{chart['id']}" for chart in self.charts_of(table) if self.chart_spec(chart)]
+            return [f"- **Table** session://tables/{self.table_name(table)} \"{table.get('displayId')}\""
                     + (f" — charts {', '.join(charts)}" if charts else "")]
         if kind == "loaded-table":
             node = self.graph.nodes[node_id]
             table = self.table_by_id.get(node.table_id or "")
             if table:
-                return [f"- **Loaded** session/tables/{self.table_name(table)}.json"]
-            return [f"- **Added reference** session/references/{node.table_id}.json"]
+                return [f"- **Loaded** session://tables/{self.table_name(table)}"]
+            return [f"- **Added reference** session://references/{node.table_id}"]
         if kind == "report":
             report = next((report for report in self.reports if report["id"] == node_id), None)
-            return [f"- **Report** session/reports/{node_id}.md \"{self.report_name(report)}\""] if report else []
+            return [f"- **Report** session://reports/{node_id} \"{self.report_name(report)}\""] if report else []
         if kind == "file":
             node = next((node for node in state["fileNodes"] if node.get("id") == node_id), None)
             return [f"- **File** files/{node.get('path')}" + (f" \"{node['displayName']}\"" if node.get("displayName") else "")] \
@@ -717,7 +741,7 @@ class SessionLayer:
             plans = [plan for plan in operation.get("plans") or [] if isinstance(plan, dict)]
             selected = next((plan.get("label") for plan in plans if plan.get("id") == operation.get("selectedPlanId")), None)
             results = [self._output_link(id) for id in operation.get("resultTableIds") or []]
-            results += [f"session/references/{ref.get('id')}.json" for ref in operation.get("resultReferences") or [] if isinstance(ref, dict)]
+            results += [f"session://references/{ref.get('id')}" for ref in operation.get("resultReferences") or [] if isinstance(ref, dict)]
             lines.append(f"- **Data load** ({operation.get('status', '')}): {_clip(str(operation.get('reason', '')), 400)}"
                          + (f"; options: {', '.join(str(plan.get('label')) for plan in plans)}" if plans else "")
                          + (f"; chosen: {selected}" if selected else "")
@@ -734,11 +758,11 @@ class SessionLayer:
 
     def _output_link(self, id: str) -> str:
         if id in self.table_by_id:
-            return f"session/tables/{self.table_name(self.table_by_id[id])}.json"
+            return f"session://tables/{self.table_name(self.table_by_id[id])}"
         if any(report["id"] == id for report in self.reports):
-            return f"session/reports/{id}.md"
+            return f"session://reports/{id}"
         if any(chart["id"] == id for chart in self.charts):
-            return f"session/charts/{id}.json"
+            return f"session://charts/{id}"
         return id
 
     def _thread_view(self, number: int) -> str:
@@ -779,17 +803,18 @@ class SessionLayer:
     def tables_behind(self, path: str | None) -> list[str]:
         """The tables a chart or derived table on the canvas shows and was computed from, nearest first."""
         table = None
-        if path and path.startswith("session/charts/"):
-            chart = next((chart for chart in self.charts if f"session/charts/{chart['id']}.json" == path), None)
+        path = names.canonical(path) if path else path
+        if path and path.startswith("session://charts/"):
+            chart = next((chart for chart in self.charts if f"session://charts/{chart['id']}" == path), None)
             table = self.table_by_id.get((chart or {}).get("tableRef"))
             shown = [table] if table else []
-        elif path and path.startswith("session/tables/"):
-            table = next((table for table in self.tables if f"session/tables/{self.table_name(table)}.json" == path), None)
+        elif path and path.startswith("session://tables/"):
+            table = next((table for table in self.tables if f"session://tables/{self.table_name(table)}" == path), None)
             shown = []
         if table is None:
             return []
         sources = [self.table_by_id[id] for id in (table.get("derive") or {}).get("source") or [] if id in self.table_by_id]
-        return list(dict.fromkeys(f"session/tables/{self.table_name(item)}.json" for item in [*shown, *sources]))
+        return list(dict.fromkeys(f"session://tables/{self.table_name(item)}" for item in [*shown, *sources]))
 
     def focus_line(self) -> str:
         """Where the user is: what is on the canvas, the thread they work in, the reference it is about."""
@@ -797,10 +822,10 @@ class SessionLayer:
         if not path and not thread:
             return ""
         reference = self.reference_of(self.focus_node())
-        reference_path = f"session/references/{reference}.json" if reference else None
+        reference_path = f"session://references/{reference}" if reference else None
         return "Focus: " + ", ".join(filter(None, [
             f"`{path}` is on the canvas{self._file_status(path)}" if path else None,
-            f"the user is working in `session/threads/{thread}.md`" if thread else None,
+            f"the user is working in `session://threads/{thread}`" if thread else None,
             f"about `{reference_path}`" if reference_path and reference_path != path else None]))
 
     def focus(self) -> tuple[str | None, int | None]:
@@ -812,29 +837,29 @@ class SessionLayer:
         if kind == "chart":
             chart = next((chart for chart in self.charts if chart["id"] == focus.get("chartId")), None)
             if chart:
-                path = f"session/charts/{chart['id']}.json" if self.chart_spec(chart) else None
+                path = f"session://charts/{chart['id']}" if self.chart_spec(chart) else None
                 node = chart.get("tableRef")
                 if path is None and node in self.table_by_id:
-                    path = f"session/tables/{self.table_name(self.table_by_id[node])}.json"
+                    path = f"session://tables/{self.table_name(self.table_by_id[node])}"
         elif kind in ("table", "conversation"):
             node = focus.get("tableId")
             if node in self.table_by_id:
-                path = f"session/tables/{self.table_name(self.table_by_id[node])}.json"
+                path = f"session://tables/{self.table_name(self.table_by_id[node])}"
         elif kind == "report":
             node = focus.get("reportId")
-            path = f"session/reports/{node}.md" if any(report["id"] == node for report in self.reports) else None
+            path = f"session://reports/{node}" if any(report["id"] == node for report in self.reports) else None
         elif kind == "file":
             name = str(focus.get("fileName") or "")
             path = name if name.startswith("scratch/") else f"files/{name}"
             node = self.focus_node()
         elif kind == "external-table":
-            path = f"session/references/{focus.get('referenceId')}.json"
+            path = f"session://references/{focus.get('referenceId')}"
         elif kind == "reference":
             node = focus.get("referenceId")
             graph_node = self.graph.nodes.get(node or "")
             if graph_node and graph_node.kind == "loaded-table":
                 table = self.table_by_id.get(graph_node.table_id or "")
-                path = f"session/tables/{self.table_name(table)}.json" if table else f"session/references/{graph_node.table_id}.json"
+                path = f"session://tables/{self.table_name(table)}" if table else f"session://references/{graph_node.table_id}"
             elif graph_node and graph_node.kind == "file":
                 file = next((item for item in self.state["fileNodes"] if item.get("id") == node), None)
                 path = f"files/{file.get('path')}" if file else None
@@ -879,12 +904,12 @@ class SessionLayer:
             prompts = [turns[id] for id in item.node_ids if id in turns]
             first = _clip(" ".join(str(prompts[0]["prompt"]).split()), 80) if prompts else ""
             made = sum(1 for id in item.node_ids if self.graph.is_item(id)) - (1 if root else 0)
-            threads.append((f"session/threads/{number}.md",
+            threads.append((f"session://threads/{number}",
                             (f" from {self.table_name(root)}" if root else "") + (f" — \"{first}\"" if first else "")
                             + f" · {len(prompts)} request{'s' if len(prompts) != 1 else ''}, {max(made, 0)} item{'s' if made != 1 else ''}"
                             + (" [working here]" if number == thread else ""),
                             [self._node_state(id) for id in item.node_ids]))
-        section("Threads", threads, "session/threads")
+        section("Threads", threads, "session://threads")
 
         tables = []
         for table in self.tables:
@@ -907,10 +932,10 @@ class SessionLayer:
                 flags.append("used by a report")
             if self.apps_reading(name):
                 flags.append("read by an app")
-            mark = " [on canvas]" if path == f"session/tables/{name}.json" else ""
-            tables.append((f"session/tables/{name}.json", f" \"{table.get('displayId') or name}\" — {' · '.join(flags)}{mark}",
+            mark = " [on canvas]" if path == f"session://tables/{name}" else ""
+            tables.append((f"session://tables/{name}", f" \"{table.get('displayId') or name}\" — {' · '.join(flags)}{mark}",
                            [table, self._data_hash(name)]))
-        section("Tables", tables, "session/tables")
+        section("Tables", tables, "session://tables")
 
         charts = []
         for chart in self.charts:
@@ -923,24 +948,24 @@ class SessionLayer:
             blocked = self._blocked().get(chart["tableRef"])
             if blocked:
                 flags.append(f"cannot replace: {blocked}")
-            chart_path = f"session/charts/{chart['id']}.json"
+            chart_path = f"session://charts/{chart['id']}"
             mark = " [on canvas]" if path == chart_path else ""
             charts.append((chart_path, f" \"{self.chart_name(chart)}\" — {', '.join(flags)}{mark}",
                            [chart, (self.overlay.get(chart_path) or {}).get("content")]))
         charts += [(chart_path, f" \"{view.get('name')}\" — made in this run", view.get("content"))
                    for chart_path, view in self.overlay.items() if view.get("made_in_run")]
-        section("Charts", charts, "session/charts")
+        section("Charts", charts, "session://charts")
 
-        section("Reports", [(f"session/reports/{report['id']}.md", f" \"{self.report_name(report)}\""
-                             + (" [on canvas]" if path == f"session/reports/{report['id']}.md" else ""),
-                             [report, (self.overlay.get(f"session/reports/{report['id']}.md") or {}).get("content")])
-                            for report in self.reports], "session/reports")
+        section("Reports", [(f"session://reports/{report['id']}", f" \"{self.report_name(report)}\""
+                             + (" [on canvas]" if path == f"session://reports/{report['id']}" else ""),
+                             [report, (self.overlay.get(f"session://reports/{report['id']}") or {}).get("content")])
+                            for report in self.reports], "session://reports")
         section("Connected-source references", [
-            (f"session/references/{reference['id']}.json",
+            (f"session://references/{reference['id']}",
              f" \"{reference.get('displayName') or reference['id']}\" — "
              f"{reference.get('connectorName') or reference.get('connectorId')}: {reference.get('tableKey')}"
-             + (" [on canvas]" if path == f"session/references/{reference['id']}.json" else ""), reference)
-            for reference in self.references], "session/references")
+             + (" [on canvas]" if path == f"session://references/{reference['id']}" else ""), reference)
+            for reference in self.references], "session://references")
 
         try:
             from data_formulator.data_connector import list_available_connector_ids
@@ -950,7 +975,7 @@ class SessionLayer:
         if connected:
             # Sources the user connected, beyond this session: searchable for more data.
             lines.extend([f"## Connected data sources ({len(connected)})",
-                          "Catalogs under sources/ (search covers them; list_files sources/ to browse): " + ", ".join(connected[:12])
+                          "Catalogs under sources:// (search covers them; list_files sources:// to browse): " + ", ".join(connected[:12])
                           + (f" (+{len(connected) - 12} more)" if len(connected) > 12 else ""), ""])
         if self.workspace is not None:
             try:
@@ -1037,14 +1062,20 @@ class SessionLayer:
 
     def record_edit(self, path: str, content: str) -> None:
         """An accepted edit: later reads of ``path`` see it."""
+        path = names.canonical(path)
         base = self.view(path) or {}
         self.overlay[path] = {**base, "content": content}
 
     def add_run_chart(self, chart_id: str, spec: dict[str, Any], columns: list[str]) -> None:
         """A chart this run made, editable for the rest of the run."""
-        self.overlay[f"session/charts/{chart_id}.json"] = {
+        self.overlay[f"session://charts/{chart_id}"] = {
             "content": _json(spec), "editable": True, "name": spec.get("title") or chart_id,
-            "columns": columns, "made_in_run": True, "note": _chart_note(spec.get("table") or "", columns)}
+            "columns": columns, "made_in_run": True, "note": _chart_note(spec.get("table") or "", columns,
+                                                                       data_file=self.data_file(spec.get("table") or ""))}
+
+    def record_report(self, report_id: str, content: str, name: str) -> None:
+        """A report this run delivered, editable for the rest of the run by its name."""
+        self.overlay[names.report(report_id)] = {"content": content, "editable": True, "name": name, "made_in_run": True}
 
     def forget(self, *, tables: set[str] = frozenset(), charts: set[str] = frozenset(),
                references: set[str] = frozenset()) -> None:
@@ -1056,7 +1087,7 @@ class SessionLayer:
         state["charts"] = [chart for chart in state["charts"] if chart.get("id") not in charts]
         state["externalTableReferences"] = [ref for ref in state["externalTableReferences"] if ref.get("id") not in references]
         self.overlay = {path: view for path, view in self.overlay.items()
-                        if not (path.startswith("session/charts/") and path[len("session/charts/"):-len(".json")] in charts)}
+                        if names.leaf_of(path, "charts") not in charts}
         self._rebuild()
 
 

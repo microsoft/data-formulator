@@ -23,7 +23,9 @@ import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
 import TitleIcon from '@mui/icons-material/Title';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { iconVar, textVar } from '../app/layout';
-import { quotedPassage, safeHttpUrl, sessionFileName } from './reportBlocks';
+import { isReportLinkAllowed, quotedPassage, safeHttpUrl, sessionFileName } from './reportBlocks';
+import { parseItemName, type ItemTarget } from '../app/itemNames';
+import { ItemEmbed } from './ItemReferences';
 import { ReportBlockLabels, reportBlockExtensions } from './reportBlockNodes';
 import type { SourceLocation } from '../app/sourceLocation';
 import { ReportLook, reportContentSx } from './reportThemes';
@@ -46,6 +48,8 @@ export interface TiptapReportEditorProps {
     reportLook?: ReportLook;       // the reader's typeface and density
     // a link to a session file was clicked (an excerpt's source: near its page / quoted words)
     onOpenSource?: (fileName: string, location: SourceLocation) => void;
+    // a link to a session item (`session://charts/…`, `session://tables/…`, a report, a thread) was clicked
+    onOpenItem?: (target: ItemTarget) => void;
     onUpdate?: (html: string) => void;
 }
 
@@ -189,8 +193,11 @@ const REPORT_TOP_SPACE = '48px';
 const STREAMING_PARSE_MS = 200;
 
 /** Resizable image node view — drag bottom-right corner to resize */
-const ResizableImageView: FC<NodeViewProps> = ({ node, updateAttributes, selected }) => {
+const ResizableImageView: FC<NodeViewProps> = ({ editor, node, updateAttributes, selected }) => {
     const { src, alt, width, height } = node.attrs;
+    // An embed by name (a table's rows, an image file, a link to a report or thread) keeps its name as its src,
+    // so editing the report keeps the reference.
+    const item = parseItemName(src);
     const containerRef = useRef<HTMLDivElement>(null);
     const [isResizing, setIsResizing] = useStateReact(false);
 
@@ -221,6 +228,12 @@ const ResizableImageView: FC<NodeViewProps> = ({ node, updateAttributes, selecte
         document.addEventListener('mouseup', onMouseUp);
     }, [width, height, updateAttributes]);
 
+    if (item && item.kind !== 'web') {
+        return <NodeViewWrapper style={{ display: 'block', margin: '0.5em 0' }}>
+            <ItemEmbed src={src} target={item} alt={alt || undefined} canOpen={() => !editor.isEditable} />
+        </NodeViewWrapper>;
+    }
+
     return (
         <NodeViewWrapper style={{ display: 'block', margin: '0.5em 0' }}>
             <Box
@@ -231,7 +244,7 @@ const ResizableImageView: FC<NodeViewProps> = ({ node, updateAttributes, selecte
                     maxWidth: '100%',
                     border: selected ? '2px solid' : '2px solid transparent',
                     borderColor: selected ? 'primary.main' : 'transparent',
-                    borderRadius: '4px',
+                    borderRadius: 1,
                     '&:hover .resize-handle': { opacity: 1 },
                 }}
             >
@@ -272,11 +285,24 @@ const ResizableImageView: FC<NodeViewProps> = ({ node, updateAttributes, selecte
     );
 };
 
+/** An image src that is an item's name (`session://tables/…`, `files/x.png`), not a URL the browser can load. */
+const isItemSrc = (src: unknown): src is string => typeof src === 'string' && (parseItemName(src)?.kind ?? 'web') !== 'web';
+
 /** Custom Image extension with resizable node view */
-const ResizableImage = Image.extend({
+export const ResizableImage = Image.extend({
+    parseHTML() {
+        return [...(this.parent?.() ?? []), { tag: 'img[data-item-src]' }];
+    },
     addAttributes() {
         return {
             ...this.parent?.(),
+            // A name is kept as `data-item-src`, never `src`: serialized HTML (getHTML, the clipboard) is built in
+            // the live document, where an <img src="session://…"> would make the browser try to load it.
+            src: {
+                default: null,
+                parseHTML: el => el.getAttribute('src') ?? el.getAttribute('data-item-src'),
+                renderHTML: attributes => isItemSrc(attributes.src) ? { 'data-item-src': attributes.src } : { src: attributes.src },
+            },
             width: { default: null, parseHTML: el => el.getAttribute('width') },
             height: { default: null, parseHTML: el => el.getAttribute('height') },
             'data-chart-id': { 
@@ -308,7 +334,7 @@ const ToolbarButton: FC<{
                 onClick={onClick}
                 sx={{
                     p: '3px',
-                    borderRadius: '4px',
+                    borderRadius: 1,
                     color: isActive ? theme.palette.primary.main : 'text.secondary',
                     backgroundColor: isActive ? alpha(theme.palette.primary.main, 0.08) : 'transparent',
                     '&:hover': {
@@ -331,6 +357,7 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
     reportId,
     reportLook = DEFAULT_LOOK,
     onOpenSource,
+    onOpenItem,
     onUpdate,
 }) => {
     const theme = useTheme();
@@ -343,7 +370,7 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
             StarterKit.configure({
                 heading: { levels: [1, 2, 3] },
                 // Links open on a plain click only when reading (session files in a canvas tab).
-                link: { openOnClick: false },
+                link: { openOnClick: false, isAllowedUri: (url, context) => isReportLinkAllowed(url, context.defaultValidate) },
             }),
             ResizableImage.configure({
                 inline: false,
@@ -441,13 +468,18 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
             onOpenSource?.(fileName, { text: quotedPassage(entry.textContent || '') });
             return;
         }
+        const item = parseItemName(href);
+        if (item && item.kind !== 'web') {
+            onOpenItem?.(item);
+            return;
+        }
         const web = safeHttpUrl(href) ?? safeHttpUrl(entry.textContent?.match(/https?:\/\/\S+/)?.[0]?.replace(/[).,;]+$/, ''));
         if (web) {
             window.open(web, '_blank', 'noopener,noreferrer');
             return;
         }
         entry.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    }, [onOpenSource]);
+    }, [onOpenSource, onOpenItem]);
 
     // Hovering a citation previews its reference.
     const [citePreview, setCitePreview] = useStateReact<{ anchor: HTMLElement; text: string } | null>(null);
@@ -481,14 +513,20 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
         const fromExcerpt = link.getAttribute('data-open-file');
         if (editable && !fromExcerpt) return;
         const fileName = fromExcerpt || sessionFileName(link.getAttribute('href'));
-        if (!fileName) return;
+        if (!fileName) {
+            const item = parseItemName(link.getAttribute('href'));
+            if (!item || item.kind === 'web') return;
+            event.preventDefault();
+            onOpenItem?.(item);
+            return;
+        }
         event.preventDefault();
         const page = Number(link.getAttribute('data-page')?.match(/\d+/)?.[0]) || undefined;
         const text = fromExcerpt
             ? link.closest('figure')?.querySelector('.report-block-body')?.textContent ?? undefined
             : undefined;
         onOpenSource?.(fileName, { page, text });
-    }, [editable, onOpenSource, referenceOf, openReference]);
+    }, [editable, onOpenSource, onOpenItem, referenceOf, openReference]);
 
     const copyAsRichText = useCallback(async () => {
         if (!editor) return;
@@ -620,7 +658,7 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
             </Box>
             <Popper open={!!citePreview} anchorEl={citePreview?.anchor} placement="top" sx={{ zIndex: 1300, pointerEvents: 'none' }}
                 modifiers={[{ name: 'offset', options: { offset: [0, 6] } }]}>
-                <Paper elevation={3} sx={{ maxWidth: 380, px: 1.25, py: 0.9, borderRadius: '6px' }}>
+                <Paper elevation={3} sx={{ maxWidth: 380, px: 1.25, py: 0.9, borderRadius: 1.5 }}>
                     <Typography sx={{ fontSize: textVar.sm, lineHeight: 1.45, color: 'text.primary', overflowWrap: 'anywhere' }}>
                         {citePreview?.text}
                     </Typography>

@@ -1758,7 +1758,7 @@ const DataSourceSidebarPanel: React.FC<{
                             onClick={() => onOpenUploadDialog('add-connection')}
                             sx={{
                                 justifyContent: 'flex-start', textTransform: 'none', fontSize: textVar.xs, fontWeight: 500,
-                                py: 0.5, borderRadius: '6px', border: '1px dashed', borderColor: 'rgba(0,0,0,0.15)',
+                                py: 0.5, borderRadius: 1.5, border: '1px dashed', borderColor: 'rgba(0,0,0,0.15)',
                                 color: 'text.secondary', '& .MuiButton-startIcon': { mr: 0.5 },
                                 '&:hover': { borderColor: 'primary.main', color: 'primary.main', bgcolor: 'transparent' },
                             }}>

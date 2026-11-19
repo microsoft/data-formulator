@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "title": "How many years of school adults have",
+  "subtitle": "Average years of schooling of adults aged 25 and over; latest figure, 2020–2026",
+  "source": "UIS, November 2026 release; indicator MYS.1T8.AG25T99",
+  "template": "choropleth",
+  "data": {
+    "table": "adult_years_of_schooling"
+  },
+  "encoding": {
+    "region": "country_id",
+    "color": "years_of_schooling",
+    "tooltip": [
+      "country",
+      "years_of_schooling",
+      "latest_year"
+    ]
+  },
+  "properties": {
+    "geography": "world",
+    "keyType": "iso3"
+  },
+  "fields": {
+    "country_id": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+    },
+    "country": {
+      "semanticType": "Country",
+      "displayName": "Country"
+    },
+    "latest_year": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+    },
+    "years_of_schooling": {
+      "semanticType": "Number",
+      "unit": "years",
+      "displayName": "Average years of schooling, adults 25+"
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

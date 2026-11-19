@@ -1,128 +1,1138 @@
 {
- "__stateVersion": 14,
+ "__stateVersion": 15,
+ "activeWorkspace": {
+  "id": "science-s22",
+  "displayName": "South Korea: second in research spending, first in researchers"
+ },
  "derivedTables": [
   {
    "kind": "table",
-   "id": "d_result_3",
-   "displayId": "Leading countries by recent research spending share",
+   "id": "research_rankings",
+   "displayId": "Research spending and researchers by country",
    "names": [
-    "indicator_id",
-    "COUNTRY_ID",
+    "country_id",
     "country",
-    "year",
-    "value",
-    "magnitude",
-    "qualifier",
-    "rank"
+    "spending_year",
+    "rd_share",
+    "researchers_year",
+    "researchers_per_million",
+    "rd_share_rank",
+    "researchers_rank"
    ],
    "rows": [
     {
-     "indicator_id": "EXPGDP.TOT",
-     "COUNTRY_ID": "ISR",
+     "country_id": "ISR",
      "country": "Israel",
-     "year": 2023,
-     "value": 6.34589,
-     "magnitude": null,
-     "qualifier": null,
-     "rank": 1
+     "spending_year": 2023,
+     "rd_share": 6.35,
+     "researchers_year": null,
+     "researchers_per_million": null,
+     "rd_share_rank": 1,
+     "researchers_rank": null
     },
     {
-     "indicator_id": "EXPGDP.TOT",
-     "COUNTRY_ID": "KOR",
+     "country_id": "KOR",
      "country": "South Korea",
-     "year": 2023,
-     "value": 4.94352,
-     "magnitude": null,
-     "qualifier": null,
-     "rank": 2
+     "spending_year": 2023,
+     "rd_share": 4.94,
+     "researchers_year": 2023,
+     "researchers_per_million": 9472.0,
+     "rd_share_rank": 2,
+     "researchers_rank": 1
     },
     {
-     "indicator_id": "EXPGDP.TOT",
-     "COUNTRY_ID": "SWE",
+     "country_id": "SWE",
      "country": "Sweden",
-     "year": 2023,
-     "value": 3.59978,
-     "magnitude": null,
-     "qualifier": null,
-     "rank": 3
+     "spending_year": 2023,
+     "rd_share": 3.6,
+     "researchers_year": 2023,
+     "researchers_per_million": 8911.0,
+     "rd_share_rank": 3,
+     "researchers_rank": 2
     },
     {
-     "indicator_id": "EXPGDP.TOT",
-     "COUNTRY_ID": "USA",
+     "country_id": "USA",
      "country": "US",
-     "year": 2023,
-     "value": 3.44716,
-     "magnitude": null,
-     "qualifier": null,
-     "rank": 4
+     "spending_year": 2023,
+     "rd_share": 3.45,
+     "researchers_year": 2022,
+     "researchers_per_million": 4937.0,
+     "rd_share_rank": 4,
+     "researchers_rank": 23
     },
     {
-     "indicator_id": "EXPGDP.TOT",
-     "COUNTRY_ID": "JPN",
+     "country_id": "JPN",
      "country": "Japan",
-     "year": 2023,
-     "value": 3.44125,
-     "magnitude": null,
-     "qualifier": null,
-     "rank": 5
+     "spending_year": 2023,
+     "rd_share": 3.44,
+     "researchers_year": 2023,
+     "researchers_per_million": 5609.0,
+     "rd_share_rank": 5,
+     "researchers_rank": 18
     },
     {
-     "indicator_id": "EXPGDP.TOT",
-     "COUNTRY_ID": "BEL",
+     "country_id": "BEL",
      "country": "Belgium",
-     "year": 2023,
-     "value": 3.27235,
-     "magnitude": null,
-     "qualifier": null,
-     "rank": 6
+     "spending_year": 2023,
+     "rd_share": 3.27,
+     "researchers_year": 2023,
+     "researchers_per_million": 5990.0,
+     "rd_share_rank": 6,
+     "researchers_rank": 10
     },
     {
-     "indicator_id": "EXPGDP.TOT",
-     "COUNTRY_ID": "AUT",
+     "country_id": "AUT",
      "country": "Austria",
-     "year": 2023,
-     "value": 3.25517,
-     "magnitude": null,
-     "qualifier": null,
-     "rank": 7
+     "spending_year": 2023,
+     "rd_share": 3.26,
+     "researchers_year": 2023,
+     "researchers_per_million": 6634.0,
+     "rd_share_rank": 7,
+     "researchers_rank": 7
     },
     {
-     "indicator_id": "EXPGDP.TOT",
-     "COUNTRY_ID": "CHE",
+     "country_id": "CHE",
      "country": "Switzerland",
-     "year": 2023,
-     "value": 3.22178,
-     "magnitude": null,
-     "qualifier": null,
-     "rank": 8
+     "spending_year": 2023,
+     "rd_share": 3.22,
+     "researchers_year": 2023,
+     "researchers_per_million": 6108.0,
+     "rd_share_rank": 8,
+     "researchers_rank": 9
     },
     {
-     "indicator_id": "EXPGDP.TOT",
-     "COUNTRY_ID": "DEU",
+     "country_id": "DEU",
      "country": "Germany",
-     "year": 2023,
-     "value": 3.1539,
-     "magnitude": null,
-     "qualifier": null,
-     "rank": 9
+     "spending_year": 2023,
+     "rd_share": 3.15,
+     "researchers_year": 2023,
+     "researchers_per_million": 5926.0,
+     "rd_share_rank": 9,
+     "researchers_rank": 13
     },
     {
-     "indicator_id": "EXPGDP.TOT",
-     "COUNTRY_ID": "FIN",
+     "country_id": "FIN",
      "country": "Finland",
-     "year": 2023,
-     "value": 3.0938,
-     "magnitude": null,
-     "qualifier": null,
-     "rank": 10
+     "spending_year": 2023,
+     "rd_share": 3.09,
+     "researchers_year": 2023,
+     "researchers_per_million": 8315.0,
+     "rd_share_rank": 10,
+     "researchers_rank": 5
+    },
+    {
+     "country_id": "DNK",
+     "country": "Denmark",
+     "spending_year": 2023,
+     "rd_share": 3.05,
+     "researchers_year": 2023,
+     "researchers_per_million": 8838.0,
+     "rd_share_rank": 11,
+     "researchers_rank": 3
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "spending_year": 2023,
+     "rd_share": 2.68,
+     "researchers_year": null,
+     "researchers_per_million": null,
+     "rd_share_rank": 12,
+     "researchers_rank": null
+    },
+    {
+     "country_id": "ISL",
+     "country": "Iceland",
+     "spending_year": 2023,
+     "rd_share": 2.64,
+     "researchers_year": 2023,
+     "researchers_per_million": 5953.0,
+     "rd_share_rank": 13,
+     "researchers_rank": 12
+    },
+    {
+     "country_id": "CHN",
+     "country": "China",
+     "spending_year": 2023,
+     "rd_share": 2.58,
+     "researchers_year": 2023,
+     "researchers_per_million": 2107.0,
+     "rd_share_rank": 14,
+     "researchers_rank": 43
+    },
+    {
+     "country_id": "NLD",
+     "country": "Netherlands",
+     "spending_year": 2023,
+     "rd_share": 2.27,
+     "researchers_year": 2023,
+     "researchers_per_million": 6563.0,
+     "rd_share_rank": 15,
+     "researchers_rank": 8
+    },
+    {
+     "country_id": "FRA",
+     "country": "France",
+     "spending_year": 2023,
+     "rd_share": 2.18,
+     "researchers_year": 2023,
+     "researchers_per_million": 5369.0,
+     "rd_share_rank": 16,
+     "researchers_rank": 20
+    },
+    {
+     "country_id": "SVN",
+     "country": "Slovenia",
+     "spending_year": 2023,
+     "rd_share": 2.13,
+     "researchers_year": 2023,
+     "researchers_per_million": 5616.0,
+     "rd_share_rank": 17,
+     "researchers_rank": 17
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "spending_year": 2021,
+     "rd_share": 1.86,
+     "researchers_year": null,
+     "researchers_per_million": null,
+     "rd_share_rank": 18,
+     "researchers_rank": null
+    },
+    {
+     "country_id": "NOR",
+     "country": "Norway",
+     "spending_year": 2023,
+     "rd_share": 1.85,
+     "researchers_year": 2023,
+     "researchers_per_million": 7451.0,
+     "rd_share_rank": 19,
+     "researchers_rank": 6
+    },
+    {
+     "country_id": "EST",
+     "country": "Estonia",
+     "spending_year": 2023,
+     "rd_share": 1.84,
+     "researchers_year": 2023,
+     "researchers_per_million": 4800.0,
+     "rd_share_rank": 20,
+     "researchers_rank": 24
+    },
+    {
+     "country_id": "CZE",
+     "country": "Czechia",
+     "spending_year": 2023,
+     "rd_share": 1.83,
+     "researchers_year": 2023,
+     "researchers_per_million": 4505.0,
+     "rd_share_rank": 21,
+     "researchers_rank": 27
+    },
+    {
+     "country_id": "SGP",
+     "country": "Singapore",
+     "spending_year": 2022,
+     "rd_share": 1.81,
+     "researchers_year": 2022,
+     "researchers_per_million": 8782.0,
+     "rd_share_rank": 22,
+     "researchers_rank": 4
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "spending_year": 2024,
+     "rd_share": 1.79,
+     "researchers_year": 2022,
+     "researchers_per_million": 5624.0,
+     "rd_share_rank": 23,
+     "researchers_rank": 16
+    },
+    {
+     "country_id": "PRT",
+     "country": "Portugal",
+     "spending_year": 2023,
+     "rd_share": 1.69,
+     "researchers_year": 2023,
+     "researchers_per_million": 5983.0,
+     "rd_share_rank": 24,
+     "researchers_rank": 11
+    },
+    {
+     "country_id": "IRL",
+     "country": "Ireland",
+     "spending_year": 2023,
+     "rd_share": 1.59,
+     "researchers_year": 2023,
+     "researchers_per_million": 5753.0,
+     "rd_share_rank": 25,
+     "researchers_rank": 15
+    },
+    {
+     "country_id": "POL",
+     "country": "Poland",
+     "spending_year": 2023,
+     "rd_share": 1.56,
+     "researchers_year": 2023,
+     "researchers_per_million": 3675.0,
+     "rd_share_rank": 26,
+     "researchers_rank": 29
+    },
+    {
+     "country_id": "NZL",
+     "country": "New Zealand",
+     "spending_year": 2023,
+     "rd_share": 1.55,
+     "researchers_year": 2023,
+     "researchers_per_million": 5435.0,
+     "rd_share_rank": 27,
+     "researchers_rank": 19
+    },
+    {
+     "country_id": "GRC",
+     "country": "Greece",
+     "spending_year": 2023,
+     "rd_share": 1.49,
+     "researchers_year": 2023,
+     "researchers_per_million": 5283.0,
+     "rd_share_rank": 28,
+     "researchers_rank": 22
+    },
+    {
+     "country_id": "ESP",
+     "country": "Spain",
+     "spending_year": 2023,
+     "rd_share": 1.49,
+     "researchers_year": 2023,
+     "researchers_per_million": 3654.0,
+     "rd_share_rank": 28,
+     "researchers_rank": 30
+    },
+    {
+     "country_id": "ARE",
+     "country": "United Arab Emirates",
+     "spending_year": 2021,
+     "rd_share": 1.49,
+     "researchers_year": 2021,
+     "researchers_per_million": 2607.0,
+     "rd_share_rank": 28,
+     "researchers_rank": 36
+    },
+    {
+     "country_id": "TUR",
+     "country": "Türkiye",
+     "spending_year": 2023,
+     "rd_share": 1.42,
+     "researchers_year": 2023,
+     "researchers_per_million": 2645.0,
+     "rd_share_rank": 31,
+     "researchers_rank": 34
+    },
+    {
+     "country_id": "HRV",
+     "country": "Croatia",
+     "spending_year": 2023,
+     "rd_share": 1.39,
+     "researchers_year": 2023,
+     "researchers_per_million": 2440.0,
+     "rd_share_rank": 32,
+     "researchers_rank": 37
+    },
+    {
+     "country_id": "HUN",
+     "country": "Hungary",
+     "spending_year": 2023,
+     "rd_share": 1.38,
+     "researchers_year": 2023,
+     "researchers_per_million": 4567.0,
+     "rd_share_rank": 33,
+     "researchers_rank": 26
+    },
+    {
+     "country_id": "ITA",
+     "country": "Italy",
+     "spending_year": 2023,
+     "rd_share": 1.38,
+     "researchers_year": 2023,
+     "researchers_per_million": 2855.0,
+     "rd_share_rank": 33,
+     "researchers_rank": 32
+    },
+    {
+     "country_id": "BRA",
+     "country": "Brazil",
+     "spending_year": 2023,
+     "rd_share": 1.19,
+     "researchers_year": null,
+     "researchers_per_million": null,
+     "rd_share_rank": 35,
+     "researchers_rank": null
+    },
+    {
+     "country_id": "HKG",
+     "country": "Hong Kong",
+     "spending_year": 2024,
+     "rd_share": 1.13,
+     "researchers_year": 2024,
+     "researchers_per_million": 5874.0,
+     "rd_share_rank": 36,
+     "researchers_rank": 14
+    },
+    {
+     "country_id": "LUX",
+     "country": "Luxembourg",
+     "spending_year": 2023,
+     "rd_share": 1.07,
+     "researchers_year": 2023,
+     "researchers_per_million": 5359.0,
+     "rd_share_rank": 37,
+     "researchers_rank": 21
+    },
+    {
+     "country_id": "LTU",
+     "country": "Lithuania",
+     "spending_year": 2023,
+     "rd_share": 1.05,
+     "researchers_year": 2023,
+     "researchers_per_million": 3704.0,
+     "rd_share_rank": 38,
+     "researchers_rank": 28
+    },
+    {
+     "country_id": "SVK",
+     "country": "Slovakia",
+     "spending_year": 2023,
+     "rd_share": 1.03,
+     "researchers_year": 2023,
+     "researchers_per_million": 3507.0,
+     "rd_share_rank": 39,
+     "researchers_rank": 31
+    },
+    {
+     "country_id": "EGY",
+     "country": "Egypt",
+     "spending_year": 2024,
+     "rd_share": 1.02,
+     "researchers_year": 2024,
+     "researchers_per_million": 1120.0,
+     "rd_share_rank": 40,
+     "researchers_rank": 54
+    },
+    {
+     "country_id": "MYS",
+     "country": "Malaysia",
+     "spending_year": 2022,
+     "rd_share": 1.01,
+     "researchers_year": 2022,
+     "researchers_per_million": 1218.0,
+     "rd_share_rank": 41,
+     "researchers_rank": 53
+    },
+    {
+     "country_id": "SRB",
+     "country": "Serbia",
+     "spending_year": 2024,
+     "rd_share": 0.94,
+     "researchers_year": 2024,
+     "researchers_per_million": 2688.0,
+     "rd_share_rank": 42,
+     "researchers_rank": 33
+    },
+    {
+     "country_id": "RUS",
+     "country": "Russia",
+     "spending_year": 2024,
+     "rd_share": 0.94,
+     "researchers_year": 2024,
+     "researchers_per_million": 2639.0,
+     "rd_share_rank": 42,
+     "researchers_rank": 35
+    },
+    {
+     "country_id": "THA",
+     "country": "Thailand",
+     "spending_year": 2023,
+     "rd_share": 0.94,
+     "researchers_year": 2023,
+     "researchers_per_million": 1592.0,
+     "rd_share_rank": 42,
+     "researchers_rank": 49
+    },
+    {
+     "country_id": "LVA",
+     "country": "Latvia",
+     "spending_year": 2023,
+     "rd_share": 0.82,
+     "researchers_year": 2023,
+     "researchers_per_million": 2191.0,
+     "rd_share_rank": 45,
+     "researchers_rank": 41
+    },
+    {
+     "country_id": "KEN",
+     "country": "Kenya",
+     "spending_year": 2024,
+     "rd_share": 0.81,
+     "researchers_year": 2024,
+     "researchers_per_million": 384.0,
+     "rd_share_rank": 46,
+     "researchers_rank": 79
+    },
+    {
+     "country_id": "BGR",
+     "country": "Bulgaria",
+     "spending_year": 2023,
+     "rd_share": 0.79,
+     "researchers_year": 2023,
+     "researchers_per_million": 2401.0,
+     "rd_share_rank": 47,
+     "researchers_rank": 38
+    },
+    {
+     "country_id": "RWA",
+     "country": "Rwanda",
+     "spending_year": 2023,
+     "rd_share": 0.78,
+     "researchers_year": 2023,
+     "researchers_per_million": 133.0,
+     "rd_share_rank": 48,
+     "researchers_rank": 90
+    },
+    {
+     "country_id": "IRN",
+     "country": "Iran",
+     "spending_year": 2021,
+     "rd_share": 0.73,
+     "researchers_year": 2021,
+     "researchers_per_million": 2240.0,
+     "rd_share_rank": 49,
+     "researchers_rank": 40
+    },
+    {
+     "country_id": "URY",
+     "country": "Uruguay",
+     "spending_year": 2023,
+     "rd_share": 0.7,
+     "researchers_year": 2024,
+     "researchers_per_million": 938.0,
+     "rd_share_rank": 50,
+     "researchers_rank": 58
+    },
+    {
+     "country_id": "CYP",
+     "country": "Cyprus",
+     "spending_year": 2023,
+     "rd_share": 0.68,
+     "researchers_year": 2023,
+     "researchers_per_million": 1686.0,
+     "rd_share_rank": 51,
+     "researchers_rank": 46
+    },
+    {
+     "country_id": "QAT",
+     "country": "Qatar",
+     "spending_year": 2021,
+     "rd_share": 0.68,
+     "researchers_year": 2021,
+     "researchers_per_million": 948.0,
+     "rd_share_rank": 51,
+     "researchers_rank": 56
+    },
+    {
+     "country_id": "MLT",
+     "country": "Malta",
+     "spending_year": 2023,
+     "rd_share": 0.65,
+     "researchers_year": 2023,
+     "researchers_per_million": 2355.0,
+     "rd_share_rank": 53,
+     "researchers_rank": 39
+    },
+    {
+     "country_id": "IND",
+     "country": "India",
+     "spending_year": 2020,
+     "rd_share": 0.65,
+     "researchers_year": 2020,
+     "researchers_per_million": 259.0,
+     "rd_share_rank": 53,
+     "researchers_rank": 81
+    },
+    {
+     "country_id": "NAM",
+     "country": "Namibia",
+     "spending_year": 2022,
+     "rd_share": 0.65,
+     "researchers_year": 2022,
+     "researchers_per_million": 225.0,
+     "rd_share_rank": 53,
+     "researchers_rank": 84
+    },
+    {
+     "country_id": "SAU",
+     "country": "Saudi Arabia",
+     "spending_year": 2024,
+     "rd_share": 0.64,
+     "researchers_year": 2024,
+     "researchers_per_million": 1235.0,
+     "rd_share_rank": 56,
+     "researchers_rank": 52
+    },
+    {
+     "country_id": "ZAF",
+     "country": "South Africa",
+     "spending_year": 2022,
+     "rd_share": 0.61,
+     "researchers_year": 2022,
+     "researchers_per_million": 444.0,
+     "rd_share_rank": 57,
+     "researchers_rank": 75
+    },
+    {
+     "country_id": "ARG",
+     "country": "Argentina",
+     "spending_year": 2023,
+     "rd_share": 0.6,
+     "researchers_year": 2023,
+     "researchers_per_million": 1313.0,
+     "rd_share_rank": 58,
+     "researchers_rank": 51
+    },
+    {
+     "country_id": "BLR",
+     "country": "Belarus",
+     "spending_year": 2024,
+     "rd_share": 0.59,
+     "researchers_year": 2024,
+     "researchers_per_million": 1568.0,
+     "rd_share_rank": 59,
+     "researchers_rank": 50
+    },
+    {
+     "country_id": "ROU",
+     "country": "Romania",
+     "spending_year": 2023,
+     "rd_share": 0.52,
+     "researchers_year": 2023,
+     "researchers_per_million": 1082.0,
+     "rd_share_rank": 60,
+     "researchers_rank": 55
+    },
+    {
+     "country_id": "CUB",
+     "country": "Cuba",
+     "spending_year": 2024,
+     "rd_share": 0.44,
+     "researchers_year": 2024,
+     "researchers_per_million": 2171.0,
+     "rd_share_rank": 61,
+     "researchers_rank": 42
+    },
+    {
+     "country_id": "DZA",
+     "country": "Algeria",
+     "spending_year": 2024,
+     "rd_share": 0.44,
+     "researchers_year": 2024,
+     "researchers_per_million": 1764.0,
+     "rd_share_rank": 61,
+     "researchers_rank": 45
+    },
+    {
+     "country_id": "UGA",
+     "country": "Uganda",
+     "spending_year": 2023,
+     "rd_share": 0.44,
+     "researchers_year": 2023,
+     "researchers_per_million": 81.0,
+     "rd_share_rank": 61,
+     "researchers_rank": 93
+    },
+    {
+     "country_id": "VNM",
+     "country": "Vietnam",
+     "spending_year": 2023,
+     "rd_share": 0.41,
+     "researchers_year": 2023,
+     "researchers_per_million": 836.0,
+     "rd_share_rank": 64,
+     "researchers_rank": 61
+    },
+    {
+     "country_id": "OMN",
+     "country": "Oman",
+     "spending_year": 2024,
+     "rd_share": 0.39,
+     "researchers_year": 2024,
+     "researchers_per_million": 739.0,
+     "rd_share_rank": 65,
+     "researchers_rank": 63
+    },
+    {
+     "country_id": "CHL",
+     "country": "Chile",
+     "spending_year": 2022,
+     "rd_share": 0.39,
+     "researchers_year": 2022,
+     "researchers_per_million": 707.0,
+     "rd_share_rank": 65,
+     "researchers_rank": 64
+    },
+    {
+     "country_id": "COG",
+     "country": "Congo",
+     "spending_year": 2022,
+     "rd_share": 0.38,
+     "researchers_year": 2022,
+     "researchers_per_million": 127.0,
+     "rd_share_rank": 67,
+     "researchers_rank": 91
+    },
+    {
+     "country_id": "MKD",
+     "country": "North Macedonia",
+     "spending_year": 2024,
+     "rd_share": 0.37,
+     "researchers_year": 2024,
+     "researchers_per_million": 888.0,
+     "rd_share_rank": 68,
+     "researchers_rank": 59
+    },
+    {
+     "country_id": "UKR",
+     "country": "Ukraine",
+     "spending_year": 2024,
+     "rd_share": 0.37,
+     "researchers_year": 2022,
+     "researchers_per_million": 586.0,
+     "rd_share_rank": 68,
+     "researchers_rank": 69
+    },
+    {
+     "country_id": "CRI",
+     "country": "Costa Rica",
+     "spending_year": 2023,
+     "rd_share": 0.34,
+     "researchers_year": 2023,
+     "researchers_per_million": 508.0,
+     "rd_share_rank": 70,
+     "researchers_rank": 71
+    },
+    {
+     "country_id": "MAC",
+     "country": "Macao",
+     "spending_year": 2024,
+     "rd_share": 0.31,
+     "researchers_year": 2024,
+     "researchers_per_million": 4634.0,
+     "rd_share_rank": 71,
+     "researchers_rank": 25
+    },
+    {
+     "country_id": "ARM",
+     "country": "Armenia",
+     "spending_year": 2024,
+     "rd_share": 0.29,
+     "researchers_year": 2024,
+     "researchers_per_million": 942.0,
+     "rd_share_rank": 72,
+     "researchers_rank": 57
+    },
+    {
+     "country_id": "COL",
+     "country": "Colombia",
+     "spending_year": 2020,
+     "rd_share": 0.29,
+     "researchers_year": null,
+     "researchers_per_million": null,
+     "rd_share_rank": 72,
+     "researchers_rank": null
+    },
+    {
+     "country_id": "IDN",
+     "country": "Indonesia",
+     "spending_year": 2020,
+     "rd_share": 0.28,
+     "researchers_year": 2020,
+     "researchers_per_million": 395.0,
+     "rd_share_rank": 74,
+     "researchers_rank": 78
+    },
+    {
+     "country_id": "PHL",
+     "country": "Philippines",
+     "spending_year": 2020,
+     "rd_share": 0.28,
+     "researchers_year": 2020,
+     "researchers_per_million": 320.0,
+     "rd_share_rank": 74,
+     "researchers_rank": 80
+    },
+    {
+     "country_id": "GEO",
+     "country": "Georgia",
+     "spending_year": 2024,
+     "rd_share": 0.26,
+     "researchers_year": 2024,
+     "researchers_per_million": 1896.0,
+     "rd_share_rank": 76,
+     "researchers_rank": 44
+    },
+    {
+     "country_id": "MUS",
+     "country": "Mauritius",
+     "spending_year": 2024,
+     "rd_share": 0.26,
+     "researchers_year": 2024,
+     "researchers_per_million": 689.0,
+     "rd_share_rank": 76,
+     "researchers_rank": 66
+    },
+    {
+     "country_id": "MEX",
+     "country": "Mexico",
+     "spending_year": 2024,
+     "rd_share": 0.25,
+     "researchers_year": 2024,
+     "researchers_per_million": 438.0,
+     "rd_share_rank": 78,
+     "researchers_rank": 76
+    },
+    {
+     "country_id": "MDA",
+     "country": "Moldova",
+     "spending_year": 2024,
+     "rd_share": 0.22,
+     "researchers_year": 2024,
+     "researchers_per_million": 650.0,
+     "rd_share_rank": 79,
+     "researchers_rank": 67
+    },
+    {
+     "country_id": "TGO",
+     "country": "Togo",
+     "spending_year": 2024,
+     "rd_share": 0.22,
+     "researchers_year": 2024,
+     "researchers_per_million": 58.0,
+     "rd_share_rank": 79,
+     "researchers_rank": 95
+    },
+    {
+     "country_id": "AZE",
+     "country": "Azerbaijan",
+     "spending_year": 2024,
+     "rd_share": 0.21,
+     "researchers_year": 2024,
+     "researchers_per_million": 1663.0,
+     "rd_share_rank": 81,
+     "researchers_rank": 48
+    },
+    {
+     "country_id": "BIH",
+     "country": "Bosnia and Herzegovina",
+     "spending_year": 2024,
+     "rd_share": 0.21,
+     "researchers_year": 2024,
+     "researchers_per_million": 705.0,
+     "rd_share_rank": 81,
+     "researchers_rank": 65
+    },
+    {
+     "country_id": "ALB",
+     "country": "Albania",
+     "spending_year": 2022,
+     "rd_share": 0.2,
+     "researchers_year": 2022,
+     "researchers_per_million": 429.0,
+     "rd_share_rank": 83,
+     "researchers_rank": 77
+    },
+    {
+     "country_id": "PAN",
+     "country": "Panama",
+     "spending_year": 2024,
+     "rd_share": 0.2,
+     "researchers_year": 2024,
+     "researchers_per_million": 250.0,
+     "rd_share_rank": 83,
+     "researchers_rank": 82
+    },
+    {
+     "country_id": "BHR",
+     "country": "Bahrain",
+     "spending_year": 2024,
+     "rd_share": 0.19,
+     "researchers_year": 2024,
+     "researchers_per_million": 849.0,
+     "rd_share_rank": 85,
+     "researchers_rank": 60
+    },
+    {
+     "country_id": "PER",
+     "country": "Peru",
+     "spending_year": 2023,
+     "rd_share": 0.18,
+     "researchers_year": null,
+     "researchers_per_million": null,
+     "rd_share_rank": 86,
+     "researchers_rank": null
+    },
+    {
+     "country_id": "KAZ",
+     "country": "Kazakhstan",
+     "spending_year": 2024,
+     "rd_share": 0.16,
+     "researchers_year": 2024,
+     "researchers_per_million": 758.0,
+     "rd_share_rank": 87,
+     "researchers_rank": 62
+    },
+    {
+     "country_id": "PAK",
+     "country": "Pakistan",
+     "spending_year": 2023,
+     "rd_share": 0.16,
+     "researchers_year": 2023,
+     "researchers_per_million": 474.0,
+     "rd_share_rank": 87,
+     "researchers_rank": 74
+    },
+    {
+     "country_id": "MLI",
+     "country": "Mali",
+     "spending_year": 2023,
+     "rd_share": 0.15,
+     "researchers_year": 2023,
+     "researchers_per_million": 26.0,
+     "rd_share_rank": 89,
+     "researchers_rank": 99
+    },
+    {
+     "country_id": "PRY",
+     "country": "Paraguay",
+     "spending_year": 2023,
+     "rd_share": 0.14,
+     "researchers_year": 2023,
+     "researchers_per_million": 139.0,
+     "rd_share_rank": 90,
+     "researchers_rank": 89
+    },
+    {
+     "country_id": "LKA",
+     "country": "Sri Lanka",
+     "spending_year": 2022,
+     "rd_share": 0.11,
+     "researchers_year": 2022,
+     "researchers_per_million": 94.0,
+     "rd_share_rank": 91,
+     "researchers_rank": 92
+    },
+    {
+     "country_id": "UZB",
+     "country": "Uzbekistan",
+     "spending_year": 2024,
+     "rd_share": 0.1,
+     "researchers_year": 2024,
+     "researchers_per_million": 640.0,
+     "rd_share_rank": 92,
+     "researchers_rank": 68
+    },
+    {
+     "country_id": "BTN",
+     "country": "Bhutan",
+     "spending_year": 2024,
+     "rd_share": 0.1,
+     "researchers_year": 2024,
+     "researchers_per_million": 236.0,
+     "rd_share_rank": 92,
+     "researchers_rank": 83
+    },
+    {
+     "country_id": "SLV",
+     "country": "El Salvador",
+     "spending_year": 2023,
+     "rd_share": 0.1,
+     "researchers_year": 2023,
+     "researchers_per_million": 55.0,
+     "rd_share_rank": 92,
+     "researchers_rank": 96
+    },
+    {
+     "country_id": "BFA",
+     "country": "Burkina Faso",
+     "spending_year": 2024,
+     "rd_share": 0.1,
+     "researchers_year": null,
+     "researchers_per_million": null,
+     "rd_share_rank": 92,
+     "researchers_rank": null
+    },
+    {
+     "country_id": "KWT",
+     "country": "Kuwait",
+     "spending_year": 2024,
+     "rd_share": 0.09,
+     "researchers_year": 2024,
+     "researchers_per_million": 145.0,
+     "rd_share_rank": 96,
+     "researchers_rank": 87
+    },
+    {
+     "country_id": "LSO",
+     "country": "Lesotho",
+     "spending_year": 2023,
+     "rd_share": 0.09,
+     "researchers_year": 2023,
+     "researchers_per_million": 32.0,
+     "rd_share_rank": 96,
+     "researchers_rank": 97
+    },
+    {
+     "country_id": "TJK",
+     "country": "Tajikistan",
+     "spending_year": 2020,
+     "rd_share": 0.09,
+     "researchers_year": null,
+     "researchers_per_million": null,
+     "rd_share_rank": 96,
+     "researchers_rank": null
+    },
+    {
+     "country_id": "TKM",
+     "country": "Turkmenistan",
+     "spending_year": 2023,
+     "rd_share": 0.09,
+     "researchers_year": null,
+     "researchers_per_million": null,
+     "rd_share_rank": 96,
+     "researchers_rank": null
+    },
+    {
+     "country_id": "MNG",
+     "country": "Mongolia",
+     "spending_year": 2022,
+     "rd_share": 0.08,
+     "researchers_year": 2022,
+     "researchers_per_million": 535.0,
+     "rd_share_rank": 100,
+     "researchers_rank": 70
+    },
+    {
+     "country_id": "BOL",
+     "country": "Bolivia",
+     "spending_year": 2021,
+     "rd_share": 0.06,
+     "researchers_year": 2021,
+     "researchers_per_million": 63.0,
+     "rd_share_rank": 101,
+     "researchers_rank": 94
+    },
+    {
+     "country_id": "TTO",
+     "country": "Trinidad and Tobago",
+     "spending_year": 2022,
+     "rd_share": 0.05,
+     "researchers_year": 2022,
+     "researchers_per_million": 493.0,
+     "rd_share_rank": 102,
+     "researchers_rank": 73
+    },
+    {
+     "country_id": "KGZ",
+     "country": "Kyrgyzstan",
+     "spending_year": 2024,
+     "rd_share": 0.05,
+     "researchers_year": null,
+     "researchers_per_million": null,
+     "rd_share_rank": 102,
+     "researchers_rank": null
+    },
+    {
+     "country_id": "IRQ",
+     "country": "Iraq",
+     "spending_year": 2021,
+     "rd_share": 0.04,
+     "researchers_year": 2021,
+     "researchers_per_million": 164.0,
+     "rd_share_rank": 104,
+     "researchers_rank": 86
+    },
+    {
+     "country_id": "SYR",
+     "country": "Syria",
+     "spending_year": 2022,
+     "rd_share": 0.04,
+     "researchers_year": 2022,
+     "researchers_per_million": 140.0,
+     "rd_share_rank": 104,
+     "researchers_rank": 88
+    },
+    {
+     "country_id": "MMR",
+     "country": "Myanmar",
+     "spending_year": 2023,
+     "rd_share": 0.02,
+     "researchers_year": 2023,
+     "researchers_per_million": 28.0,
+     "rd_share_rank": 106,
+     "researchers_rank": 98
+    },
+    {
+     "country_id": "GTM",
+     "country": "Guatemala",
+     "spending_year": 2023,
+     "rd_share": 0.01,
+     "researchers_year": 2023,
+     "researchers_per_million": 1.0,
+     "rd_share_rank": 107,
+     "researchers_rank": 101
+    },
+    {
+     "country_id": "TUN",
+     "country": "Tunisia",
+     "spending_year": null,
+     "rd_share": null,
+     "researchers_year": 2024,
+     "researchers_per_million": 1668.0,
+     "rd_share_rank": null,
+     "researchers_rank": 47
+    },
+    {
+     "country_id": "BRN",
+     "country": "Brunei Darussalam",
+     "spending_year": null,
+     "rd_share": null,
+     "researchers_year": 2022,
+     "researchers_per_million": 506.0,
+     "rd_share_rank": null,
+     "researchers_rank": 72
+    },
+    {
+     "country_id": "VEN",
+     "country": "Venezuela",
+     "spending_year": null,
+     "rd_share": null,
+     "researchers_year": 2023,
+     "researchers_per_million": 180.0,
+     "rd_share_rank": null,
+     "researchers_rank": 85
+    },
+    {
+     "country_id": "DOM",
+     "country": "Dominican Republic",
+     "spending_year": null,
+     "rd_share": null,
+     "researchers_year": 2022,
+     "researchers_per_million": 20.0,
+     "rd_share_rank": null,
+     "researchers_rank": 100
     }
    ],
    "metadata": {
-    "indicator_id": {
-     "type": "string",
-     "levels": []
-    },
-    "COUNTRY_ID": {
+    "country_id": {
      "type": "string",
      "levels": []
     },
@@ -130,198 +1140,139 @@
      "type": "string",
      "levels": []
     },
-    "year": {
+    "spending_year": {
      "type": "integer",
      "levels": []
     },
-    "value": {
+    "rd_share": {
      "type": "number",
      "levels": []
     },
-    "magnitude": {
-     "type": "boolean",
+    "researchers_year": {
+     "type": "integer",
      "levels": []
     },
-    "qualifier": {
-     "type": "boolean",
+    "researchers_per_million": {
+     "type": "number",
      "levels": []
     },
-    "rank": {
+    "rd_share_rank": {
+     "type": "integer",
+     "levels": []
+    },
+    "researchers_rank": {
      "type": "integer",
      "levels": []
     }
    },
    "derive": {
-    "code": "import pandas as pd\nd=pd.read_parquet('data/rd_sdg_national.parquet')\nresult=d[(d.indicator_id=='EXPGDP.TOT') & d.year.between(2021,2024) & (d.COUNTRY_ID!='LIE')].sort_values('year').groupby('COUNTRY_ID').tail(1).nlargest(10,'value').copy()\nresult['country']=result.country.replace({'Republic of Korea':'South Korea','United States of America':'US'})\nresult['rank']=range(1,len(result)+1)",
-    "codeSignature": "186b4f17ed4c8819638deae0fa9cbba79100689aa622f08b9fb613bb4a41372a",
-    "outputVariable": "result",
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with spending as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/rd_sdg_national.parquet')\n        where indicator_id = 'EXPGDP.TOT' and year between 2020 and 2024 and value is not null\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    researchers as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/rd_sdg_national.parquet')\n        where indicator_id = 'RESDEN.INHAB.TFTE' and year between 2020 and 2024 and value is not null\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    population as (\n        select COUNTRY_ID as country_id, value as thousands\n        from read_parquet('data/dem_national.parquet')\n        where indicator_id = '200101'\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    countries as (\n        select coalesce(s.country_id, r.country_id) as country_id, coalesce(s.country, r.country) as country,\n               s.year as spending_year, round(s.value, 2) as rd_share,\n               r.year as researchers_year, round(r.value) as researchers_per_million\n        from spending s full join researchers r using (country_id)\n    )\n    select c.*,\n           case when rd_share is not null then rank() over (order by rd_share desc nulls last) end as rd_share_rank,\n           case when researchers_per_million is not null\n                then rank() over (order by researchers_per_million desc nulls last) end as researchers_rank\n    from countries c join population using (country_id)\n    where population.thousands >= 100\n    order by rd_share desc nulls last, researchers_per_million desc nulls last, country\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
+    "outputVariable": "out",
     "source": [
+     "dem_national",
      "rd_sdg_national"
     ],
-    "inputSources": [
-     {
-      "id": "data:e2d392aa9fac7f3712262b0e9ae08869:rd_sdg_national",
-      "kind": "data",
-      "displayName": "rd_sdg_national"
-     }
-    ],
     "trigger": {
-     "tableId": "rd_sdg_national",
-     "resultTableId": "d_result_3",
+     "tableId": "dem_national",
+     "resultTableId": "research_rankings",
      "chart": {
-      "id": "chart-1792308626882",
+      "id": "chart-trigger-research_rankings",
       "chartType": "Auto",
       "encodingMap": {},
-      "tableRef": "rd_sdg_national",
+      "tableRef": "dem_national",
       "source": "trigger"
      }
     }
    },
    "virtual": {
-    "tableId": "d_result_3",
-    "rowCount": 10
+    "tableId": "research_rankings",
+    "rowCount": 111
    },
-   "description": "",
-   "parentNodeId": "textTurn_exploreDataFromNL_1792308617801_step_1",
-   "createdAt": 1792308635637
+   "description": "Each country's latest research spending (% of GDP) and researchers per million people (full-time equivalent) in 2020–2024, with its rank on each; territories under 100,000 people left out. Source: UIS, February 2026 release; indicators EXPGDP.TOT, RESDEN.INHAB.TFTE.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794706000000_step_1",
+   "createdAt": 1794706002000
   }
  ],
- "charts": [
-  {
-   "id": "chart-c805e810a395",
-   "chartType": "Bar Chart",
-   "encodingMap": {
-    "x": {
-     "fieldID": "concept-value-1792308546075-0.028224717727207138",
-     "dtype": "quantitative"
-    },
-    "y": {
-     "fieldID": "concept-country-1792308546075-0.3624084484355673",
-     "dtype": "nominal",
-     "sortOrder": "descending",
-     "sortBy": "value"
-    },
-    "color": {
-     "channel": "color",
-     "bin": false
-    },
-    "opacity": {
-     "channel": "opacity",
-     "bin": false
-    },
-    "column": {
-     "channel": "column",
-     "bin": false
-    },
-    "row": {
-     "channel": "row",
-     "bin": false
-    }
-   },
-   "tableRef": "d_result_3",
-   "source": "user",
-   "title": "Research spending leaders",
-   "subtitle": "Latest reported values, 2021–2024; excludes Liechtenstein, whose population is below 100,000",
-   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-value-1792308546075-0.028224717727207138:|y:concept-country-1792308546075-0.3624084484355673:",
-   "unread": false,
-   "themeId": "datawrapper"
-  }
- ],
- "conceptShelfItems": [
-  {
-   "id": "concept-country-1792308546075-0.3624084484355673",
-   "name": "country",
-   "source": "custom",
-   "tableRef": "custom"
-  },
-  {
-   "id": "concept-value-1792308546075-0.028224717727207138",
-   "name": "value",
-   "source": "custom",
-   "tableRef": "custom"
-  }
- ],
+ "charts": [],
+ "conceptShelfItems": [],
  "textTurns": [
   {
    "kind": "text",
-   "id": "textTurn_exploreDataFromNL_1792308617801_prompt",
-   "displayId": "textTurn_exploreDataFromNL_1792308617801_prompt",
+   "id": "textTurn_exploreDataFromNL_1794706000000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794706000000_prompt",
    "textKind": "explain",
    "content": "",
    "prompt": "Where does South Korea rank in research today?",
-   "parentNodeId": "conversation-root:0a780cf2-59a6-49c2-839a-5af91396f395",
-   "actionId": "exploreDataFromNL_1792308617801",
-   "createdAt": 1792308617801
+   "parentNodeId": "conversation-root:b082f7de-1d66-5419-a3df-8b66f32ab416",
+   "actionId": "exploreDataFromNL_1794706000000",
+   "createdAt": 1794706000000
   },
   {
    "kind": "text",
-   "id": "textTurn_exploreDataFromNL_1792308617801_step_1",
-   "displayId": "textTurn_exploreDataFromNL_1792308617801_step_1",
+   "id": "textTurn_exploreDataFromNL_1794706000000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794706000000_step_1",
    "textKind": "explain",
-   "content": "Verify South Korea’s latest research rankings and identify small-country exceptions.",
-   "parentNodeId": "textTurn_exploreDataFromNL_1792308617801_prompt",
-   "actionId": "exploreDataFromNL_1792308617801",
-   "createdAt": 1792308626022,
-   "startedAt": 1792308617802,
-   "codeExecutions": [
-    {
-     "id": "code_exploreDataFromNL_1792308617801_1",
-     "tool": "execute_python_script",
-     "purpose": "Verify South Korea’s latest research rankings and identify small-country exceptions.",
-     "code": "import pandas as pd\nd=pd.read_parquet('data/rd_sdg_national.parquet')\nfor ind in d.indicator_id.unique():\n t=d[(d.indicator_id==ind)&d.year.between(2021,2024)].sort_values('year').groupby('COUNTRY_ID').tail(1).sort_values('value',ascending=False)\n print(ind,len(t)); print(t.head(5)[['country','year','value']].to_string(index=False))",
-     "status": "completed",
-     "createdAt": 1792308626022,
-     "output": "EXPGDP.TOT 104\n                 country  year   value\n                  Israel  2023 6.34589\n           Liechtenstein  2023 6.00984\n       Republic of Korea  2023 4.94352\n                  Sweden  2023 3.59978\nUnited States of America  2023 3.44716\nRESDEN.INHAB.TFTE 99\n          country  year       value\n    Liechtenstein  2023 18129.75165\nRepublic of Korea  2023  9471.82543\n           Sweden  2023  8910.73864\n          Denmark  2023  8837.51688\n        Singapore  2022  8781.74332\n"
-    }
-   ],
+   "content": "Setting spending beside the number of researchers to see who leads on both.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794706000000_prompt",
+   "actionId": "exploreDataFromNL_1794706000000",
+   "createdAt": 1794706001000,
+   "startedAt": 1794706000000,
    "progressSteps": [
     {
-     "id": "progress-exploreDataFromNL_1792308617801-1",
+     "id": "progress-exploreDataFromNL_1794706000000-1-1",
      "kind": "tool",
-     "label": "running code... Verify South Korea’s latest research rankings and identify small-country exceptions.",
+     "label": "Querying: dem_national, rd_sdg_national",
      "status": "completed",
-     "tool": "execute_python_script",
-     "toolCallId": "call_b9TQxV0caAJ99D4qtKQjU0K6",
-     "executionId": "code_exploreDataFromNL_1792308617801_1"
+     "tool": "create_data"
     },
     {
-     "id": "progress-exploreDataFromNL_1792308617801-2",
-     "kind": "chart",
-     "label": "creating chart...",
-     "status": "completed"
+     "id": "progress-exploreDataFromNL_1794706000000-1-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "Map created: Researchers per million people"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794706000000-1-3",
+     "kind": "info",
+     "status": "completed",
+     "label": "App created: South Korea's research rank"
     }
    ]
   },
   {
    "kind": "text",
-   "id": "textTurn_exploreDataFromNL_1792308617801_1792308641164",
-   "displayId": "textTurn_exploreDataFromNL_1792308617801_closing",
+   "id": "textTurn_exploreDataFromNL_1794706000000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794706000000_closing",
    "textKind": "explain",
-   "content": "**South Korea ranks second in the world in research spending relative to its economy, and first in researchers per person.**\n\n- **Research spending:** 4.94% of GDP in 2023, behind Israel's 6.35%.\n- **Researchers:** 9,472 per million people in 2023, ahead of Sweden and Denmark.\n\nRankings use each country's latest figure from 2021–2024 and leave out countries with fewer than 100,000 people. Source: UIS, February 2026 release.",
-   "parentNodeId": "d_result_3",
-   "actionId": "exploreDataFromNL_1792308617801",
-   "createdAt": 1792308641164,
-   "startedAt": 1792308617802,
+   "content": "**South Korea ranks second in research spending and first in researchers.**\n\n- **Research spending:** 4.94% of GDP (2023), behind only Israel (6.35%).\n- **Researchers:** 9,472 per million people (2023), the most of 101 countries.\n\nThe dashboard shows both top-10 rankings with South Korea highlighted; a world map beside it shows researchers per million people everywhere. Each country's latest figure from 2020–2024; territories under 100,000 people left out. Source: UIS, February 2026 release; indicators EXPGDP.TOT, RESDEN.INHAB.TFTE.",
+   "parentNodeId": "file-korea_research_rank.app.jsx",
+   "actionId": "exploreDataFromNL_1794706000000",
+   "createdAt": 1794706005000,
+   "startedAt": 1794706000000,
    "answered": true
   }
  ],
  "tableSemantics": [
   {
-   "tableId": "d_result_3",
+   "tableId": "research_rankings",
    "fields": {
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
+    },
     "country": {
+     "semanticType": "Country",
      "displayName": "Country",
      "authored": {
+      "semanticType": "Country",
       "displayName": "Country"
      }
     },
-    "year": {
-     "displayName": "Year",
-     "authored": {
-      "displayName": "Year"
-     }
-    },
-    "value": {
+    "rd_share": {
      "semanticType": "Percentage",
      "unit": "% of GDP",
      "displayName": "Research spending (% of GDP)",
@@ -331,21 +1282,94 @@
       "displayName": "Research spending (% of GDP)"
      }
     },
-    "rank": {
-     "displayName": "Rank",
+    "researchers_per_million": {
+     "semanticType": "Number",
+     "unit": "per million people",
+     "displayName": "Researchers per million people",
      "authored": {
-      "displayName": "Rank"
+      "semanticType": "Number",
+      "unit": "per million people",
+      "displayName": "Researchers per million people"
+     }
+    },
+    "spending_year": {
+     "semanticType": "Year",
+     "displayName": "Research spending year",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Research spending year"
+     }
+    },
+    "researchers_year": {
+     "semanticType": "Year",
+     "displayName": "Researchers year",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Researchers year"
+     }
+    },
+    "rd_share_rank": {
+     "semanticType": "Rank",
+     "displayName": "Rank in research spending",
+     "authored": {
+      "semanticType": "Rank",
+      "displayName": "Rank in research spending"
+     }
+    },
+    "researchers_rank": {
+     "semanticType": "Rank",
+     "displayName": "Rank in researchers",
+     "authored": {
+      "semanticType": "Rank",
+      "displayName": "Rank in researchers"
      }
     }
    }
   }
  ],
- "activeWorkspace": {
-  "id": "science-s22",
-  "displayName": "South Korea: second in research spending, first in researchers"
- },
+ "fileNodes": [
+  {
+   "kind": "file",
+   "id": "file-researchers_per_million.map.json",
+   "path": "researchers_per_million.map.json",
+   "displayName": "Researchers per million people",
+   "contentHash": "5ec4161767d7eed6be7aff20641496aac3d8cd4f53305ac5ddbdc2bd2cffa1f2",
+   "parentNodeId": "research_rankings",
+   "createdAt": 1794706003000
+  },
+  {
+   "kind": "file",
+   "id": "file-korea_research_rank.app.jsx",
+   "path": "korea_research_rank.app.jsx",
+   "displayName": "South Korea's research rank",
+   "contentHash": "3b6c17a581489c74c73bae39988afafa2d5edfab59698c9cb94c01c0055ebcf6",
+   "parentNodeId": "file-researchers_per_million.map.json",
+   "createdAt": 1794706004000
+  }
+ ],
  "focusedId": {
-  "type": "chart",
-  "chartId": "chart-c805e810a395"
- }
+  "type": "file",
+  "fileName": "korea_research_rank.app.jsx"
+ },
+ "canvasTabs": [
+  {
+   "key": "file:researchers_per_million.map.json",
+   "target": {
+    "type": "file",
+    "fileName": "researchers_per_million.map.json"
+   },
+   "addedAt": 1794700000000,
+   "viewedAt": 1794700000000
+  },
+  {
+   "key": "file:korea_research_rank.app.jsx",
+   "target": {
+    "type": "file",
+    "fileName": "korea_research_rank.app.jsx"
+   },
+   "addedAt": 1794700000001,
+   "viewedAt": 1794700000001
+  }
+ ],
+ "canvasTabActive": "file:korea_research_rank.app.jsx"
 }

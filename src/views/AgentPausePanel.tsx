@@ -289,7 +289,7 @@ export const ResponseOptionButton: FC<ResponseOptionButtonProps> = ({
 }) => {
     const theme = useTheme();
     return (
-        <Box sx={{ position: 'relative', overflow: 'hidden', borderRadius: '6px' }}>
+        <Box sx={{ position: 'relative', overflow: 'hidden', borderRadius: 1.5 }}>
             <Typography
                 component="button"
                 type="button"
@@ -299,7 +299,7 @@ export const ResponseOptionButton: FC<ResponseOptionButtonProps> = ({
                 sx={{
                     position: 'relative', zIndex: 1,
                     px: '8px', py: '4px',
-                    borderRadius: '6px',
+                    borderRadius: 1.5,
                     border: `1px solid ${selected ? alpha(accentColor, 0.6) : alpha(theme.palette.text.primary, 0.12)}`,
                     backgroundColor: selected ? alpha(accentColor, 0.12) : theme.palette.background.paper,
                     cursor: disabled ? 'default' : 'pointer',
@@ -548,7 +548,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                     aria-pressed={isSkipped}
                     sx={{
                         flexShrink: 0, minWidth: 0, fontSize: textVar.xs, mb: '2px',
-                        px: '8px', py: '4px', borderRadius: '6px', lineHeight: 1.4,
+                        px: '8px', py: '4px', borderRadius: 1.5, lineHeight: 1.4,
                         border: `1px solid ${isSkipped ? alpha(accentColor, 0.6) : 'transparent'}`,
                         color: isSkipped ? theme.palette.text.primary : theme.palette.text.secondary,
                         fontWeight: isSkipped ? 600 : 400,
@@ -831,7 +831,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                                                     aria-expanded={expanded}
                                                     onClick={() => setExpandedOptions(previous => ({ ...previous, [questionIndex]: !expanded }))}
                                                     sx={{
-                                                        px: '8px', py: '4px', borderRadius: '6px', fontSize: textVar.xs, lineHeight: 1.4,
+                                                        px: '8px', py: '4px', borderRadius: 1.5, fontSize: textVar.xs, lineHeight: 1.4,
                                                         color: theme.palette.text.secondary, fontFamily: theme.typography.fontFamily,
                                                         '&:hover': { color: theme.palette.text.primary, textDecoration: 'underline' },
                                                     }}

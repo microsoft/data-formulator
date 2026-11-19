@@ -22,7 +22,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Type } from '../data/types';
 import { SelectableDataGrid } from './SelectableDataGrid';
 import { formatCellValue, getColumnAlign } from './ViewUtils';
-import { borderColor } from '../app/tokens';
+import { borderColor, ambientShadow, cardRadius } from '../app/tokens';
 import { iconVar, textVar } from '../app/layout';
 import { externalReferenceTitle } from '../app/workspaceService';
 
@@ -97,11 +97,11 @@ export const TableSearchField: FC<{ query: string; onSearch: (query: string) => 
         }}
         sx={{
             width,
-            '& .MuiOutlinedInput-root': { borderRadius: '8px', fontSize: textVar.sm, backgroundColor: 'background.paper' },
+            '& .MuiOutlinedInput-root': { borderRadius: 2, fontSize: textVar.sm, backgroundColor: 'background.paper' },
             '& .MuiOutlinedInput-input': { py: '4px' },
             ...(bare ? {
                 '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                '& .MuiOutlinedInput-root': { borderRadius: '6px', fontSize: textVar.sm, backgroundColor: 'transparent', transition: 'background-color 0.15s' },
+                '& .MuiOutlinedInput-root': { borderRadius: 1.5, fontSize: textVar.sm, backgroundColor: 'transparent', transition: 'background-color 0.15s' },
                 '& .MuiOutlinedInput-root:hover, & .MuiOutlinedInput-root.Mui-focused': { backgroundColor: 'action.hover' },
             } : {}),
         }}
@@ -270,7 +270,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                             deleteIcon={<ClearIcon sx={{ fontSize: iconVar.sm }} />}
                             sx={{
                                 height: 22, maxWidth: 220, flexShrink: 0,
-                                borderRadius: '6px',
+                                borderRadius: 1.5,
                                 backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.08),
                                 color: 'primary.main',
                                 '& .MuiChip-label': { fontSize: textVar.xs, px: 0.75, overflow: 'hidden', textOverflow: 'ellipsis' },
@@ -318,7 +318,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
         return withHeader(
             <Box sx={{
                 height: '100%', width: '100%', overflow: 'hidden',
-                borderRadius: '8px', border: `1px solid ${borderColor.divider}`,
+                borderRadius: cardRadius('8px'), border: `1px solid ${borderColor.divider}`,
             }}>
                 {grid}
             </Box>
@@ -351,11 +351,11 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
     // no hover glow/elevation — since the title lives outside the card.
     const cardSx = maximized ? { overflow: 'hidden' } : {
         overflow: 'hidden',
-        borderRadius: '8px',
+        borderRadius: cardRadius('8px'),
         border: `1px solid ${borderColor.divider}`,
         ...(showHeaderBar ? {} : {
             transition: 'box-shadow 0.2s ease',
-            '&:hover': { boxShadow: '0 0 8px rgba(25, 118, 210, 0.25)' },
+            '&:hover': { boxShadow: ambientShadow('0 0 8px rgba(25, 118, 210, 0.25)') },
         }),
     };
     const framed = (
@@ -381,7 +381,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                 {/* Table overlay filling the visualization view. */}
                 <Box sx={{
                     position: 'absolute', inset: 12, zIndex: 1300,
-                    borderRadius: '8px', overflow: 'hidden',
+                    borderRadius: 2, overflow: 'hidden',
                     border: `1px solid ${borderColor.divider}`,
                     boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
                     backgroundColor: 'background.paper',

@@ -19,18 +19,18 @@ about:
     Microsoft Research for exploring data with charts, reports and dashboards.
   - >-
     The [UNESCO Institute for Statistics](https://databrowser.uis.unesco.org/) is the UN's official
-    source of statistics on education, science and culture. This site loads the full {release} bulk
-    release of four of its datasets.
+    source of statistics on education, science and culture. This site loads the latest bulk release
+    of four of its datasets: education from {release}, research and heritage spending from February 2026.
 intro: >-
   Ask a question above and the AI analyst loads the datasets it needs, or open an example session
-  to see a question it already answered and keep asking your own.
-release: "2026-02"
+  to see a question it already answered, on a map or a small dashboard, and keep asking your own.
+release: "2026-11"
 # Sessions start with the workspace folded into one card (its name, a few tables); visitors open it when needed.
 workspace_collapsed: true
 # Shown before the demo is installed, beside the Install button (local installs).
 install_note: >-
-  Installing downloads about 120 MB of public data from the UNESCO Institute for Statistics and
-  builds the example sessions on this computer (about 230 MB).
+  Installing downloads about 100 MB of public data from the UNESCO Institute for Statistics and
+  builds the example sessions on this computer (about 250 MB).
 # A screenshot of the app with an example session open, in the release's content folder.
 hero_image: hero.png
 # The UIS logotype (blue, as the brand guidelines ask), above the page title and beside the name in the app bar.
@@ -67,8 +67,8 @@ analyst_rules: >-
   indicators in everyday language (for example "share of children not in school") in titles, axis
   labels and text, and never show table or column names in answers, charts or reports. Do cite the
   UIS indicator code(s) used where the source is given: a map's source, the end of a chart's
-  subtitle, a table's description, a report's source note (for example "Source: UIS, February 2026
-  release; indicator CR.MOD.3"). When an indicator's label says "(modelled data)", call its values
+  subtitle, a table's description, a report's source note, with the release of the dataset used (for
+  example "Source: UIS, November 2026 release; indicator CR.MOD.3"). When an indicator's label says "(modelled data)", call its values
   modelled estimates in the chart or map subtitle and in the answer; when both an observed and a
   modelled series exist, say which one you used. Name education levels as UIS does (primary, lower
   secondary, upper secondary, tertiary), not with country-specific terms such as "high school" or
@@ -86,15 +86,18 @@ analyst_rules: >-
   example "DR Congo", "Tanzania", "UK") so labels are not cut off. Mention coverage gaps
   or estimates in one plain sentence when they matter.
   When a question asks where something is high or low across the world's countries, show it on a
-  world map made with the map skill (a choropleth keyed by country_id). Visitors ask short questions: pick
+  world map made with the map skill (a choropleth of a rate keyed by country_id, or bubbles for a
+  number of people), with a ranking chart beside it. When a question has a few parts that belong
+  together (a total, its trend and where it is largest) or compares two countries, show them in one
+  small dashboard made with the html_app skill. Visitors ask short questions: pick
   a sensible reading (the main indicator, both sexes, recent years) and say what you chose rather
   than asking them to choose. Keep answers short: the finding first, then one or two supporting
   sentences. When asked for a report, write a short news-style story: a headline of at most nine
   words, a few short paragraphs that build from the first finding to the last with the charts and maps in
   order, and one plain sentence on what the data cannot tell us.
 attribution: >-
-  Data: UNESCO Institute for Statistics (UIS), Bulk Data Download Service,
-  February 2026 release. Licensed under CC BY-SA 3.0 IGO.
+  Data: UNESCO Institute for Statistics (UIS), Bulk Data Download Service: education, November
+  2026 release; research and heritage spending, February 2026 release. Licensed under CC BY-SA 3.0 IGO.
 # After "Powered by Data Formulator" at the foot of the page.
 disclaimer: >-
   The analyses are by an AI analyst working on UIS data; AI-generated analyses can be wrong, so check
@@ -111,12 +114,16 @@ starters:
   - id: education-sdg4
     # The dataset's page in the UIS Data Browser, linked from its section.
     source_url: https://databrowser.uis.unesco.org/browser/EDUCATION/UIS-SDG4Monitoring
-    kicker: SDG 4 education
+    kicker: School and learning
     icon: school
     start_note: The full dataset, with its README and UIS notes
-    title: "Education: Sustainable Development Goal 4 (SDG 4)"
+    title: "Going to school and learning"
+    # The dataset's name at UIS, shown as its source link: the reference for those who know it.
+    source_name: "UIS SDG 4 Global and Thematic Indicators"
     subtitle: Global and thematic indicators
     # UIS's own description of the dataset, from the UNESCO DataHub (data.unesco.org/explore/assets/uis001).
+    # What the dataset contains, in a couple of plain sentences for visitors; the description below (UIS's own) is for the analyst.
+    summary: "This dataset follows how children and young people do at school in more than 200 countries: how many start school, how many finish each level, how well they read and do maths, and how many adults can read. It also covers teachers, school buildings and what governments spend on education, with many figures split by girls and boys, richer and poorer families, and town and countryside."
     description: >-
       Comprehensive set of globally comparable education indicators used to
       monitor SDG 4, compiled from administrative data, household surveys,
@@ -141,9 +148,10 @@ starters:
     stories:
       - id: education-sdg4-e20
         label: Finishing school
-        headline: Finishing upper secondary school is rarest in sub-Saharan Africa
-        dek: In South Sudan, just 2 in 100 young people finish upper secondary school. Niger, the Central African
-          Republic and Chad are all below 7 in 100.
+        title: "Upper secondary completion rates around the world"
+        headline: "Finishing upper secondary school is rarest in sub-Saharan Africa"
+        dek: "In South Sudan, just 2 in 100 young people finish upper secondary school. Niger, the Central
+          African Republic and Chad are all below 7 in 100."
         featured: true
         prompt: "Where do young people finish upper secondary school least often?"
         file: stories/education-sdg4-e20.zip
@@ -151,17 +159,13 @@ starters:
         - Which countries improved upper secondary completion the most since 2000?
         - Do girls or boys finish school more often?
         - Is completion lower in rural areas?
-        stack:
-        - label: On the map
-          image: stories/education-sdg4-e20-stack-1.png
-        - label: Ranked
-          image: stories/education-sdg4-e20-stack-2.png
         image: stories/education-sdg4-e20.png
       - id: education-sdg4-e21
         label: Rich and poor
-        headline: In Nigeria, the rich–poor gap in finishing school is widest
-        dek: 'In Nigeria, 90% of children from the richest fifth of families finish upper secondary school, but
-          only 16% from the poorest: the widest gap of 87 countries. Laos and Ghana come next.'
+        title: "Completion rates for the richest and poorest households"
+        headline: "In Nigeria, the rich–poor gap in finishing school is widest"
+        dek: "In Nigeria, 90% of young people from the richest fifth of families finish upper secondary
+          school, but only 16% from the poorest: the widest gap of 86 countries. Laos and Ghana come next."
         prompt: "Where is the gap between rich and poor children in finishing school biggest?"
         file: stories/education-sdg4-e21.zip
         follow_ups:
@@ -171,9 +175,10 @@ starters:
         image: stories/education-sdg4-e21.png
       - id: education-sdg4-e22
         label: Learning to read
-        headline: Where nearly every pupil learns to read
-        dek: By the end of primary school, 99% of pupils in Canada reach minimum reading proficiency, and 97–98%
-          in several European countries and Singapore.
+        title: "Pupils reaching basic reading by the end of primary school"
+        headline: "Where nearly every pupil learns to read"
+        dek: "By the end of primary school, 99% of pupils in Canada reach minimum reading proficiency. In 48
+          of 101 countries assessed, fewer than half do."
         prompt: "Where do most children reach a minimum reading level by the end of primary school?"
         file: stories/education-sdg4-e22.zip
         follow_ups:
@@ -183,25 +188,30 @@ starters:
         image: stories/education-sdg4-e22.png
       - id: education-sdg4-e23
         label: Schools without power
-        headline: In Chad, 99% of primary schools have no power
-        dek: Schools without electricity are concentrated in sub-Saharan Africa. After Chad come Niger (92%) and
-          DR Congo (90%).
+        title: "Schools in sub-Saharan Africa without power, internet or water"
+        headline: "In Chad, 97% of primary schools have no power"
+        dek: "Schools without electricity are concentrated in sub-Saharan Africa. After Chad come Niger (92%)
+          and DR Congo (90%)."
         prompt: "Where are schools still without power?"
         file: stories/education-sdg4-e23.zip
         follow_ups:
-        - Do schools without power also lack internet?
-        - How many primary schools have drinking water?
+        - Which countries outside Africa have the most schools without power?
+        - Do secondary schools have electricity more often than primary schools?
         - How has school electricity changed since 2015?
         image: stories/education-sdg4-e23.png
   - id: education-opri
     # The dataset's page in the UIS Data Browser, linked from its section.
     source_url: https://databrowser.uis.unesco.org/browser/EDUCATION/UIS-EducationOPRI
-    kicker: Education indicators
+    kicker: Pupils and teachers
     icon: school
     start_note: The full dataset, with its README and UIS notes
-    title: "Education: Other policy-relevant indicators"
+    title: "Pupils, teachers and education spending"
+    # The dataset's name at UIS, shown as its source link: the reference for those who know it.
+    source_name: "UIS Other Policy Relevant Indicators (OPRI)"
     subtitle: Enrolment, teachers, finance and more
     # UIS's own description of the dataset, from the UNESCO DataHub (data.unesco.org/explore/assets/uis006).
+    # What the dataset contains, in a couple of plain sentences for visitors; the description below (UIS's own) is for the analyst.
+    summary: "This dataset counts the people and the money behind education in more than 200 countries: how many pupils and teachers there are at each level, from pre-school to university, and how many children are out of school. It also shows how many years of school adults have had, how many students go abroad to study, and what is spent on each level."
     description: >-
       Extended set of education indicators not part of SDG 4, including metrics
       on teachers, mobility, and system performance. Complements SDG monitoring
@@ -224,9 +234,10 @@ starters:
     stories:
       - id: education-opri-o20
         label: Out of school
-        headline: India has the most children out of school, about 50 million
-        dek: India, Pakistan and Ethiopia have the most children and young people out of school, about 50, 23
-          and 15 million.
+        title: "Children and young people out of school, by country"
+        headline: "India has the most children out of school, about 48 million"
+        dek: "India, Pakistan and Ethiopia have the most children and young people out of school, about 48, 21
+          and 19 million."
         featured: true
         prompt: "Where do out-of-school children and young people live? Show me on a map."
         file: stories/education-opri-o20.zip
@@ -234,41 +245,39 @@ starters:
         - How has the number of children out of school changed since 2000?
         - How has the number changed in sub-Saharan Africa?
         - What share of primary-age children are out of school in each region?
-        stack:
-        - label: On the map
-          image: stories/education-opri-o20-stack-1.png
-        - label: Ranked
-          image: stories/education-opri-o20-stack-2.png
         image: stories/education-opri-o20.png
       - id: education-opri-o21
         label: Students abroad
-        headline: The US and UK host the most students from abroad
-        dek: In 2023 the US hosted 957,000 international students and the UK 748,000, followed by Australia,
-          Germany and Canada.
+        title: "Where international students go to study"
+        headline: "The US and the UK host the most students from abroad"
+        dek: "The US hosts 957,000 international students (2023) and the UK 721,000 (2024), followed by
+          Australia, Canada and Germany."
         prompt: "Where do students who study abroad go?"
         file: stories/education-opri-o21.zip
         follow_ups:
         - Which countries have the highest share of international students?
         - Which countries gain or lose the most students?
-        - How did international students in Canada and Australia grow?
+        - Where do students from India and China go to study?
         image: stories/education-opri-o21.png
       - id: education-opri-o22
         label: Adults who cannot read
-        headline: 739 million adults still cannot read
-        dek: In 2024, 739 million adults could not read and write a simple statement. Nearly two-thirds of
-          them were women.
+        title: "Adults who cannot read, by sex and region"
+        headline: "732 million adults still cannot read"
+        dek: "In 2025, 732 million adults could not read and write a simple statement, down from 806 million
+          in 2000. Nearly two-thirds of them were women."
         prompt: "How many adults can't read?"
         file: stories/education-opri-o22.zip
         follow_ups:
-        - How has the number of adults who can't read changed since 2000?
+        - Which countries have the lowest adult literacy rates?
         - Which countries have the most adults who can't read?
         - How many young people aged 15 to 24 can't read?
         image: stories/education-opri-o22.png
       - id: education-opri-o23
         label: Years in school
-        headline: From 14 years of school to fewer than two
-        dek: Adults aged 25 and over average 14 years of schooling in the US, 8 in China and 7.3 in India,
-          but 1.6 in Mali.
+        title: "Average years of schooling among adults"
+        headline: "From 14 years of school to fewer than two"
+        dek: "Adults aged 25 and over average 14 years of schooling in the US, 8 in China and 7.3 in India,
+          but 1.6 in Mali."
         prompt: "How many years of school do adults have, on average?"
         file: stories/education-opri-o23.zip
         follow_ups:
@@ -279,12 +288,16 @@ starters:
   - id: science
     # The dataset's page in the UIS Data Browser, linked from its section.
     source_url: https://databrowser.uis.unesco.org/browser/SCIENCE_TECHNOLOGY_INNOVATION/UIS-SDG9Monitoring
-    kicker: Research and development
+    kicker: Research
     icon: science
     start_note: The full dataset, with its README and UIS notes
-    title: "Science: Research and development, Sustainable Development Goal 9.5 (SDG 9.5)"
+    title: "Research and researchers"
+    # The dataset's name at UIS, shown as its source link: the reference for those who know it.
+    source_name: "UIS Research and Development, SDG 9.5"
     subtitle: SDG 9.5 and other R&D indicators
     # UIS's own description of the dataset, from the UNESCO DataHub (data.unesco.org/explore/assets/uis004, uis005).
+    # What the dataset contains, in a couple of plain sentences for visitors; the description below (UIS's own) is for the analyst.
+    summary: "This dataset shows how much each country puts into research compared with the size of its economy, and how many researchers it has for every million people. It also shows how many of those researchers are women and where they work: in companies, government or universities, for about 170 countries since 1996."
     description: >-
       Contains SDG indicators on R&D expenditure (% of GDP) and researchers per
       million inhabitants, with global coverage since 1996. Data comes from
@@ -307,9 +320,10 @@ starters:
     stories:
       - id: science-s20
         label: The world's research
-        headline: Israel and South Korea spend the most on research
-        dek: Israel spends 6.35% of its GDP on research and South Korea 4.94%, ahead of Sweden, the US and
-          Japan.
+        title: "Research spending as a share of GDP, by country"
+        headline: "Israel and South Korea spend the most on research"
+        dek: "Israel spends 6.35% of its GDP on research and South Korea 4.94%, ahead of Sweden, the US and
+          Japan."
         featured: true
         prompt: "Which countries spend the most on research?"
         file: stories/science-s20.zip
@@ -317,17 +331,13 @@ starters:
         - How has China's research spending changed since 2000?
         - Which African countries spend the most on research?
         - Do countries with more researchers spend more on research?
-        stack:
-        - label: On the map
-          image: stories/science-s20-stack-1.png
-        - label: Ranked
-          image: stories/science-s20-stack-2.png
         image: stories/science-s20.png
       - id: science-s21
         label: Women in research
-        headline: Women are at least half of researchers in 23 countries
-        dek: Myanmar leads at 76.5%, then Kyrgyzstan and Azerbaijan. Most of the 23 are in Eastern Europe,
-          the Caucasus and Central Asia, or Latin America.
+        title: "Women's share of researchers around the world"
+        headline: "Women are at least half of researchers in 23 countries"
+        dek: "Myanmar leads at 76.5%, then Kyrgyzstan and Azerbaijan. Across the 104 countries with recent
+          data, the typical share is 43%."
         prompt: "Where are women at least half of researchers?"
         file: stories/science-s21.zip
         follow_ups:
@@ -337,9 +347,10 @@ starters:
         image: stories/science-s21.png
       - id: science-s22
         label: Korea's research rank
-        headline: 'South Korea: second in research spending, first in researchers'
-        dek: South Korea spends 4.94% of its GDP on research, behind only Israel, and has 9,472 researchers per
-          million people, the most of any country except tiny Liechtenstein.
+        title: "How South Korea ranks in research spending and researchers"
+        headline: "South Korea: second in research spending, first in researchers"
+        dek: "South Korea spends 4.94% of its GDP on research, behind only Israel, and has 9,472 researchers
+          per million people, the most of any country except tiny Liechtenstein."
         prompt: "Where does South Korea rank in research today?"
         file: stories/science-s22.zip
         follow_ups:
@@ -349,9 +360,10 @@ starters:
         image: stories/science-s22.png
       - id: science-s23
         label: China and the US
-        headline: China is catching up with the US in research
-        dek: China spent 2.58% of its GDP on research in 2023, against 3.45% in the US. In 2000 its share was
-          only a third of the US level.
+        title: "China and the US in research spending and researchers"
+        headline: "China is catching up with the US in research"
+        dek: "China spent 2.58% of its GDP on research in 2023, against 3.45% in the US. In 2000 its share was
+          only a third of the US level."
         prompt: "How does China compare with the US in research?"
         file: stories/science-s23.zip
         follow_ups:
@@ -362,12 +374,16 @@ starters:
   - id: culture
     # The dataset's page in the UIS Data Browser, linked from its section.
     source_url: https://databrowser.uis.unesco.org/browser/CULTURE/UIS-SDG11Monitoring
-    kicker: Heritage spending
+    kicker: Heritage
     icon: landmark
     start_note: The full dataset, with its README and UIS notes
-    title: "Culture: Sustainable Development Goal 11.4 (SDG 11.4)"
+    title: "Spending on heritage"
+    # The dataset's name at UIS, shown as its source link: the reference for those who know it.
+    source_name: "UIS Cultural and Natural Heritage, SDG 11.4"
     subtitle: Spending on cultural and natural heritage
     # UIS's own description of the dataset, from the UNESCO DataHub (data.unesco.org/explore/assets/uis002).
+    # What the dataset contains, in a couple of plain sentences for visitors; the description below (UIS's own) is for the analyst.
+    summary: "This dataset shows how much is spent, per person, on protecting heritage such as historic buildings, museums and nature reserves in about 80 countries. It shows who pays (national, regional or local government, or private sources) and whether the money goes to cultural or natural heritage, from 2017."
     description: >-
       Measures national expenditure on protecting cultural and natural heritage,
       based on UIS survey data and financial statistics. Includes breakdowns by
@@ -385,9 +401,10 @@ starters:
     stories:
       - id: culture-c20
         label: Spending on heritage
-        headline: 'From pennies to hundreds: what governments spend on heritage'
-        dek: Among 74 reporting countries, the typical government spends about $21 a person on cultural and
-          natural heritage. Belgium spends $369; 13 countries spend under $1.
+        title: "Government spending on heritage per person"
+        headline: "From pennies to hundreds: what governments spend on heritage"
+        dek: "Among 72 reporting countries, the typical government spends about $21 a person on cultural and
+          natural heritage. Belgium spends $369; 13 countries spend under $1."
         featured: true
         prompt: "How much do governments spend to protect their heritage?"
         file: stories/culture-c20.zip
@@ -395,17 +412,13 @@ starters:
         - Which countries spend the least per person?
         - Has heritage spending grown since 2017?
         - How does spending compare across Europe?
-        stack:
-        - label: On the map
-          image: stories/culture-c20-stack-1.png
-        - label: Ranked
-          image: stories/culture-c20-stack-2.png
         image: stories/culture-c20.png
       - id: culture-c21
         label: Who pays
-        headline: Who pays for heritage? Mostly national governments
-        dek: In 30 of 37 reporting countries, national governments outspend local ones. In Belgium, towns and
-          cities supply 88%.
+        title: "Heritage spending by national and local governments"
+        headline: "Who pays for heritage? Mostly national governments"
+        dek: "In 30 of 37 reporting countries, national governments outspend local ones. In Belgium, towns and
+          cities supply 88%."
         prompt: "Who pays for heritage: national or local governments?"
         file: stories/culture-c21.zip
         follow_ups:
@@ -415,9 +428,10 @@ starters:
         image: stories/culture-c21.png
       - id: culture-c22
         label: Monuments or nature
-        headline: Only four countries spend more on nature than on monuments
-        dek: Colombia puts 90% of its heritage spending into nature, followed by Estonia, Georgia and Ecuador.
-          The other 14 reporting countries spend more on cultural heritage.
+        title: "Heritage spending split between monuments and nature"
+        headline: "Only four countries spend more on nature than on monuments"
+        dek: "Colombia puts 90% of its heritage spending into nature, followed by Estonia, Georgia and
+          Ecuador. The other 14 reporting countries spend more on cultural heritage."
         prompt: "Where does nature get the bigger share of heritage spending?"
         file: stories/culture-c22.zip
         follow_ups:
@@ -427,13 +441,14 @@ starters:
         image: stories/culture-c22.png
       - id: culture-c23
         label: After the pandemic
-        headline: Finland added the most heritage spending since the pandemic
-        dek: Finland spends $88 more per person on heritage than before COVID-19 and Switzerland $56 more,
-          followed by Slovakia, Ecuador and Canada.
+        title: "Change in heritage spending since the pandemic"
+        headline: "Finland added the most heritage spending since the pandemic"
+        dek: "Finland spends $88 more per person on heritage than before COVID-19 and Switzerland $56 more,
+          followed by Slovakia, Ecuador and Canada."
         prompt: "Which countries added the most to heritage spending per person since before the pandemic?"
         file: stories/culture-c23.zip
         follow_ups:
-        - Which countries cut heritage spending since the pandemic?
+        - Has private heritage spending grown since the pandemic?
         - How did heritage spending change in 2020?
         - Show heritage spending over time for Finland and Switzerland.
         image: stories/culture-c23.png
