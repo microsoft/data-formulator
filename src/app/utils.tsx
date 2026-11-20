@@ -77,6 +77,7 @@ export function getUrls() {
         SESSION_LOAD: `/api/sessions/load`,
         SESSION_DELETE: `/api/sessions/delete`,
         SESSION_EXPORT: `/api/sessions/export`,
+        SESSION_COPY_TO_APP: `/api/sessions/copy-to-app`,
         SESSION_IMPORT: `/api/sessions/import`,
         SESSION_UPDATE_META: `/api/sessions/update-meta`,
         SESSION_WORMHOLE_SEND: `/api/sessions/wormhole/send`,

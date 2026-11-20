@@ -24,6 +24,11 @@ intro: >-
   a question it already answered, on a map or a small dashboard, and keep asking your own.
 release: "2026-11"
 workspace_collapsed: true
+# Where its data comes from: the datasets' tables, extracted on install into the release's data/ folder and offered
+# as a read-only folder source (one subfolder per dataset).
+sources:
+  - folder: data
+    name: NeurIPS datasets
 # A screenshot of the app with an example session open, in the release's content folder.
 hero_image: hero.png
 # The NeurIPS logo (neurips.cc/About: "may be used on presentations"; a NeurIPS Foundation trademark), above the

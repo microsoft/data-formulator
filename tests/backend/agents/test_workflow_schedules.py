@@ -437,3 +437,74 @@ def test_published_example_sessions_can_be_imported_and_unpublished_by_admins(ex
     assert client.get("/api/sessions/examples").get_json()["data"]["examples"] == []
     assert client.get(f"/api/sessions/examples/{published['id']}").get_json()["error"]["code"] == "TABLE_NOT_FOUND"
 
+
+
+DEMO = {"X-DF-Demo": "demo"}
+
+
+def _a_demo(monkeypatch):
+    from data_formulator import sites
+    monkeypatch.setattr(sites, "known_site_id", lambda site_id: site_id if site_id == "demo" else None)
+
+
+def test_a_demo_lists_and_manages_only_its_own_schedules(execution_context, monkeypatch):
+    _a_demo(monkeypatch)
+    app, store, schedule, occurrence = execution_context
+    client = app.test_client()
+    # The standard app's schedule is not the demo's: not listed there, and its history is left alone.
+    assert client.get("/api/schedules", headers=DEMO).get_json()["data"]["schedules"] == []
+    assert len(store.history(schedule["id"])) == 1
+    assert client.delete(f"/api/schedules/{schedule['id']}", headers=DEMO).get_json()["error"]["code"] == "INVALID_REQUEST"
+    assert store.get(schedule["id"])
+    from data_formulator.datalake.workspace import get_user_home
+    from data_formulator.workflows.instances import WorkflowStore
+    with app.app_context():
+        report = WorkflowStore(get_user_home("local:test")).read("report.yaml")
+    with app.test_request_context(headers=DEMO):
+        WorkflowStore(get_user_home("local:test")).save("report.yaml", report)
+    made = client.post("/api/schedules", json={"config": CONFIG}, headers=DEMO).get_json()["data"]["schedule"]
+    assert made["config"]["site"] == "demo"
+    assert [item["id"] for item in client.get("/api/schedules", headers=DEMO).get_json()["data"]["schedules"]] == [made["id"]]
+    assert [item["id"] for item in client.get("/api/schedules").get_json()["data"]["schedules"]] == [schedule["id"]]
+
+
+def test_a_demo_does_not_list_the_example_workflows(execution_context, monkeypatch):
+    from data_formulator.datalake.workspace import get_user_home
+    from data_formulator.workflows.instances import WorkflowStore
+    _a_demo(monkeypatch)
+    app = execution_context[0]
+    with app.test_request_context():
+        assert any(item["origin"] == "demo" for item in WorkflowStore(get_user_home("local:test")).list_all())
+    with app.test_request_context(headers=DEMO):
+        assert not any(item["origin"] == "demo" for item in WorkflowStore(get_user_home("local:test")).list_all())
+
+
+@pytest.mark.slow
+def test_a_demo_schedule_runs_in_the_demos_storage(execution_context, monkeypatch):
+    from data_formulator.datalake.workspace import get_user_home
+    from data_formulator.workflows.agent import WorkflowAgent
+    from data_formulator.workflows.instances import WorkflowStore
+    from data_formulator.workflows.scheduler import execute_occurrence
+    from data_formulator.workspace_factory import get_workspace_manager
+    _a_demo(monkeypatch)
+    app, store, schedule, _ = execution_context
+    with app.app_context():
+        report = WorkflowStore(get_user_home("local:test")).read("report.yaml")
+    with app.test_request_context(headers=DEMO):
+        WorkflowStore(get_user_home("local:test")).save("report.yaml", report)
+    made = store.save("local:test", {**CONFIG, "site": "demo"}, now=NOW)
+    store.delete("local:test", schedule["id"])
+    occurrence, = store.claim_due(NOW + timedelta(hours=1))
+
+    def complete(agent):
+        agent.state.update(status="completed")
+        agent.checkpoint(agent.state)
+        yield {"type": "workflow_state", "run": {"status": "completed"}}
+
+    monkeypatch.setattr(WorkflowAgent, "run_workflow", complete)
+    execute_occurrence(app, store, occurrence)
+    assert store.history(made["id"])[0]["status"] == "completed"
+    with app.test_request_context(headers=DEMO):
+        assert get_workspace_manager("local:test").workspace_exists("scheduled-" + occurrence["id"])
+    with app.app_context():
+        assert not get_workspace_manager("local:test").workspace_exists("scheduled-" + occurrence["id"])

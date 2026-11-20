@@ -532,7 +532,9 @@ export interface DataFormulatorState {
         /** The name auto-naming last set and the sources it covered; a different displayName means the user renamed it. */
         autoName?: { name: string; sources: string[] };
         /** Another tab took over editing this session; this tab is view-only until it takes it back. */
-        openElsewhere?: boolean } | null;
+        openElsewhere?: boolean;
+        /** The demo example (`<dataset id>/<story id>`) the session was opened from; opening it again offers this session. */
+        exampleId?: string } | null;
 
     /** Backend-synchronized count of persisted non-table files in the active workspace. */
     workspaceFileCount: number;

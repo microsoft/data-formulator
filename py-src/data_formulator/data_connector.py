@@ -225,9 +225,17 @@ def _catalog_tree_payload(
     return _lightweight_tree_for_response(tree)
 
 
+def _scope_key() -> str:
+    """The current scope's part of a user connector's registry key: empty in the standard app, ``site:<id>::`` on a
+    demo, whose user connectors are stored apart (``get_user_home``) and must not be mixed up in memory either."""
+    from data_formulator.sites import current_site
+    site = current_site()
+    return f"site:{site}::" if site else ""
+
+
 def _user_connector_key(identity: str, source_id: str) -> str:
-    """Return the internal registry key for a user-owned connector."""
-    return f"{_USER_CONNECTOR_PREFIX}{identity}::{source_id}"
+    """Return the internal registry key for a user-owned connector in the current scope."""
+    return f"{_USER_CONNECTOR_PREFIX}{_scope_key()}{identity}::{source_id}"
 
 
 def _is_user_connector_key(key: str) -> bool:
@@ -284,6 +292,23 @@ def _loader_auth_mode(loader_class: type[ExternalDataLoader]) -> str:
     return config.get("mode") if config else loader_class.auth_mode()
 
 
+def _admin_connector_visible(key: str) -> bool:
+    """Whether the current request may use the admin connector ``key``: in the standard app, all but the demos'
+    data folders; on a demo, only the connections and folders its profile lists."""
+    from data_formulator.sites import current_site, current_site_connector_ids
+
+    if key in _DEMO_FOLDER_SITES:
+        return current_site() == _DEMO_FOLDER_SITES[key]
+    allowed = current_site_connector_ids()
+    return allowed is None or key in allowed
+
+
+def visible_admin_connector_ids() -> set[str]:
+    """The admin connector ids the current request may use (see ``_admin_connector_visible``)."""
+    _sync_demo_folder_connectors()
+    return {key for key in _ADMIN_CONNECTOR_IDS if _admin_connector_visible(key)}
+
+
 def _visible_connector_items(identity: str | None) -> list[tuple[str, "DataConnector", bool]]:
     """Return registry entries visible to the current identity.
 
@@ -304,13 +329,14 @@ def _visible_connector_items(identity: str | None) -> list[tuple[str, "DataConne
         load_connectors(identity)
 
     result = []
-    user_prefix = f"{_USER_CONNECTOR_PREFIX}{identity}::" if identity else None
+    user_prefix = f"{_USER_CONNECTOR_PREFIX}{_scope_key()}{identity}::" if identity else None
     from data_formulator.configuration import read_configuration
     _sync_installation_connectors()
+    _sync_demo_folder_connectors()
     configured_connectors = read_configuration()['overrides'].get('connectors', {})
     for key, connector in DATA_CONNECTORS.items():
         if key in _ADMIN_CONNECTOR_IDS:
-            if not configured_connectors.get(key, {}).get('enabled', True):
+            if not configured_connectors.get(key, {}).get('enabled', True) or not _admin_connector_visible(key):
                 continue
             result.append((key, connector, True))
         elif disabled:
@@ -347,10 +373,13 @@ def _resolve_connector_with_key(data: dict[str, Any]) -> tuple[str, "DataConnect
 
     # Admin/global connector IDs are public registry keys.
     _sync_installation_connectors()
+    _sync_demo_folder_connectors()
     if connector_id in _ADMIN_CONNECTOR_IDS and connector_id in DATA_CONNECTORS:
         from data_formulator.configuration import resource_enabled
         if not resource_enabled('connectors', connector_id):
             raise AppError(ErrorCode.ACCESS_DENIED, 'This connector is disabled by the administrator.')
+        if not _admin_connector_visible(connector_id):
+            raise AppError(ErrorCode.ACCESS_DENIED, 'This demo does not offer this connector.')
         return connector_id, DATA_CONNECTORS[connector_id]
 
     if user_connectors_disabled():
@@ -419,6 +448,9 @@ class DataConnector:
         # In-process cache; cleared on disconnect.
         self._loaders: dict[str, ExternalDataLoader] = {}
         self._loaders_configured_only = False
+        # Admin connectors marked auto_connect connect with their configured (host) credentials when listed.
+        self._auto_connect = False
+        self._auto_connect_failed: dict[str, float] = {}
 
     # -- Factory -----------------------------------------------------------
 
@@ -464,7 +496,7 @@ class DataConnector:
 
     def _uses_configured_params(self) -> bool:
         from data_formulator.configuration import user_connectors_disabled
-        return bool(getattr(self, '_installation_reference', None) or (
+        return bool(getattr(self, '_installation_reference', None) or getattr(self, '_demo_site', None) or (
             self._source_id in _ADMIN_CONNECTOR_IDS and user_connectors_disabled()))
 
     def get_frontend_config(self, include_pinned_in_form: bool = False) -> dict[str, Any]:
@@ -559,13 +591,19 @@ class DataConnector:
         from data_formulator.auth.vault import get_credential_vault
         return get_credential_vault()
 
+    def _vault_owner(self, identity: str) -> str:
+        """Whose credentials these are: a demo's own (user) connection keeps them apart from the standard app's;
+        an admin connection's sign-in is the user's in every scope."""
+        site = getattr(self, "_owner_site", None)
+        return f"{identity}@site:{site}" if site else identity
+
     def _vault_store(self, identity: str, user_params: dict[str, Any]) -> bool:
         """Encrypt and persist user_params for this source. Returns True on success."""
         vault = self._get_vault()
         if vault is None:
             return False
         try:
-            vault.store(identity, self._source_id, {
+            vault.store(self._vault_owner(identity), self._source_id, {
                 "user_params": user_params,
                 "source_id": self._source_id,
             })
@@ -581,7 +619,7 @@ class DataConnector:
         if vault is None:
             return None
         try:
-            data = vault.retrieve(identity, self._source_id)
+            data = vault.retrieve(self._vault_owner(identity), self._source_id)
             if data and "user_params" in data:
                 return data["user_params"]
             return None
@@ -596,7 +634,7 @@ class DataConnector:
         if vault is None:
             return
         try:
-            vault.delete(identity, self._source_id)
+            vault.delete(self._vault_owner(identity), self._source_id)
         except Exception as exc:
             logger.warning("Failed to delete credentials for %s/%s: %s",
                            identity[:16], self._source_id, exc)
@@ -607,7 +645,7 @@ class DataConnector:
         if vault is None:
             return False
         try:
-            return self._source_id in vault.list_sources(identity)
+            return self._source_id in vault.list_sources(self._vault_owner(identity))
         except Exception as e:
             logger.debug("Could not check stored credentials for %s", self._source_id, exc_info=e)
             return False
@@ -903,6 +941,8 @@ def resolve_catalog_refresh_target(
         from data_formulator.errors import AppError, ErrorCode
         if not resource_enabled('connectors', source_id):
             raise AppError(ErrorCode.ACCESS_DENIED, 'This connector is disabled by the administrator.')
+        if not _admin_connector_visible(source_id):
+            raise AppError(ErrorCode.ACCESS_DENIED, 'This demo does not offer this connector.')
         connector = DATA_CONNECTORS[source_id]
     else:
         _, connector = _resolve_connector_with_key({"connector_id": source_id})
@@ -924,6 +964,22 @@ def resolve_catalog_refresh_target(
         if hasattr(connector, "_loaders") and 'identity' in locals():
             connector._loaders[identity] = loader
     return loader_class, loader
+
+
+_AUTO_CONNECT_RETRY_SECONDS = 60
+
+
+def _auto_connect_now(connector: DataConnector, identity: str) -> bool:
+    """Connect an auto_connect admin connector with its configured credentials; after a failure, wait a minute
+    before trying again so listing connectors stays fast."""
+    if time.time() - connector._auto_connect_failed.get(identity, 0) < _AUTO_CONNECT_RETRY_SECONDS:
+        return False
+    if connector._try_ambient_reconnect(identity) is not None:
+        connector._auto_connect_failed.pop(identity, None)
+        return True
+    connector._auto_connect_failed[identity] = time.time()
+    logger.info("Auto-connect failed for '%s'; retrying in %ds", connector._source_id, _AUTO_CONNECT_RETRY_SECONDS)
+    return False
 
 
 def _connector_connection_status(
@@ -952,6 +1008,8 @@ def _connector_connection_status(
     connected = connector._get_loader(identity) is not None or has_stored
     if connected:
         return True, has_stored, False
+    if getattr(connector, "_auto_connect", False) is True and _auto_connect_now(connector, identity):
+        return True, False, False
 
     sso_auto = False
     if sso_token is not None and auth_mode in ("token", "sso_exchange", "delegated"):
@@ -1548,6 +1606,8 @@ def create_connector():
         default_params=default_params,
         icon=icon,
     )
+    from data_formulator.sites import current_site
+    connector._owner_site = current_site()
     registry_key = _user_connector_key(identity, instance_id)
     DATA_CONNECTORS[registry_key] = connector
 
@@ -2767,6 +2827,7 @@ def _load_admin_specs() -> list[SourceSpec]:
             continue
         name = fields.pop("name", loader_type.replace("_", " ").title())
         icon = fields.pop("icon", "")
+        auto_connect = fields.pop("auto_connect", "").strip().lower() in ("1", "true", "yes", "on")
         params: dict[str, str] = {}
         other: dict[str, str] = {}
         for k, v in fields.items():
@@ -2781,6 +2842,7 @@ def _load_admin_specs() -> list[SourceSpec]:
             display_name=name,
             default_params=params,
             icon=icon,
+            auto_connect=auto_connect,
             source="admin",
         ))
 
@@ -2880,8 +2942,35 @@ def _sync_installation_connectors():
         DATA_CONNECTORS[identifier] = connector
         _ADMIN_CONNECTOR_IDS.add(identifier)
 
+# A demo's data folders (sites.site_folder_sources), by connector id: the demo each belongs to.
+_DEMO_FOLDER_SITES: dict[str, str] = {}
+
+
+def _sync_demo_folder_connectors() -> None:
+    """Register the current request's demo data folders as admin connectors: read-only local folders the server
+    chose, so not subject to the local-folder loader's local-mode limit, and offered only on that demo."""
+    from data_formulator.sites import current_site, site_folder_sources
+
+    site = current_site()
+    if site is None:
+        return
+    from data_formulator.data_loader.local_folder_data_loader import LocalFolderDataLoader
+
+    for identifier, label, path in site_folder_sources(site):
+        existing = DATA_CONNECTORS.get(identifier)
+        if existing is not None and existing._default_params.get("root_dir") == str(path):
+            continue
+        connector = DataConnector.from_loader(LocalFolderDataLoader, identifier, display_name=label,
+                                              default_params={"root_dir": str(path), "recursive": True}, icon="local_folder")
+        connector._auto_connect = True
+        connector._demo_site = site
+        DATA_CONNECTORS[identifier] = connector
+        _ADMIN_CONNECTOR_IDS.add(identifier)
+        _DEMO_FOLDER_SITES[identifier] = site
+
+
 # Track identities whose user connectors have been loaded.
-_LOADED_USER_IDENTITIES: set[str] = set()
+_LOADED_USER_IDENTITIES: set[tuple[str | None, str]] = set()
 
 
 def load_connectors(identity: str | None = None) -> None:
@@ -2892,11 +2981,14 @@ def load_connectors(identity: str | None = None) -> None:
     request.  Subsequent calls for the same identity are no-ops.
     """
     from data_formulator.data_loader import DATA_LOADERS
+    from data_formulator.sites import current_site
 
-    if not identity or identity in _LOADED_USER_IDENTITIES:
+    # Each scope (the standard app, each demo) has its own user connectors on disk (get_user_home).
+    loaded = (current_site(), identity)
+    if not identity or loaded in _LOADED_USER_IDENTITIES:
         return
 
-    _LOADED_USER_IDENTITIES.add(identity)
+    _LOADED_USER_IDENTITIES.add(loaded)
 
     user_specs = _load_user_specs(identity)
     for spec in user_specs:
@@ -2915,6 +3007,7 @@ def load_connectors(identity: str | None = None) -> None:
             default_params=spec.default_params,
             icon=spec.icon or spec.loader_type,
         )
+        source._owner_site = current_site()
         DATA_CONNECTORS[registry_key] = source
         logger.info("Loaded user connector '%s' (type=%s)", spec.source_id, spec.loader_type)
 
@@ -2959,6 +3052,7 @@ def register_data_connectors(app: Flask) -> None:
             default_params=spec.default_params,
             icon=spec.icon or spec.loader_type,
         )
+        source._auto_connect = bool(getattr(spec, "auto_connect", False))
         DATA_CONNECTORS[spec.source_id] = source
         _ADMIN_CONNECTOR_IDS.add(spec.source_id)
         logger.info(

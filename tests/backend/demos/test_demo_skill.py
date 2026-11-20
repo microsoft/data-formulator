@@ -109,13 +109,15 @@ def test_the_standard_registry_never_has_the_demo_skill():
         assert registry.with_demo(site_id) is registry
 
 
-def test_a_demo_registry_is_a_copy_with_the_demo_skill_and_without_other_data_paths():
+def test_a_demo_registry_is_a_copy_with_the_demo_skill_and_every_other_skill(tmp_path):
     registry = build_registry()
     demo = registry.with_demo("demo")
     assert demo.has("demo") and demo.action_owner("load_datasets") == "demo"
-    for name in ("connected_data", "terminal", "configure", "html_app"):
-        assert not demo.has(name) and registry.has(name)
+    assert set(demo.metas) == set(registry.metas) | {"demo"}
+    assert demo.tool_specs == {**registry.tool_specs, "demo": demo.tool_specs["demo"]}
     assert not registry.has("demo")
+    # Its data is the demo's sources: the analyst's sources/ folder stays.
+    assert SessionFiles(_ctx(Workspace("visitor", root_dir=tmp_path / "ws"))).sources.enabled
 
 
 def test_a_demo_without_installed_datasets_gets_no_skill(tmp_path):
@@ -162,12 +164,6 @@ def test_a_demo_cannot_load_another_demos_datasets(tmp_path):
     workspace = Workspace("visitor", root_dir=tmp_path / "ws")
     _, observation = _run(_skill().handle_action("load_datasets", {"datasets": ["science"]}, _ctx(workspace)))
     assert "Unknown dataset" in observation and workspace.list_tables() == []
-
-
-def test_connected_sources_are_hidden_on_a_demo(tmp_path):
-    workspace = Workspace("visitor", root_dir=tmp_path / "ws")
-    assert SessionFiles(_ctx(workspace, demo=None)).sources.enabled
-    assert not SessionFiles(_ctx(workspace)).sources.available
 
 
 # -- datasets -----------------------------------------------------------------------------------
@@ -222,58 +218,6 @@ def test_the_demo_has_no_session_suggestions():
     assert [spec["function"]["name"] for spec in registry.action_tools_for(["demo"])] == ["load_datasets"]
 
 
-def test_a_demo_offers_no_connected_source_tools_and_its_guidance_says_so():
-    registry = build_registry()
-    demo = registry.with_demo("demo")
-    tools = {spec["function"]["name"] for spec in demo.tools_for(["meta", "demo"]) + demo.action_tools_for(["meta", "demo"])}
-    assert {"load_datasets", "visualize", "execute_python_script", "write_report"} <= tools
-    assert not tools & {"probe_data", "propose_data_operation", "write_app", "load_skill_html_app"}
-    body = demo.load_body("meta")
-    for absent in ("connected_data", "`configure`", "propose_data_operation", "probe_data", "html_app"):
-        assert absent not in body, absent
-    assert "`load_datasets`" in body
-    # The standard app's guidance and tools are untouched.
-    standard = registry.load_body("meta")
-    assert "connected_data" in standard and "propose_data_operation" in standard
-    assert "probe_data" in {spec["function"]["name"] for spec in registry.tools_for(["meta"])}
-
-
-def test_the_demo_guidance_rules_still_match_the_baseline_text():
-    from data_formulator.sites.skill import _DEMO_RULES, demo_body_edits
-
-    demo_body_edits.cache_clear()
-    edits = demo_body_edits()
-    assert {name: len(pairs) for name, pairs in edits.items()} == {name: len(rules) for name, rules in _DEMO_RULES.items()}
-
-
-def test_the_demo_refers_work_beyond_its_scope_to_the_full_app():
-    body = demo_skill_body("demo")
-    assert "https://github.com/microsoft/data-formulator" in body
-    assert "regressions" in body and "dashboards" in body
-
-
-def test_nothing_the_demo_analyst_sees_offers_other_data_paths(tmp_path):
-    """The whole prompt and tool list of a demo run: no connectors, uploads, terminal, apps or the web."""
-    agent = AnalystAgent(client=None, workspace=Workspace("visitor", root_dir=tmp_path / "ws"), demo="demo")
-    agent._loaded_skills = {"meta"}
-    agent._run_payload = {"demo": "demo"}
-    prompt = agent._build_system_prompt()
-    preloads = "\n".join(message["content"] for message in agent._preload_messages(agent._initial_loaded_skills(None)))
-    agent._loaded_skills = {"meta", "demo"}
-    tools = agent._current_tools()
-    names = {tool["function"]["name"] for tool in tools}
-    assert "load_datasets" in names
-    assert not names & {"probe_data", "propose_data_operation", "run_terminal", "propose_connection", "write_app"}
-    visualize = next(tool for tool in tools if tool["function"]["name"] == "visualize")
-    assert "connector_inputs" not in visualize["function"]["parameters"]["properties"]
-    text = "\n".join([prompt, preloads, json.dumps(tools)])
-    for offer in ("connected_data", "configure", "propose_data_operation", "probe_data", "connector_inputs", "html_app",
-                  "connector forms", "connected-source catalogs", "sources://<source_id>", "acquire remote data",
-                  "run_terminal"):
-        assert offer not in text, offer
-    assert "Do not fetch data from the internet on this demo" in prompt
-
-
 def test_the_standard_analyst_keeps_its_data_paths(tmp_path):
     agent = AnalystAgent(client=None, workspace=Workspace("visitor", root_dir=tmp_path / "ws"))
     agent._loaded_skills = {"meta"}
@@ -283,3 +227,36 @@ def test_the_standard_analyst_keeps_its_data_paths(tmp_path):
     visualize = next(tool for tool in tools if tool["function"]["name"] == "visualize")
     assert "connector_inputs" in visualize["function"]["parameters"]["properties"]
     assert "connected_data" in prompt and "connector forms" in prompt and "acquire remote data" in prompt
+
+
+# -- the data folder ----------------------------------------------------------------------------
+
+
+def test_a_data_folder_holds_the_datasets_tables_and_is_offered_only_on_its_demo(tmp_path, monkeypatch):
+    import pyarrow.parquet as pq
+    from data_formulator import data_connector
+    from data_formulator.sites.data_folder import write_data_folders
+
+    profile = tmp_path / "content" / "demo" / "profile.yaml"
+    profile.write_text(PROFILE + "sources:\n  - folder: data\n    name: Demo datasets\n", encoding="utf-8")
+    sites.site_profile.cache_clear()
+    content = tmp_path / "content" / "demo" / "r1"
+    write_data_folders(sites.site_profile("demo"), content, log=lambda line: None)
+    files = sorted(str(path.relative_to(content / "data")) for path in (content / "data").rglob("*.parquet"))
+    assert files == ["culture/countries.parquet", "culture/spending.parquet", "education/countries.parquet",
+                     "education/schools.parquet"]
+    assert pq.read_table(content / "data" / "culture" / "spending.parquet").column("value").to_pylist() == [1, 2]
+
+    monkeypatch.setattr(data_connector, "DATA_CONNECTORS", {})
+    monkeypatch.setattr(data_connector, "_ADMIN_CONNECTOR_IDS", set())
+    monkeypatch.setattr(data_connector, "_DEMO_FOLDER_SITES", {})
+    monkeypatch.setattr(data_connector, "_sync_installation_connectors", lambda: None)
+    app = flask.Flask(__name__)
+    with app.test_request_context("/", headers={"X-DF-Demo": "demo"}):
+        assert data_connector.visible_admin_connector_ids() == {"demo-demo-data"}
+        connector = data_connector.DATA_CONNECTORS["demo-demo-data"]
+        assert connector._display_name == "Demo datasets" and connector._uses_configured_params()
+        assert connector._default_params["root_dir"] == str(content / "data")
+    for headers in ({}, {"X-DF-Demo": "other"}):
+        with app.test_request_context("/", headers=headers):
+            assert "demo-demo-data" not in data_connector.visible_admin_connector_ids()

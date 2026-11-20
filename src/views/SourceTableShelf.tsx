@@ -566,7 +566,6 @@ export const SourceTableShelf: FC<{
     const canvasTarget = useSelector(dfSelectors.selectCanvasTarget);
     const externalReferences = useSelector((state: DataFormulatorState) => state.externalTableReferences);
     const pendingTableLoads = useSelector((state: DataFormulatorState) => state.pendingTableLoads);
-    const isDemo = useSelector((state: DataFormulatorState) => !!state.serverConfig.SITE);
     const collapsedByDefault = useSelector((state: DataFormulatorState) => !!state.serverConfig.SITE?.workspace_collapsed);
     const workspaceItemOrder = useSelector((state: DataFormulatorState) => state.workspaceItemOrder);
     const workspaceTitle = useSelector((state: DataFormulatorState) => state.workspaceTitle);
@@ -1114,11 +1113,10 @@ export const SourceTableShelf: FC<{
                         <ScrollFadeEdge visible={listMoreBelow} />
                     </Box>
                     </Box>
-                    {/* Adding data is one more row of the list. A demo's data is its own datasets, which its analyst
-                        loads when asked (design-docs/69). */}
-                    {!isDemo && <WorkspaceRow action icon={<AddIcon sx={{ fontSize: 14, color: iconTone.rest }} />}
+                    {/* Adding data is one more row of the list. */}
+                    <WorkspaceRow action icon={<AddIcon sx={{ fontSize: 14, color: iconTone.rest }} />}
                         label={t('dataThread.addMoreData', { defaultValue: 'Add more data' })}
-                        onClick={() => setAddDataDialogOpen(true)} />}
+                        onClick={() => setAddDataDialogOpen(true)} />
                 </Box>
             </Collapse>
 

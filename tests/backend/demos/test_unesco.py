@@ -12,6 +12,7 @@ import pytest
 import yaml
 
 from data_formulator import sites
+from data_formulator.sites import builder
 from data_formulator.session_format import SESSION_STATE_VERSION
 
 pytestmark = [pytest.mark.backend]
@@ -48,7 +49,7 @@ def test_profile_is_served_with_its_datasets_and_live_stories(tmp_path, monkeypa
 
 def test_every_image_the_profile_names_is_committed_and_nothing_else():
     profile = yaml.safe_load(build.PROFILE.read_text(encoding="utf-8"))
-    images = {name for name in build.referenced_files(profile) if name.endswith(".png")}
+    images = {name for name in sites.referenced_files(profile) if name.endswith(".png")}
     committed = {path.relative_to(build.ASSETS).as_posix() for path in build.ASSETS.rglob("*") if path.is_file()}
     assert images == committed
 
@@ -56,12 +57,12 @@ def test_every_image_the_profile_names_is_committed_and_nothing_else():
 def test_install_copies_the_profile_and_images(tmp_path):
     profile = yaml.safe_load(build.PROFILE.read_text(encoding="utf-8"))
     site = tmp_path / "unesco"
-    build.install_static(profile, site)
+    builder.install_static(DEMO, profile, site)
     content = site / profile["release"]
     assert (site / "profile.yaml").read_bytes() == build.PROFILE.read_bytes()
     assert (site / "skill" / "SKILL.md").read_bytes() == (DEMO / "skill" / "SKILL.md").read_bytes()
-    sessions = [name for name in build.referenced_files(profile) if name.endswith(".zip")]
-    assert build.missing_files(profile, content) == sessions
+    sessions = [name for name in sites.referenced_files(profile) if name.endswith(".zip")]
+    assert builder.missing_files(profile, content) == sessions
 
 
 def _fake_uis_download(raw: Path) -> None:
@@ -127,6 +128,11 @@ def test_build_makes_a_session_data_formulator_can_open(tmp_path):
     # The indicator list is named as the whole catalog, so it is not mistaken for a query result.
     assert tables["sdg11_indicators"]["displayId"] == "All SDG 11.4 heritage indicators (catalog)"
     assert tables["sdg11_national"]["displayId"] == "sdg11_national"
+    # Loaded, as far as the app can tell, from the demo's data folder, so it shows that source and refreshes from it.
+    assert tables["sdg11_national"]["sourceConfig"] | {"lastRefreshed": 0} == {
+        "type": "database", "connectorId": "demo-unesco-data", "databaseTable": "culture/sdg11_national.parquet",
+        "canRefresh": True, "lastRefreshed": 0, "originalTableName": "sdg11_national"}
+    assert workspace.get_table_metadata("sdg11_national").source_table == "culture/sdg11_national.parquet"
     assert state["activeWorkspace"] == {"id": "culture", "displayName": starter["title"]}
     with zipfile.ZipFile(target) as archive:
         guide = next(name for name in archive.namelist() if name.endswith("UIS data guide.md"))
@@ -189,7 +195,7 @@ def test_build_adds_a_story_to_its_dataset_session(tmp_path):
     _fake_uis_download(tmp_path / "raw")
     content = tmp_path / "content"
     build.build_starter(starter, profile, tmp_path / "raw", tmp_path / "work", content)
-    target = build.build_story(story, starter, tmp_path / "stories", content)
+    target = builder.build_story(DEMO, story, starter, tmp_path / "stories", content)
 
     workspace = WorkspaceManager(tmp_path / "import").create_and_open_workspace("check", "local:test")
     state = workspace.import_session_zip(io.BytesIO(target.read_bytes()))
@@ -224,6 +230,11 @@ def test_install_builds_and_reports_what_is_still_missing(tmp_path):
     content = tmp_path / "sites" / "unesco" / yaml.safe_load(build.PROFILE.read_text(encoding="utf-8"))["release"]
     assert (content / "culture.zip").is_file() and (content / "stories" / "culture-c20.zip").is_file()
     assert (tmp_path / "sites" / "unesco" / "profile.yaml").is_file()
+    # Each dataset table's source is in the data folder, where the session says it is.
+    with zipfile.ZipFile(content / "culture.zip") as archive:
+        state = json.loads(archive.read("state.json"))
+    paths = [table["sourceConfig"]["databaseTable"] for table in state["inputTables"]]
+    assert paths and all((content / "data" / path).is_file() for path in paths)
     assert lines[0] == "building culture" and any("story culture-c20" in line for line in lines)
     assert build._log is print
 

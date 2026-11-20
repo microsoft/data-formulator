@@ -152,6 +152,7 @@ class WorkspaceManager:
         source_ids: Optional[list[str]] = None,
         provisional: Optional[bool] = None,
         scheduled_run: Optional[dict] = None,
+        example_id: Optional[str] = None,
         state_revision: Optional[int] = None,
     ) -> None:
         """Write a lightweight ``workspace_meta.json`` used by list_workspaces.
@@ -203,6 +204,11 @@ class WorkspaceManager:
             meta["scheduledRun"] = scheduled_run
         elif existing.get("scheduledRun"):
             meta["scheduledRun"] = existing["scheduledRun"]
+        # The demo example the session was opened from, so opening it again can offer this session.
+        if example_id:
+            meta["exampleId"] = example_id
+        elif isinstance(existing.get("exampleId"), str):
+            meta["exampleId"] = existing["exampleId"]
         if existing.get("starred"):
             meta["starred"] = True
         if state_revision is not None:
@@ -312,6 +318,7 @@ class WorkspaceManager:
                 "chart_count": cc,
                 "source_ids": meta.get("sourceIds", []),
                 "scheduled_run": meta.get("scheduledRun"),
+                "example_id": meta.get("exampleId"),
                 "starred": meta.get("starred") is True,
             })
 
@@ -646,6 +653,7 @@ class WorkspaceManager:
             chart_count=cc,
             source_ids=_session_source_ids(clean_state),
             scheduled_run=aw.get("scheduledRun") if isinstance(aw, dict) else None,
+            example_id=aw.get("exampleId") if isinstance(aw, dict) and isinstance(aw.get("exampleId"), str) else None,
             state_revision=revision,
         )
 

@@ -218,6 +218,8 @@ def list_sessions():
         entry["source_ids"] = w.get("source_ids", [])
         if w.get("scheduled_run"):
             entry["scheduled_run"] = w["scheduled_run"]
+        if w.get("example_id"):
+            entry["example_id"] = w["example_id"]
         if w.get("starred"):
             entry["starred"] = True
         sessions.append(entry)
@@ -376,6 +378,41 @@ def export_session():
 
     filename = f"df_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
     return send_file(buf, mimetype="application/zip", as_attachment=True, download_name=filename)
+
+
+@session_bp.route("/copy-to-app", methods=["POST"])
+def copy_session_to_app():
+    """Copy one of the user's sessions on a demo into the standard app, as a new session there.
+
+    Body: ``{ "workspace_id": "session_..." }``. Each scope (the standard app, each demo) keeps its own sessions;
+    this is the one way from a demo to the app. The demo keeps its session.
+    """
+    from uuid import uuid4
+
+    from data_formulator.datalake.session_archive import build_session_archive
+    from data_formulator.sites import current_site, in_scope
+
+    if current_site() is None:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Only a demo's session can be copied to Data Formulator.")
+    workspace_id = str((request.get_json(silent=True) or {}).get("workspace_id") or "").strip()
+    identity_id = get_identity_id()
+    source = get_workspace_manager(identity_id)
+    state = source.load_session_state(workspace_id) if workspace_id and source.workspace_exists(workspace_id) else None
+    if state is None:
+        raise AppError(ErrorCode.TABLE_NOT_FOUND, f"Session '{workspace_id}' not found")
+    archive = build_session_archive(source.open_workspace(workspace_id, identity_id), state)
+
+    copy_id = f"session_{datetime.now():%Y%m%d_%H%M%S}_{uuid4().hex[:4]}"
+    with in_scope(None):
+        target = get_workspace_manager(identity_id)
+        copied = target.create_and_open_workspace(copy_id, identity_id).import_session_zip(archive)
+        # A new session of the app's: not tied to the demo example it came from, and editable.
+        active = {key: value for key, value in (copied.get("activeWorkspace") or {}).items()
+                  if key not in ("exampleId", "readOnly", "openElsewhere", "provisional")}
+        display_name = active.get("displayName") or workspace_id
+        copied["activeWorkspace"] = {**active, "id": copy_id, "displayName": display_name}
+        target.save_session_state(copy_id, copied)
+    return json_ok({"id": copy_id, "display_name": display_name})
 
 
 @session_bp.route("/import", methods=["POST"])

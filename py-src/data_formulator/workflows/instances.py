@@ -234,6 +234,10 @@ class WorkflowStore:
     def read(self, name: str) -> str:
         if isinstance(name, str) and name.startswith(('demo/', 'server/')):
             from data_formulator.configuration import resource_options, workflow_content
+            from data_formulator.sites import current_site_workflows
+            offered = current_site_workflows()
+            if offered is not None and name not in offered:
+                raise ValueError('Workflow is not published.')
             options = resource_options('workflows', name)
             if not options.get('enabled', True):
                 raise ValueError('Workflow is not published.')
@@ -261,11 +265,17 @@ class WorkflowStore:
     def list_all(self, language: str = "en") -> list[dict]:
         items = []
         sources = [(path, path.name, "user") for pattern in ("*.yaml", "*.yml") for path in sorted(self.files.rglob(pattern))]
-        sources.extend((path, f"demo/{path.name}", "demo") for path in sorted(Path(__file__).parent.glob("*.yaml")))
+        from data_formulator.sites import current_site_workflows
+        # A demo offers its visitors' own workflows and the server workflows it lists; Data Formulator's example
+        # workflows are the standard app's.
+        offered = current_site_workflows()
+        if offered is None:
+            sources.extend((path, f"demo/{path.name}", "demo") for path in sorted(Path(__file__).parent.glob("*.yaml")))
         from data_formulator.configuration import read_configuration
         configured = read_configuration()['overrides'].get('workflows', {})
         sources.extend((Path(name), name, 'server') for name, options in configured.items()
-                       if name.startswith('server/') and ('content' in options or 'file' in options))
+                       if name.startswith('server/') and ('content' in options or 'file' in options)
+                       and (offered is None or name in offered))
         for path, name, origin in sources:
             if origin != 'user' and not configured.get(name, {}).get('enabled', True):
                 continue

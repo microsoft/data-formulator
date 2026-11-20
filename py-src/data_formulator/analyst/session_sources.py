@@ -92,13 +92,13 @@ class Sources:
             return
         self._bootstrapped = True
         try:
-            from data_formulator.data_connector import _ADMIN_CONNECTOR_IDS, list_available_connector_ids
+            from data_formulator.data_connector import list_available_connector_ids, visible_admin_connector_ids
             from data_formulator.datalake.catalog_cache import list_cached_sources
             from data_formulator.datalake.catalog_refresh import ensure_catalog_freshness
             from data_formulator.datalake.connector_preferences import connector_is_enabled
             from data_formulator.data_operations.discovery import _source_is_discoverable
             cached = set(list_cached_sources(self.user_home))
-            for source_id in sorted((set(_ADMIN_CONNECTOR_IDS) | set(list_available_connector_ids())) - cached):
+            for source_id in sorted((visible_admin_connector_ids() | set(list_available_connector_ids())) - cached):
                 if connector_is_enabled(self.user_home, source_id) and _source_is_discoverable(source_id):
                     ensure_catalog_freshness(Path(self.user_home), source_id)
         except Exception:

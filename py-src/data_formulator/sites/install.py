@@ -18,6 +18,8 @@ import time
 from collections import deque
 from typing import Any
 
+from flask import Flask, current_app
+
 from data_formulator.auth.identity import is_local_mode
 from data_formulator.errors import AppError, ErrorCode
 from data_formulator.sites import all_demo_ids, demo_status, packaged_demo_dir, site_profile, sites_dir
@@ -41,7 +43,13 @@ def listed_demos() -> list[dict[str, str]]:
             for site_id in all_demo_ids() if demo_status(site_id) == "ready" or can_install(site_id)]
 
 
-def _run(site_id: str, job: dict[str, Any]) -> None:
+def _run(site_id: str, job: dict[str, Any], app: Flask) -> None:
+    # The server's app context, so this thread resolves the same --data-dir (sites folder, code-signing key).
+    with app.app_context():
+        _build(site_id, job)
+
+
+def _build(site_id: str, job: dict[str, Any]) -> None:
     def log(line: str) -> None:
         job["log"].append(line)
 
@@ -92,5 +100,5 @@ def start(site_id: str) -> dict[str, Any]:
         if job is None or job["state"] != "running":
             job = {"state": "running", "log": deque(maxlen=_LOG_LINES), "started": time.time()}
             _jobs[site_id] = job
-            threading.Thread(target=_run, args=(site_id, job), name=f"demo-install-{site_id}", daemon=True).start()
+            threading.Thread(target=_run, args=(site_id, job, current_app._get_current_object()), name=f"demo-install-{site_id}", daemon=True).start()
     return status(site_id)

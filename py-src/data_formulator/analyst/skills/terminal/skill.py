@@ -115,8 +115,8 @@ def require_local_terminal_request(*, check_policy: bool = True) -> None:
 
     if not has_request_context() or not is_local_mode() or sys.platform not in ("darwin", "linux", "win32"):
         raise ValueError("Terminal is available only in single-user local mode on macOS, Linux or Windows.")
-    from data_formulator.configuration import user_connectors_disabled, terminal_mode
-    if check_policy and user_connectors_disabled():
+    from data_formulator.configuration import deployment_disables_user_connectors, terminal_mode
+    if check_policy and deployment_disables_user_connectors():
         raise ValueError("Terminal data access is disabled in this deployment.")
     if check_policy and terminal_mode() == "off":
         raise ValueError("Terminal access is disabled by application policy.")

@@ -60,7 +60,7 @@ import dfLogo from '../assets/df-logo.svg';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
 import { UnifiedDataUploadDialog, UploadTabType, ConnectorInstance } from './UnifiedDataUploadDialog';
-import { LandingDataEntry } from './LandingDataEntry';
+import { LandingDataEntry, LandingSources } from './LandingDataEntry';
 import { ReportView } from './ReportView';
 import { CanvasChromeContext } from './CanvasHeader';
 import { CanvasTabs } from './CanvasTabs';
@@ -468,7 +468,7 @@ export const DataFormulatorFC = ({ }) => {
         dispatch(dfActions.queueAnalystTask({ text, images, attachments }));
     };
 
-    const handleLoadExampleSession = async (session: ExampleSession, workspaceTitle?: string): Promise<boolean> => {
+    const handleLoadExampleSession = async (session: ExampleSession, workspaceTitle?: string, exampleId?: string): Promise<boolean> => {
         dispatch(dfActions.setSessionLoading({ loading: true, label: t('messages.loadingExample', { title: session.title }) }));
 
         dispatch(dfActions.addMessages({
@@ -491,7 +491,7 @@ export const DataFormulatorFC = ({ }) => {
             // header; provisional so a failed import stays on the landing page.
             dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: session.title, provisional: true }));
             const state = await importWorkspace(file, wsId, session.title);
-            dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: session.title } }));
+            dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: session.title, ...(exampleId && { exampleId }) } }));
             if (workspaceTitle) dispatch(dfActions.setWorkspaceTitle(workspaceTitle));
             dispatch(dfActions.setExampleFollowUps({ title: session.title, questions: session.followUps || [] }));
 
@@ -532,11 +532,23 @@ export const DataFormulatorFC = ({ }) => {
                     '{{name}} is loaded. Ask the analyst anything about it in the chat, or start with one of these:' }) }));
         }
     };
-    /** A story opens on its saved session, its question already answered; without one the analyst runs it live. */
+    /** A copy of a story's saved session, its question already answered, remembered as opened from the story. */
+    const openStoryCopy = async (starter: SiteStarter, story: SiteStory) => {
+        await handleLoadExampleSession({ id: story.id, title: story.headline, description: story.dek || '',
+            previewImage: story.image || '', workspace: story.session, live: false, followUps: story.follow_ups },
+            starter.title, `${starter.id}/${story.id}`);
+    };
+    // A story opened before: whether to continue that session or start a new copy.
+    const [storyReopen, setStoryReopen] = useState<{ starter: SiteStarter; story: SiteStory; previous: WorkspaceSummary }>();
+    /** A story opens on its saved session (the visitor's earlier copy, if they choose it); without one the analyst runs it live. */
     const handleOpenStory = async (starter: SiteStarter, story: SiteStory) => {
         if (!story.available) return handleOpenStarter(starter, story.prompt, story.follow_ups);
-        await handleLoadExampleSession({ id: story.id, title: story.headline, description: story.dek || '',
-            previewImage: story.image || '', workspace: story.session, live: false, followUps: story.follow_ups }, starter.title);
+        const exampleId = `${starter.id}/${story.id}`;
+        const previous = savedWorkspaces
+            .filter(w => w.example_id === exampleId && !w.read_only)
+            .sort((a, b) => (b.saved_at || '').localeCompare(a.saved_at || ''))[0];
+        if (previous) setStoryReopen({ starter, story, previous });
+        else await openStoryCopy(starter, story);
     };
 
     useEffect(() => {
@@ -1043,6 +1055,24 @@ export const DataFormulatorFC = ({ }) => {
         </Box>) : appName}
     </Typography>;
 
+    // The landing's sources and ways to add data: under the chat, or after a demo's centred chat.
+    const landingSources = {
+        onUpload: () => openUploadDialog('upload'),
+        onConnect: serverConfig.DISABLE_DATA_CONNECTORS ? undefined : () => openUploadDialog('add-connection'),
+        onLinkFolder: serverConfig?.IS_LOCAL_MODE && !serverConfig.DISABLE_DATA_CONNECTORS ? () => openUploadDialog('local-folder') : undefined,
+        onSelectConnector: (conn: ConnectorInstance) => {
+            // Already-authed connector → open the data-source
+            // sidebar focused on it. Otherwise open the upload
+            // dialog at the connector's auth/connect tab.
+            if (conn.connected || conn.sso_auto_connect) {
+                dispatch(dfActions.focusConnector(conn.id));
+            } else {
+                openUploadDialog(`connector:${conn.id}` as UploadTabType);
+            }
+        },
+        connectors: pageConnectors,
+    };
+
     let dataUploadRequestBox = <Box sx={{
             margin: '4px 4px 4px 8px', 
             ...canvasPattern(`
@@ -1070,9 +1100,18 @@ export const DataFormulatorFC = ({ }) => {
                             <Box component="img" src={dfLogo} alt="Data Formulator" sx={{ display: 'block', height: { xs: 36, sm: 56 }, width: 'auto' }} />
                         </Box>
                         <Box aria-hidden sx={{ display: { xs: 'none', sm: 'block' }, width: '1px', alignSelf: 'stretch', bgcolor: 'divider' }} />
-                        <Box sx={{ minWidth: 0 }}>
+                        {/* As wide as its text: the title, or a tagline of up to 30em on one line, so the column never
+                            takes all the room it has and pushes the lockup off centre. The hidden copy sizes the column;
+                            the tagline itself fills it, so under a wider title it wraps at the title's width, not at 30em. */}
+                        <Box sx={{ minWidth: 0, maxWidth: '100%', width: { sm: 'max-content' } }}>
                             {heading(Math.min(headingSize, 40))}
-                            <Typography sx={{ ...taglineSx, mt: 1, textAlign: 'inherit' }}>{tagline}{versionTag}</Typography>
+                            <Typography aria-hidden sx={{ ...taglineSx, display: { xs: 'none', sm: 'block' }, height: 0,
+                                overflow: 'hidden', visibility: 'hidden', maxWidth: '30em' }}>
+                                {tagline}{versionTag}
+                            </Typography>
+                            <Typography sx={{ ...taglineSx, mt: 1, textAlign: 'inherit', width: { sm: 0 }, minWidth: { sm: '100%' } }}>
+                                {tagline}{versionTag}
+                            </Typography>
                         </Box>
                     </Box>
                 ) : heading(headingSize)}
@@ -1183,21 +1222,8 @@ export const DataFormulatorFC = ({ }) => {
                 <LandingDataEntry
                     onStartChat={startAnalystChat}
                     ensureActiveWorkspace={() => dispatch(ensureActiveWorkspace())}
-                    onUpload={() => openUploadDialog('upload')}
-                    onConnect={serverConfig.DISABLE_DATA_CONNECTORS ? undefined : () => openUploadDialog('add-connection')}
-                    onLinkFolder={serverConfig?.IS_LOCAL_MODE && !serverConfig.DISABLE_DATA_CONNECTORS ? () => openUploadDialog('local-folder') : undefined}
+                    {...landingSources}
                     readOnly={activeWorkspace?.readOnly || site?.status === 'not_installed'}
-                    onSelectConnector={(conn) => {
-                        // Already-authed connector → open the data-source
-                        // sidebar focused on it. Otherwise open the upload
-                        // dialog at the connector's auth/connect tab.
-                        if (conn.connected || conn.sso_auto_connect) {
-                            dispatch(dfActions.focusConnector(conn.id));
-                        } else {
-                            openUploadDialog(`connector:${conn.id}` as UploadTabType);
-                        }
-                    }}
-                    connectors={pageConnectors}
                     demo={site ? {
                         // What the demo has, and its analyses of the dataset in the tab below (design-docs/69).
                         suggestions: [
@@ -1221,7 +1247,10 @@ export const DataFormulatorFC = ({ }) => {
             </Box>
 
             {site ? <>
-                {site.status !== 'not_installed' && <Box sx={{ mx: 'auto', width: '100%', maxWidth: DEMO_COLUMN }}>
+                {site.status !== 'not_installed' && <Box sx={{ mx: 'auto', width: '100%', maxWidth: DEMO_COLUMN, textAlign: 'left' }}>
+                    {/* After the centred block, so the chat stays at the screen's middle. A demo lists its sources only,
+                        without the "Add data:" row. */}
+                    <LandingSources connectors={landingSources.connectors} onSelectConnector={landingSources.onSelectConnector} />
                     <DemoDatasetTabs starters={site.starters} disabled={sessionLoading || activeWorkspace?.readOnly}
                         onLoad={(starter, question) => void handleOpenStarter(starter, question)}
                         onOpenStory={(starter, story) => void handleOpenStory(starter, story)} onSelect={setDemoDataset} />
@@ -1261,6 +1290,30 @@ export const DataFormulatorFC = ({ }) => {
                 </DialogActions>
             </Dialog>);
 
+    const storyReopenDialog = (
+            <Dialog open={!!storyReopen} onClose={() => setStoryReopen(undefined)} maxWidth="xs" fullWidth>
+                <DialogTitle>{t('demo.reopenTitle', { defaultValue: 'You opened this example before' })}</DialogTitle>
+                <DialogContent>
+                    <Typography variant="body2">
+                        {t('demo.reopenBody', { defaultValue: 'Continue in your session “{{name}}” (last saved {{date}}), or start a new copy of the example?',
+                            name: storyReopen?.previous.display_name,
+                            date: storyReopen?.previous.saved_at ? new Date(storyReopen.previous.saved_at).toLocaleString() : '' })}
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => {
+                        const reopen = storyReopen;
+                        setStoryReopen(undefined);
+                        if (reopen) void openStoryCopy(reopen.starter, reopen.story);
+                    }}>{t('demo.reopenNewCopy', { defaultValue: 'Start a new copy' })}</Button>
+                    <Button variant="contained" disableElevation onClick={() => {
+                        const reopen = storyReopen;
+                        setStoryReopen(undefined);
+                        if (reopen) void handleOpenWorkspace(reopen.previous.id, reopen.previous.display_name);
+                    }}>{t('demo.reopenContinue', { defaultValue: 'Continue my session' })}</Button>
+                </DialogActions>
+            </Dialog>);
+
     // A /demo/<id> page for a demo this server does not have.
     const missingDemo = !site && DEMO_ID && <Box sx={{ m: 'auto', p: 3, textAlign: 'center' }}>
         <Typography variant="h6">{t('demo.notFound', { defaultValue: 'There is no demo called “{{id}}” here.', id: DEMO_ID })}</Typography>
@@ -1282,7 +1335,7 @@ export const DataFormulatorFC = ({ }) => {
                 </Alert>
             )}
             <DndProvider backend={HTML5Backend}>
-                {inSession ? (isPhone ? phoneWorkspace : fixedSplitPane) : missingDemo || (site ? dataUploadRequestBox : (
+                {inSession ? (isPhone ? phoneWorkspace : fixedSplitPane) : missingDemo || (
                     <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
                         <DataSourceSidebar
                             onOpenUploadDialog={(tab, tablePath) => openUploadDialog((tab ?? 'menu') as UploadTabType, tablePath)}
@@ -1292,8 +1345,9 @@ export const DataFormulatorFC = ({ }) => {
                         />
                         {dataUploadRequestBox}
                     </Box>
-                ))}
+                )}
                 {deleteWorkspaceDialog}
+                {storyReopenDialog}
                 <UnifiedDataUploadDialog 
                     open={uploadDialogOpen}
                     onClose={closeUploadDialog}

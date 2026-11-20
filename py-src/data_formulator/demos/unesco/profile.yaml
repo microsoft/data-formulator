@@ -27,6 +27,11 @@ intro: >-
 release: "2026-11"
 # Sessions start with the workspace folded into one card (its name, a few tables); visitors open it when needed.
 workspace_collapsed: true
+# Where its data comes from: the datasets' tables, extracted on install into the release's data/ folder and offered
+# as a read-only folder source (one subfolder per dataset).
+sources:
+  - folder: data
+    name: UIS datasets
 # Shown before the demo is installed, beside the Install button (local installs).
 install_note: >-
   Installing downloads about 100 MB of public data from the UNESCO Institute for Statistics and

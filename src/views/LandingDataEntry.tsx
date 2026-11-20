@@ -17,19 +17,17 @@ import { frameColor, heroInputLine, inkColor } from '../app/look';
 import { DEMO_COLUMN, demoText } from '../sites/layout';
 import { ambientShadow, cardRadius, metaText, weight } from '../app/tokens';
 
-/** A demo's landing (design-docs/69): its own suggested questions and datasets, no other data paths. */
+/** A demo's landing (design-docs/69): its own suggested questions and chat placeholder. */
 export interface LandingDemo {
     /** Short questions offered as chips; sending one starts the chat with it. */
     suggestions: string[];
     placeholder?: string;
-    /** The demo's datasets, shown under the chat in place of connected sources and uploads. */
-    datasets?: React.ReactNode;
 }
 
 interface LandingDataEntryProps {
     onStartChat: (prompt: string, images: string[], attachments: string[]) => void;
     ensureActiveWorkspace: () => void;
-    onUpload: () => void;
+    onUpload?: () => void;
     onConnect?: () => void;
     onLinkFolder?: () => void;
     onSelectConnector: (connector: ConnectorInstance) => void;
@@ -63,16 +61,6 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
         requestAutoSend: (payload: { text: string; images: string[]; attachments: string[] }) =>
             submit(payload.text, payload.images, payload.attachments),
     };
-    const linkStyle = {
-        display: 'inline-flex', alignItems: 'center', gap: 0.5, p: 0, border: 'none', borderRadius: 0,
-        background: 'none', maxWidth: '100%', minWidth: 0, minHeight: 0, textTransform: 'none', whiteSpace: 'normal',
-        fontWeight: weight(400), fontSize: '0.8125rem', lineHeight: 1.4, textAlign: 'left', overflowWrap: 'anywhere',
-        color: (theme: Theme) => inkColor(theme, 0.76), transition: 'color 120ms ease',
-        '& .MuiButton-startIcon': { m: 0, flexShrink: 0, '& .MuiSvgIcon-root': { fontSize: iconVar.md } },
-        '&:hover': { background: 'none', color: 'primary.main', textDecoration: 'underline', textUnderlineOffset: 2 },
-    } as const;
-    const labelStyle = { fontWeight: weight(600), ...metaText({ fontSize: '0.8rem' }),
-        color: (theme: Theme) => inkColor(theme, 0.72), mr: 0.25, flexShrink: 0 } as const;
     return <Box sx={{ width: '100%', maxWidth: demo ? DEMO_COLUMN : 800, mx: 'auto', textAlign: 'left' }}>
         <Box sx={{ mb: 1.75, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75 }}>
             {(demo
@@ -88,11 +76,10 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
         </Box>
         {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 1 }}>{error}</Alert>}
         <AgentChatInput value={input} onChange={setInput} images={images} onImagesChange={setImages}
-            trailingSlot={demo ? undefined : <ToolsAccessButton />}
+            trailingSlot={<ToolsAccessButton />}
             onSend={() => submit(input, images, attachments)} disabled={disabled} layout="stacked" minRows={demo ? 3 : 4}
             attachments={attachments} onAttachmentsChange={setAttachments}
-            fileAccept={demo ? 'image/*' : undefined}
-            onNonImageFile={demo ? undefined : async file => {
+            onNonImageFile={async file => {
                 if (readOnly) return;
                 ensureActiveWorkspace();
                 setUploadCount(count => count + 1);
@@ -116,32 +103,53 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
                 ...(demo && { '& textarea': { fontSize: demoText.input } }),
                 boxShadow: ambientShadow('0 5px 18px rgba(32, 33, 36, 0.11), 0 1px 4px rgba(32, 33, 36, 0.07)'),
                 '&:hover': { boxShadow: ambientShadow('0 6px 20px rgba(32, 33, 36, 0.11), 0 2px 6px rgba(32, 33, 36, 0.06)') } }} />
-        {demo ? demo.datasets : <Box sx={{ mt: 4, display: 'flex', flexDirection: 'column', gap: 1 }}>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 1.5, rowGap: 0.75 }}>
-                <Typography variant="body2" sx={labelStyle}>
-                    {t('upload.dataSourcesLabel', { defaultValue: 'Connected to:' })}
-                </Typography>
-                {connectors.map(connector => <Button disableRipple key={connector.id} onClick={() => onSelectConnector(connector)}
-                    title={connector.connection_identity || connector.display_name} sx={linkStyle}
-                    startIcon={<Box sx={{ width: 7, height: 7, borderRadius: '50%',
-                        bgcolor: connector.connected || connector.sso_auto_connect ? 'success.main' : 'error.main' }} />}>
-                    {connector.display_name}
-                </Button>)}
-            </Box>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 1.5, rowGap: 0.75 }}>
-                <Typography variant="body2" sx={labelStyle}>
-                    {t('upload.addSourceLabel', { defaultValue: 'Add data:' })}
-                </Typography>
-                <Button disableRipple startIcon={<UploadFileIcon />} onClick={onUpload} sx={linkStyle}>
-                    {t('upload.uploadData', { defaultValue: 'Upload data' })}
-                </Button>
-                {onLinkFolder && <Button disableRipple startIcon={<CreateNewFolderIcon />} onClick={onLinkFolder} sx={linkStyle}>
-                    {t('upload.localFolder', { defaultValue: 'Link local folder' })}
-                </Button>}
-                {onConnect && <Button disableRipple startIcon={<AddIcon />} onClick={onConnect} sx={linkStyle}>
-                    {t('upload.addConnection', { defaultValue: 'Connect databases' })}
-                </Button>}
-            </Box>
+        {!demo && <LandingSources connectors={connectors} onSelectConnector={onSelectConnector} onUpload={onUpload}
+            onLinkFolder={onLinkFolder} onConnect={onConnect} />}
+    </Box>;
+};
+
+type LandingSourcesProps = Pick<LandingDataEntryProps, 'connectors' | 'onSelectConnector' | 'onUpload' | 'onLinkFolder' | 'onConnect'>;
+
+/** Under the landing chat: the sources it is connected to, and the ways to add data this deployment allows. A demo
+ *  page places it after its centred chat, and gets only the demo's sources (the server limits them). */
+export const LandingSources: React.FC<LandingSourcesProps> = ({ connectors, onSelectConnector, onUpload, onLinkFolder, onConnect }) => {
+    const { t } = useTranslation();
+    const linkStyle = {
+        display: 'inline-flex', alignItems: 'center', gap: 0.5, p: 0, border: 'none', borderRadius: 0,
+        background: 'none', maxWidth: '100%', minWidth: 0, minHeight: 0, textTransform: 'none', whiteSpace: 'normal',
+        fontWeight: weight(400), fontSize: '0.8125rem', lineHeight: 1.4, textAlign: 'left', overflowWrap: 'anywhere',
+        color: (theme: Theme) => inkColor(theme, 0.76), transition: 'color 120ms ease',
+        '& .MuiButton-startIcon': { m: 0, flexShrink: 0, '& .MuiSvgIcon-root': { fontSize: iconVar.md } },
+        '&:hover': { background: 'none', color: 'primary.main', textDecoration: 'underline', textUnderlineOffset: 2 },
+    } as const;
+    const labelStyle = { fontWeight: weight(600), ...metaText({ fontSize: '0.8rem' }),
+        color: (theme: Theme) => inkColor(theme, 0.72), mr: 0.25, flexShrink: 0 } as const;
+    if (!connectors.length && !onUpload && !onLinkFolder && !onConnect) return null;
+    return <Box sx={{ mt: 4, display: 'flex', flexDirection: 'column', gap: 1 }}>
+        {connectors.length > 0 && <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 1.5, rowGap: 0.75 }}>
+            <Typography variant="body2" sx={labelStyle}>
+                {t('upload.dataSourcesLabel', { defaultValue: 'Connected to:' })}
+            </Typography>
+            {connectors.map(connector => <Button disableRipple key={connector.id} onClick={() => onSelectConnector(connector)}
+                title={connector.connection_identity || connector.display_name} sx={linkStyle}
+                startIcon={<Box sx={{ width: 7, height: 7, borderRadius: '50%',
+                    bgcolor: connector.connected || connector.sso_auto_connect ? 'success.main' : 'error.main' }} />}>
+                {connector.display_name}
+            </Button>)}
+        </Box>}
+        {(onUpload || onLinkFolder || onConnect) && <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 1.5, rowGap: 0.75 }}>
+            <Typography variant="body2" sx={labelStyle}>
+                {t('upload.addSourceLabel', { defaultValue: 'Add data:' })}
+            </Typography>
+            {onUpload && <Button disableRipple startIcon={<UploadFileIcon />} onClick={onUpload} sx={linkStyle}>
+                {t('upload.uploadData', { defaultValue: 'Upload data' })}
+            </Button>}
+            {onLinkFolder && <Button disableRipple startIcon={<CreateNewFolderIcon />} onClick={onLinkFolder} sx={linkStyle}>
+                {t('upload.localFolder', { defaultValue: 'Link local folder' })}
+            </Button>}
+            {onConnect && <Button disableRipple startIcon={<AddIcon />} onClick={onConnect} sx={linkStyle}>
+                {t('upload.addConnection', { defaultValue: 'Connect databases' })}
+            </Button>}
         </Box>}
     </Box>;
 };

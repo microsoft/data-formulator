@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "title": "Where we win",
+  "subtitle": "Accounts with 3 or more closed deals, sized by won revenue (USD), coloured by win rate",
+  "source": "Dataverse (Power Apps)",
+  "template": "bubbles",
+  "data": {
+    "table": "account_wins"
+  },
+  "encoding": {
+    "lat": "lat",
+    "lon": "lon",
+    "size": "won_revenue",
+    "color": "win_rate",
+    "label": "account",
+    "tooltip": [
+      "account",
+      "country",
+      "won",
+      "lost",
+      "win_rate",
+      "won_revenue"
+    ]
+  },
+  "properties": {
+    "geography": "world"
+  },
+  "fields": {
+    "account": {
+      "semanticType": "Name",
+      "displayName": "Account"
+    },
+    "city": {
+      "semanticType": "City",
+      "displayName": "City"
+    },
+    "country": {
+      "semanticType": "Country",
+      "displayName": "Country"
+    },
+    "region": {
+      "semanticType": "Category",
+      "displayName": "Sales region"
+    },
+    "lat": {
+      "semanticType": "Latitude",
+      "displayName": "Latitude"
+    },
+    "lon": {
+      "semanticType": "Longitude",
+      "displayName": "Longitude"
+    },
+    "won": {
+      "semanticType": "Count",
+      "displayName": "Won"
+    },
+    "lost": {
+      "semanticType": "Count",
+      "displayName": "Lost"
+    },
+    "win_rate": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Win rate"
+    },
+    "won_revenue": {
+      "semanticType": "Amount",
+      "unit": "USD",
+      "displayName": "Won revenue"
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "title": "Where our accounts are",
+  "subtitle": "Each account at its address, sized by its open pipeline (USD), coloured by sales region",
+  "source": "Dataverse (Power Apps)",
+  "template": "bubbles",
+  "data": {
+    "table": "account_map"
+  },
+  "encoding": {
+    "lat": "lat",
+    "lon": "lon",
+    "size": "open_pipeline",
+    "color": "region",
+    "label": "account",
+    "tooltip": [
+      "account",
+      "city",
+      "country",
+      "open_pipeline",
+      "won_revenue"
+    ]
+  },
+  "properties": {
+    "geography": "world"
+  },
+  "fields": {
+    "account": {
+      "semanticType": "Name",
+      "displayName": "Account"
+    },
+    "city": {
+      "semanticType": "City",
+      "displayName": "City"
+    },
+    "country": {
+      "semanticType": "Country",
+      "displayName": "Country"
+    },
+    "region": {
+      "semanticType": "Category",
+      "displayName": "Sales region"
+    },
+    "lat": {
+      "semanticType": "Latitude",
+      "displayName": "Latitude"
+    },
+    "lon": {
+      "semanticType": "Longitude",
+      "displayName": "Longitude"
+    },
+    "industry": {
+      "semanticType": "Category",
+      "displayName": "Industry"
+    },
+    "open_pipeline": {
+      "semanticType": "Amount",
+      "unit": "USD",
+      "displayName": "Open pipeline"
+    },
+    "won_revenue": {
+      "semanticType": "Amount",
+      "unit": "USD",
+      "displayName": "Won revenue"
+    },
+    "deals": {
+      "semanticType": "Count",
+      "displayName": "Opportunities"
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

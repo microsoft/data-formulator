@@ -44,9 +44,9 @@ def config_path() -> Path:
 def mcp_available() -> bool:
     """MCP servers are a single-user local feature; hosted and managed deployments do not offer them."""
     from data_formulator.auth.identity import is_local_mode
-    from data_formulator.configuration import user_connectors_disabled
+    from data_formulator.configuration import deployment_disables_user_connectors
 
-    return is_local_mode() and not user_connectors_disabled()
+    return is_local_mode() and not deployment_disables_user_connectors()
 
 
 def valid_server_id(server_id: Any) -> bool:

@@ -291,8 +291,8 @@ def load_catalog(workspace_root: Path | str, source_id: str) -> list[dict[str, A
     disabled = user_connectors_disabled()
     if disabled:
         try:
-            from data_formulator.data_connector import _ADMIN_CONNECTOR_IDS
-            if source_id not in _ADMIN_CONNECTOR_IDS:
+            from data_formulator.data_connector import visible_admin_connector_ids
+            if source_id not in visible_admin_connector_ids():
                 return None
         except Exception:
             pass
@@ -394,8 +394,8 @@ def list_cached_sources(workspace_root: Path | str) -> list[str]:
     disabled = user_connectors_disabled()
     if disabled:
         try:
-            from data_formulator.data_connector import _ADMIN_CONNECTOR_IDS
-            allowed = set(_ADMIN_CONNECTOR_IDS)
+            from data_formulator.data_connector import visible_admin_connector_ids
+            allowed = visible_admin_connector_ids()
             sources = [s for s in sources if s in allowed]
         except Exception:
             logger.debug("Failed to filter cached sources by admin set", exc_info=True)

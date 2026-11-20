@@ -118,6 +118,7 @@ include = ["data_formulator*"]
     "demos/*/*.py",
     "demos/*/*.csv",
     "demos/*/assets/**/*.png",
+    "demos/*/assets/**/*.svg",
     "demos/*/stories/*/state.json",
     "demos/*/stories/*/*.parquet",
     "demos/*/stories/*/files/*",

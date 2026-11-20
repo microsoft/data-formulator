@@ -4,7 +4,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataFormulatorReducer, dfActions } from '../../../../src/app/dfSlice';
-import { LandingDataEntry } from '../../../../src/views/LandingDataEntry';
+import { LandingDataEntry, LandingSources } from '../../../../src/views/LandingDataEntry';
 import { DemoDatasetTabs, inSentence } from '../../../../src/sites/DemoDatasetTabs';
 import type { SiteConfig, SiteStarter } from '../../../../src/sites/types';
 
@@ -25,20 +25,34 @@ const store = (site?: SiteConfig) => {
 };
 
 describe('the landing chat on a demo', () => {
-    it('offers the demo’s questions and datasets instead of sources and uploads', () => {
+    it('offers the demo’s questions, and its sources in the standard rows placed after the chat', () => {
         const onStartChat = vi.fn();
+        const onSelectConnector = vi.fn();
+        const dataverse = { id: 'dataverse', display_name: 'Dataverse', connected: true } as any;
         render(<Provider store={store()}>
-            <LandingDataEntry onStartChat={onStartChat} ensureActiveWorkspace={vi.fn()} onUpload={vi.fn()} onConnect={vi.fn()}
-                onSelectConnector={vi.fn()} connectors={[{ id: 'kusto', display_name: 'Kusto', connected: true } as any]}
-                demo={{ suggestions: ['What can I explore here?'], placeholder: 'Ask about the data', datasets: <div>The datasets</div> }} />
+            <LandingDataEntry onStartChat={onStartChat} ensureActiveWorkspace={vi.fn()} onUpload={vi.fn()}
+                onSelectConnector={onSelectConnector} connectors={[dataverse]}
+                demo={{ suggestions: ['What can I explore here?'], placeholder: 'Ask about the data' }} />
         </Provider>);
         expect(screen.getByPlaceholderText('Ask about the data')).toBeInTheDocument();
-        expect(screen.getByText('The datasets')).toBeInTheDocument();
-        for (const name of ['Kusto', 'Upload Data', 'Connect databases', 'Guide me to connect a data source']) {
-            expect(screen.queryByRole('button', { name })).toBeNull();
-        }
+        // The chat keeps the screen's middle: the rows are not under it.
+        expect(screen.queryByRole('button', { name: 'Dataverse' })).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: 'What can I explore here?' }));
         expect(onStartChat).toHaveBeenLastCalledWith('What can I explore here?', [], []);
+    });
+
+    it('lists only the sources and ways to add data it is given', () => {
+        const onSelectConnector = vi.fn();
+        const dataverse = { id: 'dataverse', display_name: 'Dataverse', connected: true } as any;
+        // A demo's page gets only the demo's sources, and no way to connect more (the server disables it).
+        const { container, rerender } = render(<LandingSources connectors={[dataverse]} onSelectConnector={onSelectConnector}
+            onUpload={vi.fn()} />);
+        expect(screen.getByRole('button', { name: 'Upload Data' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Connect databases' })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Dataverse' }));
+        expect(onSelectConnector).toHaveBeenLastCalledWith(dataverse);
+        rerender(<LandingSources connectors={[]} onSelectConnector={onSelectConnector} />);
+        expect(container).toBeEmptyDOMElement();
     });
 });
 

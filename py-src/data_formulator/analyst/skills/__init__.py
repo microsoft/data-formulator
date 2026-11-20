@@ -208,14 +208,10 @@ class SkillRegistry:
     def with_demo(self, site_id: str | None) -> SkillRegistry:
         """This registry for a request on the demo ``site_id`` (design-docs/69); unchanged without one.
 
-        The copy gains the ``demo`` skill, made for that demo, and loses what a demo does not offer: data
-        beyond it (``connected_data``, ``terminal``, connected-source tools), setting up the app
-        (``configure``) and apps (``html_app``); the baseline guidance about them is rewritten for the demo.
+        The copy keeps every skill and gains the ``demo`` skill, made for that demo. What data it reaches is
+        decided by the demo's sources (``sites.current_site_connector_ids``), not by removing skills.
         """
-        from data_formulator.sites.skill import (
-            DEMO_SKILL, DEMO_WITHOUT_TOOLS, SKILL_DIR, demo_body_edits, demo_skill_available, demo_skill_body,
-            demo_tool_specs,
-        )
+        from data_formulator.sites.skill import DEMO_SKILL, SKILL_DIR, demo_skill_available, demo_skill_body
 
         if not demo_skill_available(site_id):
             return self
@@ -224,12 +220,6 @@ class SkillRegistry:
         registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
                            tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
                            _bodies=dict(self._bodies), _body_edits=dict(self._body_edits))
-        for name in ("connected_data", "terminal", "browser", "configure", "html_app", "past_sessions"):
-            for collection in (registry.metas, registry.skills, registry.tool_specs, registry._doc_paths):
-                collection.pop(name, None)
-        registry = registry.without_tools(DEMO_WITHOUT_TOOLS)
-        registry._body_edits.update(demo_body_edits())
-        registry.tool_specs = {name: demo_tool_specs(specs) for name, specs in registry.tool_specs.items()}
         raw, _ = _parse_front_matter((SKILL_DIR / SKILL_DOC_NAME).read_text(encoding="utf-8"))
         registry.metas[DEMO_SKILL] = _meta_from_frontmatter(raw, DEMO_SKILL)
         registry.skills[DEMO_SKILL] = get_skill()

@@ -64,6 +64,8 @@ export interface WorkspaceSummary {
     source_ids?: string[];
     read_only?: boolean;
     scheduled_run?: ScheduledRunProvenance;
+    /** The demo example the session was opened from (`activeWorkspace.exampleId`). */
+    example_id?: string;
     starred?: boolean;
 }
 
@@ -376,6 +378,16 @@ export async function saveWorkspaceState(state: Record<string, unknown>): Promis
 // ── Export / Import ─────────────────────────────────────────────────────
 
 /** Export a workspace as a downloadable zip Blob. */
+/** Copy one of the user's demo sessions into the standard app (a new session there); returns the copy. */
+export async function copySessionToApp(id: string): Promise<{ id: string; display_name: string }> {
+    const { data } = await apiRequest<{ id: string; display_name: string }>(getUrls().SESSION_COPY_TO_APP, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace_id: id }),
+    });
+    return data;
+}
+
 export async function exportWorkspace(id: string): Promise<Blob> {
     const { data } = await apiRequest<{ state: any }>(getUrls().SESSION_LOAD, {
         method: 'POST',

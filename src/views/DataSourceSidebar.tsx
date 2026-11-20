@@ -96,11 +96,8 @@ import { importConnectorFile, loadsAsConnectorReference, isSemanticConnectorTabl
 
 type SidebarTab = DataFormulatorState['dataSourceSidebarTab'];
 
-/** A demo front page (`serverConfig.SITE`) offers only Sessions: no data connectors, workflows or schedules. */
-const selectIsDemo = (state: DataFormulatorState) => !!state.serverConfig.SITE;
 // Older persisted state predates the tab field; 'sources' was the default.
 const selectSidebarTab = (state: DataFormulatorState): SidebarTab => {
-    if (selectIsDemo(state)) return 'sessions';
     // Saved state from before the Workflows tab was renamed calls it 'knowledge'.
     const saved = (state.dataSourceSidebarTab as string | undefined) ?? 'sources';
     const tab: SidebarTab = saved === 'knowledge' ? 'workflows' : saved as SidebarTab;
@@ -193,7 +190,6 @@ export const DataSourceSidebar: React.FC<{
     // appears when they try to add a new connector or link a folder.
     // Stored in Redux so the active tab survives a session refresh.
     // Fall back to 'sources' for older persisted state that predates this field.
-    const isDemo = useSelector(selectIsDemo);
     const workflowsAvailable = useSelector((state: DataFormulatorState) => state.serverConfig?.WORKFLOWS_AVAILABLE === true);
     const initialTab = useSelector(selectSidebarTab);
     const setInitialTab = useCallback(
@@ -301,8 +297,7 @@ export const DataSourceSidebar: React.FC<{
                 pt: 1,
                 gap: 0.5,
             }}>
-                {/* A demo's only data is its own datasets (design-docs/69). */}
-                {!isDemo && <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Upload data' })} placement="right">
+                <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Upload data' })} placement="right">
                     <IconButton
                         size="small"
                         onClick={() => onOpenUploadDialog?.('menu')}
@@ -314,7 +309,7 @@ export const DataSourceSidebar: React.FC<{
                     }}>
                         <AddCircleIcon fontSize="small" />
                     </IconButton>
-                </Tooltip>}
+                </Tooltip>
                 <Tooltip title={t('sidebar.sessions', { defaultValue: 'Saved workspaces' })} placement="right">
                     <IconButton size="small" onClick={() => { setInitialTab('sessions'); if (!isOpen) toggle(); else if (initialTab !== 'sessions') setInitialTab('sessions'); else toggle(); }} sx={{
                         color: isOpen && initialTab === 'sessions' ? 'primary.main' : 'text.secondary',
@@ -324,7 +319,7 @@ export const DataSourceSidebar: React.FC<{
                         <FolderOutlinedIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
-                {!isDemo && <>
+                <>
                     <Tooltip title={t('sidebar.openDataConnectors', { defaultValue: 'Data connectors' })} placement="right">
                         <IconButton size="small" onClick={() => { setInitialTab('sources'); if (!isOpen) toggle(); else if (initialTab !== 'sources') setInitialTab('sources'); else toggle(); }} sx={{
                             color: isOpen && initialTab === 'sources' ? 'primary.main' : 'text.secondary',
@@ -353,7 +348,7 @@ export const DataSourceSidebar: React.FC<{
                             <ScheduleOutlinedIcon fontSize="small" />
                         </IconButton>
                     </Tooltip></>}
-                </>}
+                </>
             </Box>
 
             {/* The expanded panel overlays the workspace instead of changing

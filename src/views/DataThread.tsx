@@ -236,7 +236,6 @@ const WorkspacePanel: FC<{
     const focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-    const isDemo = useSelector((state: DataFormulatorState) => !!state.serverConfig.SITE);
     const [workspaceExpanded, setWorkspaceExpanded] = useState(false);
 
     const fileItemSx = (isActive: boolean, isNested: boolean = false) => ({
@@ -348,8 +347,7 @@ const WorkspacePanel: FC<{
                         {t('dataThread.workspace')}
                     </Typography>
                 </Box>
-                {/* A demo's only data is its own datasets, which its analyst loads (design-docs/69). */}
-                {!isDemo && <Box
+                <Box
                     onClick={(e) => { e.stopPropagation(); setUploadDialogOpen(true); }}
                     sx={{
                         display: 'flex', alignItems: 'center', gap: '2px',
@@ -361,7 +359,7 @@ const WorkspacePanel: FC<{
                 >
                     <AddIcon sx={{ fontSize: iconVar.sm }} />
                     <Typography sx={{ fontSize: textVar.xs, fontWeight: weight(600) }}>{t('dataThread.addData')}</Typography>
-                </Box>}
+                </Box>
             </Box>
 
             <Collapse in={workspaceExpanded} timeout={150}>

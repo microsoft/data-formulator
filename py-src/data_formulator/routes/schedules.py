@@ -1,5 +1,6 @@
 from flask import Blueprint, request
 from urllib.parse import urlsplit
+from uuid import UUID
 
 from data_formulator.auth.identity import get_identity_id
 from data_formulator.error_handler import json_ok
@@ -16,12 +17,19 @@ def schedule_owner():
     return get_identity_id()
 
 
+def here(schedule: dict) -> bool:
+    """Whether the schedule was made where this request is: the standard app, or the same demo."""
+    from data_formulator.sites import current_site
+    return schedule["config"].get("site") == current_site()
+
+
 @schedule_bp.route("", methods=["GET"])
 def list_schedules():
     if not scheduler.scheduling_available():
         return json_ok({"available": False, "reason": SCHEDULING_LOCAL_ONLY, "schedules": []})
     store = scheduler.schedule_store()
-    schedules = [{**schedule, "history": store.history(schedule["id"])} for schedule in store.list(schedule_owner())]
+    schedules = [{**schedule, "history": store.history(schedule["id"])} for schedule in store.list(schedule_owner())
+                 if here(schedule)]
     reconcile_resumed_runs(store, schedules)
     return json_ok({"available": True, "schedules": schedules})
 
@@ -71,6 +79,18 @@ def save_schedule():
     config = body.get("config")
     try:
         schedule_trigger(config)
+        from data_formulator.sites import current_site
+        # A schedule made on a demo lists and runs there (its workflows and run sessions are the demo's).
+        config.pop("site", None)
+        if current_site():
+            config["site"] = current_site()
+        if body.get("id"):
+            try:
+                existing = scheduler.schedule_store().get(UUID(str(body["id"])).hex)
+            except ValueError:
+                existing = None
+            if existing and existing["owner"] == owner and not here(existing):
+                raise ValueError("Schedule not found.")
         if config.get("enabled", True):
             if model_registry.get_config(config["model_id"]) is None:
                 raise ValueError("Choose a server-configured model connection.")
@@ -88,6 +108,8 @@ def delete_schedule(identifier: str):
     if request.headers.get("Sec-Fetch-Site") == "cross-site":
         raise AppError(ErrorCode.ACCESS_DENIED, "Schedules must be managed from the application.")
     try:
+        if not here(scheduler.schedule_store().get(identifier)):
+            raise ValueError("Schedule not found.")
         scheduler.schedule_store().delete(owner, identifier)
     except ValueError as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc

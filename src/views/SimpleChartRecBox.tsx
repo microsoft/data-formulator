@@ -281,7 +281,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
     const [chatPrompt, setChatPrompt] = useState("");
     const [quickActionAnchor, setQuickActionAnchor] = useState<HTMLElement | null>(null);
-    const isDemo = useSelector((state: DataFormulatorState) => !!state.serverConfig.SITE);
     const [chatInputFocused, setChatInputFocused] = useState(false);
     // ── Clarification accumulated answers ────────────────────────────
     // When the agent asks one or more clarification questions, clicking an
@@ -681,8 +680,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
     const handleAttachFiles = React.useCallback((fileList: FileList | File[] | null) => {
         if (!fileList) return;
-        // A demo's analyst works only on the demo's datasets: images (e.g. of a chart) only (design-docs/69).
-        const files = Array.from(fileList).filter(file => !isDemo || file.type.startsWith('image/'));
+        const files = Array.from(fileList);
         if (!files.length) return;
         setAttachmentUploads(count => count + files.length);
         files.forEach(async file => {
@@ -716,7 +714,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 setAttachmentUploads(count => count - 1);
             }
         });
-    }, [dispatch, t, isDemo]);
+    }, [dispatch, t]);
 
     // Paste handler: capture pasted files — images AND other files (CSV, Excel,
     // etc.) — so the chat box accepts the same attachments as the "+" button,
@@ -733,7 +731,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 if (f) files.push(f);
             }
         }
-        if (files.length === 0 && !isDemo) {
+        if (files.length === 0) {
             const pasted = pastedTextFile(e.clipboardData.getData('text/plain'), pasteCount.current + 1);
             if (pasted) {
                 pasteCount.current += 1;
@@ -743,7 +741,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         if (files.length === 0) return;
         e.preventDefault();
         handleAttachFiles(files);
-    }, [handleAttachFiles, isDemo]);
+    }, [handleAttachFiles]);
 
     // Files dropped on the chat box attach like the "+" button and paste; refused while a reply runs, as the button is.
     const { active: fileDragActive, handlers: fileDropHandlers } = useFileDrop({
@@ -3341,7 +3339,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         ref={fileInputRef}
                         type="file"
                         multiple
-                        accept={isDemo ? 'image/*' : undefined}
                         style={{ display: 'none' }}
                         onChange={(e) => { handleAttachFiles(e.target.files); if (e.target) e.target.value = ''; }}
                     />
@@ -3386,20 +3383,19 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             }}>
                                 <Box component="span" sx={menuIconSlotSx}><ArticleOutlinedIcon /></Box>{t('chartRec.writeReport')}
                             </MenuItem>
-                            {/* A demo's analyst builds no apps or workflows (design-docs/69). */}
-                            {!isDemo && <MenuItem onClick={() => {
+                            <MenuItem onClick={() => {
                                 setQuickActionAnchor(null);
                                 submitChat(t('chartRec.appConversationPrompt'));
                             }}>
                                 {/* Apps are React files, so they take the React file glyph, as in the thread and tabs. */}
                                 <Box component="span" sx={menuIconSlotSx}><FileTypeIcon path="app.app.jsx" size="1em" /></Box>{t('chartRec.createApp')}
-                            </MenuItem>}
-                            {!isDemo && <MenuItem onClick={() => {
+                            </MenuItem>
+                            <MenuItem onClick={() => {
                                 setQuickActionAnchor(null);
                                 exploreFromChat(WORKFLOW_AUTHORING_PROMPT, { authorWorkflow: true });
                             }}>
                                 <Box component="span" sx={menuIconSlotSx}><WorkflowGears running={false} size="1.2em" showTooltip={false} /></Box>{t('chartRec.createWorkflow')}
-                            </MenuItem>}
+                            </MenuItem>
                         </Menu>
                         <Tooltip title={t('chartRec.getIdeaSuggestions')}>
                             <span>

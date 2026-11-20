@@ -88,6 +88,16 @@ class TestWorkspaceLifecycle:
         assert "second" in names
         assert len(ws_list) == 2
 
+    def test_a_session_remembers_the_example_it_was_opened_from(self, manager):
+        manager.create_workspace("from_example")
+        state = {"tables": [], "activeWorkspace": {"id": "from_example", "displayName": "Pipeline",
+                                                    "exampleId": "sales/pipeline"}}
+        manager.save_session_state("from_example", state)
+        # Later saves keep it, even one whose state no longer carries it.
+        manager.save_session_state("from_example", {"tables": [], "activeWorkspace": {"id": "from_example",
+                                                                                      "displayName": "Renamed"}})
+        assert manager.list_workspaces()[0]["example_id"] == "sales/pipeline"
+
     def test_workspace_exists(self, manager):
         assert not manager.workspace_exists("nope")
         manager.create_workspace("test")

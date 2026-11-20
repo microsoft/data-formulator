@@ -13,6 +13,7 @@ from filelock import FileLock, Timeout
 
 from data_formulator.auth.identity import _scheduled_identity, is_local_mode
 from data_formulator.configuration import configuration_path
+from data_formulator.sites import in_scope
 from data_formulator.workflows.scheduling import ScheduleStore
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,10 @@ def execute_occurrence(app, store: ScheduleStore, occurrence: dict):
     with app.app_context():
         schedule = store.get(occurrence["schedule_id"])
         config = schedule["config"]
+        # A schedule made on a demo runs in the demo's storage (its workflows and run sessions).
+        scope = in_scope(config.get("site"))
+        scope.__enter__()
+        demo = {"X-DF-Demo": config["site"]} if config.get("site") else {}
         identity = execution_identity(schedule)
         workspace_id = "scheduled-" + occurrence["id"]
         token = _scheduled_identity.set(identity)
@@ -121,7 +126,7 @@ def execute_occurrence(app, store: ScheduleStore, occurrence: dict):
                 body = {"run_id": occurrence["id"], "model": {"id": model_id, "is_global": True}, **response_body}
                 error = None
                 with app.test_request_context("/api/workflows/run", method="POST", json=body,
-                        base_url="http://localhost", headers={"X-Workspace-Id": workspace_id, "Origin": "http://localhost"},
+                        base_url="http://localhost", headers={"X-Workspace-Id": workspace_id, "Origin": "http://localhost", **demo},
                         environ_base={"REMOTE_ADDR": "127.0.0.1"}):
                     try:
                         response = run_instance()
@@ -184,6 +189,7 @@ def execute_occurrence(app, store: ScheduleStore, occurrence: dict):
             store.finish(occurrence, "needs_attention", "Check model, workflow, source access, and output limits.")
         finally:
             _scheduled_identity.reset(token)
+            scope.__exit__(None, None, None)
 
 
 def automatic_response(state: dict, config: dict) -> dict:

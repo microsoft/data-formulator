@@ -64,8 +64,13 @@ shows its introduction and, on a local Data Formulator, an **Install demo** butt
 available yet. A profile installed in `DF_SITES_DIR` takes precedence over the shipped one.
 
 `build.py` defines `install(sites_dir, *, log)`, which the button calls, and runs it from the
-command line with `--sites-dir` and other options. It builds the sessions, copies
-`profile.yaml`, `skill/` and `assets/` beside them, and fails if any file the profile names is missing.
+command line with `--sites-dir` and other options. Only making its datasets' sessions is its own
+(downloading UIS files, reading NeurIPS's collected data, reading Dataverse); the rest is shared in
+`data_formulator.sites.builder`. `dataset_state` records each dataset table as loaded from the demo's
+source (`sources`), as the sidebar records a table it loads, so the session shows where it came from
+and Refresh reads it again; `build_stories` assembles the stories from their seeds; and `finish`
+copies `profile.yaml`, `skill/` and `assets/` beside them, writes the data folders, and fails if any
+file the profile names is missing.
 It must not call AI models: data goes in as downloaded and processed, and an analysis made with
 the AI analyst goes in as curated content, as the UIS demo does with its small story seeds (see
 [unesco/README.md](unesco/README.md)). Tests are in `tests/backend/demos/`.
@@ -76,6 +81,7 @@ the AI analyst goes in as curated content, as the UIS demo does with its small s
 |---|---|
 | `DF_SITE=<id>` | `/` opens the demo (`/app` is still the standard app) |
 | `DF_SITES_DIR=/path/to/demos` | Where demo content is installed (default `<DATA_FORMULATOR_HOME>/site-content`) |
+| `DF_DEMOS=<id>,<id>` | The demos the server offers; any other (installed or shipped) is treated as missing. Default all |
 
 Profiles are read once per server start (and again after an install); restart after editing
 one. If a profile is invalid, the server logs why and `/demo/<id>` says there is no such demo.
@@ -106,6 +112,9 @@ and `intro` reads as the release's month and year (e.g. `2026-02` → February 2
 | `attribution` | A line at the foot of the page, e.g. the data's source and license |
 | `links` | Links at the foot: a list of `{label, url}` |
 | `workspace_collapsed` | `true` to start sessions with the workspace folded into one card (its name and a few tables) |
+| `sources` | Where the demo's data comes from: a list of `{connector: <id>}` (a deployment administrator connection, e.g. `{connector: dataverse}` for `DF_SOURCES__dataverse__*`) and `{folder: <name>, name: <label>}` (the datasets' tables, extracted on install into `<release>/<name>/<dataset id>/<table>.parquet` by `sites.data_folder.write_data_folders`, offered as a read-only folder). A demo offers only these: other administrator connections, the example datasets and visitors' own connections are hidden and refused on demo requests, and visitors cannot add connections or link local folders. Default none |
+| `models` | The server models the demo offers, by id; others are hidden and refused on demo requests. Default all (see [design-docs/76](../../../design-docs/76-scopes.md)) |
+| `workflows` | The server workflows (`server/<name>.yaml`) the demo offers; Data Formulator's example workflows are the standard app's. Default none |
 | `disclaimer` | A note after "Powered by Data Formulator" (*links*); a generic note on AI-written analyses by default |
 | `install_note` | Before the demo is installed: what installing it downloads and builds |
 | `analyst_rules` | Guidance added to every analyst request on the demo, e.g. audience and tone (not shown) |
@@ -151,15 +160,20 @@ deployment's model, and can differ from run to run.
 
 ## The analyst on a demo
 
-On a demo, the analyst has a `demo` skill (design-docs/69) instead of the standard data paths: it
-has no connected sources, uploads, local folders or terminal. The skill lists the demo's datasets
-(from their installed session ZIPs) and example questions (the stories' `prompt`s), and has one action,
-`load_datasets`, which copies whole datasets (tables, data guide, docs) into the session. Typing a
-question on the front page opens an empty session; the analyst picks the datasets and loads them. Asked
-for an example ("Show me your analysis of …"), it runs one of the example questions itself: it loads the
-dataset and answers simply with a chart. Its scope is focused questions about the demo's data; for
-more (modelling, forecasts, long studies, dashboards, other data) it does the basic part and points
-the visitor to the full Data Formulator. On a demo it has no connected-source tools or app building.
+On a demo the analyst has everything the standard app offers (the demo's sources, uploads, apps,
+workflows, the terminal on a local install) and a `demo` skill (design-docs/69). The skill lists the
+demo's datasets (from their installed session ZIPs) and example questions (the stories' `prompt`s), and
+has one action, `load_datasets`, which copies whole datasets (tables, data guide, docs) into the session.
+Typing a question on the front page opens an empty session; the analyst picks the datasets and loads
+them. Asked for an example ("Show me your analysis of …"), it runs one of the example questions itself:
+it loads the dataset and answers simply with a chart.
+
+Demos differ only in their data. Its sources are what its profile lists (`sources`): a connection
+the deployment configures, such as [`powerapps/`](powerapps/)'s Dataverse, or a folder of the
+datasets' own tables, as in [`unesco/`](unesco/) and [`neurips/`](neurips/), which a build writes
+with `write_data_folders`. Either way the dataset sessions' tables are loaded from that source and
+refresh from it. Visitors cannot add connections of their own or link local folders, and
+the example datasets are not offered.
 
 `skill/SKILL.md` adds the demo's own guidance: what the demo shows, which dataset answers what, and
 how to work with its data. Without one, the analyst gets the `tagline`. `analyst_rules` (audience and
@@ -168,12 +182,17 @@ tone) still apply to every request.
 The skill is never available in the standard app: it is added only for a request carrying a demo's
 `X-DF-Demo` header.
 
+Each demo is its own scope ([design-docs/76](../../../design-docs/76-scopes.md)): a visitor's sessions,
+workflows, schedules and connections on a demo are kept apart from the standard app's and other demos'.
+"Open in Data Formulator", in a demo session's header, copies the session into the standard app.
+
 ## Deploying
 
 Hosted servers do not offer the Install button: install the demo into the server's
 `DF_SITES_DIR`, either by running its `build.py` there or by uploading a folder built with
 `--sites-dir <folder>`. It is then at `/demo/<id>`; set `DF_SITE` to make it the server's home
-page as well. Nothing in the app build changes. Demos get the same
+page as well, and `DF_DEMOS` to offer only the demos the deployment is for (the shipped ones are
+otherwise all listed, uninstalled ones as "not available yet"). Nothing in the app build changes. Demos get the same
 agents, workspaces, access controls and sandbox as the rest of the app; on a public demo,
 visitors' questions use the deployment's model and its sandboxed Python, so plan rate limits
 and model budget accordingly.

@@ -18,12 +18,8 @@ the analyst's demo guidance (skill/) and the front-page images (assets/) into
 from __future__ import annotations
 
 import argparse
-import io
-import json
-import shutil
 import sys
 import tempfile
-import time
 from pathlib import Path
 from typing import Callable
 from zoneinfo import ZoneInfo
@@ -31,19 +27,15 @@ from zoneinfo import ZoneInfo
 import duckdb
 import pandas as pd
 import pyarrow as pa
-import pyarrow.parquet as pq
 import yaml
 
 from data_formulator.datalake.workspace_manager import WorkspaceManager
-from data_formulator.security.code_signing import sign_code
-from data_formulator.session_format import SESSION_STATE_VERSION
-from data_formulator.sites import referenced_files, sites_dir
+from data_formulator.sites import sites_dir
+from data_formulator.sites.builder import (InstallError, build_stories, dataset_state, finish, folder_source,
+                                           save_session)
 
 HERE = Path(__file__).resolve().parent
 PROFILE = HERE / "profile.yaml"
-ASSETS = HERE / "assets"
-STORIES = HERE / "stories"
-FILE_TYPES = {".map.json": "application/json", ".app.jsx": "text/jsx"}
 DEFAULT_DATA = Path.home() / ".cache" / "data-formulator" / "neurips" / "dataset"
 SITE_ID = "neurips"
 # The time zone of each city NeurIPS 2026 meets in, for its sessions' local times.
@@ -175,25 +167,6 @@ def data_guide(starter: dict, profile: dict, tables: list[tuple[str, int]]) -> s
     return "\n".join(lines)
 
 
-def session_state(workspace, starter: dict, order: list[str]) -> dict:
-    now = int(time.time() * 1000)
-    metadata = workspace.get_metadata()
-    input_tables = []
-    for name in order:
-        table = metadata.tables[name]
-        input_tables.append({
-            "kind": "input-table", "id": name, "displayId": name,
-            "source": {"kind": "workspace", "tableId": name},
-            "snapshot": {"columns": [{"name": c.name, "type": "number" if c.dtype in ("integer", "number") else "string"}
-                                     for c in table.columns], "rowCount": table.row_count, "capturedAt": now},
-            "description": table.description or "", "sourceConfig": {"type": "example", "canRefresh": False},
-            "addedAt": now,
-        })
-    return {"__stateVersion": SESSION_STATE_VERSION, "inputTables": input_tables,
-            "workspaceItemOrder": [f"shelf-card-{name}" for name in order],
-            "activeWorkspace": {"id": starter["id"], "displayName": starter["title"]}}
-
-
 def build_starter(starter: dict, profile: dict, data: Path, work: Path, out: Path) -> Path:
     workspace = WorkspaceManager(work / "sessions").create_and_open_workspace(starter["id"], "local:site-builder")
     names = [name for name in STARTERS[starter["id"]]
@@ -203,65 +176,17 @@ def build_starter(starter: dict, profile: dict, data: Path, work: Path, out: Pat
     tables = [(name, write_table(workspace, name, table_frame(name, data))) for name in names]
     workspace.save_workspace_file(data_guide(starter, profile, tables).encode("utf-8"), "NeurIPS data guide.md",
                                   "text/markdown")
-    archive = workspace.export_session_zip(session_state(workspace, starter, [name for name, _ in tables]))
-    out.mkdir(parents=True, exist_ok=True)
-    target = out / starter["file"]
-    target.write_bytes(archive.getvalue())
+    # Its tables are the demo's data folder (sources), as if loaded from it, so they refresh from it.
+    connector_id, source_table = folder_source(profile, SITE_ID, starter["id"])
+    state = dataset_state(workspace, starter, [name for name, _ in tables], connector_id=connector_id,
+                          source_table=source_table, loader_type="LocalFolderDataLoader")
+    target = save_session(workspace, state, out / starter["file"])
     for name, rows in tables:
         _log(f"  {name}: {rows:,} rows")
     return target
 
 
-def signed_here(table: dict) -> dict:
-    """A seed's derived table with its code signed by this installation, so the app can refresh it."""
-    derive = table.get("derive")
-    if not isinstance(derive, dict) or not derive.get("code"):
-        return table
-    return {**table, "derive": {**derive, "codeSignature": sign_code(derive["code"])}}
-
-
-def build_story(story: dict, starter: dict, work: Path, content: Path, theme_id: str | None = None) -> Path:
-    """A story's session: its dataset's session with the story's seed (question, answer, tables, map or app)."""
-    seed = STORIES / story["id"]
-    state = json.loads((seed / "state.json").read_text(encoding="utf-8"))
-    workspace = WorkspaceManager(work / "stories").create_and_open_workspace(story["id"], "local:site-builder")
-    dataset = workspace.import_session_zip(io.BytesIO((content / starter["file"]).read_bytes()))
-    for path in sorted(seed.glob("*.parquet")):
-        workspace.write_parquet_from_arrow(pq.read_table(path), path.stem)
-    titles = {node["path"]: node.get("displayName") for node in state.get("fileNodes") or []}
-    for path in sorted((seed / "files").glob("*")):
-        workspace.save_workspace_file(path.read_bytes(), path.name, FILE_TYPES.get("".join(path.suffixes[-2:])),
-                                      display_name=titles.get(path.name), agent_managed=True)
-    state = {**state, "derivedTables": [signed_here(table) for table in state.get("derivedTables") or []],
-             "inputTables": dataset["inputTables"], "workspaceItemOrder": dataset["workspaceItemOrder"]}
-    if theme_id:
-        state["charts"] = [{**chart, "themeId": theme_id} if isinstance(chart, dict) else chart
-                           for chart in state.get("charts") or []]
-    target = content / story["file"]
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(workspace.export_session_zip(state).getvalue())
-    return target
-
-
-def install_static(profile: dict, site: Path) -> None:
-    """Copy the profile, the analyst's demo guidance and front-page images into the installed site."""
-    content = site / str(profile["release"])
-    for path in sorted(ASSETS.rglob("*")) if ASSETS.is_dir() else []:
-        if path.is_file():
-            target = content / path.relative_to(ASSETS)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(path, target)
-    site.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(PROFILE, site / "profile.yaml")
-    (site / "skill").mkdir(exist_ok=True)
-    shutil.copyfile(HERE / "skill" / "SKILL.md", site / "skill" / "SKILL.md")
-
-
 _log: Callable[[str], None] = print
-
-
-class InstallError(Exception):
-    """The demo could not be installed (e.g. the dataset is missing)."""
 
 
 def install(sites: Path | None = None, data: Path | None = None, *, only: list[str] | None = None,
@@ -295,20 +220,8 @@ def install(sites: Path | None = None, data: Path | None = None, *, only: list[s
             if starter not in todo:
                 log(f"{starter['id']}: already built")
         with tempfile.TemporaryDirectory(prefix="neurips-stories-") as tmp:
-            for starter in starters:
-                if not (content / starter["file"]).is_file():
-                    continue
-                for story in starter.get("stories") or []:
-                    if story.get("file") and (STORIES / story["id"] / "state.json").is_file():
-                        target = build_story(story, starter, Path(tmp), content,
-                                             (profile.get("chart_theme") or {}).get("id"))
-                        log(f"  story {story['id']} -> {target.name} ({target.stat().st_size / 2**20:.1f} MB)")
-        install_static(profile, site)
-        missing = [name for name in referenced_files(profile) if not (content / name).is_file()]
-        if missing:
-            raise InstallError(f"missing from {content}: {', '.join(missing)}")
-        log(f"{SITE_ID}: installed in {site}")
-        return site
+            build_stories(HERE, profile, starters, Path(tmp), content, log)
+        return finish(HERE, profile, site, log=log)
     finally:
         _log = print
 

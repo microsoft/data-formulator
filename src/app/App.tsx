@@ -71,7 +71,10 @@ import { createDfTheme } from './theme';
 import { applyLookVariables, DEFAULT_LOOK, LOOK_NAMES, LOOKS, saveLook, useLook, type Look } from './look';
 import { setChartInk } from './savedThemes';
 import { MIN_SUPPORTED } from './layout';
-import { useAutoSave } from './useAutoSave';
+import { getSerializableState, useAutoSave } from './useAutoSave';
+import { copySessionToApp, saveWorkspaceState } from './workspaceService';
+import { SESSION_PARAM } from './sessionTabs';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useWorkspaceConsistency } from './workspaceConsistency';
 import { useWorkspaceAutoName } from './useWorkspaceAutoName';
 
@@ -597,8 +600,44 @@ const WorkspaceMenu: React.FC = () => {
                 </ButtonBase>
             </Tooltip>} />
             <WormholeMenuButton />
+            {DEMO_ID && <OpenInAppButton />}
         </>
     );
+};
+
+/** On a demo: copy the open session into Data Formulator (the standard app) and continue there. */
+const OpenInAppButton: React.FC = () => {
+    const { t } = useTranslation();
+    const [copying, setCopying] = useState(false);
+    const [error, setError] = useState<string>();
+    const label = t('demo.openInApp', { defaultValue: 'Open in Data Formulator' });
+    const open = async () => {
+        const state = store.getState();
+        const workspace = state.activeWorkspace;
+        if (!workspace || copying) return;
+        setCopying(true);
+        setError(undefined);
+        try {
+            // Copy what the visitor sees: save the session's latest changes first.
+            if (!workspace.readOnly && !dfSelectors.selectSessionEmpty(state)) {
+                try { await saveWorkspaceState(getSerializableState(state)); } catch { /* the saved copy is copied */ }
+            }
+            const copy = await copySessionToApp(workspace.id);
+            // The standard app's page (APP_PATH is the demo's own on a demo page).
+            window.location.assign(`/app?${SESSION_PARAM}=${encodeURIComponent(copy.id)}`);
+        } catch (reason) {
+            setError(reason instanceof Error ? reason.message : String(reason));
+            setCopying(false);
+        }
+    };
+    return <Tooltip title={error || t('demo.openInAppTooltip', { defaultValue: 'Copy this session into Data Formulator and continue there' })}>
+        <span>
+            <IconButton size="small" aria-label={label} disabled={copying} onClick={() => void open()}
+                sx={{ p: 0.5, color: error ? 'error.main' : 'text.secondary', '&:hover': { color: 'text.primary', backgroundColor: ink(0.04) } }}>
+                <OpenInNewIcon fontSize="small" />
+            </IconButton>
+        </span>
+    </Tooltip>;
 };
 
 // Exit the current session and return to the front-page (no workspace).

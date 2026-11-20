@@ -285,6 +285,11 @@ def test_a_default_demo_that_does_not_exist_is_reported(monkeypatch, caplog):
     ("links: https://example.org\n", "'links' is not a list"),
     ("starters:\n  - id: culture\n    stories:\n      - id: s1\n        headline: No prompt\n", "needs an 'id' and a 'prompt'"),
     ("logo: logo.gif\n", "'logo' is not an image file name"),
+    ("sources: dataverse\n", "'sources' is not a list"),
+    ("sources: [dataverse]\n", "each of 'sources' must be"),
+    ("sources:\n  - folder: ../data\n", "each of 'sources' must be"),
+    ("models: [1]\n", "'models' is not a list of model ids"),
+    ("workflows: [report.yaml]\n", "'workflows' is not a list of server workflows"),
     ("chart_theme: {id: datawrapper, label: Copy}\n", "'chart_theme'"),
 ])
 def test_an_invalid_profile_disables_the_site_without_breaking_requests(tmp_path, monkeypatch, caplog, text, problem):
@@ -360,6 +365,22 @@ def test_a_local_install_builds_the_shipped_demo_in_the_background(tmp_path, mon
     assert failed["job"]["log"][-1] == "error: download failed"
 
 
+def test_an_install_lands_in_the_servers_data_dir(tmp_path, monkeypatch):
+    """With --data-dir (no DF_SITES_DIR), the background build installs where the server then looks."""
+    from data_formulator.sites import install
+    monkeypatch.setattr(install, "_jobs", {})
+    monkeypatch.setattr(install, "is_local_mode", lambda: True)
+    monkeypatch.delenv("DF_SITES_DIR")
+    _shipped_demo(tmp_path)
+    app = _app()
+    app.config["CLI_ARGS"] = {"data_dir": str(tmp_path / "data-dir")}
+    client = app.test_client()
+
+    client.post("/api/demos/shipped-demo/install")
+    assert _wait_for_install(client)["status"] == "ready"
+    assert (tmp_path / "data-dir" / "site-content" / "shipped-demo" / "r1" / "data.zip").is_file()
+
+
 def test_only_local_installs_of_shipped_demos_can_install(tmp_path, monkeypatch):
     from data_formulator.errors import AppError
     from data_formulator.sites import install
@@ -397,3 +418,49 @@ def test_the_menu_lists_installed_demos_and_installable_shipped_ones(tmp_path, m
     assert install.listed_demos() == [{"id": "demo", "name": "Demo Explorer"}]
     monkeypatch.setattr(install, "is_local_mode", lambda: True)
     assert install.listed_demos() == [{"id": "demo", "name": "Demo Explorer"}, {"id": "shipped-demo", "name": "Shipped"}]
+
+
+def test_a_demo_session_is_copied_into_the_standard_app(tmp_path, monkeypatch):
+    import pyarrow as pa
+    from data_formulator.auth import identity
+    from data_formulator.error_handler import register_error_handlers
+    from data_formulator.routes.sessions import session_bp
+    from data_formulator.workspace_factory import get_workspace_manager
+
+    monkeypatch.setattr(identity, "_provider", None)
+    monkeypatch.setattr(identity, "_localhost_identity", "local:test")
+    app = flask.Flask(__name__)
+    app.config.update(TESTING=True, CLI_ARGS={"workspace_backend": "local"})
+    app.register_blueprint(session_bp)
+    register_error_handlers(app)
+    with app.test_request_context("/", headers=DEMO):
+        manager = get_workspace_manager("local:test")
+        workspace = manager.create_and_open_workspace("session_demo", "local:test")
+        workspace.add_table_metadata(workspace.write_parquet_from_arrow(pa.table({"value": [1, 2]}), "sales"))
+        manager.save_session_state("session_demo", {"activeWorkspace": {"id": "session_demo", "displayName": "Pipeline",
+                                                                         "exampleId": "sales/pipeline"}, "charts": []})
+
+    client = app.test_client()
+    assert client.post("/api/sessions/copy-to-app", json={"workspace_id": "session_demo"}).get_json()["error"]["code"] \
+        == "INVALID_REQUEST"  # only from a demo
+    copied = client.post("/api/sessions/copy-to-app", json={"workspace_id": "session_demo"}, headers=DEMO).get_json()["data"]
+    assert copied["display_name"] == "Pipeline"
+    with app.test_request_context("/"):
+        manager = get_workspace_manager("local:test")
+        state = manager.load_session_state(copied["id"])
+        assert state["activeWorkspace"] == {"id": copied["id"], "displayName": "Pipeline"}
+        assert manager.open_workspace(copied["id"], "local:test").list_tables() == ["sales"]
+        assert not manager.workspace_exists("session_demo")
+    with app.test_request_context("/", headers=DEMO):
+        assert get_workspace_manager("local:test").workspace_exists("session_demo")
+
+
+def test_a_server_offers_only_the_demos_df_demos_lists(tmp_path, monkeypatch):
+    _shipped_demo(tmp_path)
+    assert sites.all_demo_ids() == ["demo", "shipped-demo"]
+    monkeypatch.setenv("DF_DEMOS", "demo, missing-site")
+    sites.site_profile.cache_clear()
+    assert sites.all_demo_ids() == ["demo"]
+    assert sites.site_profile("shipped-demo") is None and sites.known_site_id("shipped-demo") is None
+    with _app().test_request_context("/", headers={"X-DF-Demo": "shipped-demo"}):
+        assert sites.current_site() is None

@@ -19,9 +19,11 @@ from __future__ import annotations
 import logging
 import os
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import yaml
 
@@ -52,10 +54,20 @@ def packaged_demo_dir(site_id: str) -> Path | None:
     return folder if (folder / "profile.yaml").is_file() else None
 
 
+def offered_demos() -> set[str] | None:
+    """The demos this server offers (``DF_DEMOS``, comma-separated ids), or None for all it has."""
+    listed = {item.strip() for item in os.getenv("DF_DEMOS", "").split(",") if item.strip()}
+    return listed or None
+
+
 @lru_cache(maxsize=None)
 def site_profile(site_id: str) -> dict[str, Any] | None:
-    """The demo's profile: installed in the sites folder, else shipped with Data Formulator; or None."""
+    """The demo's profile: installed in the sites folder, else shipped with Data Formulator; or None (also for a
+    demo the server does not offer, ``DF_DEMOS``)."""
     if not _SITE_ID.fullmatch(site_id or ""):
+        return None
+    offered = offered_demos()
+    if offered is not None and site_id not in offered:
         return None
     path = next((base / site_id / "profile.yaml" for base in (sites_dir(), PACKAGED_DEMOS)
                  if (base / site_id / "profile.yaml").is_file()), None)
@@ -92,9 +104,21 @@ def _profile_problem(profile: Any) -> str | None:
             # The story's question: answered in its saved session, or asked live when there is none.
             if not str(story.get("id") or "").strip() or not str(story.get("prompt") or "").strip():
                 return f"starter {starter['id']!r}: every story needs an 'id' and a 'prompt'"
-    for field in ("about", "links", "suggestions"):
+    for field in ("about", "links", "suggestions", "sources", "models", "workflows"):
         if not isinstance(profile.get(field) or [], list):
             return f"'{field}' is not a list"
+    if not all(isinstance(item, str) and item.strip() for item in profile.get("models") or []):
+        return "'models' is not a list of model ids"
+    if not all(isinstance(item, str) and item.startswith("server/") for item in profile.get("workflows") or []):
+        return "'workflows' is not a list of server workflows (server/<name>.yaml)"
+    from data_formulator.sites.data_folder import SAFE_NAME
+    for source in profile.get("sources") or []:
+        connector = isinstance(source, dict) and set(source) == {"connector"} and isinstance(source["connector"], str) \
+            and bool(source["connector"].strip())
+        folder = isinstance(source, dict) and set(source) <= {"folder", "name"} and isinstance(source.get("folder"), str) \
+            and bool(SAFE_NAME.fullmatch(source["folder"])) and isinstance(source.get("name", ""), str)
+        if not (connector or folder):
+            return "each of 'sources' must be {connector: <connector id>} or {folder: <folder name>, name: <label>}"
     if "logo" in profile and not (isinstance(profile["logo"], str) and Path(profile["logo"]).suffix.lower() in LOGO_SUFFIXES):
         return f"'logo' is not an image file name ({', '.join(LOGO_SUFFIXES)})"
     if profile.get("chart_theme") is not None:
@@ -157,8 +181,27 @@ def known_site_id(site_id: str | None) -> str | None:
     return None
 
 
+# A scope set for a stretch of code (``in_scope``), over the request's: e.g. a demo's scheduled run, or copying a
+# demo session into the standard app. Holds ``(site,)`` so that "the standard app" (None) can be set too.
+_SCOPE: ContextVar[tuple[str | None] | None] = ContextVar("df_site_scope", default=None)
+
+
+@contextmanager
+def in_scope(site: str | None) -> Iterator[None]:
+    """Run the block in ``site``'s scope (None: the standard app), whatever the request's demo is."""
+    token = _SCOPE.set((site,))
+    try:
+        yield
+    finally:
+        _SCOPE.reset(token)
+
+
 def current_site() -> str | None:
-    """The demo the current request belongs to (its ``X-DF-Demo`` header), or None for the standard app."""
+    """The demo the current scope belongs to: ``in_scope``'s, else the request's ``X-DF-Demo`` header; None for the
+    standard app."""
+    scope = _SCOPE.get()
+    if scope is not None:
+        return scope[0]
     try:
         from flask import has_request_context, request
     except ImportError:
@@ -166,6 +209,44 @@ def current_site() -> str | None:
     if not has_request_context():
         return None
     return known_site_id((request.headers.get(DEMO_HEADER) or "").strip())
+
+
+def current_site_connector_ids() -> set[str] | None:
+    """The connections the current request's demo offers (its profile's ``sources``: administrator connections and
+    its data folders), or None in the standard app. A demo offers only these: no other admin connection, the example
+    datasets or the visitor's own."""
+    from data_formulator.sites.data_folder import folder_connector_id
+    site = current_site()
+    if site is None:
+        return None
+    sources = (site_profile(site) or {}).get("sources") or []
+    return {source["connector"] if "connector" in source else folder_connector_id(site, source["folder"]) for source in sources}
+
+
+def current_site_model_ids() -> set[str] | None:
+    """The server models the current request's demo offers (its profile's ``models``); None offers them all (the
+    standard app, or a demo that lists none)."""
+    site = current_site()
+    models = (site_profile(site) or {}).get("models") if site else None
+    return set(models) if models else None
+
+
+def current_site_workflows() -> set[str] | None:
+    """The server workflows (``server/<name>``) the current request's demo offers (its profile's ``workflows``), or
+    None in the standard app. A demo offers only these; Data Formulator's example workflows are the standard app's."""
+    site = current_site()
+    if site is None:
+        return None
+    return set((site_profile(site) or {}).get("workflows") or [])
+
+
+def site_folder_sources(site_id: str) -> list[tuple[str, str, Path]]:
+    """The demo's installed data folders, as ``(connector id, label, path)``."""
+    from data_formulator.sites.data_folder import folder_connector_id, folder_sources
+    profile = site_profile(site_id) or {}
+    content = site_content_dir(site_id)
+    return [(folder_connector_id(site_id, source["folder"]), str(source.get("name") or source["folder"]), path)
+            for source in folder_sources(profile) if (path := content / source["folder"]).is_dir()]
 
 
 def default_demo() -> str | None:

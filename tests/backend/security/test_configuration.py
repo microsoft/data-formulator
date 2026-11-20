@@ -22,7 +22,7 @@ def test_terminal_policy_persistence_and_deployment_ceiling(monkeypatch, mode):
 
     monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: True)
     monkeypatch.setattr(configuration.sys, 'platform', 'darwin')
-    monkeypatch.setattr(configuration, 'user_connectors_disabled', lambda: False)
+    monkeypatch.setattr(configuration, 'deployment_disables_user_connectors', lambda: False)
     assert configuration.terminal_mode() == 'ask'
     save_configuration({'terminal_mode': mode}, 0)
     assert configuration.terminal_mode() == mode
@@ -41,7 +41,7 @@ def test_terminal_policy_persistence_and_deployment_ceiling(monkeypatch, mode):
     monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: False)
     assert configuration.terminal_mode() == 'off'
     monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: True)
-    monkeypatch.setattr(configuration, 'user_connectors_disabled', lambda: True)
+    monkeypatch.setattr(configuration, 'deployment_disables_user_connectors', lambda: True)
     assert configuration.terminal_mode() == 'off'
 
 
@@ -171,6 +171,68 @@ def test_configured_only_connectors_block_creation_and_personal_lookup(monkeypat
             data_connector._resolve_connector_with_key({'connector_id': 'personal'})
         assert caught.value.code == ErrorCode.ACCESS_DENIED
         assert data_connector._visible_connector_items('user:test') == [('admin', admin, True)]
+
+
+def test_a_demo_offers_only_the_connections_its_profile_lists(monkeypatch):
+    from flask import Flask
+    from data_formulator import data_connector, sites
+    from data_formulator import configuration
+    from data_formulator.configuration import terminal_available, user_connectors_disabled
+    from data_formulator.errors import AppError, ErrorCode
+    monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: True)
+    monkeypatch.setattr(configuration.sys, 'platform', 'darwin')
+    offered, other, samples, personal = object(), object(), object(), object()
+    monkeypatch.setattr(data_connector, 'DATA_CONNECTORS', {'dataverse': offered, 'warehouse': other,
+                                                           'sample_datasets': samples, 'personal': personal})
+    monkeypatch.setattr(data_connector, '_ADMIN_CONNECTOR_IDS', {'dataverse', 'warehouse', 'sample_datasets'})
+    monkeypatch.setattr(data_connector, '_sync_installation_connectors', lambda: None)
+    monkeypatch.setattr(data_connector.DataConnector, '_get_identity', staticmethod(lambda: 'user:test'))
+    monkeypatch.setattr(sites, 'known_site_id', lambda site_id: site_id if site_id == 'demo' else None)
+    monkeypatch.setattr(sites, 'site_profile', lambda site_id: {'sources': [{'connector': 'dataverse'}]} if site_id == 'demo' else None)
+    app = Flask(__name__)
+    with app.test_request_context(headers={'X-DF-Demo': 'demo'}, json={'loader_type': 'mysql'}):
+        assert user_connectors_disabled()
+        # Only connections are limited: the visitor's local tools stay.
+        assert terminal_available()
+        assert data_connector._visible_connector_items('user:test') == [('dataverse', offered, True)]
+        assert data_connector.visible_admin_connector_ids() == {'dataverse'}
+        assert data_connector._resolve_connector_with_key({'connector_id': 'dataverse'}) == ('dataverse', offered)
+        for refused in ('warehouse', 'sample_datasets', 'personal'):
+            with pytest.raises(AppError) as caught:
+                data_connector._resolve_connector_with_key({'connector_id': refused})
+            assert caught.value.code == ErrorCode.ACCESS_DENIED
+        with pytest.raises(AppError) as caught:
+            data_connector.create_connector()
+        assert caught.value.code == ErrorCode.ACCESS_DENIED
+    with app.test_request_context():
+        assert not user_connectors_disabled()
+        assert data_connector.visible_admin_connector_ids() == {'dataverse', 'warehouse', 'sample_datasets'}
+
+
+def test_a_demo_offers_only_the_models_and_server_workflows_its_profile_lists(monkeypatch, tmp_path):
+    from flask import Flask
+    from data_formulator import sites
+    from data_formulator.model_registry import model_registry
+    from data_formulator.workflows.instances import WorkflowStore
+    workflow = "version: 1\nname: {}\noverview: Shared\ndeliverables: [A report]\nsteps:\n  - id: s\n    description: d\n    instructions: i\n"
+    save_configuration({'workflows': {'server/listed.yaml': {'content': workflow.format('Listed')},
+                                      'server/other.yaml': {'content': workflow.format('Other')}}}, 0)
+    model = {'endpoint': 'openai', 'model': 'm', 'api_key': 'k', 'api_base': '', 'api_version': ''}
+    monkeypatch.setattr(model_registry, '_models', {'offered': {**model, 'id': 'offered'}, 'kept-back': {**model, 'id': 'kept-back'}})
+    monkeypatch.setattr(sites, 'known_site_id', lambda site_id: site_id if site_id == 'demo' else None)
+    monkeypatch.setattr(sites, 'site_profile', lambda site_id: {'models': ['offered'], 'workflows': ['server/listed.yaml']}
+                        if site_id == 'demo' else None)
+    store = WorkflowStore(tmp_path / 'home')
+    app = Flask(__name__)
+    with app.test_request_context(headers={'X-DF-Demo': 'demo'}):
+        assert [item['id'] for item in model_registry.list_public()] == ['offered']
+        assert model_registry.get_config('kept-back') is None and model_registry.get_config('offered')
+        assert [item['path'] for item in store.list_all()] == ['server/listed.yaml']
+        with pytest.raises(ValueError):
+            store.read('server/other.yaml')
+    with app.test_request_context():
+        assert {item['id'] for item in model_registry.list_public()} == {'offered', 'kept-back'}
+        assert {'server/listed.yaml', 'server/other.yaml'} <= {item['path'] for item in store.list_all()}
 
 
 @pytest.mark.parametrize('overrides', [
@@ -608,6 +670,18 @@ def test_model_catalog_overrides_do_not_change_credentials(monkeypatch):
     assert 'private-test-key' not in str(models)
     assert registry.get_config('global-openai-first') is None
     assert registry.get_config('global-openai-first', configured=False)['api_key'] == 'private-test-key'
+
+
+def test_the_deployment_default_model_is_listed_first_unless_an_admin_picks_one(monkeypatch):
+    from data_formulator.model_registry import ModelRegistry
+    monkeypatch.setenv('OPENAI_API_KEY', 'private-test-key')
+    monkeypatch.setenv('OPENAI_MODELS', 'first,second,third')
+    monkeypatch.setenv('DF_DEFAULT_MODEL', 'global-openai-third')
+    registry = ModelRegistry()
+    names = lambda: [model['model'] for model in registry.list_public() if model['endpoint'] == 'openai']
+    assert names()[0] == 'third'
+    save_configuration({'default_model': 'global-openai-second'}, 0)
+    assert names()[0] == 'second'
 
 
 def test_published_workflow_lifecycle(tmp_path):

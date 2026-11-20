@@ -662,9 +662,9 @@ describe('DataSourceSidebar', () => {
 
     it.each([
         { demo: false, workflows: true, rail: ['Upload data', 'Saved workspaces', 'Data connectors', 'workflow.title', 'Schedules'] },
-        { demo: true, workflows: true, rail: ['Saved workspaces'] },
+        { demo: true, workflows: true, rail: ['Upload data', 'Saved workspaces', 'Data connectors', 'workflow.title', 'Schedules'] },
         { demo: false, workflows: false, rail: ['Upload data', 'Saved workspaces', 'Data connectors'] },
-    ])('offers uploads, data connectors, workflows and schedules only outside demos, and workflows only where available (demo: $demo, workflows: $workflows)', async ({ demo, workflows, rail }) => {
+    ])('offers uploads, data connectors, workflows and schedules on demos too, and workflows only where available (demo: $demo, workflows: $workflows)', async ({ demo, workflows, rail }) => {
         // A tab remembered from before must not reopen a hidden panel.
         mockState.dataSourceSidebarTab = 'schedules';
         mockState.serverConfig.WORKFLOWS_AVAILABLE = workflows;
@@ -674,7 +674,7 @@ describe('DataSourceSidebar', () => {
         const railButtons = ['Upload data', 'Saved workspaces', 'Data connectors', 'workflow.title', 'Schedules']
             .filter(name => screen.queryByRole('button', { name }));
         expect(railButtons).toEqual(rail);
-        if (demo || !workflows) {
+        if (!workflows) {
             expect(await screen.findByRole('button', { name: 'Sort sessions' })).toBeInTheDocument();
         } else {
             expect(screen.queryByRole('button', { name: 'Sort sessions' })).not.toBeInTheDocument();
