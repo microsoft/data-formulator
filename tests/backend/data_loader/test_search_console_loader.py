@@ -74,6 +74,23 @@ def test_queries_stay_on_the_connected_property(gsc):
         gsc.query_data_as_arrow("https://shop.example.com/", {"columns": ["Clicks"]}, 10)
 
 
+def test_account_level_connection_lists_every_readable_property(monkeypatch):
+    account = _make(monkeypatch, site_url="")
+    assert [table["table_key"] for table in account.list_tables()] == ["sc-domain:example.com", "https://shop.example.com/"]
+    assert [table["table_key"] for table in account.list_tables("shop")] == ["https://shop.example.com/"]
+    assert account.test_connection() is True
+    assert SearchConsoleDataLoader.connection_identity({}) == ""
+    account.responses = [_Response({"rows": []})]
+    account.query_data_as_arrow("https://shop.example.com/", {"columns": ["Clicks"]}, 10)
+    assert account.requests[-1][1].endswith("/sites/https%3A%2F%2Fshop.example.com%2F/searchAnalytics/query")
+
+
+def test_account_level_connection_fails_without_a_readable_property(monkeypatch):
+    account = _make(monkeypatch, site_url="")
+    monkeypatch.setitem(_SITES, "siteEntry", [{"siteUrl": "https://other.example/", "permissionLevel": "siteUnverifiedUser"}])
+    assert account.test_connection() is False and account.list_tables() == []
+
+
 def test_structured_query_compiles_to_search_analytics(monkeypatch):
     gsc = _make(monkeypatch, site_url="https://shop.example.com/")
     gsc.responses = [_Response({"rows": [
@@ -211,8 +228,6 @@ def test_params_and_credentials(monkeypatch):
         SearchConsoleDataLoader({"site_url": "sc-domain:example.com"})
     with pytest.raises(ValueError, match="Could not load Google credentials"):
         SearchConsoleDataLoader({"site_url": "sc-domain:example.com", "credentials_path": "/nonexistent/key.json"})
-    with pytest.raises(ValueError, match="site_url is required"):
-        SearchConsoleDataLoader({"site_url": "  "})
     assert SearchConsoleDataLoader.infer_auth_path({"credentials_path": "k.json"}) == "service_account_file"
     assert SearchConsoleDataLoader.auth_instructions().startswith("**Example**")
 
