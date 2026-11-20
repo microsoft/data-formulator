@@ -7,9 +7,12 @@
  * See design/sharp/plan.md.
  */
 
-/** Soft (the default: grey lines, tinted surfaces, rounded), sharp (the "instrument" look) or dark (the instrument
+/** Soft (grey lines, tinted surfaces, rounded), sharp (the "instrument" look, the default) or dark (the instrument
  *  look, light on dark). */
 export type Look = 'soft' | 'sharp' | 'dark';
+
+/** The look Data Formulator opens in until the visitor picks another. */
+export const DEFAULT_LOOK: Look = 'sharp';
 
 export interface LookSpec {
     /** CSS variables set on the document root. `null` leaves each call site's own (soft) value. */

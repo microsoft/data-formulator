@@ -68,7 +68,7 @@ import { DataFormulatorFC } from '../views/DataFormulator';
 import { themeIconUrl, useThemeChoices } from '../views/ChartThemePicker';
 import { LayoutProvider, useLayout, type DensityPreference } from './LayoutProvider';
 import { createDfTheme } from './theme';
-import { applyLookVariables, LOOK_NAMES, LOOKS, saveLook, useLook, type Look } from './look';
+import { applyLookVariables, DEFAULT_LOOK, LOOK_NAMES, LOOKS, saveLook, useLook, type Look } from './look';
 import { setChartInk } from './savedThemes';
 import { MIN_SUPPORTED } from './layout';
 import { useAutoSave } from './useAutoSave';
@@ -989,7 +989,7 @@ const ConfigDialog: React.FC<{
                         setMaxStretchFactor(2.0);
                         setFrontendRowLimit(rowLimitDefault);
                         setPaletteKey(defaultPaletteKey);
-                        setLook('soft');
+                        setLook(DEFAULT_LOOK);
                         setDefaultChartThemeId(siteThemeId ?? DEFAULT_CHART_THEME_ID);
                         setDisplaySize('auto');
                     }}>{t('session.resetToDefault')}</Button>

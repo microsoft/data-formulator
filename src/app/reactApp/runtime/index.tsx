@@ -16,7 +16,7 @@ import GlobalStyles from '@mui/material/GlobalStyles';
 import { ThemeProvider } from '@mui/material/styles';
 
 import { createDfTheme } from '../../theme';
-import { applyLookVariables } from '../../look';
+import { applyLookVariables, DEFAULT_LOOK } from '../../look';
 import { ink } from '../../tokens';
 import { appConfig, bridge, errorMessage, reportError } from './bridge';
 import * as chart from './chart';
@@ -118,7 +118,7 @@ export function mount(factory: (require: (name: string) => unknown, module: { ex
     }
     const AppComponent = App as React.ComponentType;
     // The host's look: its MUI theme here, and its variables behind the DF tokens the app's components use.
-    const look = appConfig().look ?? 'soft';
+    const look = appConfig().look ?? DEFAULT_LOOK;
     applyLookVariables(document.documentElement.style, look);
     const hostTheme = densityTheme(createDfTheme(appConfig().paletteKey ?? '', look), appConfig().density ?? DEFAULT_DENSITY);
     setBoardInks(hostTheme);

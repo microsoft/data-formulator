@@ -5,7 +5,7 @@ import { alpha, createTheme, lighten, type Theme } from '@mui/material/styles';
 
 import { menuPaperSlotProps } from './LayoutProvider';
 import { buttonVar, iconVar, textVar } from './layout';
-import { LOOKS, type Look } from './look';
+import { DEFAULT_LOOK, LOOKS, type Look } from './look';
 import { lookComponents } from './look/muiOverrides';
 import { bgAlpha, defaultPaletteKey, fontSans, palettes, weight } from './tokens';
 
@@ -14,7 +14,7 @@ import { bgAlpha, defaultPaletteKey, fontSans, palettes, weight } from './tokens
  * sandboxed React apps so both render with identical components and tokens.
  * Sizes resolve through the `--df-*` CSS variables that LayoutProvider sets.
  */
-export function createDfTheme(paletteKey: string, look: Look = 'soft'): Theme {
+export function createDfTheme(paletteKey: string, look: Look = DEFAULT_LOOK): Theme {
     const { palette: lookPalette, corner, mode, tint } = LOOKS[look];
     return createTheme({
     look,

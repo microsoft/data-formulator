@@ -14,11 +14,14 @@ describe('applyLookVariables', () => {
 });
 
 describe('look preference', () => {
-    it('reads back each look and falls back to soft for an unknown value', () => {
+    it('opens in sharp, reads back each look, and falls back to sharp for an unknown value', () => {
+        localStorage.removeItem('df-contrast');
+        expect(readLook()).toBe('sharp');
         saveLook('dark');
         expect(readLook()).toBe('dark');
         localStorage.setItem('df-contrast', 'neon');
-        expect(readLook()).toBe('soft');
-        saveLook('soft');
+        expect(readLook()).toBe('sharp');
+        saveLook('sharp');
+        expect(localStorage.getItem('df-contrast')).toBeNull();
     });
 });
