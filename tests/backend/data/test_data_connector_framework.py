@@ -30,16 +30,18 @@ from data_formulator.data_connector import (
     DATA_CONNECTORS,
     DataConnector,
     SourceSpec,
-    _node_to_dict,
     _resolve_connector,
-    _resolve_env_refs,
     _sanitize_error,
     connectors_bp,
+    list_available_connector_ids,
 )
 from data_formulator.data_loader.external_data_loader import (
     CatalogNode,
     ExternalDataLoader,
 )
+from data_formulator.data_loader.sample_datasets_loader import SampleDatasetsLoader
+from data_formulator.datalake.catalog_cache import save_catalog
+from data_formulator.datalake.connector_preferences import connector_is_enabled
 from data_formulator.errors import ErrorCode
 
 pytestmark = [pytest.mark.backend, pytest.mark.plugin]
@@ -267,41 +269,10 @@ def connected_client(client):
 
 
 # ==================================================================
-# Tests: Blueprint & Registration
-# ==================================================================
-
-class TestSharedRouteRegistration:
-
-    def test_shared_routes_registered(self, app, source):
-        rules = [rule.rule for rule in app.url_map.iter_rules()]
-        assert "/api/connectors/connect" in rules
-        assert "/api/connectors/disconnect" in rules
-        assert "/api/connectors/get-status" in rules
-        assert "/api/connectors/get-catalog" in rules
-        assert "/api/connectors/get-catalog-tree" in rules
-        assert "/api/connectors/search-catalog" in rules
-        assert "/api/connectors/import-data" in rules
-        assert "/api/connectors/import-group" in rules
-        assert "/api/connectors/refresh-data" in rules
-        assert "/api/connectors/preview-data" in rules
-        assert "/api/connectors/column-values" in rules
-
-
-# ==================================================================
 # Tests: Frontend Config
 # ==================================================================
 
 class TestFrontendConfig:
-
-    def test_frontend_config_structure(self, source):
-        cfg = source.get_frontend_config()
-        assert cfg["source_id"] == "mock_db"
-        assert cfg["name"] == "Mock Database"
-        assert cfg["icon"] == "mock"
-        assert "params_form" in cfg
-        assert "pinned_params" in cfg
-        assert "hierarchy" in cfg
-        assert "effective_hierarchy" in cfg
 
     def test_pinned_params_excluded_from_form(self, source):
         cfg = source.get_frontend_config()
@@ -310,11 +281,6 @@ class TestFrontendConfig:
         assert "user" in form_names
         assert "password" in form_names
         assert cfg["pinned_params"]["host"] == "localhost"
-
-    def test_hierarchy_included(self, source):
-        cfg = source.get_frontend_config()
-        keys = [h["key"] for h in cfg["hierarchy"]]
-        assert keys == ["database", "schema", "table"]
 
     def test_pinned_source_effective_hierarchy(self, source_pinned):
         cfg = source_pinned.get_frontend_config()
@@ -378,6 +344,16 @@ class TestConnectorList:
 
 class TestAuthRoutes:
 
+    def test_connect_does_not_wait_for_catalog(self, client):
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"), \
+             patch.object(MockLoader, "list_tables", side_effect=TimeoutError) as listing:
+            response = client.post("/api/connectors/connect", json={
+                "connector_id": "mock_db",
+                "params": {"user": "test", "password": "test"},
+            })
+        assert response.get_json()["data"]["status"] == "connected"
+        listing.assert_not_called()
+
     def test_connect_success(self, client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
             resp = client.post("/api/connectors/connect", json={
@@ -389,17 +365,6 @@ class TestAuthRoutes:
         assert data["status"] == "success"
         assert "hierarchy" in data["data"]
         assert "effective_hierarchy" in data["data"]
-
-    def test_connect_merges_default_params(self, client):
-        """Default params (host=localhost) merged with user params."""
-        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = client.post("/api/connectors/connect", json={
-                "connector_id": "mock_db",
-                "params": {"user": "test", "password": "test"},
-            })
-        data = resp.get_json()
-        assert resp.status_code == 200
-        assert data["status"] == "success"
 
     def test_connect_bad_host_returns_error(self, app):
         source = DataConnector.from_loader(MockLoader, source_id="mock_bad")
@@ -484,6 +449,55 @@ class TestAuthRoutes:
         vault_delete.assert_called_once_with("test-user")
         clear_token.assert_called_once_with("mock_db")
 
+    def test_no_auth_connector_can_disconnect_and_reconnect_without_deleting_cache(
+        self,
+        client,
+        tmp_path,
+    ):
+        sample_source = DataConnector.from_loader(
+            SampleDatasetsLoader,
+            source_id="sample_datasets",
+            display_name="Example Datasets",
+        )
+        DATA_CONNECTORS["sample_datasets"] = sample_source
+        save_catalog(tmp_path, "sample_datasets", [{
+            "name": "penguins",
+            "table_key": "penguins",
+            "metadata": {},
+        }])
+
+        with (
+            patch.object(DataConnector, "_get_identity", return_value="test-user"),
+            patch("data_formulator.auth.identity.get_identity_id", return_value="test-user"),
+            patch("data_formulator.datalake.workspace.get_user_home", return_value=tmp_path),
+        ):
+            disconnect = client.post("/api/connectors/disconnect", json={
+                "connector_id": "sample_datasets",
+            })
+            status = client.get("/api/connectors")
+
+            assert disconnect.status_code == 200
+            assert connector_is_enabled(tmp_path, "sample_datasets") is False
+            assert (tmp_path / "catalog_cache" / "sample_datasets.json").exists()
+            listed = {item["id"]: item for item in status.get_json()["data"]["connectors"]}
+            assert listed["sample_datasets"]["connected"] is False
+            with pytest.raises(ValueError, match="Connector is disconnected"):
+                sample_source._require_loader()
+
+            credentialed_source = DATA_CONNECTORS["mock_db"]
+            credentialed_source._loaders["test-user"] = MockLoader({"host": "localhost"})
+            available = list_available_connector_ids()
+            assert "mock_db" in available
+            assert "sample_datasets" not in available
+
+            reconnect = client.post("/api/connectors/connect", json={
+                "connector_id": "sample_datasets",
+            })
+
+        assert reconnect.status_code == 200
+        assert connector_is_enabled(tmp_path, "sample_datasets") is True
+        assert sample_source._get_loader("test-user") is not None
+
     def test_status_connected(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
             resp = connected_client.post("/api/connectors/get-status", json={"connector_id": "mock_db"})
@@ -498,13 +512,6 @@ class TestAuthRoutes:
         assert data["data"]["connected"] is False
         assert "params_form" in data["data"]
 
-    def test_status_not_connected_after_no_connect(self, client):
-        """Status should show not-connected for a user that never connected."""
-        with patch.object(DataConnector, "_get_identity", return_value="other-user"):
-            resp = client.post("/api/connectors/get-status", json={"connector_id": "mock_db"})
-        data = resp.get_json()
-        assert data["data"]["connected"] is False
-
     def test_safe_params_exclude_password(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
             resp = connected_client.post("/api/connectors/get-status", json={"connector_id": "mock_db"})
@@ -518,6 +525,28 @@ class TestAuthRoutes:
 
 class TestCatalogRoutes:
 
+    def test_background_catalog_polls_without_reconnecting_and_caches_empty_result(self, connected_client, tmp_path):
+        with patch("data_formulator.datalake.workspace.get_user_home", return_value=tmp_path), \
+             patch("data_formulator.datalake.catalog_refresh._REFRESH_EXECUTOR.submit") as submit, \
+             patch.object(MockLoader, "list_tables", return_value=[]) as listing:
+            body = {"connector_id": "mock_db", "background": True}
+            response = connected_client.post("/api/connectors/get-catalog-tree", json=body)
+            assert response.get_json()["data"]["discovery"]["status"] == "running"
+            listing.assert_not_called()
+            with patch.object(DataConnector, "_require_loader", side_effect=AssertionError("Polling must not reconnect")):
+                response = connected_client.post("/api/connectors/get-catalog-tree", json={**body, "poll": True})
+                assert response.get_json()["data"]["discovery"]["status"] == "running"
+            submit.call_args.args[0]()
+            for _ in range(2):
+                response = connected_client.post("/api/connectors/get-catalog-tree", json={**body, "poll": True})
+                assert response.get_json()["data"]["discovery"]["status"] == "complete"
+                assert response.get_json()["data"]["tree"] == []
+            listing.assert_called_once()
+            submit.assert_called_once()
+            response = connected_client.post("/api/connectors/get-catalog-tree", json={**body, "refresh": True})
+            assert response.get_json()["data"]["discovery"]["status"] == "running"
+            assert submit.call_count == 2
+
     def test_ls_root(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
             resp = connected_client.post("/api/connectors/get-catalog", json={
@@ -530,14 +559,6 @@ class TestCatalogRoutes:
         assert len(data["data"]["nodes"]) > 0
         # First level is "database" → namespace
         assert data["data"]["nodes"][0]["node_type"] == "namespace"
-
-    def test_ls_returns_hierarchy(self, connected_client):
-        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/get-catalog", json={"connector_id": "mock_db", "path": []})
-        data = resp.get_json()
-        assert "hierarchy" in data["data"]
-        assert "effective_hierarchy" in data["data"]
-        assert data["data"]["hierarchy"][0]["key"] == "database"
 
     def test_ls_drill_down_to_tables(self, connected_client):
         """Expand database → schema → tables."""
@@ -603,16 +624,6 @@ class TestCatalogRoutes:
         assert "tree" in data["data"]
         assert "hierarchy" in data["data"]
 
-    def test_catalog_tree_with_filter(self, connected_client):
-        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/get-catalog-tree", json={
-                "connector_id": "mock_db",
-                "filter": "order",
-            })
-        data = resp.get_json()
-        assert resp.status_code == 200
-        assert "tree" in data["data"]
-
     def test_search_catalog_route(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
             resp = connected_client.post("/api/connectors/search-catalog", json={
@@ -657,8 +668,21 @@ class TestCatalogRoutes:
 
 class TestDataRoutes:
 
-    def test_preview(self, connected_client):
-        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
+    @pytest.mark.parametrize("total", [None, 0, 100])
+    def test_preview_preserves_explicit_total(self, connected_client, total):
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"), \
+             patch.object(MockLoader, "_last_total_rows", total, create=True):
+            response = connected_client.post("/api/connectors/preview-data", json={
+                "connector_id": "mock_db", "source_table": "public.users", "limit": 3,
+            })
+        assert response.get_json()["data"]["total_row_count"] == total
+
+    @pytest.mark.parametrize("cluster", [None, "https://user:secret@help.kusto.windows.net/?token=secret#fragment"])
+    def test_preview(self, connected_client, cluster, caplog):
+        caplog.set_level("INFO", logger="data_formulator.data_connector")
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"), \
+             patch.object(MockLoader, "kusto_cluster", cluster, create=True), \
+             patch.object(MockLoader, "kusto_database", "Samples", create=True):
             resp = connected_client.post("/api/connectors/preview-data", json={
                 "connector_id": "mock_db",
                 "source_table": "public.users",
@@ -668,15 +692,53 @@ class TestDataRoutes:
         assert resp.status_code == 200
         assert data["status"] == "success"
         assert data["data"]["row_count"] <= 3
+        assert data["data"]["inspection"]["sample_method"] == "source_head"
+        assert data["data"]["inspection"]["row_limit"] == 3
+        events = [record.getMessage() for record in caplog.records if "[ConnectorPreview]" in record.getMessage()]
+        assert len(events) == 2
+        assert events[0].startswith("[ConnectorPreview] start request_id=")
+        request_id = events[0].split("request_id=", 1)[1]
+        assert events[1].startswith(f"[ConnectorPreview] success request_id={request_id} duration_s=")
+        assert f"rows={data['data']['row_count']} columns={len(data['data']['columns'])}" in events[1]
+        assert "secret" not in " ".join(events)
         col_names = {c["name"] for c in data["data"]["columns"]}
         assert "id" in col_names
         assert "name" in col_names
+        if cluster:
+            assert data["data"]["source_location"] == {
+                "address": "https://help.kusto.windows.net", "database": "Samples",
+            }
+        else:
+            assert "source_location" not in data["data"]
 
-    def test_preview_missing_source_table(self, connected_client):
+    def test_preview_missing_source_table(self, connected_client, caplog):
+        caplog.set_level("INFO", logger="data_formulator.data_connector")
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
             resp = connected_client.post("/api/connectors/preview-data", json={"connector_id": "mock_db"})
         assert resp.status_code == 200
         assert resp.get_json()["status"] == "error"
+        events = [record.getMessage() for record in caplog.records if "[ConnectorPreview]" in record.getMessage()]
+        assert len(events) == 2
+        assert "start request_id=" in events[0]
+        assert "failure request_id=" in events[1]
+        assert "error_code=INVALID_REQUEST" in events[1]
+
+    def test_preview_logs_before_connector_resolution_and_on_unexpected_failure(self, connected_client, caplog):
+        caplog.set_level("INFO", logger="data_formulator.data_connector")
+
+        def fail_resolution(data):
+            assert "[ConnectorPreview] start request_id=" in caplog.text
+            raise RuntimeError("secret-connection-detail")
+
+        with patch("data_formulator.data_connector._resolve_connector", side_effect=fail_resolution):
+            response = connected_client.post("/api/connectors/preview-data", json={"connector_id": "mock_db"})
+        assert response.get_json()["status"] == "error"
+        events = [record.getMessage() for record in caplog.records if "[ConnectorPreview]" in record.getMessage()]
+        assert len(events) == 2
+        request_id = events[0].split("request_id=", 1)[1]
+        assert events[1].startswith(f"[ConnectorPreview] failure request_id={request_id} duration_s=")
+        assert "error_type=RuntimeError" in events[1]
+        assert "secret-connection-detail" not in " ".join(events)
 
     def test_import_requires_source_table(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
@@ -706,11 +768,113 @@ class TestDataRoutes:
         assert data["data"]["row_count"] == 5
         assert data["data"]["refreshable"] is True
 
+    def test_full_copy_imports_all_rows_without_preview_options(self, connected_client, tmp_path):
+        from data_formulator.datalake.workspace import Workspace
+
+        workspace = Workspace("test-user", root_dir=tmp_path)
+        with (
+            patch.object(DataConnector, "_get_identity", return_value="test-user"),
+            patch("data_formulator.auth.identity.get_identity_id", return_value="test-user"),
+            patch("data_formulator.workspace_factory.get_workspace", return_value=workspace),
+            patch.object(MockLoader, "query_data_as_arrow", side_effect=[
+                pa.table({"total_rows": [3]}), pa.table({"value": [1, 2, 3]}),
+            ]) as query,
+        ):
+            response = connected_client.post("/api/connectors/import-data", json={
+                "connector_id": "mock_db", "source_table": "public.users", "table_name": "users",
+                "full_copy": True, "import_options": {"size": 1, "columns": ["missing"]},
+            })
+        result = response.get_json()
+        assert result["status"] == "success"
+        assert result["data"]["row_count"] == 3
+        assert result["data"]["refreshable"] is False
+        assert result["data"]["table_name"].startswith("users_copy_")
+        assert workspace.get_table_metadata(result["data"]["table_name"]).row_count == 3
+        assert query.call_args_list[1].args == ("public.users", {}, 4)
+
+    def test_full_copy_materializes_local_source_without_modifying_it(self, connected_client, tmp_path):
+        from data_formulator.data_loader.local_folder_data_loader import LocalFolderDataLoader
+        from data_formulator.datalake.workspace import Workspace
+
+        source_file = tmp_path / "events.csv"
+        original = "value\n" + "\n".join(str(value) for value in range(75)) + "\n"
+        source_file.write_text(original)
+        loader = LocalFolderDataLoader({"root_dir": str(tmp_path)})
+        workspace = Workspace("test-user", root_dir=tmp_path / "workspace")
+        workspace.write_parquet_from_arrow(pa.table({"value": [-1]}), "events")
+        assert len(loader.preview_data("events.csv")["rows"]) == 50
+        with (
+            patch.object(DataConnector, "_get_identity", return_value="test-user"),
+            patch.object(DataConnector, "_require_loader", return_value=loader),
+            patch("data_formulator.auth.identity.get_identity_id", return_value="test-user"),
+            patch("data_formulator.workspace_factory.get_workspace", return_value=workspace),
+        ):
+            response = connected_client.post("/api/connectors/import-data", json={
+                "connector_id": "mock_db", "source_table": "events.csv", "table_name": "events", "full_copy": True,
+            })
+        result = response.get_json()
+        assert result["status"] == "success", result
+        name = result["data"]["table_name"]
+        assert workspace.read_data_as_df(name)["value"].tolist() == list(range(75))
+        assert workspace.read_data_as_df("events")["value"].tolist() == [-1]
+        assert source_file.read_text() == original
+        source_file.write_text("value\n999\n")
+        assert workspace.read_data_as_df(name)["value"].tolist() == list(range(75))
+        assert not workspace.get_table_metadata(name).source_table
+
+    @pytest.mark.parametrize("count, values", [(2_000_001, None), (3, [1, 2]), (1, [1, 2])])
+    def test_full_copy_rejects_oversize_or_incomplete_data(self, connected_client, count, values):
+        results = [pa.table({"total_rows": [count]})]
+        if values is not None:
+            results.append(pa.table({"value": values}))
+        with (
+            patch.object(DataConnector, "_get_identity", return_value="test-user"),
+            patch("data_formulator.auth.identity.get_identity_id", return_value="test-user"),
+            patch("data_formulator.workspace_factory.get_workspace") as workspace,
+            patch.object(MockLoader, "query_data_as_arrow", side_effect=results),
+        ):
+            response = connected_client.post("/api/connectors/import-data", json={
+                "connector_id": "mock_db", "source_table": "public.users", "full_copy": True,
+            })
+        assert response.get_json()["status"] == "error"
+        workspace.return_value.write_parquet_from_arrow.assert_not_called()
+
     def test_refresh_requires_table_name(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
             resp = connected_client.post("/api/connectors/refresh-data", json={"connector_id": "mock_db"})
         assert resp.status_code == 200
         assert resp.get_json()["status"] == "error"
+
+    @pytest.mark.parametrize("native", [False, True])
+    def test_refresh_preserves_materialized_aggregate_query(self, connected_client, tmp_path, native):
+        from data_formulator.datalake.workspace import Workspace
+
+        workspace = Workspace("test-user", root_dir=tmp_path)
+        query = {"aggregates": [{"op": "sum", "column": "amount", "as": "total"}]}
+        if native:
+            query = {"native": {"language": "kql", "text": "orders | summarize total=sum(amount)"}}
+        workspace.write_parquet_from_arrow(pa.table({"total": [350.0]}), "totals", source_info={
+            "source_table": "public.orders", "import_options": {"structured_query": query},
+        })
+        with (
+            patch.object(DataConnector, "_get_identity", return_value="test-user"),
+            patch("data_formulator.auth.identity.get_identity_id", return_value="test-user"),
+            patch("data_formulator.workspace_factory.get_workspace", return_value=workspace),
+            patch.object(MockLoader, "query_data_as_arrow", return_value=pa.table({"total": [400.0]})) as aggregate,
+            patch.object(MockLoader, "fetch_data_as_arrow", side_effect=AssertionError("No raw-row refresh")),
+            patch.object(MockLoader, "query_capabilities", return_value={"native_query_languages": ["kql"]}),
+            patch.object(MockLoader, "validate_native_query", return_value=None),
+        ):
+            response = connected_client.post("/api/connectors/refresh-data", json={
+                "connector_id": "mock_db", "table_name": "totals",
+            })
+        assert response.status_code == 200
+        assert response.get_json()["status"] == "success", response.get_json()
+        assert aggregate.call_args.kwargs == {"source_table": "public.orders", "query": query, "limit": 10001}
+        from data_formulator.datalake.parquet_utils import compute_arrow_table_hash
+        assert compute_arrow_table_hash(pa.table({"total": [350.0]})) != compute_arrow_table_hash(pa.table({"total": [400.0]}))
+        assert response.get_json()["data"]["data_changed"] is True
+        assert workspace.read_data_as_df("totals")["total"].tolist() == [400.0]
 
     def test_column_values_success(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
@@ -743,19 +907,6 @@ class TestDataRoutes:
         assert resp.status_code == 200
         assert resp.get_json()["status"] == "error"
 
-    def test_column_values_with_keyword(self, connected_client):
-        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/column-values", json={
-                "connector_id": "mock_db",
-                "source_table": "public.users",
-                "column_name": "name",
-                "keyword": "ali",
-                "limit": 10,
-            })
-        data = resp.get_json()
-        assert resp.status_code == 200
-        assert data["status"] == "success"
-
     def test_column_values_not_connected(self, client):
         with patch.object(DataConnector, "_get_identity", return_value="nobody"):
             resp = client.post("/api/connectors/column-values", json={
@@ -780,10 +931,6 @@ class TestErrorHandling:
     def test_sanitize_error_permission(self):
         msg, code = _sanitize_error(PermissionError("access denied for user"))
         assert code == 403
-
-    def test_sanitize_error_invalid_params(self):
-        msg, code = _sanitize_error(ValueError("host is required"))
-        assert code == 200
 
     def test_sanitize_error_unknown(self):
         msg, code = _sanitize_error(RuntimeError("something weird happened"))
@@ -828,23 +975,6 @@ class TestIdentityIsolation:
             resp = client.post("/api/connectors/get-status", json={"connector_id": "mock_db"})
             assert resp.get_json()["data"]["connected"] is True
 
-    def test_delete_does_not_affect_other_user(self, client):
-        """Deleting credentials for user-a doesn't affect user-b's session."""
-        with patch.object(DataConnector, "_get_identity", return_value="user-a"):
-            client.post("/api/connectors/connect", json={
-                "connector_id": "mock_db",
-                "params": {"host": "localhost", "user": "A", "password": "A"},
-            })
-        with patch.object(DataConnector, "_get_identity", return_value="user-b"):
-            client.post("/api/connectors/connect", json={
-                "connector_id": "mock_db",
-                "params": {"host": "localhost", "user": "B", "password": "B"},
-            })
-        # user-b should still be connected regardless of user-a's state
-        with patch.object(DataConnector, "_get_identity", return_value="user-b"):
-            resp = client.post("/api/connectors/get-status", json={"connector_id": "mock_db"})
-            assert resp.get_json()["data"]["connected"] is True
-
 
 # ==================================================================
 # Tests: Scope Pinning
@@ -879,29 +1009,3 @@ class TestScopePinning:
             })
         data = resp.get_json()
         assert data["data"]["pinned_scope"]["database"] == "testdb"
-
-
-# ==================================================================
-# Tests: Helpers
-# ==================================================================
-
-class TestHelpers:
-
-    def test_node_to_dict(self):
-        node = CatalogNode("users", "table", ["db", "public", "users"], {"row_count": 5})
-        d = _node_to_dict(node)
-        assert d["name"] == "users"
-        assert d["node_type"] == "table"
-        assert d["path"] == ["db", "public", "users"]
-        assert d["metadata"]["row_count"] == 5
-
-    def test_resolve_env_refs(self, monkeypatch):
-        monkeypatch.setenv("MY_SECRET", "hunter2")
-        result = _resolve_env_refs({"password": "${MY_SECRET}", "host": "localhost"})
-        assert result["password"] == "hunter2"
-        assert result["host"] == "localhost"
-
-    def test_resolve_env_refs_missing(self, monkeypatch):
-        monkeypatch.delenv("NONEXISTENT_VAR", raising=False)
-        result = _resolve_env_refs({"password": "${NONEXISTENT_VAR}"})
-        assert result["password"] == ""

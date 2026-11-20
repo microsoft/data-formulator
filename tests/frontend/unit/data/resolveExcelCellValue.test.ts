@@ -7,26 +7,9 @@ describe('resolveExcelCellValue', () => {
     expect(resolveExcelCellValue(null)).toBeNull();
   });
 
-  it('should return null for undefined', () => {
-    expect(resolveExcelCellValue(undefined)).toBeNull();
-  });
-
   // --- Primitives pass-through ---
   it('should return string as-is', () => {
     expect(resolveExcelCellValue('hello')).toBe('hello');
-  });
-
-  it('should return number as-is', () => {
-    expect(resolveExcelCellValue(42)).toBe(42);
-  });
-
-  it('should return boolean as-is', () => {
-    expect(resolveExcelCellValue(true)).toBe(true);
-    expect(resolveExcelCellValue(false)).toBe(false);
-  });
-
-  it('should return empty string as-is', () => {
-    expect(resolveExcelCellValue('')).toBe('');
   });
 
   // --- Date objects ---

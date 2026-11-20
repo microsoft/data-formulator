@@ -1,0 +1,929 @@
+{
+ "__stateVersion": 15,
+ "activeWorkspace": {
+  "id": "education-sdg4-e21",
+  "displayName": "In Nigeria, the rich–poor gap in finishing school is widest"
+ },
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "completion_by_wealth",
+   "displayId": "Upper secondary completion, richest and poorest fifth",
+   "names": [
+    "country_id",
+    "country",
+    "latest_year",
+    "poorest",
+    "richest",
+    "gap"
+   ],
+   "rows": [
+    {
+     "country_id": "NGA",
+     "country": "Nigeria",
+     "latest_year": 2021,
+     "poorest": 15.7,
+     "richest": 89.8,
+     "gap": 74.1
+    },
+    {
+     "country_id": "LAO",
+     "country": "Laos",
+     "latest_year": 2023,
+     "poorest": 10.0,
+     "richest": 80.9,
+     "gap": 70.9
+    },
+    {
+     "country_id": "GHA",
+     "country": "Ghana",
+     "latest_year": 2022,
+     "poorest": 18.8,
+     "richest": 87.2,
+     "gap": 68.3
+    },
+    {
+     "country_id": "LSO",
+     "country": "Lesotho",
+     "latest_year": 2024,
+     "poorest": 5.7,
+     "richest": 71.8,
+     "gap": 66.1
+    },
+    {
+     "country_id": "ZMB",
+     "country": "Zambia",
+     "latest_year": 2024,
+     "poorest": 4.7,
+     "richest": 68.7,
+     "gap": 64.0
+    },
+    {
+     "country_id": "VNM",
+     "country": "Vietnam",
+     "latest_year": 2021,
+     "poorest": 30.3,
+     "richest": 91.6,
+     "gap": 61.3
+    },
+    {
+     "country_id": "COD",
+     "country": "DR Congo",
+     "latest_year": 2023,
+     "poorest": 10.9,
+     "richest": 71.6,
+     "gap": 60.7
+    },
+    {
+     "country_id": "IND",
+     "country": "India",
+     "latest_year": 2019,
+     "poorest": 19.7,
+     "richest": 79.7,
+     "gap": 60.0
+    },
+    {
+     "country_id": "KEN",
+     "country": "Kenya",
+     "latest_year": 2022,
+     "poorest": 22.0,
+     "richest": 81.9,
+     "gap": 59.9
+    },
+    {
+     "country_id": "NPL",
+     "country": "Nepal",
+     "latest_year": 2021,
+     "poorest": 15.4,
+     "richest": 74.4,
+     "gap": 59.0
+    },
+    {
+     "country_id": "URY",
+     "country": "Uruguay",
+     "latest_year": 2025,
+     "poorest": 30.5,
+     "richest": 85.0,
+     "gap": 54.5
+    },
+    {
+     "country_id": "PAK",
+     "country": "Pakistan",
+     "latest_year": 2018,
+     "poorest": 1.4,
+     "richest": 55.1,
+     "gap": 53.7
+    },
+    {
+     "country_id": "THA",
+     "country": "Thailand",
+     "latest_year": 2022,
+     "poorest": 43.1,
+     "richest": 96.5,
+     "gap": 53.4
+    },
+    {
+     "country_id": "CMR",
+     "country": "Cameroon",
+     "latest_year": 2018,
+     "poorest": 1.3,
+     "richest": 53.1,
+     "gap": 51.8
+    },
+    {
+     "country_id": "UGA",
+     "country": "Uganda",
+     "latest_year": 2019,
+     "poorest": 2.6,
+     "richest": 52.9,
+     "gap": 50.3
+    },
+    {
+     "country_id": "VUT",
+     "country": "Vanuatu",
+     "latest_year": 2023,
+     "poorest": 2.5,
+     "richest": 51.5,
+     "gap": 49.0
+    },
+    {
+     "country_id": "GUY",
+     "country": "Guyana",
+     "latest_year": 2019,
+     "poorest": 35.8,
+     "richest": 84.7,
+     "gap": 48.9
+    },
+    {
+     "country_id": "AGO",
+     "country": "Angola",
+     "latest_year": 2023,
+     "poorest": 0.6,
+     "richest": 49.3,
+     "gap": 48.7
+    },
+    {
+     "country_id": "BGD",
+     "country": "Bangladesh",
+     "latest_year": 2022,
+     "poorest": 12.1,
+     "richest": 60.0,
+     "gap": 47.9
+    },
+    {
+     "country_id": "FJI",
+     "country": "Fiji",
+     "latest_year": 2021,
+     "poorest": 29.5,
+     "richest": 77.3,
+     "gap": 47.8
+    },
+    {
+     "country_id": "MOZ",
+     "country": "Mozambique",
+     "latest_year": 2022,
+     "poorest": 1.9,
+     "richest": 49.1,
+     "gap": 47.3
+    },
+    {
+     "country_id": "DZA",
+     "country": "Algeria",
+     "latest_year": 2019,
+     "poorest": 25.0,
+     "richest": 72.0,
+     "gap": 47.0
+    },
+    {
+     "country_id": "LBR",
+     "country": "Liberia",
+     "latest_year": 2019,
+     "poorest": 2.2,
+     "richest": 49.1,
+     "gap": 47.0
+    },
+    {
+     "country_id": "AFG",
+     "country": "Afghanistan",
+     "latest_year": 2022,
+     "poorest": 6.1,
+     "richest": 53.0,
+     "gap": 46.9
+    },
+    {
+     "country_id": "TUN",
+     "country": "Tunisia",
+     "latest_year": 2023,
+     "poorest": 12.6,
+     "richest": 59.4,
+     "gap": 46.8
+    },
+    {
+     "country_id": "KHM",
+     "country": "Cambodia",
+     "latest_year": 2021,
+     "poorest": 6.1,
+     "richest": 52.8,
+     "gap": 46.7
+    },
+    {
+     "country_id": "DOM",
+     "country": "Dominican Republic",
+     "latest_year": 2025,
+     "poorest": 39.8,
+     "richest": 86.2,
+     "gap": 46.4
+    },
+    {
+     "country_id": "RWA",
+     "country": "Rwanda",
+     "latest_year": 2020,
+     "poorest": 1.8,
+     "richest": 48.1,
+     "gap": 46.3
+    },
+    {
+     "country_id": "MNE",
+     "country": "Montenegro",
+     "latest_year": 2018,
+     "poorest": 54.5,
+     "richest": 100.0,
+     "gap": 45.5
+    },
+    {
+     "country_id": "SUR",
+     "country": "Suriname",
+     "latest_year": 2018,
+     "poorest": 7.4,
+     "richest": 52.9,
+     "gap": 45.5
+    },
+    {
+     "country_id": "GIN",
+     "country": "Guinea",
+     "latest_year": 2018,
+     "poorest": 0.5,
+     "richest": 45.4,
+     "gap": 44.9
+    },
+    {
+     "country_id": "MNG",
+     "country": "Mongolia",
+     "latest_year": 2018,
+     "poorest": 50.5,
+     "richest": 95.1,
+     "gap": 44.6
+    },
+    {
+     "country_id": "MKD",
+     "country": "North Macedonia",
+     "latest_year": 2018,
+     "poorest": 56.1,
+     "richest": 100.0,
+     "gap": 43.9
+    },
+    {
+     "country_id": "MDG",
+     "country": "Madagascar",
+     "latest_year": 2021,
+     "poorest": 0.4,
+     "richest": 42.1,
+     "gap": 41.7
+    },
+    {
+     "country_id": "PRY",
+     "country": "Paraguay",
+     "latest_year": 2025,
+     "poorest": 48.7,
+     "richest": 89.8,
+     "gap": 41.1
+    },
+    {
+     "country_id": "CIV",
+     "country": "Côte d'Ivoire",
+     "latest_year": 2021,
+     "poorest": 1.9,
+     "richest": 42.6,
+     "gap": 40.7
+    },
+    {
+     "country_id": "IRQ",
+     "country": "Iraq",
+     "latest_year": 2018,
+     "poorest": 12.8,
+     "richest": 53.3,
+     "gap": 40.5
+    },
+    {
+     "country_id": "JOR",
+     "country": "Jordan",
+     "latest_year": 2025,
+     "poorest": 43.8,
+     "richest": 83.8,
+     "gap": 40.0
+    },
+    {
+     "country_id": "ETH",
+     "country": "Ethiopia",
+     "latest_year": 2024,
+     "poorest": 5.1,
+     "richest": 45.0,
+     "gap": 39.9
+    },
+    {
+     "country_id": "YEM",
+     "country": "Yemen",
+     "latest_year": 2023,
+     "poorest": 16.8,
+     "richest": 56.7,
+     "gap": 39.9
+    },
+    {
+     "country_id": "WSM",
+     "country": "Samoa",
+     "latest_year": 2019,
+     "poorest": 38.8,
+     "richest": 78.3,
+     "gap": 39.5
+    },
+    {
+     "country_id": "PAN",
+     "country": "Panama",
+     "latest_year": 2025,
+     "poorest": 58.2,
+     "richest": 97.3,
+     "gap": 39.1
+    },
+    {
+     "country_id": "SLV",
+     "country": "El Salvador",
+     "latest_year": 2025,
+     "poorest": 45.1,
+     "richest": 84.1,
+     "gap": 39.0
+    },
+    {
+     "country_id": "GEO",
+     "country": "Georgia",
+     "latest_year": 2018,
+     "poorest": 53.5,
+     "richest": 92.3,
+     "gap": 38.8
+    },
+    {
+     "country_id": "MEX",
+     "country": "Mexico",
+     "latest_year": 2024,
+     "poorest": 44.6,
+     "richest": 83.4,
+     "gap": 38.8
+    },
+    {
+     "country_id": "PNG",
+     "country": "Papua New Guinea",
+     "latest_year": 2018,
+     "poorest": 1.7,
+     "richest": 39.9,
+     "gap": 38.2
+    },
+    {
+     "country_id": "COL",
+     "country": "Colombia",
+     "latest_year": 2025,
+     "poorest": 60.0,
+     "richest": 94.6,
+     "gap": 34.6
+    },
+    {
+     "country_id": "KIR",
+     "country": "Kiribati",
+     "latest_year": 2018,
+     "poorest": 3.9,
+     "richest": 38.3,
+     "gap": 34.3
+    },
+    {
+     "country_id": "SRB",
+     "country": "Serbia",
+     "latest_year": 2019,
+     "poorest": 61.7,
+     "richest": 95.9,
+     "gap": 34.3
+    },
+    {
+     "country_id": "GMB",
+     "country": "Gambia",
+     "latest_year": 2020,
+     "poorest": 11.4,
+     "richest": 45.2,
+     "gap": 33.8
+    },
+    {
+     "country_id": "BFA",
+     "country": "Burkina Faso",
+     "latest_year": 2021,
+     "poorest": 2.3,
+     "richest": 35.9,
+     "gap": 33.6
+    },
+    {
+     "country_id": "ZWE",
+     "country": "Zimbabwe",
+     "latest_year": 2019,
+     "poorest": 0.7,
+     "richest": 34.4,
+     "gap": 33.6
+    },
+    {
+     "country_id": "BRA",
+     "country": "Brazil",
+     "latest_year": 2025,
+     "poorest": 61.8,
+     "richest": 94.4,
+     "gap": 32.6
+    },
+    {
+     "country_id": "SWZ",
+     "country": "Eswatini",
+     "latest_year": 2022,
+     "poorest": 18.4,
+     "richest": 50.6,
+     "gap": 32.2
+    },
+    {
+     "country_id": "BEN",
+     "country": "Benin",
+     "latest_year": 2021,
+     "poorest": 2.8,
+     "richest": 34.9,
+     "gap": 32.1
+    },
+    {
+     "country_id": "SLE",
+     "country": "Sierra Leone",
+     "latest_year": 2019,
+     "poorest": 3.4,
+     "richest": 35.3,
+     "gap": 31.8
+    },
+    {
+     "country_id": "MLI",
+     "country": "Mali",
+     "latest_year": 2024,
+     "poorest": 0.1,
+     "richest": 31.7,
+     "gap": 31.6
+    },
+    {
+     "country_id": "SEN",
+     "country": "Senegal",
+     "latest_year": 2023,
+     "poorest": 3.6,
+     "richest": 35.2,
+     "gap": 31.6
+    },
+    {
+     "country_id": "CRI",
+     "country": "Costa Rica",
+     "latest_year": 2025,
+     "poorest": 65.8,
+     "richest": 96.8,
+     "gap": 31.0
+    },
+    {
+     "country_id": "HND",
+     "country": "Honduras",
+     "latest_year": 2025,
+     "poorest": 21.8,
+     "richest": 52.3,
+     "gap": 30.5
+    },
+    {
+     "country_id": "EGY",
+     "country": "Egypt",
+     "latest_year": 2023,
+     "poorest": 60.0,
+     "richest": 89.7,
+     "gap": 29.6
+    },
+    {
+     "country_id": "PSE",
+     "country": "Palestine",
+     "latest_year": 2019,
+     "poorest": 47.5,
+     "richest": 74.9,
+     "gap": 27.4
+    },
+    {
+     "country_id": "MWI",
+     "country": "Malawi",
+     "latest_year": 2024,
+     "poorest": 1.5,
+     "richest": 28.5,
+     "gap": 27.0
+    },
+    {
+     "country_id": "COM",
+     "country": "Comoros",
+     "latest_year": 2022,
+     "poorest": 22.0,
+     "richest": 48.0,
+     "gap": 26.1
+    },
+    {
+     "country_id": "NER",
+     "country": "Niger",
+     "latest_year": 2018,
+     "poorest": 0.0,
+     "richest": 23.6,
+     "gap": 23.6
+    },
+    {
+     "country_id": "ECU",
+     "country": "Ecuador",
+     "latest_year": 2025,
+     "poorest": 70.3,
+     "richest": 93.7,
+     "gap": 23.4
+    },
+    {
+     "country_id": "TZA",
+     "country": "Tanzania",
+     "latest_year": 2022,
+     "poorest": 0.4,
+     "richest": 23.6,
+     "gap": 23.2
+    },
+    {
+     "country_id": "AZE",
+     "country": "Azerbaijan",
+     "latest_year": 2023,
+     "poorest": 71.4,
+     "richest": 93.9,
+     "gap": 22.4
+    },
+    {
+     "country_id": "JAM",
+     "country": "Jamaica",
+     "latest_year": 2022,
+     "poorest": 76.4,
+     "richest": 97.2,
+     "gap": 20.8
+    },
+    {
+     "country_id": "CAF",
+     "country": "Central African Republic",
+     "latest_year": 2019,
+     "poorest": 0.1,
+     "richest": 18.6,
+     "gap": 18.5
+    },
+    {
+     "country_id": "TUR",
+     "country": "Türkiye",
+     "latest_year": 2022,
+     "poorest": 65.9,
+     "richest": 84.0,
+     "gap": 18.1
+    },
+    {
+     "country_id": "TTO",
+     "country": "Trinidad and Tobago",
+     "latest_year": 2022,
+     "poorest": 67.7,
+     "richest": 85.1,
+     "gap": 17.5
+    },
+    {
+     "country_id": "BLR",
+     "country": "Belarus",
+     "latest_year": 2019,
+     "poorest": 77.3,
+     "richest": 93.5,
+     "gap": 16.3
+    },
+    {
+     "country_id": "TCD",
+     "country": "Chad",
+     "latest_year": 2019,
+     "poorest": 0.9,
+     "richest": 14.9,
+     "gap": 14.0
+    },
+    {
+     "country_id": "BOL",
+     "country": "Bolivia",
+     "latest_year": 2025,
+     "poorest": 77.9,
+     "richest": 89.0,
+     "gap": 11.1
+    },
+    {
+     "country_id": "KGZ",
+     "country": "Kyrgyzstan",
+     "latest_year": 2023,
+     "poorest": 86.7,
+     "richest": 96.8,
+     "gap": 10.1
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "latest_year": 2018,
+     "poorest": 84.5,
+     "richest": 94.4,
+     "gap": 9.9
+    },
+    {
+     "country_id": "PER",
+     "country": "Peru",
+     "latest_year": 2025,
+     "poorest": 87.0,
+     "richest": 96.8,
+     "gap": 9.8
+    },
+    {
+     "country_id": "RUS",
+     "country": "Russia",
+     "latest_year": 2022,
+     "poorest": 87.7,
+     "richest": 96.8,
+     "gap": 9.2
+    },
+    {
+     "country_id": "CHL",
+     "country": "Chile",
+     "latest_year": 2024,
+     "poorest": 91.3,
+     "richest": 99.3,
+     "gap": 8.0
+    },
+    {
+     "country_id": "ARM",
+     "country": "Armenia",
+     "latest_year": 2018,
+     "poorest": 75.4,
+     "richest": 83.0,
+     "gap": 7.5
+    },
+    {
+     "country_id": "USA",
+     "country": "US",
+     "latest_year": 2020,
+     "poorest": 89.7,
+     "richest": 97.0,
+     "gap": 7.3
+    },
+    {
+     "country_id": "KAZ",
+     "country": "Kazakhstan",
+     "latest_year": 2024,
+     "poorest": 90.4,
+     "richest": 97.2,
+     "gap": 6.8
+    },
+    {
+     "country_id": "UZB",
+     "country": "Uzbekistan",
+     "latest_year": 2022,
+     "poorest": 89.8,
+     "richest": 96.6,
+     "gap": 6.8
+    },
+    {
+     "country_id": "TJK",
+     "country": "Tajikistan",
+     "latest_year": 2023,
+     "poorest": 80.1,
+     "richest": 84.7,
+     "gap": 4.6
+    },
+    {
+     "country_id": "CHN",
+     "country": "China",
+     "latest_year": 2020,
+     "poorest": 86.5,
+     "richest": 85.9,
+     "gap": -0.6
+    }
+   ],
+   "metadata": {
+    "country_id": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "latest_year": {
+     "type": "integer",
+     "levels": []
+    },
+    "poorest": {
+     "type": "number",
+     "levels": []
+    },
+    "richest": {
+     "type": "number",
+     "levels": []
+    },
+    "gap": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with pairs as (\n        select a.COUNTRY_ID as country_id, a.country, a.year, a.value as poorest, b.value as richest\n        from read_parquet('data/sdg4_national.parquet') a\n        join read_parquet('data/sdg4_national.parquet') b using (COUNTRY_ID, year)\n        where a.indicator_id = 'CR.3.Q1' and b.indicator_id = 'CR.3.Q5'\n          and a.year between 2018 and 2025\n          and a.value is not null and b.value is not null\n          and coalesce(a.magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n          and coalesce(b.magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by a.COUNTRY_ID order by a.year desc) = 1\n    ),\n    population as (\n        select COUNTRY_ID as country_id, value as thousands\n        from read_parquet('data/dem_national.parquet')\n        where indicator_id = '200101'\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    )\n    select p.country_id, p.country, p.year as latest_year, round(p.poorest, 1) as poorest,\n           round(p.richest, 1) as richest, round(p.richest - p.poorest, 1) as gap\n    from pairs p join population using (country_id)\n    where population.thousands >= 100\n    order by gap desc, p.country\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
+    "outputVariable": "out",
+    "source": [
+     "dem_national",
+     "sdg4_national"
+    ],
+    "trigger": {
+     "tableId": "dem_national",
+     "resultTableId": "completion_by_wealth",
+     "chart": {
+      "id": "chart-trigger-completion_by_wealth",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "dem_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "completion_by_wealth",
+    "rowCount": 86
+   },
+   "description": "Upper secondary completion rate (%) for the poorest and richest fifth of households, and the gap between them (percentage points), from each country's latest survey in 2018–2025 that has both (latest_year). Source: UIS, November 2026 release; indicators CR.3.Q1, CR.3.Q5.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794700600000_step_1",
+   "createdAt": 1794700602000
+  }
+ ],
+ "charts": [],
+ "conceptShelfItems": [],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794700600000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794700600000_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Where is the gap between rich and poor children in finishing school biggest?",
+   "parentNodeId": "conversation-root:3d0c6785-cba9-5b3b-99e2-59042bfc2208",
+   "actionId": "exploreDataFromNL_1794700600000",
+   "createdAt": 1794700600000
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794700600000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794700600000_step_1",
+   "textKind": "explain",
+   "content": "Splitting completion by household wealth to see who gets left behind.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794700600000_prompt",
+   "actionId": "exploreDataFromNL_1794700600000",
+   "createdAt": 1794700601000,
+   "startedAt": 1794700600000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794700600000-1-1",
+     "kind": "tool",
+     "label": "Querying: dem_national, sdg4_national",
+     "status": "completed",
+     "tool": "create_data"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794700600000-1-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "Map created: The rich–poor gap in finishing school"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794700600000-1-3",
+     "kind": "info",
+     "status": "completed",
+     "label": "App created: Rich and poor in finishing school"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794700600000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794700600000_closing",
+   "textKind": "explain",
+   "content": "**Nigeria has the widest gap of the 86 countries with recent surveys:** 89.8% of young people from the richest fifth of families finished upper secondary school, against 15.7% from the poorest fifth, a **74-point gap** (2021).\n\nLaos (71 points), Ghana (68 points), Lesotho (66 points) and Zambia (64 points) come next.\n\nThe dashboard sets the richest against the poorest for the widest gaps; the map beside it can switch between the gap and each group's rate. Each country's latest survey from 2018–2025. Source: UIS, November 2026 release; indicators CR.3.Q1, CR.3.Q5.",
+   "parentNodeId": "file-completion_by_wealth.app.jsx",
+   "actionId": "exploreDataFromNL_1794700600000",
+   "createdAt": 1794700605000,
+   "startedAt": 1794700600000,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "completion_by_wealth",
+   "fields": {
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "latest_year": {
+     "semanticType": "Year",
+     "displayName": "Latest year with data",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+     }
+    },
+    "poorest": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Completion, poorest fifth",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Completion, poorest fifth"
+     }
+    },
+    "richest": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Completion, richest fifth",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Completion, richest fifth"
+     }
+    },
+    "gap": {
+     "semanticType": "Number",
+     "unit": "percentage points",
+     "displayName": "Rich–poor gap",
+     "authored": {
+      "semanticType": "Number",
+      "unit": "percentage points",
+      "displayName": "Rich–poor gap"
+     }
+    }
+   }
+  }
+ ],
+ "fileNodes": [
+  {
+   "kind": "file",
+   "id": "file-completion_by_wealth.map.json",
+   "path": "completion_by_wealth.map.json",
+   "displayName": "The rich–poor gap in finishing school",
+   "contentHash": "e368d164f6587e721dc3d3721e9cd7ca53edcadfd76bb7f5206d4dbb02ede3f1",
+   "parentNodeId": "completion_by_wealth",
+   "createdAt": 1794700603000
+  },
+  {
+   "kind": "file",
+   "id": "file-completion_by_wealth.app.jsx",
+   "path": "completion_by_wealth.app.jsx",
+   "displayName": "Rich and poor in finishing school",
+   "contentHash": "d15faf4d6ceb50244960bbd604a83a4363c44f0cae43b1e3f2e47823c42b80dc",
+   "parentNodeId": "file-completion_by_wealth.map.json",
+   "createdAt": 1794700604000
+  }
+ ],
+ "focusedId": {
+  "type": "file",
+  "fileName": "completion_by_wealth.app.jsx"
+ },
+ "canvasTabs": [
+  {
+   "key": "file:completion_by_wealth.map.json",
+   "target": {
+    "type": "file",
+    "fileName": "completion_by_wealth.map.json"
+   },
+   "addedAt": 1794700000000,
+   "viewedAt": 1794700000000
+  },
+  {
+   "key": "file:completion_by_wealth.app.jsx",
+   "target": {
+    "type": "file",
+    "fileName": "completion_by_wealth.app.jsx"
+   },
+   "addedAt": 1794700000001,
+   "viewedAt": 1794700000001
+  }
+ ],
+ "canvasTabActive": "file:completion_by_wealth.app.jsx"
+}

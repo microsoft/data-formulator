@@ -15,6 +15,7 @@ import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import { TableIcon } from '../icons';
 import { iconVar, textVar } from '../app/layout';
+import { weight } from '../app/tokens';
 
 // ---------- Types ----------
 
@@ -120,7 +121,7 @@ export const StyledTreeItem = styled(TreeItem)(({ theme }) => ({
     },
     [`& > .${treeItemClasses.content}.Mui-selected`]: {
         backgroundColor: theme.palette.action.selected,
-        fontWeight: 500,
+        fontWeight: weight(500),
         '&:hover': { backgroundColor: theme.palette.action.selected },
     },
 })) as typeof TreeItem;

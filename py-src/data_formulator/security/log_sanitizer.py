@@ -205,6 +205,11 @@ def _apply_patterns(text: str) -> str:
     return text
 
 
+def sanitize_text(text: str) -> str:
+    """``text`` with credentials, tokens and secret-bearing URLs redacted (for logs written outside ``logging``)."""
+    return _apply_patterns(text)
+
+
 class SensitiveDataFilter(logging.Filter):
     """Safety-net filter that auto-redacts sensitive patterns in log messages.
 

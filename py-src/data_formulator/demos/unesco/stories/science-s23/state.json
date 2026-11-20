@@ -1,0 +1,476 @@
+{
+ "__stateVersion": 15,
+ "activeWorkspace": {
+  "id": "science-s23",
+  "displayName": "China is catching up with the US in research"
+ },
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "china_us_research",
+   "displayId": "China and US research spending and researchers",
+   "names": [
+    "country",
+    "year",
+    "rd_share",
+    "researchers_per_million"
+   ],
+   "rows": [
+    {
+     "country": "China",
+     "year": 2000,
+     "rd_share": 0.88,
+     "researchers_per_million": 550.0
+    },
+    {
+     "country": "China",
+     "year": 2001,
+     "rd_share": 0.93,
+     "researchers_per_million": 583.0
+    },
+    {
+     "country": "China",
+     "year": 2002,
+     "rd_share": 1.04,
+     "researchers_per_million": 632.0
+    },
+    {
+     "country": "China",
+     "year": 2003,
+     "rd_share": 1.1,
+     "researchers_per_million": 668.0
+    },
+    {
+     "country": "China",
+     "year": 2004,
+     "rd_share": 1.2,
+     "researchers_per_million": 713.0
+    },
+    {
+     "country": "China",
+     "year": 2005,
+     "rd_share": 1.29,
+     "researchers_per_million": 857.0
+    },
+    {
+     "country": "China",
+     "year": 2006,
+     "rd_share": 1.35,
+     "researchers_per_million": 931.0
+    },
+    {
+     "country": "China",
+     "year": 2007,
+     "rd_share": 1.35,
+     "researchers_per_million": 1077.0
+    },
+    {
+     "country": "China",
+     "year": 2008,
+     "rd_share": 1.42,
+     "researchers_per_million": 1198.0
+    },
+    {
+     "country": "China",
+     "year": 2009,
+     "rd_share": 1.64,
+     "researchers_per_million": 861.0
+    },
+    {
+     "country": "China",
+     "year": 2010,
+     "rd_share": 1.68,
+     "researchers_per_million": 899.0
+    },
+    {
+     "country": "China",
+     "year": 2011,
+     "rd_share": 1.75,
+     "researchers_per_million": 972.0
+    },
+    {
+     "country": "China",
+     "year": 2012,
+     "rd_share": 1.88,
+     "researchers_per_million": 1029.0
+    },
+    {
+     "country": "China",
+     "year": 2013,
+     "rd_share": 1.96,
+     "researchers_per_million": 1080.0
+    },
+    {
+     "country": "China",
+     "year": 2014,
+     "rd_share": 1.98,
+     "researchers_per_million": 1102.0
+    },
+    {
+     "country": "China",
+     "year": 2015,
+     "rd_share": 2.02,
+     "researchers_per_million": 1163.0
+    },
+    {
+     "country": "China",
+     "year": 2016,
+     "rd_share": 2.06,
+     "researchers_per_million": 1209.0
+    },
+    {
+     "country": "China",
+     "year": 2017,
+     "rd_share": 2.08,
+     "researchers_per_million": 1236.0
+    },
+    {
+     "country": "China",
+     "year": 2018,
+     "rd_share": 2.1,
+     "researchers_per_million": 1317.0
+    },
+    {
+     "country": "China",
+     "year": 2019,
+     "rd_share": 2.2,
+     "researchers_per_million": 1484.0
+    },
+    {
+     "country": "China",
+     "year": 2020,
+     "rd_share": 2.36,
+     "researchers_per_million": 1600.0
+    },
+    {
+     "country": "China",
+     "year": 2021,
+     "rd_share": 2.38,
+     "researchers_per_million": 1686.0
+    },
+    {
+     "country": "China",
+     "year": 2022,
+     "rd_share": 2.49,
+     "researchers_per_million": 1849.0
+    },
+    {
+     "country": "China",
+     "year": 2023,
+     "rd_share": 2.58,
+     "researchers_per_million": 2107.0
+    },
+    {
+     "country": "US",
+     "year": 2000,
+     "rd_share": 2.62,
+     "researchers_per_million": 3556.0
+    },
+    {
+     "country": "US",
+     "year": 2001,
+     "rd_share": 2.64,
+     "researchers_per_million": 3599.0
+    },
+    {
+     "country": "US",
+     "year": 2002,
+     "rd_share": 2.55,
+     "researchers_per_million": 3646.0
+    },
+    {
+     "country": "US",
+     "year": 2003,
+     "rd_share": 2.55,
+     "researchers_per_million": 3851.0
+    },
+    {
+     "country": "US",
+     "year": 2004,
+     "rd_share": 2.49,
+     "researchers_per_million": 3710.0
+    },
+    {
+     "country": "US",
+     "year": 2005,
+     "rd_share": 2.5,
+     "researchers_per_million": 3635.0
+    },
+    {
+     "country": "US",
+     "year": 2006,
+     "rd_share": 2.55,
+     "researchers_per_million": 3674.0
+    },
+    {
+     "country": "US",
+     "year": 2007,
+     "rd_share": 2.62,
+     "researchers_per_million": 3624.0
+    },
+    {
+     "country": "US",
+     "year": 2008,
+     "rd_share": 2.74,
+     "researchers_per_million": 3751.0
+    },
+    {
+     "country": "US",
+     "year": 2009,
+     "rd_share": 2.79,
+     "researchers_per_million": 3878.0
+    },
+    {
+     "country": "US",
+     "year": 2010,
+     "rd_share": 2.71,
+     "researchers_per_million": 3644.0
+    },
+    {
+     "country": "US",
+     "year": 2011,
+     "rd_share": 2.74,
+     "researchers_per_million": 3755.0
+    },
+    {
+     "country": "US",
+     "year": 2012,
+     "rd_share": 2.67,
+     "researchers_per_million": 3735.0
+    },
+    {
+     "country": "US",
+     "year": 2013,
+     "rd_share": 2.7,
+     "researchers_per_million": 3815.0
+    },
+    {
+     "country": "US",
+     "year": 2014,
+     "rd_share": 2.71,
+     "researchers_per_million": 3915.0
+    },
+    {
+     "country": "US",
+     "year": 2015,
+     "rd_share": 2.77,
+     "researchers_per_million": 3950.0
+    },
+    {
+     "country": "US",
+     "year": 2016,
+     "rd_share": 2.84,
+     "researchers_per_million": 3897.0
+    },
+    {
+     "country": "US",
+     "year": 2017,
+     "rd_share": 2.88,
+     "researchers_per_million": 4021.0
+    },
+    {
+     "country": "US",
+     "year": 2018,
+     "rd_share": 2.99,
+     "researchers_per_million": 4323.0
+    },
+    {
+     "country": "US",
+     "year": 2019,
+     "rd_share": 3.14,
+     "researchers_per_million": 4367.0
+    },
+    {
+     "country": "US",
+     "year": 2020,
+     "rd_share": 3.42,
+     "researchers_per_million": 4568.0
+    },
+    {
+     "country": "US",
+     "year": 2021,
+     "rd_share": 3.47,
+     "researchers_per_million": 4901.0
+    },
+    {
+     "country": "US",
+     "year": 2022,
+     "rd_share": 3.49,
+     "researchers_per_million": 4937.0
+    },
+    {
+     "country": "US",
+     "year": 2023,
+     "rd_share": 3.45,
+     "researchers_per_million": null
+    }
+   ],
+   "metadata": {
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "rd_share": {
+     "type": "number",
+     "levels": []
+    },
+    "researchers_per_million": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    select case COUNTRY_ID when 'CHN' then 'China' else 'US' end as country, year,\n           round(max(value) filter (where indicator_id = 'EXPGDP.TOT'), 2) as rd_share,\n           round(max(value) filter (where indicator_id = 'RESDEN.INHAB.TFTE')) as researchers_per_million\n    from read_parquet('data/rd_sdg_national.parquet')\n    where COUNTRY_ID in ('CHN', 'USA') and indicator_id in ('EXPGDP.TOT', 'RESDEN.INHAB.TFTE') and year >= 2000\n    group by all\n    order by country, year\n\"\"\").df()\n",
+    "outputVariable": "out",
+    "source": [
+     "rd_sdg_national"
+    ],
+    "trigger": {
+     "tableId": "rd_sdg_national",
+     "resultTableId": "china_us_research",
+     "chart": {
+      "id": "chart-trigger-china_us_research",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "rd_sdg_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "china_us_research",
+    "rowCount": 48
+   },
+   "description": "Research spending (% of GDP) and researchers per million people (full-time equivalent), China and the US, by year since 2000. Source: UIS, February 2026 release; indicators EXPGDP.TOT, RESDEN.INHAB.TFTE.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794706600000_step_1",
+   "createdAt": 1794706602000
+  }
+ ],
+ "charts": [],
+ "conceptShelfItems": [],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794706600000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794706600000_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "How does China compare with the US in research?",
+   "parentNodeId": "conversation-root:49c4b5a7-f161-5934-b9eb-fe980d6a6b72",
+   "actionId": "exploreDataFromNL_1794706600000",
+   "createdAt": 1794706600000
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794706600000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794706600000_step_1",
+   "textKind": "explain",
+   "content": "Following China and the US side by side over time.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794706600000_prompt",
+   "actionId": "exploreDataFromNL_1794706600000",
+   "createdAt": 1794706601000,
+   "startedAt": 1794706600000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794706600000-1-1",
+     "kind": "tool",
+     "label": "Querying: rd_sdg_national",
+     "status": "completed",
+     "tool": "create_data"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794706600000-1-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "App created: China and the US in research"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794706600000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794706600000_closing",
+   "textKind": "explain",
+   "content": "**China is catching up with the US in research spending.** In 2023, China spent **2.58%** of its GDP on research and the US **3.45%**: China's share is 75% of the US level, up from 34% in 2000.\n\nThe dashboard also compares researchers per million people, where the US is still well ahead. Source: UIS, February 2026 release; indicators EXPGDP.TOT, RESDEN.INHAB.TFTE.",
+   "parentNodeId": "file-china_us_research.app.jsx",
+   "actionId": "exploreDataFromNL_1794706600000",
+   "createdAt": 1794706604000,
+   "startedAt": 1794706600000,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "china_us_research",
+   "fields": {
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "year": {
+     "semanticType": "Year",
+     "displayName": "Year",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Year"
+     }
+    },
+    "rd_share": {
+     "semanticType": "Percentage",
+     "unit": "% of GDP",
+     "displayName": "Research spending (% of GDP)",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "% of GDP",
+      "displayName": "Research spending (% of GDP)"
+     }
+    },
+    "researchers_per_million": {
+     "semanticType": "Number",
+     "unit": "per million people",
+     "displayName": "Researchers per million people",
+     "authored": {
+      "semanticType": "Number",
+      "unit": "per million people",
+      "displayName": "Researchers per million people"
+     }
+    }
+   }
+  }
+ ],
+ "fileNodes": [
+  {
+   "kind": "file",
+   "id": "file-china_us_research.app.jsx",
+   "path": "china_us_research.app.jsx",
+   "displayName": "China and the US in research",
+   "contentHash": "c428bc9f844d0d427fc1c1f81bfc47df676950196dd748639b5b397e1624c46f",
+   "parentNodeId": "china_us_research",
+   "createdAt": 1794706603000
+  }
+ ],
+ "focusedId": {
+  "type": "file",
+  "fileName": "china_us_research.app.jsx"
+ },
+ "canvasTabs": [
+  {
+   "key": "file:china_us_research.app.jsx",
+   "target": {
+    "type": "file",
+    "fileName": "china_us_research.app.jsx"
+   },
+   "addedAt": 1794700000000,
+   "viewedAt": 1794700000000
+  }
+ ],
+ "canvasTabActive": "file:china_us_research.app.jsx"
+}

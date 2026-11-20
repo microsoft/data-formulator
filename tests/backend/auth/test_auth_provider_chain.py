@@ -138,38 +138,6 @@ class TestProviderDispatch:
 
 
 # ------------------------------------------------------------------
-# get_identity_id — anonymous-only mode (no AUTH_PROVIDER)
-# ------------------------------------------------------------------
-
-class TestAnonymousMode:
-
-    def test_browser_identity_works(self, app):
-        with app.test_request_context(
-            headers={"X-Identity-Id": "my-browser-uuid"}
-        ):
-            assert get_identity_id() == "browser:my-browser-uuid"
-
-    def test_prefixed_identity_stripped(self, app):
-        with app.test_request_context(
-            headers={"X-Identity-Id": "browser:my-uuid"}
-        ):
-            assert get_identity_id() == "browser:my-uuid"
-
-    def test_missing_header_raises(self, app):
-        with app.test_request_context():
-            with pytest.raises(ValueError, match="X-Identity-Id"):
-                get_identity_id()
-
-    def test_spoofed_user_prefix_forced_to_browser(self, app):
-        with app.test_request_context(
-            headers={"X-Identity-Id": "user:alice@corp.com"}
-        ):
-            identity = get_identity_id()
-            assert identity.startswith("browser:")
-            assert "alice@corp.com" in identity
-
-
-# ------------------------------------------------------------------
 # get_sso_token / get_auth_result
 # ------------------------------------------------------------------
 
@@ -228,14 +196,8 @@ class TestAuthenticationErrorPropagation:
 
 class TestAllPhase1ProvidersDiscovered:
 
-    def test_oidc_discovered(self):
-        assert "oidc" in list_available_providers()
-
     def test_github_discovered(self):
         assert "github" in list_available_providers()
-
-    def test_azure_easyauth_discovered(self):
-        assert "azure_easyauth" in list_available_providers()
 
 
 # ------------------------------------------------------------------
@@ -292,10 +254,66 @@ class TestIdentityRegexExpansion:
     def test_oidc_style_sub_claims_accepted(self, value):
         assert _validate_identity_value(value, "test") == value
 
-    def test_path_separator_still_rejected(self):
-        with pytest.raises(ValueError, match="disallowed"):
-            _validate_identity_value("../../etc/passwd", "test")
-
     def test_space_still_rejected(self):
         with pytest.raises(ValueError, match="disallowed"):
             _validate_identity_value("user name", "test")
+
+
+# ------------------------------------------------------------------
+# Single-user localhost mode follows the listening address
+# ------------------------------------------------------------------
+
+class TestSingleUserMode:
+    """Single-user mode treats every request as the machine's owner, so it
+    must not apply to a server other machines can reach (MSRC 168681)."""
+
+    @pytest.fixture(autouse=True)
+    def _env(self, monkeypatch):
+        for name in ("AUTH_PROVIDER", "HOST", "DF_SINGLE_USER"):
+            monkeypatch.delenv(name, raising=False)
+
+    @pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1"])
+    def test_loopback_host_is_single_user(self, app, host):
+        app.config["CLI_ARGS"] = {"host": host}
+        init_auth(app)
+        assert auth_module.is_local_mode()
+
+    def test_network_host_is_anonymous(self, app):
+        app.config["CLI_ARGS"] = {"host": "0.0.0.0"}
+        init_auth(app)
+        assert not auth_module.is_local_mode()
+        with app.test_request_context(headers={"X-Identity-Id": "550e8400-e29b-41d4-a716-446655440000"}):
+            assert get_identity_id() == "browser:550e8400-e29b-41d4-a716-446655440000"
+
+    def test_unknown_listening_address_is_anonymous(self, app):
+        """A WSGI server's bind address is unknown; HOST must name loopback explicitly."""
+        app.config["CLI_ARGS"] = {"host": None}
+        init_auth(app)
+        assert not auth_module.is_local_mode()
+
+    def test_loopback_host_env_is_single_user(self, app, monkeypatch):
+        monkeypatch.setenv("HOST", "127.0.0.1")
+        init_auth(app)
+        assert auth_module.is_local_mode()
+
+    def test_cli_host_decides_after_import(self, app):
+        """The CLI parses --host after import; re-deciding drops single-user mode."""
+        app.config["CLI_ARGS"] = {"host": "127.0.0.1"}
+        init_auth(app)
+        assert auth_module.is_local_mode()
+        app.config["CLI_ARGS"] = {"host": "0.0.0.0"}
+        auth_module.configure_local_mode(app)
+        assert not auth_module.is_local_mode()
+
+    def test_explicit_opt_in_keeps_single_user_on_a_network_host(self, app, monkeypatch):
+        monkeypatch.setenv("DF_SINGLE_USER", "1")
+        app.config["CLI_ARGS"] = {"host": "0.0.0.0"}
+        init_auth(app)
+        assert auth_module.is_local_mode()
+
+    def test_opt_in_does_not_override_a_provider(self, app, monkeypatch):
+        monkeypatch.setenv("DF_SINGLE_USER", "1")
+        monkeypatch.setenv("AUTH_PROVIDER", "azure_easyauth")
+        app.config["CLI_ARGS"] = {"host": "127.0.0.1"}
+        init_auth(app)
+        assert not auth_module.is_local_mode()

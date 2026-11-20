@@ -15,9 +15,15 @@ services:
       dockerfile: Dockerfile
     image: data-formulator:latest
     ports:
-      - "5567:5567"
+      # Only this machine can connect, which is what makes DF_SINGLE_USER safe below.
+      - "127.0.0.1:5567:5567"
     env_file:
       - .env
+    environment:
+      # The container listens on 0.0.0.0, which alone would select anonymous multi-user
+      # mode. Single-user mode (no login, terminal, local folders) is safe here only
+      # because the port above is published on localhost.
+      DF_SINGLE_USER: "1"
     volumes:
       # Persist workspace data (uploaded files, sessions, etc.) across container restarts.
       - data_formulator_home:/home/appuser/.data_formulator

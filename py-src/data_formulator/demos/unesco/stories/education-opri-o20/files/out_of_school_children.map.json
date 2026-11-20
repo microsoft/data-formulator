@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "title": "Where out-of-school children and young people live",
+  "subtitle": "Children and young people of primary and secondary school age out of school; latest figure, 2020–2026",
+  "source": "UIS, November 2026 release; indicator OFST.1T3.CP",
+  "template": "bubbles",
+  "data": {
+    "table": "out_of_school_children"
+  },
+  "encoding": {
+    "region": "country_id",
+    "size": "out_of_school",
+    "tooltip": [
+      "country",
+      "out_of_school",
+      "latest_year"
+    ]
+  },
+  "properties": {
+    "geography": "world",
+    "keyType": "iso3"
+  },
+  "fields": {
+    "country_id": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+    },
+    "country": {
+      "semanticType": "Country",
+      "displayName": "Country"
+    },
+    "latest_year": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+    },
+    "out_of_school": {
+      "semanticType": "Count",
+      "displayName": "Out-of-school children and young people"
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

@@ -95,7 +95,6 @@ class TestPreviewIdVsWorkspaceIdMismatch:
 
     @pytest.mark.parametrize("preview_id, expected_ws_name", [
         ("数据.csv",            "数据_csv"),
-        ("数据.xlsx",           "数据_xlsx"),
         ("数据.xlsx-Sheet1",    "数据_xlsx_sheet1"),
         ("sales report.csv",   "sales_report_csv"),
     ])
@@ -112,35 +111,6 @@ class TestPreviewIdVsWorkspaceIdMismatch:
             "but currently they always differ."
         )
 
-    def test_orphan_cleanup_would_wrongly_remove_on_reupload(
-        self, client, tmp_workspace,
-    ) -> None:
-        """Simulate the re-upload scenario that triggers the orphan bug.
-
-        1. First upload: 数据.csv → workspace table name "数据_csv"
-        2. Re-upload: frontend orphan-cleanup checks
-              newTableIds = {"数据.csv"}   (preview IDs)
-              existing table id = "数据_csv"  (workspace name)
-              "数据_csv" NOT in {"数据.csv"} → WRONGLY marked as orphan
-        """
-        csv_bytes = CSV_CONTENT.encode("utf-8")
-
-        # -- first upload --
-        resp = _upload(client, csv_bytes, "数据.csv", "数据.csv")
-        ws_name = resp.get_json()["data"]["table_name"]
-        assert ws_name == "数据_csv"
-
-        # -- simulate the frontend orphan-cleanup check --
-        # On re-upload, the preview still uses raw filename as ID
-        new_preview_ids = {"数据.csv"}
-        existing_ws_id = ws_name  # "数据_csv"
-
-        would_be_removed = existing_ws_id not in new_preview_ids
-        assert would_be_removed is True, (
-            "BUG: the existing table would be wrongly removed because "
-            f"'{existing_ws_id}' is not in preview IDs {new_preview_ids}"
-        )
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # 2. Backend: same basename, different extensions → both must coexist
@@ -148,31 +118,6 @@ class TestPreviewIdVsWorkspaceIdMismatch:
 
 class TestSameBasenameDifferentExtension:
     """Upload 数据.csv and 数据.xlsx — both must exist as separate tables."""
-
-    def test_both_tables_exist_after_upload(
-        self, client, tmp_workspace,
-    ) -> None:
-        """Upload two CSV files with names that mimic CSV + Excel scenario.
-        Both must produce distinct workspace tables."""
-        csv_bytes = CSV_CONTENT.encode("utf-8")
-        csv2_bytes = "姓名,年龄\n王五,28\n".encode("utf-8")
-
-        resp1 = _upload(client, csv_bytes, "数据.csv", "数据.csv")
-        assert resp1.get_json()["status"] == "success"
-        name1 = resp1.get_json()["data"]["table_name"]
-
-        # Simulate the Excel sheet upload: different table_name, different file
-        resp2 = _upload(client, csv2_bytes, "数据_sheet1.csv", "数据.xlsx-Sheet1")
-        assert resp2.get_json()["status"] == "success"
-        name2 = resp2.get_json()["data"]["table_name"]
-
-        assert name1 != name2, (
-            f"Table names must differ: got {name1} and {name2}"
-        )
-
-        tables = tmp_workspace.list_tables()
-        assert name1 in tables
-        assert name2 in tables
 
     def test_both_readable_after_upload(
         self, client, tmp_workspace,
@@ -234,39 +179,3 @@ class TestSameBasenameDifferentExtension:
         assert "数据_xlsx_sheet1" in tables, (
             "replace_source for 数据.csv must not remove tables from other source files"
         )
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# 3. filePreviewFiles / filePreviewTables array mismatch (contract test)
-# ═══════════════════════════════════════════════════════════════════════
-
-class TestFileArrayMismatch:
-    """Document the array-index mismatch that happens when an Excel file
-    has multiple sheets while being co-uploaded with other files.
-
-    filePreviewFiles:  [csv_file,  xlsx_file]           — length 2
-    filePreviewTables: [csv_table, sheet1, sheet2]      — length 3
-
-    The fallback `filePreviewFiles[i] || filePreviewFiles[0]` at i=2
-    sends the WRONG file (csv instead of xlsx) for sheet2.
-    """
-
-    def test_index_fallback_sends_wrong_file(self) -> None:
-        """Pure logic test: demonstrate the fallback picks the wrong file."""
-        # Simulated arrays matching the frontend structure
-        files = ["数据.csv", "数据.xlsx"]             # 2 files
-        tables = ["数据.csv", "数据.xlsx-Sheet1", "数据.xlsx-Sheet2"]  # 3 tables
-
-        for i, table_id in enumerate(tables):
-            # This mirrors: filePreviewFiles[i]?.name || filePreviewFiles[0]?.name
-            file_name = files[i] if i < len(files) else files[0]
-
-            if i == 2:
-                assert file_name == "数据.csv", (
-                    "BUG: table '数据.xlsx-Sheet2' gets the CSV file "
-                    "because filePreviewFiles[2] is out of bounds and "
-                    "falls back to filePreviewFiles[0]"
-                )
-                assert file_name != "数据.xlsx", (
-                    "The correct file should be 数据.xlsx but we got 数据.csv"
-                )

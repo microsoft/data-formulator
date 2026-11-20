@@ -19,12 +19,14 @@
  * with lightweight <img src={thumbnail}> elements.
  */
 
+import { chartTitleFits } from '../components/ComponentType';
+import { chartThemeKey, refreshSavedThemes, resolvedChartTheme, useSavedThemes } from '../app/savedThemes';
+import { chartCategoryColors, registerCategoryColors, type CategoryRegistration } from '../app/categoryColors';
 import { FC, useEffect, useRef, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { Chart, DictTable, FieldItem, FieldSemanticsInfo } from '../components/ComponentType';
-import { assembleVegaChart, prepVisTable } from '../app/utils';
-import { buildEmbeddedDataForChart } from '../app/restyle';
+import { assembleVegaChart, chartCanvasBox, containScale, prepVisTable } from '../app/utils';
 import { getDataTable, checkChartAvailability } from './ChartUtils';
 import { getCachedChart, setCachedChart, computeCacheKey, invalidateChart, ChartCacheEntry } from '../app/chartCache';
 import { displayRowsCache, computeDisplayRowsCacheKey } from '../app/displayRowsCache';
@@ -46,6 +48,8 @@ interface RenderJob {
     conceptShelfItems: FieldItem[];
     cacheKey: string;
     fieldSemantics?: Record<string, FieldSemanticsInfo>;
+    /** The session's colours for the chart's category values. */
+    valueColors?: Record<string, string>;
 }
 
 /**
@@ -82,6 +86,28 @@ async function renderHeadless(
     view.finalize();
 
     return { svg, pngDataUrl, width, height };
+}
+
+/** A Vega-Lite spec drawn as a PNG at `scale` times its size (e.g. sharper than the cache's, for sharing). */
+export async function renderChartPng(vlSpec: any, scale: number): Promise<string> {
+    const view = new View(parse(compile(vlSpec as any).spec), { renderer: 'none' });
+    try {
+        await view.runAsync();
+        return await view.toImageURL('png', scale);
+    } finally {
+        view.finalize();
+    }
+}
+
+/** The size a Vega-Lite spec lays out at (axes, legends and titles included), without drawing an image. */
+async function measureHeadless(vlSpec: any): Promise<{ width: number; height: number }> {
+    const view = new View(parse(compile(vlSpec as any).spec), { renderer: 'none' });
+    try {
+        await view.runAsync();
+        return extractSvgSize(await view.toSVG());
+    } finally {
+        view.finalize();
+    }
 }
 
 /**
@@ -143,8 +169,15 @@ export const ChartRenderService: FC = () => {
     // The canvas types fields (and so picks color scales) from these, so the
     // thumbnail must read them too or the two renders disagree.
     const tableSemantics = useSelector((state: DataFormulatorState) => state.tableSemantics);
+    // Category values keep their session colours in thumbnails too.
+    const sessionColors = useSelector(dfSelectors.getSessionCategoryColors);
     const chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
     const maxStretchFactor = useSelector((state: DataFormulatorState) => state.config.maxStretchFactor);
+    const canvasChartWidth = useSelector((state: DataFormulatorState) => state.config.defaultChartWidth);
+    const canvasChartHeight = useSelector((state: DataFormulatorState) => state.config.defaultChartHeight);
+    // A saved theme that changes redraws the charts that use it (their cache keys carry the theme).
+    const savedThemeList = useSavedThemes();
+    useEffect(() => { void refreshSavedThemes(); }, []);
     // Re-run when the focused canvas caches a fresh display-row sample so
     // thumbnails can use the same richer data the main chart is rendering.
     const displayRowsTick = useSelector((state: DataFormulatorState) => state.displayRowsTick);
@@ -161,7 +194,7 @@ export const ChartRenderService: FC = () => {
     const prevChartIdsRef = useRef<Set<string>>(new Set());
 
     const processChart = useCallback(async (job: RenderJob) => {
-        const { chart, table, conceptShelfItems: items, cacheKey, fieldSemantics } = job;
+        const { chart, table, conceptShelfItems: items, cacheKey, fieldSemantics, valueColors } = job;
 
         // Skip if already rendering this chart
         if (renderingRef.current.has(chart.id)) return;
@@ -177,57 +210,54 @@ export const ChartRenderService: FC = () => {
             // rows; reuse that when present.
             const dispKey = computeDisplayRowsCacheKey(table, chart, items);
             const cachedDisplay = displayRowsCache.get(dispKey);
-            let visTableRows: any[] = cachedDisplay
+            const visTableRows: any[] = cachedDisplay
                 ? structuredClone(cachedDisplay.rows)
-                : structuredClone(table.rows);
+                : prepVisTable(structuredClone(table.rows), items, chart.encodingMap);
 
-            // Pre-aggregate for the encoding map
-            visTableRows = prepVisTable(visTableRows, items, chart.encodingMap);
-
-            // --- Resolve the spec to render ---
-            // If a style variant is active, render its stored Vega-Lite spec so
-            // the thumbnail matches what the user sees in the focused canvas.
-            // Otherwise assemble the default spec from the encoding map.
-            // (See design-docs/28-chart-style-refinement-agent.md.)
-            const activeVariant = chart.activeVariantId
-                ? chart.styleVariants?.find(v => v.id === chart.activeVariantId)
-                : undefined;
-
-            let fullSpec: any;
-            if (activeVariant) {
-                fullSpec = JSON.parse(JSON.stringify(activeVariant.vlSpec));
-                // Plug data using the same conversion the assemble pipeline
-                // applies (e.g. Year 1980 → "1980"). Variants embed axis
-                // formats / timeUnit chosen against the converted shape, so
-                // re-attaching raw rows would mismatch those formats.
-                const variantValues = buildEmbeddedDataForChart(
-                    chart, visTableRows, table.metadata, items,
-                );
-                fullSpec.data = { values: variantValues };
-            } else {
-                fullSpec = assembleVegaChart(
-                    chart.chartType,
-                    chart.encodingMap,
-                    items,
-                    visTableRows,
-                    table.metadata,
-                    FULL_WIDTH,
-                    FULL_HEIGHT,
-                    true,   // add tooltips
-                    chart.config,
-                    1,
-                    maxStretchFactor,
-                    undefined,
-                    fieldSemantics,
-                    undefined,
-                    undefined,
-                    chart.themeId,
-                );
-            }
+            // The chart's title and subtitle, when still current for its encodings (as on the canvas).
+            const titled = chartTitleFits(chart);
+            const fullSpec: any = assembleVegaChart(
+                chart.chartType,
+                chart.encodingMap,
+                items,
+                visTableRows,
+                table.metadata,
+                FULL_WIDTH,
+                FULL_HEIGHT,
+                true,   // add tooltips
+                chart.config,
+                1,
+                maxStretchFactor,
+                undefined,
+                fieldSemantics,
+                titled ? chart.title : undefined,
+                titled ? chart.subtitle : undefined,
+                chart.themeId,
+                valueColors,
+            );
 
             if (!fullSpec || fullSpec === "Table") return;
+            const box = chartCanvasBox(fullSpec);
             // --- Render headlessly (single full-size render) ---
             const fullResult = await renderHeadless(fullSpec);
+            const fit = containScale(fullResult, box);
+
+            // The size it draws at on the canvas, which lays charts out for the user's default size.
+            let canvasSize: { width: number; height: number } | undefined;
+            try {
+                const canvasSpec: any = assembleVegaChart(
+                    chart.chartType, chart.encodingMap, items, visTableRows, table.metadata,
+                    canvasChartWidth, canvasChartHeight, false, chart.config, 1, maxStretchFactor, undefined,
+                    fieldSemantics, titled ? chart.title : undefined, titled ? chart.subtitle : undefined, chart.themeId, valueColors,
+                );
+                if (canvasSpec && canvasSpec !== 'Table') {
+                    const drawn = await measureHeadless(canvasSpec);
+                    const scale = containScale(drawn, chartCanvasBox(canvasSpec));
+                    canvasSize = { width: Math.round(drawn.width * scale), height: Math.round(drawn.height * scale) };
+                }
+            } catch (failure) {
+                console.warn(`ChartRenderService: could not measure chart ${chart.id} at canvas size`, failure);
+            }
 
             // Scale the full-size PNG down to thumbnail dimensions
             const thumbnailPng = await scalePngDown(
@@ -244,6 +274,10 @@ export const ChartRenderService: FC = () => {
                 specKey: cacheKey,
                 naturalWidth: fullResult.width,
                 naturalHeight: fullResult.height,
+                displayWidth: Math.round(fullResult.width * fit),
+                displayHeight: Math.round(fullResult.height * fit),
+                ...(canvasSize ? { canvasWidth: canvasSize.width, canvasHeight: canvasSize.height } : {}),
+                spec: fullSpec,
             };
             setCachedChart(chart.id, entry);
 
@@ -259,7 +293,7 @@ export const ChartRenderService: FC = () => {
         } finally {
             renderingRef.current.delete(chart.id);
         }
-    }, [dispatch]);
+    }, [dispatch, maxStretchFactor, canvasChartWidth, canvasChartHeight]);
 
     useEffect(() => {
         // Clean up cache entries for deleted charts
@@ -273,6 +307,9 @@ export const ChartRenderService: FC = () => {
 
         // Build render jobs for charts that need (re-)rendering
         const jobs: RenderJob[] = [];
+        // Charts register new category values in order, each seeing the slots the ones before it took.
+        let session = sessionColors;
+        const registrations: CategoryRegistration[] = [];
 
         for (const chart of charts) {
             // Skip non-renderable chart types
@@ -289,9 +326,6 @@ export const ChartRenderService: FC = () => {
             if (!checkChartAvailability(chart, conceptShelfItems, table.rows)) continue;
 
             // Compute cache key and check if rendering is needed
-            const activeVariant = chart.activeVariantId
-                ? chart.styleVariants?.find(v => v.id === chart.activeVariantId)
-                : undefined;
             // Mix in the canvas's display-row sample fingerprint so a
             // thumbnail rendered from the preview slice gets re-rendered
             // once the richer server sample arrives in `displayRowsCache`.
@@ -302,6 +336,12 @@ export const ChartRenderService: FC = () => {
                 ? `disp:${displayEntry.rows.length}/${displayEntry.totalCount}`
                 : `preview:${table.rows.length}`;
             const fieldSemantics = tableSemantics.find(info => info.tableId === table.id)?.fields;
+            const { colors: valueColors, register } = chartCategoryColors(session, chart.encodingMap, conceptShelfItems,
+                displayEntry?.rows ?? table.rows, fieldSemantics, resolvedChartTheme(chart.themeId));
+            if (register) {
+                registrations.push(register);
+                session = { ...session, registry: registerCategoryColors(session.registry, register) };
+            }
             const cacheKey = computeCacheKey(
                 chart.chartType,
                 chart.encodingMap,
@@ -310,10 +350,9 @@ export const ChartRenderService: FC = () => {
                 `${table.contentHash || ''}|${displayFingerprint}`,
                 table.id,
                 table.metadata,
-                activeVariant?.id,
-                activeVariant?.vlSpec,
                 fieldSemantics,
-                chart.themeId,
+                `${chartThemeKey(chart.themeId)}|${chartTitleFits(chart) ? `${chart.title}|${chart.subtitle || ''}` : ''}|${JSON.stringify(valueColors ?? null)}`,
+                `stretch:${maxStretchFactor ?? ''}|canvas:${canvasChartWidth}x${canvasChartHeight}`,
             );
 
             const cached = getCachedChart(chart.id);
@@ -331,8 +370,9 @@ export const ChartRenderService: FC = () => {
                 continue;
             }
 
-            jobs.push({ chart, table, conceptShelfItems, cacheKey, fieldSemantics });
+            jobs.push({ chart, table, conceptShelfItems, cacheKey, fieldSemantics, valueColors });
         }
+        for (const registration of registrations) dispatch(dfActions.registerCategoryColors(registration));
 
         // Process jobs sequentially to avoid overwhelming the browser
         // Use a small delay between renders to keep the UI responsive
@@ -352,7 +392,7 @@ export const ChartRenderService: FC = () => {
 
             return () => { cancelled = true; };
         }
-    }, [charts, tables, conceptShelfItems, tableSemantics, chartSynthesisInProgress, displayRowsTick, processChart, dispatch]);
+    }, [charts, tables, conceptShelfItems, tableSemantics, sessionColors, chartSynthesisInProgress, displayRowsTick, maxStretchFactor, canvasChartWidth, canvasChartHeight, processChart, dispatch, savedThemeList]);
 
     // This component renders nothing
     return null;

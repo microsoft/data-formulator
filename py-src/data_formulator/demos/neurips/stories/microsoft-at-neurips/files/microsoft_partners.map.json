@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "title": "Where Microsoft's NeurIPS co-authors work",
+  "subtitle": "Organizations by NeurIPS papers written with Microsoft authors, 2020–2026 (2 or more)",
+  "source": "NeurIPS proceedings and neurips.cc; affiliations from neurips.cc (2020 on) and OpenAlex; ROR",
+  "template": "bubbles",
+  "data": {
+    "table": "microsoft_partner_places"
+  },
+  "encoding": {
+    "lat": "lat",
+    "lon": "lng",
+    "size": "papers",
+    "color": "kind",
+    "label": "organization",
+    "tooltip": [
+      "organization",
+      "country",
+      "papers"
+    ]
+  },
+  "properties": {
+    "geography": "world"
+  },
+  "fields": {
+    "organization": {
+      "semanticType": "Name",
+      "displayName": "Organization"
+    },
+    "kind": {
+      "semanticType": "Category",
+      "displayName": "Kind"
+    },
+    "country": {
+      "semanticType": "Country",
+      "displayName": "Country"
+    },
+    "papers": {
+      "semanticType": "Count",
+      "displayName": "Papers"
+    },
+    "lat": {
+      "semanticType": "Latitude"
+    },
+    "lng": {
+      "semanticType": "Longitude"
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

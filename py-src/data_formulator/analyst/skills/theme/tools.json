@@ -1,0 +1,28 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "list_themes",
+      "description": "List the chart themes: Flint's presets by id, and the user's saved themes in full (their ThemeSpec JSON), to reuse one or to revise it with save_theme.",
+      "parameters": {"type": "object", "properties": {}, "additionalProperties": false}
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "save_theme",
+      "description": "Save a chart theme (a Flint ThemeSpec) to the user's theme library, or replace the saved theme with the same id. Saved themes are used by id like a preset in every session: a chart file's \"theme\", a map's view.theme, an app's <Page theme> or FlintChart theme, and the canvas theme picker. Rejected themes are not saved and the result lists every problem.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "theme": {
+            "type": "object",
+            "description": "The ThemeSpec: id (kebab-case, not a preset id), label, optional description (what it is for, at most 300 characters), optional extends (a preset id), and only the parts that differ: ink, type, structure, marks, labels, legend, dataLabels, annotation, furniture, source, facets, layout, geometry, chartDefaults, compileDefaults, interaction, variants. Colors as hex."
+          }
+        },
+        "required": ["theme"],
+        "additionalProperties": false
+      }
+    }
+  }
+]

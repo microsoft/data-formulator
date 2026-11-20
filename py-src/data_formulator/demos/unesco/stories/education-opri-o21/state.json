@@ -1,0 +1,1462 @@
+{
+ "__stateVersion": 15,
+ "activeWorkspace": {
+  "id": "education-opri-o21",
+  "displayName": "The US and the UK host the most students from abroad"
+ },
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "international_students_hosted",
+   "displayId": "International students hosted by country",
+   "names": [
+    "country_id",
+    "country",
+    "latest_year",
+    "international_students"
+   ],
+   "rows": [
+    {
+     "country_id": "USA",
+     "country": "US",
+     "latest_year": 2023,
+     "international_students": 956923.0
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "latest_year": 2024,
+     "international_students": 721041.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "latest_year": 2024,
+     "international_students": 580287.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "latest_year": 2024,
+     "international_students": 480645.0
+    },
+    {
+     "country_id": "DEU",
+     "country": "Germany",
+     "latest_year": 2024,
+     "international_students": 438260.0
+    },
+    {
+     "country_id": "RUS",
+     "country": "Russia",
+     "latest_year": 2025,
+     "international_students": 401861.0
+    },
+    {
+     "country_id": "TUR",
+     "country": "Türkiye",
+     "latest_year": 2024,
+     "international_students": 336372.0
+    },
+    {
+     "country_id": "FRA",
+     "country": "France",
+     "latest_year": 2024,
+     "international_students": 284865.0
+    },
+    {
+     "country_id": "ARE",
+     "country": "United Arab Emirates",
+     "latest_year": 2025,
+     "international_students": 270050.0
+    },
+    {
+     "country_id": "CHN",
+     "country": "China",
+     "latest_year": 2025,
+     "international_students": 195768.0
+    },
+    {
+     "country_id": "JPN",
+     "country": "Japan",
+     "latest_year": 2024,
+     "international_students": 184408.0
+    },
+    {
+     "country_id": "KOR",
+     "country": "South Korea",
+     "latest_year": 2024,
+     "international_students": 143939.0
+    },
+    {
+     "country_id": "NLD",
+     "country": "Netherlands (Kingdom of the)",
+     "latest_year": 2021,
+     "international_students": 135535.0
+    },
+    {
+     "country_id": "IRN",
+     "country": "Iran",
+     "latest_year": 2022,
+     "international_students": 130591.0
+    },
+    {
+     "country_id": "ARG",
+     "country": "Argentina",
+     "latest_year": 2024,
+     "international_students": 130558.0
+    },
+    {
+     "country_id": "ITA",
+     "country": "Italy",
+     "latest_year": 2024,
+     "international_students": 123392.0
+    },
+    {
+     "country_id": "ESP",
+     "country": "Spain",
+     "latest_year": 2024,
+     "international_students": 113649.0
+    },
+    {
+     "country_id": "EGY",
+     "country": "Egypt",
+     "latest_year": 2025,
+     "international_students": 108936.0
+    },
+    {
+     "country_id": "SAU",
+     "country": "Saudi Arabia",
+     "latest_year": 2025,
+     "international_students": 107467.0
+    },
+    {
+     "country_id": "POL",
+     "country": "Poland",
+     "latest_year": 2024,
+     "international_students": 95120.0
+    },
+    {
+     "country_id": "HKG",
+     "country": "Hong Kong",
+     "latest_year": 2025,
+     "international_students": 92482.0
+    },
+    {
+     "country_id": "AUT",
+     "country": "Austria",
+     "latest_year": 2024,
+     "international_students": 92054.0
+    },
+    {
+     "country_id": "MYS",
+     "country": "Malaysia",
+     "latest_year": 2025,
+     "international_students": 91629.0
+    },
+    {
+     "country_id": "SGP",
+     "country": "Singapore",
+     "latest_year": 2024,
+     "international_students": 80395.0
+    },
+    {
+     "country_id": "MEX",
+     "country": "Mexico",
+     "latest_year": 2023,
+     "international_students": 72888.0
+    },
+    {
+     "country_id": "CHE",
+     "country": "Switzerland",
+     "latest_year": 2024,
+     "international_students": 67805.0
+    },
+    {
+     "country_id": "THA",
+     "country": "Thailand",
+     "latest_year": 2026,
+     "international_students": 58968.0
+    },
+    {
+     "country_id": "CZE",
+     "country": "Czechia",
+     "latest_year": 2024,
+     "international_students": 57307.0
+    },
+    {
+     "country_id": "PRT",
+     "country": "Portugal",
+     "latest_year": 2024,
+     "international_students": 55330.0
+    },
+    {
+     "country_id": "BEL",
+     "country": "Belgium",
+     "latest_year": 2024,
+     "international_students": 48648.0
+    },
+    {
+     "country_id": "MAC",
+     "country": "Macao",
+     "latest_year": 2025,
+     "international_students": 47188.0
+    },
+    {
+     "country_id": "IND",
+     "country": "India",
+     "latest_year": 2023,
+     "international_students": 45700.0
+    },
+    {
+     "country_id": "NZL",
+     "country": "New Zealand",
+     "latest_year": 2024,
+     "international_students": 44171.0
+    },
+    {
+     "country_id": "HUN",
+     "country": "Hungary",
+     "latest_year": 2024,
+     "international_students": 43137.0
+    },
+    {
+     "country_id": "JOR",
+     "country": "Jordan",
+     "latest_year": 2024,
+     "international_students": 43075.0
+    },
+    {
+     "country_id": "TGO",
+     "country": "Togo",
+     "latest_year": 2021,
+     "international_students": 40825.0
+    },
+    {
+     "country_id": "KGZ",
+     "country": "Kyrgyzstan",
+     "latest_year": 2026,
+     "international_students": 39181.0
+    },
+    {
+     "country_id": "ROU",
+     "country": "Romania",
+     "latest_year": 2024,
+     "international_students": 38020.0
+    },
+    {
+     "country_id": "GEO",
+     "country": "Georgia",
+     "latest_year": 2025,
+     "international_students": 37161.0
+    },
+    {
+     "country_id": "SWE",
+     "country": "Sweden",
+     "latest_year": 2024,
+     "international_students": 35779.0
+    },
+    {
+     "country_id": "FIN",
+     "country": "Finland",
+     "latest_year": 2024,
+     "international_students": 35715.0
+    },
+    {
+     "country_id": "LBN",
+     "country": "Lebanon",
+     "latest_year": 2023,
+     "international_students": 34178.0
+    },
+    {
+     "country_id": "ZAF",
+     "country": "South Africa",
+     "latest_year": 2024,
+     "international_students": 32826.0
+    },
+    {
+     "country_id": "KAZ",
+     "country": "Kazakhstan",
+     "latest_year": 2024,
+     "international_students": 30259.0
+    },
+    {
+     "country_id": "DNK",
+     "country": "Denmark",
+     "latest_year": 2024,
+     "international_students": 28751.0
+    },
+    {
+     "country_id": "BRA",
+     "country": "Brazil",
+     "latest_year": 2024,
+     "international_students": 27989.0
+    },
+    {
+     "country_id": "IRL",
+     "country": "Ireland",
+     "latest_year": 2022,
+     "international_students": 27159.0
+    },
+    {
+     "country_id": "MAR",
+     "country": "Morocco",
+     "latest_year": 2024,
+     "international_students": 27064.0
+    },
+    {
+     "country_id": "UKR",
+     "country": "Ukraine",
+     "latest_year": 2025,
+     "international_students": 24747.0
+    },
+    {
+     "country_id": "UZB",
+     "country": "Uzbekistan",
+     "latest_year": 2026,
+     "international_students": 23673.0
+    },
+    {
+     "country_id": "GRC",
+     "country": "Greece",
+     "latest_year": 2024,
+     "international_students": 22856.0
+    },
+    {
+     "country_id": "QAT",
+     "country": "Qatar",
+     "latest_year": 2025,
+     "international_students": 22841.0
+    },
+    {
+     "country_id": "BLR",
+     "country": "Belarus",
+     "latest_year": 2025,
+     "international_students": 22555.0
+    },
+    {
+     "country_id": "CHL",
+     "country": "Chile",
+     "latest_year": 2024,
+     "international_students": 22235.0
+    },
+    {
+     "country_id": "SVK",
+     "country": "Slovakia",
+     "latest_year": 2024,
+     "international_students": 21947.0
+    },
+    {
+     "country_id": "SEN",
+     "country": "Senegal",
+     "latest_year": 2025,
+     "international_students": 20495.0
+    },
+    {
+     "country_id": "MDV",
+     "country": "Maldives",
+     "latest_year": 2025,
+     "international_students": 19910.0
+    },
+    {
+     "country_id": "BGR",
+     "country": "Bulgaria",
+     "latest_year": 2024,
+     "international_students": 15438.0
+    },
+    {
+     "country_id": "UGA",
+     "country": "Uganda",
+     "latest_year": 2024,
+     "international_students": 13339.0
+    },
+    {
+     "country_id": "NOR",
+     "country": "Norway",
+     "latest_year": 2024,
+     "international_students": 13274.0
+    },
+    {
+     "country_id": "PER",
+     "country": "Peru",
+     "latest_year": 2024,
+     "international_students": 13150.0
+    },
+    {
+     "country_id": "ISR",
+     "country": "Israel",
+     "latest_year": 2024,
+     "international_students": 12650.0
+    },
+    {
+     "country_id": "CYP",
+     "country": "Cyprus",
+     "latest_year": 2024,
+     "international_students": 12499.0
+    },
+    {
+     "country_id": "SRB",
+     "country": "Serbia",
+     "latest_year": 2025,
+     "international_students": 11776.0
+    },
+    {
+     "country_id": "LTU",
+     "country": "Lithuania",
+     "latest_year": 2024,
+     "international_students": 11472.0
+    },
+    {
+     "country_id": "RWA",
+     "country": "Rwanda",
+     "latest_year": 2025,
+     "international_students": 10514.0
+    },
+    {
+     "country_id": "LVA",
+     "country": "Latvia",
+     "latest_year": 2024,
+     "international_students": 10425.0
+    },
+    {
+     "country_id": "PHL",
+     "country": "Philippines",
+     "latest_year": 2025,
+     "international_students": 10189.0
+    },
+    {
+     "country_id": "SVN",
+     "country": "Slovenia",
+     "latest_year": 2024,
+     "international_students": 9494.0
+    },
+    {
+     "country_id": "BDI",
+     "country": "Burundi",
+     "latest_year": 2024,
+     "international_students": 8934.0
+    },
+    {
+     "country_id": "COL",
+     "country": "Colombia",
+     "latest_year": 2024,
+     "international_students": 8874.0
+    },
+    {
+     "country_id": "AZE",
+     "country": "Azerbaijan",
+     "latest_year": 2025,
+     "international_students": 8793.0
+    },
+    {
+     "country_id": "PAN",
+     "country": "Panama",
+     "latest_year": 2024,
+     "international_students": 8674.0
+    },
+    {
+     "country_id": "ARM",
+     "country": "Armenia",
+     "latest_year": 2025,
+     "international_students": 8257.0
+    },
+    {
+     "country_id": "TUN",
+     "country": "Tunisia",
+     "latest_year": 2025,
+     "international_students": 8058.0
+    },
+    {
+     "country_id": "ECU",
+     "country": "Ecuador",
+     "latest_year": 2024,
+     "international_students": 7793.0
+    },
+    {
+     "country_id": "VNM",
+     "country": "Vietnam",
+     "latest_year": 2022,
+     "international_students": 7760.0
+    },
+    {
+     "country_id": "BHR",
+     "country": "Bahrain",
+     "latest_year": 2025,
+     "international_students": 7755.0
+    },
+    {
+     "country_id": "DZA",
+     "country": "Algeria",
+     "latest_year": 2025,
+     "international_students": 7468.0
+    },
+    {
+     "country_id": "CMR",
+     "country": "Cameroon",
+     "latest_year": 2023,
+     "international_students": 7392.0
+    },
+    {
+     "country_id": "DOM",
+     "country": "Dominican Republic",
+     "latest_year": 2025,
+     "international_students": 7131.0
+    },
+    {
+     "country_id": "CIV",
+     "country": "Côte d'Ivoire",
+     "latest_year": 2025,
+     "international_students": 6966.0
+    },
+    {
+     "country_id": "MLT",
+     "country": "Malta",
+     "latest_year": 2023,
+     "international_students": 6242.0
+    },
+    {
+     "country_id": "HND",
+     "country": "Honduras",
+     "latest_year": 2025,
+     "international_students": 6231.0
+    },
+    {
+     "country_id": "MDA",
+     "country": "Moldova",
+     "latest_year": 2025,
+     "international_students": 6197.0
+    },
+    {
+     "country_id": "MKD",
+     "country": "North Macedonia",
+     "latest_year": 2023,
+     "international_students": 6178.0
+    },
+    {
+     "country_id": "CUB",
+     "country": "Cuba",
+     "latest_year": 2024,
+     "international_students": 6118.0
+    },
+    {
+     "country_id": "BIH",
+     "country": "Bosnia and Herzegovina",
+     "latest_year": 2025,
+     "international_students": 5910.0
+    },
+    {
+     "country_id": "HRV",
+     "country": "Croatia",
+     "latest_year": 2024,
+     "international_students": 5396.0
+    },
+    {
+     "country_id": "GHA",
+     "country": "Ghana",
+     "latest_year": 2024,
+     "international_students": 5150.0
+    },
+    {
+     "country_id": "BTN",
+     "country": "Bhutan",
+     "latest_year": 2021,
+     "international_students": 4393.0
+    },
+    {
+     "country_id": "MNG",
+     "country": "Mongolia",
+     "latest_year": 2025,
+     "international_students": 4337.0
+    },
+    {
+     "country_id": "EST",
+     "country": "Estonia",
+     "latest_year": 2024,
+     "international_students": 4336.0
+    },
+    {
+     "country_id": "LUX",
+     "country": "Luxembourg",
+     "latest_year": 2024,
+     "international_students": 4305.0
+    },
+    {
+     "country_id": "URY",
+     "country": "Uruguay",
+     "latest_year": 2023,
+     "international_students": 4207.0
+    },
+    {
+     "country_id": "BEN",
+     "country": "Benin",
+     "latest_year": 2022,
+     "international_students": 3972.0
+    },
+    {
+     "country_id": "MUS",
+     "country": "Mauritius",
+     "latest_year": 2025,
+     "international_students": 3836.0
+    },
+    {
+     "country_id": "OMN",
+     "country": "Oman",
+     "latest_year": 2025,
+     "international_students": 3768.0
+    },
+    {
+     "country_id": "NIC",
+     "country": "Nicaragua",
+     "latest_year": 2023,
+     "international_students": 3263.0
+    },
+    {
+     "country_id": "BFA",
+     "country": "Burkina Faso",
+     "latest_year": 2025,
+     "international_students": 3193.0
+    },
+    {
+     "country_id": "BGD",
+     "country": "Bangladesh",
+     "latest_year": 2022,
+     "international_students": 2281.0
+    },
+    {
+     "country_id": "ALB",
+     "country": "Albania",
+     "latest_year": 2024,
+     "international_students": 2254.0
+    },
+    {
+     "country_id": "ISL",
+     "country": "Iceland",
+     "latest_year": 2024,
+     "international_students": 2207.0
+    },
+    {
+     "country_id": "GTM",
+     "country": "Guatemala",
+     "latest_year": 2023,
+     "international_students": 2192.0
+    },
+    {
+     "country_id": "NAM",
+     "country": "Namibia",
+     "latest_year": 2022,
+     "international_students": 2132.0
+    },
+    {
+     "country_id": "BWA",
+     "country": "Botswana",
+     "latest_year": 2024,
+     "international_students": 2029.0
+    },
+    {
+     "country_id": "LKA",
+     "country": "Sri Lanka",
+     "latest_year": 2023,
+     "international_students": 1773.0
+    },
+    {
+     "country_id": "GIN",
+     "country": "Guinea",
+     "latest_year": 2023,
+     "international_students": 1327.0
+    },
+    {
+     "country_id": "MDG",
+     "country": "Madagascar",
+     "latest_year": 2025,
+     "international_students": 1060.0
+    },
+    {
+     "country_id": "TZA",
+     "country": "Tanzania",
+     "latest_year": 2024,
+     "international_students": 1058.0
+    },
+    {
+     "country_id": "TTO",
+     "country": "Trinidad and Tobago",
+     "latest_year": 2025,
+     "international_students": 1055.0
+    },
+    {
+     "country_id": "BRN",
+     "country": "Brunei Darussalam",
+     "latest_year": 2025,
+     "international_students": 1053.0
+    },
+    {
+     "country_id": "SLV",
+     "country": "El Salvador",
+     "latest_year": 2023,
+     "international_students": 938.0
+    },
+    {
+     "country_id": "LCA",
+     "country": "Saint Lucia",
+     "latest_year": 2025,
+     "international_students": 788.0
+    },
+    {
+     "country_id": "KHM",
+     "country": "Cambodia",
+     "latest_year": 2021,
+     "international_students": 513.0
+    },
+    {
+     "country_id": "BLZ",
+     "country": "Belize",
+     "latest_year": 2025,
+     "international_students": 195.0
+    },
+    {
+     "country_id": "WSM",
+     "country": "Samoa",
+     "latest_year": 2025,
+     "international_students": 151.0
+    },
+    {
+     "country_id": "SLE",
+     "country": "Sierra Leone",
+     "latest_year": 2025,
+     "international_students": 29.0
+    },
+    {
+     "country_id": "TKM",
+     "country": "Turkmenistan",
+     "latest_year": 2025,
+     "international_students": 27.0
+    },
+    {
+     "country_id": "KIR",
+     "country": "Kiribati",
+     "latest_year": 2025,
+     "international_students": 12.0
+    },
+    {
+     "country_id": "PSE",
+     "country": "Palestine",
+     "latest_year": 2024,
+     "international_students": 0.0
+    },
+    {
+     "country_id": "STP",
+     "country": "Sao Tome and Principe",
+     "latest_year": 2025,
+     "international_students": 0.0
+    },
+    {
+     "country_id": "SYC",
+     "country": "Seychelles",
+     "latest_year": 2025,
+     "international_students": 0.0
+    },
+    {
+     "country_id": "SUR",
+     "country": "Suriname",
+     "latest_year": 2021,
+     "international_students": 0.0
+    }
+   ],
+   "metadata": {
+    "country_id": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "latest_year": {
+     "type": "integer",
+     "levels": []
+    },
+    "international_students": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with v as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/opri_national.parquet')\n        where indicator_id = '26637' and year between 2021 and 2026\n          and value is not null and coalesce(magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    population as (\n        select COUNTRY_ID as country_id, value as thousands\n        from read_parquet('data/dem_national.parquet')\n        where indicator_id = '200101'\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    )\n    select v.country_id, v.country, v.year as latest_year, round(value, 0) as international_students\n    from v join population using (country_id)\n    where population.thousands >= 100\n    order by international_students desc, v.country\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
+    "outputVariable": "out",
+    "source": [
+     "dem_national",
+     "opri_national"
+    ],
+    "trigger": {
+     "tableId": "dem_national",
+     "resultTableId": "international_students_hosted",
+     "chart": {
+      "id": "chart-trigger-international_students_hosted",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "dem_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "international_students_hosted",
+    "rowCount": 124
+   },
+   "description": "Inbound internationally mobile students in higher education, both sexes, each host country's latest figure in 2021–2026 (latest_year). Source: UIS, November 2026 release; indicator 26637.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794703000000_step_1",
+   "createdAt": 1794703002000
+  },
+  {
+   "kind": "table",
+   "id": "international_students_trend",
+   "displayId": "International students in the five largest host countries, since 2010",
+   "names": [
+    "country_id",
+    "country",
+    "year",
+    "international_students"
+   ],
+   "rows": [
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "year": 2010,
+     "international_students": 271231.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "year": 2011,
+     "international_students": 262597.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "year": 2012,
+     "international_students": 249588.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "year": 2013,
+     "international_students": 249868.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "year": 2014,
+     "international_students": 266048.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "year": 2015,
+     "international_students": 294438.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "year": 2016,
+     "international_students": 335512.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "year": 2017,
+     "international_students": 381202.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "year": 2018,
+     "international_students": 444514.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "year": 2019,
+     "international_students": 509160.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "year": 2020,
+     "international_students": 458279.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "year": 2021,
+     "international_students": 378439.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "year": 2022,
+     "international_students": 382007.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "year": 2023,
+     "international_students": 467074.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "year": 2024,
+     "international_students": 580287.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "year": 2010,
+     "international_students": 106284.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "year": 2011,
+     "international_students": 120960.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "year": 2012,
+     "international_students": 135187.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "year": 2013,
+     "international_students": 151244.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "year": 2014,
+     "international_students": 164274.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "year": 2015,
+     "international_students": 171603.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "year": 2016,
+     "international_students": 189478.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "year": 2017,
+     "international_students": 209979.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "year": 2018,
+     "international_students": 224548.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "year": 2019,
+     "international_students": 279168.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "year": 2020,
+     "international_students": 323157.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "year": 2021,
+     "international_students": 312630.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "year": 2022,
+     "international_students": 336837.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "year": 2023,
+     "international_students": 389181.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "year": 2024,
+     "international_students": 480645.0
+    },
+    {
+     "country_id": "DEU",
+     "country": "Germany",
+     "year": 2013,
+     "international_students": 196619.0
+    },
+    {
+     "country_id": "DEU",
+     "country": "Germany",
+     "year": 2014,
+     "international_students": 210542.0
+    },
+    {
+     "country_id": "DEU",
+     "country": "Germany",
+     "year": 2015,
+     "international_students": 228756.0
+    },
+    {
+     "country_id": "DEU",
+     "country": "Germany",
+     "year": 2016,
+     "international_students": 244575.0
+    },
+    {
+     "country_id": "DEU",
+     "country": "Germany",
+     "year": 2017,
+     "international_students": 258873.0
+    },
+    {
+     "country_id": "DEU",
+     "country": "Germany",
+     "year": 2018,
+     "international_students": 311738.0
+    },
+    {
+     "country_id": "DEU",
+     "country": "Germany",
+     "year": 2019,
+     "international_students": 333233.0
+    },
+    {
+     "country_id": "DEU",
+     "country": "Germany",
+     "year": 2020,
+     "international_students": 368717.0
+    },
+    {
+     "country_id": "DEU",
+     "country": "Germany",
+     "year": 2021,
+     "international_students": 376359.0
+    },
+    {
+     "country_id": "DEU",
+     "country": "Germany",
+     "year": 2022,
+     "international_students": 403473.0
+    },
+    {
+     "country_id": "DEU",
+     "country": "Germany",
+     "year": 2023,
+     "international_students": 423197.0
+    },
+    {
+     "country_id": "DEU",
+     "country": "Germany",
+     "year": 2024,
+     "international_students": 438260.0
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "year": 2010,
+     "international_students": 389958.0
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "year": 2011,
+     "international_students": 419946.0
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "year": 2012,
+     "international_students": 427686.0
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "year": 2013,
+     "international_students": 416693.0
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "year": 2014,
+     "international_students": 428724.0
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "year": 2015,
+     "international_students": 430833.0
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "year": 2016,
+     "international_students": 432001.0
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "year": 2017,
+     "international_students": 435734.0
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "year": 2018,
+     "international_students": 452079.0
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "year": 2019,
+     "international_students": 489019.0
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "year": 2020,
+     "international_students": 550877.0
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "year": 2021,
+     "international_students": 600589.0
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "year": 2022,
+     "international_students": 674931.0
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "year": 2023,
+     "international_students": 748461.0
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "year": 2024,
+     "international_students": 721041.0
+    },
+    {
+     "country_id": "USA",
+     "country": "US",
+     "year": 2013,
+     "international_students": 784427.0
+    },
+    {
+     "country_id": "USA",
+     "country": "US",
+     "year": 2014,
+     "international_students": 842384.0
+    },
+    {
+     "country_id": "USA",
+     "country": "US",
+     "year": 2015,
+     "international_students": 907251.0
+    },
+    {
+     "country_id": "USA",
+     "country": "US",
+     "year": 2016,
+     "international_students": 971417.0
+    },
+    {
+     "country_id": "USA",
+     "country": "US",
+     "year": 2017,
+     "international_students": 984898.0
+    },
+    {
+     "country_id": "USA",
+     "country": "US",
+     "year": 2018,
+     "international_students": 987314.0
+    },
+    {
+     "country_id": "USA",
+     "country": "US",
+     "year": 2020,
+     "international_students": 957475.0
+    },
+    {
+     "country_id": "USA",
+     "country": "US",
+     "year": 2021,
+     "international_students": 833204.0
+    },
+    {
+     "country_id": "USA",
+     "country": "US",
+     "year": 2023,
+     "international_students": 956923.0
+    }
+   ],
+   "metadata": {
+    "country_id": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "international_students": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with v as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/opri_national.parquet')\n        where indicator_id = '26637' and value is not null\n          and coalesce(magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n    ),\n    top as (\n        select country_id, value from v where year between 2021 and 2026\n        qualify row_number() over (partition by country_id order by year desc) = 1\n        order by value desc limit 5\n    )\n    select v.country_id, v.country, v.year, round(v.value) as international_students\n    from v join top using (country_id)\n    where v.year >= 2010\n    order by v.country, v.year\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
+    "outputVariable": "out",
+    "source": [
+     "opri_national"
+    ],
+    "trigger": {
+     "tableId": "opri_national",
+     "resultTableId": "international_students_trend",
+     "chart": {
+      "id": "chart-trigger-international_students_trend",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "opri_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "international_students_trend",
+    "rowCount": 66
+   },
+   "description": "International students in higher education hosted each year since 2010 by the five largest hosts (by their latest figure in 2021–2026). Source: UIS, November 2026 release; indicator 26637.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794703000000_step_2",
+   "createdAt": 1794703005000
+  }
+ ],
+ "charts": [],
+ "conceptShelfItems": [],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794703000000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794703000000_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Where do students who study abroad go?",
+   "parentNodeId": "conversation-root:c6dde67d-0f9a-5d88-ad40-9fe3e925e5db",
+   "actionId": "exploreDataFromNL_1794703000000",
+   "createdAt": 1794703000000
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794703000000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794703000000_step_1",
+   "textKind": "explain",
+   "content": "Measuring how many international students each country hosts.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794703000000_prompt",
+   "actionId": "exploreDataFromNL_1794703000000",
+   "createdAt": 1794703001000,
+   "startedAt": 1794703000000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794703000000-1-1",
+     "kind": "tool",
+     "label": "Querying: dem_national, opri_national",
+     "status": "completed",
+     "tool": "create_data"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794703000000-1-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "Map created: Where students from abroad study"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794703000000_step_2",
+   "displayId": "textTurn_exploreDataFromNL_1794703000000_step_2",
+   "textKind": "explain",
+   "content": "Following the biggest hosts since 2010 to see who is gaining.",
+   "parentNodeId": "file-international_students_hosted.map.json",
+   "actionId": "exploreDataFromNL_1794703000000",
+   "createdAt": 1794703004000,
+   "startedAt": 1794703000000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794703000000-2-1",
+     "kind": "tool",
+     "label": "Querying: opri_national",
+     "status": "completed",
+     "tool": "create_data"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794703000000-2-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "App created: The largest hosts of students from abroad"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794703000000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794703000000_closing",
+   "textKind": "explain",
+   "content": "**The US and the UK host the most international students:** 957,000 and 721,000. The largest hosts:\n\n- **US:** 957,000 (2023)\n- **UK:** 721,000 (2024)\n- **Australia:** 580,000 (2024)\n- **Canada:** 481,000 (2024)\n- **Germany:** 438,000 (2024)\n\nThese are students who crossed a border to study in higher education. The dashboard ranks the largest hosts and shows how the five largest grew since 2010; the map beside it sizes every host country by its number. Each country's latest figure from 2021–2026. Source: UIS, November 2026 release; indicator 26637.",
+   "parentNodeId": "file-international_students.app.jsx",
+   "actionId": "exploreDataFromNL_1794703000000",
+   "createdAt": 1794703007000,
+   "startedAt": 1794703000000,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "international_students_hosted",
+   "fields": {
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "latest_year": {
+     "semanticType": "Year",
+     "displayName": "Latest year with data",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+     }
+    },
+    "international_students": {
+     "semanticType": "Count",
+     "displayName": "International students hosted",
+     "authored": {
+      "semanticType": "Count",
+      "displayName": "International students hosted"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "international_students_trend",
+   "fields": {
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "year": {
+     "semanticType": "Year",
+     "displayName": "Year",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Year"
+     }
+    },
+    "international_students": {
+     "semanticType": "Count",
+     "displayName": "International students hosted",
+     "authored": {
+      "semanticType": "Count",
+      "displayName": "International students hosted"
+     }
+    }
+   }
+  }
+ ],
+ "fileNodes": [
+  {
+   "kind": "file",
+   "id": "file-international_students_hosted.map.json",
+   "path": "international_students_hosted.map.json",
+   "displayName": "Where students from abroad study",
+   "contentHash": "d77abf3dbb48084327f08a4ba2b2dacb8fc6a32fa60254306f9680ae3fb7ec75",
+   "parentNodeId": "international_students_hosted",
+   "createdAt": 1794703003000
+  },
+  {
+   "kind": "file",
+   "id": "file-international_students.app.jsx",
+   "path": "international_students.app.jsx",
+   "displayName": "The largest hosts of students from abroad",
+   "contentHash": "e56b8132f2b310d364a743e7e060713fcf64306abd907ea32075883f701d77ba",
+   "parentNodeId": "international_students_trend",
+   "createdAt": 1794703006000
+  }
+ ],
+ "focusedId": {
+  "type": "file",
+  "fileName": "international_students.app.jsx"
+ },
+ "canvasTabs": [
+  {
+   "key": "file:international_students_hosted.map.json",
+   "target": {
+    "type": "file",
+    "fileName": "international_students_hosted.map.json"
+   },
+   "addedAt": 1794700000000,
+   "viewedAt": 1794700000000
+  },
+  {
+   "key": "file:international_students.app.jsx",
+   "target": {
+    "type": "file",
+    "fileName": "international_students.app.jsx"
+   },
+   "addedAt": 1794700000001,
+   "viewedAt": 1794700000001
+  }
+ ],
+ "canvasTabActive": "file:international_students.app.jsx"
+}

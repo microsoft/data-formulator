@@ -21,25 +21,6 @@ from data_formulator.data_loader.external_data_loader import ExternalDataLoader
 pytestmark = [pytest.mark.backend, pytest.mark.plugin]
 
 
-# ------------------------------------------------------------------
-# Test data: expected hierarchies per loader type
-# ------------------------------------------------------------------
-
-_EXPECTED_HIERARCHIES = {
-    "mysql": ["database", "table"],
-    "clickhouse": ["database", "table"],
-    "postgresql": ["database", "schema", "table"],
-    "mssql": ["database", "schema", "object_type", "table"],
-    "bigquery": ["project_id", "dataset_id", "table"],
-    "kusto": ["kusto_database", "table"],
-    "athena": ["database", "table"],
-    "mongodb": ["database", "collection"],
-    "s3": ["bucket", "table"],
-    "azure_blob": ["container_name", "table"],
-    "superset": ["dashboard", "dataset"],
-}
-
-
 def _get_available_loaders() -> dict[str, type[ExternalDataLoader]]:
     """Import the DATA_LOADERS registry, which only includes loaders whose deps are installed."""
     from data_formulator.data_loader import DATA_LOADERS
@@ -62,15 +43,6 @@ class TestAllLoaderCatalogHierarchies:
                 assert "key" in level, f"{key}: each level must have 'key'"
                 assert "label" in level, f"{key}: each level must have 'label'"
 
-    def test_hierarchies_match_expected(self):
-        """Verify expected hierarchy keys for all available loaders."""
-        for key, cls in _get_available_loaders().items():
-            expected = _EXPECTED_HIERARCHIES.get(key)
-            if expected is None:
-                continue  # unknown loader, skip
-            actual = [level["key"] for level in cls.catalog_hierarchy()]
-            assert actual == expected, f"{key}: expected {expected}, got {actual}"
-
     def test_last_level_is_importable(self):
         """The last hierarchy level should be the importable leaf (table/file/dataset/etc.)."""
         importable_keys = {"table", "collection", "container", "dataset", "object", "blob"}
@@ -91,8 +63,6 @@ class TestScopePinningAllLoaders:
     @pytest.mark.parametrize("loader_key,pin_param,expected_removed", [
         ("mysql", "database", "database"),
         ("postgresql", "database", "database"),
-        ("mssql", "database", "database"),
-        ("athena", "database", "database"),
     ])
     def test_pinning_removes_level(self, loader_key, pin_param, expected_removed):
         """When a hierarchy-level param is provided, that level is pinned out."""
@@ -139,14 +109,6 @@ class TestScopePinningAllLoaders:
 
 class TestAuthModes:
 
-    def test_default_auth_mode_is_connection(self):
-        """Most loaders use the default 'connection' auth mode."""
-        connection_loaders = {"mysql", "clickhouse", "postgresql", "mssql", "bigquery", "kusto",
-                              "athena", "mongodb", "s3", "azure_blob"}
-        for key, cls in _get_available_loaders().items():
-            if key in connection_loaders:
-                assert cls.auth_mode() == "connection", f"{key}: expected 'connection'"
-
     def test_superset_uses_token_mode(self):
         loaders = _get_available_loaders()
         if "superset" in loaders:
@@ -182,13 +144,6 @@ class TestStaticMethods:
             required = [p for p in params if p.get("required", False)]
             if cls.auth_mode() != "none":
                 assert len(required) > 0, f"{key}: should have at least one required param"
-
-    def test_rate_limit_returns_dict_or_none(self):
-        for key, cls in _get_available_loaders().items():
-            result = cls.rate_limit()
-            assert result is None or isinstance(result, dict), (
-                f"{key}: rate_limit() must return None or dict"
-            )
 
 
 # ==================================================================

@@ -106,7 +106,7 @@ connectors:
 | `name` | 前端显示名称 |
 | `icon` | 可选，前端图标 key |
 | `params` | 非敏感默认参数或 pinned 参数 |
-| `auto_connect` | admin 配置可用；用于启动时自动建立连接的场景 |
+| `auto_connect` | admin 配置可用；`true` 时，用户列出连接时即用 connector 配置的凭据（如服务器的托管身份）自动连接，无需用户操作；失败后一分钟内不再重试 |
 
 `params` 支持 `${ENV_VAR}` 引用：
 
@@ -133,6 +133,7 @@ connectors:
 DF_SOURCES__<connector_id>__type=<loader_type>
 DF_SOURCES__<connector_id>__name=<display_name>
 DF_SOURCES__<connector_id>__icon=<icon>
+DF_SOURCES__<connector_id>__auto_connect=true
 DF_SOURCES__<connector_id>__params__<param_name>=<value>
 ```
 

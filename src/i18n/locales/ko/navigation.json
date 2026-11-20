@@ -1,0 +1,18 @@
+{
+  "navigation": {
+    "startExploration": "탐색 시작",
+    "installLocally": "로컬에 설치",
+    "tryOnlineDemo": "온라인 데모 체험",
+    "video": "영상",
+    "github": "GitHub",
+    "contactUs": "문의하기",
+    "termsOfUse": "이용 약관",
+    "about": "정보",
+    "home": "홈",
+    "data": "데이터",
+    "visualization": "시각화",
+    "report": "보고서",
+    "chat": "채팅",
+    "agentRules": "에이전트 규칙"
+  }
+}

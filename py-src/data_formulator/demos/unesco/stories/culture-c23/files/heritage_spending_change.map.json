@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "title": "Where heritage spending rose and fell",
+  "subtitle": "Change in public heritage spending per person, latest (2022–2024) against before the pandemic (2017–2019), constant 2017 PPP$",
+  "source": "UIS, February 2026 release; indicator HEXPCSTPPPCAP.HER.PU",
+  "template": "choropleth",
+  "data": {
+    "table": "heritage_spending_change"
+  },
+  "encoding": {
+    "region": "country_id",
+    "color": "change",
+    "tooltip": [
+      "country",
+      "change",
+      "latest_year"
+    ]
+  },
+  "properties": {
+    "geography": "world",
+    "keyType": "iso3"
+  },
+  "fields": {
+    "change": {
+      "semanticType": "Price",
+      "unit": "PPP$ per person",
+      "displayName": "Change per person",
+      "divergingMidpoint": 0
+    },
+    "latest_year": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

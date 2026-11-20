@@ -28,6 +28,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import { useTranslation } from 'react-i18next';
 import { iconVar, textVar } from '../app/layout';
+import { weight } from '../app/tokens';
 
 const UVX_CMD = 'uvx --prerelease=allow data-formulator';
 const REPO_URL = 'https://github.com/microsoft/data-formulator';
@@ -159,7 +160,7 @@ export const LocalInstallUpgradePanel: React.FC<LocalInstallUpgradePanelProps> =
             }}
         >
             <Box>
-                <Typography sx={{ fontSize: textVar.lg, fontWeight: 600, mb: 0.5 }}>
+                <Typography sx={{ fontSize: textVar.lg, fontWeight: weight(600), mb: 0.5 }}>
                     {t('upload.upgrade.title', {
                         defaultValue: 'Data connectors require a local install',
                     })}
@@ -207,7 +208,7 @@ export const LocalInstallUpgradePanel: React.FC<LocalInstallUpgradePanelProps> =
 
             {/* Install + launch */}
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-                <Typography sx={{ fontSize: textVar.md, fontWeight: 600 }}>
+                <Typography sx={{ fontSize: textVar.md, fontWeight: weight(600) }}>
                     {t('upload.upgrade.installHeading', { defaultValue: 'Install & launch' })}
                 </Typography>
                 <CommandRow
@@ -226,7 +227,7 @@ export const LocalInstallUpgradePanel: React.FC<LocalInstallUpgradePanelProps> =
                         target="_blank"
                         rel="noopener noreferrer"
                         underline="hover"
-                        sx={{ mx: 0.25, fontWeight: 600 }}
+                        sx={{ mx: 0.25, fontWeight: weight(600) }}
                     >
                         uv
                     </Link>

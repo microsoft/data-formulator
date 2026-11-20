@@ -8,7 +8,7 @@ enabled, Azure verifies the user's identity *before* the request reaches
 Flask and injects trusted headers:
 
 * ``X-MS-CLIENT-PRINCIPAL-ID`` — user's Object ID (always present)
-* ``X-MS-CLIENT-PRINCIPAL-NAME`` — display name (optional)
+* ``X-MS-CLIENT-PRINCIPAL-NAME`` — authenticated sign-in name (optional)
 
 These headers are set by the Azure infrastructure and cannot be forged
 by end-user clients.
@@ -43,6 +43,7 @@ class AzureEasyAuthProvider(AuthProvider):
         return AuthResult(
             user_id=principal_id.strip(),
             display_name=principal_name.strip() or None,
+            login_name=principal_name.strip() or None,
         )
 
     def get_auth_info(self) -> dict:

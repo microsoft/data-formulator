@@ -1,0 +1,3 @@
+antarctica.json is Antarctica from Natural Earth 1:110m (public domain), via the world-atlas package's
+countries-110m.json, with coordinates rounded to 0.01°. The World Bank Official Boundaries leave Antarctica
+out; world maps draw this shape only when their data lies there.

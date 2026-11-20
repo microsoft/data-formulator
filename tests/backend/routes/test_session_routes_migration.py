@@ -53,6 +53,77 @@ class TestSaveSessionRoute:
         assert "No space left on device" not in body["error"]["message"]
 
 
+class TestListSessionRoute:
+    def test_list_includes_source_summary(self, client):
+        manager = MagicMock()
+        manager.list_workspaces.return_value = [{
+            "id": "sales",
+            "display_name": "Sales",
+            "created_at": "2026-08-17T10:00:00Z",
+            "updated_at": "2026-08-17T11:00:00Z",
+            "source_ids": ["sample_datasets", "warehouse"],
+        }]
+
+        with (
+            patch("data_formulator.routes.sessions.get_identity_id", return_value="browser:abc"),
+            patch("data_formulator.routes.sessions.get_workspace_manager", return_value=manager),
+        ):
+            resp = client.get("/api/sessions/list")
+
+        assert resp.status_code == 200
+        session = resp.get_json()["data"]["sessions"][0]
+        assert session["source_ids"] == ["sample_datasets", "warehouse"]
+
+
+class TestSaveConflictRoute:
+    def test_save_reports_a_stale_copy_as_session_conflict(self, client, tmp_path):
+        from data_formulator.datalake.workspace_manager import WorkspaceManager
+
+        manager = WorkspaceManager(tmp_path / "workspaces")
+        manager.create_workspace("ws")
+        with (
+            patch("data_formulator.routes.sessions.get_identity_id", return_value="local:me"),
+            patch("data_formulator.routes.sessions.get_workspace_manager", return_value=manager),
+        ):
+            saved = client.post("/api/sessions/save", json={"id": "ws", "state": {"textTurns": [1]}}).get_json()
+            assert saved["data"]["revision"] == 1
+            assert client.post("/api/sessions/load", json={"id": "ws"}).get_json()["data"]["revision"] == 1
+            client.post("/api/sessions/save", json={"id": "ws", "state": {"textTurns": [1, 2]}, "base_revision": 1})
+
+            stale = client.post("/api/sessions/save", json={"id": "ws", "state": {"textTurns": [1]}, "base_revision": 1}).get_json()
+
+        assert stale["status"] == "error" and stale["error"]["code"] == "SESSION_CONFLICT"
+        assert manager.load_session_state("ws")["textTurns"] == [1, 2]
+
+
+class TestUpdateMetaRoute:
+    def _post(self, client, manager, body):
+        with (
+            patch("data_formulator.routes.sessions.get_identity_id", return_value="browser:abc"),
+            patch("data_formulator.routes.sessions.get_workspace_manager", return_value=manager),
+        ):
+            return client.post("/api/sessions/update-meta", json=body)
+
+    def test_star_only_does_not_rename(self, client):
+        manager = MagicMock()
+        manager.workspace_exists.return_value = True
+
+        body = self._post(client, manager, {"id": "sales", "starred": True}).get_json()
+
+        assert body["status"] == "success"
+        manager.set_starred.assert_called_once_with("sales", True)
+        manager.update_display_name.assert_not_called()
+
+    def test_rejects_non_boolean_star(self, client):
+        manager = MagicMock()
+        manager.workspace_exists.return_value = True
+
+        body = self._post(client, manager, {"id": "sales", "starred": "yes"}).get_json()
+
+        assert body["status"] == "error"
+        manager.set_starred.assert_not_called()
+
+
 class TestMigrateRoute:
     def test_migrate_moves_and_cleans_source(self, client):
         source_mgr = MagicMock()

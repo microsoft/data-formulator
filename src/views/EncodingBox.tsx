@@ -53,6 +53,7 @@ import { getUrls, fetchWithIdentity } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { textVar } from '../app/layout';
 import { Type } from '../data/types';
+import { ink, paper } from '../app/tokens';
 
 
 
@@ -208,10 +209,8 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             setAutoSortResult(levels);
 
             if (!chart.chartType.includes("Area") && levels && levels.length > 0) {
-                // Only dispatch when sortBy actually needs updating. Otherwise this
-                // effect re-fires on every chart switch and the resulting no-op
-                // dispatch silently clears chart.activeVariantId in the reducer
-                // (because updateChartEncodingProp resets variants on any edit).
+                // Only dispatch when sortBy actually needs updating; this effect
+                // re-fires on every chart switch.
                 const nextSortBy = JSON.stringify(levels);
                 if (encoding.sortBy !== nextSortBy) {
                     updateEncProp('sortBy', nextSortBy);
@@ -289,7 +288,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         if (tooltip != "") {
             comp = <Tooltip key={`${key}-tooltip`} title={tooltip} arrow slotProps={{
                 tooltip: {
-                    sx: { bgcolor: 'rgba(255, 255, 255, 0.95)', color: 'rgba(0,0,0,0.95)', border: '1px solid darkgray' },
+                    sx: { bgcolor: paper(0.95), color: ink(0.95), border: '1px solid darkgray' },
                 },
             }}>{comp}</Tooltip>
         }
@@ -312,18 +311,19 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 aria-labelledby="data-type-option-radio-buttons-group"
                 name="data-type-option-radio-buttons-group"
                 value={encoding.dtype || "auto"}
-                sx={{ width: 160 }}
+                sx={{ width: 200 }}
                 onChange={(event) => { 
                     if (event.target.value == "auto") {
                         updateEncProp("dtype", undefined);
                     } else {
-                        updateEncProp("dtype", event.target.value as "quantitative" | "qualitative" | "temporal");
+                        updateEncProp("dtype", event.target.value as "quantitative" | "nominal" | "ordinal" | "temporal");
                     }
                 }}
             >
                 {radioLabel(getIconFromDtype("auto"), "auto", `dtype-auto`, 40, false, "auto")}
                 {radioLabel(getIconFromDtype("quantitative"), "quantitative", `dtype-quantitative`, 40, false, "quantitative")}
                 {radioLabel(getIconFromDtype("nominal"), "nominal", `dtype-nominal`, 40, false, "nominal")}
+                {radioLabel(getIconFromDtype("ordinal"), "ordinal", `dtype-ordinal`, 40, false, "ordinal")}
                 {radioLabel(getIconFromDtype("temporal"), "temporal", `dtype-temporal`, 40, false, "temporal")}
             </RadioGroup>
         </FormControl>
@@ -409,8 +409,8 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                     <Tooltip title={autoSortOptTitle} arrow componentsProps={{
                         tooltip: {
                           sx: {
-                            bgcolor: 'rgba(255, 255, 255, 0.95)',
-                            color: 'rgba(0,0,0,0.95)',
+                            bgcolor: paper(0.95),
+                            color: ink(0.95),
                             border: '1px solid darkgray'
                           },
                         },
@@ -657,7 +657,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         fontSize: textVar.xs,
                         padding: '4px 8px !important',
                         cursor: 'pointer',
-                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.05)' },
+                        '&:hover': { backgroundColor: ink(0.05) },
                     }}
                 >
                     {getIconFromType(dtype)}
@@ -746,7 +746,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         </Tooltip>
                         <Box sx={{
                             backgroundColor: backgroundColor, width: "calc(100% - 84px)",
-                            display: "flex", borderBottom: (editMode ? "1px solid rgba(0, 0, 0, 0.12)" : undefined)
+                            display: "flex", borderBottom: (editMode ? `1px solid ${ink(0.12)}` : undefined)
                         }}>
                             {encContent}
                         </Box>

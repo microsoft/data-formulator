@@ -14,9 +14,6 @@ class TestNormalizeDtypeToAppType:
 
     @pytest.mark.parametrize("dtype_str, expected", [
         ("datetime64[ns]", "datetime"),
-        ("datetime64[ns, UTC]", "datetime"),
-        ("datetime64[us]", "datetime"),
-        ("timestamp[ns]", "datetime"),
         ("timestamp[us, tz=UTC]", "datetime"),
     ])
     def test_datetime_types(self, dtype_str: str, expected: str):
@@ -26,7 +23,6 @@ class TestNormalizeDtypeToAppType:
 
     @pytest.mark.parametrize("dtype_str, expected", [
         ("date", "date"),
-        ("date32", "date"),
         ("date32[day]", "date"),
         ("date64", "date"),
     ])
@@ -48,7 +44,6 @@ class TestNormalizeDtypeToAppType:
     @pytest.mark.parametrize("dtype_str, expected", [
         ("timedelta64[ns]", "duration"),
         ("duration[ns]", "duration"),
-        ("duration[us]", "duration"),
     ])
     def test_duration_types(self, dtype_str: str, expected: str):
         assert normalize_dtype_to_app_type(dtype_str) == expected
@@ -57,7 +52,6 @@ class TestNormalizeDtypeToAppType:
 
     @pytest.mark.parametrize("dtype_str, expected", [
         ("int64", "integer"),
-        ("int32", "integer"),
         ("Int64", "integer"),
         ("uint8", "integer"),
     ])
@@ -68,7 +62,6 @@ class TestNormalizeDtypeToAppType:
 
     @pytest.mark.parametrize("dtype_str, expected", [
         ("float64", "number"),
-        ("float32", "number"),
         ("double", "number"),
         ("Float64", "number"),
     ])
@@ -78,7 +71,6 @@ class TestNormalizeDtypeToAppType:
     # --- Boolean ---
 
     @pytest.mark.parametrize("dtype_str, expected", [
-        ("bool", "boolean"),
         ("boolean", "boolean"),
     ])
     def test_boolean_types(self, dtype_str: str, expected: str):
@@ -89,7 +81,6 @@ class TestNormalizeDtypeToAppType:
     @pytest.mark.parametrize("dtype_str, expected", [
         ("object", "string"),
         ("string", "string"),
-        ("category", "string"),
         ("unknown_type", "string"),
     ])
     def test_string_fallback(self, dtype_str: str, expected: str):

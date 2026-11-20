@@ -42,8 +42,10 @@ def get_ephemeral_root() -> Path:
 
 
 def get_ephemeral_workspaces_root(identity_id: str) -> Path:
+    from data_formulator.sites import site_scope
+
     safe_identity = Workspace._sanitize_identity_id(identity_id)
-    return get_ephemeral_root() / "users" / safe_identity / "workspaces"
+    return site_scope(get_ephemeral_root()) / "users" / safe_identity / "workspaces"
 
 
 def _workspace_updated_at(workspace_dir: Path) -> float:
@@ -75,25 +77,27 @@ def _directory_size(path: Path) -> int:
 
 
 def _workspace_directories(root: Path) -> list[Path]:
-    users_root = root / "users"
-    if not users_root.exists():
-        return []
+    # Site workspaces (data_formulator.sites) live under root/sites/<site>/users/.
+    sites_root = root / "sites"
+    scopes = [root, *(sorted(p for p in sites_root.iterdir() if p.is_dir()) if sites_root.is_dir() else [])]
     return [
         workspace_dir
-        for workspaces_root in users_root.glob("*/workspaces")
+        for scope in scopes
+        for workspaces_root in (scope / "users").glob("*/workspaces")
         if workspaces_root.is_dir()
         for workspace_dir in workspaces_root.iterdir()
         if workspace_dir.is_dir()
     ]
 
 
-def _tombstone_path(root: Path, identity_dir: str, workspace_id: str) -> Path:
-    return root / "tombstones" / identity_dir / f"{workspace_id}.json"
+def _tombstone_path(scope: Path, identity_dir: str, workspace_id: str) -> Path:
+    return scope / "tombstones" / identity_dir / f"{workspace_id}.json"
 
 
-def _write_tombstone(root: Path, workspace_dir: Path, reason: str) -> None:
+def _write_tombstone(workspace_dir: Path, reason: str) -> None:
+    # <scope>/users/<identity>/workspaces/<workspace>
     identity_dir = workspace_dir.parent.parent.name
-    tombstone = _tombstone_path(root, identity_dir, workspace_dir.name)
+    tombstone = _tombstone_path(workspace_dir.parents[3], identity_dir, workspace_dir.name)
     tombstone.parent.mkdir(parents=True, exist_ok=True)
     tombstone.write_text(json.dumps({
         "workspaceId": workspace_dir.name,
@@ -123,7 +127,7 @@ def cleanup_ephemeral_workspaces(*, force: bool = False) -> int:
             try:
                 updated_at = _workspace_updated_at(workspace_dir)
                 if ttl_seconds > 0 and now - updated_at >= ttl_seconds:
-                    _write_tombstone(root, workspace_dir, "ttl")
+                    _write_tombstone(workspace_dir, "ttl")
                     shutil.rmtree(workspace_dir)
                     removed += 1
                     logger.info("Expired ephemeral workspace: %s", workspace_dir)
@@ -137,7 +141,7 @@ def cleanup_ephemeral_workspaces(*, force: bool = False) -> int:
         if max_bytes > 0 and total_bytes > max_bytes:
             for workspace_dir, _, size in sorted(retained, key=lambda entry: entry[1]):
                 try:
-                    _write_tombstone(root, workspace_dir, "lru")
+                    _write_tombstone(workspace_dir, "lru")
                     shutil.rmtree(workspace_dir)
                     total_bytes -= size
                     removed += 1
@@ -154,13 +158,16 @@ class EphemeralWorkspaceManager(WorkspaceManager):
     """Standard local workspace manager with ephemeral retention semantics."""
 
     def __init__(self, identity_id: str):
+        from data_formulator.sites import site_scope
+
         cleanup_ephemeral_workspaces()
         self._identity_dir = Workspace._sanitize_identity_id(identity_id)
+        self._scope = site_scope(get_ephemeral_root())
         super().__init__(get_ephemeral_workspaces_root(identity_id))
 
     def workspace_was_evicted(self, workspace_id: str) -> bool:
         safe_id = self._safe_id(workspace_id)
-        return _tombstone_path(get_ephemeral_root(), self._identity_dir, safe_id).exists()
+        return _tombstone_path(self._scope, self._identity_dir, safe_id).exists()
 
     def _touch(self, workspace_id: str) -> None:
         meta_file = self.get_workspace_path(workspace_id) / WORKSPACE_META_FILENAME
@@ -170,6 +177,9 @@ class EphemeralWorkspaceManager(WorkspaceManager):
             meta_file.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
         except (OSError, json.JSONDecodeError):
             logger.warning("Failed to update ephemeral workspace access time", exc_info=True)
+
+    def mark_accessed(self, workspace_id: str) -> None:
+        self._touch(workspace_id)
 
     def open_workspace(self, workspace_id: str, identity_id: str) -> Workspace:
         workspace = super().open_workspace(workspace_id, identity_id)

@@ -1,0 +1,1224 @@
+{
+ "__stateVersion": 15,
+ "activeWorkspace": {
+  "id": "education-opri-o22",
+  "displayName": "732 million adults still cannot read"
+ },
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "adult_illiteracy_by_sex",
+   "displayId": "Adults who cannot read, world, by sex",
+   "names": [
+    "year",
+    "sex",
+    "millions"
+   ],
+   "rows": [
+    {
+     "year": 2000,
+     "sex": "Men",
+     "millions": 287.8
+    },
+    {
+     "year": 2000,
+     "sex": "Women",
+     "millions": 518.4
+    },
+    {
+     "year": 2001,
+     "sex": "Men",
+     "millions": 287.1
+    },
+    {
+     "year": 2001,
+     "sex": "Women",
+     "millions": 515.6
+    },
+    {
+     "year": 2002,
+     "sex": "Men",
+     "millions": 284.3
+    },
+    {
+     "year": 2002,
+     "sex": "Women",
+     "millions": 513.7
+    },
+    {
+     "year": 2003,
+     "sex": "Men",
+     "millions": 279.2
+    },
+    {
+     "year": 2003,
+     "sex": "Women",
+     "millions": 511.1
+    },
+    {
+     "year": 2004,
+     "sex": "Men",
+     "millions": 278.3
+    },
+    {
+     "year": 2004,
+     "sex": "Women",
+     "millions": 510.4
+    },
+    {
+     "year": 2005,
+     "sex": "Men",
+     "millions": 280.6
+    },
+    {
+     "year": 2005,
+     "sex": "Women",
+     "millions": 521.2
+    },
+    {
+     "year": 2006,
+     "sex": "Men",
+     "millions": 289.8
+    },
+    {
+     "year": 2006,
+     "sex": "Women",
+     "millions": 527.8
+    },
+    {
+     "year": 2007,
+     "sex": "Men",
+     "millions": 286.8
+    },
+    {
+     "year": 2007,
+     "sex": "Women",
+     "millions": 515.8
+    },
+    {
+     "year": 2008,
+     "sex": "Men",
+     "millions": 285.1
+    },
+    {
+     "year": 2008,
+     "sex": "Women",
+     "millions": 512.5
+    },
+    {
+     "year": 2009,
+     "sex": "Men",
+     "millions": 283.8
+    },
+    {
+     "year": 2009,
+     "sex": "Women",
+     "millions": 509.5
+    },
+    {
+     "year": 2010,
+     "sex": "Men",
+     "millions": 281.2
+    },
+    {
+     "year": 2010,
+     "sex": "Women",
+     "millions": 495.2
+    },
+    {
+     "year": 2011,
+     "sex": "Men",
+     "millions": 279.5
+    },
+    {
+     "year": 2011,
+     "sex": "Women",
+     "millions": 493.1
+    },
+    {
+     "year": 2012,
+     "sex": "Men",
+     "millions": 279.3
+    },
+    {
+     "year": 2012,
+     "sex": "Women",
+     "millions": 493.4
+    },
+    {
+     "year": 2013,
+     "sex": "Men",
+     "millions": 276.6
+    },
+    {
+     "year": 2013,
+     "sex": "Women",
+     "millions": 490.5
+    },
+    {
+     "year": 2014,
+     "sex": "Men",
+     "millions": 275.4
+    },
+    {
+     "year": 2014,
+     "sex": "Women",
+     "millions": 484.4
+    },
+    {
+     "year": 2015,
+     "sex": "Men",
+     "millions": 269.3
+    },
+    {
+     "year": 2015,
+     "sex": "Women",
+     "millions": 477.3
+    },
+    {
+     "year": 2016,
+     "sex": "Men",
+     "millions": 266.9
+    },
+    {
+     "year": 2016,
+     "sex": "Women",
+     "millions": 471.4
+    },
+    {
+     "year": 2017,
+     "sex": "Men",
+     "millions": 270.8
+    },
+    {
+     "year": 2017,
+     "sex": "Women",
+     "millions": 468.9
+    },
+    {
+     "year": 2018,
+     "sex": "Men",
+     "millions": 265.7
+    },
+    {
+     "year": 2018,
+     "sex": "Women",
+     "millions": 464.2
+    },
+    {
+     "year": 2019,
+     "sex": "Men",
+     "millions": 270.7
+    },
+    {
+     "year": 2019,
+     "sex": "Women",
+     "millions": 467.7
+    },
+    {
+     "year": 2020,
+     "sex": "Men",
+     "millions": 270.9
+    },
+    {
+     "year": 2020,
+     "sex": "Women",
+     "millions": 468.4
+    },
+    {
+     "year": 2021,
+     "sex": "Men",
+     "millions": 271.2
+    },
+    {
+     "year": 2021,
+     "sex": "Women",
+     "millions": 466.8
+    },
+    {
+     "year": 2022,
+     "sex": "Men",
+     "millions": 275.5
+    },
+    {
+     "year": 2022,
+     "sex": "Women",
+     "millions": 466.5
+    },
+    {
+     "year": 2023,
+     "sex": "Men",
+     "millions": 275.1
+    },
+    {
+     "year": 2023,
+     "sex": "Women",
+     "millions": 464.4
+    },
+    {
+     "year": 2024,
+     "sex": "Men",
+     "millions": 270.9
+    },
+    {
+     "year": 2024,
+     "sex": "Women",
+     "millions": 461.9
+    },
+    {
+     "year": 2025,
+     "sex": "Men",
+     "millions": 271.0
+    },
+    {
+     "year": 2025,
+     "sex": "Women",
+     "millions": 461.0
+    }
+   ],
+   "metadata": {
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "sex": {
+     "type": "string",
+     "levels": []
+    },
+    "millions": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    select year, case indicator_id when 'ILLPOP.AG15T99.F' then 'Women' else 'Men' end as sex,\n           round(value / 1e6, 1) as millions\n    from read_parquet('data/opri_regional.parquet')\n    where region = 'UIS: World' and indicator_id in ('ILLPOP.AG15T99.F', 'ILLPOP.AG15T99.M')\n      and year >= 2000 and value is not null\n    order by year, sex\n\"\"\").df()\n",
+    "outputVariable": "out",
+    "source": [
+     "opri_regional"
+    ],
+    "trigger": {
+     "tableId": "opri_regional",
+     "resultTableId": "adult_illiteracy_by_sex",
+     "chart": {
+      "id": "chart-trigger-adult_illiteracy_by_sex",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "opri_regional",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "adult_illiteracy_by_sex",
+    "rowCount": 52
+   },
+   "description": "Adults aged 15 and over who cannot read and write, world (UIS aggregate), women and men, by year since 2000. Source: UIS, November 2026 release; indicators ILLPOP.AG15T99, ILLPOP.AG15T99.F, ILLPOP.AG15T99.M.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794703600000_step_1",
+   "createdAt": 1794703602000
+  },
+  {
+   "kind": "table",
+   "id": "adults_who_cannot_read_by_country",
+   "displayId": "Adults who cannot read, by country",
+   "names": [
+    "country_id",
+    "country",
+    "latest_year",
+    "adults"
+   ],
+   "rows": [
+    {
+     "country_id": "IND",
+     "country": "India",
+     "latest_year": 2023,
+     "adults": 190709197.0
+    },
+    {
+     "country_id": "PAK",
+     "country": "Pakistan",
+     "latest_year": 2024,
+     "adults": 62395638.0
+    },
+    {
+     "country_id": "CHN",
+     "country": "China",
+     "latest_year": 2020,
+     "adults": 38140917.0
+    },
+    {
+     "country_id": "BGD",
+     "country": "Bangladesh",
+     "latest_year": 2022,
+     "adults": 25248980.0
+    },
+    {
+     "country_id": "EGY",
+     "country": "Egypt",
+     "latest_year": 2017,
+     "adults": 19604622.0
+    },
+    {
+     "country_id": "AFG",
+     "country": "Afghanistan",
+     "latest_year": 2021,
+     "adults": 13924525.0
+    },
+    {
+     "country_id": "COD",
+     "country": "DR Congo",
+     "latest_year": 2016,
+     "adults": 10079628.0
+    },
+    {
+     "country_id": "IRN",
+     "country": "Iran",
+     "latest_year": 2016,
+     "adults": 9110082.0
+    },
+    {
+     "country_id": "BRA",
+     "country": "Brazil",
+     "latest_year": 2022,
+     "adults": 8198532.0
+    },
+    {
+     "country_id": "IDN",
+     "country": "Indonesia",
+     "latest_year": 2020,
+     "adults": 8112163.0
+    },
+    {
+     "country_id": "BFA",
+     "country": "Burkina Faso",
+     "latest_year": 2019,
+     "adults": 8022069.0
+    },
+    {
+     "country_id": "MLI",
+     "country": "Mali",
+     "latest_year": 2018,
+     "adults": 6713981.0
+    },
+    {
+     "country_id": "MOZ",
+     "country": "Mozambique",
+     "latest_year": 2020,
+     "adults": 6678401.0
+    },
+    {
+     "country_id": "TZA",
+     "country": "Tanzania",
+     "latest_year": 2022,
+     "adults": 6142896.0
+    },
+    {
+     "country_id": "TCD",
+     "country": "Chad",
+     "latest_year": 2016,
+     "adults": 5918176.0
+    },
+    {
+     "country_id": "NPL",
+     "country": "Nepal",
+     "latest_year": 2021,
+     "adults": 5865973.0
+    },
+    {
+     "country_id": "MEX",
+     "country": "Mexico",
+     "latest_year": 2020,
+     "adults": 4440204.0
+    },
+    {
+     "country_id": "IRQ",
+     "country": "Iraq",
+     "latest_year": 2025,
+     "adults": 4293882.0
+    },
+    {
+     "country_id": "SOM",
+     "country": "Somalia",
+     "latest_year": 2022,
+     "adults": 4280298.0
+    },
+    {
+     "country_id": "GIN",
+     "country": "Guinea",
+     "latest_year": 2018,
+     "adults": 4268604.0
+    },
+    {
+     "country_id": "SEN",
+     "country": "Senegal",
+     "latest_year": 2017,
+     "adults": 4236159.0
+    },
+    {
+     "country_id": "MMR",
+     "country": "Myanmar",
+     "latest_year": 2019,
+     "adults": 4184639.0
+    },
+    {
+     "country_id": "ZAF",
+     "country": "South Africa",
+     "latest_year": 2024,
+     "adults": 4168923.0
+    },
+    {
+     "country_id": "MDG",
+     "country": "Madagascar",
+     "latest_year": 2018,
+     "adults": 3722289.0
+    },
+    {
+     "country_id": "SLE",
+     "country": "Sierra Leone",
+     "latest_year": 2025,
+     "adults": 3079647.0
+    },
+    {
+     "country_id": "VNM",
+     "country": "Vietnam",
+     "latest_year": 2022,
+     "adults": 2924624.0
+    },
+    {
+     "country_id": "MWI",
+     "country": "Malawi",
+     "latest_year": 2018,
+     "adults": 2365799.0
+    },
+    {
+     "country_id": "BDI",
+     "country": "Burundi",
+     "latest_year": 2017,
+     "adults": 1857810.0
+    },
+    {
+     "country_id": "TUR",
+     "country": "Türkiye",
+     "latest_year": 2021,
+     "adults": 1769139.0
+    },
+    {
+     "country_id": "TUN",
+     "country": "Tunisia",
+     "latest_year": 2019,
+     "adults": 1719988.0
+    },
+    {
+     "country_id": "RWA",
+     "country": "Rwanda",
+     "latest_year": 2022,
+     "adults": 1678431.0
+    },
+    {
+     "country_id": "TGO",
+     "country": "Togo",
+     "latest_year": 2022,
+     "adults": 1522979.0
+    },
+    {
+     "country_id": "KHM",
+     "country": "Cambodia",
+     "latest_year": 2019,
+     "adults": 1381622.0
+    },
+    {
+     "country_id": "PER",
+     "country": "Peru",
+     "latest_year": 2020,
+     "adults": 1339759.0
+    },
+    {
+     "country_id": "LKA",
+     "country": "Sri Lanka",
+     "latest_year": 2024,
+     "adults": 1298350.0
+    },
+    {
+     "country_id": "PHL",
+     "country": "Philippines",
+     "latest_year": 2020,
+     "adults": 1172228.0
+    },
+    {
+     "country_id": "MYS",
+     "country": "Malaysia",
+     "latest_year": 2022,
+     "adults": 1112262.0
+    },
+    {
+     "country_id": "THA",
+     "country": "Thailand",
+     "latest_year": 2025,
+     "adults": 1032746.0
+    },
+    {
+     "country_id": "SYR",
+     "country": "Syria",
+     "latest_year": 2021,
+     "adults": 780874.0
+    },
+    {
+     "country_id": "HND",
+     "country": "Honduras",
+     "latest_year": 2019,
+     "adults": 761211.0
+    },
+    {
+     "country_id": "VEN",
+     "country": "Venezuela",
+     "latest_year": 2016,
+     "adults": 635106.0
+    },
+    {
+     "country_id": "SAU",
+     "country": "Saudi Arabia",
+     "latest_year": 2024,
+     "adults": 539462.0
+    },
+    {
+     "country_id": "JOR",
+     "country": "Jordan",
+     "latest_year": 2025,
+     "adults": 494390.0
+    },
+    {
+     "country_id": "SLV",
+     "country": "El Salvador",
+     "latest_year": 2024,
+     "adults": 483465.0
+    },
+    {
+     "country_id": "CHL",
+     "country": "Chile",
+     "latest_year": 2024,
+     "adults": 442552.0
+    },
+    {
+     "country_id": "ITA",
+     "country": "Italy",
+     "latest_year": 2019,
+     "adults": 338075.0
+    },
+    {
+     "country_id": "LBN",
+     "country": "Lebanon",
+     "latest_year": 2018,
+     "adults": 324066.0
+    },
+    {
+     "country_id": "ARG",
+     "country": "Argentina",
+     "latest_year": 2025,
+     "adults": 308527.0
+    },
+    {
+     "country_id": "PRT",
+     "country": "Portugal",
+     "latest_year": 2021,
+     "adults": 291416.0
+    },
+    {
+     "country_id": "TLS",
+     "country": "Timor-Leste",
+     "latest_year": 2022,
+     "adults": 263588.0
+    },
+    {
+     "country_id": "PRY",
+     "country": "Paraguay",
+     "latest_year": 2020,
+     "adults": 252998.0
+    },
+    {
+     "country_id": "NAM",
+     "country": "Namibia",
+     "latest_year": 2023,
+     "adults": 226301.0
+    },
+    {
+     "country_id": "PRI",
+     "country": "Puerto Rico",
+     "latest_year": 2017,
+     "adults": 222140.0
+    },
+    {
+     "country_id": "BTN",
+     "country": "Bhutan",
+     "latest_year": 2017,
+     "adults": 183783.0
+    },
+    {
+     "country_id": "ROU",
+     "country": "Romania",
+     "latest_year": 2021,
+     "adults": 136152.0
+    },
+    {
+     "country_id": "PAN",
+     "country": "Panama",
+     "latest_year": 2019,
+     "adults": 130592.0
+    },
+    {
+     "country_id": "KWT",
+     "country": "Kuwait",
+     "latest_year": 2020,
+     "adults": 126488.0
+    },
+    {
+     "country_id": "ESP",
+     "country": "Spain",
+     "latest_year": 2021,
+     "adults": 121375.0
+    },
+    {
+     "country_id": "ARE",
+     "country": "United Arab Emirates",
+     "latest_year": 2025,
+     "adults": 107060.0
+    },
+    {
+     "country_id": "OMN",
+     "country": "Oman",
+     "latest_year": 2024,
+     "adults": 100971.0
+    },
+    {
+     "country_id": "RUS",
+     "country": "Russia",
+     "latest_year": 2021,
+     "adults": 87788.0
+    },
+    {
+     "country_id": "SGP",
+     "country": "Singapore",
+     "latest_year": 2021,
+     "adults": 79258.0
+    },
+    {
+     "country_id": "PSE",
+     "country": "Palestine",
+     "latest_year": 2022,
+     "adults": 70237.0
+    },
+    {
+     "country_id": "ALB",
+     "country": "Albania",
+     "latest_year": 2023,
+     "adults": 53831.0
+    },
+    {
+     "country_id": "CPV",
+     "country": "Cabo Verde",
+     "latest_year": 2024,
+     "adults": 44308.0
+    },
+    {
+     "country_id": "SRB",
+     "country": "Serbia",
+     "latest_year": 2022,
+     "adults": 38100.0
+    },
+    {
+     "country_id": "LSO",
+     "country": "Lesotho",
+     "latest_year": 2016,
+     "adults": 36341.0
+    },
+    {
+     "country_id": "BLZ",
+     "country": "Belize",
+     "latest_year": 2022,
+     "adults": 34672.0
+    },
+    {
+     "country_id": "HUN",
+     "country": "Hungary",
+     "latest_year": 2022,
+     "adults": 34233.0
+    },
+    {
+     "country_id": "BHR",
+     "country": "Bahrain",
+     "latest_year": 2024,
+     "adults": 28007.0
+    },
+    {
+     "country_id": "KAZ",
+     "country": "Kazakhstan",
+     "latest_year": 2021,
+     "adults": 19645.0
+    },
+    {
+     "country_id": "MNG",
+     "country": "Mongolia",
+     "latest_year": 2020,
+     "adults": 17984.0
+    },
+    {
+     "country_id": "QAT",
+     "country": "Qatar",
+     "latest_year": 2024,
+     "adults": 17268.0
+    },
+    {
+     "country_id": "MAC",
+     "country": "Macao",
+     "latest_year": 2021,
+     "adults": 15078.0
+    },
+    {
+     "country_id": "CZE",
+     "country": "Czechia",
+     "latest_year": 2016,
+     "adults": 14910.0
+    },
+    {
+     "country_id": "BRN",
+     "country": "Brunei Darussalam",
+     "latest_year": 2021,
+     "adults": 12769.0
+    },
+    {
+     "country_id": "TJK",
+     "country": "Tajikistan",
+     "latest_year": 2020,
+     "adults": 10673.0
+    },
+    {
+     "country_id": "BLR",
+     "country": "Belarus",
+     "latest_year": 2019,
+     "adults": 9920.0
+    },
+    {
+     "country_id": "GEO",
+     "country": "Georgia",
+     "latest_year": 2024,
+     "adults": 9466.0
+    },
+    {
+     "country_id": "MDV",
+     "country": "Maldives",
+     "latest_year": 2016,
+     "adults": 7992.0
+    },
+    {
+     "country_id": "TON",
+     "country": "Tonga",
+     "latest_year": 2021,
+     "adults": 5275.0
+    },
+    {
+     "country_id": "TKM",
+     "country": "Turkmenistan",
+     "latest_year": 2022,
+     "adults": 4895.0
+    },
+    {
+     "country_id": "ARM",
+     "country": "Armenia",
+     "latest_year": 2022,
+     "adults": 4005.0
+    },
+    {
+     "country_id": "WSM",
+     "country": "Samoa",
+     "latest_year": 2016,
+     "adults": 756.0
+    },
+    {
+     "country_id": "UZB",
+     "country": "Uzbekistan",
+     "latest_year": 2022,
+     "adults": 4.0
+    }
+   ],
+   "metadata": {
+    "country_id": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "latest_year": {
+     "type": "integer",
+     "levels": []
+    },
+    "adults": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with v as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/opri_national.parquet')\n        where indicator_id = 'ILLPOP.AG15T99' and year between 2016 and 2025\n          and value is not null and coalesce(magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    population as (\n        select COUNTRY_ID as country_id, value as thousands\n        from read_parquet('data/dem_national.parquet')\n        where indicator_id = '200101'\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    )\n    select v.country_id, v.country, v.year as latest_year, round(value, 0) as adults\n    from v join population using (country_id)\n    where population.thousands >= 100\n    order by adults desc, v.country\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
+    "outputVariable": "out",
+    "source": [
+     "dem_national",
+     "opri_national"
+    ],
+    "trigger": {
+     "tableId": "dem_national",
+     "resultTableId": "adults_who_cannot_read_by_country",
+     "chart": {
+      "id": "chart-trigger-adults_who_cannot_read_by_country",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "dem_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "adults_who_cannot_read_by_country",
+    "rowCount": 85
+   },
+   "description": "Adults aged 15 and over who cannot read and write, each country's latest figure in 2016–2025 (latest_year). Source: UIS, November 2026 release; indicator ILLPOP.AG15T99.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794703600000_step_2",
+   "createdAt": 1794703604000
+  },
+  {
+   "kind": "table",
+   "id": "adult_illiteracy_by_region",
+   "displayId": "Adults who cannot read, by region",
+   "names": [
+    "region",
+    "year",
+    "millions",
+    "women_share"
+   ],
+   "rows": [
+    {
+     "region": "Central and Southern Asia",
+     "year": 2025,
+     "millions": 344.1,
+     "women_share": 64.0
+    },
+    {
+     "region": "Sub-Saharan Africa",
+     "year": 2025,
+     "millions": 227.6,
+     "women_share": 60.6
+    },
+    {
+     "region": "Northern Africa and Western Asia",
+     "year": 2025,
+     "millions": 65.2,
+     "women_share": 64.7
+    },
+    {
+     "region": "Eastern and South-Eastern Asia",
+     "year": 2025,
+     "millions": 55.0,
+     "women_share": 70.6
+    },
+    {
+     "region": "Latin America and the Caribbean",
+     "year": 2025,
+     "millions": 23.0,
+     "women_share": 52.5
+    }
+   ],
+   "metadata": {
+    "region": {
+     "type": "string",
+     "levels": []
+    },
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "millions": {
+     "type": "number",
+     "levels": []
+    },
+    "women_share": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with v as (\n        select region, year, indicator_id, value\n        from read_parquet('data/opri_regional.parquet')\n        where indicator_id in ('ILLPOP.AG15T99', 'ILLPOP.AG15T99.F')\n          and region in ('SDG: Sub-Saharan Africa', 'SDG: Northern Africa and Western Asia', 'SDG: Central and Southern Asia', 'SDG: Eastern and South-Eastern Asia', 'SDG: Latin America and the Caribbean', 'SDG: Oceania', 'SDG: Europe and Northern America')\n    )\n    select replace(t.region, 'SDG: ', '') as region, t.year, round(t.value / 1e6, 1) as millions,\n           round(100 * f.value / t.value, 1) as women_share\n    from v t left join v f on f.region = t.region and f.year = t.year\n      and f.indicator_id = 'ILLPOP.AG15T99.F'\n    where t.indicator_id = 'ILLPOP.AG15T99'\n      and t.year = (select max(year) from v where indicator_id = 'ILLPOP.AG15T99')\n    order by millions desc\n\"\"\").df()\n",
+    "outputVariable": "out",
+    "source": [
+     "opri_regional"
+    ],
+    "trigger": {
+     "tableId": "opri_regional",
+     "resultTableId": "adult_illiteracy_by_region",
+     "chart": {
+      "id": "chart-trigger-adult_illiteracy_by_region",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "opri_regional",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "adult_illiteracy_by_region",
+    "rowCount": 5
+   },
+   "description": "Adults aged 15 and over who cannot read and write in each SDG region, latest year with a world estimate, with the share who are women. Source: UIS, November 2026 release; indicators ILLPOP.AG15T99, ILLPOP.AG15T99.F, ILLPOP.AG15T99.M.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794703600000_step_3",
+   "createdAt": 1794703607000
+  }
+ ],
+ "charts": [],
+ "conceptShelfItems": [],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794703600000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794703600000_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "How many adults can't read?",
+   "parentNodeId": "conversation-root:d6aee7b9-ff09-5b2e-9d94-cb45b249e48f",
+   "actionId": "exploreDataFromNL_1794703600000",
+   "createdAt": 1794703600000
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794703600000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794703600000_step_1",
+   "textKind": "explain",
+   "content": "First the world picture for adults who cannot read, women and men apart.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794703600000_prompt",
+   "actionId": "exploreDataFromNL_1794703600000",
+   "createdAt": 1794703601000,
+   "startedAt": 1794703600000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794703600000-1-1",
+     "kind": "tool",
+     "label": "Querying: opri_regional",
+     "status": "completed",
+     "tool": "create_data"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794703600000_step_2",
+   "displayId": "textTurn_exploreDataFromNL_1794703600000_step_2",
+   "textKind": "explain",
+   "content": "And country by country, for the map.",
+   "parentNodeId": "adult_illiteracy_by_sex",
+   "actionId": "exploreDataFromNL_1794703600000",
+   "createdAt": 1794703603000,
+   "startedAt": 1794703600000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794703600000-2-1",
+     "kind": "tool",
+     "label": "Querying: dem_national, opri_national",
+     "status": "completed",
+     "tool": "create_data"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794703600000-2-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "Map created: Where adults who cannot read live"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794703600000_step_3",
+   "displayId": "textTurn_exploreDataFromNL_1794703600000_step_3",
+   "textKind": "explain",
+   "content": "Breaking it down by region to see where it concentrates.",
+   "parentNodeId": "file-adults_who_cannot_read.map.json",
+   "actionId": "exploreDataFromNL_1794703600000",
+   "createdAt": 1794703606000,
+   "startedAt": 1794703600000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794703600000-3-1",
+     "kind": "tool",
+     "label": "Querying: opri_regional",
+     "status": "completed",
+     "tool": "create_data"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794703600000-3-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "App created: Adults who cannot read"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794703600000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794703600000_closing",
+   "textKind": "explain",
+   "content": "**In 2025, 732 million adults could not read and write a simple statement**, down from 806 million in 2000.\n\n- **63%** of them are women (461 million).\n- **Central and Southern Asia** has the most: 344 million, 47% of the world's total.\n\nThe dashboard shows the trend since 2000 by sex, and the SDG regions with an estimate for 2025; a map beside it shows the countries where they live. These are UIS estimates for adults aged 15 and over. Source: UIS, November 2026 release; indicators ILLPOP.AG15T99, ILLPOP.AG15T99.F, ILLPOP.AG15T99.M.",
+   "parentNodeId": "file-adult_illiteracy.app.jsx",
+   "actionId": "exploreDataFromNL_1794703600000",
+   "createdAt": 1794703609000,
+   "startedAt": 1794703600000,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "adult_illiteracy_by_sex",
+   "fields": {
+    "year": {
+     "semanticType": "Year",
+     "displayName": "Year",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Year"
+     }
+    },
+    "sex": {
+     "semanticType": "Category",
+     "displayName": "Sex",
+     "authored": {
+      "semanticType": "Category",
+      "displayName": "Sex"
+     }
+    },
+    "millions": {
+     "semanticType": "Number",
+     "displayName": "Adults who cannot read (millions)",
+     "authored": {
+      "semanticType": "Number",
+      "displayName": "Adults who cannot read (millions)"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "adult_illiteracy_by_region",
+   "fields": {
+    "region": {
+     "semanticType": "Category",
+     "displayName": "Region",
+     "authored": {
+      "semanticType": "Category",
+      "displayName": "Region"
+     }
+    },
+    "year": {
+     "semanticType": "Year",
+     "displayName": "Year",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Year"
+     }
+    },
+    "millions": {
+     "semanticType": "Number",
+     "displayName": "Adults who cannot read (millions)",
+     "authored": {
+      "semanticType": "Number",
+      "displayName": "Adults who cannot read (millions)"
+     }
+    },
+    "women_share": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Women among them",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Women among them"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "adults_who_cannot_read_by_country",
+   "fields": {
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "latest_year": {
+     "semanticType": "Year",
+     "displayName": "Latest year with data",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+     }
+    },
+    "adults": {
+     "semanticType": "Count",
+     "displayName": "Adults who cannot read",
+     "authored": {
+      "semanticType": "Count",
+      "displayName": "Adults who cannot read"
+     }
+    }
+   }
+  }
+ ],
+ "fileNodes": [
+  {
+   "kind": "file",
+   "id": "file-adults_who_cannot_read.map.json",
+   "path": "adults_who_cannot_read.map.json",
+   "displayName": "Where adults who cannot read live",
+   "contentHash": "1152ae6dc95958a74a95447a7b016873f0c996944bf1b037ae429d75f8d5ebba",
+   "parentNodeId": "adults_who_cannot_read_by_country",
+   "createdAt": 1794703605000
+  },
+  {
+   "kind": "file",
+   "id": "file-adult_illiteracy.app.jsx",
+   "path": "adult_illiteracy.app.jsx",
+   "displayName": "Adults who cannot read",
+   "contentHash": "af1f8c8ccd9df026b220feb91d21545d200c2fc74489b4fbc234d0dbc325028a",
+   "parentNodeId": "adult_illiteracy_by_region",
+   "createdAt": 1794703608000
+  }
+ ],
+ "focusedId": {
+  "type": "file",
+  "fileName": "adult_illiteracy.app.jsx"
+ },
+ "canvasTabs": [
+  {
+   "key": "file:adults_who_cannot_read.map.json",
+   "target": {
+    "type": "file",
+    "fileName": "adults_who_cannot_read.map.json"
+   },
+   "addedAt": 1794700000000,
+   "viewedAt": 1794700000000
+  },
+  {
+   "key": "file:adult_illiteracy.app.jsx",
+   "target": {
+    "type": "file",
+    "fileName": "adult_illiteracy.app.jsx"
+   },
+   "addedAt": 1794700000001,
+   "viewedAt": 1794700000001
+  }
+ ],
+ "canvasTabActive": "file:adult_illiteracy.app.jsx"
+}

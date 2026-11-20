@@ -1,0 +1,5772 @@
+{
+ "__stateVersion": 15,
+ "activeWorkspace": {
+  "id": "microsoft-at-neurips",
+  "displayName": "Microsoft at NeurIPS, and who it writes with"
+ },
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "microsoft_papers_2026",
+   "displayId": "NeurIPS 2026 papers with Microsoft authors",
+   "names": [
+    "paper_id",
+    "title",
+    "presentation",
+    "topic_area",
+    "city",
+    "day",
+    "starts",
+    "session",
+    "poster_position",
+    "microsoft_teams",
+    "url"
+   ],
+   "rows": [
+    {
+     "paper_id": "2026-149118",
+     "title": "MapPFN: Learning Causal Perturbation Maps in Context",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S1719",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/149118"
+    },
+    {
+     "paper_id": "2026-139228",
+     "title": "WordEval: Evaluating Word-Native Operation Fidelity in Document Editing",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S1911",
+     "microsoft_teams": "Microsoft; Microsoft Research Asia; Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/139228"
+    },
+    {
+     "paper_id": "2026-149985",
+     "title": "Group-Graph Policy Optimization for Long-Horizon Agentic Reinforcement Learning",
+     "presentation": "Poster",
+     "topic_area": "Reinforcement Learning",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S2410",
+     "microsoft_teams": "Microsoft; Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/149985"
+    },
+    {
+     "paper_id": "2026-152049",
+     "title": "SCOPE-RL: Stable and Quantitative Control of Policy Entropy in RL Post-Training",
+     "presentation": "Poster",
+     "topic_area": "Reinforcement Learning",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S2502",
+     "microsoft_teams": "Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/152049"
+    },
+    {
+     "paper_id": "2026-152104",
+     "title": "Reinforcement World Model Learning for LLM-based Agents",
+     "presentation": "Poster",
+     "topic_area": "Reinforcement Learning",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S2503",
+     "microsoft_teams": "Microsoft; Microsoft Research Redmond; Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/152104"
+    },
+    {
+     "paper_id": "2026-150085",
+     "title": "Thinking with Images as Continuous Policy: Numerical Visual Chain-of-Thought",
+     "presentation": "Oral",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S3110",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/150085"
+    },
+    {
+     "paper_id": "2026-150916",
+     "title": "Beyond Hard Negatives: Grounded Positive Supervision for Compositional CLIP",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S3119",
+     "microsoft_teams": "Microsoft Research India",
+     "url": "https://neurips.cc/virtual/2026/poster/150916"
+    },
+    {
+     "paper_id": "2026-148773",
+     "title": "ChartArena: A Unified Benchmark with Atomic-Primitive Reasoning for Chart Parsing",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S3302",
+     "microsoft_teams": "Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/148773"
+    },
+    {
+     "paper_id": "2026-151389",
+     "title": "Mechanism-Aware Ensemble Conditioning for Data-Limited Emulation of Extreme Events",
+     "presentation": "Oral",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S3512",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/151389"
+    },
+    {
+     "paper_id": "2026-154658",
+     "title": "CoQuant: Covariance-Aware Rotation for 2-bit KV Cache Quantization",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S3602",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/154658"
+    },
+    {
+     "paper_id": "2026-154313",
+     "title": "SSD: Shell-Guided Spherical Diffusion for Molecular Geometry Generation",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S3625",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/154313"
+    },
+    {
+     "paper_id": "2026-154289",
+     "title": "Test-time Scaling of Diffusions with Flow Maps",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S3626",
+     "microsoft_teams": "Microsoft Research New England",
+     "url": "https://neurips.cc/virtual/2026/poster/154289"
+    },
+    {
+     "paper_id": "2026-153131",
+     "title": "Total Variation Distance Estimation in Autoregressive Models",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S3721",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/153131"
+    },
+    {
+     "paper_id": "2026-153257",
+     "title": "Active Corpus Selection for Training Subgraph Retrievers Using OOD Queries",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S3809",
+     "microsoft_teams": "Microsoft; Microsoft Research India",
+     "url": "https://neurips.cc/virtual/2026/poster/153257"
+    },
+    {
+     "paper_id": "2026-139012",
+     "title": "Get a GRIP, this will be a long TRIP: A Quantifiable Long-Range Framework for Verifying Over-squashing",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S3814",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139012"
+    },
+    {
+     "paper_id": "2026-149471",
+     "title": "CodeScaler: Scaling Code LLM Training and Test-Time Inference via Reward Models",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S3905",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/149471"
+    },
+    {
+     "paper_id": "2026-150857",
+     "title": "Load Balancing Mixture of Experts with Similarity Preserving Routers",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S3906",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/150857"
+    },
+    {
+     "paper_id": "2026-151515",
+     "title": "GenZ: Hybrid statistical–foundational models for knowledge discovery from real-valued multidimensional targets",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S4105",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/151515"
+    },
+    {
+     "paper_id": "2026-151632",
+     "title": "Elicited Adaptation: Auditable Localized Fairness via Pairwise Queries",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S4108",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/151632"
+    },
+    {
+     "paper_id": "2026-152551",
+     "title": "HoloCode: A Code-Centric Multi-Agent Framework for Image-to-3D Scene Generation",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S4115",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/152551"
+    },
+    {
+     "paper_id": "2026-153917",
+     "title": "Reinforcing VLAs in Task-Agnostic World Models",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S4125",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/153917"
+    },
+    {
+     "paper_id": "2026-148898",
+     "title": "Understanding the Challenges in Iterative Generative Optimization with LLMs",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S4212",
+     "microsoft_teams": "Microsoft; Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/148898"
+    },
+    {
+     "paper_id": "2026-148357",
+     "title": "Embodied-R1.5: Evolving Physical Intelligence via Embodied Foundation Models",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 1",
+     "poster_position": "#S4219",
+     "microsoft_teams": "Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/148357"
+    },
+    {
+     "paper_id": "2026-151264",
+     "title": "SkillOpt: Executive Strategy for Self-Evolving Agent Skills",
+     "presentation": "Spotlight",
+     "topic_area": "General Machine Learning",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S1201",
+     "microsoft_teams": "Microsoft Cloud AI; Microsoft; Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/151264"
+    },
+    {
+     "paper_id": "2026-154653",
+     "title": "NGDB-Zoo: Towards Efficient and Scalable Neural Graph Databases Training",
+     "presentation": "Poster",
+     "topic_area": "Optimization",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S1517",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/154653"
+    },
+    {
+     "paper_id": "2026-140123",
+     "title": "Bigger Isn’t Better: Why the Indiscriminate Scaling of Foundation Models Can’t Solve Biology",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S1704",
+     "microsoft_teams": "Microsoft Research; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/140123"
+    },
+    {
+     "paper_id": "2026-155414",
+     "title": "M$^\\star$: Every Task Deserves Its Own Memory Harness",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S1815",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/155414"
+    },
+    {
+     "paper_id": "2026-155140",
+     "title": "EmpathyChat: Structured Cognitive Reasoning in Empathetic Spoken Dialogue",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S1819",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/155140"
+    },
+    {
+     "paper_id": "2026-149049",
+     "title": "Population-Aligned Persona Generation for LLM-based Social Simulation",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S1905",
+     "microsoft_teams": "Microsoft Research Asia; Microsoft; Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/149049"
+    },
+    {
+     "paper_id": "2026-152511",
+     "title": "ALAM: Algebraically Consistent Latent Transitions for Vision-Language-Action Models",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S2217",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/152511"
+    },
+    {
+     "paper_id": "2026-148917",
+     "title": "QUEST: Q-Learning for Uncertainty-Guided Efficient Search Teams",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S2317",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/148917"
+    },
+    {
+     "paper_id": "2026-154046",
+     "title": "From Raw Experience to Skill Consumption: A Systematic Study of Model-Generated Agent Skills",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S2416",
+     "microsoft_teams": "Microsoft Cloud AI; Microsoft Research Asia; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/154046"
+    },
+    {
+     "paper_id": "2026-155981",
+     "title": "Jump Start Your Policy Learning with Lessons from 145,000 Training Runs",
+     "presentation": "Poster",
+     "topic_area": "Reinforcement Learning",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S2520",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/155981"
+    },
+    {
+     "paper_id": "2026-150132",
+     "title": "When Does Interaction Help? Representational Tradeoffs in Value-Based Imitation Learning",
+     "presentation": "Poster",
+     "topic_area": "Reinforcement Learning",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S2800",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/150132"
+    },
+    {
+     "paper_id": "2026-149164",
+     "title": "HYDRA: Representation Harmonized Tokenization for Multimodal Generation and Understanding",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S2902",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/149164"
+    },
+    {
+     "paper_id": "2026-140079",
+     "title": "AI Evaluation Should Require Standardized Item-Level Data Releases",
+     "presentation": "Poster",
+     "topic_area": "Data-centric AI",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S315",
+     "microsoft_teams": "Microsoft; Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/140079"
+    },
+    {
+     "paper_id": "2026-139181",
+     "title": "fxBench: Evaluating and Understanding Formula Suggestions in Spreadsheets",
+     "presentation": "Poster",
+     "topic_area": "Data-centric AI",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S319",
+     "microsoft_teams": "Microsoft Research; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139181"
+    },
+    {
+     "paper_id": "2026-148179",
+     "title": "Pretext Reasoning: Scaling the Building Blocks of Interleaved Multimodal Reasoning",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S3307",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/148179"
+    },
+    {
+     "paper_id": "2026-150915",
+     "title": "The $1/\\mathcal{W}$ Law: Context Length is the Dominant Energy Lever in LLM Inference Fleets",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S3709",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/150915"
+    },
+    {
+     "paper_id": "2026-154546",
+     "title": "interwhen: A Generalizable Framework for Steering Reasoning Models with Test-time Verification",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S3723",
+     "microsoft_teams": "Microsoft Research India; Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/154546"
+    },
+    {
+     "paper_id": "2026-155169",
+     "title": "R-GRec: Relation-Guided Generative Recommendation via Collaborative Graph Supervision",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S4009",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/155169"
+    },
+    {
+     "paper_id": "2026-139084",
+     "title": "Safe, or Simply Incapable? Rethinking Safety Evaluation for Phone-Use Agents",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S503",
+     "microsoft_teams": "Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/139084"
+    },
+    {
+     "paper_id": "2026-154728",
+     "title": "MemContract: Contract-Sensitive Evaluation for Mutable Agent Memory",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S607",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/154728"
+    },
+    {
+     "paper_id": "2026-150307",
+     "title": "Training-free Spatially Grounded Geometric Shape Encoding",
+     "presentation": "Poster",
+     "topic_area": "Theory",
+     "city": "Sydney",
+     "day": "2026-12-08T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 2",
+     "poster_position": "#S810",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/150307"
+    },
+    {
+     "paper_id": "2026-149745",
+     "title": "Express Language Modeling",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Atlanta",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 1",
+     "poster_position": "#A220",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/149745"
+    },
+    {
+     "paper_id": "2026-155345",
+     "title": "Synthetic Web: Benchmarking Language Agents under Adversarial Search Ranking",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Atlanta",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 1",
+     "poster_position": "#A313",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/155345"
+    },
+    {
+     "paper_id": "2026-154287",
+     "title": "Data Auctions for Retrieval Augmented Generation",
+     "presentation": "Poster",
+     "topic_area": "Theory",
+     "city": "Atlanta",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 1",
+     "poster_position": "#A415",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/154287"
+    },
+    {
+     "paper_id": "2026-140061",
+     "title": "No One Knows the State-of-the-Art in Geospatial Foundation Models",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Atlanta",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 1",
+     "poster_position": "#A725",
+     "microsoft_teams": "Microsoft AI for Good; Microsoft AI for Good Research Lab",
+     "url": "https://neurips.cc/virtual/2026/poster/140061"
+    },
+    {
+     "paper_id": "2026-149323",
+     "title": "Exploring Advertising Manipulation in Diffusion Image Generation",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Atlanta",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 1",
+     "poster_position": "#A911",
+     "microsoft_teams": "Microsoft; Microsoft Research Redmond",
+     "url": "https://neurips.cc/virtual/2026/poster/149323"
+    },
+    {
+     "paper_id": "2026-155547",
+     "title": "COMPLLLM: Fine-tuning LLMs to Discover Complementary Signals for Decision-making",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Atlanta",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 1",
+     "poster_position": "#A926",
+     "microsoft_teams": "Microsoft Research New England",
+     "url": "https://neurips.cc/virtual/2026/poster/155547"
+    },
+    {
+     "paper_id": "2026-154657",
+     "title": "Test-Time Learning with an Evolving Library",
+     "presentation": "Poster",
+     "topic_area": "General Machine Learning",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 3",
+     "poster_position": "#S1100",
+     "microsoft_teams": "Microsoft Research; Microsoft; Microsoft Research Redmond",
+     "url": "https://neurips.cc/virtual/2026/poster/154657"
+    },
+    {
+     "paper_id": "2026-139445",
+     "title": "The FACTS Leaderboard: A Comprehensive Benchmark for Large Language Model Factuality",
+     "presentation": "Spotlight",
+     "topic_area": "General Machine Learning",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 3",
+     "poster_position": "#S1307",
+     "microsoft_teams": "Microsoft; Microsoft AI",
+     "url": "https://neurips.cc/virtual/2026/poster/139445"
+    },
+    {
+     "paper_id": "2026-139359",
+     "title": "OS-Omni: A Cross-Platform Benchmark for Generalist Computer-Using Agents",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 3",
+     "poster_position": "#S1920",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139359"
+    },
+    {
+     "paper_id": "2026-155666",
+     "title": "Diffusion-warm sampling of the XY model enables fast thermalization at scale",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 3",
+     "poster_position": "#S2021",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/155666"
+    },
+    {
+     "paper_id": "2026-139370",
+     "title": "RoutingBench: Can Agentic Routing Analysis Scale to Production Datacenter Networks?",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 3",
+     "poster_position": "#S2305",
+     "microsoft_teams": "Microsoft Azure Networking; Microsoft Research Asia; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139370"
+    },
+    {
+     "paper_id": "2026-154808",
+     "title": "Reinforce Adjoint Matching: Scaling RL Post-Training of Diffusion and Flow Models",
+     "presentation": "Poster",
+     "topic_area": "Reinforcement Learning",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 3",
+     "poster_position": "#S2514",
+     "microsoft_teams": "Microsoft Research New England",
+     "url": "https://neurips.cc/virtual/2026/poster/154808"
+    },
+    {
+     "paper_id": "2026-150128",
+     "title": "Practical Estimation of the Bayes Optimal Fairness-Accuracy Tradeoff with Soft Labels",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 3",
+     "poster_position": "#S310",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/150128"
+    },
+    {
+     "paper_id": "2026-138914",
+     "title": "Harbor Adapters and Harbor-Mix: Infrastructure and a Curated Meta-Dataset for Large-Scale Agentic Evaluation",
+     "presentation": "Poster",
+     "topic_area": "Data-centric AI",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 3",
+     "poster_position": "#S314",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/138914"
+    },
+    {
+     "paper_id": "2026-138951",
+     "title": "AgentLens: Revealing The Lucky Pass Problem in SWE-Agent Evaluation",
+     "presentation": "Poster",
+     "topic_area": "Data-centric AI",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 3",
+     "poster_position": "#S315",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/138951"
+    },
+    {
+     "paper_id": "2026-148925",
+     "title": "A Cross-Interaction Neural Architecture for Submodular Functions",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 3",
+     "poster_position": "#S3521",
+     "microsoft_teams": "Microsoft Research; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/148925"
+    },
+    {
+     "paper_id": "2026-152596",
+     "title": "Rethinking Knowledge Distillation for Diffusion Language Models",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 3",
+     "poster_position": "#S3611",
+     "microsoft_teams": "Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/152596"
+    },
+    {
+     "paper_id": "2026-152297",
+     "title": "MOSAIC: Scaling Long-Horizon Language Agents via Multi-Scale Adaptive Inference Control",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 3",
+     "poster_position": "#S3613",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/152297"
+    },
+    {
+     "paper_id": "2026-139434",
+     "title": "Medmarks: A Comprehensive Open-Source LLM Benchmark Suite for Medical Tasks",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 3",
+     "poster_position": "#S4225",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139434"
+    },
+    {
+     "paper_id": "2026-139132",
+     "title": "The PokeAgent Challenge: Competitive and Long-Context Learning at Scale",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 3",
+     "poster_position": "#S4325",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/139132"
+    },
+    {
+     "paper_id": "2026-139195",
+     "title": "CSBench: A Comprehensive Benchmark for Evaluating Project-Level System Construction in Computer Science",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 3",
+     "poster_position": "#S4326",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139195"
+    },
+    {
+     "paper_id": "2026-152273",
+     "title": "LiSA: Lifelong Safety Adaptation via Conservative Policy Induction",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 3",
+     "poster_position": "#S514",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/152273"
+    },
+    {
+     "paper_id": "2026-150177",
+     "title": "HARC: Coupling Harmfulness and Refusal Capabilities for Robust Safety Alignment",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Paris",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "12:30",
+     "session": "Paris Poster Session 1",
+     "poster_position": "#P217",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/150177"
+    },
+    {
+     "paper_id": "2026-149189",
+     "title": "Private Adaptive Covariance Estimation via Gaussian Graphical Models",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Atlanta",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 2",
+     "poster_position": "#A1000",
+     "microsoft_teams": "LinkedIn",
+     "url": "https://neurips.cc/virtual/2026/poster/149189"
+    },
+    {
+     "paper_id": "2026-151046",
+     "title": "Tracing Agentic Failure from the Flow of Success",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Atlanta",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 2",
+     "poster_position": "#A1006",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/151046"
+    },
+    {
+     "paper_id": "2026-139253",
+     "title": "RustMizan: A Compilable, Contamination-Aware Benchmarking Framework for Rust Vulnerabilities",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Atlanta",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 2",
+     "poster_position": "#A1014",
+     "microsoft_teams": "Microsoft; Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/139253"
+    },
+    {
+     "paper_id": "2026-153725",
+     "title": "GUI-Libra: Data-Efficient Post-Training for Reliable Reasoning-and-Acting in Native GUI Agents",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Atlanta",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 2",
+     "poster_position": "#A1022",
+     "microsoft_teams": "Microsoft Research; Microsoft Research Redmond; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/153725"
+    },
+    {
+     "paper_id": "2026-152943",
+     "title": "Multi-Turn RL Makes Small Language Model Competitive for Optimization Modeling",
+     "presentation": "Poster",
+     "topic_area": "Optimization",
+     "city": "Atlanta",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 2",
+     "poster_position": "#A301",
+     "microsoft_teams": "Microsoft Research; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/152943"
+    },
+    {
+     "paper_id": "2026-139096",
+     "title": "FrontierOR: Benchmarking LLMs' Capacity for Efficient Algorithm Design in Large-Scale Optimization",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Atlanta",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 2",
+     "poster_position": "#A302",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/139096"
+    },
+    {
+     "paper_id": "2026-148959",
+     "title": "Reject, Resample, Repeat: Understanding Parallel Reasoning in Language Model Inference",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Atlanta",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 2",
+     "poster_position": "#A323",
+     "microsoft_teams": "Microsoft Research; Microsoft Research New England; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/148959"
+    },
+    {
+     "paper_id": "2026-154397",
+     "title": "CoTrek: Toward Scalable On-Policy Distillation for Long Chain-of-Thought Reasoning",
+     "presentation": "Poster",
+     "topic_area": "Reinforcement Learning",
+     "city": "Atlanta",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 2",
+     "poster_position": "#A508",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/154397"
+    },
+    {
+     "paper_id": "2026-148217",
+     "title": "Learning Where and What to Restore for Composite Image Restoration",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Atlanta",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 2",
+     "poster_position": "#A709",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/148217"
+    },
+    {
+     "paper_id": "2026-149176",
+     "title": "Progress-Aware Distillation for Mitigating Stagnation in Small Language Model Agents",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Atlanta",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 2",
+     "poster_position": "#A816",
+     "microsoft_teams": "Microsoft CoreAI",
+     "url": "https://neurips.cc/virtual/2026/poster/149176"
+    },
+    {
+     "paper_id": "2026-138895",
+     "title": "JARVIS-Bench: Benchmarking Personal Intelligence Agents on Long-Horizon Real-User Daily Traces",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Atlanta",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 2",
+     "poster_position": "#A918",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/138895"
+    },
+    {
+     "paper_id": "2026-153034",
+     "title": "Jailbreak susceptibility prediction and mitigation via the behavioral geometry of models",
+     "presentation": "Poster",
+     "topic_area": "General Machine Learning",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S1013",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/153034"
+    },
+    {
+     "paper_id": "2026-149450",
+     "title": "PreDiff: Sequential Recommendation by Denoising Preference Distributions",
+     "presentation": "Poster",
+     "topic_area": "General Machine Learning",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S1217",
+     "microsoft_teams": "Microsoft; Microsoft Research Asia Vancouver",
+     "url": "https://neurips.cc/virtual/2026/poster/149450"
+    },
+    {
+     "paper_id": "2026-148345",
+     "title": "Intrinsic Muon: Spectral Optimization on Riemannian Matrix Manifolds",
+     "presentation": "Poster",
+     "topic_area": "Optimization",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S1310",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/148345"
+    },
+    {
+     "paper_id": "2026-149474",
+     "title": "DrugSAGE: Self-evolving Agent Experience for Efficient State-of-the-Art Drug Discovery",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S1617",
+     "microsoft_teams": "Microsoft Research New England",
+     "url": "https://neurips.cc/virtual/2026/poster/149474"
+    },
+    {
+     "paper_id": "2026-156143",
+     "title": "Vermeer: Autoregressive generative modeling of microscopy predicts protein localization",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S1726",
+     "microsoft_teams": "Microsoft Research; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/156143"
+    },
+    {
+     "paper_id": "2026-151256",
+     "title": "AutoSaddler: Automatic Harness Optimization with Durable Updates from Agent Execution Traces",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S1816",
+     "microsoft_teams": "Microsoft Research; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/151256"
+    },
+    {
+     "paper_id": "2026-139393",
+     "title": "Global PIQA: Evaluating Commonsense Reasoning Across 100+ Languages and Cultures",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S1915",
+     "microsoft_teams": "Microsoft; LinkedIn",
+     "url": "https://neurips.cc/virtual/2026/poster/139393"
+    },
+    {
+     "paper_id": "2026-150388",
+     "title": "From Patches to Trajectories: Privileged Process Supervision for Software-Engineering Agents",
+     "presentation": "Poster",
+     "topic_area": "Data-centric AI",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S217",
+     "microsoft_teams": "Microsoft Research Asia; Microsoft Research; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/150388"
+    },
+    {
+     "paper_id": "2026-139513",
+     "title": "Agent$^2$ RL-Bench: Can LLM Agents Engineer Agentic RL Post-Training?",
+     "presentation": "Poster",
+     "topic_area": "Reinforcement Learning",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S2614",
+     "microsoft_teams": "Microsoft; Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/139513"
+    },
+    {
+     "paper_id": "2026-154505",
+     "title": "Parallel Rollout Approximation for Pixel-Space Autoregressive Image Generation",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S2624",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/154505"
+    },
+    {
+     "paper_id": "2026-154437",
+     "title": "EvoDiagram: Agentic Editable Diagram Creation via Design Expertise Evolution",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S2626",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/154437"
+    },
+    {
+     "paper_id": "2026-153860",
+     "title": "Logit-Conditioned Diffusion Decoding for Frozen Discrete-Token VLMs",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S2725",
+     "microsoft_teams": "Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/153860"
+    },
+    {
+     "paper_id": "2026-156777",
+     "title": "DecompDreamer: A Composition-Aware Curriculum for Structured 3D Asset Generation",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S2817",
+     "microsoft_teams": "LinkedIn",
+     "url": "https://neurips.cc/virtual/2026/poster/156777"
+    },
+    {
+     "paper_id": "2026-154731",
+     "title": "Fine-Detail Monocular Geometry Estimation with Self-Guided Sparse Volumetric Refinement",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S2822",
+     "microsoft_teams": "Microsoft Research; Microsoft; Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/154731"
+    },
+    {
+     "paper_id": "2026-155350",
+     "title": "Bridging Compute- and Data-Optimal Pretraining",
+     "presentation": "Oral",
+     "topic_area": "Data-centric AI",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S308",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/155350"
+    },
+    {
+     "paper_id": "2026-138963",
+     "title": "TwinRouterBench: Fast Static and Live Dynamic Evaluation for Realistic Agentic LLM Routing",
+     "presentation": "Poster",
+     "topic_area": "Data-centric AI",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S311",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/138963"
+    },
+    {
+     "paper_id": "2026-151831",
+     "title": "CAIRN: Cross-Room 3D Scene Understanding with Topology-Aware Large Multimodal Models",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S3117",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/151831"
+    },
+    {
+     "paper_id": "2026-139062",
+     "title": "XL-DocBench: Benchmarking Evidence-Grounded Extra-Long Document Understanding",
+     "presentation": "Poster",
+     "topic_area": "Data-centric AI",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S314",
+     "microsoft_teams": "Microsoft Research Asia; Microsoft Cloud AI; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139062"
+    },
+    {
+     "paper_id": "2026-155158",
+     "title": "Enhancing Gaze Reasoning in Vision Foundation Models for Gaze Following",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S3323",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/155158"
+    },
+    {
+     "paper_id": "2026-155889",
+     "title": "SPECS: Faster Test-Time Scaling through Speculative Drafts and Dynamic Switching",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S3404",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/155889"
+    },
+    {
+     "paper_id": "2026-150346",
+     "title": "Trust Region Policy Distillation",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S3415",
+     "microsoft_teams": "Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/150346"
+    },
+    {
+     "paper_id": "2026-155307",
+     "title": "Latent-Lens: Visual Perception in Small Language Models Through Latent Communication",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S3825",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/155307"
+    },
+    {
+     "paper_id": "2026-152284",
+     "title": "Understanding Layer Patching in Model Size Interpolation",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S3923",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/152284"
+    },
+    {
+     "paper_id": "2026-151133",
+     "title": "Cascaded Sparse Autoencoders LearnMulti-Level Visual Concepts in Multimodal LLMs",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S410",
+     "microsoft_teams": "Microsoft AI; Microsoft Research; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/151133"
+    },
+    {
+     "paper_id": "2026-153567",
+     "title": "PRIME: A Modular Approach for Private Synthetic Data",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S503",
+     "microsoft_teams": "LinkedIn",
+     "url": "https://neurips.cc/virtual/2026/poster/153567"
+    },
+    {
+     "paper_id": "2026-139607",
+     "title": "GUIGuard-Bench:  Toward a General Evaluation for Privacy-Preserving GUI Agents",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S508",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/139607"
+    },
+    {
+     "paper_id": "2026-153268",
+     "title": "Dialectics of Alignment: Harnessing Unsafe Knowledge for Dynamic Safety Routing",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S516",
+     "microsoft_teams": "Microsoft; Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/153268"
+    },
+    {
+     "paper_id": "2026-149578",
+     "title": "Query-Limited Community Recovery in Stochastic Block Models",
+     "presentation": "Poster",
+     "topic_area": "Theory",
+     "city": "Sydney",
+     "day": "2026-12-09T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 4",
+     "poster_position": "#S916",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/149578"
+    },
+    {
+     "paper_id": "2026-139353",
+     "title": "SkillsBench: Benchmarking How Well Agent Skills Work Across Diverse Tasks",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 3",
+     "poster_position": "#A1113",
+     "microsoft_teams": "LinkedIn; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139353"
+    },
+    {
+     "paper_id": "2026-152335",
+     "title": "Synthetic Tasks for Training AutoResearch",
+     "presentation": "Poster",
+     "topic_area": "Data-centric AI",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 3",
+     "poster_position": "#A117",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/152335"
+    },
+    {
+     "paper_id": "2026-150064",
+     "title": "Relaxed On-Policy Distillation: Selective Credit Allocation for Scaling Reasoning Efficiently",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 3",
+     "poster_position": "#A226",
+     "microsoft_teams": "Microsoft AI; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/150064"
+    },
+    {
+     "paper_id": "2026-149398",
+     "title": "Generalizing Test-time Compute-optimal Scaling as an Optimizable Graph",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 3",
+     "poster_position": "#A326",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/149398"
+    },
+    {
+     "paper_id": "2026-153017",
+     "title": "SGD Provably Prioritizes a Shortcut Spurious Feature in the XOR Model",
+     "presentation": "Poster",
+     "topic_area": "Theory",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 3",
+     "poster_position": "#A420",
+     "microsoft_teams": "Microsoft AI",
+     "url": "https://neurips.cc/virtual/2026/poster/153017"
+    },
+    {
+     "paper_id": "2026-155698",
+     "title": "Firefly: Illuminating Verified Real-world Tool Call Data Generation",
+     "presentation": "Poster",
+     "topic_area": "Reinforcement Learning",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 3",
+     "poster_position": "#A506",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/155698"
+    },
+    {
+     "paper_id": "2026-148969",
+     "title": "Stepwise Penalization for Length-Efficient Chain-of-Thought Reasoning",
+     "presentation": "Poster",
+     "topic_area": "Reinforcement Learning",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 3",
+     "poster_position": "#A513",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/148969"
+    },
+    {
+     "paper_id": "2026-139106",
+     "title": "Measuring and Mitigating the Distributional Gap Between Real and Simulated User Behaviors",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 3",
+     "poster_position": "#A817",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139106"
+    },
+    {
+     "paper_id": "2026-149268",
+     "title": "DEFT: Disentanglement-Enhanced Fine-Tuning for EEG Foundation Models",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 3",
+     "poster_position": "#A825",
+     "microsoft_teams": "Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/149268"
+    },
+    {
+     "paper_id": "2026-153329",
+     "title": "Cost Efficient Fairness Audit Under Partial Feedback",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 3",
+     "poster_position": "#A910",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/153329"
+    },
+    {
+     "paper_id": "2026-153992",
+     "title": "Conditional Evaluation of Language Models with Cheap Auxiliary Signals",
+     "presentation": "Poster",
+     "topic_area": "Data-centric AI",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S100",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/153992"
+    },
+    {
+     "paper_id": "2026-155772",
+     "title": "Next-Latent Prediction Transformers Learn Compact World Models",
+     "presentation": "Poster",
+     "topic_area": "General Machine Learning",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S1010",
+     "microsoft_teams": "Microsoft Research; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/155772"
+    },
+    {
+     "paper_id": "2026-154983",
+     "title": "LOFT: Low-Rank Orthogonal Fine-Tuning via Task-Aware Support Selection",
+     "presentation": "Poster",
+     "topic_area": "Optimization",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S1412",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/154983"
+    },
+    {
+     "paper_id": "2026-139503",
+     "title": "MorphoHELM: A Comprehensive Benchmark for Evaluating Representations for Microscopy-Based Morphology Assays",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S1612",
+     "microsoft_teams": "Microsoft; Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/139503"
+    },
+    {
+     "paper_id": "2026-152111",
+     "title": "STARE: Surprisal-Guided Token-Level Advantage Reweighting for Policy Entropy Stability",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S1814",
+     "microsoft_teams": "Microsoft Research Asia; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/152111"
+    },
+    {
+     "paper_id": "2026-148850",
+     "title": "SkillGen: Verified Inference-Time Agent Skill Synthesis",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S1825",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/148850"
+    },
+    {
+     "paper_id": "2026-148605",
+     "title": "DocAtlas: Long-Document Understanding as Mutable-State Interaction",
+     "presentation": "Poster",
+     "topic_area": "Data-centric AI",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S211",
+     "microsoft_teams": "Microsoft Research Asia; Microsoft; Microsoft Cloud AI",
+     "url": "https://neurips.cc/virtual/2026/poster/148605"
+    },
+    {
+     "paper_id": "2026-139327",
+     "title": "The Missing Corpus: Infinite Ground Truth for File-Grounded LLM Evaluation",
+     "presentation": "Poster",
+     "topic_area": "Data-centric AI",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S217",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139327"
+    },
+    {
+     "paper_id": "2026-149334",
+     "title": "DeformGen: Dynamics-Based Topology Augmentation for Deformable Manipulation Policy Learning",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S2204",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/149334"
+    },
+    {
+     "paper_id": "2026-150935",
+     "title": "STAR-Math: Multi-Agent Mathematical Reasoning under Persistent Meta-Strategic Supervision",
+     "presentation": "Spotlight",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S2311",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/150935"
+    },
+    {
+     "paper_id": "2026-153521",
+     "title": "RL Excursions during Pre-training: How early is too early for on-policy learning?",
+     "presentation": "Poster",
+     "topic_area": "Reinforcement Learning",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S2408",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/153521"
+    },
+    {
+     "paper_id": "2026-155498",
+     "title": "GeoMemory: Geometry-Indexed Memory for Long-Horizon Interactive Video Generation",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S2501",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/155498"
+    },
+    {
+     "paper_id": "2026-155778",
+     "title": "GramStatTexNet: Efficient, Interpretable, and Neuro-Inspired Texture Analysis-by-Synthesis",
+     "presentation": "Spotlight",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S2502",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/155778"
+    },
+    {
+     "paper_id": "2026-152704",
+     "title": "Rethinking Vector Field Learning for Generative Segmentation",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S2617",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/152704"
+    },
+    {
+     "paper_id": "2026-150145",
+     "title": "Diffusion Models without Classifier-free Guidance",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S2717",
+     "microsoft_teams": "Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/150145"
+    },
+    {
+     "paper_id": "2026-154858",
+     "title": "What MLLMs Learn about When they Learn about Multimodal Reasoning",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S2916",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/154858"
+    },
+    {
+     "paper_id": "2026-149266",
+     "title": "The Surprising Effectiveness of Video Diffusion Models for Hand Motion Reconstruction",
+     "presentation": "Spotlight",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S2926",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/149266"
+    },
+    {
+     "paper_id": "2026-151754",
+     "title": "LensVLM: Selective Context Expansion for Compressed Visual Representation of Text",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S3009",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/151754"
+    },
+    {
+     "paper_id": "2026-154318",
+     "title": "Agentic-imodels: Evolving agentic interpretability tools via autoresearch",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S302",
+     "microsoft_teams": "Microsoft; Microsoft Research; Microsoft Research Redmond",
+     "url": "https://neurips.cc/virtual/2026/poster/154318"
+    },
+    {
+     "paper_id": "2026-151198",
+     "title": "Skill-Level Effects in Behavioral Cloning: When Low-Skill Data Improves Performance",
+     "presentation": "Poster",
+     "topic_area": "Data-centric AI",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S316",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/151198"
+    },
+    {
+     "paper_id": "2026-148753",
+     "title": "TreemapMix: Dirichlet-Controlled Multi-Image Augmentation for Probability and Ordinal Supervision",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S3218",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/148753"
+    },
+    {
+     "paper_id": "2026-139313",
+     "title": "CIPHERGRID Benchmark: From Multimodal Rule Inference to Sequential Action",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S3223",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139313"
+    },
+    {
+     "paper_id": "2026-149792",
+     "title": "Memory Grafting: Scaling Language Model Pre-training via Offline Conditional Memory",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S3412",
+     "microsoft_teams": "Microsoft; Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/149792"
+    },
+    {
+     "paper_id": "2026-149161",
+     "title": "Spectrally Decomposed Equivariant Graph Neural Networks for Interatomic Potentials",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S3623",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/149161"
+    },
+    {
+     "paper_id": "2026-155422",
+     "title": "CMI-Trans: Cross Modal Inconsistency-aware Transport for HSI-LiDAR Classification",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S3823",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/155422"
+    },
+    {
+     "paper_id": "2026-151196",
+     "title": "TaskGround: Structured Executable Task Inference for Full-Scene Household Reasoning",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S4003",
+     "microsoft_teams": "Microsoft; Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/151196"
+    },
+    {
+     "paper_id": "2026-139045",
+     "title": "AI Construct Lexis: An Ontology of the Hidden Assumptions in AI Evaluation",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S4114",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/139045"
+    },
+    {
+     "paper_id": "2026-139776",
+     "title": "XL-SafetyBench: A Country-Grounded Cross-Cultural Benchmark for LLM Safety and Cultural Sensitivity",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S4120",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139776"
+    },
+    {
+     "paper_id": "2026-151262",
+     "title": "An Efficient Geometric Characterization of Robust Fair Learning",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S611",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/151262"
+    },
+    {
+     "paper_id": "2026-153410",
+     "title": "Why Latent Actions Fail, and How to Prevent It",
+     "presentation": "Poster",
+     "topic_area": "Theory",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "10:00",
+     "session": "Sydney Poster Session 5",
+     "poster_position": "#S915",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/153410"
+    },
+    {
+     "paper_id": "2026-148810",
+     "title": "Is Text All You Need? Text as a Universal Information Bottleneck for Speech LLMs",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Paris",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "12:30",
+     "session": "Paris Poster Session 3",
+     "poster_position": "#P182",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/148810"
+    },
+    {
+     "paper_id": "2026-152696",
+     "title": "Securing AI Agents with Information-Flow Control",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Paris",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "12:30",
+     "session": "Paris Poster Session 3",
+     "poster_position": "#P219",
+     "microsoft_teams": "Microsoft; Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/152696"
+    },
+    {
+     "paper_id": "2026-149022",
+     "title": "To trust or not to trust: Attention-based Trust Management for LLM Multi-Agent Systems",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 4",
+     "poster_position": "#A1008",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/149022"
+    },
+    {
+     "paper_id": "2026-149891",
+     "title": "The Invisible Hand of Physics: When Video Diffusion Models Know More Than They Show",
+     "presentation": "Spotlight",
+     "topic_area": "General Machine Learning",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 4",
+     "poster_position": "#A101",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/149891"
+    },
+    {
+     "paper_id": "2026-154932",
+     "title": "ECHO: Terminal Agents Learn World Models for Free",
+     "presentation": "Spotlight",
+     "topic_area": null,
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 4",
+     "poster_position": "#A1029",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/154932"
+    },
+    {
+     "paper_id": "2026-150686",
+     "title": "Free energy Estimation on Any State Space",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 4",
+     "poster_position": "#A1116",
+     "microsoft_teams": "Microsoft Research New England",
+     "url": "https://neurips.cc/virtual/2026/poster/150686"
+    },
+    {
+     "paper_id": "2026-151581",
+     "title": "Query Lower Bounds for Diffusion Sampling",
+     "presentation": "Oral",
+     "topic_area": "Deep Learning",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 4",
+     "poster_position": "#A315",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/151581"
+    },
+    {
+     "paper_id": "2026-154159",
+     "title": "Consumer Search and Social Learning in Agentic Markets",
+     "presentation": "Poster",
+     "topic_area": "Theory",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 4",
+     "poster_position": "#A423",
+     "microsoft_teams": "Microsoft Research; Microsoft Research New York; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/154159"
+    },
+    {
+     "paper_id": "2026-155449",
+     "title": "Clustering with Weak Distance Oracles",
+     "presentation": "Poster",
+     "topic_area": "Theory",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 4",
+     "poster_position": "#A426",
+     "microsoft_teams": "Microsoft Research India",
+     "url": "https://neurips.cc/virtual/2026/poster/155449"
+    },
+    {
+     "paper_id": "2026-152925",
+     "title": "ScreenSearch: Uncertainty-Aware OS Exploration",
+     "presentation": "Poster",
+     "topic_area": "Reinforcement Learning",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 4",
+     "poster_position": "#A605",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/152925"
+    },
+    {
+     "paper_id": "2026-151597",
+     "title": "OpenWebRL: Demystifying Online Multi-turn Reinforcement Learning for Visual Web Agents",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 4",
+     "poster_position": "#A721",
+     "microsoft_teams": "Microsoft Research; Microsoft Research Redmond; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/151597"
+    },
+    {
+     "paper_id": "2026-151672",
+     "title": "RepoLaunch: Automating Build and Management of Code Repositories across Languages and Platforms",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 4",
+     "poster_position": "#A817",
+     "microsoft_teams": "Microsoft; Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/151672"
+    },
+    {
+     "paper_id": "2026-139134",
+     "title": "GroupMemBench: Benchmarking LLM Agent Memory in Multi-Party Conversations",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 4",
+     "poster_position": "#A826",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139134"
+    },
+    {
+     "paper_id": "2026-139424",
+     "title": "VerifyThisBench: Joint Evaluation of Code, Specifications, and Proof",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Atlanta",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 4",
+     "poster_position": "#A917",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139424"
+    },
+    {
+     "paper_id": "2026-153258",
+     "title": "A2Eval: Agentic and Automated Evaluation for Embodied Brain",
+     "presentation": "Poster",
+     "topic_area": "Data-centric AI",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 6",
+     "poster_position": "#S100",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/153258"
+    },
+    {
+     "paper_id": "2026-154778",
+     "title": "Breaking the Exactness Barrier: Interleaved DeepSeek Sparse Attention for Efficient Long Context Reasoning",
+     "presentation": "Poster",
+     "topic_area": "Optimization",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 6",
+     "poster_position": "#S1314",
+     "microsoft_teams": "Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/154778"
+    },
+    {
+     "paper_id": "2026-150275",
+     "title": "DPIAgent: Divide, Protocol, Isolate for Agentic Reproduction Test Generation",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 6",
+     "poster_position": "#S1411",
+     "microsoft_teams": "Microsoft; Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/150275"
+    },
+    {
+     "paper_id": "2026-154372",
+     "title": "GeneZip: Region-Aware Compression for Long Context DNA Modeling",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 6",
+     "poster_position": "#S1510",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/154372"
+    },
+    {
+     "paper_id": "2026-156790",
+     "title": "Rethinking Reward Models for Multi-Domain Test-Time Scaling",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 6",
+     "poster_position": "#S1612",
+     "microsoft_teams": "Microsoft Research; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/156790"
+    },
+    {
+     "paper_id": "2026-153135",
+     "title": "DialectLLM: A Dialect-Aware Dialog[ue] Generation Framework Beyond Standard American English",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 6",
+     "poster_position": "#S1619",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/153135"
+    },
+    {
+     "paper_id": "2026-152531",
+     "title": "Unified Noise Steering for Efficient Human-Guided VLA Adaptation",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 6",
+     "poster_position": "#S1904",
+     "microsoft_teams": "Microsoft Research; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/152531"
+    },
+    {
+     "paper_id": "2026-154636",
+     "title": "SLOPE: Optimistic Potential Landscape Shaping for Model-based Reinforcement Learning",
+     "presentation": "Poster",
+     "topic_area": "Reinforcement Learning",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 6",
+     "poster_position": "#S2102",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/154636"
+    },
+    {
+     "paper_id": "2026-149224",
+     "title": "Knowing When to Ask: Segment-Level Credit Assignment for LLM Tool Use",
+     "presentation": "Spotlight",
+     "topic_area": "Reinforcement Learning",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 6",
+     "poster_position": "#S2302",
+     "microsoft_teams": "Microsoft; Microsoft AI",
+     "url": "https://neurips.cc/virtual/2026/poster/149224"
+    },
+    {
+     "paper_id": "2026-149769",
+     "title": "CAPO: A Primal-Dual Framework for Constraint-Aware Prompt Optimization",
+     "presentation": "Poster",
+     "topic_area": "Reinforcement Learning",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 6",
+     "poster_position": "#S2303",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/149769"
+    },
+    {
+     "paper_id": "2026-154759",
+     "title": "StableAvatar: Ultra-Long Audio-Driven Avatar Video Generation",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 6",
+     "poster_position": "#S2404",
+     "microsoft_teams": "Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/154759"
+    },
+    {
+     "paper_id": "2026-148720",
+     "title": "Working with AI: Measuring the Applicability of Generative AI to Occupations",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 6",
+     "poster_position": "#S319",
+     "microsoft_teams": "Microsoft; Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/148720"
+    },
+    {
+     "paper_id": "2026-139524",
+     "title": "TALES: Text-Adventure Learning Environment Suite",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 6",
+     "poster_position": "#S3205",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/139524"
+    },
+    {
+     "paper_id": "2026-154763",
+     "title": "The Era of Agentic Organization: Learning to Organize with Language Models",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 6",
+     "poster_position": "#S3418",
+     "microsoft_teams": "Microsoft Research Asia; Microsoft; Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/154763"
+    },
+    {
+     "paper_id": "2026-138976",
+     "title": "GenAI Evaluation Results are Largely Artifacts of Evaluation Design Choices: Evidence from Audit Studies of Resume Screening",
+     "presentation": "Oral",
+     "topic_area": "Social Aspects",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 6",
+     "poster_position": "#S517",
+     "microsoft_teams": "Microsoft; Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/138976"
+    },
+    {
+     "paper_id": "2026-152525",
+     "title": "Calibration without Ground Truth",
+     "presentation": "Spotlight",
+     "topic_area": "Theory",
+     "city": "Sydney",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "17:00",
+     "session": "Sydney Poster Session 6",
+     "poster_position": "#S707",
+     "microsoft_teams": "Microsoft Research New England",
+     "url": "https://neurips.cc/virtual/2026/poster/152525"
+    },
+    {
+     "paper_id": "2026-152600",
+     "title": "CoPE-VideoLM: Leveraging Codec Primitives For Efficient Video Language Modelling",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Paris",
+     "day": "2026-12-10T00:00:00.000",
+     "starts": "17:30",
+     "session": "Paris Poster Session 4",
+     "poster_position": "#P270",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/152600"
+    },
+    {
+     "paper_id": "2026-154943",
+     "title": "When Does Subspace Direction Matter for LoRA? Regime Analysis of the Magnitude Principle in Few-Shot Adaptation",
+     "presentation": "Poster",
+     "topic_area": "General Machine Learning",
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 5",
+     "poster_position": "#A107",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/154943"
+    },
+    {
+     "paper_id": "2026-139178",
+     "title": "VeruSAGE-Bench: A Benchmark Suite for Rust System Verification",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 5",
+     "poster_position": "#A1123",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/139178"
+    },
+    {
+     "paper_id": "2026-154464",
+     "title": "Language-Conditioned World Modeling for Visual Navigation",
+     "presentation": "Oral",
+     "topic_area": "Computer Vision",
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 5",
+     "poster_position": "#A620",
+     "microsoft_teams": "Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/154464"
+    },
+    {
+     "paper_id": "2026-153418",
+     "title": "Video Models Can Reason with Verifiable Rewards",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 5",
+     "poster_position": "#A621",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/153418"
+    },
+    {
+     "paper_id": "2026-151623",
+     "title": "Swift Sampling: Selecting Temporal Surprises via Taylor Series",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 5",
+     "poster_position": "#A623",
+     "microsoft_teams": "Microsoft; Microsoft Research India",
+     "url": "https://neurips.cc/virtual/2026/poster/151623"
+    },
+    {
+     "paper_id": "2026-139508",
+     "title": "AdShot: Benchmarking Multimodal Large Language Models for Video Advertisement Clipping",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 5",
+     "poster_position": "#A726",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139508"
+    },
+    {
+     "paper_id": "2026-152099",
+     "title": "Language Model Goal Selection Differs from Humans' in a Self-Directed Learning Task",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 5",
+     "poster_position": "#A812",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/152099"
+    },
+    {
+     "paper_id": "2026-148477",
+     "title": "Statistical Estimation of Adversarial Risk in Large Language Models under Best-of-N Sampling",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "10:00",
+     "session": "Atlanta Poster Session 5",
+     "poster_position": "#A901",
+     "microsoft_teams": "Microsoft Research; Microsoft; Microsoft Research Redmond",
+     "url": "https://neurips.cc/virtual/2026/poster/148477"
+    },
+    {
+     "paper_id": "2026-139090",
+     "title": "ProgramBench: Can Language Models Rebuild Programs From Scratch?",
+     "presentation": "Poster",
+     "topic_area": "Data-centric AI",
+     "city": "Paris",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "11:30",
+     "session": "Paris Poster Session 5",
+     "poster_position": "#P104",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139090"
+    },
+    {
+     "paper_id": "2026-150732",
+     "title": "Coherence Mechanisms for Provable Self-Improvement",
+     "presentation": "Poster",
+     "topic_area": "Theory",
+     "city": "Paris",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "11:30",
+     "session": "Paris Poster Session 5",
+     "poster_position": "#P115",
+     "microsoft_teams": "Microsoft Research New England",
+     "url": "https://neurips.cc/virtual/2026/poster/150732"
+    },
+    {
+     "paper_id": "2026-152179",
+     "title": "Mining Logic under Uncertainty: Probabilistic Soft Logic with Energy-Based Inference for Chain-of-Thought Verification",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Paris",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "11:30",
+     "session": "Paris Poster Session 5",
+     "poster_position": "#P217",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/152179"
+    },
+    {
+     "paper_id": "2026-140112",
+     "title": "Looking Under the Streetlight: Evaluation in Generative Molecular Dynamics",
+     "presentation": "Poster",
+     "topic_area": "Applications",
+     "city": "Paris",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "14:30",
+     "session": "Paris Poster Session 6",
+     "poster_position": "#P161",
+     "microsoft_teams": "Microsoft Research AI for Science",
+     "url": "https://neurips.cc/virtual/2026/poster/140112"
+    },
+    {
+     "paper_id": "2026-140100",
+     "title": "AI Agents Push Humans Out of the Loop",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 6",
+     "poster_position": "#A1007",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/140100"
+    },
+    {
+     "paper_id": "2026-139770",
+     "title": "ContractBench: Can LLM Agents Preserve Observation Contracts?",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 6",
+     "poster_position": "#A1008",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139770"
+    },
+    {
+     "paper_id": "2026-139517",
+     "title": "Agents' Last Exam",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 6",
+     "poster_position": "#A1010",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139517"
+    },
+    {
+     "paper_id": "2026-139068",
+     "title": "A Process-Level Evaluation of LLM Discovery Agents",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 6",
+     "poster_position": "#A1013",
+     "microsoft_teams": "Microsoft Research; Microsoft Research New England; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139068"
+    },
+    {
+     "paper_id": "2026-139723",
+     "title": "Automated Hypothesis Discovery for Characterizing Annotation Disagreement",
+     "presentation": "Poster",
+     "topic_area": "Data-centric AI",
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 6",
+     "poster_position": "#A122",
+     "microsoft_teams": "Microsoft Research; Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139723"
+    },
+    {
+     "paper_id": "2026-153919",
+     "title": "OATS: Online Data Augmentation for Time Series Foundation Models",
+     "presentation": "Poster",
+     "topic_area": "Data-centric AI",
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 6",
+     "poster_position": "#A127",
+     "microsoft_teams": "Microsoft; Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/153919"
+    },
+    {
+     "paper_id": "2026-151695",
+     "title": "Rethinking Language Model Scaling under Transferable Hypersphere Optimization",
+     "presentation": "Poster",
+     "topic_area": "Deep Learning",
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 6",
+     "poster_position": "#A212",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/151695"
+    },
+    {
+     "paper_id": "2026-151555",
+     "title": "HybridCache: Enhancing Prefix Caching for Linear–Softmax Language Models",
+     "presentation": "Poster",
+     "topic_area": "Optimization",
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 6",
+     "poster_position": "#A407",
+     "microsoft_teams": "Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/151555"
+    },
+    {
+     "paper_id": "2026-139395",
+     "title": "SOL-ExecBench: Speed-of-Light Benchmarking for Real-World GPU Kernels Against Hardware Limits",
+     "presentation": "Poster",
+     "topic_area": "Optimization",
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 6",
+     "poster_position": "#A409",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/139395"
+    },
+    {
+     "paper_id": "2026-148505",
+     "title": "Predictive 4D Generation with Latent State Machines",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 6",
+     "poster_position": "#A507",
+     "microsoft_teams": "Microsoft; Microsoft Research Asia",
+     "url": "https://neurips.cc/virtual/2026/poster/148505"
+    },
+    {
+     "paper_id": "2026-153141",
+     "title": "PolyMind: Exploring Width Scaling for Reflective Reasoning in Language Agents",
+     "presentation": "Poster",
+     "topic_area": "Reinforcement Learning",
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 6",
+     "poster_position": "#A519",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/153141"
+    },
+    {
+     "paper_id": "2026-155728",
+     "title": "LogT: Logically Think with Images for Visual Search",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 6",
+     "poster_position": "#A602",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/155728"
+    },
+    {
+     "paper_id": "2026-155661",
+     "title": "ReToken: One Token to Improve Vision–Language Models for Visual Retrieval",
+     "presentation": "Poster",
+     "topic_area": "Computer Vision",
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 6",
+     "poster_position": "#A603",
+     "microsoft_teams": "Microsoft Research Redmond",
+     "url": "https://neurips.cc/virtual/2026/poster/155661"
+    },
+    {
+     "paper_id": "2026-155074",
+     "title": "Interpreting Neural Combinatorial Optimization via Evolving Programmatic Bottlenecks",
+     "presentation": "Poster",
+     "topic_area": "Social Aspects",
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 6",
+     "poster_position": "#A803",
+     "microsoft_teams": "Microsoft Research",
+     "url": "https://neurips.cc/virtual/2026/poster/155074"
+    },
+    {
+     "paper_id": "2026-149426",
+     "title": "Truthful Calibration Errors for Multi-Class Prediction",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 6",
+     "poster_position": "#A900",
+     "microsoft_teams": "Microsoft Research New England",
+     "url": "https://neurips.cc/virtual/2026/poster/149426"
+    },
+    {
+     "paper_id": "2026-153720",
+     "title": "Runtime Monitoring of Perception-Based Autonomous Systems via Embedding Temporal Logic",
+     "presentation": "Poster",
+     "topic_area": null,
+     "city": "Atlanta",
+     "day": "2026-12-11T00:00:00.000",
+     "starts": "16:30",
+     "session": "Atlanta Poster Session 6",
+     "poster_position": "#A921",
+     "microsoft_teams": "Microsoft",
+     "url": "https://neurips.cc/virtual/2026/poster/153720"
+    }
+   ],
+   "metadata": {
+    "paper_id": {
+     "type": "string",
+     "levels": []
+    },
+    "title": {
+     "type": "string",
+     "levels": []
+    },
+    "presentation": {
+     "type": "string",
+     "levels": []
+    },
+    "topic_area": {
+     "type": "string",
+     "levels": []
+    },
+    "city": {
+     "type": "string",
+     "levels": []
+    },
+    "day": {
+     "type": "string",
+     "levels": []
+    },
+    "starts": {
+     "type": "string",
+     "levels": []
+    },
+    "session": {
+     "type": "string",
+     "levels": []
+    },
+    "poster_position": {
+     "type": "string",
+     "levels": []
+    },
+    "microsoft_teams": {
+     "type": "string",
+     "levels": []
+    },
+    "url": {
+     "type": "string",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with microsoft as (\n    select distinct institution, organization\n    from read_parquet('data/institution_orgs.parquet')\n    where lower(coalesce(parent, '') || ' ' || organization) like '%microsoft%'\n       or lower(coalesce(parent, organization)) in ('github', 'linkedin')\n),\n                     teams as (\n                         select a.paper_id, string_agg(distinct m.organization, '; ') as microsoft_teams\n                         from read_parquet('data/authorships_2026.parquet') a join microsoft m using (institution)\n                         group by a.paper_id\n                     )\n                     select p.paper_id, p.title, p.presentation, p.topic_area, p.city, p.day,\n                            strftime(p.start_local, '%H:%M') as starts, p.session, p.poster_position,\n                            t.microsoft_teams, p.url\n                     from read_parquet('data/papers_2026.parquet') p join teams t using (paper_id)\n                     order by p.day, starts, p.city, p.poster_position\n\"\"\").df()\n",
+    "outputVariable": "out",
+    "source": [
+     "authorships_2026",
+     "institution_orgs",
+     "papers_2026"
+    ],
+    "trigger": {
+     "tableId": "authorships_2026",
+     "resultTableId": "microsoft_papers_2026",
+     "chart": {
+      "id": "chart-trigger-microsoft_papers_2026",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "authorships_2026",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "microsoft_papers_2026",
+    "rowCount": 205
+   },
+   "description": "NeurIPS 2026 papers with at least one author at Microsoft (an institution an AI model read as Microsoft or one of its labs or companies, such as GitHub and LinkedIn), with the Microsoft teams named and where and when each poster is shown (local time). Source: neurips.cc, NeurIPS 2026 schedule (November 2026).",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794707200000_step_1",
+   "createdAt": 1794707202000
+  },
+  {
+   "kind": "table",
+   "id": "microsoft_by_year",
+   "displayId": "NeurIPS papers with Microsoft authors by year",
+   "names": [
+    "year",
+    "papers",
+    "share"
+   ],
+   "rows": [
+    {
+     "year": 1995,
+     "papers": 1,
+     "share": 0.8
+    },
+    {
+     "year": 1996,
+     "papers": 0,
+     "share": 0.0
+    },
+    {
+     "year": 1997,
+     "papers": 2,
+     "share": 1.5
+    },
+    {
+     "year": 1998,
+     "papers": 4,
+     "share": 3.1
+    },
+    {
+     "year": 1999,
+     "papers": 5,
+     "share": 4.0
+    },
+    {
+     "year": 2000,
+     "papers": 5,
+     "share": 3.9
+    },
+    {
+     "year": 2001,
+     "papers": 3,
+     "share": 3.1
+    },
+    {
+     "year": 2002,
+     "papers": 6,
+     "share": 3.5
+    },
+    {
+     "year": 2003,
+     "papers": 4,
+     "share": 2.5
+    },
+    {
+     "year": 2004,
+     "papers": 4,
+     "share": 2.4
+    },
+    {
+     "year": 2005,
+     "papers": 1,
+     "share": 0.6
+    },
+    {
+     "year": 2007,
+     "papers": 5,
+     "share": 3.1
+    },
+    {
+     "year": 2008,
+     "papers": 6,
+     "share": 3.2
+    },
+    {
+     "year": 2009,
+     "papers": 11,
+     "share": 5.2
+    },
+    {
+     "year": 2010,
+     "papers": 10,
+     "share": 4.4
+    },
+    {
+     "year": 2011,
+     "papers": 13,
+     "share": 5.6
+    },
+    {
+     "year": 2012,
+     "papers": 13,
+     "share": 4.7
+    },
+    {
+     "year": 2013,
+     "papers": 11,
+     "share": 4.2
+    },
+    {
+     "year": 2014,
+     "papers": 10,
+     "share": 3.9
+    },
+    {
+     "year": 2015,
+     "papers": 15,
+     "share": 6.1
+    },
+    {
+     "year": 2016,
+     "papers": 15,
+     "share": 4.2
+    },
+    {
+     "year": 2017,
+     "papers": 33,
+     "share": 7.1
+    },
+    {
+     "year": 2018,
+     "papers": 36,
+     "share": 6.4
+    },
+    {
+     "year": 2019,
+     "papers": 40,
+     "share": 5.5
+    },
+    {
+     "year": 2020,
+     "papers": 110,
+     "share": 5.8
+    },
+    {
+     "year": 2021,
+     "papers": 125,
+     "share": 5.4
+    },
+    {
+     "year": 2022,
+     "papers": 111,
+     "share": 3.8
+    },
+    {
+     "year": 2023,
+     "papers": 133,
+     "share": 3.7
+    },
+    {
+     "year": 2024,
+     "papers": 151,
+     "share": 3.3
+    },
+    {
+     "year": 2025,
+     "papers": 167,
+     "share": 2.9
+    },
+    {
+     "year": 2026,
+     "papers": 205,
+     "share": 2.3
+    }
+   ],
+   "metadata": {
+    "year": {
+     "type": "integer",
+     "levels": []
+    },
+    "papers": {
+     "type": "integer",
+     "levels": []
+    },
+    "share": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with microsoft as (\n    select distinct institution, organization\n    from read_parquet('data/institution_orgs.parquet')\n    where lower(coalesce(parent, '') || ' ' || organization) like '%microsoft%'\n       or lower(coalesce(parent, organization)) in ('github', 'linkedin')\n),\n            known as (\n                select year, count(distinct paper_id) as known\n                from read_parquet('data/authorships.parquet')\n                where institution is not null group by year\n            ),\n            ms as (\n                select year, count(distinct paper_id) as papers\n                from read_parquet('data/authorships.parquet')\n                where institution in (select institution from microsoft) group by year\n            )\n            select year, coalesce(ms.papers, 0) as papers,\n                   round(100.0 * coalesce(ms.papers, 0) / k.known, 1) as share\n            from known k left join ms using (year)\n            where year >= 1995 and year != 2006\n            order by year\n\"\"\").df()\n",
+    "outputVariable": "out",
+    "source": [
+     "authorships",
+     "institution_orgs"
+    ],
+    "trigger": {
+     "tableId": "authorships",
+     "resultTableId": "microsoft_by_year",
+     "chart": {
+      "id": "chart-trigger-microsoft_by_year",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "authorships",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "microsoft_by_year",
+    "rowCount": 31
+   },
+   "description": "NeurIPS papers per year since 1995 with at least one author at Microsoft (as an AI model read the institutions), and their share of the year's papers with known affiliations (98% of papers from 2020, 50–85% before; 2006 left out). Source: NeurIPS proceedings and neurips.cc; affiliations from neurips.cc (2020 on) and OpenAlex.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794707200000_step_2",
+   "createdAt": 1794707204000
+  },
+  {
+   "kind": "table",
+   "id": "top_microsoft_partners",
+   "displayId": "15 organizations that write the most NeurIPS papers with Microsoft",
+   "names": [
+    "organization",
+    "kind",
+    "country",
+    "papers",
+    "lat",
+    "lng"
+   ],
+   "rows": [
+    {
+     "organization": "Google",
+     "kind": "Company",
+     "country": "US",
+     "papers": 104,
+     "lat": 37.38605,
+     "lng": -122.08385
+    },
+    {
+     "organization": "Tsinghua University",
+     "kind": "University",
+     "country": "China",
+     "papers": 104,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "Peking University",
+     "kind": "University",
+     "country": "China",
+     "papers": 75,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "Stanford University",
+     "kind": "University",
+     "country": "US",
+     "papers": 74,
+     "lat": 37.42411,
+     "lng": -122.16608
+    },
+    {
+     "organization": "Carnegie Mellon University",
+     "kind": "University",
+     "country": "US",
+     "papers": 72,
+     "lat": 40.44062,
+     "lng": -79.99589
+    },
+    {
+     "organization": "MIT",
+     "kind": "University",
+     "country": "US",
+     "papers": 67,
+     "lat": 42.3751,
+     "lng": -71.10561
+    },
+    {
+     "organization": "University of Science and Technology of China",
+     "kind": "University",
+     "country": "China",
+     "papers": 61,
+     "lat": 31.86389,
+     "lng": 117.28083
+    },
+    {
+     "organization": "University of Illinois Urbana-Champaign",
+     "kind": "University",
+     "country": "US",
+     "papers": 53,
+     "lat": 40.11059,
+     "lng": -88.20727
+    },
+    {
+     "organization": "UC Berkeley",
+     "kind": "University",
+     "country": "US",
+     "papers": 52,
+     "lat": 37.87159,
+     "lng": -122.27275
+    },
+    {
+     "organization": "University of Washington",
+     "kind": "University",
+     "country": "US",
+     "papers": 52,
+     "lat": 47.60621,
+     "lng": -122.33207
+    },
+    {
+     "organization": "Chinese Academy of Sciences",
+     "kind": "Research institute or other",
+     "country": "China",
+     "papers": 50,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "Cornell University",
+     "kind": "University",
+     "country": "US",
+     "papers": 42,
+     "lat": 42.44063,
+     "lng": -76.49661
+    },
+    {
+     "organization": "Chinese University of Hong Kong",
+     "kind": "University",
+     "country": "Hong Kong",
+     "papers": 40,
+     "lat": 22.27832,
+     "lng": 114.17469
+    },
+    {
+     "organization": "University of Texas at Austin",
+     "kind": "University",
+     "country": "US",
+     "papers": 39,
+     "lat": 30.26715,
+     "lng": -97.74306
+    },
+    {
+     "organization": "Amazon",
+     "kind": "Company",
+     "country": "US",
+     "papers": 37,
+     "lat": 47.60621,
+     "lng": -122.33207
+    }
+   ],
+   "metadata": {
+    "organization": {
+     "type": "string",
+     "levels": []
+    },
+    "kind": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "papers": {
+     "type": "integer",
+     "levels": []
+    },
+    "lat": {
+     "type": "number",
+     "levels": []
+    },
+    "lng": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with microsoft as (\n        select distinct institution, organization\n        from read_parquet('data/institution_orgs.parquet')\n        where lower(coalesce(parent, '') || ' ' || organization) like '%microsoft%'\n           or lower(coalesce(parent, organization)) in ('github', 'linkedin')\n    ),\n        groups as (\n    select distinct a.paper_id, case regexp_replace(case when o.parent is not null and (o.kind <> 'university' or contains(o.organization, o.parent))\n             then replace(o.parent, 'Alphabet', 'Google') else o.organization end, '^The ', '') when 'Massachusetts Institute of Technology' then 'MIT' when 'Korea Advanced Institute of Science and Technology' then 'KAIST' when 'Mila' then 'Mila – Quebec AI Institute' when 'Mila - Quebec AI Institute' then 'Mila – Quebec AI Institute' when 'École Polytechnique Fédérale de Lausanne' then 'EPFL' else regexp_replace(case when o.parent is not null and (o.kind <> 'university' or contains(o.organization, o.parent))\n             then replace(o.parent, 'Alphabet', 'Google') else o.organization end, '^The ', '') end as organization, o.kind, o.country_code\n    from read_parquet('data/authorships.parquet') a\n    join read_parquet('data/institution_orgs.parquet') o using (institution)\n    where o.kind not in ('independent', 'other') and a.year >= 2020 and a.paper_id in (select paper_id from read_parquet('data/authorships.parquet') where institution in (select institution from microsoft))\n      and a.institution not in (select institution from microsoft)\n),\norganizations as (\n    select g.organization,\n           case mode(g.kind) when 'company' then 'Company' when 'university' then 'University'\n                else 'Research institute or other' end as kind,\n           mode(g.country_code) as country_code, count(distinct g.paper_id) as papers\n    from groups g group by g.organization\n),\nplaces as (\n    -- Where ROR places the organization's strings in its own country (not a subsidiary or lab abroad)\n    select og.organization, arg_max(i.ror_lat, i.authorships) as lat, arg_max(i.ror_lng, i.authorships) as lng\n    from read_parquet('data/institution_orgs.parquet') o\n    join read_parquet('data/institutions.parquet') i using (institution)\n    join organizations og on og.organization = case regexp_replace(case when o.parent is not null and (o.kind <> 'university' or contains(o.organization, o.parent))\n             then replace(o.parent, 'Alphabet', 'Google') else o.organization end, '^The ', '') when 'Massachusetts Institute of Technology' then 'MIT' when 'Korea Advanced Institute of Science and Technology' then 'KAIST' when 'Mila' then 'Mila – Quebec AI Institute' when 'Mila - Quebec AI Institute' then 'Mila – Quebec AI Institute' when 'École Polytechnique Fédérale de Lausanne' then 'EPFL' else regexp_replace(case when o.parent is not null and (o.kind <> 'university' or contains(o.organization, o.parent))\n             then replace(o.parent, 'Alphabet', 'Google') else o.organization end, '^The ', '') end\n    where o.org_index = 1 and i.ror_lat is not null and i.ror_country_code = og.country_code\n    group by og.organization\n)\nselect o.organization, o.kind, c.country, o.papers, p.lat, p.lng\nfrom organizations o left join places p using (organization)\nleft join read_parquet('data/countries.parquet') c using (country_code)\n\norder by o.papers desc, o.organization\nlimit 15\n\"\"\").df()\n",
+    "outputVariable": "out",
+    "source": [
+     "authorships",
+     "countries",
+     "institution_orgs",
+     "institutions"
+    ],
+    "trigger": {
+     "tableId": "authorships",
+     "resultTableId": "top_microsoft_partners",
+     "chart": {
+      "id": "chart-trigger-top_microsoft_partners",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "authorships",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "top_microsoft_partners",
+    "rowCount": 15
+   },
+   "description": "Organizations whose authors wrote NeurIPS papers with Microsoft authors, 2020–2026: papers together, the organization's kind and country, and where ROR places it. Organizations as an AI model read the institution strings. Source: NeurIPS proceedings and neurips.cc; affiliations from neurips.cc (2020 on) and OpenAlex; ROR.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794707500000_step_1",
+   "createdAt": 1794707209000
+  },
+  {
+   "kind": "table",
+   "id": "microsoft_partner_places",
+   "displayId": "Organizations that write NeurIPS papers with Microsoft, on a map",
+   "names": [
+    "organization",
+    "kind",
+    "country",
+    "papers",
+    "lat",
+    "lng"
+   ],
+   "rows": [
+    {
+     "organization": "Google",
+     "kind": "Company",
+     "country": "US",
+     "papers": 104,
+     "lat": 37.38605,
+     "lng": -122.08385
+    },
+    {
+     "organization": "Tsinghua University",
+     "kind": "University",
+     "country": "China",
+     "papers": 104,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "Peking University",
+     "kind": "University",
+     "country": "China",
+     "papers": 75,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "Stanford University",
+     "kind": "University",
+     "country": "US",
+     "papers": 74,
+     "lat": 37.42411,
+     "lng": -122.16608
+    },
+    {
+     "organization": "Carnegie Mellon University",
+     "kind": "University",
+     "country": "US",
+     "papers": 72,
+     "lat": 40.44062,
+     "lng": -79.99589
+    },
+    {
+     "organization": "MIT",
+     "kind": "University",
+     "country": "US",
+     "papers": 67,
+     "lat": 42.3751,
+     "lng": -71.10561
+    },
+    {
+     "organization": "University of Science and Technology of China",
+     "kind": "University",
+     "country": "China",
+     "papers": 61,
+     "lat": 31.86389,
+     "lng": 117.28083
+    },
+    {
+     "organization": "University of Illinois Urbana-Champaign",
+     "kind": "University",
+     "country": "US",
+     "papers": 53,
+     "lat": 40.11059,
+     "lng": -88.20727
+    },
+    {
+     "organization": "UC Berkeley",
+     "kind": "University",
+     "country": "US",
+     "papers": 52,
+     "lat": 37.87159,
+     "lng": -122.27275
+    },
+    {
+     "organization": "University of Washington",
+     "kind": "University",
+     "country": "US",
+     "papers": 52,
+     "lat": 47.60621,
+     "lng": -122.33207
+    },
+    {
+     "organization": "Chinese Academy of Sciences",
+     "kind": "Research institute or other",
+     "country": "China",
+     "papers": 50,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "Cornell University",
+     "kind": "University",
+     "country": "US",
+     "papers": 42,
+     "lat": 42.44063,
+     "lng": -76.49661
+    },
+    {
+     "organization": "Chinese University of Hong Kong",
+     "kind": "University",
+     "country": "Hong Kong",
+     "papers": 40,
+     "lat": 22.27832,
+     "lng": 114.17469
+    },
+    {
+     "organization": "University of Texas at Austin",
+     "kind": "University",
+     "country": "US",
+     "papers": 39,
+     "lat": 30.26715,
+     "lng": -97.74306
+    },
+    {
+     "organization": "Amazon",
+     "kind": "Company",
+     "country": "US",
+     "papers": 37,
+     "lat": 47.60621,
+     "lng": -122.33207
+    },
+    {
+     "organization": "Shanghai Jiao Tong University",
+     "kind": "University",
+     "country": "China",
+     "papers": 37,
+     "lat": 31.22222,
+     "lng": 121.45806
+    },
+    {
+     "organization": "Princeton University",
+     "kind": "University",
+     "country": "US",
+     "papers": 35,
+     "lat": 40.34872,
+     "lng": -74.65905
+    },
+    {
+     "organization": "Meta",
+     "kind": "Company",
+     "country": "US",
+     "papers": 33,
+     "lat": 37.45383,
+     "lng": -122.18219
+    },
+    {
+     "organization": "Hong Kong University of Science and Technology",
+     "kind": "University",
+     "country": "Hong Kong",
+     "papers": 32,
+     "lat": 22.27832,
+     "lng": 114.17469
+    },
+    {
+     "organization": "Harvard University",
+     "kind": "University",
+     "country": "US",
+     "papers": 31,
+     "lat": 42.3751,
+     "lng": -71.10561
+    },
+    {
+     "organization": "National University of Singapore",
+     "kind": "University",
+     "country": "Singapore",
+     "papers": 29,
+     "lat": 1.28967,
+     "lng": 103.85007
+    },
+    {
+     "organization": "University of Oxford",
+     "kind": "University",
+     "country": "UK",
+     "papers": 29,
+     "lat": 51.75222,
+     "lng": -1.25596
+    },
+    {
+     "organization": "Fudan University",
+     "kind": "University",
+     "country": "China",
+     "papers": 28,
+     "lat": 31.22222,
+     "lng": 121.45806
+    },
+    {
+     "organization": "Mila – Quebec AI Institute",
+     "kind": "Research institute or other",
+     "country": "Canada",
+     "papers": 28,
+     "lat": 45.50884,
+     "lng": -73.58781
+    },
+    {
+     "organization": "Georgia Institute of Technology",
+     "kind": "University",
+     "country": "US",
+     "papers": 27,
+     "lat": 33.749,
+     "lng": -84.38798
+    },
+    {
+     "organization": "University of Cambridge",
+     "kind": "University",
+     "country": "UK",
+     "papers": 27,
+     "lat": 52.2,
+     "lng": 0.11667
+    },
+    {
+     "organization": "UC San Diego",
+     "kind": "University",
+     "country": "US",
+     "papers": 26,
+     "lat": 32.71571,
+     "lng": -117.16472
+    },
+    {
+     "organization": "ByteDance",
+     "kind": "Company",
+     "country": "China",
+     "papers": 23,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "New York University",
+     "kind": "University",
+     "country": "US",
+     "papers": 23,
+     "lat": 40.71427,
+     "lng": -74.00597
+    },
+    {
+     "organization": "NVIDIA",
+     "kind": "Company",
+     "country": "US",
+     "papers": 21,
+     "lat": 42.35843,
+     "lng": -71.05977
+    },
+    {
+     "organization": "Xi'an Jiaotong University",
+     "kind": "University",
+     "country": "China",
+     "papers": 21,
+     "lat": 34.25833,
+     "lng": 108.92861
+    },
+    {
+     "organization": "Zhejiang University",
+     "kind": "University",
+     "country": "China",
+     "papers": 20,
+     "lat": 30.29365,
+     "lng": 120.16142
+    },
+    {
+     "organization": "McGill University",
+     "kind": "University",
+     "country": "Canada",
+     "papers": 19,
+     "lat": 45.50884,
+     "lng": -73.58781
+    },
+    {
+     "organization": "University of Hong Kong",
+     "kind": "University",
+     "country": "Hong Kong",
+     "papers": 19,
+     "lat": 22.26861,
+     "lng": 114.12924
+    },
+    {
+     "organization": "Johns Hopkins University",
+     "kind": "University",
+     "country": "US",
+     "papers": 18,
+     "lat": 39.29038,
+     "lng": -76.61219
+    },
+    {
+     "organization": "Nanjing University",
+     "kind": "University",
+     "country": "China",
+     "papers": 17,
+     "lat": 32.06167,
+     "lng": 118.77778
+    },
+    {
+     "organization": "Nanyang Technological University",
+     "kind": "University",
+     "country": "Singapore",
+     "papers": 17,
+     "lat": 1.28967,
+     "lng": 103.85007
+    },
+    {
+     "organization": "Tencent",
+     "kind": "Company",
+     "country": "China",
+     "papers": 17,
+     "lat": 22.54554,
+     "lng": 114.0683
+    },
+    {
+     "organization": "University of Toronto",
+     "kind": "University",
+     "country": "Canada",
+     "papers": 17,
+     "lat": 43.70643,
+     "lng": -79.39864
+    },
+    {
+     "organization": "University of Southern California",
+     "kind": "University",
+     "country": "US",
+     "papers": 16,
+     "lat": 34.05223,
+     "lng": -118.24368
+    },
+    {
+     "organization": "University of Wisconsin–Madison",
+     "kind": "University",
+     "country": "US",
+     "papers": 16,
+     "lat": 43.07305,
+     "lng": -89.40123
+    },
+    {
+     "organization": "Boston University",
+     "kind": "University",
+     "country": "US",
+     "papers": 15,
+     "lat": 42.35843,
+     "lng": -71.05977
+    },
+    {
+     "organization": "UCLA",
+     "kind": "University",
+     "country": "US",
+     "papers": 15,
+     "lat": 34.05223,
+     "lng": -118.24368
+    },
+    {
+     "organization": "University College London",
+     "kind": "University",
+     "country": "UK",
+     "papers": 15,
+     "lat": 51.50853,
+     "lng": -0.12574
+    },
+    {
+     "organization": "EPFL",
+     "kind": "University",
+     "country": "Switzerland",
+     "papers": 14,
+     "lat": 46.516,
+     "lng": 6.63282
+    },
+    {
+     "organization": "KAIST",
+     "kind": "University",
+     "country": "South Korea",
+     "papers": 14,
+     "lat": 36.34913,
+     "lng": 127.38493
+    },
+    {
+     "organization": "University of Edinburgh",
+     "kind": "University",
+     "country": "UK",
+     "papers": 14,
+     "lat": 55.95206,
+     "lng": -3.19648
+    },
+    {
+     "organization": "California Institute of Technology",
+     "kind": "University",
+     "country": "US",
+     "papers": 13,
+     "lat": 34.14778,
+     "lng": -118.14452
+    },
+    {
+     "organization": "ETH Zurich",
+     "kind": "University",
+     "country": "Switzerland",
+     "papers": 13,
+     "lat": 47.36667,
+     "lng": 8.55
+    },
+    {
+     "organization": "Technion – Israel Institute of Technology",
+     "kind": "University",
+     "country": "Israel",
+     "papers": 13,
+     "lat": 32.81303,
+     "lng": 34.99928
+    },
+    {
+     "organization": "University of Maryland, College Park",
+     "kind": "University",
+     "country": "US",
+     "papers": 13,
+     "lat": 38.98067,
+     "lng": -76.93692
+    },
+    {
+     "organization": "University of Massachusetts",
+     "kind": "University",
+     "country": "US",
+     "papers": 13,
+     "lat": 42.37537,
+     "lng": -72.51925
+    },
+    {
+     "organization": "University of Michigan",
+     "kind": "University",
+     "country": "US",
+     "papers": 13,
+     "lat": 42.27756,
+     "lng": -83.74088
+    },
+    {
+     "organization": "University of Tokyo",
+     "kind": "University",
+     "country": "Japan",
+     "papers": 13,
+     "lat": 35.6895,
+     "lng": 139.69171
+    },
+    {
+     "organization": "Beijing Institute of Technology",
+     "kind": "University",
+     "country": "China",
+     "papers": 12,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "Max Planck Society",
+     "kind": "Research institute or other",
+     "country": "Germany",
+     "papers": 12,
+     "lat": 48.78232,
+     "lng": 9.17702
+    },
+    {
+     "organization": "Renmin University of China",
+     "kind": "University",
+     "country": "China",
+     "papers": 12,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "South China University of Technology",
+     "kind": "University",
+     "country": "China",
+     "papers": 12,
+     "lat": 23.11667,
+     "lng": 113.25
+    },
+    {
+     "organization": "Sun Yat-sen University",
+     "kind": "University",
+     "country": "China",
+     "papers": 12,
+     "lat": 23.11667,
+     "lng": 113.25
+    },
+    {
+     "organization": "University of Montreal",
+     "kind": "University",
+     "country": "Canada",
+     "papers": 12,
+     "lat": 45.50884,
+     "lng": -73.58781
+    },
+    {
+     "organization": "University of Pennsylvania",
+     "kind": "University",
+     "country": "US",
+     "papers": 12,
+     "lat": 39.95238,
+     "lng": -75.16362
+    },
+    {
+     "organization": "Columbia University",
+     "kind": "University",
+     "country": "US",
+     "papers": 11,
+     "lat": 40.71427,
+     "lng": -74.00597
+    },
+    {
+     "organization": "Harbin Institute of Technology",
+     "kind": "University",
+     "country": "China",
+     "papers": 11,
+     "lat": 45.75,
+     "lng": 126.65
+    },
+    {
+     "organization": "Imperial College London",
+     "kind": "University",
+     "country": "UK",
+     "papers": 11,
+     "lat": 51.50853,
+     "lng": -0.12574
+    },
+    {
+     "organization": "UC Santa Barbara",
+     "kind": "University",
+     "country": "US",
+     "papers": 11,
+     "lat": 34.42083,
+     "lng": -119.69819
+    },
+    {
+     "organization": "Apple",
+     "kind": "Company",
+     "country": "US",
+     "papers": 10,
+     "lat": 37.323,
+     "lng": -122.03218
+    },
+    {
+     "organization": "RIKEN",
+     "kind": "Research institute or other",
+     "country": "Japan",
+     "papers": 10,
+     "lat": 35.78944,
+     "lng": 139.62333
+    },
+    {
+     "organization": "University of Amsterdam",
+     "kind": "University",
+     "country": "Netherlands",
+     "papers": 10,
+     "lat": 52.37403,
+     "lng": 4.88969
+    },
+    {
+     "organization": "University of Waterloo",
+     "kind": "University",
+     "country": "Canada",
+     "papers": 10,
+     "lat": 43.4668,
+     "lng": -80.51639
+    },
+    {
+     "organization": "Alibaba Group",
+     "kind": "Company",
+     "country": "China",
+     "papers": 9,
+     "lat": 30.29365,
+     "lng": 120.16142
+    },
+    {
+     "organization": "Arizona State University",
+     "kind": "University",
+     "country": "US",
+     "papers": 9,
+     "lat": 33.41477,
+     "lng": -111.90931
+    },
+    {
+     "organization": "Duke University",
+     "kind": "University",
+     "country": "US",
+     "papers": 9,
+     "lat": 35.99403,
+     "lng": -78.89862
+    },
+    {
+     "organization": "Indian Institute of Technology Bombay",
+     "kind": "University",
+     "country": "India",
+     "papers": 9,
+     "lat": 19.07283,
+     "lng": 72.88261
+    },
+    {
+     "organization": "Inria",
+     "kind": "Research institute or other",
+     "country": "France",
+     "papers": 9,
+     "lat": 43.63292,
+     "lng": 6.99911
+    },
+    {
+     "organization": "Pennsylvania State University",
+     "kind": "University",
+     "country": "US",
+     "papers": 9,
+     "lat": 40.79339,
+     "lng": -77.86
+    },
+    {
+     "organization": "University of Alberta",
+     "kind": "University",
+     "country": "Canada",
+     "papers": 9,
+     "lat": 53.55014,
+     "lng": -113.46871
+    },
+    {
+     "organization": "University of Chicago",
+     "kind": "University",
+     "country": "US",
+     "papers": 9,
+     "lat": 41.85003,
+     "lng": -87.65005
+    },
+    {
+     "organization": "Université de Montréal",
+     "kind": "University",
+     "country": "Canada",
+     "papers": 9,
+     "lat": 45.50884,
+     "lng": -73.58781
+    },
+    {
+     "organization": "Vector Institute",
+     "kind": "Research institute or other",
+     "country": "Canada",
+     "papers": 9,
+     "lat": 44.64269,
+     "lng": -63.57688
+    },
+    {
+     "organization": "Seoul National University",
+     "kind": "University",
+     "country": "South Korea",
+     "papers": 8,
+     "lat": 37.566,
+     "lng": 126.9784
+    },
+    {
+     "organization": "Shanghai Artificial Intelligence Laboratory",
+     "kind": "Research institute or other",
+     "country": "China",
+     "papers": 8,
+     "lat": 31.22222,
+     "lng": 121.45806
+    },
+    {
+     "organization": "Technical University of Munich",
+     "kind": "University",
+     "country": "Germany",
+     "papers": 8,
+     "lat": 48.13743,
+     "lng": 11.57549
+    },
+    {
+     "organization": "Tongji University",
+     "kind": "University",
+     "country": "China",
+     "papers": 8,
+     "lat": 31.22222,
+     "lng": 121.45806
+    },
+    {
+     "organization": "University of Virginia",
+     "kind": "University",
+     "country": "US",
+     "papers": 8,
+     "lat": 38.02931,
+     "lng": -78.47668
+    },
+    {
+     "organization": "Baidu",
+     "kind": "Company",
+     "country": "China",
+     "papers": 7,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "Beihang University",
+     "kind": "University",
+     "country": "China",
+     "papers": 7,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "Central South University",
+     "kind": "University",
+     "country": "China",
+     "papers": 7,
+     "lat": 28.19874,
+     "lng": 112.97087
+    },
+    {
+     "organization": "City University of Hong Kong",
+     "kind": "University",
+     "country": "Hong Kong",
+     "papers": 7,
+     "lat": 22.27832,
+     "lng": 114.17469
+    },
+    {
+     "organization": "Huazhong University of Science and Technology",
+     "kind": "University",
+     "country": "China",
+     "papers": 7,
+     "lat": 30.58333,
+     "lng": 114.26667
+    },
+    {
+     "organization": "Mohamed bin Zayed University of Artificial Intelligence",
+     "kind": "University",
+     "country": "UAE",
+     "papers": 7,
+     "lat": 24.45118,
+     "lng": 54.39696
+    },
+    {
+     "organization": "Rice University",
+     "kind": "University",
+     "country": "US",
+     "papers": 7,
+     "lat": 29.76328,
+     "lng": -95.36327
+    },
+    {
+     "organization": "Stony Brook University",
+     "kind": "University",
+     "country": "US",
+     "papers": 7,
+     "lat": 40.92565,
+     "lng": -73.14094
+    },
+    {
+     "organization": "Thinking Machines Lab",
+     "kind": "Company",
+     "country": "US",
+     "papers": 7,
+     "lat": 37.42411,
+     "lng": -122.16608
+    },
+    {
+     "organization": "University of North Carolina",
+     "kind": "University",
+     "country": "US",
+     "papers": 7,
+     "lat": 35.9132,
+     "lng": -79.05584
+    },
+    {
+     "organization": "University of Sydney",
+     "kind": "University",
+     "country": "Australia",
+     "papers": 7,
+     "lat": -33.86785,
+     "lng": 151.20732
+    },
+    {
+     "organization": "Westlake University",
+     "kind": "University",
+     "country": "China",
+     "papers": 7,
+     "lat": 30.29365,
+     "lng": 120.16142
+    },
+    {
+     "organization": "Allen Institute for Artificial Intelligence",
+     "kind": "Research institute or other",
+     "country": "US",
+     "papers": 6,
+     "lat": 47.60621,
+     "lng": -122.33207
+    },
+    {
+     "organization": "Beijing University of Posts and Telecommunications",
+     "kind": "University",
+     "country": "China",
+     "papers": 6,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "Dartmouth College",
+     "kind": "University",
+     "country": "US",
+     "papers": 6,
+     "lat": 43.70229,
+     "lng": -72.28954
+    },
+    {
+     "organization": "Michigan State University",
+     "kind": "University",
+     "country": "US",
+     "papers": 6,
+     "lat": 42.73698,
+     "lng": -84.48387
+    },
+    {
+     "organization": "National Taiwan University",
+     "kind": "University",
+     "country": "Taiwan",
+     "papers": 6,
+     "lat": 25.05306,
+     "lng": 121.52639
+    },
+    {
+     "organization": "OpenAI",
+     "kind": "Company",
+     "country": "US",
+     "papers": 6,
+     "lat": 37.77493,
+     "lng": -122.41942
+    },
+    {
+     "organization": "Oracle",
+     "kind": "Company",
+     "country": "US",
+     "papers": 6,
+     "lat": 39.95238,
+     "lng": -75.16362
+    },
+    {
+     "organization": "Queen Mary University of London",
+     "kind": "University",
+     "country": "UK",
+     "papers": 6,
+     "lat": 51.50853,
+     "lng": -0.12574
+    },
+    {
+     "organization": "Samsung",
+     "kind": "Company",
+     "country": "UK",
+     "papers": 6,
+     "lat": 51.75222,
+     "lng": -1.25596
+    },
+    {
+     "organization": "Texas A&M University",
+     "kind": "University",
+     "country": "US",
+     "papers": 6,
+     "lat": 30.62798,
+     "lng": -96.33441
+    },
+    {
+     "organization": "Toyota Technological Institute at Chicago",
+     "kind": "Research institute or other",
+     "country": "US",
+     "papers": 6,
+     "lat": 41.85003,
+     "lng": -87.65005
+    },
+    {
+     "organization": "UC Davis",
+     "kind": "University",
+     "country": "US",
+     "papers": 6,
+     "lat": 38.54491,
+     "lng": -121.74052
+    },
+    {
+     "organization": "University of London",
+     "kind": "University",
+     "country": "UK",
+     "papers": 6,
+     "lat": 51.43158,
+     "lng": -0.55239
+    },
+    {
+     "organization": "University of Minnesota",
+     "kind": "University",
+     "country": "US",
+     "papers": 6,
+     "lat": 44.97997,
+     "lng": -93.26384
+    },
+    {
+     "organization": "Yale University",
+     "kind": "University",
+     "country": "US",
+     "papers": 6,
+     "lat": 41.30815,
+     "lng": -72.92816
+    },
+    {
+     "organization": "Adobe",
+     "kind": "Company",
+     "country": "US",
+     "papers": 5,
+     "lat": 33.41477,
+     "lng": -111.90931
+    },
+    {
+     "organization": "Australian National University",
+     "kind": "University",
+     "country": "Australia",
+     "papers": 5,
+     "lat": -35.28346,
+     "lng": 149.12807
+    },
+    {
+     "organization": "Brown University",
+     "kind": "University",
+     "country": "US",
+     "papers": 5,
+     "lat": 41.82399,
+     "lng": -71.41283
+    },
+    {
+     "organization": "Helmholtz Association",
+     "kind": "Research institute or other",
+     "country": "Germany",
+     "papers": 5,
+     "lat": 49.23262,
+     "lng": 7.00982
+    },
+    {
+     "organization": "King's College London",
+     "kind": "University",
+     "country": "UK",
+     "papers": 5,
+     "lat": 51.50853,
+     "lng": -0.12574
+    },
+    {
+     "organization": "Lehigh University",
+     "kind": "University",
+     "country": "US",
+     "papers": 5,
+     "lat": 40.62593,
+     "lng": -75.37046
+    },
+    {
+     "organization": "Ohio State University",
+     "kind": "University",
+     "country": "US",
+     "papers": 5,
+     "lat": 39.96118,
+     "lng": -82.99879
+    },
+    {
+     "organization": "Purdue University",
+     "kind": "University",
+     "country": "US",
+     "papers": 5,
+     "lat": 41.1306,
+     "lng": -85.12886
+    },
+    {
+     "organization": "Sony",
+     "kind": "Company",
+     "country": "Japan",
+     "papers": 5,
+     "lat": 35.6895,
+     "lng": 139.69171
+    },
+    {
+     "organization": "Tokyo Institute of Technology",
+     "kind": "University",
+     "country": "Japan",
+     "papers": 5,
+     "lat": 35.6895,
+     "lng": 139.69171
+    },
+    {
+     "organization": "UC Santa Cruz",
+     "kind": "University",
+     "country": "US",
+     "papers": 5,
+     "lat": 36.97412,
+     "lng": -122.0308
+    },
+    {
+     "organization": "University of British Columbia",
+     "kind": "University",
+     "country": "Canada",
+     "papers": 5,
+     "lat": 49.24966,
+     "lng": -123.11934
+    },
+    {
+     "organization": "University of Central Florida",
+     "kind": "University",
+     "country": "US",
+     "papers": 5,
+     "lat": 28.53834,
+     "lng": -81.37924
+    },
+    {
+     "organization": "University of Manchester",
+     "kind": "University",
+     "country": "UK",
+     "papers": 5,
+     "lat": 53.48095,
+     "lng": -2.23743
+    },
+    {
+     "organization": "University of Melbourne",
+     "kind": "University",
+     "country": "Australia",
+     "papers": 5,
+     "lat": -37.814,
+     "lng": 144.96332
+    },
+    {
+     "organization": "University of North Carolina at Chapel Hill",
+     "kind": "University",
+     "country": "US",
+     "papers": 5,
+     "lat": 35.9132,
+     "lng": -79.05584
+    },
+    {
+     "organization": "University of Technology Sydney",
+     "kind": "University",
+     "country": "Australia",
+     "papers": 5,
+     "lat": -33.86785,
+     "lng": 151.20732
+    },
+    {
+     "organization": "University of Wisconsin-Madison",
+     "kind": "University",
+     "country": "US",
+     "papers": 5,
+     "lat": 43.07305,
+     "lng": -89.40123
+    },
+    {
+     "organization": "Allen Institute for AI",
+     "kind": "Research institute or other",
+     "country": "US",
+     "papers": 4,
+     "lat": 47.60621,
+     "lng": -122.33207
+    },
+    {
+     "organization": "Anthropic",
+     "kind": "Company",
+     "country": "US",
+     "papers": 4,
+     "lat": 37.77493,
+     "lng": -122.41942
+    },
+    {
+     "organization": "Cohere",
+     "kind": "Company",
+     "country": "Canada",
+     "papers": 4,
+     "lat": 43.70643,
+     "lng": -79.39864
+    },
+    {
+     "organization": "French National Centre for Scientific Research",
+     "kind": "Research institute or other",
+     "country": "France",
+     "papers": 4,
+     "lat": 48.85341,
+     "lng": 2.3488
+    },
+    {
+     "organization": "Hong Kong Polytechnic University",
+     "kind": "University",
+     "country": "Hong Kong",
+     "papers": 4,
+     "lat": 22.27832,
+     "lng": 114.17469
+    },
+    {
+     "organization": "Indian Institute of Technology Hyderabad",
+     "kind": "University",
+     "country": "India",
+     "papers": 4,
+     "lat": 17.62477,
+     "lng": 78.08669
+    },
+    {
+     "organization": "Institute of Science and Technology Austria",
+     "kind": "Research institute or other",
+     "country": "Austria",
+     "papers": 4,
+     "lat": 48.30521,
+     "lng": 16.32522
+    },
+    {
+     "organization": "Jilin University",
+     "kind": "University",
+     "country": "China",
+     "papers": 4,
+     "lat": 43.88,
+     "lng": 125.32278
+    },
+    {
+     "organization": "Johannes Kepler University Linz",
+     "kind": "University",
+     "country": "Austria",
+     "papers": 4,
+     "lat": 48.30639,
+     "lng": 14.28611
+    },
+    {
+     "organization": "KTH Royal Institute of Technology",
+     "kind": "University",
+     "country": "Sweden",
+     "papers": 4,
+     "lat": 59.32938,
+     "lng": 18.06871
+    },
+    {
+     "organization": "Ludwig Maximilian University of Munich",
+     "kind": "University",
+     "country": "Germany",
+     "papers": 4,
+     "lat": 48.13743,
+     "lng": 11.57549
+    },
+    {
+     "organization": "Nankai University",
+     "kind": "University",
+     "country": "China",
+     "papers": 4,
+     "lat": 39.14222,
+     "lng": 117.17667
+    },
+    {
+     "organization": "Netflix",
+     "kind": "Company",
+     "country": "US",
+     "papers": 4,
+     "lat": 42.44063,
+     "lng": -76.49661
+    },
+    {
+     "organization": "North Carolina State University",
+     "kind": "University",
+     "country": "US",
+     "papers": 4,
+     "lat": 35.7721,
+     "lng": -78.63861
+    },
+    {
+     "organization": "Rutgers University",
+     "kind": "University",
+     "country": "US",
+     "papers": 4,
+     "lat": 40.48622,
+     "lng": -74.45182
+    },
+    {
+     "organization": "ShanghaiTech University",
+     "kind": "University",
+     "country": "China",
+     "papers": 4,
+     "lat": 31.22222,
+     "lng": 121.45806
+    },
+    {
+     "organization": "Soochow University",
+     "kind": "University",
+     "country": "China",
+     "papers": 4,
+     "lat": 33.63611,
+     "lng": 116.97889
+    },
+    {
+     "organization": "Technical University of Darmstadt",
+     "kind": "University",
+     "country": "Germany",
+     "papers": 4,
+     "lat": 49.87167,
+     "lng": 8.65027
+    },
+    {
+     "organization": "Tel Aviv University",
+     "kind": "University",
+     "country": "Israel",
+     "papers": 4,
+     "lat": 32.08088,
+     "lng": 34.78057
+    },
+    {
+     "organization": "UC Irvine",
+     "kind": "University",
+     "country": "US",
+     "papers": 4,
+     "lat": 33.66946,
+     "lng": -117.82311
+    },
+    {
+     "organization": "University of California",
+     "kind": "Research institute or other",
+     "country": "US",
+     "papers": 4,
+     "lat": 37.87159,
+     "lng": -122.27275
+    },
+    {
+     "organization": "University of Copenhagen",
+     "kind": "University",
+     "country": "Denmark",
+     "papers": 4,
+     "lat": 55.67594,
+     "lng": 12.56553
+    },
+    {
+     "organization": "University of Illinois Chicago",
+     "kind": "University",
+     "country": "US",
+     "papers": 4,
+     "lat": 41.85003,
+     "lng": -87.65005
+    },
+    {
+     "organization": "University of New South Wales",
+     "kind": "University",
+     "country": "Australia",
+     "papers": 4,
+     "lat": -33.86785,
+     "lng": 151.20732
+    },
+    {
+     "organization": "University of Rochester",
+     "kind": "University",
+     "country": "US",
+     "papers": 4,
+     "lat": 43.15478,
+     "lng": -77.61556
+    },
+    {
+     "organization": "University of Tübingen",
+     "kind": "University",
+     "country": "Germany",
+     "papers": 4,
+     "lat": 48.52266,
+     "lng": 9.05222
+    },
+    {
+     "organization": "Virginia Tech",
+     "kind": "University",
+     "country": "US",
+     "papers": 4,
+     "lat": 37.22957,
+     "lng": -80.41394
+    },
+    {
+     "organization": "Wuhan University",
+     "kind": "University",
+     "country": "China",
+     "papers": 4,
+     "lat": 30.58333,
+     "lng": 114.26667
+    },
+    {
+     "organization": "Aalto University",
+     "kind": "University",
+     "country": "Finland",
+     "papers": 3,
+     "lat": 60.2052,
+     "lng": 24.6522
+    },
+    {
+     "organization": "Alan Turing Institute",
+     "kind": "Research institute or other",
+     "country": "UK",
+     "papers": 3,
+     "lat": 55.86515,
+     "lng": -4.25763
+    },
+    {
+     "organization": "Beijing Normal University",
+     "kind": "University",
+     "country": "China",
+     "papers": 3,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "Broad Institute",
+     "kind": "Research institute or other",
+     "country": "US",
+     "papers": 3,
+     "lat": 42.3751,
+     "lng": -71.10561
+    },
+    {
+     "organization": "CSIRO",
+     "kind": "Research institute or other",
+     "country": "Australia",
+     "papers": 3,
+     "lat": -35.28346,
+     "lng": 149.12807
+    },
+    {
+     "organization": "College of William & Mary",
+     "kind": "University",
+     "country": "US",
+     "papers": 3,
+     "lat": 37.2707,
+     "lng": -76.70746
+    },
+    {
+     "organization": "Communication University of China",
+     "kind": "University",
+     "country": "China",
+     "papers": 3,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "Cornell Tech",
+     "kind": "University",
+     "country": "US",
+     "papers": 3,
+     "lat": 40.71427,
+     "lng": -74.00597
+    },
+    {
+     "organization": "Courant Institute of Mathematical Sciences",
+     "kind": "University",
+     "country": "US",
+     "papers": 3,
+     "lat": 40.71427,
+     "lng": -74.00597
+    },
+    {
+     "organization": "ELLIS Institute Tübingen",
+     "kind": "Research institute or other",
+     "country": "Germany",
+     "papers": 3,
+     "lat": 48.52266,
+     "lng": 9.05222
+    },
+    {
+     "organization": "Emory University",
+     "kind": "University",
+     "country": "US",
+     "papers": 3,
+     "lat": 33.749,
+     "lng": -84.38798
+    },
+    {
+     "organization": "George Washington University",
+     "kind": "University",
+     "country": "US",
+     "papers": 3,
+     "lat": 38.89511,
+     "lng": -77.03637
+    },
+    {
+     "organization": "Hebrew University of Jerusalem",
+     "kind": "University",
+     "country": "Israel",
+     "papers": 3,
+     "lat": 31.76904,
+     "lng": 35.21633
+    },
+    {
+     "organization": "Hong Kong Baptist University",
+     "kind": "University",
+     "country": "Hong Kong",
+     "papers": 3,
+     "lat": 22.27832,
+     "lng": 114.17469
+    },
+    {
+     "organization": "Hugging Face",
+     "kind": "Company",
+     "country": "US",
+     "papers": 3,
+     "lat": 40.71427,
+     "lng": -74.00597
+    },
+    {
+     "organization": "Indian Institute of Science",
+     "kind": "University",
+     "country": "India",
+     "papers": 3,
+     "lat": 12.97194,
+     "lng": 77.59369
+    },
+    {
+     "organization": "Indian Institute of Technology Madras",
+     "kind": "University",
+     "country": "India",
+     "papers": 3,
+     "lat": 13.08784,
+     "lng": 80.27847
+    },
+    {
+     "organization": "Kuaishou",
+     "kind": "Company",
+     "country": "China",
+     "papers": 3,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "Monash University",
+     "kind": "University",
+     "country": "Australia",
+     "papers": 3,
+     "lat": -37.814,
+     "lng": 144.96332
+    },
+    {
+     "organization": "NYU Shanghai",
+     "kind": "University",
+     "country": "China",
+     "papers": 3,
+     "lat": 31.22222,
+     "lng": 121.45806
+    },
+    {
+     "organization": "Nara Institute of Science and Technology",
+     "kind": "University",
+     "country": "Japan",
+     "papers": 3,
+     "lat": 34.68333,
+     "lng": 135.7
+    },
+    {
+     "organization": "Pohang University of Science and Technology",
+     "kind": "University",
+     "country": "South Korea",
+     "papers": 3,
+     "lat": 36.02917,
+     "lng": 129.36481
+    },
+    {
+     "organization": "Polytechnique Montréal",
+     "kind": "University",
+     "country": "Canada",
+     "papers": 3,
+     "lat": 45.50884,
+     "lng": -73.58781
+    },
+    {
+     "organization": "Salesforce",
+     "kind": "Company",
+     "country": "US",
+     "papers": 3,
+     "lat": 37.42411,
+     "lng": -122.16608
+    },
+    {
+     "organization": "Simon Fraser University",
+     "kind": "University",
+     "country": "Canada",
+     "papers": 3,
+     "lat": 49.26636,
+     "lng": -122.95263
+    },
+    {
+     "organization": "Snap Inc.",
+     "kind": "Company",
+     "country": "US",
+     "papers": 3,
+     "lat": 34.05223,
+     "lng": -118.24368
+    },
+    {
+     "organization": "Southern University of Science and Technology",
+     "kind": "University",
+     "country": "China",
+     "papers": 3,
+     "lat": 22.54554,
+     "lng": 114.0683
+    },
+    {
+     "organization": "StepFun",
+     "kind": "Company",
+     "country": "China",
+     "papers": 3,
+     "lat": 31.22222,
+     "lng": 121.45806
+    },
+    {
+     "organization": "Technical University of Berlin",
+     "kind": "University",
+     "country": "Germany",
+     "papers": 3,
+     "lat": 52.52437,
+     "lng": 13.41053
+    },
+    {
+     "organization": "Tianjin University",
+     "kind": "University",
+     "country": "China",
+     "papers": 3,
+     "lat": 39.14222,
+     "lng": 117.17667
+    },
+    {
+     "organization": "UC San Francisco",
+     "kind": "University",
+     "country": "US",
+     "papers": 3,
+     "lat": 37.77493,
+     "lng": -122.41942
+    },
+    {
+     "organization": "University of Arizona",
+     "kind": "University",
+     "country": "US",
+     "papers": 3,
+     "lat": 32.22174,
+     "lng": -110.92648
+    },
+    {
+     "organization": "University of Bath",
+     "kind": "University",
+     "country": "UK",
+     "papers": 3,
+     "lat": 51.3751,
+     "lng": -2.36172
+    },
+    {
+     "organization": "University of Illinois",
+     "kind": "University",
+     "country": "US",
+     "papers": 3,
+     "lat": 40.11059,
+     "lng": -88.20727
+    },
+    {
+     "organization": "University of Warwick",
+     "kind": "University",
+     "country": "UK",
+     "papers": 3,
+     "lat": 52.40656,
+     "lng": -1.51217
+    },
+    {
+     "organization": "Washington University in St. Louis",
+     "kind": "University",
+     "country": "US",
+     "papers": 3,
+     "lat": 38.62727,
+     "lng": -90.19789
+    },
+    {
+     "organization": "Aarhus University",
+     "kind": "University",
+     "country": "Denmark",
+     "papers": 2,
+     "lat": 56.15674,
+     "lng": 10.21076
+    },
+    {
+     "organization": "Agency for Science, Technology and Research",
+     "kind": "Research institute or other",
+     "country": "Singapore",
+     "papers": 2,
+     "lat": 1.28967,
+     "lng": 103.85007
+    },
+    {
+     "organization": "Alberta Machine Intelligence Institute",
+     "kind": "Research institute or other",
+     "country": "Canada",
+     "papers": 2,
+     "lat": 43.70643,
+     "lng": -79.39864
+    },
+    {
+     "organization": "Auburn University",
+     "kind": "University",
+     "country": "US",
+     "papers": 2,
+     "lat": 32.60986,
+     "lng": -85.48078
+    },
+    {
+     "organization": "Bandung Institute of Technology",
+     "kind": "University",
+     "country": "Indonesia",
+     "papers": 2,
+     "lat": -6.92222,
+     "lng": 107.60694
+    },
+    {
+     "organization": "Barcelona Supercomputing Center",
+     "kind": "Research institute or other",
+     "country": "Spain",
+     "papers": 2,
+     "lat": 41.38879,
+     "lng": 2.15899
+    },
+    {
+     "organization": "Cardiff University",
+     "kind": "University",
+     "country": "UK",
+     "papers": 2,
+     "lat": 51.48,
+     "lng": -3.18
+    },
+    {
+     "organization": "Case Western Reserve University",
+     "kind": "University",
+     "country": "US",
+     "papers": 2,
+     "lat": 41.4995,
+     "lng": -81.69541
+    },
+    {
+     "organization": "Clemson University",
+     "kind": "University",
+     "country": "US",
+     "papers": 2,
+     "lat": 34.68344,
+     "lng": -82.83737
+    },
+    {
+     "organization": "Colorado School of Mines",
+     "kind": "University",
+     "country": "US",
+     "papers": 2,
+     "lat": 39.75554,
+     "lng": -105.2211
+    },
+    {
+     "organization": "Dalian University of Technology",
+     "kind": "University",
+     "country": "China",
+     "papers": 2,
+     "lat": 38.91222,
+     "lng": 121.60222
+    },
+    {
+     "organization": "Drexel University",
+     "kind": "University",
+     "country": "US",
+     "papers": 2,
+     "lat": 39.95238,
+     "lng": -75.16362
+    },
+    {
+     "organization": "East China Normal University",
+     "kind": "University",
+     "country": "China",
+     "papers": 2,
+     "lat": 31.22222,
+     "lng": 121.45806
+    },
+    {
+     "organization": "Free University of Berlin",
+     "kind": "University",
+     "country": "Germany",
+     "papers": 2,
+     "lat": 52.52437,
+     "lng": 13.41053
+    },
+    {
+     "organization": "Gaoling School of Artificial Intelligence",
+     "kind": "University",
+     "country": "China",
+     "papers": 2,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "German Research Center for Artificial Intelligence",
+     "kind": "Research institute or other",
+     "country": "Germany",
+     "papers": 2,
+     "lat": 49.443,
+     "lng": 7.77161
+    },
+    {
+     "organization": "Higher School of Communication of Tunis",
+     "kind": "University",
+     "country": "Tunisia",
+     "papers": 2,
+     "lat": 36.86012,
+     "lng": 10.19337
+    },
+    {
+     "organization": "Hong Kong University of Science and Technology (Guangzhou)",
+     "kind": "University",
+     "country": "China",
+     "papers": 2,
+     "lat": 23.11667,
+     "lng": 113.25
+    },
+    {
+     "organization": "Idiap Research Institute",
+     "kind": "Research institute or other",
+     "country": "Switzerland",
+     "papers": 2,
+     "lat": 46.07817,
+     "lng": 7.05099
+    },
+    {
+     "organization": "Indian Institute of Technology Kanpur",
+     "kind": "University",
+     "country": "India",
+     "papers": 2,
+     "lat": 26.46523,
+     "lng": 80.34975
+    },
+    {
+     "organization": "Indian Institute of Technology Roorkee",
+     "kind": "University",
+     "country": "India",
+     "papers": 2,
+     "lat": 29.86632,
+     "lng": 77.89118
+    },
+    {
+     "organization": "Indraprastha Institute of Information Technology Delhi",
+     "kind": "University",
+     "country": "India",
+     "papers": 2,
+     "lat": 28.65195,
+     "lng": 77.23149
+    },
+    {
+     "organization": "Institute for Interdisciplinary Information Sciences",
+     "kind": "University",
+     "country": "China",
+     "papers": 2,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "JD.com",
+     "kind": "Company",
+     "country": "China",
+     "papers": 2,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "KT Corporation",
+     "kind": "Company",
+     "country": "South Korea",
+     "papers": 2,
+     "lat": 37.43861,
+     "lng": 127.13778
+    },
+    {
+     "organization": "Karlsruhe Institute of Technology",
+     "kind": "University",
+     "country": "Germany",
+     "papers": 2,
+     "lat": 49.00937,
+     "lng": 8.40444
+    },
+    {
+     "organization": "King Abdullah University of Science and Technology",
+     "kind": "University",
+     "country": "Saudi Arabia",
+     "papers": 2,
+     "lat": 21.49012,
+     "lng": 39.18624
+    },
+    {
+     "organization": "Lancaster University",
+     "kind": "University",
+     "country": "UK",
+     "papers": 2,
+     "lat": 54.04649,
+     "lng": -2.79988
+    },
+    {
+     "organization": "Los Alamos National Laboratory",
+     "kind": "Research institute or other",
+     "country": "US",
+     "papers": 2,
+     "lat": 35.88808,
+     "lng": -106.30697
+    },
+    {
+     "organization": "Mass General Brigham",
+     "kind": "Research institute or other",
+     "country": "US",
+     "papers": 2,
+     "lat": 42.3751,
+     "lng": -71.10561
+    },
+    {
+     "organization": "Meituan",
+     "kind": "Company",
+     "country": "China",
+     "papers": 2,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "Nanjing University of Posts and Telecommunications",
+     "kind": "University",
+     "country": "China",
+     "papers": 2,
+     "lat": 32.06167,
+     "lng": 118.77778
+    },
+    {
+     "organization": "Nanjing University of Science and Technology",
+     "kind": "University",
+     "country": "China",
+     "papers": 2,
+     "lat": 32.06167,
+     "lng": 118.77778
+    },
+    {
+     "organization": "Pivotal Research",
+     "kind": "Company",
+     "country": "UK",
+     "papers": 2,
+     "lat": 51.3751,
+     "lng": -2.36172
+    },
+    {
+     "organization": "Politecnico di Milano",
+     "kind": "University",
+     "country": "Italy",
+     "papers": 2,
+     "lat": 45.46427,
+     "lng": 9.18951
+    },
+    {
+     "organization": "Polytechnic University of Valencia",
+     "kind": "University",
+     "country": "Spain",
+     "papers": 2,
+     "lat": 39.47391,
+     "lng": -0.37966
+    },
+    {
+     "organization": "Research Organization of Information and Systems",
+     "kind": "Research institute or other",
+     "country": "Japan",
+     "papers": 2,
+     "lat": 35.6895,
+     "lng": 139.69171
+    },
+    {
+     "organization": "Rochester Institute of Technology",
+     "kind": "University",
+     "country": "US",
+     "papers": 2,
+     "lat": 43.15478,
+     "lng": -77.61556
+    },
+    {
+     "organization": "Saarland University",
+     "kind": "University",
+     "country": "Germany",
+     "papers": 2,
+     "lat": 49.23262,
+     "lng": 7.00982
+    },
+    {
+     "organization": "Santa Clara University",
+     "kind": "University",
+     "country": "US",
+     "papers": 2,
+     "lat": 37.35411,
+     "lng": -121.95524
+    },
+    {
+     "organization": "Shandong University",
+     "kind": "University",
+     "country": "China",
+     "papers": 2,
+     "lat": 36.66833,
+     "lng": 116.99722
+    },
+    {
+     "organization": "Singapore Management University",
+     "kind": "University",
+     "country": "Singapore",
+     "papers": 2,
+     "lat": 1.28967,
+     "lng": 103.85007
+    },
+    {
+     "organization": "Singapore University of Technology and Design",
+     "kind": "University",
+     "country": "Singapore",
+     "papers": 2,
+     "lat": 1.28967,
+     "lng": 103.85007
+    },
+    {
+     "organization": "Sorbonne University",
+     "kind": "University",
+     "country": "France",
+     "papers": 2,
+     "lat": 48.85341,
+     "lng": 2.3488
+    },
+    {
+     "organization": "South China Normal University",
+     "kind": "University",
+     "country": "China",
+     "papers": 2,
+     "lat": 23.11667,
+     "lng": 113.25
+    },
+    {
+     "organization": "TU Wien",
+     "kind": "University",
+     "country": "Austria",
+     "papers": 2,
+     "lat": 48.20849,
+     "lng": 16.37208
+    },
+    {
+     "organization": "Together AI",
+     "kind": "Company",
+     "country": "US",
+     "papers": 2,
+     "lat": 30.26715,
+     "lng": -97.74306
+    },
+    {
+     "organization": "Tohoku University",
+     "kind": "University",
+     "country": "Japan",
+     "papers": 2,
+     "lat": 38.26667,
+     "lng": 140.86667
+    },
+    {
+     "organization": "Tribhuvan University",
+     "kind": "University",
+     "country": "Nepal",
+     "papers": 2,
+     "lat": 27.70169,
+     "lng": 85.3206
+    },
+    {
+     "organization": "UC Riverside",
+     "kind": "University",
+     "country": "US",
+     "papers": 2,
+     "lat": 33.95335,
+     "lng": -117.39616
+    },
+    {
+     "organization": "University at Buffalo",
+     "kind": "University",
+     "country": "US",
+     "papers": 2,
+     "lat": 42.65258,
+     "lng": -73.75623
+    },
+    {
+     "organization": "University of Bern",
+     "kind": "University",
+     "country": "Switzerland",
+     "papers": 2,
+     "lat": 46.94809,
+     "lng": 7.44744
+    },
+    {
+     "organization": "University of Birmingham",
+     "kind": "University",
+     "country": "UK",
+     "papers": 2,
+     "lat": 52.48142,
+     "lng": -1.89983
+    },
+    {
+     "organization": "University of Helsinki",
+     "kind": "University",
+     "country": "Finland",
+     "papers": 2,
+     "lat": 60.16952,
+     "lng": 24.93545
+    },
+    {
+     "organization": "University of International Business and Economics",
+     "kind": "University",
+     "country": "China",
+     "papers": 2,
+     "lat": 39.9075,
+     "lng": 116.39723
+    },
+    {
+     "organization": "University of Ljubljana",
+     "kind": "University",
+     "country": "Slovenia",
+     "papers": 2,
+     "lat": 46.05108,
+     "lng": 14.50513
+    },
+    {
+     "organization": "University of Notre Dame",
+     "kind": "University",
+     "country": "US",
+     "papers": 2,
+     "lat": 41.70019,
+     "lng": -86.23793
+    },
+    {
+     "organization": "University of Ottawa",
+     "kind": "University",
+     "country": "Canada",
+     "papers": 2,
+     "lat": 45.41117,
+     "lng": -75.69812
+    },
+    {
+     "organization": "University of Pittsburgh",
+     "kind": "University",
+     "country": "US",
+     "papers": 2,
+     "lat": 40.44062,
+     "lng": -79.99589
+    },
+    {
+     "organization": "University of Sheffield",
+     "kind": "University",
+     "country": "UK",
+     "papers": 2,
+     "lat": 53.38297,
+     "lng": -1.4659
+    },
+    {
+     "organization": "University of Texas at San Antonio",
+     "kind": "University",
+     "country": "US",
+     "papers": 2,
+     "lat": 29.42412,
+     "lng": -98.49363
+    },
+    {
+     "organization": "University of Trento",
+     "kind": "University",
+     "country": "Italy",
+     "papers": 2,
+     "lat": 46.06787,
+     "lng": 11.12108
+    },
+    {
+     "organization": "University of Utah",
+     "kind": "University",
+     "country": "US",
+     "papers": 2,
+     "lat": 40.76078,
+     "lng": -111.89105
+    },
+    {
+     "organization": "University of Vienna",
+     "kind": "University",
+     "country": "Austria",
+     "papers": 2,
+     "lat": 48.20849,
+     "lng": 16.37208
+    },
+    {
+     "organization": "University of Zurich",
+     "kind": "University",
+     "country": "Switzerland",
+     "papers": 2,
+     "lat": 47.36667,
+     "lng": 8.55
+    },
+    {
+     "organization": "Xiamen University",
+     "kind": "University",
+     "country": "China",
+     "papers": 2,
+     "lat": 24.47979,
+     "lng": 118.08187
+    },
+    {
+     "organization": "Yonsei University",
+     "kind": "University",
+     "country": "South Korea",
+     "papers": 2,
+     "lat": 37.566,
+     "lng": 126.9784
+    },
+    {
+     "organization": "Zhejiang Lab",
+     "kind": "Research institute or other",
+     "country": "China",
+     "papers": 2,
+     "lat": 30.29365,
+     "lng": 120.16142
+    }
+   ],
+   "metadata": {
+    "organization": {
+     "type": "string",
+     "levels": []
+    },
+    "kind": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "papers": {
+     "type": "integer",
+     "levels": []
+    },
+    "lat": {
+     "type": "number",
+     "levels": []
+    },
+    "lng": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with microsoft as (\n        select distinct institution, organization\n        from read_parquet('data/institution_orgs.parquet')\n        where lower(coalesce(parent, '') || ' ' || organization) like '%microsoft%'\n           or lower(coalesce(parent, organization)) in ('github', 'linkedin')\n    ),\n        groups as (\n    select distinct a.paper_id, case regexp_replace(case when o.parent is not null and (o.kind <> 'university' or contains(o.organization, o.parent))\n             then replace(o.parent, 'Alphabet', 'Google') else o.organization end, '^The ', '') when 'Massachusetts Institute of Technology' then 'MIT' when 'Korea Advanced Institute of Science and Technology' then 'KAIST' when 'Mila' then 'Mila – Quebec AI Institute' when 'Mila - Quebec AI Institute' then 'Mila – Quebec AI Institute' when 'École Polytechnique Fédérale de Lausanne' then 'EPFL' else regexp_replace(case when o.parent is not null and (o.kind <> 'university' or contains(o.organization, o.parent))\n             then replace(o.parent, 'Alphabet', 'Google') else o.organization end, '^The ', '') end as organization, o.kind, o.country_code\n    from read_parquet('data/authorships.parquet') a\n    join read_parquet('data/institution_orgs.parquet') o using (institution)\n    where o.kind not in ('independent', 'other') and a.year >= 2020 and a.paper_id in (select paper_id from read_parquet('data/authorships.parquet') where institution in (select institution from microsoft))\n      and a.institution not in (select institution from microsoft)\n),\norganizations as (\n    select g.organization,\n           case mode(g.kind) when 'company' then 'Company' when 'university' then 'University'\n                else 'Research institute or other' end as kind,\n           mode(g.country_code) as country_code, count(distinct g.paper_id) as papers\n    from groups g group by g.organization\n),\nplaces as (\n    -- Where ROR places the organization's strings in its own country (not a subsidiary or lab abroad)\n    select og.organization, arg_max(i.ror_lat, i.authorships) as lat, arg_max(i.ror_lng, i.authorships) as lng\n    from read_parquet('data/institution_orgs.parquet') o\n    join read_parquet('data/institutions.parquet') i using (institution)\n    join organizations og on og.organization = case regexp_replace(case when o.parent is not null and (o.kind <> 'university' or contains(o.organization, o.parent))\n             then replace(o.parent, 'Alphabet', 'Google') else o.organization end, '^The ', '') when 'Massachusetts Institute of Technology' then 'MIT' when 'Korea Advanced Institute of Science and Technology' then 'KAIST' when 'Mila' then 'Mila – Quebec AI Institute' when 'Mila - Quebec AI Institute' then 'Mila – Quebec AI Institute' when 'École Polytechnique Fédérale de Lausanne' then 'EPFL' else regexp_replace(case when o.parent is not null and (o.kind <> 'university' or contains(o.organization, o.parent))\n             then replace(o.parent, 'Alphabet', 'Google') else o.organization end, '^The ', '') end\n    where o.org_index = 1 and i.ror_lat is not null and i.ror_country_code = og.country_code\n    group by og.organization\n)\nselect o.organization, o.kind, c.country, o.papers, p.lat, p.lng\nfrom organizations o left join places p using (organization)\nleft join read_parquet('data/countries.parquet') c using (country_code)\nwhere p.lat is not null and o.papers >= 2\norder by o.papers desc, o.organization\n\"\"\").df()\n",
+    "outputVariable": "out",
+    "source": [
+     "authorships",
+     "countries",
+     "institution_orgs",
+     "institutions"
+    ],
+    "trigger": {
+     "tableId": "authorships",
+     "resultTableId": "microsoft_partner_places",
+     "chart": {
+      "id": "chart-trigger-microsoft_partner_places",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "authorships",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "microsoft_partner_places",
+    "rowCount": 261
+   },
+   "description": "Organizations whose authors wrote NeurIPS papers with Microsoft authors, 2020–2026: papers together, the organization's kind and country, and where ROR places it. Organizations as an AI model read the institution strings. Source: NeurIPS proceedings and neurips.cc; affiliations from neurips.cc (2020 on) and OpenAlex; ROR. Only organizations with 2 or more papers together that ROR locates.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794707500000_step_2",
+   "createdAt": 1794707211000
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-80f700dc1bed",
+   "chartType": "Bar Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-papers-933711343268-0.6952735267581211063",
+     "dtype": "quantitative"
+    },
+    "y": {
+     "fieldID": "concept-organization-792941847979-0.4096172661578404132",
+     "dtype": "nominal",
+     "sortBy": "x",
+     "sortOrder": "descending"
+    },
+    "color": {
+     "channel": "color",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "top_microsoft_partners",
+   "source": "user",
+   "title": "Microsoft's most frequent NeurIPS co-authors",
+   "subtitle": "NeurIPS papers written with Microsoft authors, 2020–2026; NeurIPS proceedings and neurips.cc; affiliations from neurips.cc (2020 on) and OpenAlex",
+   "unread": false,
+   "themeId": "datawrapper",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-papers-933711343268-0.6952735267581211063:|y:concept-organization-792941847979-0.4096172661578404132:"
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-papers-933711343268-0.6952735267581211063",
+   "name": "papers",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-organization-792941847979-0.4096172661578404132",
+   "name": "organization",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794707200000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794707200000_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Which NeurIPS 2026 papers have Microsoft authors, and where can I see them?",
+   "parentNodeId": "conversation-root:5c36d494-054a-5d04-aca1-42673b2848fd",
+   "actionId": "exploreDataFromNL_1794707200000",
+   "createdAt": 1794707200000
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794707200000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794707200000_step_1",
+   "textKind": "explain",
+   "content": "Finding this year's papers with a Microsoft author, and when each is presented.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794707200000_prompt",
+   "actionId": "exploreDataFromNL_1794707200000",
+   "createdAt": 1794707201000,
+   "startedAt": 1794707200000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794707200000-1-1",
+     "kind": "tool",
+     "status": "completed",
+     "tool": "create_data",
+     "label": "Querying: authorships_2026, institution_orgs, papers_2026"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794707200000_step_2",
+   "displayId": "textTurn_exploreDataFromNL_1794707200000_step_2",
+   "textKind": "explain",
+   "content": "Counting Microsoft papers each year to see how its presence grew.",
+   "parentNodeId": "microsoft_papers_2026",
+   "actionId": "exploreDataFromNL_1794707200000",
+   "createdAt": 1794707203000,
+   "startedAt": 1794707200000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794707200000-2-1",
+     "kind": "tool",
+     "status": "completed",
+     "tool": "create_data",
+     "label": "Querying: authorships, institution_orgs"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794707200000-2-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "App created: Microsoft at NeurIPS 2026"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794707200000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794707200000_closing",
+   "textKind": "explain",
+   "content": "**205 NeurIPS 2026 papers have at least one author at Microsoft: 134 in Sydney, 63 in Atlanta and 8 in Paris.** The story shows each one as a dot, by topic and by city, how that grew since 1995, and every paper with its poster session. Microsoft includes its labs and companies such as GitHub and LinkedIn, as an AI model read the institutions.",
+   "parentNodeId": "file-microsoft_2026.app.jsx",
+   "actionId": "exploreDataFromNL_1794707200000",
+   "createdAt": 1794707206000,
+   "startedAt": 1794707200000,
+   "answered": true
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794707500000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794707500000_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Who does Microsoft write NeurIPS papers with?",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794707200000_closing_turn",
+   "actionId": "exploreDataFromNL_1794707500000",
+   "createdAt": 1794707207000
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794707500000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794707500000_step_1",
+   "textKind": "explain",
+   "content": "Ranking the organizations Microsoft writes with most often.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794707500000_prompt",
+   "actionId": "exploreDataFromNL_1794707500000",
+   "createdAt": 1794707208000,
+   "startedAt": 1794707207000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794707500000-1-1",
+     "kind": "tool",
+     "status": "completed",
+     "tool": "create_data",
+     "label": "Querying: authorships, countries, institution_orgs, institutions"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794707500000_step_2",
+   "displayId": "textTurn_exploreDataFromNL_1794707500000_step_2",
+   "textKind": "explain",
+   "content": "And mapping every co-authoring organization to show the reach of those ties.",
+   "parentNodeId": "top_microsoft_partners",
+   "actionId": "exploreDataFromNL_1794707500000",
+   "createdAt": 1794707210000,
+   "startedAt": 1794707207000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794707500000-2-1",
+     "kind": "tool",
+     "status": "completed",
+     "tool": "create_data",
+     "label": "Querying: authorships, countries, institution_orgs, institutions"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794707500000-2-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "Map created: Where Microsoft's NeurIPS co-authors work"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794707500000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794707500000_closing",
+   "textKind": "explain",
+   "content": "**Since 2020, Microsoft authors wrote the most NeurIPS papers with Google, Tsinghua University and Peking University.** The map shows the 261 organizations they wrote 2 or more papers with, 206 of them universities, sized by papers together; find yours.",
+   "parentNodeId": "file-microsoft_partners.map.json",
+   "actionId": "exploreDataFromNL_1794707500000",
+   "createdAt": 1794707213000,
+   "startedAt": 1794707207000,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "microsoft_papers_2026",
+   "fields": {
+    "paper_id": {
+     "semanticType": "ID",
+     "displayName": "Paper",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Paper"
+     }
+    },
+    "title": {
+     "semanticType": "Name",
+     "displayName": "Title",
+     "authored": {
+      "semanticType": "Name",
+      "displayName": "Title"
+     }
+    },
+    "presentation": {
+     "semanticType": "Category",
+     "displayName": "Presentation",
+     "authored": {
+      "semanticType": "Category",
+      "displayName": "Presentation"
+     }
+    },
+    "topic_area": {
+     "semanticType": "Category",
+     "displayName": "Topic area",
+     "authored": {
+      "semanticType": "Category",
+      "displayName": "Topic area"
+     }
+    },
+    "city": {
+     "semanticType": "City",
+     "displayName": "City",
+     "authored": {
+      "semanticType": "City",
+      "displayName": "City"
+     }
+    },
+    "day": {
+     "semanticType": "Date",
+     "displayName": "Day",
+     "authored": {
+      "semanticType": "Date",
+      "displayName": "Day"
+     }
+    },
+    "starts": {
+     "semanticType": "Time",
+     "displayName": "Starts",
+     "authored": {
+      "semanticType": "Time",
+      "displayName": "Starts"
+     }
+    },
+    "session": {
+     "semanticType": "Category",
+     "displayName": "Session",
+     "authored": {
+      "semanticType": "Category",
+      "displayName": "Session"
+     }
+    },
+    "poster_position": {
+     "semanticType": "ID",
+     "displayName": "Poster",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Poster"
+     }
+    },
+    "microsoft_teams": {
+     "semanticType": "Name",
+     "displayName": "Microsoft teams",
+     "authored": {
+      "semanticType": "Name",
+      "displayName": "Microsoft teams"
+     }
+    },
+    "url": {
+     "semanticType": "ID",
+     "displayName": "Link",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Link"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "microsoft_by_year",
+   "fields": {
+    "year": {
+     "semanticType": "Year",
+     "displayName": "Year",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Year"
+     }
+    },
+    "papers": {
+     "semanticType": "Count",
+     "displayName": "Papers with Microsoft authors",
+     "authored": {
+      "semanticType": "Count",
+      "displayName": "Papers with Microsoft authors"
+     }
+    },
+    "share": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Share of papers",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Share of papers"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "top_microsoft_partners",
+   "fields": {
+    "organization": {
+     "semanticType": "Name",
+     "displayName": "Organization",
+     "authored": {
+      "semanticType": "Name",
+      "displayName": "Organization"
+     }
+    },
+    "kind": {
+     "semanticType": "Category",
+     "displayName": "Kind",
+     "authored": {
+      "semanticType": "Category",
+      "displayName": "Kind"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "papers": {
+     "semanticType": "Count",
+     "displayName": "Papers",
+     "authored": {
+      "semanticType": "Count",
+      "displayName": "Papers"
+     }
+    },
+    "lat": {
+     "semanticType": "Latitude"
+    },
+    "lng": {
+     "semanticType": "Longitude"
+    }
+   }
+  },
+  {
+   "tableId": "microsoft_partner_places",
+   "fields": {
+    "organization": {
+     "semanticType": "Name",
+     "displayName": "Organization",
+     "authored": {
+      "semanticType": "Name",
+      "displayName": "Organization"
+     }
+    },
+    "kind": {
+     "semanticType": "Category",
+     "displayName": "Kind",
+     "authored": {
+      "semanticType": "Category",
+      "displayName": "Kind"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "papers": {
+     "semanticType": "Count",
+     "displayName": "Papers",
+     "authored": {
+      "semanticType": "Count",
+      "displayName": "Papers"
+     }
+    },
+    "lat": {
+     "semanticType": "Latitude"
+    },
+    "lng": {
+     "semanticType": "Longitude"
+    }
+   }
+  }
+ ],
+ "fileNodes": [
+  {
+   "kind": "file",
+   "id": "file-microsoft_2026.app.jsx",
+   "path": "microsoft_2026.app.jsx",
+   "displayName": "Microsoft at NeurIPS 2026",
+   "contentHash": "06246676f467bba5569ba9f683829469987e17b620dcf5aa65d398851dceb656",
+   "parentNodeId": "microsoft_by_year",
+   "createdAt": 1794707205000
+  },
+  {
+   "kind": "file",
+   "id": "file-microsoft_partners.map.json",
+   "path": "microsoft_partners.map.json",
+   "displayName": "Where Microsoft's NeurIPS co-authors work",
+   "contentHash": "76271665f230ea14e8125299faa497ead91c3bd0d721fab90cf90114ba91012d",
+   "parentNodeId": "microsoft_partner_places",
+   "createdAt": 1794707212000
+  }
+ ],
+ "focusedId": {
+  "type": "file",
+  "fileName": "microsoft_2026.app.jsx"
+ },
+ "canvasTabs": [
+  {
+   "key": "file:microsoft_2026.app.jsx",
+   "target": {
+    "type": "file",
+    "fileName": "microsoft_2026.app.jsx"
+   },
+   "addedAt": 1794700000000,
+   "viewedAt": 1794700000002
+  },
+  {
+   "key": "file:microsoft_partners.map.json",
+   "target": {
+    "type": "file",
+    "fileName": "microsoft_partners.map.json"
+   },
+   "addedAt": 1794700000001,
+   "viewedAt": 1794700000001
+  }
+ ],
+ "canvasTabActive": "file:microsoft_2026.app.jsx"
+}

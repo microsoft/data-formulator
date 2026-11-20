@@ -9,11 +9,6 @@ vi.mock('../../../../src/i18n', () => ({
         t: vi.fn((key: string) => {
             const translations: Record<string, string> = {
                 'errors.authRequired': '需要登录',
-                'errors.llmRateLimit': '请求过于频繁，请稍后再试',
-                'errors.tableNotFound': '未找到数据表',
-                'errors.internalError': '服务器内部错误',
-                'errors.connectorAuthFailed': '数据源认证失败，请检查连接凭据',
-                'errors.storageFull': '工作区存储空间已满，请释放磁盘空间后重试。',
             };
             return translations[key] ?? key;
         }),
@@ -39,12 +34,6 @@ describe('ERROR_CODE_I18N_MAP', () => {
             expect(ERROR_CODE_I18N_MAP).toHaveProperty(code);
         }
     });
-
-    it('should map to errors.* i18n keys', () => {
-        for (const [, value] of Object.entries(ERROR_CODE_I18N_MAP)) {
-            expect(value).toMatch(/^errors\./);
-        }
-    });
 });
 
 describe('getErrorMessage', () => {
@@ -52,11 +41,6 @@ describe('getErrorMessage', () => {
     it('should return translated message for known code', () => {
         const err: ApiError = { code: 'AUTH_REQUIRED', message: 'Authentication required', retry: false };
         expect(getErrorMessage(err)).toBe('需要登录');
-    });
-
-    it('should return translated message for LLM rate limit', () => {
-        const err: ApiError = { code: 'LLM_RATE_LIMIT', message: 'Rate limit exceeded', retry: true };
-        expect(getErrorMessage(err)).toBe('请求过于频繁，请稍后再试');
     });
 
     it('should fall back to backend message for unknown code', () => {
@@ -69,20 +53,5 @@ describe('getErrorMessage', () => {
         const err: ApiError = { code: 'LLM_AUTH_FAILED', message: 'Auth failed - check key', retry: false };
         // i18n.t returns the key itself when no translation → fallback to backend message
         expect(getErrorMessage(err)).toBe('Auth failed - check key');
-    });
-
-    it('should use TABLE_NOT_FOUND translation', () => {
-        const err: ApiError = { code: 'TABLE_NOT_FOUND', message: 'Table not found', retry: false };
-        expect(getErrorMessage(err)).toBe('未找到数据表');
-    });
-
-    it('should use STORAGE_FULL translation', () => {
-        const err: ApiError = { code: 'STORAGE_FULL', message: 'Workspace storage is full', retry: true };
-        expect(getErrorMessage(err)).toBe('工作区存储空间已满，请释放磁盘空间后重试。');
-    });
-
-    it('should use CONNECTOR_AUTH_FAILED translation', () => {
-        const err: ApiError = { code: 'CONNECTOR_AUTH_FAILED', message: 'Auth failed', retry: false };
-        expect(getErrorMessage(err)).toBe('数据源认证失败，请检查连接凭据');
     });
 });

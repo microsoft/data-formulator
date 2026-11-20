@@ -9,7 +9,7 @@ export FLASK_RUN_PORT=5567
 
 # Use uv if available, otherwise fall back to python
 if command -v uv &> /dev/null; then
-    uv run data_formulator --port ${FLASK_RUN_PORT} --dev
+    uv run data_formulator --port ${FLASK_RUN_PORT} --dev --managed
 else
-    python -m data_formulator.app --port ${FLASK_RUN_PORT} --dev
+    python -m data_formulator.app --port ${FLASK_RUN_PORT} --dev --managed
 fi

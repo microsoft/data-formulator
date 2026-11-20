@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "title": "Where students from abroad study",
+  "subtitle": "International students in higher education, by host country; latest figure, 2021–2026",
+  "source": "UIS, November 2026 release; indicator 26637",
+  "template": "bubbles",
+  "data": {
+    "table": "international_students_hosted"
+  },
+  "encoding": {
+    "region": "country_id",
+    "size": "international_students",
+    "tooltip": [
+      "country",
+      "international_students",
+      "latest_year"
+    ]
+  },
+  "properties": {
+    "geography": "world",
+    "keyType": "iso3"
+  },
+  "fields": {
+    "country_id": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+    },
+    "country": {
+      "semanticType": "Country",
+      "displayName": "Country"
+    },
+    "latest_year": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+    },
+    "international_students": {
+      "semanticType": "Count",
+      "displayName": "International students hosted"
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

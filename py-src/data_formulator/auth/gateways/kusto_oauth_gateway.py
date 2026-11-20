@@ -118,13 +118,13 @@ def _cluster_auth_metadata(cluster: str) -> tuple[str, str]:
         )
 
 
-def _frontend_origin(value: str) -> str:
+def _frontend_origin(value: str, allowed_env: str = "KUSTO_OAUTH_ALLOWED_ORIGINS") -> str:
     parsed = urllib.parse.urlparse(value)
     origin = f"{parsed.scheme}://{parsed.netloc}"
     request_origin = request.url_root.rstrip("/")
     configured = {
         item.strip().rstrip("/")
-        for item in os.environ.get("KUSTO_OAUTH_ALLOWED_ORIGINS", "").split(",")
+        for item in os.environ.get(allowed_env, "").split(",")
         if item.strip()
     }
     is_local = parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}

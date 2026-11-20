@@ -1,0 +1,14 @@
+World Bank Official Boundaries
+
+The files in this folder (coarse.json, medium.json, fine.json) are simplified from World Bank Official
+Boundaries (Admin 0 and Non-Determined Legal Status Areas), by the World Bank Group, licensed under the
+Creative Commons Attribution 4.0 International License (CC BY 4.0):
+https://creativecommons.org/licenses/by/4.0/
+
+Source: https://datacatalog.worldbank.org/search/dataset/0038272/world-bank-official-boundaries
+Changes: territories sharing an ISO 3166-1 alpha-3 code were merged; geometry was simplified to three
+levels of detail and converted to TopoJSON with build.sh (mapshaper).
+
+The boundaries, colors, denominations, and any other information shown on maps made with these files do
+not imply any judgment on the part of The World Bank concerning the legal status of any territory or the
+endorsement or acceptance of such boundaries.

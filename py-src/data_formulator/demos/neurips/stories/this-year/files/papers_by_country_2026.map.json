@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "title": "Where NeurIPS 2026 authors work",
+  "subtitle": "Share of NeurIPS 2026 authors working in each country, %",
+  "source": "neurips.cc, NeurIPS 2026 schedule (November 2026); ROR; OpenAlex",
+  "template": "choropleth",
+  "data": {
+    "table": "papers_by_country_2026"
+  },
+  "encoding": {
+    "region": "country_code",
+    "color": "share",
+    "tooltip": [
+      "country",
+      "share",
+      "authors",
+      "papers"
+    ]
+  },
+  "properties": {
+    "geography": "world",
+    "keyType": "iso2"
+  },
+  "fields": {
+    "country_code": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+    },
+    "country": {
+      "semanticType": "Country",
+      "displayName": "Country"
+    },
+    "authors": {
+      "semanticType": "Count",
+      "displayName": "Authors working there"
+    },
+    "papers": {
+      "semanticType": "Count",
+      "displayName": "Papers with an author there"
+    },
+    "share": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Share of authors",
+      "thresholds": [
+        0.5,
+        2,
+        5,
+        15,
+        30
+      ]
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

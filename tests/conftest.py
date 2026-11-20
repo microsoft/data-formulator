@@ -25,7 +25,7 @@ def _reset_to_pristine() -> None:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_env():
+def _isolate_env(tmp_path_factory):
     """Restore os.environ to its pre-session state before every test.
 
     When any test imports ``data_formulator.app``, the module-level
@@ -35,5 +35,37 @@ def _isolate_env():
     that existed before any test ran.
     """
     _reset_to_pristine()
+    # Keep the developer's ~/.data_formulator (saved models, connectors, configuration) out of tests.
+    os.environ.setdefault("DATA_FORMULATOR_HOME", str(tmp_path_factory.mktemp("df-home")))
     yield
     _reset_to_pristine()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_saved_configuration(tmp_path_factory, monkeypatch):
+    """Tests that clear os.environ fall back to the home directory; keep them off the saved configuration."""
+    from data_formulator import configuration
+    default = Path.home() / ".data_formulator" / "configuration.json"
+    isolated = tmp_path_factory.mktemp("configuration") / "configuration.json"
+    original = configuration.configuration_path
+    monkeypatch.setattr(configuration, "configuration_path", lambda: isolated if original() == default else original())
+
+
+def pytest_addoption(parser):
+    parser.addoption("--run-slow", action="store_true", default=False,
+                     help="Also run tests marked slow in files not named on the command line.")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip slow tests in a broad run; a file named on the command line runs all of its tests."""
+    if config.getoption("--run-slow") or os.environ.get("DF_RUN_SLOW_TESTS") == "1":
+        return
+    named = set()
+    for arg in config.args:
+        path = Path(arg.split("::", 1)[0]).resolve()
+        if path.is_file():
+            named.add(path)
+    skip = pytest.mark.skip(reason="slow; run with --run-slow or name the file")
+    for item in items:
+        if "slow" in item.keywords and Path(item.path).resolve() not in named:
+            item.add_marker(skip)

@@ -4,6 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, SxProps, Theme, Typography } from '@mui/material';
 import { keyframes } from '@mui/system';
+import { weight } from '../app/tokens';
 
 const ROWS = 3;
 const COLS = 12;
@@ -53,7 +54,7 @@ function BinaryGrid() {
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 fontSize: '0.75rem',
-                                fontWeight: 500,
+                                fontWeight: weight(500),
                                 color: cell === 1 ? 'primary.main' : 'text.disabled',
                                 opacity: cell === 1 ? 0.9 : 0.25,
                                 transition: 'opacity 0.2s ease, color 0.2s ease',
@@ -99,7 +100,7 @@ export function AnvilLoader({ height = '100vh', label, action, sx }: AnvilLoader
                                 fontFamily: '"Courier New", monospace',
                                 letterSpacing: 3,
                                 fontSize: '0.75rem',
-                                fontWeight: 400,
+                                fontWeight: weight(400),
                                 animation: `${pulse} 2.5s ease-in-out infinite`,
                                 textTransform: 'uppercase',
                             }}

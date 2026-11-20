@@ -109,6 +109,22 @@ describe('fetchWithIdentity', () => {
             expect(headers.get('X-Workspace-Id')).toBe('workspace-b');
         });
 
+        it('takes the session from the store the page renders with, not another copy of the store module', async () => {
+            const { setPageStore } = await import('../../../../src/app/utils');
+            setPageStore({ getState: () => ({
+                identity: { type: 'browser', id: 'page-browser-id' },
+                activeWorkspace: { id: 'page-session', displayName: 'Page session' },
+            }) });
+            try {
+                await fetchWithIdentity('/api/test');
+                const headers = (globalThis.fetch as Mock).mock.calls[0][1].headers as Headers;
+                expect(headers.get('X-Workspace-Id')).toBe('page-session');
+                expect(headers.get('X-Identity-Id')).toBe('browser:page-browser-id');
+            } finally {
+                setPageStore(store as any);
+            }
+        });
+
         it('should not modify headers for non-API URLs', async () => {
             await fetchWithIdentity('/static/file.js');
 

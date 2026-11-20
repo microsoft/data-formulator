@@ -1,16 +1,18 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { memo, useState } from 'react';
+import React, { memo, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import Markdown from 'react-markdown';
+import i18n from '../i18n';
+import Markdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Box, Collapse, Typography, useTheme } from '@mui/material';
+import { Box, CircularProgress, Collapse, Tooltip, Typography, useTheme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import PersonIcon from '@mui/icons-material/Person';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import { AgentToyIcon, AgentToyVariant } from './AgentToyIcon';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import CodeIcon from '@mui/icons-material/Code';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
@@ -18,39 +20,59 @@ import CheckIcon from '@mui/icons-material/Check';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
+import RemoveIcon from '@mui/icons-material/Remove';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import WbIncandescentIcon from '@mui/icons-material/WbIncandescent';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
-import { InteractionEntry } from '../components/ComponentType';
+import { InteractionEntry, PlanItem, ProgressStep } from '../components/ComponentType';
+import { ShimmerText } from '../components/FunComponents';
 import { AgentIcon } from '../icons';
-import { radius, borderColor } from '../app/tokens';
+import { radius, borderColor, ink, weight } from '../app/tokens';
+import { userPromptSurface } from '../app/look';
 import { textVar } from '../app/layout';
+import { ThreadReferenceChips } from '../components/ThreadReferenceIcon';
+import { AttachmentPreview, PreviewTooltip } from '../components/AttachmentPreview';
+import { parseItemName, workspaceFileName } from '../app/itemNames';
+import { ItemEmbed, ItemLink, isBlockEmbed, markdownImageSx } from './ItemReferences';
+import { BrowserTabLink } from '../components/BrowserAccess';
+import { browserTabFromHref } from '../app/browserSettings';
 
-/** Pick the icon component for a step line based on known prefixes. */
-export const getStepIconComponent = (line: string) => {
-    if (line.startsWith('✗')) return ErrorOutlineIcon;
-    if (line.startsWith('⚠')) return WarningAmberIcon;
-    if (line.startsWith('📋')) return InfoOutlinedIcon;
-    const stripped = line.startsWith('✓') ? line.slice(2) : line;
-    const lbl = stripped.toLowerCase();
-    if (lbl.startsWith('running code') || lbl.startsWith('运行')) return TerminalIcon;
-    if (lbl.startsWith('inspecting') || lbl.startsWith('检查')) return SearchIcon;
-    if (lbl.startsWith('searching') || lbl.startsWith('搜索')) return SearchIcon;
-    if (lbl.startsWith('creating chart') || lbl.startsWith('图表') || lbl.startsWith('生成图表')) return AutoGraphIcon;
+/** A message link's workspace file, as the app names it (`x` for `files/x`, `scratch/x` itself); null for anything else. */
+export const workspaceFileFromHref = (href: string): string | null => {
+    const target = parseItemName(href);
+    return target?.kind === 'file' ? workspaceFileName(target.path) : null;
+};
+
+export const getStepIconComponent = (step: ProgressStep | string) => {
+    if (typeof step === 'string') return AutoAwesomeIcon;
+    if (step.status === 'failed') return ErrorOutlineIcon;
+    if (step.kind === 'warning') return WarningAmberIcon;
+    if (step.kind === 'info') return InfoOutlinedIcon;
+    if (step.kind === 'chart' || step.tool === 'visualize') return AutoGraphIcon;
+    if (step.tool === 'run_terminal') return TerminalIcon;
+    if (step.tool === 'execute_python_script' || step.tool === 'explore') return CodeIcon;
+    if (['inspect_source_data', 'inspect_chart', 'search_data_tables', 'search_knowledge'].includes(step.tool || '')) return SearchIcon;
     return AutoAwesomeIcon;
 };
 
 /** A single step line with 2-line clamp + click to expand. */
 const PlanStepItem: React.FC<{
-    step: string;
+    step: ProgressStep | string;
     showShimmer: boolean;
     trailing?: React.ReactNode;
 }> = ({ step, showShimmer, trailing }) => {
     const theme = useTheme();
     const [expanded, setExpanded] = useState(false);
-    const isChecked = step.startsWith('✓');
-    const isFailed = step.startsWith('✗');
-    const isWarning = step.startsWith('⚠');
-    const isInfo = step.startsWith('📋');
-    const displayLine = (isChecked || isFailed) ? step.slice(2) : (isWarning || isInfo) ? step.slice(2).trimStart() : step;
+    const isFailed = typeof step !== 'string' && step.status === 'failed';
+    const isWarning = typeof step !== 'string' && step.kind === 'warning';
+    const isInfo = typeof step !== 'string' && step.kind === 'info';
+    const rawLine = typeof step === 'string' ? step : step.label;
+    // Trailing ellipsis marks the step still in flight; some labels ship their own.
+    const displayLine = showShimmer && !/(\.\.\.|…)$/.test(rawLine.trim())
+        ? `${rawLine}…`
+        : rawLine;
     const IconComp = getStepIconComponent(step);
 
     // Text stays in the normal muted color even for failed/warning steps — the
@@ -67,20 +89,6 @@ const PlanStepItem: React.FC<{
             display: 'flex', alignItems: 'flex-start', gap: '4px',
             position: 'relative', overflow: 'hidden',
             cursor: 'pointer',
-            ...(showShimmer ? {
-                '&::before': {
-                    content: '""',
-                    position: 'absolute',
-                    top: 0, left: 0, width: '100%', height: '100%',
-                    background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.8) 50%, transparent 100%)',
-                    animation: 'windowWipe 2s ease-in-out infinite',
-                    zIndex: 1, pointerEvents: 'none',
-                },
-                '@keyframes windowWipe': {
-                    '0%': { transform: 'translateX(-100%)' },
-                    '100%': { transform: 'translateX(100%)' },
-                },
-            } : {}),
         }}
         onClick={() => setExpanded(prev => !prev)}
         >
@@ -97,7 +105,7 @@ const PlanStepItem: React.FC<{
                     overflow: 'hidden',
                 } : {}),
             }}>
-                {displayLine}
+                {showShimmer ? <ShimmerText tone="neutral" fontSize="inherit" fontWeight={400}>{displayLine}</ShimmerText> : displayLine}
             </Typography>
             {trailing}
         </Box>
@@ -108,35 +116,108 @@ const PlanStepItem: React.FC<{
  *  `activeLastStep` adds a shimmer animation to the last incomplete step (for streaming). 
  *  `filterCreatingChart` hides "creating chart..." lines (already shown as instruction text). */
 export const PlanStepsView: React.FC<{
-    steps: string[];
+    steps: (ProgressStep | string)[];
     activeLastStep?: boolean;
     filterCreatingChart?: boolean;
     /** Inline node appended after the text of the last (active) step — used for live timers. */
     trailing?: React.ReactNode;
 }> = ({ steps, activeLastStep = false, filterCreatingChart = false, trailing }) => {
     const filtered = filterCreatingChart
-        ? steps.filter(l => {
-            const stripped = l.startsWith('✓') ? l.slice(2) : l;
-            const lbl = stripped.trim().toLowerCase();
-            return !(lbl.startsWith('creating chart') || lbl.startsWith('图表'));
-        })
+        ? steps.filter(step => typeof step === 'string' || step.kind !== 'chart')
         : steps;
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {filtered.map((step, idx) => {
                 const isLast = idx === filtered.length - 1;
-                const isChecked = step.startsWith('✓');
-                const showShimmer = activeLastStep && isLast && !isChecked;
-                return <PlanStepItem key={idx} step={step} showShimmer={showShimmer} trailing={isLast ? trailing : undefined} />;
+                const showShimmer = activeLastStep && isLast && typeof step !== 'string' && step.status === 'running';
+                return <PlanStepItem key={typeof step === 'string' ? idx : step.id} step={step} showShimmer={showShimmer} trailing={isLast ? trailing : undefined} />;
             })}
         </Box>
     );
 };
 
-/** Compact Markdown for agent prose — inherits parent font-size (10px). */
-export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ content, color }) => {
+/**
+ * The analyst's checklist plan for a longer request (design-docs/64). Open by default
+ * while it is the latest request's plan (`defaultExpanded`), one line once the conversation
+ * moves on; a manual toggle holds until then. While its run is live it is the run's status row (the thread draws the
+ * spinner in the gutter): the current step is marked and `activity` shows what the
+ * agent is doing now.
+ */
+export const RunPlanChecklist: React.FC<{ items: PlanItem[]; title?: string; active?: boolean; activity?: React.ReactNode; defaultExpanded?: boolean }> = ({
+    items, title, active = false, activity, defaultExpanded = false,
+}) => {
+    const { t } = useTranslation();
+    const [toggled, setToggled] = useState<boolean | null>(null);
+    useEffect(() => setToggled(null), [defaultExpanded]);
+    const expanded = toggled ?? defaultExpanded;
+    const done = items.filter(item => item.status === 'done').length;
+    const counted = items.filter(item => item.status !== 'dropped').length;
+    const currentIndex = items.findIndex(item => item.status === 'open');
+    const current = items[currentIndex];
+    // The label leads with where the plan stands: "Plan 1/3: …" while steps are open, "Completed 3/3: …" after
+    // (or "Completed 2/3" when the run finished with a step skipped).
+    const stage = currentIndex >= 0
+        ? t('dataThread.planStage', { defaultValue: 'Plan {{done}}/{{total}}', done, total: counted })
+        : t('dataThread.planCompletedStage', { defaultValue: 'Completed {{done}}/{{total}}', done, total: counted });
+    const name = title ? `${stage}: ${title}` : stage;
+    const stepIcon = (item: PlanItem, index: number) => item.status === 'done'
+        ? <FiberManualRecordIcon aria-hidden sx={{ fontSize: 9, color: 'success.main' }} />
+        : item.status === 'skipped'
+            ? <RemoveIcon aria-hidden sx={{ fontSize: 13, color: 'text.disabled' }} />
+        : active && index === currentIndex
+            ? <FiberManualRecordIcon aria-label={t('workflow.currentStepRunning', { defaultValue: 'Current step running' })} sx={{ fontSize: 9, color: 'primary.main' }} />
+            : <RadioButtonUncheckedIcon aria-hidden sx={{ fontSize: 13, color: 'text.disabled' }} />;
+    return (
+        <Box component="section" aria-label={t('dataThread.plan', { defaultValue: 'Plan' })} sx={{
+            minWidth: 0, px: 1, py: 0.5, borderRadius: 1.5, bgcolor: ink(0.035),
+        }}>
+            <Box component="button" type="button" aria-expanded={expanded} onClick={() => setToggled(!expanded)} sx={{
+                display: 'flex', alignItems: 'center', gap: '5px', width: '100%', m: 0, p: 0, border: 0,
+                bgcolor: 'transparent', cursor: 'pointer', textAlign: 'left', font: 'inherit',
+                color: 'text.secondary', fontSize: textVar.xs, lineHeight: 1.4,
+                '&:hover': { color: 'text.primary' },
+                '&:focus': { outline: 'none' },
+                '&:focus-visible': { textDecoration: 'underline' },
+            }}>
+                <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {name}{!title && !expanded && current ? ` · ${current.text}` : ''}
+                </Box>
+                <ExpandMoreIcon aria-hidden sx={{ width: 14, height: 14, flexShrink: 0, ml: 'auto',
+                    transform: expanded ? 'rotate(180deg)' : 'none' }} />
+            </Box>
+            {activity}
+            {expanded && <Box component="ul" sx={{ listStyle: 'none', m: 0, mt: 0.5, p: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                {items.map((item, index) => <Box component="li" key={index} sx={{ display: 'flex', alignItems: 'flex-start', gap: '5px' }}>
+                    {/* One text line tall, so the icon centers on the step's first line. */}
+                    <Box component="span" sx={{ display: 'flex', flexShrink: 0, width: 13, height: '1.4em', alignItems: 'center',
+                        justifyContent: 'center', fontSize: textVar.xs }}>{stepIcon(item, index)}</Box>
+                    <Box sx={{ minWidth: 0 }}>
+                        <Typography component="div" sx={{ fontSize: textVar.xs, lineHeight: 1.4, overflowWrap: 'anywhere',
+                            color: item.status === 'open' ? 'text.primary' : 'text.secondary' }}>
+                            <Box component="span" sx={item.status === 'dropped' ? { textDecoration: 'line-through' } : undefined}>
+                                {item.text}
+                            </Box>
+                            {item.status === 'dropped' && item.note && <Box component="span" sx={{ fontStyle: 'italic' }}> ({item.note})</Box>}
+                            {item.status === 'skipped' && <Box component="span" sx={{ fontStyle: 'italic' }}> ({t('dataThread.planStepSkipped', { defaultValue: 'skipped' })})</Box>}
+                        </Typography>
+                    </Box>
+                </Box>)}
+            </Box>}
+        </Box>
+    );
+};
+
+const isItemName = (url: string) => (parseItemName(url)?.kind ?? 'web') !== 'web';
+
+/** Markdown for agent prose. Document mode expands the hierarchy for reading canvases. */
+export const CompactMarkdown: React.FC<{
+    content: string;
+    color: string;
+    variant?: 'compact' | 'document';
+}> = ({ content, color, variant = 'compact' }) => {
     const theme = useTheme();
+    const isDocument = variant === 'document';
     return (
     <Box sx={{
         wordBreak: 'break-word',
@@ -145,44 +226,119 @@ export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ 
         // rendered markdown (incl. table cells) stays sans-serif. The `code`
         // component overrides this with the shared monospace token.
         fontFamily: theme.typography.fontFamily,
+        width: '100%',
+        maxWidth: isDocument ? 960 : 'none',
+        mx: isDocument ? 'auto' : 0,
         '& > :first-child': { mt: 0 },
         '& > :last-child': { mb: 0 },
     }}>
         <Markdown
             remarkPlugins={[remarkGfm]}
+            // Items by name (`session://…`, `files/…`, and the old `chart://`, `map://`, `session/…` forms) stay as written.
+            urlTransform={(url, key, node) => (((key === 'src' && node.tagName === 'img') || key === 'href') && isItemName(url))
+                || (key === 'href' && browserTabFromHref(url)) ? url : defaultUrlTransform(url)}
             components={{
-                p: ({ children }) => (
-                    <Typography component="p" sx={{ fontSize: 'inherit', color, lineHeight: 1.6, my: 0.25 }}>
+                img: ({ src, alt }) => {
+                    const target = parseItemName(src);
+                    return target && target.kind !== 'web' ? <ItemEmbed src={src!} target={target} alt={alt} />
+                        : src ? <Box component="img" src={src} alt={alt} sx={markdownImageSx} /> : null;
+                },
+                a: ({ href, children }) => {
+                    const browserTab = browserTabFromHref(href || '');
+                    if (browserTab) return <BrowserTabLink tab={browserTab}>{children}</BrowserTabLink>;
+                    const target = parseItemName(href);
+                    return target && target.kind !== 'web'
+                        ? <ItemLink href={href!} target={target}>{children}</ItemLink>
+                        : <Box component="a" href={href} sx={{ color: 'primary.main', overflowWrap: 'anywhere' }}>{children}</Box>;
+                },
+                p: ({ node, children }) => (
+                    // A paragraph holding a table preview is a block of its own.
+                    <Typography component={node?.children.some(child => child.type === 'element' && child.tagName === 'img'
+                        && isBlockEmbed(parseItemName(String(child.properties?.src ?? '')))) ? 'div' : 'p'}
+                        sx={{ fontSize: 'inherit', color, lineHeight: isDocument ? 1.65 : 1.6, my: isDocument ? 1 : 0.25 }}>
+                        {children}
+                    </Typography>
+                ),
+                h1: ({ children }) => (
+                    <Typography component="h1" sx={{
+                        fontSize: isDocument ? textVar.xxl : '1.2em', fontWeight: weight(600),
+                        lineHeight: 1.35, mt: 0, mb: isDocument ? 1.5 : 0.5, color,
+                    }}>
+                        {children}
+                    </Typography>
+                ),
+                h2: ({ children }) => (
+                    <Typography component="h2" sx={{
+                        fontSize: isDocument ? textVar.xl : '1.1em', fontWeight: weight(600),
+                        lineHeight: 1.4, mt: isDocument ? 2.5 : 0.75, mb: isDocument ? 1 : 0.5, color,
+                    }}>
+                        {children}
+                    </Typography>
+                ),
+                h3: ({ children }) => (
+                    <Typography component="h3" sx={{
+                        fontSize: isDocument ? textVar.lg : '1em', fontWeight: weight(600),
+                        lineHeight: 1.45, mt: isDocument ? 2 : 0.5, mb: isDocument ? 0.75 : 0.25, color,
+                    }}>
                         {children}
                     </Typography>
                 ),
                 strong: ({ children }) => (
-                    <Box component="span" sx={{ fontWeight: 600 }}>{children}</Box>
+                    <Box component="span" sx={{ fontWeight: weight(600) }}>{children}</Box>
                 ),
                 em: ({ children }) => (
                     <Box component="span" sx={{ fontStyle: 'italic' }}>{children}</Box>
                 ),
                 ul: ({ children }) => (
-                    <Box component="ul" sx={{ m: 0, my: 0.25, pl: 2 }}>{children}</Box>
+                    <Box component="ul" sx={{ m: 0, my: isDocument ? 1 : 0.25, pl: isDocument ? 3 : 2 }}>{children}</Box>
                 ),
                 ol: ({ children }) => (
-                    <Box component="ol" sx={{ m: 0, my: 0.25, pl: 2 }}>{children}</Box>
+                    <Box component="ol" sx={{ m: 0, my: isDocument ? 1 : 0.25, pl: isDocument ? 3 : 2 }}>{children}</Box>
                 ),
                 li: ({ children }) => (
                     <Typography component="li" sx={{ fontSize: 'inherit', color, lineHeight: 1.6 }}>
                         {children}
                     </Typography>
                 ),
-                code: ({ children }) => (
-                    <Box component="code" sx={{
-                        fontSize: '0.9em',
+                code: ({ children, className }) => (
+                    <Box component="code" className={className} sx={{
                         fontFamily: 'var(--df-font-mono)',
-                        bgcolor: 'rgba(0,0,0,0.04)', px: 0.4, py: 0.1, borderRadius: '3px',
+                        ...(className ? {
+                            display: 'block',
+                            lineHeight: 1.5,
+                            whiteSpace: 'pre',
+                        } : {
+                            fontSize: '0.9em',
+                            bgcolor: ink(0.04), px: 0.4, py: 0.1, borderRadius: 0.75,
+                        }),
                     }}>
                         {children}
                     </Box>
                 ),
-                pre: ({ children }) => <>{children}</>,
+                pre: ({ children }) => (
+                    <Box component="pre" sx={{
+                        m: 0, my: isDocument ? 1.5 : 0.5,
+                        p: isDocument ? 1.5 : 1,
+                        maxWidth: '100%', overflowX: 'auto',
+                        bgcolor: theme.palette.mode === 'dark'
+                            ? alpha(theme.palette.common.black, 0.28)
+                            : alpha(theme.palette.text.primary, 0.055),
+                        border: `1px solid ${theme.palette.divider}`,
+                        borderRadius: radius.sm,
+                        '& > code': {
+                            display: 'block',
+                            fontSize: textVar.xxs,
+                            fontWeight: weight(400),
+                            color: theme.palette.text.secondary,
+                            lineHeight: 1.5,
+                            letterSpacing: 0,
+                            whiteSpace: 'pre',
+                            bgcolor: 'transparent', p: 0,
+                        },
+                    }}>
+                        {children}
+                    </Box>
+                ),
                 // Without this the UA default (margin: 1em 40px) dwarfs the
                 // prose above it; a reply is a close follow-on, not a pull quote.
                 blockquote: ({ children }) => (
@@ -196,23 +352,30 @@ export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ 
                     </Box>
                 ),
                 table: ({ children }) => (
-                    <Box sx={{ overflowX: 'auto', my: 0.5 }}>
+                    <Box sx={{ overflowX: 'auto', my: isDocument ? 1.5 : 0.5 }}>
                         <Box component="table" sx={{ borderCollapse: 'collapse', width: '100%', fontSize: 'inherit', color }}>
                             {children}
                         </Box>
                     </Box>
                 ),
+                // Documents read tables like prose: hairline rows, no grid, a quiet header.
                 th: ({ children }) => (
-                    <Box component="th" sx={{
-                        border: '1px solid rgba(0,0,0,0.12)', px: '5px', py: '2px',
-                        textAlign: 'left', fontWeight: 600, bgcolor: 'rgba(0,0,0,0.03)',
+                    <Box component="th" sx={isDocument ? {
+                        borderBottom: `1px solid ${theme.palette.divider}`, px: 1, py: 0.75, pl: 0,
+                        textAlign: 'left', fontWeight: weight(600), fontSize: '0.9em', color: 'text.secondary',
+                    } : {
+                        border: `1px solid ${theme.palette.divider}`, px: '5px', py: '2px',
+                        textAlign: 'left', fontWeight: weight(600), bgcolor: 'action.hover',
                     }}>
                         {children}
                     </Box>
                 ),
                 td: ({ children }) => (
-                    <Box component="td" sx={{
-                        border: '1px solid rgba(0,0,0,0.12)', px: '5px', py: '2px', verticalAlign: 'top',
+                    <Box component="td" sx={isDocument ? {
+                        borderBottom: `1px solid ${theme.palette.divider}`, px: 1, py: 0.75, pl: 0, verticalAlign: 'top',
+                        '& strong': { fontWeight: 'inherit' },
+                    } : {
+                        border: `1px solid ${theme.palette.divider}`, px: '5px', py: '2px', verticalAlign: 'top',
                     }}>
                         {children}
                     </Box>
@@ -270,60 +433,77 @@ export interface InteractionEntryCardProps {
     onClick?: (entry: InteractionEntry) => void;
 }
 
+const isExploreIdeasEntry = (entry: InteractionEntry) =>
+    entry.from === 'user' && (entry.role === 'prompt' || entry.role === 'instruction')
+    && Object.keys(i18n.store.data).some(language =>
+        entry.content === i18n.getResource(language, 'translation', 'chartRec.exploreIdeasPrompt'));
+
 export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({ entry, highlighted = false, resolved = false, onClick }) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const text = entry.displayContent || entry.content;
-    const clickable = !!onClick;
+    const isIntermediateInstruction = entry.from !== 'user' && entry.role === 'instruction';
+    const clickable = !!onClick && !isIntermediateInstruction;
     const clickSx = clickable ? { cursor: 'pointer', '&:hover': { opacity: 0.8 } } : {};
 
-    const handleClick = onClick ? () => onClick(entry) : undefined;
+    const handleClick = clickable ? () => onClick!(entry) : undefined;
 
     // User prompts and user instructions — card with custom palette
     if (entry.from === 'user' && (entry.role === 'prompt' || entry.role === 'instruction')) {
         const palette = theme.palette.custom;
+        const isExploreIdeas = isExploreIdeasEntry(entry);
+        if (isExploreIdeas && !entry.attachments?.length && !entry.references?.length) return null;
         // Provenance for multi-input derivations is rendered as a structural
         // "merge node" in the timeline gutter (see DataThread), so the
         // instruction card itself stays free of chip-strip chrome.
         return (
-            <Box onClick={handleClick} sx={{
+            <Box onClick={event => event.stopPropagation()} sx={{
                 fontSize: textVar.xs,
                 color: theme.palette.text.primary,
                 py: 0.5, px: 1,
-                borderRadius: radius.sm,
-                // Keep the user card visually weighted (full bgcolor tint) —
-                // user prompts/instructions are the anchors of the thread,
-                // so they should read stronger than the agent's bubbles.
-                backgroundColor: palette.bgcolor,
-                border: `1px solid ${borderColor.component}`,
+                // User prompts are the anchors of the thread, so they read stronger than the agent's
+                // bubbles: a full tint card, or (sharp) a rule in the user's colour.
+                ...userPromptSurface(theme, palette),
                 // Cap very long instructions (e.g. a replayed workflow) so the
                 // card stays compact; the full text scrolls within the cap.
                 maxHeight: 160,
                 overflowY: 'auto',
                 overscrollBehavior: 'contain',
                 ...(highlighted ? { borderLeft: `2px solid ${palette.main}` } : {}),
-                ...clickSx,
+                ...(isExploreIdeas ? {
+                    width: 'fit-content', maxWidth: '100%',
+                    p: 0, border: 'none', borderRadius: 0,
+                    backgroundColor: 'transparent',
+                } : {}),
+                cursor: 'text', userSelect: 'text',
             }}>
-                <Typography component="div" sx={{ fontSize: 'inherit', color: 'inherit', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                {!isExploreIdeas && <Typography component="div" sx={{ fontSize: 'inherit', color: 'inherit', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                     {renderFieldHighlights(text, palette.main)}
-                </Typography>
+                </Typography>}
                 {entry.attachments && entry.attachments.length > 0 && (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px', mt: 0.5 }}>
                         {entry.attachments.map((name, i) => (
-                            <Box key={i} sx={{
+                            <PreviewTooltip key={i} pinnable
+                                title={<AttachmentPreview name={name} path={entry.attachmentPaths?.[name]} sentAt={entry.timestamp} />}>
+                            <Box component="button" type="button" aria-label={name} sx={{
                                 display: 'inline-flex', alignItems: 'center', gap: '2px',
-                                maxWidth: '100%', fontSize: textVar.xxs, fontFamily: theme.typography.fontFamily,
+                                maxWidth: '100%', minWidth: 0, boxSizing: 'border-box',
+                                fontSize: textVar.xxs, fontFamily: theme.typography.fontFamily,
                                 color: theme.palette.text.secondary,
                                 backgroundColor: alpha(theme.palette.text.primary, 0.05),
                                 border: `1px solid ${borderColor.divider}`,
-                                borderRadius: '4px', px: '5px', py: '1px',
+                                borderRadius: 1, px: '5px', py: '1px', cursor: 'pointer',
+                                '&:hover': { color: theme.palette.text.primary, backgroundColor: alpha(theme.palette.text.primary, 0.08) },
+                                '&:focus-visible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1 },
                             }}>
-                                <AttachFileIcon sx={{ fontSize: textVar.xs, transform: 'rotate(45deg)' }} />
-                                <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</Box>
+                                <AttachFileIcon sx={{ fontSize: textVar.xs, transform: 'rotate(45deg)', flexShrink: 0 }} />
+                                <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</Box>
                             </Box>
+                            </PreviewTooltip>
                         ))}
                     </Box>
                 )}
+                {entry.references && entry.references.length > 0 && <ThreadReferenceChips references={entry.references} sx={{ mt: 0.5 }} />}
             </Box>
         );
     }
@@ -376,19 +556,11 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 color = theme.palette.text.secondary;
         }
 
-        // Plan (thinking) lines: split, then drop the redundant "creating
-        // chart…" step (it just duplicates the instruction text). A plan whose
-        // ONLY content is that filtered step has nothing to show — so `hasPlan`
-        // is false and no thinking section / divider renders above the text.
         const planLinesVisible = (() => {
+            if (entry.progressSteps) return entry.progressSteps.filter(step => step.kind !== 'chart');
             if (!entry.plan || entry.plan === displayText) return [] as string[];
-            const raw = (entry.plan.includes('\x1E') ? entry.plan.split('\x1E') : entry.plan.split('\n'))
+            return (entry.plan.includes('\x1E') ? entry.plan.split('\x1E') : entry.plan.split('\n'))
                 .filter(l => l.trim());
-            return raw.filter(l => {
-                const stripped = l.startsWith('✓') ? l.slice(2) : l;
-                const lbl = stripped.trim().toLowerCase();
-                return !(lbl.startsWith('creating chart') || lbl.startsWith('图表'));
-            });
         })();
         const hasPlan = planLinesVisible.length > 0;
 
@@ -404,13 +576,13 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
         // except for active clarify/explain, which clamp permanently.
         const TEXT_CLAMP_LINES = 8;
         const TEXT_CLAMP_CHAR_THRESHOLD = 600;
-        const canClampText = !collapsedLabel
+        const canClampText = !isIntermediateInstruction && !collapsedLabel
             && !isActiveAgentPause
             && (displayText?.length ?? 0) > TEXT_CLAMP_CHAR_THRESHOLD;
         const forceClampText = isActiveAgentPause
             && (displayText?.length ?? 0) > TEXT_CLAMP_CHAR_THRESHOLD;
 
-        const isCollapsible = hasPlan || !!collapsedLabel || canClampText;
+        const isCollapsible = !isIntermediateInstruction && (hasPlan || !!collapsedLabel || canClampText);
         const [expanded, setExpanded] = useState(false);
 
         // Provenance for multi-input derivations is rendered as a structural
@@ -471,10 +643,10 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
         } : isResolvedPause ? {
             // Minimal trace: just inline padding so the text aligns with
             // the gutter icon and adjacent bubbles. No bg, no border.
-            py: '2px', px: '4px',
+            py: '2px', px: 'var(--df-thread-text-inset, 4px)',
             opacity: 0.7,
         } : isInstruction ? {
-            py: '2px', px: '4px',
+            py: '2px', px: 'var(--df-thread-text-inset, 4px)',
         } : {};
 
         return (
@@ -484,19 +656,32 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                     // but the surrounding timeline row is clickable to
                     // refocus — show pointer here too so the affordance
                     // reads consistently across icon, gutter, and text.
-                    cursor: (isCollapsible || isActiveAgentPause) ? 'pointer' : 'default',
+                    cursor: (clickable || isCollapsible || isActiveAgentPause) ? 'pointer' : 'default',
                     ...bubbleSx,
                     ...(isCollapsible && !isConversational ? {
-                        borderRadius: '4px',
+                        borderRadius: 1,
                         px: '2px',
                         mx: '-2px',
-                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.03)' },
+                        '&:hover': { backgroundColor: ink(0.03) },
                     } : {}),
                     ...(isCollapsible && isConversational ? {
                         '&:hover': { backgroundColor: bubbleHover },
                     } : {}),
                 }}
-                onClick={() => isCollapsible && setExpanded(!expanded)}
+                role={clickable ? 'button' : undefined}
+                tabIndex={clickable ? 0 : undefined}
+                onKeyDown={clickable ? event => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handleClick?.();
+                    }
+                } : undefined}
+                onClick={event => {
+                    if (isIntermediateInstruction) { event.stopPropagation(); return; }
+                    if (handleClick) { event.stopPropagation(); handleClick(); }
+                    else if (isCollapsible) setExpanded(!expanded);
+                }}
             >
                 <Collapse in={expanded}>
                     {hasPlan && (
@@ -548,7 +733,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         {(entry.role === 'clarify' || entry.role === 'explain' || entry.role === 'delegate') && !resolved && (
                             <Box component="span" sx={{
                                 display: 'inline',
-                                fontWeight: 600,
+                                fontWeight: weight(600),
                                 fontSize: textVar.xxs,
                                 mr: '4px',
                             }}>
@@ -585,167 +770,22 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
     );
 });
 
-export interface ResolvedConversationCardProps {
-    pairs: { agentEntry: InteractionEntry; userEntry: InteractionEntry }[];
-    highlighted?: boolean;
-    /** Source table whose interaction holds these entries — lets the re-opened
-     *  explanation popup delete this block from the thread. */
-    sourceTableId?: string;
-}
-
-/** Render one or more resolved clarify/explain/suggest_data_search
- *  exchanges (each followed by a user reply) folded together into a
- *  single compact "conversation" timeline item. Collapsed by default to
- *  a one-line trace prefixed with a chat-bubble glyph; clicking expands
- *  to show every Q & A in order as paired bubbles.
- *
- *  This declutters the data thread once a back-and-forth is resolved —
- *  the timeline foregrounds charts/data; the exchange recedes into a
- *  hinted "💬 conversation happened here" marker that stays openable
- *  for context.
- */
-export const ResolvedConversationCard: React.FC<ResolvedConversationCardProps> = memo(({ pairs, sourceTableId }) => {
-    const theme = useTheme();
-    const [expanded, setExpanded] = useState(false);
-
-    if (pairs.length === 0) return null;
-
-    // Preview uses the LAST user reply (most recent resolution); fall back
-    // to the last agent question if that reply is empty.
-    const lastPair = pairs[pairs.length - 1];
-    // Compact card preview: the agent's message (question / answer) plus the
-    // user's follow-up reply, shown as `↳ …`.
-    const agentPreview = stripFieldMarkers(lastPair.agentEntry.displayContent || lastPair.agentEntry.content || '')
-        .replace(/[#*`>|]/g, ' ').replace(/\s+/g, ' ').trim();
-    const followup = stripFieldMarkers(lastPair.userEntry.displayContent || lastPair.userEntry.content || '')
-        .replace(/\s+/g, ' ').trim();
-
-    // An explanation exchange (agent gave an answer) re-opens the full
-    // read-only ExplanationPanel popup on click — which renders its markdown
-    // (tables, code) properly — rather than the plain inline expand used for
-    // clarify/delegate back-and-forth. Bridged to SimpleChartRecBox via a
-    // window CustomEvent (same pattern as `df-replay-workflow`) to avoid
-    // growing the shared redux slice.
-    const isExplanation = pairs.every(p => p.agentEntry.role === 'explain');
-    const handleCardClick = () => {
-        if (isExplanation) {
-            const md = lastPair.agentEntry.content || lastPair.agentEntry.displayContent || '';
-            if (md.trim()) {
-                // Timestamps of every entry in this conversation so the popup's
-                // Delete can remove the whole block from the source table.
-                const timestamps = pairs.flatMap(p => [p.agentEntry.timestamp, p.userEntry.timestamp])
-                    .filter((t): t is number => typeof t === 'number');
-                window.dispatchEvent(new CustomEvent('df-view-explanation', {
-                    detail: { content: md, sourceTableId, timestamps },
-                }));
-            }
-        } else {
-            setExpanded(v => !v);
-        }
-    };
-
-    const customPalette = theme.palette.custom;
-    const turnCount = pairs.length;
-
-    return (
-        <Box onClick={handleCardClick} sx={{ cursor: 'pointer' }}>
-            {!expanded ? (
-                // Simple card: agent message preview + ↳ user reply. Same look
-                // for clarify / explain / delegate (primary-tinted). Explain
-                // clicks re-open the full popup; the others expand inline below.
-                <Box sx={{
-                    borderRadius: radius.sm,
-                    border: `1px solid ${borderColor.component}`,
-                    backgroundColor: alpha(theme.palette.primary.main, 0.03),
-                    px: 1, py: 0.75,
-                    display: 'flex', flexDirection: 'column', gap: '3px',
-                    transition: 'background-color 0.15s, border-color 0.15s',
-                    '&:hover': {
-                        backgroundColor: alpha(theme.palette.primary.main, 0.06),
-                        borderColor: alpha(theme.palette.primary.main, 0.3),
-                    },
-                }}>
-                    {agentPreview && (
-                        <Box sx={{ display: 'flex', gap: '4px', alignItems: 'baseline' }}>
-                            {turnCount > 1 && (
-                                <Typography component="span" sx={{
-                                    fontSize: textVar.xxs, fontWeight: 600, color: theme.palette.text.disabled,
-                                    flexShrink: 0, fontVariantNumeric: 'tabular-nums', mt: '1px',
-                                }}>
-                                    ×{turnCount}
-                                </Typography>
-                            )}
-                            <Typography component="div" sx={{
-                                fontSize: textVar.xs, color: theme.palette.text.primary, lineHeight: 1.4,
-                                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                            }}>
-                                {agentPreview}
-                            </Typography>
-                        </Box>
-                    )}
-                    {followup && (
-                        <Typography component="div" sx={{
-                            fontSize: textVar.xs, color: theme.palette.text.secondary, lineHeight: 1.35,
-                            display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                        }}>
-                            ↳ {followup}
-                        </Typography>
-                    )}
-                </Box>
-            ) : (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px', py: '2px' }}>
-                    {pairs.map((p, idx) => (
-                        <React.Fragment key={idx}>
-                            <Box sx={{
-                                fontSize: textVar.xs,
-                                color: theme.palette.text.primary,
-                                py: 0.5, px: 1,
-                                borderRadius: radius.sm,
-                                backgroundColor: alpha(theme.palette.text.primary, 0.03),
-                                border: `1px solid ${borderColor.component}`,
-                            }}>
-                                <Typography component="div" sx={{ fontSize: 'inherit', color: 'inherit' }}>
-                                    {renderFieldHighlights(p.agentEntry.displayContent || p.agentEntry.content, theme.palette.primary.main)}
-                                </Typography>
-                            </Box>
-                            <Box sx={{
-                                fontSize: textVar.xs,
-                                color: theme.palette.text.primary,
-                                py: 0.5, px: 1,
-                                borderRadius: radius.sm,
-                                backgroundColor: customPalette.bgcolor,
-                                border: `1px solid ${borderColor.component}`,
-                            }}>
-                                <Typography component="div" sx={{ fontSize: 'inherit', color: 'inherit' }}>
-                                    {renderFieldHighlights(p.userEntry.displayContent || p.userEntry.content, customPalette.main)}
-                                </Typography>
-                            </Box>
-                        </React.Fragment>
-                    ))}
-                </Box>
-            )}
-        </Box>
-    );
-});
-ResolvedConversationCard.displayName = 'ResolvedConversationCard';
 
 /** Returns the appropriate gutter icon for an InteractionEntry. */
 export function getEntryGutterIcon(entry: InteractionEntry, color: string): React.ReactNode {
     const iconSx = { width: 18, height: 18, color };
+    if (isExploreIdeasEntry(entry)) {
+        return (
+            <Tooltip title={i18n.t('chartRec.askedForRecommendations')}>
+                <WbIncandescentIcon role="img" aria-label={i18n.t('chartRec.askedForRecommendations')} sx={{ ...iconSx, transform: 'rotate(180deg)' }} />
+            </Tooltip>
+        );
+    }
     if (entry.from === 'user') {
         return <PersonIcon sx={iconSx} />;
     }
-    // Pick a role-specific variant of the agent toy so the gutter conveys
-    // state at a glance (thinking / summary / clarify / explain).
-    const variant: AgentToyVariant = (() => {
-        switch (entry.role) {
-            case 'clarify': return 'clarify';
-            case 'explain': return 'explain';
-            case 'delegate': return 'explain';
-            case 'instruction': return 'thinking';
-            default: return 'default';
-        }
-    })();
+    // One agent face; only a question waiting for the user's answer gets its own.
+    const variant: AgentToyVariant = entry.role === 'clarify' ? 'clarify' : 'default';
     return <AgentToyIcon variant={variant} sx={iconSx} />;
 }
 
