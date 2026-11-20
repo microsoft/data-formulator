@@ -14,6 +14,7 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import { useTranslation } from 'react-i18next';
 import { iconVar } from '../app/layout';
+import { weight } from '../app/tokens';
 
 const CANVAS_HEADER_HEIGHT = 40;
 
@@ -80,8 +81,8 @@ export const CanvasHeader: FC<{
                     if (event.key === 'Enter') commit();
                     if (event.key === 'Escape') { setDraft(title); setEditing(false); }
                 }}
-                sx={{ flex: 1, minWidth: 0, fontSize: '0.875rem', fontWeight: 600 }} />
-            : <Typography component="h2" title={title} sx={{ minWidth: 0, fontSize: '0.875rem', fontWeight: 600, lineHeight: 1.4,
+                sx={{ flex: 1, minWidth: 0, fontSize: '0.875rem', fontWeight: weight(600) }} />
+            : <Typography component="h2" title={title} sx={{ minWidth: 0, fontSize: '0.875rem', fontWeight: weight(600), lineHeight: 1.4,
                 color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</Typography>}
         {(onRename || onRequestRename) && !editing && <Box component="span" data-canvas-rename sx={{ display: 'flex', flexShrink: 0, transition: 'opacity 0.15s' }}>
             <CanvasHeaderAction label={t('canvas.rename', { defaultValue: 'Rename' })} disabled={renameDisabled}

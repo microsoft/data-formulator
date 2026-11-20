@@ -6,8 +6,9 @@ import { beforeAll, expect, it } from 'vitest';
 
 import '../../../../src/i18n';
 import { loadGeoSet, type GeoSet } from '../../../../src/maps/geography';
-import { textWidth } from '../../../../src/maps/MapRenderer';
+import { MapRenderer, textWidth, type Scene } from '../../../../src/maps/MapRenderer';
 import { MapView } from '../../../../src/maps/MapView';
+import { buildLayer } from '../../../../src/maps/model';
 import { parseMapSpec } from '../../../../src/maps/spec';
 
 let countries: GeoSet;
@@ -78,14 +79,13 @@ it('selects a region on click and shows its details', async () => {
     expect(container.querySelector('[data-map-details]')).toBeNull();
 });
 
-it('places the widgets where they leave the map largest: a globe takes a column beside it, not a row over it', async () => {
+it('keeps a globe\'s controls and timeline together in one panel', async () => {
     panelSize = { width: 900, height: 600 };
     const globe = { ...map, view: { ...map.view, projection: 'orthographic' as const } };
     const { container, unmount } = render(<MapView spec={globe} data={{ d: rows }} geoSets={{ countries }} />);
     await flush();
     await flush();
     const widgets = container.querySelector('[data-map-widgets]') as HTMLElement;
-    expect(widgets).toHaveAttribute('data-map-placement', 'side');
     // Controls and the timeline sit together.
     expect(widgets.querySelector('[data-map-controls]')).not.toBeNull();
     expect(widgets.querySelector('[data-map-timeline]')).not.toBeNull();
@@ -99,11 +99,12 @@ it('keeps the chosen layout while the map is used, and follows the spec when it 
     const { container, rerender, unmount } = render(<MapView spec={globe} data={{ d: rows }} geoSets={{ countries }} />);
     await flush();
     const widgets = () => container.querySelector('[data-map-widgets]') as HTMLElement;
-    expect(widgets()).toHaveAttribute('data-map-placement', 'side');
+    const placement = widgets().getAttribute('data-map-placement');
+    expect(placement).not.toBeNull();
     // A filter re-encodes the map; the panels stay put.
     fireEvent.click(screen.getByRole('button', { name: 'Life' }));
     await flush();
-    expect(widgets()).toHaveAttribute('data-map-placement', 'side');
+    expect(widgets()).toHaveAttribute('data-map-placement', placement);
     // A pinned layout: the controls run along the bottom, and the legend leaves the bottom left to them.
     rerender(<MapView spec={{ ...globe, view: { ...globe.view, layout: 'bottom' } }} data={{ d: rows }} geoSets={{ countries }} />);
     await flush();
@@ -162,13 +163,17 @@ it('keeps every control in the row usable: a long-labelled range stacks, and lon
     expect(rangeLabel.parentElement!.contains(slider)).toBe(false);
     expect(rangeLabel).toHaveStyle({ textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
 
-    // Twelve chips: eight, then the rest on request, and back.
-    const chips = () => within(widgets).getAllByRole('button', { pressed: true });
-    expect(chips()).toHaveLength(8);
-    fireEvent.click(within(widgets).getByRole('button', { name: '4 more' }));
-    expect(chips()).toHaveLength(12);
-    fireEvent.click(within(widgets).getByRole('button', { name: 'Show less' }));
-    expect(chips()).toHaveLength(8);
+    const picks = within(widgets).getByRole('combobox', { name: 'Picks' });
+    expect(picks).toHaveTextContent('All');
+    fireEvent.mouseDown(picks);
+    const list = await screen.findByRole('listbox');
+    expect(list).toHaveAttribute('aria-multiselectable', 'true');
+    expect(within(list).getAllByRole('option')).toHaveLength(12);
+    fireEvent.click(within(list).getByRole('option', { name: 'Option 12' }));
+    const selectedNames = many.slice(0, 11).map(option => option.label).join(', ');
+    expect(picks).toHaveTextContent(selectedNames);
+    expect(within(picks).getByTitle(selectedNames)).toBeInTheDocument();
+    fireEvent.keyDown(list, { key: 'Escape' });
 
     // The layers wrap past the first row: open the row, then seven layers show four, the rest on request.
     fireEvent.click(within(widgets).getByRole('button', { name: /^1 more/ }));
@@ -176,6 +181,75 @@ it('keeps every control in the row usable: a long-labelled range stacks, and lon
     fireEvent.click(within(widgets).getByRole('button', { name: '3 more' }));
     expect(within(widgets).getAllByRole('checkbox')).toHaveLength(7);
     panelSize = { width: 900, height: 600 };
+});
+
+it('keeps small filters as chips and large filters as multi-selects with their original value types', async () => {
+    const values = [0, 1, 2, 3, 4];
+    const points = values.map(value => ({ lon: value * 10, lat: value * 5, category: value }));
+    const spec = parseMapSpec(JSON.stringify({
+        data: { d: { values: points } },
+        layers: [{ id: 'p', type: 'points', data: 'd', lon: 'lon', lat: 'lat' }],
+        controls: [{ type: 'checkboxes', param: 'category', field: 'category', data: 'd', label: 'Category' }],
+    })).spec!;
+    const { container, rerender, unmount } = render(<MapView spec={spec} data={{ d: points.slice(0, 4) }} geoSets={{ countries }} />);
+    await flush();
+    const widgets = () => container.querySelector('[data-map-widgets]') as HTMLElement;
+    expect(within(widgets()).queryByRole('combobox', { name: 'Category' })).toBeNull();
+    expect(within(widgets()).getAllByRole('button', { pressed: true })).toHaveLength(4);
+    rerender(<MapView spec={spec} data={{ d: points }} geoSets={{ countries }} />);
+    await flush();
+    const select = within(widgets()).getByRole('combobox', { name: 'Category' });
+    expect(select).toHaveTextContent('All');
+    fireEvent.click(within(widgets()).getByRole('button', { name: 'None', exact: true }));
+    await flush();
+    expect(container.querySelectorAll('circle.df-map-point')).toHaveLength(0);
+    expect(select).toHaveTextContent('None');
+    fireEvent.mouseDown(select);
+    const list = await screen.findByRole('listbox');
+    fireEvent.click(within(list).getByRole('option', { name: '0', exact: true }));
+    await flush();
+    expect(select).toHaveTextContent('0');
+    expect(within(list).getByRole('option', { name: '0', exact: true })).toHaveAttribute('aria-selected', 'true');
+    expect(container.querySelectorAll('circle.df-map-point')).toHaveLength(1);
+    fireEvent.keyDown(list, { key: 'Escape' });
+    fireEvent.click(within(widgets()).getByRole('button', { name: 'All', exact: true }));
+    await flush();
+    expect(select).toHaveTextContent('All');
+    expect(container.querySelectorAll('circle.df-map-point')).toHaveLength(5);
+    unmount();
+});
+
+it.each([2, 3])('uses a dropdown for small chip sets only when they exceed two rows (%s rows)', async rowCount => {
+    const top = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetTop')!;
+    Object.defineProperty(HTMLElement.prototype, 'offsetTop', { configurable: true,
+        get(this: HTMLElement) {
+            if (this.parentElement?.hasAttribute('data-map-chips')) {
+                const index = Array.from(this.parentElement.children).indexOf(this);
+                return Math.min(index, rowCount - 1) * 24;
+            }
+            return top.get!.call(this);
+        } });
+    try {
+        const spec = parseMapSpec(JSON.stringify({
+            data: { d: { values: rows } },
+            layers: [{ id: 'c', type: 'regions', data: 'd', key: 'country' }],
+            controls: [{ type: 'checkboxes', param: 'picks', label: 'Picks',
+                options: ['First long option', 'Second long option', 'Third long option', 'Fourth long option'].map(value => ({ value })) }],
+        })).spec!;
+        const { container, unmount } = render(<MapView spec={spec} data={{ d: rows }} geoSets={{ countries }} />);
+        await flush();
+        const widgets = container.querySelector('[data-map-widgets]') as HTMLElement;
+        if (rowCount > 2) {
+            expect(within(widgets).getByRole('combobox', { name: 'Picks' })).toHaveTextContent('All');
+            expect(within(widgets).queryByRole('button', { name: 'First long option' })).toBeNull();
+        } else {
+            expect(within(widgets).queryByRole('combobox', { name: 'Picks' })).toBeNull();
+            expect(within(widgets).getByRole('button', { name: 'First long option' })).toHaveAttribute('aria-pressed', 'true');
+        }
+        unmount();
+    } finally {
+        Object.defineProperty(HTMLElement.prototype, 'offsetTop', top);
+    }
 });
 
 it('shows the first row of controls in the row under the title, the rest on request, and flags a changed one it hides', async () => {
@@ -213,7 +287,7 @@ it('shows the first row of controls in the row under the title, the rest on requ
     }
 });
 
-it('keeps the notes under the legend and a selection\'s details short, the rest on request', async () => {
+it('opens source notes from the footer, apart from legends, and keeps selection details short', async () => {
     const wide = [{ country: 'France', a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8, note: 'A long note about how this was measured. '.repeat(6) }];
     const spec = parseMapSpec(JSON.stringify({
         source: 'Snapshots retrieved with a browser; approximate coordinates; not live quotes. '.repeat(4),
@@ -224,11 +298,17 @@ it('keeps the notes under the legend and a selection\'s details short, the rest 
     })).spec!;
     const { container } = render(<MapView spec={spec} data={{ d: wide }} geoSets={{ countries }} />);
     await flush();
-    const source = container.querySelector('[data-map-source]') as HTMLElement;
-    expect(source).toHaveStyle({ WebkitLineClamp: '2' });
-    expect(source).toHaveAttribute('title');
-    fireEvent.click(source);
-    expect(source).not.toHaveAttribute('title');
+    expect(container.querySelector('[data-map-legends] [data-map-source]')).toBeNull();
+    expect(container.querySelector('[data-map-source]')).toBeNull();
+    const footer = container.querySelector('[data-map-footer]') as HTMLElement;
+    const disclosure = within(footer).getByRole('button', { name: 'Source / notes' });
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(disclosure);
+    const note = await screen.findByRole('dialog', { name: 'Source / notes' });
+    expect(note.textContent).toBe(spec.source);
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.keyDown(note, { key: 'Escape' });
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false');
 
     fireEvent.click(container.querySelectorAll('[data-layer="c"] path')[0]);
     await flush();
@@ -238,6 +318,26 @@ it('keeps the notes under the legend and a selection\'s details short, the rest 
     fireEvent.click(within(details).getByRole('button', { name: '3 more' }));
     expect(within(details).getByText('G')).toBeInTheDocument();
     expect(within(details).getByTitle(/A long note about how this was measured/)).toHaveStyle({ WebkitLineClamp: '2' });
+});
+
+it('shows source-only maps without an empty legend and preserves source notes in still pictures', async () => {
+    const spec = parseMapSpec(JSON.stringify({
+        view: { basemap: 'none' }, source: 'Example source and caveat.',
+        data: { d: { values: pipelineRows } },
+        layers: [{ id: 'p', type: 'points', data: 'd', lon: 'lon', lat: 'lat' }],
+    })).spec!;
+    const { container, rerender, unmount } = render(<MapView spec={spec} data={{ d: pipelineRows }} geoSets={{}} />);
+    await flush();
+    expect(container.querySelector('[data-map-legends]')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Source / notes' })).toBeInTheDocument();
+    rerender(<MapView spec={spec} data={{ d: pipelineRows }} geoSets={{}} still legendBelow />);
+    await flush();
+    expect(container.querySelector('[data-map-strip] [data-map-source]')).toHaveTextContent(spec.source!);
+    expect(screen.queryByRole('button', { name: 'Source / notes' })).toBeNull();
+    rerender(<MapView spec={spec} data={{ d: pipelineRows }} geoSets={{}} still />);
+    await flush();
+    expect(container.querySelector('[data-map-footer] [data-map-source]')).toHaveTextContent(spec.source!);
+    unmount();
 });
 
 it('locates a searched place and returns to the whole map when the search is cleared', async () => {
@@ -504,6 +604,173 @@ it('labels every size of small bubbles, and tells apart legends of layers sized 
     expect(within(legends).getByText('Origins · Reviewed bars')).toBeInTheDocument();
     expect(within(legends).getByText('Makers (reviewed bars)')).toBeInTheDocument();
     second.unmount();
+});
+
+const pipelineRows = [
+    { lon: 2, lat: 48, region: 'Europe', other: 'Europe', pipeline: 0 },
+    { lon: 3, lat: 49, region: 'Europe', other: 'Europe', pipeline: 100 },
+    { lon: -50, lat: -20, region: 'Americas', other: 'Americas', pipeline: 0 },
+    { lon: -51, lat: -21, region: 'Americas', other: 'Americas', pipeline: 200 },
+];
+
+const pipelineMap = () => parseMapSpec(JSON.stringify({
+    data: { d: { values: pipelineRows }, other: { values: pipelineRows } },
+    layers: [
+        { id: 'zero', name: 'No pipeline', type: 'points', data: 'd', lon: 'lon', lat: 'lat',
+            filter: [{ field: 'pipeline', op: '==', value: 0 }], color: { field: 'region' }, size: { value: 3 } },
+        { id: 'open', name: 'Open pipeline', type: 'bubbles', data: 'd', lon: 'lon', lat: 'lat',
+            filter: [{ field: 'pipeline', op: '>', value: 0 }], color: { field: 'region' }, size: { field: 'pipeline' } },
+    ],
+})).spec!;
+
+it('keeps the stats summary visible when collapsed and expands current details from the faded edge', async () => {
+    const spec = pipelineMap();
+    spec.controls = [
+        { type: 'stats', layer: 'open', label: 'Open pipeline', fields: ['pipeline'] },
+        { type: 'checkboxes', param: 'region', field: 'region', data: 'd' },
+    ];
+    const { container, unmount } = render(<MapView spec={spec} data={{ d: pipelineRows }} geoSets={{ countries }} />);
+    await flush();
+    const stats = container.querySelector('[data-map-stats]') as HTMLElement;
+    const toggle = within(stats).getByRole('button', { name: 'Open pipeline' });
+    const content = document.getElementById(toggle.getAttribute('aria-controls')!)!;
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(content).toBeVisible();
+    expect(within(stats).getByText('300')).toBeVisible();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(content).not.toBeVisible();
+    const summary = stats.querySelector('[data-map-stats-summary]') as HTMLElement;
+    expect(within(summary).getByText('Places')).toBeVisible();
+    expect(within(summary).getByText('300')).toBeVisible();
+    expect(within(stats).getByRole('button', { name: '2 more' })).toBeVisible();
+    const controls = container.querySelector('[data-map-controls]') as HTMLElement;
+    fireEvent.click(within(controls).getByRole('button', { name: 'Americas', exact: true }));
+    await flush();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(content).not.toBeVisible();
+    expect(within(summary).getByText('100')).toBeVisible();
+    fireEvent.click(within(stats).getByRole('button', { name: '1 more' }));
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(content).toBeVisible();
+    for (const value of within(stats).getAllByText('100')) expect(value).toBeVisible();
+    expect(within(stats).queryByText('300')).toBeNull();
+    expect(stats.querySelector('[data-map-stats-preview]')).toBeNull();
+    unmount();
+});
+
+it.each([true, false])('shows either overview or detail, restoring the overview expansion state (%s)', async expanded => {
+    const spec = pipelineMap();
+    spec.controls = [
+        { type: 'stats', layer: 'open', label: 'Open pipeline', fields: ['pipeline'] },
+        { type: 'details' },
+    ];
+    const { container, unmount } = render(<MapView spec={spec} data={{ d: pipelineRows }} geoSets={{ countries }} />);
+    await flush();
+    const stats = container.querySelector('[data-map-stats]') as HTMLElement;
+    const toggle = within(stats).getByRole('button', { name: 'Open pipeline' });
+    if (!expanded) fireEvent.click(toggle);
+    expect(stats).toBeVisible();
+    fireEvent.click(container.querySelector('[data-layer="open"] circle.df-map-point')!);
+    await flush();
+    const details = container.querySelector('[data-map-details]') as HTMLElement;
+    expect(details).toBeVisible();
+    expect(stats).not.toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Open pipeline', exact: true })).toBeNull();
+    fireEvent.click(within(details).getByRole('button', { name: 'Clear selection' }));
+    await flush();
+    expect(container.querySelector('[data-map-details]')).toBeNull();
+    expect(stats).toBeVisible();
+    expect(toggle).toHaveAttribute('aria-expanded', String(expanded));
+    expect(within(stats).getByText('300')).toBeVisible();
+    unmount();
+});
+
+it.each(['equalEarth', 'orthographic'] as const)('keeps %s maps naturally sized and nearly centered even under crowded panels', projection => {
+    const spec = pipelineMap();
+    const geoSets = { countries };
+    const scene: Scene = { view: { ...spec.view, projection }, basemap: countries,
+        models: spec.layers.map(layer => buildLayer(spec, layer, { d: pipelineRows }, {}, geoSets)),
+        selection: null, hidden: {}, highlight: null, interactive: true };
+    const renderer = new MapRenderer(document.createElementNS('http://www.w3.org/2000/svg', 'svg'), document.createElement('canvas'),
+        { onHover: () => {}, onClick: () => {} });
+    try {
+        const [natural, crowded, covered] = renderer.measureLayouts(scene, 900, 600, [
+            [],
+            [[16, 12, 884, 60], [630, 70, 884, 270], [16, 300, 350, 570]],
+            [[0, 0, 900, 600]],
+        ]);
+        expect(crowded!.scale).toBeCloseTo(natural!.scale);
+        expect(crowded!.offset).toBeLessThanOrEqual(natural!.offset + Math.hypot(0.04, 0.04));
+        expect(covered!.scale).toBeCloseTo(natural!.scale);
+        expect(covered!.offset).toBeCloseTo(natural!.offset);
+        expect(covered!.covered).toBe(1);
+    } finally {
+        renderer.destroy();
+    }
+});
+
+it('shares matching category legends across layers, including hover, toggling, and still pictures', async () => {
+    const spec = pipelineMap();
+    const data = { d: pipelineRows, other: pipelineRows };
+    const { container, rerender, unmount } = render(<MapView spec={spec} data={data} geoSets={{ countries }} />);
+    await flush();
+    const legends = container.querySelector('[data-map-legends]') as HTMLElement;
+    expect(legends.querySelectorAll('[data-map-legend]')).toHaveLength(2);
+    expect(legends.querySelectorAll('[data-map-legend-dense]')).toHaveLength(2);
+    expect(legends.querySelector('[data-map-legend-items]')).toHaveStyle({ display: 'flex', flexWrap: 'wrap' });
+    expect(within(legends).getByText('Region')).toBeInTheDocument();
+    expect(within(legends).getByText('Pipeline')).toBeInTheDocument();
+    const radii = (selector: string) => Array.from(container.querySelectorAll(selector), circle => Number(circle.getAttribute('r')));
+    expect(Math.max(...radii('[data-map-legend] circle'))).toBeCloseTo(Math.max(...radii('[data-layer="open"] circle.df-map-point')));
+    const europe = within(legends).getByRole('button', { name: 'Europe' });
+    const marks = (id: string) => Array.from(container.querySelectorAll(`[data-layer="${id}"] circle.df-map-point`));
+    const opacity = (mark: Element) => Number(mark.getAttribute('fill-opacity'));
+    fireEvent.mouseEnter(europe);
+    await flush();
+    for (const id of ['zero', 'open']) {
+        expect(marks(id)).toHaveLength(2);
+        expect(new Set(marks(id).map(opacity)).size).toBe(2);
+    }
+    fireEvent.mouseLeave(europe);
+    await flush();
+    for (const id of ['zero', 'open']) expect(new Set(marks(id).map(opacity)).size).toBe(1);
+    fireEvent.click(europe);
+    await flush();
+    expect(europe).toHaveAttribute('aria-pressed', 'false');
+    for (const id of ['zero', 'open']) expect(marks(id)).toHaveLength(1);
+    fireEvent.click(europe);
+    await flush();
+    for (const id of ['zero', 'open']) expect(marks(id)).toHaveLength(2);
+    rerender(<MapView spec={spec} data={data} geoSets={{ countries }} still legendBelow />);
+    await flush();
+    expect(container.querySelectorAll('[data-map-strip] [data-map-legend]')).toHaveLength(2);
+    unmount();
+});
+
+it.each(['palette', 'domain', 'field', 'source', 'title'] as const)('keeps category legends separate for a different %s', async difference => {
+    const spec = pipelineMap();
+    const layer = spec.layers[1];
+    if (difference === 'palette') layer.color = { field: 'region', scheme: 'set1' };
+    if (difference === 'domain') layer.color = { field: 'region', domain: ['Europe'] };
+    if (difference === 'field') layer.color = { field: 'other', title: 'Region' };
+    if (difference === 'source') layer.data = 'other';
+    if (difference === 'title') layer.color = { field: 'region', title: 'Different meaning' };
+    const { container, unmount } = render(<MapView spec={spec} data={{ d: pipelineRows, other: pipelineRows }} geoSets={{ countries }} />);
+    await flush();
+    expect(container.querySelectorAll('[data-map-legends] [data-map-legend]')).toHaveLength(3);
+    unmount();
+});
+
+it('does not merge categorical scales that differ beyond the visible legend entries', async () => {
+    const spec = pipelineMap();
+    const domain = Array.from({ length: 25 }, (_, index) => `Region ${index}`);
+    spec.layers[0].color = { field: 'region', domain };
+    spec.layers[1].color = { field: 'region', domain: [...domain.slice(0, 24), 'Different region'] };
+    const { container, unmount } = render(<MapView spec={spec} data={{ d: pipelineRows }} geoSets={{ countries }} />);
+    await flush();
+    expect(container.querySelectorAll('[data-map-legends] [data-map-legend]')).toHaveLength(3);
+    unmount();
 });
 
 it('shrinks bubbles with a small panel, and edges each in a darker shade of its own colour', async () => {

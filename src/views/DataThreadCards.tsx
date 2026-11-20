@@ -22,7 +22,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AddchartIcon from '@mui/icons-material/Addchart';
 
-import { ComponentBorderStyle, cardRadius, shadow, sidebarRowActionSx, sidebarRowDangerActionSx } from '../app/tokens';
+import { ComponentBorderStyle, cardRadius, shadow, sidebarRowActionSx, sidebarRowDangerActionSx, weight } from '../app/tokens';
 import { chartHoverRing, focusColor, toneFill, toneHoverLine, toneLine } from '../app/look';
 import { iconVar, textVar } from '../app/layout';
 
@@ -128,7 +128,7 @@ const ClampedTitle: React.FC<{ title: string }> = ({ title }) => {
     const [clamped, setClamped] = React.useState(false);
     return <Tooltip title={clamped ? title : ''} placement="top-start" enterDelay={500} disableInteractive>
         <Typography component="span" onMouseEnter={event => setClamped(event.currentTarget.scrollHeight > event.currentTarget.clientHeight + 1)}
-            sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: 500,
+            sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: weight(500),
                 display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
                 overflowWrap: 'anywhere', lineHeight: 1.35 }}>{title}</Typography>
     </Tooltip>;
@@ -318,7 +318,7 @@ export const ThreadChipGroup = ({ label, chips }: {
                     '& > svg': { flexShrink: 0 },
                     '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
                 {chip.icon}
-                <Typography component="span" sx={{ minWidth: 0, fontSize: textVar.xs, fontWeight: 500, color: 'text.primary',
+                <Typography component="span" sx={{ minWidth: 0, fontSize: textVar.xs, fontWeight: weight(500), color: 'text.primary',
                     lineHeight: 1.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{chip.title}</Typography>
                 {chip.note && <Typography component="span" sx={{ ml: '2px', flexShrink: 0, fontSize: textVar.xxs,
                     color: 'text.secondary', lineHeight: 1.5 }}>{chip.note}</Typography>}

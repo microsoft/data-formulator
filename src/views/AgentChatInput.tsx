@@ -24,7 +24,7 @@ import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutl
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import StopIcon from '@mui/icons-material/Stop';
 import { useTranslation } from 'react-i18next';
-import { borderColor, transition, ambientShadow, cardRadius } from '../app/tokens';
+import { borderColor, transition, ambientShadow, cardRadius, ink } from '../app/tokens';
 import { inputFocusShadow } from '../app/look';
 import { iconVar, textVar } from '../app/layout';
 import { pastedTextFile } from '../app/pastedText';
@@ -370,8 +370,8 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                                     sx={{
                                         position: 'absolute', top: -4, right: -4,
                                         width: 18, height: 18,
-                                        bgcolor: 'rgba(0,0,0,0.55)', color: 'white',
-                                        '&:hover': { bgcolor: 'rgba(0,0,0,0.75)' },
+                                        bgcolor: ink(0.55), color: 'white',
+                                        '&:hover': { bgcolor: ink(0.75) },
                                     }}>
                                     <CloseIcon sx={{ fontSize: iconVar.xs }} />
                                 </IconButton>

@@ -127,6 +127,8 @@ export interface ColorScale {
     color: (value: unknown) => string;
     legend: LegendModel | null;
     categorical: boolean;
+    /** Full categorical domain, including entries beyond the legend's display limit. */
+    categoryDomain?: string[];
 }
 
 /** A value formatter from a d3-format string, or a compact default. */
@@ -260,6 +262,7 @@ export function colorScale(encoding: ColorEncoding | undefined, values: unknown[
             color: value => value === null || value === undefined || value === '' ? noData : ordinal(String(value)),
             legend: { kind: 'categories', title, items: domain.slice(0, 24).map(value => ({ value, label: value, color: ordinal(value) })) },
             categorical: true,
+            categoryDomain: domain,
         };
     }
     const numbers = values.map(toNumber).filter((value): value is number => value !== null);

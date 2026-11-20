@@ -22,6 +22,7 @@ import { dfActions } from '../app/dfSlice';
 import { accountsApi, onProviderSite, requestTurnResume, specIsCoherent, unsavedAccount, type AccountState } from '../app/accounts';
 import { AccountSignIn, signInAlertSx, signInButtonSx } from './AccountSignIn';
 import type { SignInFormArtifact, TextTurn } from './ComponentType';
+import { weight } from '../app/tokens';
 
 const words = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const sameSpec = (a: AccountState, b: NonNullable<SignInFormArtifact['signin']['spec']>) =>
@@ -111,7 +112,7 @@ export const SignInFormCard = ({ turn, form, embedded = false }: {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
             <SiteIcon site={coherent ? spec?.domains?.[0] : undefined} />
             {/* Not an <h3>: the chat view styles a message's markdown headings, and this is the card's own title. */}
-            <Box role="heading" aria-level={3} sx={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{form.title}</Box>
+            <Box role="heading" aria-level={3} sx={{ fontWeight: weight(600), flex: 1, minWidth: 0 }}>{form.title}</Box>
             {answered && <Box component="span" sx={{ color: 'text.secondary', display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
                 {signin.status === 'signed_in' && <CheckIcon sx={{ fontSize: '1.1em', color: 'success.main' }} />}
                 {signin.status === 'signed_in'

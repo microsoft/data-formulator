@@ -11,7 +11,7 @@
 
 import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
-import { Alert, Box, Button, CircularProgress, Typography } from '@mui/material';
+import { Alert, Box, Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Typography } from '@mui/material';
 import SentimentDissatisfiedOutlinedIcon from '@mui/icons-material/SentimentDissatisfiedOutlined';
 import { alpha, useTheme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
@@ -19,15 +19,18 @@ import { useTranslation } from 'react-i18next';
 import {
     APP_SANDBOX,
     CONTAINER_DOCUMENT,
+    collectLinks,
+    collectRowLinks,
     normalizeAppQuery,
     stripRowIds,
+    webLink,
     type HtmlAppManifest,
     type HtmlAppTheme,
 } from '../app/htmlApp/htmlAppDocument';
 import { apiRequest } from '../app/apiClient';
 import type { DataFormulatorState } from '../app/dfSlice';
 import { useLayout } from '../app/LayoutProvider';
-import { borderColorValue, readingTypography } from '../app/tokens';
+import { borderColorValue, readingTypography, paper, weight } from '../app/tokens';
 import { appLook } from '../app/look';
 import { getUrls } from '../app/utils';
 
@@ -51,21 +54,41 @@ const requestLimit = (options: unknown): number | undefined => {
 
 const newChannel = () => (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
 
+/** Open a web page outside the app; a plain link also takes the desktop wrapper's system-browser route. */
+const openWebLink = (href: string) => {
+    const link = document.createElement('a');
+    link.href = href;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+};
+
+/**
+ * Results the app could not have composed text in: plain table queries and structured source
+ * queries. SQL and native source queries can build any string, such as an address carrying data.
+ */
+const servesStoredValues = (job: QueryJob) => job.kind === 'query'
+    || (job.kind === 'source' && !(job.query && typeof job.query === 'object' && 'native' in job.query));
+
 /** DF's design tokens for apps, following the active palette and density. */
 export function useAppTheme(): HtmlAppTheme {
     const muiTheme = useTheme();
     const { density, tokens } = useLayout();
     return useMemo<HtmlAppTheme>(() => {
         const palette = muiTheme.palette as unknown as Record<string, { main: string; bgcolor?: string; textColor?: string }>;
+        // A dark look's page and panels; the light looks keep the kit's white tiles on a pale page.
+        const dark = muiTheme.palette.mode === 'dark';
         return {
             font: readingTypography.fontFamily,
             fontMono: getComputedStyle(document.documentElement).getPropertyValue('--df-font-mono').trim() || 'ui-monospace, monospace',
             text: muiTheme.palette.text.primary,
             muted: muiTheme.palette.text.secondary,
-            bg: '#ffffff',
-            canvas: '#f6f7f9',
-            surface: '#ffffff',
-            border: borderColorValue.divider,
+            bg: dark ? muiTheme.palette.background.paper : '#ffffff',
+            canvas: dark ? muiTheme.palette.background.default : '#f6f7f9',
+            surface: dark ? muiTheme.palette.background.paper : '#ffffff',
+            border: dark ? muiTheme.palette.divider : borderColorValue.divider,
             primary: muiTheme.palette.primary.main,
             primarySoft: palette.primary.bgcolor ?? alpha(muiTheme.palette.primary.main, 0.1),
             primaryText: palette.primary.textColor ?? muiTheme.palette.primary.main,
@@ -111,6 +134,8 @@ export interface AppSandboxProps {
     /** Draw the app as a picture once it has loaded its data and gone quiet (for the agent's view requests):
      *  `script` is the capture library's source, which the app frame cannot load itself. */
     capture?: AppCapture;
+    /** The app's code: web addresses written in it, like those in table data it reads, open without asking. */
+    linkSource?: string;
 }
 
 export interface AppCapture {
@@ -130,7 +155,7 @@ const CAPTURE_TIMEOUT_MS = 30_000;
 const AUTO_FIX_WINDOW_MS = 8000;
 
 export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument, initialErrors, reloadKey = 0, reserveTopRight = false, onAskFix,
-    autoFix = false, onHealthy, fixPending = false, resolveSource, workspaceId, capture }) => {
+    autoFix = false, onHealthy, fixPending = false, resolveSource, workspaceId, capture, linkSource }) => {
     const { t } = useTranslation();
     const containerRef = useRef<HTMLIFrameElement>(null);
     const [containerReady, setContainerReady] = useState(false);
@@ -147,6 +172,13 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
     resolveSourceRef.current = resolveSource;
     const captureRef = useRef(capture);
     captureRef.current = capture;
+    const linkSourceRef = useRef(linkSource);
+    linkSourceRef.current = linkSource;
+    // A web address the app asked to open that it may have built itself: the user decides.
+    const [pendingLink, setPendingLink] = useState<URL | null>(null);
+    const [trustSite, setTrustSite] = useState(false);
+    // Sites the user chose to open without asking, for as long as this app runs.
+    const trustedSitesRef = useRef(new Set<string>());
     useEffect(() => {
         const containerWindow = containerRef.current?.contentWindow;
         const containerDocument = containerRef.current?.contentDocument;
@@ -156,6 +188,8 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
         setAutoFixing(false);
         setOpenedAt(Date.now());
         setStopped(false);
+        setPendingLink(null);
+        trustedSitesRef.current = new Set();
         if (initialErrors?.length) captureRef.current?.onError(initialErrors[0]);
         if (!containerReady || !containerWindow || !containerDocument || !buildDocument) return;
         let disposed = false;
@@ -163,6 +197,9 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
         let active = 0;
         const queue: QueryJob[] = [];
         const channel = newChannel();
+        // Addresses the app cannot have built from data: written in its code or read from stored values.
+        const knownLinks = new Set<string>();
+        collectLinks(linkSourceRef.current ?? '', knownLinks);
         // Capturing for a view request: when the app last asked for data, and whether it was captured.
         let startedAt = Date.now();
         let hiddenSince: number | undefined;
@@ -251,6 +288,7 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
                 })
                     .then(({ data }) => {
                         const rows = stripRowIds(data.rows);
+                        if (servesStoredValues(job)) collectRowLinks(rows, knownLinks);
                         post({ type: 'result', id: job.id, rows, totalRowCount: data.total_row_count ?? (Array.isArray(rows) ? rows.length : 0),
                             ...(data.truncated !== undefined ? { truncated: data.truncated } : {}) });
                     })
@@ -269,6 +307,22 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
             if (data.type === 'hello') {
                 post({ type: 'init' });
                 if (lastActivity !== Infinity) lastActivity = Date.now();
+            } else if (data.type === 'openExternal') {
+                const url = webLink(data.url);
+                if (!url) {
+                    reportError('Only absolute HTTP(S) web links without embedded credentials can be opened.');
+                    return;
+                }
+                // A click in the app frame activates this page too. Without the API (older WebKit), ask instead.
+                const clicked = navigator.userActivation?.isActive;
+                if (clicked === false) {
+                    reportError('External links must be opened by a user click.');
+                } else if (clicked && (knownLinks.has(url.href) || trustedSitesRef.current.has(url.origin))) {
+                    openWebLink(url.href);
+                } else {
+                    setTrustSite(false);
+                    setPendingLink(url);
+                }
             } else if (data.type === 'captured' && data.id === captureId) {
                 finishCapture({ image: typeof data.image === 'string' && data.image.startsWith('data:image/png') ? data.image : undefined,
                     error: typeof data.error === 'string' ? data.error : undefined });
@@ -339,7 +393,7 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
     }, [autoFixing, fixPending]);
 
     return (
-        <Box sx={{ position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#fff' }}>
+        <Box sx={{ position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: paper() }}>
             {!fatal && !autoFixing && (errors.length > 0 || stopped) && (
                 <Alert severity={stopped ? 'warning' : 'error'}
                     action={!stopped && onAskFix ? <Button color="inherit" size="small" disabled={askedFix} onClick={askFix}>
@@ -359,7 +413,7 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
                     <Box data-app-fixing role="status" sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center',
                         justifyContent: 'center', gap: 1.25, px: 4, bgcolor: 'grey.50', color: 'text.secondary', textAlign: 'center' }}>
                         <CircularProgress size={22} thickness={5} />
-                        <Typography sx={{ fontSize: 15, fontWeight: 500, color: 'text.primary' }}>
+                        <Typography sx={{ fontSize: 15, fontWeight: weight(500), color: 'text.primary' }}>
                             {t('htmlApp.autoFixing', { defaultValue: 'Fixing an error in this app' })}
                         </Typography>
                         <Typography sx={{ fontSize: 13, maxWidth: 480 }}>
@@ -375,7 +429,7 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
                     <Box data-app-crash role="alert" sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
                         alignItems: 'center', justifyContent: 'center', gap: 1.5, px: 4, bgcolor: 'grey.50', color: 'text.secondary', textAlign: 'center' }}>
                         <SentimentDissatisfiedOutlinedIcon sx={{ fontSize: 48, color: 'text.disabled' }} />
-                        <Typography sx={{ fontSize: 16, fontWeight: 500, color: 'text.primary' }}>
+                        <Typography sx={{ fontSize: 16, fontWeight: weight(500), color: 'text.primary' }}>
                             {t('htmlApp.crashTitle', { defaultValue: 'This app couldn\'t be displayed' })}
                         </Typography>
                         <Box sx={{ maxWidth: 560, maxHeight: 160, overflow: 'auto', fontFamily: 'var(--df-font-mono, ui-monospace, monospace)',
@@ -388,6 +442,29 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
                     </Box>
                 )}
             </Box>
+            <Dialog open={pendingLink !== null} onClose={() => setPendingLink(null)} maxWidth="xs" fullWidth
+                aria-describedby="df-app-link-detail">
+                <DialogTitle sx={{ fontSize: 16, fontWeight: weight(600) }}>{t('htmlApp.openLinkTitle')}</DialogTitle>
+                <DialogContent>
+                    <Typography sx={{ fontSize: 14, fontWeight: weight(600), overflowWrap: 'anywhere' }}>{pendingLink?.hostname}</Typography>
+                    <Box data-app-link-url sx={{ mt: 0.5, maxHeight: 96, overflow: 'auto', fontFamily: 'var(--df-font-mono, ui-monospace, monospace)',
+                        fontSize: 12, lineHeight: 1.5, color: 'text.secondary', overflowWrap: 'anywhere' }}>{pendingLink?.href}</Box>
+                    <Typography id="df-app-link-detail" sx={{ mt: 1.5, fontSize: 13, color: 'text.secondary' }}>
+                        {t('htmlApp.openLinkDetail')}
+                    </Typography>
+                    <FormControlLabel sx={{ mt: 1 }} control={<Checkbox size="small" checked={trustSite} onChange={event => setTrustSite(event.target.checked)} />}
+                        label={<Typography sx={{ fontSize: 13 }}>{t('htmlApp.trustLinkSite', { site: pendingLink?.hostname ?? '' })}</Typography>} />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setPendingLink(null)}>{t('app.cancel')}</Button>
+                    <Button variant="contained" disableElevation onClick={() => {
+                        if (!pendingLink) return;
+                        if (trustSite) trustedSitesRef.current.add(pendingLink.origin);
+                        openWebLink(pendingLink.href);
+                        setPendingLink(null);
+                    }}>{t('htmlApp.openLink')}</Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };

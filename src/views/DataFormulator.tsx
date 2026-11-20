@@ -33,7 +33,7 @@ import {
     Tabs,
     Tab,
 } from '@mui/material';
-import { borderColor, canvasPattern, cardRadius, metaText, radius, transition } from '../app/tokens';
+import { borderColor, canvasPattern, cardRadius, metaText, radius, transition, paper, weight } from '../app/tokens';
 import { inkColor } from '../app/look';
 
 
@@ -104,7 +104,7 @@ const CANVAS_TRANSITION_MS = 140;
 /** A thread-pane drag at least this far moves a whole column in its direction. */
 const DRAG_INTENT_PX = 24;
 const INITIAL_SESSION_COUNT = 12;
-const homeSessionGroupHeaderSx = { m: 0, mb: 1, textAlign: 'left', fontWeight: 600, color: 'text.secondary',
+const homeSessionGroupHeaderSx = { m: 0, mb: 1, textAlign: 'left', fontWeight: weight(600), color: 'text.secondary',
     ...metaText({ fontSize: textVar.xs, textTransform: 'uppercase', letterSpacing: '0.04em' }) } as const;
 
 type LibraryTab = 'sessions' | 'workflows' | 'schedules';
@@ -120,7 +120,7 @@ const LandingLibrary: React.FC<{ sessionsToolbar: React.ReactNode; sessions: Rea
         <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 2, rowGap: 1, mt: 3, mb: 1.5, borderBottom: 1, borderColor: 'divider' }}>
             <Tabs value={tab} onChange={(_, value) => setTab(value)} aria-label="Saved items"
                 slotProps={{ indicator: { sx: { transition: 'left 120ms ease, width 120ms ease' } } }}
-                sx={{ minHeight: 40, '& .MuiTab-root': { minHeight: 40, px: 1, fontSize: textVar.sm, fontWeight: 400, textTransform: 'none' },
+                sx={{ minHeight: 40, '& .MuiTab-root': { minHeight: 40, px: 1, fontSize: textVar.sm, fontWeight: weight(400), textTransform: 'none' },
                     '& .MuiTouchRipple-root': { display: 'none' } }}>
                 <Tab id="home-sessions-tab" value="sessions" label={t('workspace.yourSessions')} aria-controls="home-sessions-panel" />
                 {showWorkflows && <Tab id="home-workflows-tab" value="workflows" label={t('workspace.yourWorkflows', { defaultValue: 'Your workflows' })} aria-controls="home-workflows-panel" />}
@@ -832,7 +832,7 @@ export const DataFormulatorFC = ({ }) => {
                 onAskAgent={(text) => startAnalystChat(text)}
             />
             <Box ref={containerRef} className="outer-allotment" sx={{
-                    margin: '4px 8px 8px 8px', backgroundColor: 'white',
+                    margin: '4px 8px 8px 8px', backgroundColor: paper(),
                     display: 'flex', height: 'calc(100% - 12px)', flex: 1, minWidth: 0, flexDirection: 'column',
                     overflow: 'hidden',
                     position: 'relative',
@@ -879,7 +879,7 @@ export const DataFormulatorFC = ({ }) => {
     );
 
     let footer = <Box sx={{ color: 'text.secondary', display: 'flex', 
-            backgroundColor: 'rgba(255, 255, 255, 0.89)',
+            backgroundColor: paper(0.89),
             alignItems: 'center', justifyContent: 'center' }}>
         <Button size="small" color="inherit" 
             sx={{ textTransform: 'none'}} 
@@ -908,7 +908,7 @@ export const DataFormulatorFC = ({ }) => {
     const homeLibrary = ({ examples, saved, toolbar }: { examples?: React.ReactNode; saved?: React.ReactNode; toolbar?: React.ReactNode }) => <Box data-home-library sx={{ mt: 3 }}>
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: examples !== undefined ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)' }, gap: 4, alignItems: 'start' }}>
             <Box component="section" aria-label={t('landing.exampleSessions', { defaultValue: 'Example sessions' })} sx={{ minWidth: 0 }}>
-                <Typography component="h2" sx={{ fontSize: textVar.xl, fontWeight: 400, textAlign: 'left', minHeight: 40, display: 'flex', alignItems: 'center', mb: 1.5 }}>
+                <Typography component="h2" sx={{ fontSize: textVar.xl, fontWeight: weight(400), textAlign: 'left', minHeight: 40, display: 'flex', alignItems: 'center', mb: 1.5 }}>
                     {t('landing.exampleSessions', { defaultValue: 'Example sessions' })}
                 </Typography>
                 <Box sx={itemCardGridSx}>
@@ -924,7 +924,7 @@ export const DataFormulatorFC = ({ }) => {
                 </Box>
             </Box>
             {examples !== undefined && <Box sx={{ minWidth: 0 }}>
-                <Typography component="h2" sx={{ fontSize: textVar.xl, fontWeight: 400, textAlign: 'left', minHeight: 40, display: 'flex', alignItems: 'center', mb: 1.5 }}>
+                <Typography component="h2" sx={{ fontSize: textVar.xl, fontWeight: weight(400), textAlign: 'left', minHeight: 40, display: 'flex', alignItems: 'center', mb: 1.5 }}>
                     {t('landing.exampleWorkflows', { defaultValue: 'Example workflows' })}
                 </Typography>
                 {examples}
@@ -990,7 +990,7 @@ export const DataFormulatorFC = ({ }) => {
                     </Box>
                     {starredSavedWorkspaces.length > starredGridColumns * 2 && (
                         <Button size="small" aria-haspopup="dialog" onClick={() => { setAllSessionsStarredOnly(true); setAllSessionsOpen(true); }}
-                            sx={{ mt: 1, textTransform: 'none', fontSize: textVar.sm, fontWeight: 400 }}>
+                            sx={{ mt: 1, textTransform: 'none', fontSize: textVar.sm, fontWeight: weight(400) }}>
                             {t('workspace.showAllStarred', { count: starredSavedWorkspaces.length })}
                         </Button>
                     )}
@@ -1001,7 +1001,7 @@ export const DataFormulatorFC = ({ }) => {
                 </Box>
                 {sortedSavedWorkspaces.length > INITIAL_SESSION_COUNT && (
                     <Button size="small" aria-haspopup="dialog" onClick={() => { setAllSessionsStarredOnly(false); setAllSessionsOpen(true); }}
-                        sx={{ mt: 1, textTransform: 'none', fontSize: textVar.sm, fontWeight: 400 }}>
+                        sx={{ mt: 1, textTransform: 'none', fontSize: textVar.sm, fontWeight: weight(400) }}>
                         {t('workspace.showAllSessions', { defaultValue: 'Show all ({{count}})', count: sortedSavedWorkspaces.length })}
                     </Button>
                 )}
@@ -1035,7 +1035,7 @@ export const DataFormulatorFC = ({ }) => {
                 {line}
                 {site.badge && index === headingLines.length - 1 && <Box component="span" sx={{ position: 'absolute', left: '100%', top: '50%',
                     transform: 'translateY(-50%)', ml: 1.5, px: 1, py: '2px', whiteSpace: 'nowrap',
-                    fontSize: { xs: 12, sm: 14 }, fontWeight: 600, lineHeight: 1.3, letterSpacing: 0,
+                    fontSize: { xs: 12, sm: 14 }, fontWeight: weight(600), lineHeight: 1.3, letterSpacing: 0,
                     color: 'primary.main', borderRadius: 1, bgcolor: alpha(theme.palette.primary.main, 0.1) }}>
                     {site.badge}
                 </Box>}
@@ -1346,7 +1346,7 @@ export const DataFormulatorFC = ({ }) => {
                     }}>
                         <Box sx={{margin:'auto', pb: '5%', px: 2, maxWidth: '100%', boxSizing: 'border-box', display: "flex", flexDirection: "column", textAlign: "center"}}>
                             <Box component="img" sx={{  width: 196, margin: "auto" }} alt="Data Formulator logo" src={dfLogo} fetchPriority="high" />
-                            <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 400, letterSpacing: 0, fontSize: { xs: 28, sm: Math.min(48, headingSize) }, overflowWrap: 'anywhere'}}>
+                            <Typography variant="h3" sx={{marginTop: "20px", fontWeight: weight(400), letterSpacing: 0, fontSize: { xs: 28, sm: Math.min(48, headingSize) }, overflowWrap: 'anywhere'}}>
                                 {appName}
                             </Typography>
                             <Typography variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>

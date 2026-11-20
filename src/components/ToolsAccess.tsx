@@ -23,7 +23,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector, useStore } from 'react-redux';
 import { dfActions, type DataFormulatorState } from '../app/dfSlice';
 import { iconVar, textVar } from '../app/layout';
-import { metaText } from '../app/tokens';
+import { metaText, ink, weight } from '../app/tokens';
 import { loadToolsPolicy, onToolsDialogRequest, saveToolsPolicy, toolsConfig, type ToolsChange, type ToolsMode, type ToolsPolicy } from '../app/toolsSettings';
 import { AddServerForm, setupPanelSx, StatusLine, ToolPage, ToolSwitch, toolkitIcon, useMcpSettings, type McpServer } from './McpServers';
 import { ItemCard, itemCardGridSx } from './ItemCard';
@@ -67,7 +67,7 @@ const TerminalDetails = ({ policy, busy, onChange }: {
     return <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
         <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('tools.terminal.name', { defaultValue: 'Terminal' })}</Typography>
+                <Typography variant="subtitle1" sx={{ fontWeight: weight(600) }}>{t('tools.terminal.name', { defaultValue: 'Terminal' })}</Typography>
                 <TerminalStatus policy={policy} />
                 <Box sx={{ flex: 1 }} />
                 <ToolSwitch checked={policy.enabled} disabled={busy} onChange={enabled => void onChange({ enabled })}
@@ -123,7 +123,7 @@ const ToolCard = ({ icon, name, about, status, onOpen, toggle, available }: {
     /** Not added yet: offered to add. */
     available?: boolean;
 }) => <Box sx={{ display: 'grid', '& article:has(.tool-switch:hover)': { transform: 'none', boxShadow: '0 1px 3px rgba(32, 33, 36, 0.06)',
-    borderColor: 'rgba(0, 0, 0, 0.18)' }, ...(available ? { '& article': { borderStyle: 'dashed', boxShadow: 'none', bgcolor: 'transparent' } } : {}) }}>
+    borderColor: ink(0.18) }, ...(available ? { '& article': { borderStyle: 'dashed', boxShadow: 'none', bgcolor: 'transparent' } } : {}) }}>
     <ItemCard onOpen={onOpen} persistentActions={!!toggle} actions={toggle}
         title={<Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, minWidth: 0,
             '& svg': { fontSize: 18, color: 'primary.main', flexShrink: 0 } }}>{icon}<span>{name}</span></Box>}
@@ -151,11 +151,11 @@ const AccountList = ({ accounts, onOpen }: { accounts: AccountState[]; onOpen: (
                 <ButtonBase onClick={() => onOpen(account.id)} sx={{ width: '100%', display: 'flex', alignItems: 'center', gap: 1.5,
                     px: 1.5, py: 1, textAlign: 'left', borderRadius: 1, '&:hover': { bgcolor: 'action.hover' } }}>
                     <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{account.name}</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: weight(600) }}>{account.name}</Typography>
                         <Typography variant="caption" title={detail} sx={{ display: 'block', color: 'text.secondary',
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{detail}</Typography>
                     </Box>
-                    <Typography component="span" variant="caption" sx={{ flexShrink: 0, fontWeight: 500,
+                    <Typography component="span" variant="caption" sx={{ flexShrink: 0, fontWeight: weight(500),
                         color: account.signed_in ? 'text.secondary' : 'primary.main' }}>
                         {account.signed_in ? t('accounts.manage', { defaultValue: 'Manage' })
                             : t('accounts.signIn', { defaultValue: 'Sign in' })}
@@ -310,7 +310,7 @@ export const ToolsAccessButton = () => {
             <Button size="small" aria-haspopup="dialog" onClick={() => show()}
                 aria-label={t('tools.chipLabel', { defaultValue: 'Tools: {{count}} on, {{mode}}', count: toolCount,
                     mode: t(`tools.mode.${mode}`, { defaultValue: { off: 'Off', ask: 'Ask every time', auto: 'Auto when safe' }[mode] }) })}
-                sx={{ minWidth: 0, px: 0.75, py: 0.25, flexShrink: 0, textTransform: 'none', fontWeight: 400 }}>
+                sx={{ minWidth: 0, px: 0.75, py: 0.25, flexShrink: 0, textTransform: 'none', fontWeight: weight(400) }}>
                 <ToolsChipFace count={toolCount} mode={mode} />
             </Button>
         </Tooltip>
@@ -341,7 +341,7 @@ export const ToolsAccessButton = () => {
                     <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.25 }}>
                         <Box sx={{ display: 'flex', color: 'primary.main', pt: 0.5, '& svg': { fontSize: 22 } }}><LoginIcon /></Box>
                         <Box>
-                            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{shownAccount.name}</Typography>
+                            <Typography variant="subtitle1" sx={{ fontWeight: weight(600) }}>{shownAccount.name}</Typography>
                             <Typography variant="body2">{t(`accounts.about.${shownAccount.id}`, {
                                 defaultValue: ACCOUNT_ABOUT[shownAccount.id] ?? shownAccount.instructions ?? '' })}</Typography>
                             <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }}>
@@ -365,7 +365,7 @@ export const ToolsAccessButton = () => {
                     <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.25 }}>
                         <Box sx={{ display: 'flex', color: 'primary.main', pt: 0.5, '& svg': { fontSize: 22 } }}>{toolkitIcon()}</Box>
                         <Box>
-                            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('tools.add.custom', { defaultValue: 'Custom MCP server' })}</Typography>
+                            <Typography variant="subtitle1" sx={{ fontWeight: weight(600) }}>{t('tools.add.custom', { defaultValue: 'Custom MCP server' })}</Typography>
                             <Typography variant="body2">{t('tools.add.customAbout', { defaultValue: 'Any MCP server: a remote one by its URL, or a local command. It uses the same configuration format as VS Code, Claude and Cursor.' })}</Typography>
                         </Box>
                     </Box>

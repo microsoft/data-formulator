@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { useState, useCallback, useRef } from 'react';
-import { borderColor, transition, radius } from '../app/tokens';
+import { borderColor, transition, radius, weight } from '../app/tokens';
 import { dialogHeight, textVar } from '../app/layout';
 import {
     Dialog,
@@ -481,7 +481,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                                 onClick={() => fileInputRef.current?.click()}
                             >
                                 <UploadFileIcon sx={{ fontSize: 40, color: 'text.secondary', mb: 1.5 }} />
-                                <Typography variant="subtitle1" gutterBottom sx={{ fontSize: '0.9375rem', fontWeight: 500 }}>
+                                <Typography variant="subtitle1" gutterBottom sx={{ fontSize: '0.9375rem', fontWeight: weight(500) }}>
                                     {t('upload.dragDrop')}
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8125rem', mb: 0.5 }}>

@@ -11,6 +11,26 @@ import type { SxProps, Theme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { buttonVar, iconVar, textVar } from './layout';
 
+// ── Ink and paper ──────────────────────────────────────────────────────
+
+/** Ink at an opacity: a grey drawn as the text colour's channel (a line, a hover wash, quiet text). Black in the light
+ *  looks; the look can set `--df-ink-rgb` (white on a dark page). Not for shadows, which stay black. Gives a CSS
+ *  string, so it cannot go through MUI's `alpha()`. */
+export const ink = (opacity: number) => `rgba(var(--df-ink-rgb, 0, 0, 0), ${opacity})`;
+
+/** Paper at an opacity: a white surface (a frosted toolbar, a fade to the page). The look can set `--df-paper-rgb`
+ *  (a dark panel colour). White text and marks on a coloured fill stay white instead. */
+export const paper = (opacity = 1) => `rgba(var(--df-paper-rgb, 255, 255, 255), ${opacity})`;
+
+/** An opaque, slightly sunken surface (sticky table headers, read-only panes): `#fafafa`, or the look's. */
+export const sunkSurface = 'var(--df-surface-sunk, #fafafa)';
+
+/** A font weight (400, 500, 600) that the look can shift (`--df-weight-shift`: heavier on a dark page, where light
+ *  strokes read thinner). Headings (600) take half the shift, since large bold text blooms less. Inter is variable,
+ *  so any weight renders. */
+export const weight = (value: 400 | 500 | 600) =>
+    `calc(${value} + var(--df-weight-shift, 0)${value >= 600 ? ' * 0.5' : ''})`;
+
 // ── Border colors ──────────────────────────────────────────────────────
 
 /** The border colours as plain values, for places CSS variables do not reach (a sandboxed app's iframe). */
@@ -53,7 +73,7 @@ export const iconTone = {
     /** 0.15 — thread rail icons off the focused chain, as quiet as the rail itself. */
     muted: 'var(--df-icon-muted, rgba(0, 0, 0, 0.15))',
     /** 0.40 — row icons in lists (workspace items, tables). */
-    rest: 'rgba(0, 0, 0, 0.4)',
+    rest: ink(0.4),
 } as const;
 
 /** The app's typeface, as on the Flint site: Inter (bundled, variable weight), then system fonts. */
@@ -62,14 +82,15 @@ export const fontSans = '"Inter Variable", Inter, -apple-system, BlinkMacSystemF
 /** Reading typography for reports; other long-form canvases (workflow runs) match it. */
 export const readingTypography = {
     fontFamily: fontSans,
-    color: 'rgb(55, 53, 47)',
+    // A warm near-black, or the look's reading ink (`--df-reading-text`).
+    color: 'var(--df-reading-text, rgb(55, 53, 47))',
 } as const;
 
 /** Sidebar panels keep only panel controls (pin, collapse) in the header;
  *  the tab's own actions live in this toolbar row below it. */
 export const sidebarToolbarSx = {
     display: 'flex', alignItems: 'center', gap: 1, px: 1.25, py: 0.75, minWidth: 0, flexShrink: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)', borderBottom: '1px solid rgba(0, 0, 0, 0.06)',
+    backgroundColor: paper(0.5), borderBottom: `1px solid ${ink(0.06)}`,
 } as const;
 
 /** The tab's main action in `sidebarToolbarSx` (Add connector, New session, ...). */
@@ -89,7 +110,7 @@ export const sidebarRowSx = {
     display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0,
     px: 1.25, py: 0.5,
     cursor: 'pointer', userSelect: 'none', color: 'text.primary',
-    '&:hover, &.sidebar-row-active': { bgcolor: 'rgba(0, 0, 0, 0.045)' },
+    '&:hover, &.sidebar-row-active': { bgcolor: ink(0.045) },
     '& .sidebar-row-trailing': { display: 'grid', flexShrink: 0, alignItems: 'center', justifyItems: 'end', '& > *': { gridArea: '1 / 1' } },
     '& .sidebar-row-actions': { display: 'inline-flex', flexShrink: 0, opacity: 0, pointerEvents: 'none' },
     '&:hover .sidebar-row-actions, &:focus-within .sidebar-row-actions, &.sidebar-row-active .sidebar-row-actions': { opacity: 1, pointerEvents: 'auto' },
@@ -221,7 +242,9 @@ export const selectionMark = (color: string, border = 0) => ({
     '&::after': {
         // Drawn only where the look turns it on, so the soft look composites exactly as before.
         display: 'var(--df-selection-overlay, none)',
-        content: '""', position: 'absolute', inset: `-${border}px`, pointerEvents: 'none', zIndex: 2, mixBlendMode: 'multiply',
+        content: '""', position: 'absolute', inset: `-${border}px`, pointerEvents: 'none', zIndex: 2,
+        // Multiplied on a light page so text keeps its contrast; the dark look screens it (lightens) instead.
+        mixBlendMode: 'var(--df-selection-blend, multiply)',
         background: `linear-gradient(${color}, ${color}) left / var(--df-selection-rule, 0px) 100% no-repeat, `
             + `color-mix(in srgb, ${color} var(--df-selection-tint, 0%), transparent)`,
     },

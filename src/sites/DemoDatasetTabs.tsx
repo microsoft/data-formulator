@@ -14,7 +14,7 @@ import { starterIcon } from './icons';
 import { safeUrl } from './links';
 import { demoText } from './layout';
 import type { SiteStarter, SiteStory } from './types';
-import { ambientShadow, cardRadius, hoverLift } from '../app/tokens';
+import { ambientShadow, cardRadius, hoverLift, weight } from '../app/tokens';
 
 // Under a demo's chat (design-docs/69): a tab per dataset with what it holds, a button to start a session
 // with it loaded, and its example sessions as picture cards to open.
@@ -91,7 +91,7 @@ const TopicCard: React.FC<{ story: SiteStory; disabled?: boolean; onOpen: () => 
                 : <InsertChartOutlinedIcon aria-hidden="true" sx={{ fontSize: 36, color: 'text.disabled' }} />}
         </Box>
         <Box sx={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-            <Typography component="h3" className="topic-title" sx={{ fontSize: demoText.lead, fontWeight: 600, lineHeight: 1.3 }}>
+            <Typography component="h3" className="topic-title" sx={{ fontSize: demoText.lead, fontWeight: weight(600), lineHeight: 1.3 }}>
                 {story.headline}
             </Typography>
             {story.dek && <Typography sx={{ mt: 0.75, fontSize: demoText.small, lineHeight: 1.5,
@@ -106,21 +106,21 @@ const TopicCard: React.FC<{ story: SiteStory; disabled?: boolean; onOpen: () => 
                     return <Box role="listitem" key={chapter.label} title={chapter.headline || undefined}
                         sx={{ display: 'grid', gridColumn: '1 / -1', gridTemplateColumns: 'subgrid', alignItems: 'center' }}>
                         {chapter.stat
-                            ? <Typography sx={{ fontSize: '1.5rem', fontWeight: 600, lineHeight: 1.1, letterSpacing: '-0.01em',
+                            ? <Typography sx={{ fontSize: '1.5rem', fontWeight: weight(600), lineHeight: 1.1, letterSpacing: '-0.01em',
                                 fontVariantNumeric: 'tabular-nums', color: 'primary.main' }}>{chapter.stat}</Typography>
                             : <Icon aria-hidden="true" sx={{ fontSize: iconVar.md, color: 'text.secondary' }} />}
                         <Typography sx={{ minWidth: 0, fontSize: demoText.small, lineHeight: 1.4, color: theme => inkColor(theme, 0.78), textWrap: 'pretty',
                             display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                             {chapter.stat
                                 ? chapter.message || chapter.label
-                                : <><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>{chapter.label}</Box>
+                                : <><Box component="span" sx={{ fontWeight: weight(600), color: 'text.primary' }}>{chapter.label}</Box>
                                     {chapter.headline ? ` · ${chapter.headline}` : ''}</>}
                         </Typography>
                     </Box>;
                 })}
             </Box>
             <Typography className="topic-open" sx={{ mt: 2.25, display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                fontSize: demoText.body, fontWeight: 600, color: 'text.primary', transition: 'color 0.15s' }}>
+                fontSize: demoText.body, fontWeight: weight(600), color: 'text.primary', transition: 'color 0.15s' }}>
                 Open the session <ArrowForwardIcon sx={{ fontSize: iconVar.md }} />
             </Typography>
         </Box>
@@ -175,7 +175,7 @@ export const DemoDatasetTabs: React.FC<{
                 const Icon = starterIcon(item.icon);
                 return <Tab key={item.id} value={item.id} id={`dataset-tab-${item.id}`} aria-controls="dataset-panel"
                     icon={<Icon sx={{ fontSize: iconVar.lg }} />} iconPosition="start" label={item.kicker || item.title}
-                    sx={{ minHeight: 46, py: 1, px: 1.75, textTransform: 'none', fontSize: demoText.body, fontWeight: 500,
+                    sx={{ minHeight: 46, py: 1, px: 1.75, textTransform: 'none', fontSize: demoText.body, fontWeight: weight(500),
                         color: theme => inkColor(theme, 0.6),
                         border: 1, borderColor: 'transparent',
                         borderTopLeftRadius: cardRadius('10px'), borderTopRightRadius: cardRadius('10px'),
@@ -194,7 +194,7 @@ export const DemoDatasetTabs: React.FC<{
             {/* The title with its source, what the dataset holds, its example sessions (the way in), then starting one's
                 own analysis. */}
             <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 2, rowGap: 1 }}>
-                <Typography component="h2" sx={{ flex: '1 1 auto', minWidth: 0, fontSize: demoText.lead, fontWeight: 600 }}>
+                <Typography component="h2" sx={{ flex: '1 1 auto', minWidth: 0, fontSize: demoText.lead, fontWeight: weight(600) }}>
                     {starter.title}
                 </Typography>
                 <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', columnGap: 2, flexShrink: 0 }}>
@@ -221,7 +221,7 @@ export const DemoDatasetTabs: React.FC<{
                 <TopicCard story={story} disabled={unavailable} onOpen={() => onOpenStory(starter, story)} />
             </Box>)}
             {stories.length > 0 && <Box sx={{ mt: 2.5 }}>
-                <Typography sx={{ fontSize: demoText.small, fontWeight: 500, color: 'text.secondary', mb: 1 }}>Example sessions</Typography>
+                <Typography sx={{ fontSize: demoText.small, fontWeight: weight(500), color: 'text.secondary', mb: 1 }}>Example sessions</Typography>
                 <Box role="list" aria-label="Example sessions" sx={{ display: 'grid', columnGap: 2, rowGap: 1.5,
                     gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))' }}>
                     {stories.map(story => <Box role="listitem" key={story.id}>
@@ -239,7 +239,7 @@ export const DemoDatasetTabs: React.FC<{
             </Box>}
             {allStories.length > 0 && <Button variant="text" size="small" disabled={unavailable} onClick={() => onLoad(starter)}
                 endIcon={<ArrowForwardIcon sx={{ fontSize: `${iconVar.sm} !important` }} />}
-                sx={{ mt: 1.25, ml: -0.75, px: 0.75, textTransform: 'none', fontSize: demoText.small, fontWeight: 400 }}>
+                sx={{ mt: 1.25, ml: -0.75, px: 0.75, textTransform: 'none', fontSize: demoText.small, fontWeight: weight(400) }}>
                 Or start your own analysis with this dataset
             </Button>}
         </Box>

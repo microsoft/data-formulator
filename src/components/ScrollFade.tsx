@@ -18,6 +18,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, alpha } from '@mui/material';
+import { ink } from '../app/tokens';
 
 /** Single source for fade strength across every scrolling surface. */
 export const SCROLL_FADE = {
@@ -230,7 +231,7 @@ export const OverlayScrollbar: React.FC<{ scrollRef: React.RefObject<HTMLElement
             '&::after': {
                 content: '""', display: 'block', height: '100%', borderRadius: 3,
                 width: dragging || near ? 5 : 3, transition: 'width 0.15s ease, background-color 0.15s ease',
-                backgroundColor: dragging ? 'rgba(0, 0, 0, 0.38)' : near ? 'rgba(0, 0, 0, 0.26)' : 'rgba(0, 0, 0, 0.18)',
+                backgroundColor: dragging ? ink(0.38) : near ? ink(0.26) : ink(0.18),
             },
         }} />;
 };

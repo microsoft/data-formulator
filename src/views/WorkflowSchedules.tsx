@@ -25,7 +25,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import { ItemCard, itemCardGridSx, ViewAllButton } from '../components/ItemCard';
-import { sidebarPrimaryActionSx, sidebarToolbarSx } from '../app/tokens';
+import { sidebarPrimaryActionSx, sidebarToolbarSx, ink, paper, weight } from '../app/tokens';
 import { apiRequest } from '../app/apiClient';
 import { getAgentLanguage } from '../app/utils';
 import { DataFormulatorState } from '../app/dfSlice';
@@ -464,8 +464,8 @@ export const SchedulesPanel: React.FC<{ onOpenSession?: (id: string) => void | P
         : { display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, flex: '0 1 auto', overflow: 'hidden' }}>
         {!landing && <>
         <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', px: 1.5, height: 40, minHeight: 40, boxSizing: 'border-box',
-            flexShrink: 0, borderBottom: '1px solid rgba(0, 0, 0, 0.16)', bgcolor: 'rgba(255, 255, 255, 0.76)' }}>
-            <Typography sx={{ fontSize: textVar.md, fontWeight: 600, textAlign: 'left' }}>{t('schedule.title')}</Typography>
+            flexShrink: 0, borderBottom: `1px solid ${ink(0.16)}`, bgcolor: paper(0.76) }}>
+            <Typography sx={{ fontSize: textVar.md, fontWeight: weight(600), textAlign: 'left' }}>{t('schedule.title')}</Typography>
             <ViewAllButton label={t('schedule.viewAll')} disabled={!available} onClick={() => setEditing({ browse: true })} />
             <Box sx={{ flex: 1 }} />
             {headerActions}

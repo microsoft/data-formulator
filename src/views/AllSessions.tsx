@@ -26,7 +26,7 @@ import i18n from '../i18n';
 import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { iconVar, textVar } from '../app/layout';
-import { metaText } from '../app/tokens';
+import { metaText, weight } from '../app/tokens';
 import { openSession, renameSession } from '../app/sessionThunks';
 import { openSessionInNewTab } from '../app/sessionTabs';
 import { requestWormholeDialog } from '../app/wormholeService';
@@ -79,7 +79,7 @@ export const sessionGroupLabelsFor = (t: TFunction): Record<SessionDateGroup, st
     older: t('sidebar.groupOlder', { defaultValue: 'Older' }),
 });
 
-export const sessionGroupHeaderSx = { m: 0, pb: 0.5, fontWeight: 600, color: 'text.disabled',
+export const sessionGroupHeaderSx = { m: 0, pb: 0.5, fontWeight: weight(600), color: 'text.disabled',
     ...metaText({ fontSize: textVar.xxs, textTransform: 'uppercase', letterSpacing: '0.04em' }) } as const;
 
 /**
@@ -115,7 +115,7 @@ export const SessionsDialog: React.FC<{ open: boolean; onClose: () => void; titl
     }, []);
     return <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth aria-labelledby="all-sessions-title"
         slotProps={{ paper: { sx: { height: 'min(720px, 85vh)' } }, transition: { onExited: () => { setQuery(''); setShown(false); } } }}>
-        <DialogTitle id="all-sessions-heading" sx={{ display: 'flex', alignItems: 'center', gap: 1.5, fontSize: textVar.lg, fontWeight: 600 }}>
+        <DialogTitle id="all-sessions-heading" sx={{ display: 'flex', alignItems: 'center', gap: 1.5, fontSize: textVar.lg, fontWeight: weight(600) }}>
             <Box component="span" id="all-sessions-title">{title}</Box>
             {/* A received session lands in this list, so the dialog stays open behind the wormhole one. */}
             {wormholeAvailable && <Tooltip title={t('wormhole.receiveTooltip')}>

@@ -19,6 +19,7 @@ import { bridge, type Row } from './bridge';
 import type { QueryResult } from './data';
 import { Empty, QueryView } from './states';
 import { useSize } from './board';
+import { weight } from '../../tokens';
 
 const BORDER = 'var(--df-rule, rgba(0, 0, 0, 0.12))';
 
@@ -253,7 +254,7 @@ function DataTableBody({ rows, columns, maxHeight, sortable, total, groupBy, col
     const totalRow = (key: string, label: React.ReactNode, items: Row[], options: { onClick?: () => void; grand?: boolean }) => (
         <TableRow key={key} onClick={options.onClick} sx={{
             bgcolor: alpha(theme.palette.text.primary, options.grand ? 0.06 : 0.035), ...(options.onClick ? { cursor: 'pointer' } : {}),
-            '& td': { fontWeight: 600, ...(options.grand ? { borderTop: `1px solid ${BORDER}` } : {}) },
+            '& td': { fontWeight: weight(600), ...(options.grand ? { borderTop: `1px solid ${BORDER}` } : {}) },
         }}>
             {/* The label spans the columns after it that have no total, so it never widens the first column alone. */}
             <TableCell colSpan={labelSpan} sx={{ ...cellText, whiteSpace: 'nowrap', ...held }}>{label}</TableCell>
@@ -276,7 +277,7 @@ function DataTableBody({ rows, columns, maxHeight, sortable, total, groupBy, col
                     <TableHead>
                         <TableRow>
                             {cols.map((col, index) => (
-                                <TableCell key={col.field} align={alignOf(col)} sx={{ fontSize: 'max(12px, var(--df-text-xs))', fontWeight: 600, color: 'text.secondary',
+                                <TableCell key={col.field} align={alignOf(col)} sx={{ fontSize: 'max(12px, var(--df-text-xs))', fontWeight: weight(600), color: 'text.secondary',
                                     whiteSpace: tight ? 'normal' : 'nowrap', lineHeight: 1.3, verticalAlign: 'bottom', bgcolor: 'background.paper', ...cellPad,
                                     ...(index === 0 ? { ...held, zIndex: 3 } : {}) }}>
                                     {sortable ? (
@@ -301,7 +302,7 @@ function DataTableBody({ rows, columns, maxHeight, sortable, total, groupBy, col
                                         <Box component="span" aria-hidden sx={{ display: 'inline-block', width: 10, fontSize: '0.7em', color: 'text.secondary',
                                             transform: folded.has(key) ? 'none' : 'rotate(90deg)', transition: 'transform 120ms' }}>▶</Box>
                                         {String(group.value ?? '—')}
-                                        <Box component="span" sx={{ fontWeight: 400, color: 'text.secondary' }}>({group.rows.length})</Box>
+                                        <Box component="span" sx={{ fontWeight: weight(400), color: 'text.secondary' }}>({group.rows.length})</Box>
                                     </Box>
                                 ), group.rows, { onClick: () => toggle(key) })}
                                 {!folded.has(key) && group.rows.map(dataRow)}

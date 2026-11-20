@@ -3,7 +3,7 @@
 
 import { useSyncExternalStore } from 'react';
 
-import type { Look } from './looks';
+import { LOOKS, type Look } from './looks';
 
 // The look is a preference of this browser, like the display size: kept apart from sessions. The key predates the
 // look module (it was the "contrast" setting), so existing choices carry over.
@@ -11,7 +11,10 @@ const LOOK_KEY = 'df-contrast';
 const listeners = new Set<() => void>();
 
 export const readLook = (): Look => {
-    try { return localStorage.getItem(LOOK_KEY) === 'sharp' ? 'sharp' : 'soft'; } catch { return 'soft'; }
+    try {
+        const stored = localStorage.getItem(LOOK_KEY);
+        return stored && stored in LOOKS ? stored as Look : 'soft';
+    } catch { return 'soft'; }
 };
 
 export const saveLook = (look: Look) => {

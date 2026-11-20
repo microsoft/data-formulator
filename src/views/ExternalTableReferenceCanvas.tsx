@@ -16,6 +16,7 @@ import { SelectableDataGrid, type ColumnDef } from './SelectableDataGrid';
 import { Type } from '../data/types';
 import { textVar } from '../app/layout';
 import '../scss/DataView.scss';
+import { weight } from '../app/tokens';
 
 const SAMPLE_ROW_LIMIT = 50;
 const PREVIEW_TIMEOUT_MS = 120_000;
@@ -146,7 +147,7 @@ export const ExternalTableReferenceCanvas: React.FC<{ referenceId: string }> = (
             <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1.5, px: 0.5, pb: 1, pr: 2 }}>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-                        <Typography component="h2" sx={{ fontSize: textVar.xl, fontWeight: 600, overflowWrap: 'anywhere', lineHeight: 1.2, m: 0 }}>{title}</Typography>
+                        <Typography component="h2" sx={{ fontSize: textVar.xl, fontWeight: weight(600), overflowWrap: 'anywhere', lineHeight: 1.2, m: 0 }}>{title}</Typography>
                         <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary', flexShrink: 0 }}>
                             {t('externalReference.virtual', { defaultValue: 'Virtual' })}
                         </Typography>

@@ -77,7 +77,8 @@ _HEAD_OPEN_RE = re.compile(r"<head\b[^>]*>", re.IGNORECASE)
 _HTML_OPEN_RE = re.compile(r"<html\b[^>]*>", re.IGNORECASE)
 
 _LINT_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"\b(?:src|href)\s*=\s*[\"']?\s*(?:https?:)?//", re.IGNORECASE),
+    # Assets only: ordinary `<a href>` links to web pages open in a new tab (and MUI's `<Link>` is such a link).
+    (re.compile(r"(?i:\bsrc\s*=\s*\{?\s*[\"'`]?\s*(?:https?:)?//)|<link\b[^>]*\bhref\s*=\s*[\"']?\s*(?:https?:)?//"),
      "External scripts, stylesheets, fonts, and images are blocked; inline them or use DF.chart."),
     (re.compile(r"(?:@import|url\(\s*[\"']?)\s*(?:https?:)?//", re.IGNORECASE),
      "External CSS imports and url() assets are blocked; use inline styles and data: URIs."),

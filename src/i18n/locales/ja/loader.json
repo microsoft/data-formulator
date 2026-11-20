@@ -152,6 +152,9 @@
     "powerbi": {
       "authInstructions": "**例**\n\nworkspace: `Sales Analytics`\n\n**ワークスペース**\n\nワークスペース名、または URL に含まれる ID (`.../groups/<id>/...`) を入力します。\n\n**サインイン**\n\n- **Azure default identity:** 推奨。モデルを開けるアカウントで `az login` を実行します。あなたの権限と行レベルセキュリティが適用されます。\n- **Service principal:** ワークスペースに追加された Entra アプリのクライアント ID、シークレット、テナント ID。行レベルセキュリティまたは SSO を使用するモデルはクエリできません。\n\n**アクセス権**\n\n各セマンティックモデルに対する **Read** と **Build** が必要です。Power BI 管理者が *Dataset Execute Queries REST API* を有効にする必要があり、サービスプリンシパルの場合は *Allow service principals to use Power BI APIs* も必要です。\n\n**制限**\n\nユーザーあたり毎分 120 クエリ、結果あたり最大 10,000 行。Azure Analysis Services のモデルはサポートされていません。"
     },
+    "dataverse": {
+      "authInstructions": "**例**\n\nenvironment_url: `https://contoso.crm.dynamics.com`\n\n**環境 URL**\n\nPower Apps で **Settings** (歯車) > **Session details** を開き、*Instance url* をコピーします。**Developer resources** の Web API エンドポイントも使用できます。\n\n**サインイン**\n\n- **Sign in with Microsoft (browser):** Data Formulator をお使いのマシンで実行している場合。サインインのためにブラウザーが一度開くため、Azure CLI とは別のアカウントを使用できます。アカウントを指定するには *login_hint* を入力します。以降の接続では、ブラウザーを開かずにこのサインインが再利用されます。\n- **Sign in with Microsoft:** サーバーに Dataverse サインインアプリ (`DATAVERSE_OAUTH_CLIENT_ID`) がある場合に表示されます。あなた自身のセキュリティロールが適用されます。\n- **Azure default identity:** 環境のユーザーであるアカウントで `az login` を実行します。環境が別のテナントにある場合 (ゲストとして追加された場合など) は、`az login --tenant <tenant-id> --allow-no-subscriptions` を実行します。\n- **Service principal:** セキュリティロールを持つアプリケーションユーザーとして環境に追加された Entra アプリのクライアント ID、シークレット、テナント ID。\n\n**アクセス権**\n\n読み込むテーブルに対する読み取りアクセス権がセキュリティロールに必要です。\n\n**データ**\n\n検索列と選択肢列では、表示ラベルを含む `<column>name` 列も読み込まれます。検索列には関連する行の ID が格納されるため、たとえば `opportunity.parentaccountid` を `account.accountid` と結合できます。"
+    },
     "sample_datasets": {
       "authInstructions": "組み込みのサンプルデータセットは、設定も資格情報も不要です。コネクターを開いてサンプルを参照し、テーブルをインポートしてください。"
     }

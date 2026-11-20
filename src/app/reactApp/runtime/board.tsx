@@ -29,28 +29,43 @@ const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 /** A theme that knows its categorical colours and grid ink (set by the board and by an AppTheme). */
 export type PaletteTheme = Theme & { dfPalette?: string[]; dfGrid?: string };
 
+/** The board's surfaces and inks: light by default, or the host look's when its page is dark (`setBoardInks`). */
+let darkInks: { page: string; tile: string; text: string; secondary: string; muted: string; grid: string; rule: string } | null = null;
+
+/** Draws the board on a dark host page: its tiles, page and chart inks follow `theme` (the app's outer theme). */
+export function setBoardInks(theme: Theme) {
+    const { palette } = theme;
+    darkInks = palette.mode !== 'dark' ? null : {
+        page: palette.background.default, tile: palette.background.paper, text: palette.text.primary,
+        secondary: palette.text.secondary, muted: palette.text.disabled, grid: alpha(palette.text.primary, 0.08), rule: palette.divider,
+    };
+}
+
 /**
  * The chart look of a board: the plot without a frame, axis lines or ticks, a quiet sparse grid, muted
  * labels, keys above the plot, and one series in the app's accent.
  */
 export function boardChartTheme(accent: string): Record<string, unknown> {
+    const tile = darkInks?.tile ?? BOARD_TILE;
+    const label = darkInks?.secondary ?? '#59636e';
+    const rule = darkInks?.rule ?? '#d1d9e0';
     return {
         id: 'df-board',
         label: 'Board',
         ink: {
-            surface: { source: 'house', canvas: BOARD_TILE, plot: BOARD_TILE, panel: BOARD_PAGE },
-            text: { primary: '#1f2328', secondary: '#59636e', muted: '#8b949e' },
-            structure: { grid: BOARD_GRID, axis: '#d1d9e0', rule: '#d1d9e0' },
+            surface: { source: 'house', canvas: tile, plot: tile, panel: darkInks?.page ?? BOARD_PAGE },
+            text: { primary: darkInks?.text ?? '#1f2328', secondary: label, muted: darkInks?.muted ?? '#8b949e' },
+            structure: { grid: darkInks?.grid ?? BOARD_GRID, axis: rule, rule },
             series: { single: accent, categorical: BOARD_PALETTE, accent },
             accent,
         },
         type: {
-            headline: { family: fontSans },
-            deck: { family: fontSans },
-            axisLabel: { family: fontSans, color: '#59636e' },
-            axisTitle: { family: fontSans, color: '#59636e' },
-            keyLabel: { family: fontSans, color: '#59636e' },
-            keyTitle: { family: fontSans, color: '#59636e' },
+            headline: { family: fontSans, ...(darkInks ? { color: darkInks.text } : {}) },
+            deck: { family: fontSans, ...(darkInks ? { color: label } : {}) },
+            axisLabel: { family: fontSans, color: label },
+            axisTitle: { family: fontSans, color: label },
+            keyLabel: { family: fontSans, color: label },
+            keyTitle: { family: fontSans, color: label },
             valueLabel: { family: fontSans },
             annotation: { family: fontSans },
         },
@@ -97,8 +112,9 @@ export function boardSpec(theme: 'board' | Record<string, unknown>, accent: stri
 export function boardTheme(outer: Theme): Theme {
     return createTheme(outer as object, {
         dfPalette: BOARD_PALETTE,
-        dfGrid: BOARD_GRID,
-        palette: { background: { default: BOARD_PAGE, paper: BOARD_TILE } },
+        // A dark host page keeps its own page and tiles (setBoardInks).
+        dfGrid: darkInks?.grid ?? BOARD_GRID,
+        palette: { background: { default: darkInks?.page ?? BOARD_PAGE, paper: darkInks?.tile ?? BOARD_TILE } },
         shape: { borderRadius: Number(outer.shape.borderRadius) * 2 },
         typography: {
             h4: { letterSpacing: '-0.02em' },

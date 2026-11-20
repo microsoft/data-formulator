@@ -4,6 +4,7 @@
 import React from 'react';
 import { Box } from '@mui/material';
 import { Link, useLocation } from 'react-router-dom';
+import { weight } from '../app/tokens';
 
 const PAGES: [string, string][] = [['/dev', 'components'], ['/dev/samples', 'sample apps'], ['/dev/maps', 'maps'], ['/dev/map-colors', 'map colours'], ['/dev/map-bubbles', 'map bubbles'], ['/dev/design', 'design']];
 
@@ -16,9 +17,9 @@ export const DevNav: React.FC<{ sections?: [string, string][] }> = ({ sections =
         display: 'flex', alignItems: 'center', gap: 2, px: 2, height: 36, flexShrink: 0, boxSizing: 'border-box',
         borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper', position: 'sticky', top: 0, zIndex: 10,
     }}>
-        <Box component={Link} to="/" sx={{ ...linkSx, fontWeight: 600, color: 'text.primary' }}>Data Formulator</Box>
+        <Box component={Link} to="/" sx={{ ...linkSx, fontWeight: weight(600), color: 'text.primary' }}>Data Formulator</Box>
         {PAGES.map(([path, label]) => <Box key={path} component={Link} to={path}
-            sx={{ ...linkSx, ...(pathname === path ? { color: 'primary.main', fontWeight: 600 } : {}) }}>{label}</Box>)}
+            sx={{ ...linkSx, ...(pathname === path ? { color: 'primary.main', fontWeight: weight(600) } : {}) }}>{label}</Box>)}
         {sections.length > 0 && <Box sx={{ width: '1px', height: 16, bgcolor: 'divider' }} />}
         {sections.map(([id, label]) => <Box key={id} component="a" href={`#${id}`} sx={linkSx}>{label}</Box>)}
     </Box>;

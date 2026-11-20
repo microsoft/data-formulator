@@ -152,6 +152,9 @@
     "powerbi": {
       "authInstructions": "**예시**\n\nworkspace: `Sales Analytics`\n\n**작업 영역**\n\n작업 영역 이름 또는 URL에 있는 ID(`.../groups/<id>/...`)를 입력하세요.\n\n**로그인**\n\n- **Azure default identity:** 권장. 모델을 열 수 있는 계정으로 `az login`을 실행하세요. 내 권한과 행 수준 보안이 적용됩니다.\n- **Service principal:** 작업 영역에 추가된 Entra 앱의 클라이언트 ID, 시크릿, 테넌트 ID입니다. 행 수준 보안이나 SSO를 사용하는 모델은 쿼리할 수 없습니다.\n\n**액세스 권한**\n\n각 시맨틱 모델에 대한 **Read** 및 **Build** 권한이 필요합니다. Power BI 관리자가 *Dataset Execute Queries REST API*를 활성화해야 하며, 서비스 주체의 경우 *Allow service principals to use Power BI APIs*도 활성화해야 합니다.\n\n**제한**\n\n사용자당 분당 120개 쿼리, 결과당 최대 10,000행입니다. Azure Analysis Services의 모델은 지원되지 않습니다."
     },
+    "dataverse": {
+      "authInstructions": "**예시**\n\nenvironment_url: `https://contoso.crm.dynamics.com`\n\n**환경 URL**\n\nPower Apps에서 **Settings**(톱니바퀴) > **Session details**를 열고 *Instance url*을 복사하세요. **Developer resources**의 Web API 엔드포인트도 사용할 수 있습니다.\n\n**로그인**\n\n- **Sign in with Microsoft (browser):** Data Formulator가 내 컴퓨터에서 실행될 때 사용합니다. 로그인을 위해 브라우저가 한 번 열리므로 Azure CLI와 다른 계정을 사용할 수 있습니다. 계정을 선택하려면 *login_hint*를 입력하세요. 이후 연결에서는 브라우저를 열지 않고 이 로그인을 재사용합니다.\n- **Sign in with Microsoft:** 서버에 Dataverse 로그인 앱(`DATAVERSE_OAUTH_CLIENT_ID`)이 있을 때 표시됩니다. 내 보안 역할이 적용됩니다.\n- **Azure default identity:** 환경의 사용자인 계정으로 `az login`을 실행하세요. 환경이 다른 테넌트에 있는 경우(예: 게스트로 추가된 경우) `az login --tenant <tenant-id> --allow-no-subscriptions`를 실행하세요.\n- **Service principal:** 보안 역할이 있는 애플리케이션 사용자로 환경에 추가된 Entra 앱의 클라이언트 ID, 시크릿, 테넌트 ID입니다.\n\n**액세스 권한**\n\n보안 역할에 로드할 테이블에 대한 읽기 권한이 있어야 합니다.\n\n**데이터**\n\n조회 열과 선택 항목 열은 표시 레이블이 담긴 `<column>name` 열도 함께 로드합니다. 조회 열에는 관련 행의 ID가 들어 있으므로, 예를 들어 `opportunity.parentaccountid`를 `account.accountid`와 조인할 수 있습니다."
+    },
     "sample_datasets": {
       "authInstructions": "기본 제공 샘플 데이터 세트는 설정이나 자격 증명이 필요 없습니다. 커넥터를 열어 예제를 탐색하고 테이블을 가져오세요."
     }

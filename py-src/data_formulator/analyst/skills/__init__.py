@@ -224,7 +224,7 @@ class SkillRegistry:
         registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
                            tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
                            _bodies=dict(self._bodies), _body_edits=dict(self._body_edits))
-        for name in ("connected_data", "terminal", "browser", "configure", "html_app"):
+        for name in ("connected_data", "terminal", "browser", "configure", "html_app", "past_sessions"):
             for collection in (registry.metas, registry.skills, registry.tool_specs, registry._doc_paths):
                 collection.pop(name, None)
         registry = registry.without_tools(DEMO_WITHOUT_TOOLS)

@@ -11,6 +11,7 @@ import { Box, CircularProgress, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { apiRequest } from '../app/apiClient';
 import { textVar } from '../app/layout';
+import { weight } from '../app/tokens';
 
 export interface SignInEvent {
     time: number;
@@ -79,7 +80,7 @@ export const SignInActivity: FC<{ refresh: number }> = ({ refresh }) => {
     const cell = { px: 1.5, py: 0.75, textAlign: 'left', verticalAlign: 'top', borderBottom: '1px solid', borderColor: 'divider' } as const;
     return <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
         <Box component="table" aria-label={t('logs.signinsTab', { defaultValue: 'Sign-ins' })}
-            sx={{ width: '100%', borderCollapse: 'collapse', fontSize: textVar.sm, '& th': { ...cell, color: 'text.secondary', fontWeight: 400,
+            sx={{ width: '100%', borderCollapse: 'collapse', fontSize: textVar.sm, '& th': { ...cell, color: 'text.secondary', fontWeight: weight(400),
                 position: 'sticky', top: 0, bgcolor: 'background.paper' }, '& td': cell }}>
             <thead><tr>
                 <th>{t('logs.signins.time', { defaultValue: 'Time' })}</th>

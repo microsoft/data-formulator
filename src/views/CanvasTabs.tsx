@@ -23,7 +23,7 @@ import { useTranslation } from 'react-i18next';
 import { arrangeCanvasTabs, CanvasTab, canvasTabKey, DataFormulatorState, dfActions, dfSelectors, FocusedId, isCanvasTabPinned, RECENT_CANVAS_TABS } from '../app/dfSlice';
 import { chartTitleFits } from '../components/ComponentType';
 import { externalReferenceTitle } from '../app/workspaceService';
-import { borderColor, cardRadius } from '../app/tokens';
+import { borderColor, cardRadius, ink } from '../app/tokens';
 
 export const CANVAS_TABS_HEIGHT = 32;
 const TAB_MIN_WIDTH = 96;
@@ -264,7 +264,7 @@ export const CanvasTabs: FC<{ target: FocusedId; viewMode: 'editor' | 'report'; 
         // Quieter than the tabs, and kept clear of the canvas box's rounded corner.
         sx={{ alignSelf: 'center', flexShrink: 0, position: 'relative', ml: 0.5, mr: 1.5, mt: '2px', height: 22, px: 0.75,
             borderRadius: 1.5, color: 'text.disabled', fontSize: '0.6875rem', whiteSpace: 'nowrap',
-            '&:hover': { bgcolor: 'rgba(0,0,0,0.04)', color: 'text.secondary' } }}>
+            '&:hover': { bgcolor: ink(0.04), color: 'text.secondary' } }}>
         {t('canvas.moreCount', { defaultValue: '+{{count}} more', count: hidden.length })}
         {hidden.some(tab => tab.unseen) && <Box sx={{ position: 'absolute', top: 0, right: 0, display: 'flex' }}><UnseenDot /></Box>}
     </ButtonBase>;
@@ -311,7 +311,7 @@ export const CanvasTabs: FC<{ target: FocusedId; viewMode: 'editor' | 'report'; 
                         touchAction: 'none', userSelect: 'none',
                         // A short muted separator between tabs, as in Chrome; not beside the active tab.
                         '&::before': { content: '""', position: 'absolute', left: -1, top: '50%', transform: 'translateY(-50%)',
-                            width: '1px', height: 14, bgcolor: 'rgba(0,0,0,0.12)' },
+                            width: '1px', height: 14, bgcolor: ink(0.12) },
                         '&:first-of-type::before, &[aria-selected="true"]::before, [aria-selected="true"] + &::before': { display: 'none' },
                     }}>
                     <Box sx={{ position: 'relative', width: 16, height: 16, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

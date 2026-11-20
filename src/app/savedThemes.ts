@@ -27,6 +27,16 @@ const emit = () => {
     listeners.forEach(listener => listener());
 };
 
+// The look's inks for charts drawn with Flint's defaults (look/looks.ts `chartInk`), or null.
+let chartInk: Record<string, unknown> | null = null;
+
+/** Sets the look's chart inks; default-theme charts (and their caches, keyed by `chartThemeKey`) redraw. */
+export function setChartInk(next: Record<string, unknown> | null) {
+    if (JSON.stringify(next) === JSON.stringify(chartInk)) return;
+    chartInk = next;
+    emit();
+}
+
 const subscribe = (listener: () => void) => {
     listeners.add(listener);
     return () => { listeners.delete(listener); };
@@ -105,7 +115,33 @@ export function chartThemeSpec(themeId: string | undefined): string | Record<str
 /** A key that changes when the theme an id names changes, for caches of drawn charts. */
 export function chartThemeKey(themeId: string | undefined): string {
     const spec = chartThemeSpec(themeId);
-    return typeof spec === 'object' ? JSON.stringify(spec) : spec ?? '';
+    const key = typeof spec === 'object' ? JSON.stringify(spec) : spec ?? '';
+    return spec === undefined && chartInk ? `look:${JSON.stringify(chartInk)}` : key;
+}
+
+type InkSpec = { ink?: { surface?: { canvas?: string }; text?: { primary?: string; secondary?: string };
+    structure?: { grid?: string; axis?: string } } };
+
+/**
+ * For a chart drawn with Flint's defaults (no theme) on a dark look: the look's paper and inks as a Vega-Lite `config`
+ * to merge over the chart's, recolouring only text, grid and background (Flint's defaults leave those to Vega), never
+ * its colour scales. A chart with a theme keeps it as authored. Interim: Flint's defaults ignore the host background
+ * (`options.background`), and its host-surface presets keep their light-page text on a dark host; once Flint derives
+ * inks from the host, DF passes `options.background` instead. Undefined otherwise.
+ */
+export function chartLookConfig(themeId: string | undefined): Record<string, any> | undefined {
+    if (!chartInk || chartThemeSpec(themeId) !== undefined) return undefined;
+    const { surface, text, structure } = (chartInk as InkSpec).ink ?? {};
+    const label = text?.secondary, axis = { labelColor: label, titleColor: label, gridColor: structure?.grid,
+        domainColor: structure?.axis, tickColor: structure?.axis };
+    return {
+        background: surface?.canvas,
+        title: { color: text?.primary, subtitleColor: label },
+        axis, axisX: axis, axisY: axis,
+        legend: { labelColor: label, titleColor: label },
+        header: { labelColor: label, titleColor: label },
+        text: { color: text?.primary },
+    };
 }
 
 /** The theme fully resolved (a preset or a saved theme merged over its preset), or undefined. */

@@ -27,13 +27,12 @@ from data_formulator.agents.agent_simple import SimpleAgents
 from data_formulator.auth.identity import get_identity_id
 from data_formulator.security.code_signing import sign_result, verify_code, MAX_CODE_SIZE
 from data_formulator.datalake.parquet_utils import df_to_safe_records
-from data_formulator.datalake.workspace import Workspace, get_user_home
+from data_formulator.datalake.workspace import Workspace
 from data_formulator.workspace_factory import get_active_workspace_id, get_workspace
 from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 from data_formulator.agents.client_utils import Client, effective_api_base
 from data_formulator.model_registry import model_registry
-from data_formulator.knowledge.store import KnowledgeStore
 from data_formulator.data_operations import DataOperationExecutor, DataOperationRepository
 from data_formulator.analyst.viewing import view_resume_message
 from data_formulator.datalake.parquet_utils import make_json_safe
@@ -60,16 +59,6 @@ def get_language_instruction(*, mode: str = "full") -> str:
     mode: "full" for text-heavy agents, "compact" for code-generation agents.
     """
     return build_language_instruction(_get_ui_lang(), mode=mode)
-
-
-def _get_knowledge_store(identity_id: str) -> KnowledgeStore | None:
-    """Create a KnowledgeStore for the given user, or None on failure."""
-    try:
-        from data_formulator.datalake.workspace import get_user_home
-        return KnowledgeStore(get_user_home(identity_id))
-    except Exception:
-        logger.warning("Failed to create KnowledgeStore", exc_info=True)
-        return None
 
 
 agent_bp = Blueprint('agent', __name__, url_prefix='/api/agent')

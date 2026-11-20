@@ -31,11 +31,11 @@ export interface Scene {
     /** Categories hidden from the legend, per layer. */
     hidden: Record<string, Set<string>>;
     /** Hovered legend entry: highlight its marks. */
-    highlight: { layerId: string; test: (mark: Mark) => boolean } | null;
+    highlight: { layerIds: string[]; test: (mark: Mark) => boolean } | null;
     interactive: boolean;
     /** Changes when the spec or its data change; filters, frames, and selection keep the user's view. */
     fitVersion?: number;
-    /** Panels floating over the map ([x0, y0, x1, y1] in pixels): the centred map shrinks to clear them. */
+    /** Floating panels ([x0, y0, x1, y1] in pixels): the map may nudge aside, but stays naturally sized. */
     obstacles?: [number, number, number, number][];
 }
 
@@ -354,7 +354,7 @@ export function placesCourse(places: LonLat[], project: (place: LonLat) => Scree
 }
 
 /** A fitted map's collision outline and bounds, in units of its projection's scale from its translate. */
-interface FitShape { outline: [number, number][]; bounds: [number, number, number, number] }
+interface FitShape { outline: [number, number][]; bounds: [number, number, number, number]; scale: number; translate: [number, number] }
 
 /** Text the renderer draws (legends, tooltips), translated by the host. */
 export interface RendererStrings {
@@ -692,8 +692,7 @@ export class MapRenderer {
             const places = this.dataPlaces(projection);
             return arrangements.map(boxes => {
                 const placed = shape && boxes.length ? this.placeAround(shape, boxes) : null;
-                // Panels the map cannot clear at any size it may take: it would sit under them, so score it as much smaller.
-                const { scale, tx, ty } = placed ?? { scale: shape && boxes.length ? scale0 * 0.5 : scale0, tx: tx0, ty: ty0 };
+                const { scale, tx, ty } = placed ?? { scale: scale0, tx: tx0, ty: ty0 };
                 const k = scale / scale0;
                 const inside = ([x, y]: [number, number]) => {
                     const px = (x - tx0) * k + tx;
@@ -735,7 +734,7 @@ export class MapRenderer {
 
     /**
      * The projection fitted to the whole panel, before the floating panels: what it frames (null for a set centre
-     * and zoom, which stays put), and what the panels must not cover.
+     * and zoom, which stays put), and the data to consider when nudging around panels.
      */
     private prepareFit(): { projection: d3.GeoProjection; fitted: d3.GeoPermissibleObjects | null; collision: [number, number][] | null } {
         const scene = this.scene!;
@@ -743,7 +742,7 @@ export class MapRenderer {
         const name = viewProjection(view);
         const projection = makeProjection(name);
         const pad = 16;
-        // The map is centred in the whole panel, then shrunk just enough to clear the floating panels.
+        // Floating panels may nudge this natural fit, but never shrink it.
         const extent: [[number, number], [number, number]] = [[pad, pad], [Math.max(pad + 1, this.width - pad), Math.max(pad + 1, this.height - pad)]];
         const middle: [number, number] = [this.width / 2, this.height / 2];
         let fitted: d3.GeoPermissibleObjects | null = null;
@@ -785,7 +784,7 @@ export class MapRenderer {
     }
 
     /**
-     * What the floating panels must not cover, in the projection's pixels: the data as drawn (its regions' edges
+     * What the floating panels should avoid, in the projection's pixels: the data as drawn (its regions' edges
      * and middles, its points with their size, its routes and tracks along their curves). Basemap land and sea that
      * carry no data may sit under a panel, so the map stays large rather than dodging every coastline.
      */
@@ -851,99 +850,35 @@ export class MapRenderer {
         const outline = step > 1 ? points.filter((_, index) => index % step === 0) : points;
         const [[bx0, by0], [bx1, by1]] = d3.geoPath(projection).bounds(target).map(point => toUnit(point as [number, number]));
         if (![bx0, by0, bx1, by1].every(Number.isFinite) || bx1 <= bx0 || by1 <= by0) return null;
-        return { outline, bounds: [bx0, by0, bx1, by1] };
+        return { outline, bounds: [bx0, by0, bx1, by1], scale: scale0, translate: [tx0, ty0] };
     }
 
     /**
-     * Fit the map as large as the floating panels allow. Canvas panels are squarer than most maps, so
-     * the map may sit in a free band (below the header, above the timeline, beside a side column)
-     * rather than the panel's centre. Collisions test the data, not the basemap, so panels can float
-     * over land and sea that carry none. Null when no fit clears the panels.
+     * Keep the natural fit, allowing a nudge of at most 4% along each axis when it exposes enough data.
+     * Overlap is preferable to shrinking the map or pushing it into a free corner.
      */
-    private placeAround(shape: FitShape, obstacles: [number, number, number, number][]): { scale: number; tx: number; ty: number } | null {
-        const { outline } = shape;
+    private placeAround(shape: FitShape, obstacles: [number, number, number, number][]): { scale: number; tx: number; ty: number } {
+        const { outline, scale, translate: [tx, ty] } = shape;
         const [bx0, by0, bx1, by1] = shape.bounds;
-
-        const pad = 16;
-        const gap = 10;
         const margin = 6;
-        // A panel bounds a side band when clearing that band costs less of the panel than clearing a top or
-        // bottom band would (a short title or a timeline in the top row stays a top panel).
-        const narrow = (box: [number, number, number, number]) =>
-            Math.min(box[2] / this.width, (this.width - box[0]) / this.width) < Math.min(box[3] / this.height, (this.height - box[1]) / this.height);
-        const middleY = (box: [number, number, number, number]) => (box[1] + box[3]) / 2;
-        const middleX = (box: [number, number, number, number]) => (box[0] + box[2]) / 2;
-        const tops = obstacles.filter(box => middleY(box) < this.height / 2);
-        const bottoms = obstacles.filter(box => middleY(box) >= this.height / 2);
-        const lefts = obstacles.filter(box => narrow(box) && middleX(box) < this.width / 2);
-        const rights = obstacles.filter(box => narrow(box) && middleX(box) >= this.width / 2);
-        const edges = {
-            top: tops.length ? Math.max(...tops.map(box => box[3])) + gap : pad,
-            bottom: bottoms.length ? Math.min(...bottoms.map(box => box[1])) - gap : this.height - pad,
-            left: lefts.length ? Math.max(...lefts.map(box => box[2])) + gap : pad,
-            right: rights.length ? Math.min(...rights.map(box => box[0])) - gap : this.width - pad,
-        };
-        const hits = (scale: number, tx: number, ty: number) => outline.some(([ux, uy]) => {
-            const x = ux * scale + tx;
-            const y = uy * scale + ty;
+        const coverage = (dx: number, dy: number) => outline.length ? outline.filter(([ux, uy]) => {
+            const x = ux * scale + tx + dx;
+            const y = uy * scale + ty + dy;
             return obstacles.some(([x0, y0, x1, y1]) => x >= x0 - margin && x <= x1 + margin && y >= y0 - margin && y <= y1 + margin);
-        });
-        let best: { scale: number; tx: number; ty: number } | null = null;
-        for (let mask = 0; mask < 16; mask++) {
-            const x0 = mask & 1 ? edges.left : pad;
-            const x1 = mask & 2 ? edges.right : this.width - pad;
-            const y0 = mask & 4 ? edges.top : pad;
-            const y1 = mask & 8 ? edges.bottom : this.height - pad;
-            if (x1 - x0 < this.width * 0.4 || y1 - y0 < this.height * 0.4) continue;
-            const fit = Math.min((x1 - x0) / (bx1 - bx0), (y1 - y0) / (by1 - by0));
-            const place = (scale: number) => ({ scale, tx: (x0 + x1) / 2 - (bx0 + bx1) / 2 * scale, ty: (y0 + y1) / 2 - (by0 + by1) / 2 * scale });
-            let candidate = place(fit);
-            for (let shrink = 0; shrink < 30 && hits(candidate.scale, candidate.tx, candidate.ty); shrink++) {
-                if (candidate.scale * 0.97 < fit * 0.5) break;
-                candidate = place(candidate.scale * 0.97);
+        }).length / outline.length : 0;
+        let best = { scale, tx, ty };
+        let bestCost = coverage(0, 0);
+        for (const x of [0, -0.02, 0.02, -0.04, 0.04]) {
+            for (const y of [0, -0.02, 0.02, -0.04, 0.04]) {
+                const dx = x * this.width;
+                const dy = y * this.height;
+                if (bx0 * scale + tx + dx < 4 || bx1 * scale + tx + dx > this.width - 4
+                    || by0 * scale + ty + dy < 4 || by1 * scale + ty + dy > this.height - 4) continue;
+                const cost = coverage(dx, dy) + Math.hypot(x, y) * 1.5;
+                if (cost < bestCost) { best = { scale, tx: tx + dx, ty: ty + dy }; bestCost = cost; }
             }
-            if (hits(candidate.scale, candidate.tx, candidate.ty)) continue;
-            // Prefer the larger map; on a near tie, the more centred one.
-            if (!best || candidate.scale > best.scale * 1.02) best = candidate;
         }
-        if (!best) return null;
-        // A band beside a corner panel pushes the map off-centre; slide it back as far as the land stays
-        // clear (a panel may float over open ocean).
-        // Sliding never pushes the map past the panel's edges (a full-height globe stays whole).
-        const inside = (scale: number, tx: number, ty: number) => bx0 * scale + tx >= pad - 1 && bx1 * scale + tx <= this.width - pad + 1
-            && by0 * scale + ty >= pad - 1 && by1 * scale + ty <= this.height - pad + 1;
-        // Vertically, centre between the panels above and below the map's middle (the title, a row of
-        // controls), not a side column that only sits beside it.
-        const left = bx0 * best.scale + best.tx;
-        const right = bx1 * best.scale + best.tx;
-        const middle = [left + (right - left) * 0.2, right - (right - left) * 0.2];
-        const across = (box: [number, number, number, number]) => box[0] < middle[1] && box[2] > middle[0];
-        const above = tops.filter(across);
-        const below = bottoms.filter(across);
-        const bandTop = above.length ? Math.max(...above.map(box => box[3])) + gap : pad;
-        const bandBottom = below.length ? Math.min(...below.map(box => box[1])) - gap : this.height - pad;
-        // A slightly smaller centred map reads better than a larger off-centre one: give up to ~9% of scale.
-        let moved = best;
-        for (const shrink of [1, 0.97, 0.94, 0.91]) {
-            const scale = best.scale * shrink;
-            const centreX = this.width / 2 - (bx0 + bx1) / 2 * scale;
-            const centreY = (bandTop + bandBottom) / 2 - (by0 + by1) / 2 * scale;
-            const startX = best.tx + (bx0 + bx1) / 2 * (best.scale - scale);
-            const startY = best.ty + (by0 + by1) / 2 * (best.scale - scale);
-            let found: typeof best | null = null;
-            let distance = Infinity;
-            for (let ix = 0; ix <= 10; ix++) {
-                for (let iy = 0; iy <= 10; iy++) {
-                    const tx: number = startX + (centreX - startX) * ix / 10;
-                    const ty: number = startY + (centreY - startY) * iy / 10;
-                    const away = Math.hypot(centreX - tx, centreY - ty);
-                    if (away < distance && inside(scale, tx, ty) && !hits(scale, tx, ty)) { found = { scale, tx, ty }; distance = away; }
-                }
-            }
-            if (shrink === 1 && found) moved = found;
-            if (found && distance <= this.width * 0.02) { moved = found; break; }
-        }
-        return moved;
+        return best;
     }
 
     /**
@@ -1372,7 +1307,7 @@ export class MapRenderer {
         const hidden = !!hiddenSet?.size && model.color.categorical && hiddenSet.has(String(mark.colorValue));
         const selection = scene.selection?.layerId === model.layer.id ? scene.selection : null;
         const selected = !!selection?.keys.has(mark.key);
-        const highlight = scene.highlight?.layerId === model.layer.id ? scene.highlight : null;
+        const highlight = scene.highlight?.layerIds.includes(model.layer.id) ? scene.highlight : null;
         const dim = (!!selection && selection.keys.size > 0 && !selected) || (!!highlight && !highlight.test(mark));
         return { dim, selected, hidden };
     }

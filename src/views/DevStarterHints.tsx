@@ -10,6 +10,7 @@ import { alpha } from '@mui/material/styles';
 import TipsAndUpdatesOutlinedIcon from '@mui/icons-material/TipsAndUpdatesOutlined';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import CloseIcon from '@mui/icons-material/Close';
+import { weight } from '../app/tokens';
 
 const NAME = 'Education: SDG 4';
 const QUESTIONS = [
@@ -33,7 +34,7 @@ const Close: React.FC = () =>
 
 const QuestionLink: React.FC<{ q: string; color: string }> = ({ q, color }) =>
     <ButtonBase sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 0.5, py: 0.25, textAlign: 'left',
-        fontFamily: 'inherit', fontSize: 12.5, lineHeight: 1.45, fontWeight: 500, color,
+        fontFamily: 'inherit', fontSize: 12.5, lineHeight: 1.45, fontWeight: weight(500), color,
         '&:hover': { textDecoration: 'underline', textUnderlineOffset: '2px' } }}>
         <ArrowForwardRoundedIcon sx={{ fontSize: 12, alignSelf: 'center', flexShrink: 0, opacity: 0.8 }} />{q}
     </ButtonBase>;

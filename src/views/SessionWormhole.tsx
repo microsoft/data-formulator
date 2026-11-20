@@ -33,6 +33,7 @@ import {
     receiveSessionByWormhole, sendSessionByWormhole, WormholeTransfer,
 } from '../app/wormholeService';
 import { formatBytes } from './ViewUtils';
+import { weight } from '../app/tokens';
 
 type DialogState =
     | { kind: 'send'; workspaceId: string; displayName: string; transferId?: string; error?: string }
@@ -314,7 +315,7 @@ export const SessionWormhole: FC = () => {
                         }
                         return (
                             <Paper key={transfer.id} elevation={6} sx={{ p: 1.5 }}>
-                                <Typography sx={{ fontSize: textVar.sm, fontWeight: 600 }} noWrap>
+                                <Typography sx={{ fontSize: textVar.sm, fontWeight: weight(600) }} noWrap>
                                     {transfer.direction === 'send'
                                         ? t('wormhole.sendingNamed', { name: transfer.display_name })
                                         : transfer.display_name

@@ -13,7 +13,7 @@ import { Box, useTheme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import uiScreenshot from './DevDesignPage.ui.png';
-import { fontSans } from '../app/tokens';
+import { fontSans, ink, paper } from '../app/tokens';
 import { LayerSketch, type LayerSketchKind } from './DevDesignSketch';
 
 const DW = 1640;
@@ -254,10 +254,10 @@ const InteractionSlide: React.FC<{ accent: string }> = () => <g>
 
 const Term: React.FC<{ children: React.ReactNode }> = ({ children }) => <Box component="span" sx={{
     color: INK, fontWeight: 500, whiteSpace: 'nowrap', textDecoration: 'underline', textDecorationThickness: '1px',
-    textUnderlineOffset: '0.22em', textDecorationColor: 'rgba(0, 0, 0, 0.35)',
+    textUnderlineOffset: '0.22em', textDecorationColor: ink(0.35),
 }}>{children}</Box>;
 const Soon: React.FC = () => <Box component="span" sx={{
-    ml: u(4), px: u(6), py: u(1), borderRadius: u(4), border: '1px solid rgba(0, 0, 0, 0.18)', fontSize: '0.72em',
+    ml: u(4), px: u(6), py: u(1), borderRadius: u(4), border: `1px solid ${ink(0.18)}`, fontSize: '0.72em',
     fontWeight: 600, letterSpacing: '0.06em', color: MUTED, verticalAlign: 'middle',
 }}>TBA</Box>;
 const Code: React.FC<{ children: React.ReactNode }> = ({ children }) => <Box component="span" sx={{ fontFamily: MONO, fontSize: '0.92em', color: INK }}>{children}</Box>;
@@ -360,7 +360,7 @@ const Callout: React.FC<{ layer: Layer; dimmed: boolean; onHover: (id: string | 
             {layer.points.map((point, i) => {
                 const { marker, content } = point && typeof point === 'object' && 'marker' in point ? point : { marker: '–', content: point };
                 return <Box component="li" key={i} sx={{ display: 'flex', gap: u(8), mt: i > 0 ? u(6) : 0 }}>
-                    <Box component="span" aria-hidden sx={{ color: 'rgba(0, 0, 0, 0.28)', flexShrink: 0, width: '0.6em', textAlign: 'center' }}>{marker}</Box>
+                    <Box component="span" aria-hidden sx={{ color: ink(0.28), flexShrink: 0, width: '0.6em', textAlign: 'center' }}>{marker}</Box>
                     <span>{content}</span>
                 </Box>;
             })}
@@ -439,10 +439,10 @@ export default function DevDesignPage() {
                     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: u(8), flexShrink: 0 }}>
                         <Box component="a" href="https://github.com/microsoft/data-formulator" target="_blank" rel="noreferrer" sx={{
                             display: 'flex', alignItems: 'center', gap: u(10), px: u(18), py: u(10), borderRadius: u(999),
-                            border: `1px solid ${LINE}`, bgcolor: '#fff', color: INK, textDecoration: 'none',
+                            border: `1px solid ${LINE}`, bgcolor: paper(), color: INK, textDecoration: 'none',
                             fontSize: u(17), fontWeight: 500, boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
                             transition: 'border-color .2s ease, box-shadow .2s ease',
-                            '&:hover': { borderColor: 'rgba(0, 0, 0, 0.3)', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' },
+                            '&:hover': { borderColor: ink(0.3), boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' },
                         }}>
                             <GitHubIcon sx={{ fontSize: u(22) }} />
                             microsoft/data-formulator

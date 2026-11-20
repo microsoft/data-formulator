@@ -11,7 +11,7 @@ from data_formulator.auth.identity import get_identity_id
 from data_formulator.datalake.workspace import get_user_home
 from data_formulator.error_handler import json_ok
 from data_formulator.errors import AppError, ErrorCode
-from data_formulator.knowledge.themes import ThemeStore
+from data_formulator.themes import ThemeStore
 
 themes_bp = Blueprint("themes", __name__, url_prefix="/api/themes")
 

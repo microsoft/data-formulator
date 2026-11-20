@@ -152,6 +152,9 @@
     "powerbi": {
       "authInstructions": "**示例**\n\nworkspace: `Sales Analytics`\n\n**工作区**\n\n填写工作区名称，或其 URL 中的 ID（`.../groups/<id>/...`）。\n\n**登录**\n\n- **Azure default identity:** 推荐。使用能打开这些模型的账号运行 `az login`；你的权限和行级安全性都会生效。\n- **Service principal:** 已添加到工作区的 Entra 应用的客户端 ID、密钥和租户 ID。它无法查询使用行级安全性或 SSO 的模型。\n\n**访问权限**\n\n你需要每个语义模型的 **Read** 和 **Build** 权限。Power BI 管理员必须启用 *Dataset Execute Queries REST API*；使用服务主体时还需启用 *Allow service principals to use Power BI APIs*。\n\n**限制**\n\n每个用户每分钟 120 次查询，每个结果最多 10,000 行。不支持 Azure Analysis Services 中的模型。"
     },
+    "dataverse": {
+      "authInstructions": "**示例**\n\nenvironment_url: `https://contoso.crm.dynamics.com`\n\n**环境 URL**\n\n在 Power Apps 中，打开 **Settings**（齿轮图标）> **Session details**，复制 *Instance url*。也可以使用 **Developer resources** 中的 Web API 终结点。\n\n**登录**\n\n- **Sign in with Microsoft (browser):** 适用于 Data Formulator 在你本机运行时。它会打开一次浏览器进行登录，因此你可以使用与 Azure CLI 不同的账号。填写 *login_hint* 可指定账号。之后的连接会复用此登录，无需再打开浏览器。\n- **Sign in with Microsoft:** 当服务器配置了 Dataverse 登录应用（`DATAVERSE_OAUTH_CLIENT_ID`）时显示。你自己的安全角色会生效。\n- **Azure default identity:** 使用该环境中的用户账号运行 `az login`。如果环境位于其他租户（例如你是以来宾身份被添加的），请运行 `az login --tenant <tenant-id> --allow-no-subscriptions`。\n- **Service principal:** 已作为应用程序用户添加到环境并分配了安全角色的 Entra 应用的客户端 ID、密钥和租户 ID。\n\n**访问权限**\n\n你的安全角色需要对所加载的表具有读取权限。\n\n**数据**\n\n查找列和选择列还会额外加载一个包含显示标签的 `<column>name` 列。查找列存储关联行的 id，因此可以进行关联，例如将 `opportunity.parentaccountid` 与 `account.accountid` 关联。"
+    },
     "sample_datasets": {
       "authInstructions": "内置示例数据集无需任何设置或凭据。打开连接器即可浏览示例并导入表。"
     }

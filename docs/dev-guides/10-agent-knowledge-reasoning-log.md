@@ -1,5 +1,7 @@
 # Agent 知识系统与推理日志开发规范
 
+> **Superseded (2026-11):** the knowledge store (rules, workflows, distillation, `/api/knowledge`, the knowledge panel) was removed. Saved workflows are `workflows://` with the configure skill; per-session notes are `files/notes/` (design-docs/74); earlier work is read with `past_sessions` (design-docs/75). The reasoning log described here is still in use.
+
 > **维护者**: DF 核心团队  
 > **最后更新**: 2026-10-12  
 > **适用范围**: 后端 Agent、知识库路由、推理日志、前端知识面板、工作流提炼流程

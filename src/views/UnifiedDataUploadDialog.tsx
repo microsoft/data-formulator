@@ -3,7 +3,7 @@
 
 import * as React from 'react';
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { borderColor, transition, radius } from '../app/tokens';
+import { borderColor, transition, radius, ink, weight } from '../app/tokens';
 import { dialogHeight, dialogWidth, iconVar, textVar } from '../app/layout';
 import { InlineLoadingStatus } from '../components/FunComponents';
 import {
@@ -212,7 +212,7 @@ const SourceLink: React.FC<DataSourceCardProps> = ({
                 component="span"
                 className="SourceLink-title"
                 sx={{
-                    fontWeight: 400,
+                    fontWeight: weight(400),
                     fontSize: '0.8125rem',
                     lineHeight: 1.4,
                     color: 'inherit',
@@ -638,7 +638,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 }}>
                     <Typography
                         variant="body2"
-                        sx={{ fontSize: '0.8rem', fontWeight: 600, color: alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 }}
+                        sx={{ fontSize: '0.8rem', fontWeight: weight(600), color: alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 }}
                     >
                         {t('upload.dataSourcesLabel', { defaultValue: 'Connected to:' })}
                     </Typography>
@@ -666,7 +666,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 }}>
                     <Typography
                         variant="body2"
-                        sx={{ fontSize: '0.8rem', fontWeight: 600, color: alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 }}
+                        sx={{ fontSize: '0.8rem', fontWeight: weight(600), color: alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 }}
                     >
                         {t('upload.addSourceLabel', { defaultValue: 'Add data:' })}
                     </Typography>
@@ -723,7 +723,7 @@ const ConnectorTypePicker: React.FC<{
         display: 'flex', alignItems: 'center', gap: 0.75, flexShrink: 0,
         width: { xs: 'auto', sm: '100%' }, minWidth: { xs: 'max-content', sm: 0 },
         px: 1, py: 0.625, borderRadius: 1, fontSize: textVar.sm, textAlign: 'left',
-        color: selected ? 'primary.main' : 'text.primary', fontWeight: selected ? 500 : 400,
+        color: selected ? 'primary.main' : 'text.primary', fontWeight: selected ? weight(500) : weight(400),
         bgcolor: selected ? (theme: Theme) => alpha(theme.palette.primary.main, 0.08) : 'transparent',
         transition: 'background-color 120ms ease',
         '&:hover': { bgcolor: selected ? undefined : 'action.hover' },
@@ -753,7 +753,7 @@ const ConnectorTypePicker: React.FC<{
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{loader.name}</Box>
                 {isPlugin && <Box component="span" sx={{
                     px: 0.5, fontSize: textVar.xxs, color: 'text.secondary', flexShrink: 0,
-                    bgcolor: 'rgba(0,0,0,0.045)', borderRadius: 0.5, lineHeight: 1.6,
+                    bgcolor: ink(0.045), borderRadius: 0.5, lineHeight: 1.6,
                 }}>plugin</Box>}
             </ButtonBase>;
             const item = isPlugin ? <Tooltip key={loader.type} title={`External plugin loaded from ${loader.source_path}`} placement="right" arrow>
@@ -797,7 +797,7 @@ export const ConnectorSetupForm: React.FC<{
         {[{ label: 'Display name', value: connectionProperties.displayName, onChange: connectionProperties.onDisplayNameChange },
           { label: 'Description', value: connectionProperties.description, onChange: connectionProperties.onDescriptionChange }].map(field =>
             <Box key={field.label}>
-                <Typography component="label" htmlFor={`${fieldId}-${field.label.replaceAll(' ', '-')}`} sx={{ display: 'block', fontSize: '0.8125rem', fontWeight: 500, lineHeight: 1.4, mb: 0.5 }}>{field.label}</Typography>
+                <Typography component="label" htmlFor={`${fieldId}-${field.label.replaceAll(' ', '-')}`} sx={{ display: 'block', fontSize: '0.8125rem', fontWeight: weight(500), lineHeight: 1.4, mb: 0.5 }}>{field.label}</Typography>
                 <TextField id={`${fieldId}-${field.label.replaceAll(' ', '-')}`} size="small" fullWidth value={field.value}
                     sx={{ '& .MuiInputBase-root': { fontSize: '0.8125rem' } }} onChange={event => field.onChange(event.target.value)} />
             </Box>)}
@@ -808,7 +808,7 @@ export const ConnectorSetupForm: React.FC<{
         <Box sx={{ flex: 1, minWidth: 0, overflow: 'auto', p: 0 }}>
             {pluginsInfo && pluginsInfo.errors.length > 0 && <Box sx={{ px: 2, pt: 1.5 }}>
                 <Alert severity="error" variant="outlined" sx={{ mb: 1, fontSize: textVar.xs, py: 0.5 }}>
-                    <AlertTitle sx={{ fontSize: textVar.sm, fontWeight: 600, mb: 0.5 }}>
+                    <AlertTitle sx={{ fontSize: textVar.sm, fontWeight: weight(600), mb: 0.5 }}>
                         {pluginsInfo.errors.length} plugin{pluginsInfo.errors.length === 1 ? '' : 's'} rejected
                     </AlertTitle>
                     {pluginsInfo.errors.map((error, index) => <Box key={index} sx={{ fontSize: textVar.xs, lineHeight: 1.4 }}>
@@ -1799,7 +1799,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 {activeConnector ? (
                     <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 1 }}>
                         <Typography component="span" noWrap title={activeConnector.display_name}
-                            sx={{ minWidth: 0, fontSize: 18, lineHeight: 1.35, fontWeight: 500 }}>
+                            sx={{ minWidth: 0, fontSize: 18, lineHeight: 1.35, fontWeight: weight(500) }}>
                             {activeConnector.display_name}
                         </Typography>
                         {activeConnector.type_name && activeConnector.type_name.toLowerCase() !== activeConnector.display_name.trim().toLowerCase() &&
@@ -2098,7 +2098,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                                         : <CategoryIcon sx={{ fontSize: iconVar.md }} />}
                                                 </Box>
                                                 <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                    <Typography noWrap sx={{ fontSize: textVar.sm, fontWeight: 500 }}>
+                                                    <Typography noWrap sx={{ fontSize: textVar.sm, fontWeight: weight(500) }}>
                                                         {file.name}
                                                     </Typography>
                                                     <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
@@ -2136,7 +2136,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                                 alignSelf: 'center',
                                                 textTransform: 'none',
                                                 fontSize: textVar.sm,
-                                                fontWeight: 500,
+                                                fontWeight: weight(500),
                                             }}
                                         >
                                             {t('upload.addMoreFiles')}
@@ -2283,7 +2283,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                             />
                                         }
                                         label={
-                                            <Typography component="span" variant="body2" sx={{ fontWeight: 500 }}>
+                                            <Typography component="span" variant="body2" sx={{ fontWeight: weight(500) }}>
                                                 {t('upload.autoRefresh')}
                                             </Typography>
                                         }
@@ -2319,7 +2319,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                                             border: 'none',
                                                             bgcolor: selected ? 'primary.main' : 'transparent',
                                                             color: selected ? 'primary.contrastText' : 'text.secondary',
-                                                            fontWeight: selected ? 600 : 400,
+                                                            fontWeight: selected ? weight(600) : weight(400),
                                                             '& .MuiChip-label': { px: 0.75 },
                                                             '&:hover': { bgcolor: selected ? 'primary.dark' : 'action.hover' },
                                                         }}
@@ -2342,7 +2342,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     borderColor: { md: 'divider' },
                                     pl: { xs: 0, md: 3 },
                                 }}>
-                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, fontWeight: 500 }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, fontWeight: weight(500) }}>
                                         {t('upload.tryExamples')}
                                     </Typography>
                                     {exampleUrls.map((example) => (
@@ -2582,7 +2582,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             </DialogContent>
             <Dialog open={renameOpen && !!activeConnector} onClose={() => setRenameOpen(false)} maxWidth="xs" fullWidth>
                 <Box component="form" onSubmit={(event: React.FormEvent) => { event.preventDefault(); void commitConnectorName(); }}>
-                    <DialogTitle sx={{ fontSize: textVar.lg, fontWeight: 600, pb: 1 }}>
+                    <DialogTitle sx={{ fontSize: textVar.lg, fontWeight: weight(600), pb: 1 }}>
                         {t('upload.renameConnector', { defaultValue: 'Rename connector' })}
                     </DialogTitle>
                     <DialogContent sx={{ pt: '8px !important' }}>

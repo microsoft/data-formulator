@@ -55,6 +55,7 @@ import { DataOperationCard } from '../components/DataOperationCard';
 import type { DataOperation } from '../dataOperations/models';
 import { ExecutionCodeBlock, TerminalExecutionView, TerminalMessageContent } from '../components/TerminalApprovalDialog';
 import type { TerminalExecution, CodeExecution } from '../components/ComponentType';
+import { weight } from '../app/tokens';
 
 // ---------------------------------------------------------------------------
 // Shared shell
@@ -244,7 +245,7 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
                     {icon}
                 </Box>
                 <Typography sx={{
-                    fontSize: textVar.sm, fontWeight: 600,
+                    fontSize: textVar.sm, fontWeight: weight(600),
                     color: theme.palette.text.primary,
                     flex: 1,
                 }}>
@@ -304,7 +305,7 @@ export const ResponseOptionButton: FC<ResponseOptionButtonProps> = ({
                     backgroundColor: selected ? alpha(accentColor, 0.12) : theme.palette.background.paper,
                     cursor: disabled ? 'default' : 'pointer',
                     fontSize: textVar.xs,
-                    fontWeight: selected ? 600 : 400,
+                    fontWeight: selected ? weight(600) : weight(400),
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '4px',
@@ -551,7 +552,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                         px: '8px', py: '4px', borderRadius: 1.5, lineHeight: 1.4,
                         border: `1px solid ${isSkipped ? alpha(accentColor, 0.6) : 'transparent'}`,
                         color: isSkipped ? theme.palette.text.primary : theme.palette.text.secondary,
-                        fontWeight: isSkipped ? 600 : 400,
+                        fontWeight: isSkipped ? weight(600) : weight(400),
                         backgroundColor: isSkipped ? alpha(accentColor, 0.12) : 'transparent',
                         textDecoration: 'none',
                         '&:hover': {
@@ -1036,7 +1037,7 @@ export const FailedDraftPanel: FC<FailedDraftPanelProps> = ({
             <Box sx={{ pb: '8px', pl: '20px', pr: '8px' }}>
                 {prompt && (
                     <Typography sx={{
-                        mb: '5px', fontSize: textVar.sm, fontWeight: 500,
+                        mb: '5px', fontSize: textVar.sm, fontWeight: weight(500),
                         color: theme.palette.text.primary, wordBreak: 'break-word',
                     }}>
                         {prompt}

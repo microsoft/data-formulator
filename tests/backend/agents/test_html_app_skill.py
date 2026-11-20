@@ -146,6 +146,13 @@ def test_lint_warns_about_code_that_cannot_work_in_the_sandbox() -> None:
     assert lint_html(APP, ["sales"]) == []
 
 
+def test_lint_allows_web_links_but_not_external_assets() -> None:
+    assert "External scripts" not in " ".join(lint_html('<a href="https://neurips.cc/virtual/2026" target="_blank">Site</a>', []))
+    assert lint_react_app('export default () => <Link href="https://arxiv.org/abs/1">Paper</Link>;', []) == []
+    assert "External scripts" in " ".join(lint_html('<link rel="stylesheet" href="https://cdn.example.com/a.css">', []))
+    assert "External scripts" in " ".join(lint_react_app('export default () => <img src={"https://x.example/a.png"} />;', []))
+
+
 def test_lint_steers_styling_toward_the_df_app_kit() -> None:
     styled = (
         '<html><head><style>body{font-family:Georgia;color:#111}.a{background:#fafafa;border:1px solid rgb(0, 0, 0)}'

@@ -78,7 +78,7 @@ import { loadTable } from '../app/tableThunks';
 import { listWorkspaces, importWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
-import { borderColor, sidebarEdge, sidebarMenuSx, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarToolbarSx } from '../app/tokens';
+import { borderColor, sidebarEdge, sidebarMenuSx, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarToolbarSx, ink, paper, weight } from '../app/tokens';
 import { ItemCard, ItemCardAction, MetadataCard, MetadataChips, starredColor, ViewAllButton } from '../components/ItemCard';
 
 import type { ConnectorInstance, DictTable } from '../components/ComponentType';
@@ -101,9 +101,11 @@ const selectIsDemo = (state: DataFormulatorState) => !!state.serverConfig.SITE;
 // Older persisted state predates the tab field; 'sources' was the default.
 const selectSidebarTab = (state: DataFormulatorState): SidebarTab => {
     if (selectIsDemo(state)) return 'sessions';
-    const tab = state.dataSourceSidebarTab ?? 'sources';
+    // Saved state from before the Workflows tab was renamed calls it 'knowledge'.
+    const saved = (state.dataSourceSidebarTab as string | undefined) ?? 'sources';
+    const tab: SidebarTab = saved === 'knowledge' ? 'workflows' : saved as SidebarTab;
     // A workflow or schedule tab remembered from elsewhere opens sessions where workflows are unavailable.
-    return (tab === 'knowledge' || tab === 'schedules') && state.serverConfig?.WORKFLOWS_AVAILABLE !== true ? 'sessions' : tab;
+    return (tab === 'workflows' || tab === 'schedules') && state.serverConfig?.WORKFLOWS_AVAILABLE !== true ? 'sessions' : tab;
 };
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -198,19 +200,6 @@ export const DataSourceSidebar: React.FC<{
         (tab: SidebarTab) => dispatch(dfActions.setDataSourceSidebarTab(tab)),
         [dispatch],
     );
-
-    // External callers (e.g. workflow distill on success) can ask the
-    // sidebar to open and switch to a specific tab.
-    useEffect(() => {
-        const handler = (e: Event) => {
-            const detail = (e as CustomEvent).detail || {};
-            const tab = detail.tab as SidebarTab | undefined;
-            setInitialTab(tab ?? 'knowledge');
-            dispatch(dfActions.setDataSourceSidebarOpen(true));
-        };
-        window.addEventListener('open-knowledge-panel', handler);
-        return () => window.removeEventListener('open-knowledge-panel', handler);
-    }, [dispatch]);
 
     // Resizable panel width, persisted in localStorage
     const [panelWidth, setPanelWidth] = useState<number>(() => {
@@ -345,10 +334,10 @@ export const DataSourceSidebar: React.FC<{
                             <RelationalDBIcon fontSize="small" />
                         </IconButton>
                     </Tooltip>
-                    {workflowsAvailable && <><Tooltip title={t('knowledge.workflows')} placement="right">
-                        <IconButton size="small" onClick={() => { setInitialTab('knowledge'); if (!isOpen) toggle(); else if (initialTab !== 'knowledge') setInitialTab('knowledge'); else toggle(); }} sx={{
-                            color: isOpen && initialTab === 'knowledge' ? 'primary.main' : 'text.secondary',
-                            bgcolor: isOpen && initialTab === 'knowledge' ? 'action.selected' : 'transparent',
+                    {workflowsAvailable && <><Tooltip title={t('workflow.title')} placement="right">
+                        <IconButton size="small" onClick={() => { setInitialTab('workflows'); if (!isOpen) toggle(); else if (initialTab !== 'workflows') setInitialTab('workflows'); else toggle(); }} sx={{
+                            color: isOpen && initialTab === 'workflows' ? 'primary.main' : 'text.secondary',
+                            bgcolor: isOpen && initialTab === 'workflows' ? 'action.selected' : 'transparent',
                             borderRadius: 1,
                         }}>
                             <WorkflowGears running={false} size={20} showTooltip={false} />
@@ -505,7 +494,7 @@ const DataSourceSidebarPanel: React.FC<{
     const [searchCatalogCache, setSearchCatalogCache] = useState<Record<string, CatalogCache>>({});
     const [searchingCatalog, setSearchingCatalog] = useState<Record<string, boolean>>({});
 
-    // Sidebar tab: 'sources' or 'sessions' or 'knowledge'.
+    // Sidebar tab: 'sources', 'sessions', 'workflows' or 'schedules'.
     // Stored in Redux so the active tab survives a session refresh; the
     // `initialTab` prop is derived from the same Redux value upstream.
     // Fall back to 'sources' for older persisted state that predates this field.
@@ -1301,8 +1290,8 @@ const DataSourceSidebarPanel: React.FC<{
         minHeight: 40,
         px: 1.5,
         py: 0,
-        borderBottom: '1px solid rgba(0, 0, 0, 0.16)',
-        backgroundColor: 'rgba(255, 255, 255, 0.76)',
+        borderBottom: `1px solid ${ink(0.16)}`,
+        backgroundColor: paper(0.76),
         flexShrink: 0,
         boxSizing: 'border-box',
     } as const;
@@ -1380,7 +1369,7 @@ const DataSourceSidebarPanel: React.FC<{
             flexDirection: 'column',
             maxHeight: '100%',
             borderLeft: `1px solid ${borderColor.view}`,
-            backgroundColor: 'rgba(0, 0, 0, 0.018)',
+            backgroundColor: ink(0.018),
             overflow: 'hidden',
         }}>
 
@@ -1389,7 +1378,7 @@ const DataSourceSidebarPanel: React.FC<{
                 <Box
                     sx={panelHeaderSx}
                 >
-                    <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary' }}>
+                    <Typography sx={{ fontSize: textVar.md, fontWeight: weight(600), color: 'text.primary' }}>
                         {t('sidebar.dataConnectorsTitle', { defaultValue: 'Data Connectors' })}
                     </Typography>
                     {onOpenUploadDialog && <ViewAllButton label={t('sidebar.browseInDataView', { defaultValue: 'Browse in data view' })}
@@ -1570,7 +1559,7 @@ const DataSourceSidebarPanel: React.FC<{
                                         ? 'success.main'
                                         : 'warning.main',
                                 }} />
-                                <Typography noWrap sx={{ fontSize: textVar.sm, flex: 1, minWidth: 0, fontWeight: 500, color: connector.connected ? 'text.primary' : 'text.secondary' }}>
+                                <Typography noWrap sx={{ fontSize: textVar.sm, flex: 1, minWidth: 0, fontWeight: weight(500), color: connector.connected ? 'text.primary' : 'text.secondary' }}>
                                     {connector.display_name}
                                 </Typography>
                                 <Box className="connector-row-actions" sx={{
@@ -1757,8 +1746,8 @@ const DataSourceSidebarPanel: React.FC<{
                         <Button fullWidth size="small" startIcon={<AddIcon sx={{ fontSize: iconVar.sm }} />}
                             onClick={() => onOpenUploadDialog('add-connection')}
                             sx={{
-                                justifyContent: 'flex-start', textTransform: 'none', fontSize: textVar.xs, fontWeight: 500,
-                                py: 0.5, borderRadius: 1.5, border: '1px dashed', borderColor: 'rgba(0,0,0,0.15)',
+                                justifyContent: 'flex-start', textTransform: 'none', fontSize: textVar.xs, fontWeight: weight(500),
+                                py: 0.5, borderRadius: 1.5, border: '1px dashed', borderColor: ink(0.15),
                                 color: 'text.secondary', '& .MuiButton-startIcon': { mr: 0.5 },
                                 '&:hover': { borderColor: 'primary.main', color: 'primary.main', bgcolor: 'transparent' },
                             }}>
@@ -1774,7 +1763,7 @@ const DataSourceSidebarPanel: React.FC<{
             {selection && Object.keys(selection.nodes).length > 0 && (
                 <Box sx={{ flexShrink: 0, borderTop: `1px solid ${borderColor.view}`, boxShadow: '0 -2px 8px -6px rgba(0,0,0,0.12)', px: 1.5, py: 1.25, display: 'flex', flexDirection: 'column', gap: 1, backgroundColor: 'background.paper' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <Typography sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: 600 }}>
+                                <Typography sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: weight(600) }}>
                                     {t('sidebar.selectedCount', {
                                         count: Object.keys(selection.nodes).length,
                                         defaultValue: `${Object.keys(selection.nodes).length} table${Object.keys(selection.nodes).length === 1 ? '' : 's'} selected`,
@@ -1797,7 +1786,7 @@ const DataSourceSidebarPanel: React.FC<{
                                 fullWidth
                                 disabled={importing}
                                 onClick={() => handleImportTables(selection.connectorId, Object.values(selection.nodes))}
-                                sx={{ fontSize: textVar.md, fontWeight: 600, textTransform: 'none', py: 0.75, borderRadius: 1.5 }}
+                                sx={{ fontSize: textVar.md, fontWeight: weight(600), textTransform: 'none', py: 0.75, borderRadius: 1.5 }}
                             >
                                 {t('sidebar.loadNTables', {
                                     count: Object.keys(selection.nodes).length,
@@ -1827,7 +1816,7 @@ const DataSourceSidebarPanel: React.FC<{
                 <Box
                     sx={{ ...panelHeaderSx, borderBottomColor: sidebarEdge.border }}
                 >
-                    <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary' }}>
+                    <Typography sx={{ fontSize: textVar.md, fontWeight: weight(600), color: 'text.primary' }}>
                         {t('sidebar.sessions', { defaultValue: 'Sessions' })}
                     </Typography>
                     <AllSessions sort={sessionSort} trigger={open => <ViewAllButton
@@ -2017,8 +2006,8 @@ const DataSourceSidebarPanel: React.FC<{
             </Box>
             )}
 
-            {/* ── Knowledge tab ── */}
-            {activeTab === 'knowledge' && (
+            {/* ── Workflows tab ── */}
+            {activeTab === 'workflows' && (
             <Box sx={{ flex: '0 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <WorkflowPanel onCreateSession={createNewSession} onOpenSession={handleOpenSession} headerActions={panelHeaderActions} />
             </Box>

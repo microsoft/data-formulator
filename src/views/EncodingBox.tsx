@@ -53,6 +53,7 @@ import { getUrls, fetchWithIdentity } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { textVar } from '../app/layout';
 import { Type } from '../data/types';
+import { ink, paper } from '../app/tokens';
 
 
 
@@ -287,7 +288,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         if (tooltip != "") {
             comp = <Tooltip key={`${key}-tooltip`} title={tooltip} arrow slotProps={{
                 tooltip: {
-                    sx: { bgcolor: 'rgba(255, 255, 255, 0.95)', color: 'rgba(0,0,0,0.95)', border: '1px solid darkgray' },
+                    sx: { bgcolor: paper(0.95), color: ink(0.95), border: '1px solid darkgray' },
                 },
             }}>{comp}</Tooltip>
         }
@@ -408,8 +409,8 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                     <Tooltip title={autoSortOptTitle} arrow componentsProps={{
                         tooltip: {
                           sx: {
-                            bgcolor: 'rgba(255, 255, 255, 0.95)',
-                            color: 'rgba(0,0,0,0.95)',
+                            bgcolor: paper(0.95),
+                            color: ink(0.95),
                             border: '1px solid darkgray'
                           },
                         },
@@ -656,7 +657,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         fontSize: textVar.xs,
                         padding: '4px 8px !important',
                         cursor: 'pointer',
-                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.05)' },
+                        '&:hover': { backgroundColor: ink(0.05) },
                     }}
                 >
                     {getIconFromType(dtype)}
@@ -745,7 +746,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         </Tooltip>
                         <Box sx={{
                             backgroundColor: backgroundColor, width: "calc(100% - 84px)",
-                            display: "flex", borderBottom: (editMode ? "1px solid rgba(0, 0, 0, 0.12)" : undefined)
+                            display: "flex", borderBottom: (editMode ? `1px solid ${ink(0.12)}` : undefined)
                         }}>
                             {encContent}
                         </Box>

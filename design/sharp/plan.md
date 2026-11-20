@@ -30,6 +30,40 @@ taken before it.
 - **Apps**: HTML apps get the look's kit variables; React board apps take their corners from the outer theme and
   their tile radius and shadow from `cardRadius` / `ambientShadow`, so they go square and flat with the look.
 
+### Dark (the third look)
+
+`dark` is the instrument look light on a dark page: sharp's spec spread with dark values (`looks.ts`), offered as
+a third option of the Settings toggle (Appearance: Soft / Sharp / Dark). What it took, and what it unified:
+
+- **Spec**: `mode: 'dark'` (MUI palette mode, `color-scheme`), `palette.background`, and `tint` (palette tints as
+  an opacity of the main colour; the palettes' light pastels would glare). Accent text is the main colour lightened.
+- **Ink and paper tokens** (`tokens.ts`): `ink(a)` and `paper(a)` replace literal `rgba(0,0,0,a)` greys and white
+  surfaces (about 140 call sites and the SCSS). They read `--df-ink-rgb` / `--df-paper-rgb`, unset in soft and
+  sharp, so those stay pixel-identical. Shadows stay black; white marks on coloured fills stay white.
+- **Opaque greys** that cannot be ink: `sunkSurface` (`--df-surface-sunk`, sticky table headers), `--df-text-muted`
+  (fixed grey text in SCSS), and the report's reading inks (`--df-reading-text`, `-quiet`, `-wash`).
+- **Legibility** (light text on dark reads thinner and blooms): `weight(n)` = `calc(n + var(--df-weight-shift, 0))`,
+  halved for 600 (about 300 call sites and MUI's regular/medium weights). Dark shifts by 100: body 400→500,
+  headings 600→650. Quiet text is lighter (secondary `#b4bbc6`, about 9:1). Roboto Mono only ships 400/500, so mono
+  labels top out at 500.
+- **One slate family**: the page, panels, canvas, dialogs and toasts share one surface (`#171b21`); every tinted card
+  (prompts, tables, reports, apps), sunken header and code wash shares one raised slate (`tint: '#1f242b'`); kinds are
+  told apart by icon colour and outline, and selection by outline and rule (no coloured wash). Coloured per-kind fills
+  (full or desaturated) read as brown, navy and purple patches and were dropped. Only the data table keeps faint
+  zebra rows.
+- **Lines**: a step brighter than a straight inversion (component `#363d48`, sections `#566070`) and a 2px rail.
+- **Charts**: a chart with a theme is drawn as authored (its own paper and inks), a figure on the page. Only charts
+  on Flint's defaults follow the look, through a Vega-Lite `config` of text, grid and background colours merged after
+  assembly (`savedThemes.ts` `chartLookConfig`); their colour scales stay Flint's. A Flint theme object for them
+  replaced Flint's default schemes (every category one colour), so that was dropped. Interim: the proper home is
+  Flint. Its `options.background` (host surface) is ignored by its defaults, and host-surface presets (NYT,
+  Datawrapper) keep light-page text on a dark host. Once Flint derives inks from the host, DF passes
+  `options.background` and drops the config patch.
+- **Apps**: React board apps keep the host's dark page and tiles (`setBoardInks`); HTML apps get the dark surfaces
+  through `useAppTheme`. Report exports render on the look's paper.
+- Left light on purpose: maps (their own styles), illustrations (Safari settings mock), dev pages, canvas
+  rasterising fallbacks.
+
 ### Tried and dropped
 
 - Step numbers (01…) and artifact ids (T1 / C1 / A1) on the rail: noisy; replaced by glyphs.
@@ -164,7 +198,7 @@ Remaining raw literals migrate opportunistically, outer surfaces first (sidebar,
 
 ## Decisions (were open)
 
-- Settings label: kept "Contrast: Soft / Sharp"; the hint text describes the two looks.
+- Settings label: "Appearance: Soft / Sharp / Dark" (a toggle button group; i18n keys still `config.contrast*`).
 - Sandboxed apps follow the look (HTML and React board apps).
 - Mono typeface: Roboto Mono (already bundled); switching is one line in `index.css`.
 - Step numbers and artifact refs: dropped in both looks.

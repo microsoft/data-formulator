@@ -11,6 +11,7 @@ import { DevNav } from '../views/DevNav';
 import { loadGeoSet } from './geography';
 import { sampleMaps } from './samples';
 import { stringifyMapSpec } from './spec';
+import { weight } from '../app/tokens';
 
 export default function MapGallery() {
     const [countyIds, setCountyIds] = useState<string[] | null>(null);
@@ -32,7 +33,7 @@ export default function MapGallery() {
         <DevNav />
         <Box sx={{ display: 'flex', flex: 1, minHeight: 0, fontFamily: 'var(--df-font)' }}>
         <Box sx={{ width: 250, flexShrink: 0, borderRight: '1px solid', borderColor: 'divider', overflowY: 'auto' }}>
-            <Typography sx={{ px: 2, pt: 2, pb: 1, fontWeight: 600 }}>Map samples</Typography>
+            <Typography sx={{ px: 2, pt: 2, pb: 1, fontWeight: weight(600) }}>Map samples</Typography>
             <List dense>
                 {samples.map(sample => <ListItemButton key={sample.id} selected={sample.id === active} onClick={() => {
                     setActive(sample.id);

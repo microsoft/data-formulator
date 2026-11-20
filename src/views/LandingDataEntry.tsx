@@ -15,7 +15,7 @@ import { getUrls } from '../app/utils';
 import { iconVar, textVar } from '../app/layout';
 import { frameColor, heroInputLine, inkColor } from '../app/look';
 import { DEMO_COLUMN, demoText } from '../sites/layout';
-import { ambientShadow, cardRadius, metaText } from '../app/tokens';
+import { ambientShadow, cardRadius, metaText, weight } from '../app/tokens';
 
 /** A demo's landing (design-docs/69): its own suggested questions and datasets, no other data paths. */
 export interface LandingDemo {
@@ -66,12 +66,12 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
     const linkStyle = {
         display: 'inline-flex', alignItems: 'center', gap: 0.5, p: 0, border: 'none', borderRadius: 0,
         background: 'none', maxWidth: '100%', minWidth: 0, minHeight: 0, textTransform: 'none', whiteSpace: 'normal',
-        fontWeight: 400, fontSize: '0.8125rem', lineHeight: 1.4, textAlign: 'left', overflowWrap: 'anywhere',
+        fontWeight: weight(400), fontSize: '0.8125rem', lineHeight: 1.4, textAlign: 'left', overflowWrap: 'anywhere',
         color: (theme: Theme) => inkColor(theme, 0.76), transition: 'color 120ms ease',
         '& .MuiButton-startIcon': { m: 0, flexShrink: 0, '& .MuiSvgIcon-root': { fontSize: iconVar.md } },
         '&:hover': { background: 'none', color: 'primary.main', textDecoration: 'underline', textUnderlineOffset: 2 },
     } as const;
-    const labelStyle = { fontWeight: 600, ...metaText({ fontSize: '0.8rem' }),
+    const labelStyle = { fontWeight: weight(600), ...metaText({ fontSize: '0.8rem' }),
         color: (theme: Theme) => inkColor(theme, 0.72), mr: 0.25, flexShrink: 0 } as const;
     return <Box sx={{ width: '100%', maxWidth: demo ? DEMO_COLUMN : 800, mx: 'auto', textAlign: 'left' }}>
         <Box sx={{ mb: 1.75, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75 }}>

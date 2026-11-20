@@ -77,9 +77,10 @@ def list_sessions(args: dict[str, Any], ctx: SkillContext) -> dict[str, Any]:
             "table_count": workspace.get("table_count"),
             "chart_count": workspace.get("chart_count", summary.get("chart_count")),
             **({"scheduled_run": workspace["scheduled_run"]} if workspace.get("scheduled_run") else {}),
-            **{key: value for key, value in summary.items() if key != "chart_count" and value},
+            **{key: value for key, value in summary.items() if key not in ("chart_count", "prompts") and value},
         }
-        text = str(entry).casefold()
+        # Requests are searched but not returned: another session's conversation stays out of this one.
+        text = f"{entry} {summary.get('prompts') or ''}".casefold()
         if empty_only and (entry.get("table_count") or entry.get("chart_count") or summary.get("reports")):
             continue
         if all(term in text for term in query_terms):

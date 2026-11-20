@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import type { TerminalExecution, TerminalFilesystemPolicy } from './ComponentType';
 import { iconVar, textVar } from '../app/layout';
 import { CompactMarkdown } from '../views/InteractionEntryCard';
+import { weight } from '../app/tokens';
 
 export const TerminalMessageContent = ({ content, executions, variant }: {
     content: string; executions?: TerminalExecution[]; variant?: 'document';
@@ -48,11 +49,11 @@ export const TerminalFilesystemSummary = ({ policy, compact = false, children, i
         fontSize: compact ? textVar.xs : textVar.sm, lineHeight: 1.5, letterSpacing: 0,
         color: compact ? 'text.secondary' : undefined }}>
         {!inline && <Box component="summary" sx={{ fontFamily: 'inherit', fontSize: 'inherit', lineHeight: 'inherit',
-            fontWeight: compact ? 400 : 500, cursor: 'pointer' }}>
+            fontWeight: compact ? weight(400) : weight(500), cursor: 'pointer' }}>
             {t('terminal.sandboxPolicy', { defaultValue: 'Sandbox policy' })}
         </Box>}
         <Box component="section" sx={{ mt: inline ? 0 : 1 }}>
-            <Typography component="h3" variant="inherit" sx={{ fontWeight: 500 }}>
+            <Typography component="h3" variant="inherit" sx={{ fontWeight: weight(500) }}>
                 {t('terminal.policyRead', { defaultValue: 'Read' })}
             </Typography>
             <Typography variant="inherit" color="text.secondary">
@@ -60,7 +61,7 @@ export const TerminalFilesystemSummary = ({ policy, compact = false, children, i
             </Typography>
         </Box>
         <Box component="section" sx={{ mt: 1.5 }}>
-            <Typography component="h3" variant="inherit" sx={{ fontWeight: 500 }}>
+            <Typography component="h3" variant="inherit" sx={{ fontWeight: weight(500) }}>
                 {t('terminal.policyWrite', { defaultValue: 'Write' })}
             </Typography>
             <Box component="ul" sx={{ m: 0, pl: 2.5, color: 'text.secondary', '& > li + li': { mt: 0.5 } }}>
@@ -116,9 +117,9 @@ export const ExecutionCodeBlock = ({ code, language, label, copyLabel, result, c
     const { t } = useTranslation();
     const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
     const codeSx = { m: 0, py: 0.75, maxHeight: 240, maxWidth: '100%', overflow: 'auto',
-        fontFamily: 'var(--df-font-mono)', fontSize: compact ? textVar.xxs : textVar.xs, fontWeight: 400,
+        fontFamily: 'var(--df-font-mono)', fontSize: compact ? textVar.xxs : textVar.xs, fontWeight: weight(400),
         color: 'text.primary', lineHeight: 1.6, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
-    const labelSx = { fontSize: textVar.xs, fontWeight: 400, lineHeight: 1.5, color: 'text.secondary' };
+    const labelSx = { fontSize: textVar.xs, fontWeight: weight(400), lineHeight: 1.5, color: 'text.secondary' };
     return <Box role="group" aria-label={label} sx={{ mt: flush ? 0 : 0.75, px: 1.25, py: 0.75, minWidth: 0,
         border: flush ? 0 : '1px solid', borderColor: 'divider', borderRadius: flush ? 0 : 1, bgcolor: 'background.paper' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -181,21 +182,21 @@ export const TerminalExecutionView = ({ execution, onOpen, passive = false, defa
     const commandPreview = singleLineCommand.length > 80 ? `${singleLineCommand.slice(0, 77)}...` : singleLineCommand;
     const codeSx = {
         m: 0, py: 0.75, maxHeight: 240, maxWidth: '100%', overflow: 'auto',
-        fontFamily: 'var(--df-font-mono)', fontSize: detailsOnly ? textVar.sm : textVar.xs, fontWeight: 400,
+        fontFamily: 'var(--df-font-mono)', fontSize: detailsOnly ? textVar.sm : textVar.xs, fontWeight: weight(400),
         color: 'text.primary', lineHeight: 1.6, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
     };
     const detailLabelSx = { fontFamily: theme.typography.fontFamily, fontSize: textVar.xs,
-        fontWeight: 400, lineHeight: 1.5, color: 'text.secondary' };
+        fontWeight: weight(400), lineHeight: 1.5, color: 'text.secondary' };
     return <Box component={passive ? 'span' : 'div'} sx={{ minWidth: 0, mt: passive ? 0 : 0.5,
         ...(passive ? { display: 'inline-flex', verticalAlign: 'text-bottom' } : {}),
-        fontFamily: theme.typography.fontFamily, fontWeight: 400, letterSpacing: 0 }} onClick={passive ? undefined : (event: React.MouseEvent<HTMLElement>) => event.stopPropagation()}>
+        fontFamily: theme.typography.fontFamily, fontWeight: weight(400), letterSpacing: 0 }} onClick={passive ? undefined : (event: React.MouseEvent<HTMLElement>) => event.stopPropagation()}>
         {!detailsOnly && <Box component={passive ? 'span' : 'button'} type={passive ? undefined : 'button'} aria-expanded={summaryOnly ? undefined : expanded}
             aria-label={passive ? t('terminal.command', { defaultValue: 'Command' }) : `${commandPreview} ${statusLabel}`}
             onClick={passive ? undefined : onOpen || (() => setExpanded(!expanded))} sx={{
             display: 'inline-flex', alignItems: 'center', gap: 0.5, width: 'fit-content', maxWidth: '100%', minWidth: 0,
             position: 'relative', overflow: 'hidden',
             p: passive ? 0 : 0.5, border: 0, borderRadius: 1, bgcolor: 'transparent', color: 'text.secondary',
-            textAlign: 'left', cursor: passive ? 'inherit' : 'pointer', fontFamily: theme.typography.fontFamily, fontSize: textVar.xs, fontWeight: 400, lineHeight: 1.5,
+            textAlign: 'left', cursor: passive ? 'inherit' : 'pointer', fontFamily: theme.typography.fontFamily, fontSize: textVar.xs, fontWeight: weight(400), lineHeight: 1.5,
             ...(!summaryOnly ? { px: 1, py: 0.5, border: '1px solid', borderColor: 'divider', bgcolor: 'action.hover', color: 'text.primary' } : {}),
             ...(!passive ? { '&:hover': { bgcolor: 'action.hover' } } : {}),
             '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },

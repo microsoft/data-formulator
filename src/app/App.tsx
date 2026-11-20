@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { FC, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ScrollFadeEdge, useScrollFade } from '../components/ScrollFade';
 import '../scss/App.scss';
 
@@ -24,7 +24,7 @@ import { AuthButton } from './AuthButton';
 import { IdentityMigrationDialog } from './IdentityMigrationDialog';
 
 import { red, purple, blue, brown, yellow, orange, } from '@mui/material/colors';
-import { palettes, defaultPaletteKey, paletteKeys } from './tokens';
+import { palettes, defaultPaletteKey, paletteKeys, ink, paper, weight } from './tokens';
 
 import _ from 'lodash';
 
@@ -49,7 +49,6 @@ import {
     TextField,
     IconButton,
     Select,
-    Switch,
     FormControl,
     InputLabel,
     ListItemIcon,
@@ -69,7 +68,8 @@ import { DataFormulatorFC } from '../views/DataFormulator';
 import { themeIconUrl, useThemeChoices } from '../views/ChartThemePicker';
 import { LayoutProvider, useLayout, type DensityPreference } from './LayoutProvider';
 import { createDfTheme } from './theme';
-import { applyLookVariables, saveLook, useLook, type Look } from './look';
+import { applyLookVariables, LOOK_NAMES, LOOKS, saveLook, useLook, type Look } from './look';
+import { setChartInk } from './savedThemes';
 import { MIN_SUPPORTED } from './layout';
 import { useAutoSave } from './useAutoSave';
 import { useWorkspaceConsistency } from './workspaceConsistency';
@@ -132,7 +132,7 @@ import { syncVegaLocale } from '../i18n/vega-locale';
 import { iconVar, textVar } from './layout';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
-    color: 'black',
+    color: ink(1),
     backgroundColor: "transparent",
     //borderBottom: "1px solid #C3C3C3",
     boxShadow: "none",
@@ -156,7 +156,7 @@ const TopNavButton: FC<{ to: string; label: string; selected: boolean }> = ({ to
             textDecoration: 'none',
             textTransform: 'none',
             fontSize: textVar.md,
-            fontWeight: 400,
+            fontWeight: weight(400),
             border: 'none',
             borderRadius: 0,
             px: 1.5,
@@ -164,10 +164,10 @@ const TopNavButton: FC<{ to: string; label: string; selected: boolean }> = ({ to
             minWidth: 'auto',
             cursor: selected ? 'default' : 'pointer',
             color: selected ? 'text.primary' : 'text.secondary',
-            backgroundColor: selected ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
+            backgroundColor: selected ? ink(0.08) : 'transparent',
             '&:hover': {
                 color: 'text.primary',
-                backgroundColor: selected ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+                backgroundColor: selected ? ink(0.08) : ink(0.04),
             },
         }}
     >
@@ -233,7 +233,7 @@ const LanguageSwitcher: React.FC = () => {
                     px: 0.75,
                     color: 'text.secondary',
                     fontSize: textVar.sm,
-                    fontWeight: 400,
+                    fontWeight: weight(400),
                     textTransform: 'none',
                     '& .MuiButton-endIcon': { ml: 0.25 },
                 }}
@@ -372,11 +372,11 @@ const PageNavMenu: React.FC<{ isAdministrationPage: boolean; appName: string; de
                     minWidth: 0,
                     px: 0.75,
                     gap: 0.25,
-                    '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                    '&:hover': { backgroundColor: ink(0.04) },
                 }}
             >
                 <Box sx={{ minWidth: 0, textAlign: 'left', maxWidth: { xs: 160, sm: 320 } }}>
-                    <Typography noWrap component="h1" title={appName} sx={{ fontSize: textVar.xl, fontWeight: 400, lineHeight: 1.2, letterSpacing: 0 }}>
+                    <Typography noWrap component="h1" title={appName} sx={{ fontSize: textVar.xl, fontWeight: weight(400), lineHeight: 1.2, letterSpacing: 0 }}>
                         {appName}
                     </Typography>
                 </Box>
@@ -449,7 +449,7 @@ const ToolbarOverflowMenu: React.FC<{
                     sx={{
                         p: 0.5,
                         color: 'text.secondary',
-                        '&:hover': { color: 'text.primary', backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                        '&:hover': { color: 'text.primary', backgroundColor: ink(0.04) },
                     }}
                 >
                     <MoreVertIcon fontSize="small" />
@@ -579,13 +579,13 @@ const WorkspaceMenu: React.FC = () => {
                         px: 1,
                         py: 0.25,
                         borderRadius: 1,
-                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.04)' },
+                        '&:hover': { backgroundColor: ink(0.04) },
                         '&:hover .ws-chevron': { opacity: 1 },
                     }}
                 >
                     <Typography noWrap sx={{ 
                         fontSize: textVar.lg, 
-                        fontWeight: 500, 
+                        fontWeight: weight(500), 
                         color: 'text.primary',
                         minWidth: 0,
                         maxWidth: 280,
@@ -647,13 +647,13 @@ const ExitSessionButton: React.FC = () => {
                 sx={{
                     textTransform: 'none',
                     fontSize: textVar.md,
-                    fontWeight: 400,
+                    fontWeight: weight(400),
                     px: 1.5,
                     py: 0.5,
                     minWidth: 'auto',
                     lineHeight: 1.5,
                     color: 'text.secondary',
-                    '&:hover': { color: 'text.primary', backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                    '&:hover': { color: 'text.primary', backgroundColor: ink(0.04) },
                 }}
             >
                 {t('workspace.exit', { defaultValue: 'Exit' })}
@@ -726,7 +726,7 @@ const ConfigDialog: React.FC<{
                     sx={{
                         p: 0.5,
                         color: 'text.secondary',
-                        '&:hover': { color: 'text.primary', backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                        '&:hover': { color: 'text.primary', backgroundColor: ink(0.04) },
                     }}
                 >
                     <SettingsOutlinedIcon fontSize="small" />
@@ -735,7 +735,7 @@ const ConfigDialog: React.FC<{
             )}
             <Dialog onClose={() => setOpen(false)} open={open}>
                 <DialogTitle sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, px: 3, py: 2 }}>
-                    <Typography component="span" sx={{ fontSize: textVar.xl, fontWeight: 600, flex: 1 }}>
+                    <Typography component="span" sx={{ fontSize: textVar.xl, fontWeight: weight(600), flex: 1 }}>
                         {t('app.settings')}
                     </Typography>
                 </DialogTitle>
@@ -771,8 +771,8 @@ const ConfigDialog: React.FC<{
                                     return (
                                         <MenuItem key={key} value={key} sx={{ py: 0.5 }}>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 1.5 }}>
-                                                <Box sx={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: p.primary.main, border: '1px solid rgba(0,0,0,0.1)' }} />
-                                                <Box sx={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: p.custom.main, border: '1px solid rgba(0,0,0,0.1)' }} />
+                                                <Box sx={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: p.primary.main, border: `1px solid ${ink(0.1)}` }} />
+                                                <Box sx={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: p.custom.main, border: `1px solid ${ink(0.1)}` }} />
                                             </Box>
                                             <ListItemText primary={p.name} slotProps={{ primary: { sx: { fontSize: textVar.md } } }} />
                                         </MenuItem>
@@ -807,15 +807,12 @@ const ConfigDialog: React.FC<{
                         <Box>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                 <Typography id="contrast-label" sx={{ flex: 1, fontSize: textVar.md }}>{t('config.contrast')}</Typography>
-                                <Typography component="span" aria-hidden sx={{ fontSize: textVar.sm, color: look === 'soft' ? 'text.primary' : 'text.secondary' }}>
-                                    {t('config.contrastSoft')}
-                                </Typography>
-                                <Switch size="small" checked={look === 'sharp'}
-                                    onChange={(e) => setLook(e.target.checked ? 'sharp' : 'soft')}
-                                    slotProps={{ input: { 'aria-labelledby': 'contrast-label' } }} />
-                                <Typography component="span" aria-hidden sx={{ fontSize: textVar.sm, color: look === 'sharp' ? 'text.primary' : 'text.secondary' }}>
-                                    {t('config.contrastSharp')}
-                                </Typography>
+                                <ToggleButtonGroup size="small" exclusive value={look} aria-labelledby="contrast-label"
+                                    onChange={(_, value: Look | null) => value && setLook(value)}
+                                    sx={{ '& .MuiToggleButton-root': { py: 0.25, px: 1.25, fontSize: textVar.sm, textTransform: 'none' } }}>
+                                    {LOOK_NAMES.map(name => <ToggleButton key={name} value={name}>
+                                        {t(`config.contrast${name[0].toUpperCase()}${name.slice(1)}`)}</ToggleButton>)}
+                                </ToggleButtonGroup>
                             </Box>
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
                                 {t('config.contrastHint')}
@@ -1031,7 +1028,7 @@ const ErrorBoundaryFallback: React.FC = () => {
     const stack = typeof routeError?.stack === 'string' ? routeError.stack : '';
     const mutedActionSx = {
         minWidth: 0, px: 0.5,
-        color: 'text.disabled', fontSize: '0.7rem', fontWeight: 400,
+        color: 'text.disabled', fontSize: '0.7rem', fontWeight: weight(400),
         textTransform: 'none',
         '&:hover': { color: 'text.secondary', backgroundColor: 'transparent' },
     } as const;
@@ -1170,7 +1167,7 @@ const AppShell: FC = () => {
         <Box sx={{ position: 'absolute', inset: 0 }}>
         <Box ref={shellScrollRef} onScroll={updateShellFade} sx={{
             position: 'absolute',
-            backgroundColor: 'rgba(255, 255, 255, 0.3)',
+            backgroundColor: paper(0.3),
             top: 0,
             left: 0,
             right: 0,
@@ -1218,9 +1215,9 @@ const AppShell: FC = () => {
                                 <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} compact logo={serverConfig.SITE?.logo} />
                             ) : (
                                 <Button component={RouterLink} to={APP_PATH} onClick={goHome} color="inherit"
-                                    sx={{ textTransform: 'none', minWidth: 0, px: 0.75, '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' } }}>
+                                    sx={{ textTransform: 'none', minWidth: 0, px: 0.75, '&:hover': { backgroundColor: ink(0.04) } }}>
                                     <Typography noWrap component="h1" title={appName}
-                                        sx={{ maxWidth: { xs: 160, sm: 320 }, fontSize: textVar.xl, fontWeight: 400, lineHeight: 1.2, letterSpacing: 0 }}>
+                                        sx={{ maxWidth: { xs: 160, sm: 320 }, fontSize: textVar.xl, fontWeight: weight(400), lineHeight: 1.2, letterSpacing: 0 }}>
                                         {appName}
                                     </Typography>
                                 </Button>
@@ -1245,7 +1242,7 @@ const AppShell: FC = () => {
                             }
                         }} color="inherit">
                             <Box sx={{ minWidth: 0, maxWidth: 360, textAlign: 'left', display: { xs: 'none', sm: 'block' } }}>
-                                <Typography noWrap component="h1" title={appName} sx={{ fontWeight: 400, lineHeight: 1.2, letterSpacing: 0 }}>
+                                <Typography noWrap component="h1" title={appName} sx={{ fontWeight: weight(400), lineHeight: 1.2, letterSpacing: 0 }}>
                                     {appName}
                                 </Typography>
                             </Box>
@@ -1336,7 +1333,7 @@ const AppShell: FC = () => {
                                             sx={{
                                                 p: 0.5,
                                                 color: 'text.secondary',
-                                                '&:hover': { color: 'text.primary', backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                                                '&:hover': { color: 'text.primary', backgroundColor: ink(0.04) },
                                             }}
                                         >
                                             <GitHubIcon fontSize="small" />
@@ -1534,8 +1531,9 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         dispatch(fetchGlobalModelList());
     }, []);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         applyLookVariables(document.documentElement.style, look);
+        setChartInk(LOOKS[look].chartInk);
     }, [look]);
 
     let theme = createDfTheme(activePaletteKey, look);
@@ -1606,7 +1604,9 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     return (
         <ThemeProvider theme={theme}>
             {/* Plain elements (buttons, links, spans outside Typography) take the theme font, not the browser serif. */}
-            <GlobalStyles styles={theme => ({ 'html, body': { fontFamily: theme.typography.fontFamily } })} />
+            <GlobalStyles styles={theme => ({ 'html, body': { fontFamily: theme.typography.fontFamily, fontWeight: weight(400),
+                // A dark palette paints the page and asks the browser for dark controls and scrollbars.
+                ...(theme.palette.mode === 'dark' ? { backgroundColor: theme.palette.background.default, color: theme.palette.text.primary, colorScheme: 'dark' } : {}) } })} />
             <LayoutProvider>
                 {configLoaded && authChecked ? (
                     <RouterProvider router={router} />
@@ -1623,7 +1623,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                                     sx={{
                                         color: 'text.disabled',
                                         fontSize: '0.7rem',
-                                        fontWeight: 400,
+                                        fontWeight: weight(400),
                                         fontFamily: 'inherit',
                                         '&:hover': { color: 'text.secondary' },
                                     }}

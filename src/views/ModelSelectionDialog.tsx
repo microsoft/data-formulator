@@ -72,7 +72,7 @@ import { apiRequest, ApiError, ApiRequestError } from '../app/apiClient';
 import { useTranslation } from 'react-i18next';
 import { LogViewerDialog } from './LogViewerDialog';
 import { iconVar, textVar } from '../app/layout';
-import { identText } from '../app/tokens';
+import { identText, ink, weight } from '../app/tokens';
 
 
 // Add this helper function at the top of the file, after the imports
@@ -810,7 +810,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         '& .MuiOutlinedInput-root': {
             fontSize: '0.75rem',
             borderRadius: 0.5,
-            backgroundColor: 'rgba(0,0,0,0.02)',
+            backgroundColor: ink(0.02),
             height: 28,
             '& fieldset': { borderColor: 'divider' },
             '&:hover fieldset': { borderColor: 'text.disabled' },
@@ -900,7 +900,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                         <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75, mt: 0.25 }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
                                 <Typography component="code" variant="body2" aria-label={t('model.deviceCode')}
-                                    sx={{ fontFamily: 'monospace', fontSize: textVar.sm, fontWeight: 600, overflowWrap: 'anywhere', userSelect: 'all' }}>{deviceCode}</Typography>
+                                    sx={{ fontFamily: 'monospace', fontSize: textVar.sm, fontWeight: weight(600), overflowWrap: 'anywhere', userSelect: 'all' }}>{deviceCode}</Typography>
                                 <Tooltip title={t('model.copyDeviceCode')}><IconButton size="small" aria-label={t('model.copyDeviceCode')}
                                     onClick={() => void navigator.clipboard?.writeText(deviceCode).catch(() => setOpenRouterError(t('model.copyDeviceCodeFailed')))}>
                                     <ContentCopyOutlinedIcon sx={{ fontSize: iconVar.sm }} />
@@ -952,7 +952,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                             display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 1.5, maxWidth: '100%',
                             '& .MuiButton-root': {
                                 minWidth: 0, p: 0,
-                                fontSize: textVar.sm, fontWeight: 400, lineHeight: 1.5,
+                                fontSize: textVar.sm, fontWeight: weight(400), lineHeight: 1.5,
                                 textTransform: 'none', color: 'text.secondary',
                                 '&:hover, &.Mui-focusVisible': { color: 'text.primary', bgcolor: 'transparent', textDecoration: 'underline' },
                                 '&.Mui-disabled': { color: 'text.disabled' },
@@ -1421,7 +1421,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                                     <Box component="dl" sx={{ display: 'grid', gridTemplateColumns: 'max-content minmax(0, 1fr)', alignItems: 'baseline', columnGap: 1, rowGap: 0.25, m: 0 }}>
                                         <Typography component="dt" variant="caption" color="text.secondary">{t('model.mainShort')}</Typography>
                                         <Tooltip title={model.model}>
-                                            <Typography component="dd" variant="body2" noWrap sx={{ m: 0, fontWeight: 500 }}>{model.model}</Typography>
+                                            <Typography component="dd" variant="body2" noWrap sx={{ m: 0, fontWeight: weight(500) }}>{model.model}</Typography>
                                         </Tooltip>
                                         {model.small_model?.trim() && model.small_model.trim() !== model.model.trim() && <>
                                             <Typography component="dt" variant="caption" color="text.secondary">{t('model.smallShort')}</Typography>
@@ -1479,7 +1479,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
             <Box sx={{ minWidth: 0 }}>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
                     <Box sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: weight(600) }}>
                             {detailModel ? detailModel.display_name || detailModel.model : t(serverConfig.DISABLE_CUSTOM_MODELS ? 'model.pleaseSelectModel' : 'model.newModel')}
                         </Typography>
                         {detailIsGlobal && (
@@ -1591,7 +1591,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                                     color: 'text.primary',
                                     minWidth: 0,
                                     px: 0.75,
-                                    fontWeight: 500,
+                                    fontWeight: weight(500),
                                     '&:hover': { color: 'primary.main' },
                                 },
                             }}>
@@ -1652,7 +1652,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                     fontSize: isInlineAction ? 'inherit' : '13px',
                     // The model's id is data: the toolbar shows it in the look's ident font.
                     ...(isInlineAction ? {} : identText),
-                    fontWeight: 400,
+                    fontWeight: weight(400),
                     textTransform: 'none',
                     px: 1.5,
                     py: 0.5,
@@ -1661,7 +1661,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                     color: selectedReady ? 'text.secondary' : undefined,
                     '&:hover': {
                         color: selectedReady ? 'text.primary' : undefined,
-                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                        backgroundColor: ink(0.04),
                     },
                 }}
                 variant="text"

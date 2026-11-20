@@ -17,13 +17,14 @@ import { ThemeProvider } from '@mui/material/styles';
 
 import { createDfTheme } from '../../theme';
 import { applyLookVariables } from '../../look';
+import { ink } from '../../tokens';
 import { appConfig, bridge, errorMessage, reportError } from './bridge';
 import * as chart from './chart';
 import * as data from './data';
 import * as icons from './icons';
 import { AppThemeProvider } from './appTheme';
 import { DEFAULT_DENSITY, densityTheme } from './density';
-import { TokenStyles, boardTheme, useInks, useMeasure, useSize } from './board';
+import { TokenStyles, boardTheme, setBoardInks, useInks, useMeasure, useSize } from './board';
 import { DataTable } from './table';
 import * as controls from './controls';
 import * as kpi from './kpi';
@@ -119,12 +120,14 @@ export function mount(factory: (require: (name: string) => unknown, module: { ex
     // The host's look: its MUI theme here, and its variables behind the DF tokens the app's components use.
     const look = appConfig().look ?? 'soft';
     applyLookVariables(document.documentElement.style, look);
+    const hostTheme = densityTheme(createDfTheme(appConfig().paletteKey ?? '', look), appConfig().density ?? DEFAULT_DENSITY);
+    setBoardInks(hostTheme);
     const root = createRoot(target);
     root.render(
-        <ThemeProvider theme={boardTheme(densityTheme(createDfTheme(appConfig().paletteKey ?? '', look), appConfig().density ?? DEFAULT_DENSITY))}>
+        <ThemeProvider theme={boardTheme(hostTheme)}>
             <GlobalStyles styles={theme => ({
                 // The scrollbar's colors; a dark AppTheme page sets its own (appTheme.tsx).
-                ':root': { '--df-scrollbar': 'rgba(0, 0, 0, 0.15)', '--df-scrollbar-hover': 'rgba(0, 0, 0, 0.3)' },
+                ':root': { '--df-scrollbar': ink(0.15), '--df-scrollbar-hover': ink(0.3) },
                 'html, body': {
                     margin: 0, background: theme.palette.background.default, color: theme.palette.text.primary,
                     fontFamily: theme.typography.fontFamily, lineHeight: 1.5,

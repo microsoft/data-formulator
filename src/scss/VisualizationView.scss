@@ -69,7 +69,7 @@
     font-size: 14px !important;
     font-weight: 100 !important;
     white-space: nowrap !important;
-    color: #434a56 !important;
+    color: var(--df-text-muted, #434a56) !important;
     text-decoration: none !important;
 } ;
 
@@ -79,13 +79,13 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
 
 @keyframes bump {
     0% {
-      background-color: #fff;
+      background-color: rgba(var(--df-paper-rgb, 255, 255, 255), 1);
     }
     50% {
       background-color: rgba( 2, 136, 209, 0.2);
     }
     100% {
-      background-color: #fff;
+      background-color: rgba(var(--df-paper-rgb, 255, 255, 255), 1);
     }
 }
 

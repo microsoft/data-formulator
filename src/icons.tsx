@@ -329,6 +329,7 @@ const brandIcon = ({ title, path }: BrandIcon): React.FC<SvgIconProps> => {
 export const CONNECTOR_ICON_MAP: Record<string, React.FC<SvgIconProps>> = {
     // Relational databases
     mssql: RelationalDBIcon,
+    dataverse: RelationalDBIcon,
     // Document stores
     cosmosdb: DocumentStoreIcon,
     // Cloud storage
@@ -367,6 +368,7 @@ const CONNECTOR_CATEGORY_ORDER: Record<string, number> = {
     postgresql: 0, PostgreSQLDataLoader: 0,
     clickhouse: 0, ClickHouseDataLoader: 0,
     sqlite: 0, SQLiteDataLoader: 0,
+    dataverse: 0, DataverseDataLoader: 0,
     // Document Store
     mongodb: 1, MongoDBDataLoader: 1,
     cosmosdb: 1, CosmosDBDataLoader: 1,

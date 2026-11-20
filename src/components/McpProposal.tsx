@@ -19,6 +19,7 @@ import { textVar } from '../app/layout';
 import { requestToolsDialog } from '../app/toolsSettings';
 import type { McpFormArtifact, TextTurn } from './ComponentType';
 import { AddServerForm, proposalConfig, useMcpSettings } from './McpServers';
+import { weight } from '../app/tokens';
 
 type McpForm = McpFormArtifact['mcp'];
 type McpChange = McpForm['changes'][number];
@@ -91,7 +92,7 @@ export const McpProposalPanel = ({ turnId, settings, onDismiss }: {
         display: 'flex', flexDirection: 'column', gap: 1.25 }}>
         <Box>
             <Typography sx={{ fontSize: textVar.xs, color: 'primary.main' }}>{t('mcp.form.suggested', { defaultValue: 'Suggested by the agent' })}</Typography>
-            <Typography sx={{ fontSize: textVar.sm, fontWeight: 600, overflowWrap: 'anywhere' }}>{form.title}</Typography>
+            <Typography sx={{ fontSize: textVar.sm, fontWeight: weight(600), overflowWrap: 'anywhere' }}>{form.title}</Typography>
         </Box>
         {pending.map(({ item, index }) => <Box key={index} sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             {item.reason && <Typography sx={{ ...caption, fontSize: textVar.sm }}>{item.reason}</Typography>}
@@ -126,7 +127,7 @@ export const McpFormSummary = ({ turn, form }: { turn: TextTurn; form: McpFormAr
     return <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1.5 }}>
         <ExtensionOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
         <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography sx={{ fontSize: textVar.sm, fontWeight: 600, overflowWrap: 'anywhere' }}>{form.title}</Typography>
+            <Typography sx={{ fontSize: textVar.sm, fontWeight: weight(600), overflowWrap: 'anywhere' }}>{form.title}</Typography>
             <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 {done && <CheckIcon sx={{ fontSize: 14, color: 'success.main' }} />}
                 {done ? t('mcp.form.done', { defaultValue: 'Done. Manage it in Tools.' }) : t('mcp.form.waiting', { defaultValue: 'Waiting for your review in Tools.' })}

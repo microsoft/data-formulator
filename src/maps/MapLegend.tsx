@@ -7,6 +7,7 @@ import React, { FC } from 'react';
 import { Box, Typography } from '@mui/material';
 
 import { arrowPath, type LegendModel } from './scales';
+import { weight } from '../app/tokens';
 
 const swatch = { width: 12, height: 12, borderRadius: '2px', flexShrink: 0 } as const;
 
@@ -18,13 +19,17 @@ export const MapLegend: FC<{
     onHover?: (item: { value?: string; from?: number; to?: number } | null) => void;
     /** On a small panel: narrower ramps, and categories in two columns, so the legend covers less of the map. */
     compact?: boolean;
+    /** Crowded legends use smaller text and swatches without changing symbol sizes. */
+    dense?: boolean;
     /** Under a still map: slim ramps and categories in a row. */
     thin?: boolean;
-}> = ({ legend, hidden, onToggle, onHover, compact, thin }) => {
+}> = ({ legend, hidden, onToggle, onHover, compact, dense, thin }) => {
     const bar = thin ? 6 : 10;
-    return <Box data-map-legend data-map-legend-compact={compact || undefined} sx={{ minWidth: 0 }}>
-        {legend.kind !== 'bivariate' && <Typography title={legend.title} sx={{ fontSize: compact ? '0.66rem' : '0.72rem', fontWeight: 600, color: 'text.secondary',
-            mb: compact ? 0.25 : 0.5, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: compact ? 150 : undefined }}>{legend.title}</Typography>}
+    const small = compact || dense;
+    return <Box data-map-legend data-map-legend-compact={compact || undefined} data-map-legend-dense={dense || undefined} sx={{ minWidth: 0, maxWidth: '100%' }}>
+        {legend.kind !== 'bivariate' && <Typography title={legend.title} sx={{ fontSize: small ? '0.66rem' : '0.72rem', fontWeight: weight(600), color: 'text.secondary',
+            mb: small ? 0.25 : 0.5, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis',
+            whiteSpace: dense ? 'normal' : 'nowrap', maxWidth: compact ? 150 : dense ? 160 : undefined }}>{legend.title}</Typography>}
         {legend.kind === 'gradient' && <Box sx={{ width: compact ? 120 : 180 }}>
             <Box sx={{ height: bar, borderRadius: '2px', background: `linear-gradient(to right, ${legend.stops.join(', ')})` }} />
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.25 }}>
@@ -53,11 +58,11 @@ export const MapLegend: FC<{
                 return <Box key={item.value} component={onToggle ? 'button' : 'div'} type={onToggle ? 'button' : undefined}
                     aria-pressed={onToggle ? !off : undefined}
                     onClick={() => onToggle?.(item.value)} onMouseEnter={() => onHover?.({ value: item.value })} onMouseLeave={() => onHover?.(null)}
-                    sx={{ display: 'flex', alignItems: 'center', gap: 0.75, p: '1px 2px', m: 0, border: 0, bgcolor: 'transparent', font: 'inherit',
+                    sx={{ display: 'flex', alignItems: 'center', gap: small ? 0.5 : 0.75, p: '1px 2px', m: 0, border: 0, bgcolor: 'transparent', font: 'inherit',
                         textAlign: 'left', cursor: onToggle ? 'pointer' : 'default', borderRadius: 0.75, opacity: off ? 0.4 : 1,
                         '&:hover': onToggle ? { bgcolor: 'action.hover' } : {} }}>
-                    <Box sx={{ ...swatch, ...(compact ? { width: 9, height: 9 } : {}), borderRadius: '50%', bgcolor: off ? 'transparent' : item.color, border: `1.5px solid ${item.color}` }} />
-                    <Typography title={item.label} sx={{ fontSize: compact ? '0.64rem' : '0.7rem', color: 'text.primary', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: compact ? 64 : 160 }}>{item.label}</Typography>
+                    <Box sx={{ ...swatch, ...(small ? { width: 9, height: 9 } : {}), borderRadius: '50%', bgcolor: off ? 'transparent' : item.color, border: `1.5px solid ${item.color}` }} />
+                    <Typography title={item.label} sx={{ fontSize: small ? '0.64rem' : '0.7rem', color: 'text.primary', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: compact ? 64 : dense ? 136 : 160 }}>{item.label}</Typography>
                 </Box>;
             })}
         </Box>}
@@ -72,7 +77,7 @@ export const MapLegend: FC<{
                 <Typography sx={{ fontSize: '0.66rem', color: 'text.secondary', mt: 0.25, whiteSpace: 'nowrap' }}>{legend.title} →</Typography>
             </Box>
         </Box>}
-        {legend.kind === 'sizes' && legend.shape === 'circle' && nestedLabelsFit(legend.items) && <NestedCircles items={legend.items} />}
+        {legend.kind === 'sizes' && legend.shape === 'circle' && nestedLabelsFit(legend.items) && <NestedCircles items={legend.items} dense={small} />}
         {legend.kind === 'sizes' && (legend.shape !== 'circle' || !nestedLabelsFit(legend.items)) && <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1.25 }}>
             {legend.items.map(item => <Box key={item.label} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.25 }}>
                 {legend.shape === 'circle'
@@ -83,7 +88,7 @@ export const MapLegend: FC<{
                         ? <svg width={Math.max(8, item.radius) + 2} height={10} style={{ overflow: 'visible' }}><path d={arrowPath(1, 5, Math.max(6, item.radius) + 1, 5)}
                             fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" opacity={0.75} /></svg>
                         : <Box sx={{ width: 28, height: Math.max(1, item.radius), bgcolor: 'text.secondary', opacity: 0.7, borderRadius: 1 }} />}
-                <Typography sx={{ fontSize: '0.68rem', color: 'text.secondary' }}>{item.label}</Typography>
+                <Typography sx={{ fontSize: small ? '0.62rem' : '0.68rem', color: 'text.secondary' }}>{item.label}</Typography>
             </Box>)}
         </Box>}
     </Box>;
@@ -101,12 +106,12 @@ const nestedCrowded = (sorted: SizeItem[], index: number) =>
 const nestedLabelsFit = (items: SizeItem[]) => { const sorted = nestedOrder(items); return sorted.every((_, index) => !nestedCrowded(sorted, index)); };
 
 /** Bubble sizes as nested circles on one baseline, each labelled at its top: compact and true to scale. */
-const NestedCircles: FC<{ items: SizeItem[] }> = ({ items }) => {
+const NestedCircles: FC<{ items: SizeItem[]; dense?: boolean }> = ({ items, dense }) => {
     const sorted = nestedOrder(items);
     if (!sorted.length) return null;
     const largest = Math.max(2, sorted[0].radius);
     const size = largest * 2 + 2;
-    const labelX = size + 18;
+    const labelX = size + (dense ? 12 : 18);
     // Room above the largest circle for its label (centred on the circle's top), so it does not ride over the title.
     const above = 7;
     return <svg width={labelX + 44} height={size + 2 + above} style={{ display: 'block', overflow: 'visible' }} aria-hidden>
@@ -119,7 +124,7 @@ const NestedCircles: FC<{ items: SizeItem[] }> = ({ items }) => {
                 <circle cx={largest + 1} cy={cy} r={radius} fill="none" stroke="currentColor" strokeOpacity={0.35} />
                 {!crowded && <>
                     <line x1={largest + 1} x2={labelX - 3} y1={top} y2={top} stroke="currentColor" strokeOpacity={0.25} strokeDasharray="2 2" />
-                    <text x={labelX} y={top} dominantBaseline="middle" fontSize={10.5} fill="currentColor" opacity={0.7}>{item.label}</text>
+                    <text x={labelX} y={top} dominantBaseline="middle" fontSize={dense ? 9.5 : 10.5} fill="currentColor" opacity={0.7}>{item.label}</text>
                 </>}
             </g>;
         })}

@@ -44,6 +44,7 @@ const toolLabelKeys: Record<string, string> = {
     list_connectors: 'dataThread.listingConnectors',
     list_workflows: 'dataThread.listingWorkflows',
     list_sessions: 'dataThread.searchingSessions',
+    past_sessions: 'dataThread.searchingSessions',
     delete_items: 'dataThread.deletingItems',
     list_files: 'dataThread.listingFiles',
     read_file: 'dataThread.readingFile',
@@ -97,6 +98,13 @@ export const formatAnalystToolProgress = (
         case 'list_sessions':
             detail = values.query ? `“${values.query}”` : '';
             break;
+        case 'past_sessions': {
+            const items = Array.isArray(values.item) ? values.item : values.item ? [values.item] : [];
+            detail = values.session
+                ? [values.session, items.map(String).join(', ')].filter(Boolean).join(' › ')
+                : values.query ? `“${values.query}”` : '';
+            break;
+        }
         case 'list_files':
             detail = values.path || '';
             break;
@@ -141,8 +149,11 @@ export const formatAnalystToolProgress = (
             break;
     }
 
-    // Naming a type reads that connector's setup.
-    const labelKey = tool === 'list_connectors' && values.source_type ? 'dataThread.readingConnector' : toolLabelKeys[tool];
+    // Naming a type reads that connector's setup; past_sessions looks in or copies from one session once it names one.
+    const labelKey = tool === 'list_connectors' && values.source_type ? 'dataThread.readingConnector'
+        : tool === 'past_sessions' && values.session
+            ? (values.copy ? 'dataThread.copyingFromSession' : 'dataThread.lookingInSession')
+            : toolLabelKeys[tool];
     const label = labelKey
         ? t(labelKey, tool === 'load_data' ? { defaultValue: 'Loading data' } : undefined)
         : tool.replaceAll('_', ' ');

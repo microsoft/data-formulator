@@ -276,6 +276,9 @@ def test_tool_progress_args_are_useful_and_credential_safe() -> None:
         "source_type": "databricks",
         "prefilled": {"token": "secret"},
     }) == {"source_type": "databricks"}
+    assert _tool_progress_args("past_sessions", {"session": "s1", "item": ["tables/t"], "copy": "session",
+                                                 "rows": "1-50"}) == {"session": "s1", "item": ["tables/t"],
+                                                                      "copy": "session"}
     probe_progress = _tool_progress_args("probe_data", {
         "source_id": "warehouse",
         "table_key": "orders",

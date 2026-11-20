@@ -201,11 +201,11 @@ describe('DataSourceSidebar', () => {
         vi.useFakeTimers();
         try {
             render(<DataSourceSidebar />);
-            const button = screen.getByRole('button', { name: 'knowledge.workflows' });
+            const button = screen.getByRole('button', { name: 'workflow.title' });
             fireEvent.mouseOver(button.querySelector('[data-workflow-gears]')!);
             await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
             expect(screen.getAllByRole('tooltip')).toHaveLength(1);
-            expect(screen.getByRole('tooltip')).toHaveTextContent('knowledge.workflows');
+            expect(screen.getByRole('tooltip')).toHaveTextContent('workflow.title');
         } finally {
             vi.useRealTimers();
         }
@@ -661,7 +661,7 @@ describe('DataSourceSidebar', () => {
     });
 
     it.each([
-        { demo: false, workflows: true, rail: ['Upload data', 'Saved workspaces', 'Data connectors', 'knowledge.workflows', 'Schedules'] },
+        { demo: false, workflows: true, rail: ['Upload data', 'Saved workspaces', 'Data connectors', 'workflow.title', 'Schedules'] },
         { demo: true, workflows: true, rail: ['Saved workspaces'] },
         { demo: false, workflows: false, rail: ['Upload data', 'Saved workspaces', 'Data connectors'] },
     ])('offers uploads, data connectors, workflows and schedules only outside demos, and workflows only where available (demo: $demo, workflows: $workflows)', async ({ demo, workflows, rail }) => {
@@ -671,7 +671,7 @@ describe('DataSourceSidebar', () => {
         if (demo) Object.assign(mockState.serverConfig, { SITE: { id: 'unesco', name: 'UIS', starters: [] } });
         render(<DataSourceSidebar />);
 
-        const railButtons = ['Upload data', 'Saved workspaces', 'Data connectors', 'knowledge.workflows', 'Schedules']
+        const railButtons = ['Upload data', 'Saved workspaces', 'Data connectors', 'workflow.title', 'Schedules']
             .filter(name => screen.queryByRole('button', { name }));
         expect(railButtons).toEqual(rail);
         if (demo || !workflows) {

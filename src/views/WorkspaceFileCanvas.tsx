@@ -8,7 +8,7 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import TuneIcon from '@mui/icons-material/Tune';
 import CodeIcon from '@mui/icons-material/Code';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import { floatingPillSx } from '../app/tokens';
+import { floatingPillSx, sunkSurface, weight } from '../app/tokens';
 import { SourceLocation, onSourceLocation, quoteHighlightSx, showQuote, takeSourceLocation } from '../app/sourceLocation';
 import { useDispatch, useSelector } from 'react-redux';
 import { CompactMarkdown } from './InteractionEntryCard';
@@ -381,7 +381,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
             {!(textFile && isApp && mode === 'preview') && <Box data-file-title title={fileName} sx={{ position: 'absolute', top: 10, left: 20, right: 300,
                 zIndex: 9, height: 30, display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0, pointerEvents: 'none' }}>
                 <FileTypeIcon path={fileName} size={16} active activeColor="text.secondary" />
-                <Typography component="span" sx={{ fontSize: '0.8125rem', fontWeight: 500, color: 'text.primary', flexShrink: 1, minWidth: 0,
+                <Typography component="span" sx={{ fontSize: '0.8125rem', fontWeight: weight(500), color: 'text.primary', flexShrink: 1, minWidth: 0,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{headerTitle}</Typography>
                 {headerMeta && <Typography component="span" sx={{ fontSize: '0.75rem', color: 'text.secondary', flexShrink: 100, minWidth: 0,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--df-font-mono)' }}>{headerMeta}</Typography>}
@@ -515,7 +515,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
                 </DialogActions>
             </Dialog>
             {saveError && <Alert severity="error">{saveError}</Alert>}
-            <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', bgcolor: '#fafafa',
+            <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', bgcolor: sunkSurface,
                 // Room for the floating tools, except an app preview, which they float over.
                 pt: textFile && isApp && mode === 'preview' ? 0 : 6, boxSizing: 'border-box' }}>
                 {!loading && workbookFile && <Suspense fallback={<LoadingStatus label={t('dataThread.loadingFilePreview', { defaultValue: 'Loading file preview...' })} sx={{ height: '100%', p: 2 }} />}>
@@ -615,7 +615,7 @@ export const TablePreview: FC<{ fileName: string; preview: WorkspaceFilePreview 
             <Box component="table" aria-label={fileName} sx={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: '100%',
                 fontSize: textVar.sm, lineHeight: 1.5, '& tbody tr:hover td': { bgcolor: 'action.hover' } }}>
                 <thead><tr>{columns.map(column => <Box component="th" key={column} title={column} sx={{ ...cellSx,
-                    position: 'sticky', top: 0, zIndex: 1, bgcolor: 'grey.50', fontSize: textVar.xs, fontWeight: 600,
+                    position: 'sticky', top: 0, zIndex: 1, bgcolor: 'grey.50', fontSize: textVar.xs, fontWeight: weight(600),
                     color: 'text.secondary', textAlign: numeric.has(column) ? 'right' : 'left' }}>{column}</Box>)}</tr></thead>
                 <tbody>{rows.map((row, index) => <tr key={index}>{columns.map(column => {
                     const text = formatCell(row[column]);

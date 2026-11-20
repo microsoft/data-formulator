@@ -22,6 +22,7 @@ import { MapView, type MapCategoryColors } from './MapView';
 import { requiredGeoSets } from './model';
 import type { FieldAnnotation } from './semantics';
 import { mapTables, parseMapSpec, type DataSource, type MapSpec, type Row } from './spec';
+import { weight } from '../app/tokens';
 
 export const MAP_ROW_LIMIT = 50_000;
 /** The canvas's buttons at the top right (style, reload, more: three 30px pills, 20px from the edge), and a gap. */
@@ -128,7 +129,7 @@ export const MapPreview: FC<{
     if (!parsed.spec) {
         return <Box sx={{ height: '100%', display: 'grid', placeItems: 'center', p: 3 }}>
             <Box sx={{ maxWidth: 560 }}>
-                <Typography sx={{ fontSize: '0.95rem', fontWeight: 600, mb: 1 }}>{t('map.cannotDraw')}</Typography>
+                <Typography sx={{ fontSize: '0.95rem', fontWeight: weight(600), mb: 1 }}>{t('map.cannotDraw')}</Typography>
                 <Box component="ul" sx={{ m: 0, pl: 2.5, mb: 1.5 }}>
                     {parsed.errors.map(error => <Typography component="li" key={error} sx={{ fontSize: '0.8rem', color: 'text.secondary' }}>{error}</Typography>)}
                 </Box>

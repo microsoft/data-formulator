@@ -30,6 +30,7 @@ import { useDistinct, useQuery, type QueryResult } from './data';
 import { QueryView } from './states';
 import { formatValue } from './table';
 import { useDensity, type DensityMetrics } from './density';
+import { weight } from '../../tokens';
 
 type Value = string | number;
 type Option = Value | { value: Value; label?: React.ReactNode };
@@ -240,9 +241,9 @@ export function Segmented({ label, value, onChange, options, width, grow, sx }: 
                 sx={{
                     alignSelf: 'flex-start', bgcolor: 'background.paper', p: '2px', gap: '2px', border: `1px solid ${BORDER}`, borderRadius: 1.5,
                     '& .MuiToggleButton-root': {
-                        border: 0, borderRadius: '6px !important', px: '10px', py: 0, minHeight: m.control - 6, fontSize: m.controlFont, textTransform: 'none', fontWeight: 500, color: 'text.primary',
+                        border: 0, borderRadius: '6px !important', px: '10px', py: 0, minHeight: m.control - 6, fontSize: m.controlFont, textTransform: 'none', fontWeight: weight(500), color: 'text.primary',
                         '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.08), color: 'primary.main' },
-                        '&.Mui-selected, &.Mui-selected:hover': { bgcolor: 'primary.main', color: 'primary.contrastText', fontWeight: 600 },
+                        '&.Mui-selected, &.Mui-selected:hover': { bgcolor: 'primary.main', color: 'primary.contrastText', fontWeight: weight(600) },
                     },
                 }}>
                 {options.map(option => <ToggleButton key={String(optionValue(option))} value={optionValue(option)}>{optionLabel(option)}</ToggleButton>)}
@@ -304,7 +305,7 @@ function RangeField({ label, summary, count, from, to, onDraft, onCommit, step, 
 }) {
     const m = useDensity();
     return (
-        <Field label={<>{label}{label ? ': ' : ''}<Box component="span" sx={{ fontWeight: 400, color: 'text.secondary' }}>{summary}</Box></>}
+        <Field label={<>{label}{label ? ': ' : ''}<Box component="span" sx={{ fontWeight: weight(400), color: 'text.secondary' }}>{summary}</Box></>}
             width={width ?? 240} grow={grow} sx={sx}>
             <Box sx={{ px: 1, minHeight: m.control, display: 'flex', alignItems: 'center' }}>
                 <Slider size="small" disableSwap disabled={disabled} min={count[0]} max={count[1]} step={step} value={[from, to]}
@@ -619,7 +620,7 @@ function BarListBody({ rows, label, value, format = 'compact', limit = 10, focus
             })}
             {!fitsAll && <Typography component="button" type="button" data-bar-list-more aria-expanded={open} onClick={() => setOpen(current => !current)}
                 sx={{ alignSelf: 'flex-start', flexShrink: 0, height: BAR_MORE, p: 0, px: 1, border: 0, bgcolor: 'transparent', cursor: 'pointer',
-                    font: 'inherit', fontSize: '0.8rem', fontWeight: 600, color: 'primary.main' }}>
+                    font: 'inherit', fontSize: '0.8rem', fontWeight: weight(600), color: 'primary.main' }}>
                 {open ? 'Show less' : `+${ranked.length - shown.length} more`}
             </Typography>}
         </Box>

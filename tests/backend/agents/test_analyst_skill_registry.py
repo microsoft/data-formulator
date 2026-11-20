@@ -18,7 +18,7 @@ def test_builtin_meta_bundle_has_concrete_hidden_owners() -> None:
         "meta", "analysis", "workspace", "visualization", "report",
     ]
     assert registry.gated_skill_names() == ["accounts", "browser", "configure", "connected_data", "html_app", "huggingface",
-                                            "map", "terminal", "theme"]
+                                            "map", "past_sessions", "terminal", "theme"]
     assert registry.get_skill("meta") is not None
     assert not registry.has("interaction")
     assert registry.action_owner("visualize") == "visualization"

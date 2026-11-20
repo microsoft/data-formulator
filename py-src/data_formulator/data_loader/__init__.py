@@ -77,6 +77,7 @@ _LOADER_SPECS: list[tuple[str, str, str, str]] = [
     ("superset",   "data_formulator.data_loader.superset_data_loader",   "SupersetLoader",       "requests"),
     ("cube",       "data_formulator.data_loader.cube_data_loader",       "CubeDataLoader",       "requests"),
     ("powerbi",    "data_formulator.data_loader.powerbi_data_loader",    "PowerBIDataLoader",    "azure-identity"),
+    ("dataverse",  "data_formulator.data_loader.dataverse_data_loader",  "DataverseDataLoader",  "requests"),
     ("local_folder", "data_formulator.data_loader.local_folder_data_loader", "LocalFolderDataLoader", "pyarrow"),
     ("sample_datasets", "data_formulator.data_loader.sample_datasets_loader", "SampleDatasetsLoader", "requests"),
 ]
@@ -132,7 +133,7 @@ _BUILTIN_CATALOG_POLICIES: dict[str, CatalogCachePolicy] = {
             refresh_cost="moderate",
             automatic_refresh="while_connected",
         )
-        for key in ("databricks", "bigquery", "athena", "powerbi", "snowflake")
+        for key in ("databricks", "bigquery", "athena", "powerbi", "snowflake", "dataverse")
     },
     **{
         key: CatalogCachePolicy(

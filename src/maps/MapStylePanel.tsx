@@ -22,6 +22,7 @@ import { bindChannel, boundField, channelBinding, CHOICE_CHANNELS, compatibleTem
 import { BASEMAPS, CLASS_METHODS, FLOW_DIRECTIONS, MAP_STYLES, PROJECTIONS, TILES, type LayerType, type MapSpec, type MapStyleName, type Row } from './spec';
 import { mapStyle, viewStyleName } from './styles';
 import { themeIconUrl, useThemeChoices } from '../views/ChartThemePicker';
+import { weight } from '../app/tokens';
 
 type Raw = Record<string, any>;
 
@@ -46,7 +47,7 @@ export function compatibleTypes(layer: Raw): LayerType[] {
     return [layer.type];
 }
 
-const sectionSx = { fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'text.secondary', mb: 0.75 } as const;
+const sectionSx = { fontSize: '0.7rem', fontWeight: weight(600), letterSpacing: '0.04em', textTransform: 'uppercase', color: 'text.secondary', mb: 0.75 } as const;
 const rowLabelSx = { fontSize: '0.74rem', color: 'text.secondary', width: 84, flexShrink: 0 } as const;
 const selectSx = { flex: 1, minWidth: 0, fontSize: '0.78rem', '& .MuiSelect-select': { py: 0.4 } } as const;
 const itemSx = { fontSize: '0.78rem' } as const;
@@ -195,7 +196,7 @@ export const MapStylePanel: FC<{
     return <Box data-map-style-panel sx={{ width: 300, flexShrink: 0, height: '100%', borderLeft: '1px solid', borderColor: 'divider', bgcolor: 'background.paper',
         display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, pt: 6.5, pb: 1 }}>
-            <Typography sx={{ fontSize: '0.85rem', fontWeight: 600, flex: 1 }}>{t('map.styleTitle')}</Typography>
+            <Typography sx={{ fontSize: '0.85rem', fontWeight: weight(600), flex: 1 }}>{t('map.styleTitle')}</Typography>
             <IconButton size="small" aria-label={t('map.closeStyle')} onClick={onClose}><CloseIcon sx={{ fontSize: 16 }} /></IconButton>
         </Box>
         {/* Vertical scrolling only: a slider thumb's invisible hit area pokes past the edge at its maximum. */}
@@ -289,7 +290,7 @@ export const MapStylePanel: FC<{
                         <Box component="button" type="button" onClick={() => setOpen(expanded ? null : id)} aria-expanded={expanded}
                             sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.5, border: 0, bgcolor: 'transparent', p: 0, cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
                             <Box sx={{ minWidth: 0, flex: 1 }}>
-                                <Typography sx={{ fontSize: '0.78rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{layer.name ?? id}</Typography>
+                                <Typography sx={{ fontSize: '0.78rem', fontWeight: weight(600), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{layer.name ?? id}</Typography>
                                 <Typography sx={{ fontSize: '0.68rem', color: 'text.secondary' }}>{t(`map.types.${layer.type}`, { defaultValue: layer.type })}{layer.data ? ` · ${layer.data}` : ''}</Typography>
                             </Box>
                             <ExpandMoreIcon sx={{ fontSize: 18, color: 'text.secondary', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }} />

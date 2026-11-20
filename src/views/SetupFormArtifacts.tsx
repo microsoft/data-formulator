@@ -40,6 +40,7 @@ import type { ScheduleConfig, ScheduleFormArtifact, SessionsFormArtifact, SetupF
 import { defaultScheduleConfig, listWorkflowLibrary, saveSchedule, ScheduleConfigFields, scheduleCadence, workflowApi, WorkflowLibraryItem,
     WorkflowSetup, WorkflowSetupFields, workflowSetupContentSx } from './WorkflowSchedules';
 import { executeWorkflow } from './WorkflowPanel';
+import { weight } from '../app/tokens';
 
 const errorMessage = (reason: unknown, fallback: string) => reason instanceof Error ? reason.message : fallback;
 
@@ -65,7 +66,7 @@ const SetupFormFrame: React.FC<{ icon: React.ReactNode; title: string; done?: bo
     <Box component="section" aria-label={title} sx={{ width: '100%', minWidth: 0, fontFamily: theme => theme.typography.fontFamily }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pb: 1.5, mb: 2, borderBottom: 1, borderColor: 'divider' }}>
             <Box sx={{ display: 'flex', color: 'text.secondary', '& svg': { fontSize: 18 } }}>{icon}</Box>
-            <Typography component="h1" sx={{ m: 0, minWidth: 0, fontSize: textVar.lg, fontWeight: 600, lineHeight: 1.35, overflowWrap: 'anywhere' }}>
+            <Typography component="h1" sx={{ m: 0, minWidth: 0, fontSize: textVar.lg, fontWeight: weight(600), lineHeight: 1.35, overflowWrap: 'anywhere' }}>
                 {title}
             </Typography>
             {done && <CheckIcon aria-hidden sx={{ fontSize: 16, color: 'success.main', ml: 'auto', flexShrink: 0 }} />}
@@ -334,7 +335,7 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
             .then(result => setTargetHash(result.content_hash)).catch(() => setTargetHash(undefined));
     };
     const proseStyle = { fontSize: 'inherit', lineHeight: 1.5, '& p': { my: 0 }, '& ul, & ol': { pl: 2.5, my: 0.5 },
-        '& h1, & h2, & h3, & h4': { fontSize: 'inherit', fontWeight: 600, mt: 1, mb: 0.5 },
+        '& h1, & h2, & h3, & h4': { fontSize: 'inherit', fontWeight: weight(600), mt: 1, mb: 0.5 },
         '& pre': { overflowX: 'auto', whiteSpace: 'pre-wrap', bgcolor: 'action.hover', p: 1.5, borderRadius: 1 },
         '& code': { fontFamily: 'var(--df-font-mono)', fontSize: '0.95em' }, '& a': { color: 'primary.main' } };
     const renderInput = (value: unknown): React.ReactNode => {
@@ -352,7 +353,7 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
         return <Box sx={proseStyle}><ReactMarkdown>{value == null ? t('workflow.notSpecified') : String(value)}</ReactMarkdown></Box>;
     };
     const definitionSection = (label: string, children: React.ReactNode) => <Box component="section" sx={{ mt: 2 }}>
-        <Typography component="h2" sx={{ fontSize: 'inherit', fontWeight: 600, mb: 0.5 }}>{label}</Typography>
+        <Typography component="h2" sx={{ fontSize: 'inherit', fontWeight: weight(600), mb: 0.5 }}>{label}</Typography>
         {children}
     </Box>;
     return <Box component="section" id={canvas ? 'vis-view-canvas' : undefined} aria-label={t('workflow.definition')} sx={{
@@ -362,7 +363,7 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
     }}>
         <Box sx={{ px: canvas ? { xs: 2, sm: 3 } : 0, pt: canvas ? 2 : 0, flexShrink: 0 }}>
             <Box sx={{ width: '100%', maxWidth: 900, mx: 'auto' }}>
-                <Typography component="h1" variant="h6" sx={{ fontWeight: 600, m: 0 }}>{definition.name}</Typography>
+                <Typography component="h1" variant="h6" sx={{ fontWeight: weight(600), m: 0 }}>{definition.name}</Typography>
                 <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', mt: 0.25, mb: 0.5 }}>
                     {target ? t('workflow.definitionRevises', { name: target.name }) : t('workflow.definition')}</Typography>
                 {proposal.schedule?.savedId && <Typography data-workflow-schedule sx={{ display: 'flex', alignItems: 'center', gap: 0.5,
@@ -388,7 +389,7 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
                 {!!definition.parameters?.length && definitionSection(t('workflow.parameters'),
                     <Box component="dl" sx={{ m: 0 }}>{definition.parameters.map(parameter => <Box key={parameter.name} sx={{ py: 0.75,
                         display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(130px, 1fr) minmax(0, 2fr)' }, columnGap: 2, rowGap: 0.25 }}>
-                        <Typography component="dt" sx={{ fontSize: 'inherit', fontWeight: 500 }}>{parameter.label}
+                        <Typography component="dt" sx={{ fontSize: 'inherit', fontWeight: weight(500) }}>{parameter.label}
                             {parameter.required && <Box component="span" sx={{ ml: 0.75, fontSize: textVar.sm, color: 'text.secondary' }}>{t('workflow.required')}</Box>}
                         </Typography>
                         <Box component="dd" sx={{ m: 0 }}>
@@ -402,7 +403,7 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
                 )}
                 {!!definition.steps?.length && definitionSection(t('workflow.executionSteps'), <Box component="ol" sx={{ my: 0, pl: 2.5 }}>
                     {definition.steps.map(step => <Box component="li" key={step.id} sx={{ mb: 1 }}>
-                        <Typography sx={{ fontSize: 'inherit', fontWeight: 500 }}>{step.description || step.id}</Typography>
+                        <Typography sx={{ fontSize: 'inherit', fontWeight: weight(500) }}>{step.description || step.id}</Typography>
                         <Box sx={proseStyle}><ReactMarkdown>{step.instructions}</ReactMarkdown></Box>
                         {!!step.checkers?.length && <Box component="ul" sx={{ my: 0.5, pl: 2.5, color: 'text.secondary' }}>
                             {step.checkers.map(check => <Box component="li" key={check.id} sx={proseStyle}>
@@ -499,7 +500,7 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
                 catch (reason) { if (current === generation.current) { setError(errorMessage(reason, t('workflow.runFailed'))); setSetupOpen(false); } }
                 finally { if (current === generation.current) setStarting(false); }
             }}>
-                <DialogTitle id={`workflow-setup-${turn.id}`} sx={{ fontSize: textVar.xl, lineHeight: 1.5, fontWeight: 400, overflowWrap: 'anywhere', pb: 2 }}>
+                <DialogTitle id={`workflow-setup-${turn.id}`} sx={{ fontSize: textVar.xl, lineHeight: 1.5, fontWeight: weight(400), overflowWrap: 'anywhere', pb: 2 }}>
                     <Box component="span" sx={{ color: 'text.primary' }}>{t('workflow.runWorkflowPrefix')}</Box>{' '}
                     <Box component="span" sx={{ color: 'primary.main' }}>{definition.name}</Box>
                 </DialogTitle>

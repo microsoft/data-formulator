@@ -113,7 +113,7 @@ export const ReactAppPreview: FC<{
     }, [compiled, optional, manifest, theme, paletteKey, look, semantics, chartsKey, themes, density]);
     return <AppSandbox title={title} manifest={manifest} buildDocument={buildDocument} initialErrors={initialErrors}
         reloadKey={reloadKey} reserveTopRight={reserveTopRight} onAskFix={onAskFix} autoFix={autoFix} onHealthy={onHealthy} fixPending={fixPending}
-        resolveSource={resolveSource} workspaceId={workspaceId} capture={capture} />;
+        resolveSource={resolveSource} workspaceId={workspaceId} capture={capture} linkSource={source} />;
 };
 
 export default ReactAppPreview;

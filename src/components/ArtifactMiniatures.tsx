@@ -15,6 +15,7 @@ import { DataFormulatorState } from '../app/dfSlice';
 import { getCachedChart } from '../app/chartCache';
 import { readWorkspaceTextFile } from '../app/workspaceService';
 import { isMapFile } from '../icons';
+import { ink } from '../app/tokens';
 
 const frameSx = {
     flexShrink: 0, bgcolor: 'background.paper',
@@ -22,14 +23,14 @@ const frameSx = {
 } as const;
 
 const lines = (widths: number[]) => widths.map((width, index) =>
-    <Box key={index} sx={{ height: 3, width: `${width}%`, flexShrink: 0, bgcolor: 'rgba(0,0,0,0.14)', borderRadius: 1 }} />);
+    <Box key={index} sx={{ height: 3, width: `${width}%`, flexShrink: 0, bgcolor: ink(0.14), borderRadius: 1 }} />);
 
 /** A tiny page: heading, text lines, and the report's first chart (text lines while there is none yet). A `peek` shows
  *  only the page's top, as tall as an app's window, so report cards in the thread are no taller than app cards. */
 export const MiniPage: React.FC<{ chartSrc?: string; width?: number; peek?: boolean }> = ({ chartSrc, width = 40, peek = false }) =>
     <Box aria-hidden sx={{ ...frameSx, width, height: Math.round(width * (peek ? 0.78 : 1.3)), borderRadius: 0.75, p: '4px',
         ...(peek ? { pb: 0 } : {}), display: 'flex', flexDirection: 'column', gap: '3px', overflow: 'hidden' }}>
-        <Box sx={{ height: 4, width: '70%', flexShrink: 0, bgcolor: 'rgba(0,0,0,0.35)', borderRadius: 1 }} />
+        <Box sx={{ height: 4, width: '70%', flexShrink: 0, bgcolor: ink(0.35), borderRadius: 1 }} />
         {lines(peek ? [100] : [100, 85])}
         {chartSrc
             ? <Box component="img" src={chartSrc} alt="" sx={{ display: 'block', width: '100%', height: Math.round(width * 0.42),
@@ -76,20 +77,20 @@ const DEFAULT_LAYOUT: AppLayout = [{ kind: 'filters', count: 2 }, { kind: 'cells
 const chartFill = (strength: number) => (theme: Theme) => alpha(theme.palette.secondary.main, strength);
 const cellSx = (cell: AppCell) => cell === 'chart'
     ? { bgcolor: chartFill(0.3), borderRadius: '1px' }
-    : { borderRadius: '1px', bgcolor: 'rgba(0,0,0,0.05)',
-        backgroundImage: 'repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0,0,0,0.12) 2px 3px)' };
+    : { borderRadius: '1px', bgcolor: ink(0.05),
+        backgroundImage: `repeating-linear-gradient(to bottom, transparent 0 2px, ${ink(0.12)} 2px 3px)` };
 
 const MiniRow: React.FC<{ row: AppRow }> = ({ row }) => {
     const count = 'count' in row ? Math.min(row.count, MAX_ITEMS) : 0;
     switch (row.kind) {
         case 'filters': return <Box sx={{ display: 'flex', gap: '2px', height: 3, flexShrink: 0 }}>
-            {Array.from({ length: count }, (_, index) => <Box key={index} sx={{ width: 7, bgcolor: 'rgba(0,0,0,0.14)', borderRadius: 1 }} />)}
+            {Array.from({ length: count }, (_, index) => <Box key={index} sx={{ width: 7, bgcolor: ink(0.14), borderRadius: 1 }} />)}
         </Box>;
         case 'tabs': return <Box sx={{ display: 'flex', gap: '3px', height: 2, flexShrink: 0 }}>
-            <Box sx={{ width: 6, bgcolor: chartFill(0.6) }} /><Box sx={{ width: 6, bgcolor: 'rgba(0,0,0,0.14)' }} />
+            <Box sx={{ width: 6, bgcolor: chartFill(0.6) }} /><Box sx={{ width: 6, bgcolor: ink(0.14) }} />
         </Box>;
         case 'kpis': return <Box sx={{ display: 'flex', gap: '2px', height: 5, flexShrink: 0 }}>
-            {Array.from({ length: count }, (_, index) => <Box key={index} sx={{ flex: 1, bgcolor: 'rgba(0,0,0,0.07)', borderRadius: '1px' }} />)}
+            {Array.from({ length: count }, (_, index) => <Box key={index} sx={{ flex: 1, bgcolor: ink(0.07), borderRadius: '1px' }} />)}
         </Box>;
         case 'cells': {
             const cells = row.cells.slice(0, 3);
@@ -105,11 +106,11 @@ export const MiniWindow: React.FC<{ width?: number; layout?: AppLayout }> = ({ w
     const rows = (layout?.length ? layout : DEFAULT_LAYOUT).slice(0, MAX_ROWS);
     return <Box aria-hidden sx={{ ...frameSx, width, height: Math.round(width * 0.78), borderRadius: 1, overflow: 'hidden',
         display: 'flex', flexDirection: 'column' }}>
-        <Box sx={{ height: 7, flexShrink: 0, display: 'flex', alignItems: 'center', gap: '2px', px: '3px', bgcolor: 'rgba(0,0,0,0.05)' }}>
-            {[0, 1, 2].map(index => <Box key={index} sx={{ width: 3, height: 3, borderRadius: '50%', bgcolor: 'rgba(0,0,0,0.22)' }} />)}
+        <Box sx={{ height: 7, flexShrink: 0, display: 'flex', alignItems: 'center', gap: '2px', px: '3px', bgcolor: ink(0.05) }}>
+            {[0, 1, 2].map(index => <Box key={index} sx={{ width: 3, height: 3, borderRadius: '50%', bgcolor: ink(0.22) }} />)}
         </Box>
         <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '2px', p: '3px' }}>
-            <Box sx={{ height: 3, width: '55%', flexShrink: 0, bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 1 }} />
+            <Box sx={{ height: 3, width: '55%', flexShrink: 0, bgcolor: ink(0.3), borderRadius: 1 }} />
             {rows.map((row, index) => <MiniRow key={index} row={row} />)}
         </Box>
     </Box>;

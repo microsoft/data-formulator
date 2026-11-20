@@ -25,7 +25,7 @@ export const HtmlAppPreview: FC<{
         config: { channel, hostOrigin: window.location.origin, manifest, theme },
     }), [html, manifest, theme]);
     return <AppSandbox title={title} manifest={manifest} buildDocument={buildDocument} reloadKey={reloadKey}
-        reserveTopRight={reserveTopRight} onAskFix={onAskFix} autoFix={autoFix} onHealthy={onHealthy} fixPending={fixPending} resolveSource={resolveSource} capture={capture} />;
+        reserveTopRight={reserveTopRight} onAskFix={onAskFix} autoFix={autoFix} onHealthy={onHealthy} fixPending={fixPending} resolveSource={resolveSource} capture={capture} linkSource={html} />;
 };
 
 export default HtmlAppPreview;

@@ -62,7 +62,7 @@ import { getUrls } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { DataFormulatorState } from '../app/dfSlice';
 import { textVar } from '../app/layout';
-import { codeEditorSearchPanelSx } from '../app/tokens';
+import { codeEditorSearchPanelSx, ink, weight } from '../app/tokens';
 import { WorkspaceFile, previewWorkspaceFile, downloadWorkspaceFile } from '../app/workspaceService';
 import { formatBytes } from './ViewUtils';
 import { SignInActivity } from '../components/SignInActivity';
@@ -451,7 +451,7 @@ export const LogViewerDialog: FC<{
                     sx={{
                         p: 0.5,
                         color: 'text.secondary',
-                        '&:hover': { color: 'text.primary', backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                        '&:hover': { color: 'text.primary', backgroundColor: ink(0.04) },
                     }}
                     aria-label={t('logs.viewLogs', { defaultValue: 'Open console' })}
                 >
@@ -461,7 +461,7 @@ export const LogViewerDialog: FC<{
             )}
             <Dialog open={open} onClose={() => setOpen(false)} maxWidth="lg" fullWidth>
                 <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 2, py: 1.25, flexShrink: 0 }}>
-                    <Typography component="span" sx={{ fontSize: textVar.xl, fontWeight: 500 }}>
+                    <Typography component="span" sx={{ fontSize: textVar.xl, fontWeight: weight(500) }}>
                         {title || t('logs.title', { defaultValue: 'Console' })}
                     </Typography>
                     <Tooltip title={t('logs.refresh', { defaultValue: 'Refresh' })}>
@@ -536,12 +536,12 @@ export const LogViewerDialog: FC<{
                             mr: 1,
                             color: 'text.disabled',
                             fontSize: textVar.sm,
-                            fontWeight: 400,
+                            fontWeight: weight(400),
                             textTransform: 'none',
                         },
                         '& .MuiTab-root.Mui-selected': {
                             color: 'text.primary',
-                            fontWeight: 400,
+                            fontWeight: weight(400),
                         },
                     }}
                 >

@@ -3,7 +3,7 @@
 
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
-import { ambientShadow, identText, shadow, transition } from '../app/tokens';
+import { ambientShadow, identText, shadow, transition, ink, paper } from '../app/tokens';
 import { tableHeaderSurface } from '../app/look';
 import { TableVirtuoso } from 'react-virtuoso';
 import Table from '@mui/material/Table';
@@ -325,7 +325,7 @@ const VirtuosoTableHead = React.forwardRef<HTMLTableSectionElement, React.HTMLAt
 ));
 const VirtuosoTableRow = (props: any) => {
     const index = props['data-index'];
-    return <TableRow {...props} style={{...props.style, backgroundColor: index % 2 == 0 ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.02)"}}/>
+    return <TableRow {...props} style={{...props.style, backgroundColor: index % 2 == 0 ? paper(0.05) : ink(0.02)}}/>
 };
 const VirtuosoTableBody = React.forwardRef<HTMLTableSectionElement>((props, ref) => (
     <TableBody {...props} ref={ref} />
@@ -675,7 +675,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                                                         justifyContent: 'center',
                                                         borderBottomWidth: '2px',
                                                         borderBottomStyle: 'solid',
-                                                        borderBottomColor: 'rgba(0,0,0,0.2)',
+                                                        borderBottomColor: ink(0.2),
                                                         padding: '4px 4px',
                                                         margin: '0 2px 0 0',
                                                     }}
@@ -724,7 +724,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                         return (
                             <>
                                 {columnDefs.map((column, colIndex) => {
-                                    let backgroundColor = "rgba(255,255,255,0.05)";
+                                    let backgroundColor = paper(0.05);
 
                                     return (
                                         <TableCell

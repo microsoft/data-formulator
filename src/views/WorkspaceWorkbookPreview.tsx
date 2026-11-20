@@ -6,6 +6,7 @@ import jsPreviewExcel from '@js-preview/excel';
 import '@js-preview/excel/lib/index.css';
 import '@fontsource/source-sans-pro/400.css';
 import { textVar } from '../app/layout';
+import { weight } from '../app/tokens';
 
 export const WorkspaceWorkbookPreview: React.FC<{ file: Blob; fileName: string; errorLabel: string }> = ({ file, fileName, errorLabel }) => {
     const { t } = useTranslation();
@@ -127,7 +128,7 @@ export const WorkspaceWorkbookPreview: React.FC<{ file: Blob; fileName: string; 
                 position: 'relative', boxSizing: 'border-box',
                 padding: '0 16px', maxWidth: 240,
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                fontSize: textVar.sm, fontWeight: 500, letterSpacing: 0,
+                fontSize: textVar.sm, fontWeight: weight(500), letterSpacing: 0,
                 color: theme.palette.text.secondary,
                 borderRight: `1px solid ${theme.palette.divider}`,
                 backgroundColor: 'transparent',

@@ -20,7 +20,7 @@ import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlin
 import AltRouteIcon from '@mui/icons-material/AltRoute';
 import { ArtifactDeleteButton, ThreadArtifactCard } from './DataThreadCards';
 import { exampleCardButtonSx, exampleCardDescriptionSx, exampleCardSx, exampleCardTitleSx, ItemCard, itemCardGridSx, MetadataCard, MetadataChips, ViewAllButton } from '../components/ItemCard';
-import { readingTypography, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarToolbarSx } from '../app/tokens';
+import { readingTypography, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarToolbarSx, ink, paper, weight } from '../app/tokens';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import CodeIcon from '@mui/icons-material/Code';
@@ -887,7 +887,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
     const renderChecks = (checks: NonNullable<NonNullable<TextTurn['workflow']>['checks']>) => checks.map(check => <Box key={check.id}
         sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, py: 1 }}>
         <Box sx={{ pt: 0.25 }}>{stepIcon(check.status)}</Box>
-        <Box sx={{ minWidth: 0 }}><Typography sx={{ fontSize: textVar.sm, fontWeight: 600 }}>{check.id} · {statusLabel(check.status)}</Typography>
+        <Box sx={{ minWidth: 0 }}><Typography sx={{ fontSize: textVar.sm, fontWeight: weight(600) }}>{check.id} · {statusLabel(check.status)}</Typography>
             <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', lineHeight: 1.6 }}>{check.explanation}</Typography></Box>
     </Box>);
     const callPresentation = (tool: string) => tool === 'execute_python_script'
@@ -989,7 +989,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 borderColor: active ? 'primary.main' : status === 'failed' ? 'error.main' : finished ? alpha(theme.palette.success.main, 0.4) : 'divider', bgcolor: active ? alpha(theme.palette.primary.main, 0.03) : 'background.paper',
                 boxShadow: active ? `0 0 0 3px ${alpha(theme.palette.primary.main, 0.08)}` : 'none' }}>
                 <Box sx={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: 1, minHeight: 24 }}>
-                    <Typography component="h3" sx={{ fontSize: textVar.md, fontWeight: 600, flex: 1, minWidth: 0,
+                    <Typography component="h3" sx={{ fontSize: textVar.md, fontWeight: weight(600), flex: 1, minWidth: 0,
                         color: status === 'pending' ? 'text.secondary' : 'text.primary', overflowWrap: 'anywhere' }}>{step.description || definition?.description || step.id.replaceAll('_', ' ')}</Typography>
                     {/* The border and marker carry status; only a failure also gets a visible label. */}
                     <Typography component="span" sx={status === 'failed' ? { fontSize: textVar.xs, color: 'error.main' } : visuallyHidden}>{statusLabel(status)}</Typography>
@@ -997,7 +997,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 <ClampedRegion>
                 {instructions && <Box data-clamp="3" data-workflow-action={step.id} sx={{ ...proseSx, mt: 0.5, color: 'text.secondary', overflowWrap: 'anywhere' }}><ReactMarkdown>{instructions}</ReactMarkdown></Box>}
                 {checksMode === 'open' && <Box data-workflow-checks={step.id} sx={{ mt: 1 }}>
-                    <Typography component="h4" sx={{ fontSize: textVar.sm, fontWeight: 600 }}>{t('workflow.checks')}</Typography>
+                    <Typography component="h4" sx={{ fontSize: textVar.sm, fontWeight: weight(600) }}>{t('workflow.checks')}</Typography>
                     {checkList}
                 </Box>}
                 </ClampedRegion>
@@ -1048,7 +1048,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
         <Box component="span" sx={{ flex: 1, minWidth: 0, ...(canvas ? { display: 'block' } : {}) }}>
             <Typography component="span" sx={{ display: 'block', fontSize: textVar.xs, color: 'text.secondary', overflowWrap: 'anywhere', mb: 0.75, pr: canvas ? 0 : 3.5 }}>
                 <Box component="span"
-                    sx={{ fontWeight: 600, color: statusColor, textTransform: 'capitalize' }}>
+                    sx={{ fontWeight: weight(600), color: statusColor, textTransform: 'capitalize' }}>
                     {workflow.status === 'running' ? <ShimmerText tone="neutral" fontSize="inherit" fontWeight={600}>{workflow.pauseRequested ? t('workflow.stopping') : workflow.planReviewPending ? t('workflow.reviewingPlan') : statusLabel(workflow.status)}</ShimmerText> : statusLabel(workflow.status)}
                 </Box> · {t('workflow.toolCalls', { count: workflow.toolCalls ?? workflow.log?.length ?? 0 })}
             </Typography>
@@ -1132,7 +1132,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
         {canvas && <Box component="section" aria-label={t('workflow.summary')} sx={{ ...proseSx, mt: 2, pb: 1.5, borderBottom: 1, borderColor: 'divider',
             '& > h2': { mb: 0.75 } }}>
             {workflow.status === 'completed' ? <>
-                <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: 600 }}>{t('workflow.results')}</Typography>
+                <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: weight(600) }}>{t('workflow.results')}</Typography>
                 <ReactMarkdown>{turn.content}</ReactMarkdown>
             </> : null}
             {(overview || scope || deliverables.length > 0 || setup?.instructions || Object.keys(setup?.parameters || {}).length > 0) && <Box component="details" sx={{ mt: 1,
@@ -1141,7 +1141,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 {overview && <Box data-workflow-overview sx={{ my: 1 }}><ReactMarkdown>{overview}</ReactMarkdown></Box>}
                 {scope && <ReactMarkdown>{scope}</ReactMarkdown>}
                 {deliverables.length > 0 && <Box sx={{ mt: 0.75 }}>
-                    <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: 600 }}>{t('workflow.expectedOutputs')}</Typography>
+                    <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: weight(600) }}>{t('workflow.expectedOutputs')}</Typography>
                     <Box component="ul" sx={{ m: 0, mt: 0.25, pl: 2.5, '& p': { my: 0 } }}>
                         {deliverables.map((item, index) => <Box component="li" key={index}><ReactMarkdown>{item}</ReactMarkdown></Box>)}
                     </Box>
@@ -1163,7 +1163,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
             '& summary:has(.workflow-chevron)': { listStyle: 'none', '&::-webkit-details-marker': { display: 'none' } },
             '& details[open] > summary > .workflow-chevron': { transform: 'rotate(90deg)' } }}>
             {!!workflow.planHistory?.length && <Box component="details" sx={{ mb: 2, borderTop: 1, borderColor: 'divider' }}>
-                <Box component="summary" sx={{ fontWeight: 600 }}>{t('workflow.earlierPlans', { count: workflow.planHistory.length })}</Box>
+                <Box component="summary" sx={{ fontWeight: weight(600) }}>{t('workflow.earlierPlans', { count: workflow.planHistory.length })}</Box>
                 {workflow.planHistory.map(plan => <Box component="details" key={plan.revision} data-workflow-plan={plan.revision}
                     sx={{ pl: { xs: 1, sm: 3 }, borderTop: 1, borderColor: 'divider' }}>
                     <Box component="summary">{t('workflow.planReason', { number: plan.revision + 1, reason: plan.reason })}</Box>
@@ -1171,7 +1171,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                     {allLog.filter(entry => (entry.plan_revision || 0) === plan.revision && !plan.steps.some(step => step.id === entry.step_id)).map(renderCall)}
                 </Box>)}
             </Box>}
-            <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: 600, mb: 1 }}>{t('workflow.steps')}{workflow.planRevision ? ` · ${t('workflow.planNumber', { number: workflow.planRevision + 1 })}` : ''}</Typography>
+            <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: weight(600), mb: 1 }}>{t('workflow.steps')}{workflow.planRevision ? ` · ${t('workflow.planNumber', { number: workflow.planRevision + 1 })}` : ''}</Typography>
             {renderTimeline(workflow.steps, workflow.checks || [], workflow.planRevision || 0)}
             {!!unassignedArtifacts.length && <Box component="section" aria-label={t('workflow.unassignedArtifacts')} sx={{ mt: 2 }}>
                 <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{t('workflow.unassignedArtifacts')}</Typography>
@@ -1182,7 +1182,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 {t('workflow.historyUnavailable')}
             </Typography>}
             {!!unassignedLog.length && <Box component="details" sx={{ mt: 2, borderTop: 1, borderColor: 'divider' }}>
-                <Box component="summary" sx={{ fontWeight: 600 }}>{t('workflow.unassignedCalls', { count: unassignedLog.length })}</Box>
+                <Box component="summary" sx={{ fontWeight: weight(600) }}>{t('workflow.unassignedCalls', { count: unassignedLog.length })}</Box>
                 {unassignedLog.map(renderCall)}
             </Box>}
             {!!unassignedChecks.length && <Box component="details" sx={{ borderTop: 1, borderColor: 'divider' }}>
@@ -1523,9 +1523,9 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
     return <Box sx={{ display: landing ? 'contents' : 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, flex: '0 1 auto', overflow: landing ? 'visible' : 'hidden' }}>
         {landing && renderLanding ? renderLanding({ examples: renderGroups(['demo']), saved: renderGroups(['user', 'server']), toolbar }) : <>
         <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', px: 1.5, height: 40, minHeight: 40, boxSizing: 'border-box',
-            flexShrink: 0, borderBottom: '1px solid rgba(0, 0, 0, 0.16)', bgcolor: 'rgba(255, 255, 255, 0.76)',
+            flexShrink: 0, borderBottom: `1px solid ${ink(0.16)}`, bgcolor: paper(0.76),
             ...(landing ? { px: 0, borderBottom: 0, bgcolor: 'transparent' } : {}) }}>
-            <Typography component={landing ? 'h2' : 'div'} sx={{ fontSize: landing ? textVar.xl : textVar.md, fontWeight: landing ? 400 : 600, textAlign: 'left' }}>{landing ? t('workflow.exampleWorkflows') : t('workflow.title')}</Typography>
+            <Typography component={landing ? 'h2' : 'div'} sx={{ fontSize: landing ? textVar.xl : textVar.md, fontWeight: landing ? weight(400) : weight(600), textAlign: 'left' }}>{landing ? t('workflow.exampleWorkflows') : t('workflow.title')}</Typography>
             {!landing && <ViewAllButton label={t('workflow.viewAll')} onClick={() => {
                 const first = items.find(item => (item.origin || 'user') === 'user') ?? items[0];
                 if (first) void edit(first); else createWorkflow();
@@ -1554,7 +1554,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                 if (target?.value === 'current' && inSession) void execute(runTarget.path, setup, runTarget.content);
                 else startNewSession(runTarget, setup);
             }}>
-                <DialogTitle id="workflow-setup-title" sx={{ fontSize: textVar.xl, lineHeight: 1.5, fontWeight: 400, overflowWrap: 'anywhere', pb: 2 }}>
+                <DialogTitle id="workflow-setup-title" sx={{ fontSize: textVar.xl, lineHeight: 1.5, fontWeight: weight(400), overflowWrap: 'anywhere', pb: 2 }}>
                     <Box component="span" sx={{ color: 'text.primary' }}>{t('workflow.runWorkflowPrefix')}</Box>{' '}
                     <Box component="span" sx={{ color: 'primary.main' }}>{runTarget?.name}</Box>
                 </DialogTitle>
@@ -1636,7 +1636,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                 }}>{t('app.save')}</Button>
             </>}>
             <Box>
-                <Typography sx={{ fontSize: textVar.lg, fontWeight: 500, overflowWrap: 'anywhere' }}>
+                <Typography sx={{ fontSize: textVar.lg, fontWeight: weight(500), overflowWrap: 'anywhere' }}>
                     {editor.creating ? t('workflow.new') : editorItem?.name ?? editor.path}</Typography>
                 {editorRuns.length > 0 && <RunList caption={t('schedule.previousRuns')} label={t('schedule.runsOf', { name: editorItem?.name })} limit={6} runs={editorRuns} />}
             </Box>

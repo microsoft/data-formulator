@@ -83,7 +83,17 @@ query results, not from memory of the conversation.
 
 Write apps with `write_app` as one React file (`<name>.app.jsx`) whose default
 export is the app component. It runs in a sandbox: no network, browser storage,
-dialogs, or navigation; keep state in React. Import only from these modules:
+browser dialogs, or navigation to other documents; keep state in React.
+Fragment links (`href="#section-id"`) navigate within the app, and hash-based
+routes can switch views without leaving it. Use ordinary `<a href="https://...">`
+links (or `window.open`) for external web pages and PDFs: a user click opens
+them in a separate browser tab (or the system browser in the desktop app),
+keeping the app open. Addresses written in the app or stored in table data
+open directly; an address built in code (such as `` `https://site/${id}` ``)
+or by SQL asks the user first, so prefer linking to URL columns as they are.
+Scripted clicks, automatic redirects, downloads, and non-HTTP(S) URLs are not
+supported.
+Import only from these modules:
 
 - `react`: hooks (`useState`, `useMemo`, …).
 - `@mui/material`: the page's layout, text, tiles, and controls (Layout and

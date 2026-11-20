@@ -36,9 +36,9 @@ import { formatter, toNumber, type LegendModel } from './scales';
 import type { FieldAnnotation } from './semantics';
 import { frameBackground, themeInk, viewStyle } from './styles';
 import { isParamRef, type Control, type MapSpec, type Row, type TooltipField } from './spec';
-import { bottomInset, chooseLayout, EDGE, panelTop, ROW_GAP, ROW_PADDING, ROW_WIDTH, rowFit, rowRoom, TOGGLE_SPACE, WIDGET_WIDTH, ZOOM_SPACE,
+import { bottomInset, chooseLayout, EDGE, panelTop, ROW_GAP, ROW_PADDING, ROW_WIDTH, rowFit, rowRoom, topRightPanelTop, TOGGLE_SPACE, WIDGET_WIDTH, ZOOM_SPACE,
     type Box as PanelBox, type MapLayout, type Size } from './layout';
-import { ambientShadow } from '../app/tokens';
+import { ambientShadow, paper, weight } from '../app/tokens';
 
 const WORLD_BANK_BOUNDARIES_URL = 'https://datacatalog.worldbank.org/search/dataset/0038272/world-bank-official-boundaries';
 export interface MapViewProps {
@@ -120,9 +120,11 @@ const panelSx = {
     boxShadow: ambientShadow('0 1px 3px rgba(0,0,0,0.06)'), backdropFilter: 'blur(4px)',
 } as const;
 
-const labelSx = { fontSize: '0.68rem', fontWeight: 600, color: 'text.secondary', lineHeight: 1.3 } as const;
+const labelSx = { fontSize: '0.68rem', fontWeight: weight(600), color: 'text.secondary', lineHeight: 1.3 } as const;
 /** Compact inputs, so the widgets read as one quiet group rather than a form. */
-const inputSx = { fontSize: '0.74rem', '& .MuiSelect-select, & .MuiInputBase-input': { py: '3px', minHeight: 0 } } as const;
+const inputSx = { fontSize: '0.74rem', height: 26,
+    '& .MuiSelect-select, & .MuiInputBase-input': { py: '3px', minHeight: 0 },
+    '& .MuiSelect-select': { pl: 1, pr: '28px !important' } } as const;
 /** Inputs keep to their own width: a slider's end thumbs (12px, centred on the ends) sit inside it, not over the panel's edge. */
 const sliderSx = { py: '10px', mx: '6px', width: 'calc(100% - 12px)' } as const;
 /** Heights to plan with before a control is laid out (and where nothing is, as in tests). */
@@ -256,15 +258,20 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
     const [lasso, setLasso] = useState(false);
     const headerRef = useRef<HTMLDivElement>(null);
-    const [measuredHeader, setMeasuredHeader] = useState(0);
+    const [measuredHeader, setMeasuredHeader] = useState<Size>({ width: 0, height: 0 });
     useEffect(() => {
         const element = headerRef.current;
-        if (!element) { setMeasuredHeader(0); return; }
-        const observer = new ResizeObserver(() => setMeasuredHeader(Math.ceil(element.getBoundingClientRect().height)));
+        if (!element) { setMeasuredHeader(current => current.width || current.height ? { width: 0, height: 0 } : current); return; }
+        const observer = new ResizeObserver(() => {
+            const box = element.getBoundingClientRect();
+            const next = { width: Math.ceil(box.width), height: Math.ceil(box.height) };
+            setMeasuredHeader(current => current.width === next.width && current.height === next.height ? current : next);
+        });
         observer.observe(element);
         return () => observer.disconnect();
     }, [spec.title, spec.subtitle, interactive]);
     const widgetsRef = useRef<HTMLDivElement>(null);
+    const sideRef = useRef<HTMLDivElement>(null);
     const widgetsOverflow = useRealOverflow(widgetsRef);
     // In the row under the title the box shows its first row of controls, the rest on request: the map stays in view
     // and the controls stay at hand. `rowBottom` is where that first row ends inside the box, measured.
@@ -377,7 +384,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     const timeControlIndex = spec.controls.findIndex((control, index) => control.type === 'slider' && isTimeLike(control, domains[index] ?? []));
     const columnControls = spec.controls.filter((control, index) => index !== timeControlIndex && control.type !== 'details' && control.type !== 'stats');
     const sideControls = spec.controls.filter(control => control.type === 'details' || control.type === 'stats');
-    const headerHeight = panels && (spec.title || spec.subtitle) ? measuredHeader + 4 : 0;
+    const headerHeight = panels && (spec.title || spec.subtitle) ? measuredHeader.height + 4 : 0;
     // The map reframes on new data or layers, not when a filter, frame, or selection changes its marks.
     const fitVersion = useMemo(() => ++fitCounter, [spec.layers, data, loadedGeoSets]);
 
@@ -386,6 +393,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     const [obstacles, setObstacles] = useState<[number, number, number, number][]>([]);
     const legendCount = models.filter(model => model.layer.visible !== false && (model.color.legend || model.size.legend
         || model.layer.type === 'hexbin' || model.layer.type === 'heatmap')).length;
+    const sharedCategories = new Map<string, { model: LayerModel; legend: LegendModel; key: string; layerIds: string[] }>();
     const legends = models.filter(model => model.layer.visible !== false).flatMap(model => {
         const items: { model: LayerModel; legend: LegendModel; key: string }[] = [];
         const dynamic = dynamicLegends[model.layer.id];
@@ -396,6 +404,17 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
         const sameAsColor = model.layer.type === 'vectors' && !!model.sizeField && model.sizeField === model.colorField;
         if (model.size.legend && !sameAsColor) items.push({ model, legend: model.size.legend, key: `${model.layer.id}-size` });
         return items;
+    }).flatMap(item => {
+        const entry = { ...item, layerIds: [item.model.layer.id] };
+        if (item.legend.kind !== 'categories' || !item.model.color.categoryDomain) return [entry];
+        const { model, legend } = item;
+        const domain = item.model.color.categoryDomain;
+        const signature = JSON.stringify([model.layer.data, model.colorField, legend,
+            domain.map(value => [value, model.color.color(value)])]);
+        const shared = sharedCategories.get(signature);
+        if (shared) { shared.layerIds.push(model.layer.id); return []; }
+        sharedCategories.set(signature, entry);
+        return [entry];
     }).map((item, _, all) => {
         // Layers encoding the same field get legends titled alike: name each by its layer (the name alone when it says the field).
         const name = item.model.layer.name;
@@ -404,6 +423,8 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
         const title = saysField ? name : `${name} · ${item.legend.title}`;
         return { ...item, legend: { ...item.legend, title } };
     });
+    const denseLegend = !below && (legends.length > 1 || legends.some(item => item.legend.kind === 'categories' && item.legend.items.length > 4));
+    const legendWidth = legends.length > 1 ? 360 : LEGEND_WIDTH;
     // Basemap regions a choropleth leaves empty are grey: say so.
     const noData = !!basemap && models.some(model => model.layer.type === 'regions' && model.layer.visible !== false && model.geoSet === basemap
         && model.marks.length > 0 && model.marks.length < basemap.features.filter(item => item.properties.id !== 'ATA'
@@ -418,9 +439,9 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     const tiles = spec.view.tiles && spec.view.tiles !== 'none' ? TILE_STYLES[spec.view.tiles] : null;
     // World boundaries carry their source and the UN-style disclaimer (World Bank Official Boundaries, CC BY 4.0).
     const worldBoundaries = !!basemap?.name.startsWith('countries') || models.some(model => !!model.geoSet?.name.startsWith('countries'));
-    const hasLegendItems = legends.length > 0 || unplaced > 0 || noData || !!footer || !!spec.source;
+    const hasLegendItems = legends.length > 0 || unplaced > 0 || noData || !!footer;
     const hasLegendCard = !below && hasLegendItems;
-    const creditLine = panels && worldBoundaries && !below;
+    const footerLine = panels && (worldBoundaries || !!spec.source) && !below;
 
     // Where the panels go (layout.ts): the controls and timeline share one box in a row under the title, a row along
     // the bottom, or a column at the left; the legend takes a corner or joins that box. Chosen by trying each
@@ -478,7 +499,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
         return () => observer.disconnect();
     }, [placement, rowOrder.length, controlsExpanded, firstRow?.count, controlsMinimized]);
     const layoutKey = JSON.stringify([size, fitVersion, headerHeight, columnControls.length, legendCount, timeControlIndex,
-        sideControls.filter(control => control.type === 'stats').length, interactive, layout, legendJoins, legendCorner, compactRow, widgetsHeight]);
+        sideControls.filter(control => control.type === 'stats').length, interactive, layout, legendJoins, legendCorner, compactRow, widgetsHeight, footerLine]);
     useLayoutEffect(() => {
         const container = containerRef.current;
         if (!container || !panels) { setObstacles([]); return; }
@@ -523,11 +544,14 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     const selectedMarks = selectedModel ? selectedModel.marks.filter(mark => selection!.keys.has(mark.key)) : [];
     // The details card floats over the map: put it in the corner that hides the fewest selected marks.
     const hasStats = sideControls.some(control => control.type === 'stats');
-    const detailsTopLeft = panelTop(headerHeight ? measuredHeader : 0);
+    const detailsTopLeft = panelTop(headerHeight ? measuredHeader.height : 0);
     const bottomRightTaken = legendCorner === 'bottom-right' || (hasControls && placement === 'bottom');
-    // A card in the top-right corner starts below the controls row (which runs the panel's width), not over it.
-    const topRight = Math.max(reserveTopRight ? 52 : 12, placement === 'top' && interactive && rowOrder.length && widgetsHeight
-        ? detailsTopLeft + widgetsHeight + 8 : 0);
+    const topPanels: PanelBox[] = [
+        ...(headerHeight ? [[EDGE, 12, EDGE + measuredHeader.width, 12 + measuredHeader.height] as PanelBox] : []),
+        ...(placement === 'top' && hasControls && widgetsHeight
+            ? [[EDGE, detailsTopLeft, EDGE + widgetsWidth, detailsTopLeft + widgetsHeight] as PanelBox] : []),
+    ];
+    const topRight = topRightPanelTop(size.width, DETAILS_WIDTH, topPanels, reserveTopRight);
     const detailsCorner = useMemo((): 'top-right' | 'bottom-right' | 'top-left' => {
         const renderer = rendererRef.current;
         if (hasStats || !renderer || !selectedMarks.length) return 'top-right';
@@ -552,7 +576,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     // Choose the layout: when the map opens, when what it shows changes (its projection, layers, data, controls,
     // legend, title), or when the panel is resized by more than a third; never on a filter, a frame, or a zoom.
     const decisionKey = JSON.stringify([fitVersion, viewProjection(spec.view), spec.view.basemap ?? 'world', spec.view.tiles ?? 'none',
-        spec.view.center, spec.view.zoom, spec.view.rotate, spec.view.fit, pin ?? 'auto', controlsKey, hasLegendCard, !!(spec.title || spec.subtitle)]);
+        spec.view.center, spec.view.zoom, spec.view.rotate, spec.view.fit, pin ?? 'auto', controlsKey, hasLegendCard, footerLine, !!(spec.title || spec.subtitle)]);
     useLayoutEffect(() => {
         const renderer = rendererRef.current;
         const container = containerRef.current;
@@ -571,6 +595,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
         const items = rowOrder.map((item, index) => ({ width: rowWidths[index],
             height: elements[index]?.offsetHeight || ESTIMATED_HEIGHT[item === 'timeline' ? 'timeline' : item.type] || ESTIMATED_HEIGHT.select }));
         const legend = hasLegendCard ? measure(legendRef.current) ?? { width: 200, height: 80 } : null;
+        const stats = interactive && hasStats ? measure(sideRef.current) ?? { width: DETAILS_WIDTH, height: 180 } : null;
         const zoom = zoomRef.current?.getBoundingClientRect();
         const bottomRight = tiles ? 30 : 16;
         const zoomBox: PanelBox = zoom && zoom.width > 0
@@ -578,7 +603,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
             : [size.width - EDGE - 34, size.height - bottomRight - reserveBottomRight - 170, size.width - EDGE, size.height - bottomRight - reserveBottomRight];
         const scene: Scene = { view: spec.view, basemap, models, selection: null, hidden: {}, highlight: null, interactive, fitVersion };
         const next = chooseLayout({
-            width: size.width, height: size.height, header, items, legend, fixed: interactive ? [zoomBox] : [], creditLine, reserveTopRight, bottomRight, pin,
+            width: size.width, height: size.height, header, items, legend, stats, fixed: interactive ? [zoomBox] : [], creditLine: footerLine, reserveTopRight, bottomRight, pin,
             timelineOnly: rowOrder.length === 1 && rowOrder[0] === 'timeline',
         }, arrangements => renderer.measureLayouts(scene, size.width, size.height, arrangements));
         setDecided({ key: decisionKey, layout: next, width: size.width, height: size.height });
@@ -591,10 +616,10 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
             fittedBounds: () => rendererRef.current?.fittedBounds() ?? null, drawNow: () => rendererRef.current?.drawNow() });
     });
 
-    const legendHover = (model: LayerModel) => (item: { value?: string; from?: number; to?: number } | null) => {
+    const legendHover = (layerIds: string[]) => (item: { value?: string; from?: number; to?: number } | null) => {
         if (!item) { setHighlight(null); return; }
         setHighlight({
-            layerId: model.layer.id,
+            layerIds,
             test: (mark: Mark) => {
                 if (item.value !== undefined) return String(mark.colorValue) === item.value;
                 const value = toNumber(mark.colorValue);
@@ -632,20 +657,28 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
             const selected = options.filter(option => chosen.has(String(option.value)));
             if (selected.length === options.length) return t('map.all');
             if (!selected.length) return t('map.none');
-            return selected.length <= 2 ? selected.map(option => option.label ?? String(option.value)).join(', ') : t('map.selectedCount', { count: selected.length });
+            return selected.map(option => option.label ?? String(option.value)).join(', ');
         }
         if (control.type === 'layers') return `${t('map.layers')} ${models.filter(model => model.layer.visible !== false).length}/${models.length}`;
         return t('map.search');
     };
 
     const legendBody = <>
-        {legends.map(({ model, legend, key }) => <MapLegend key={key} legend={legend} hidden={hidden[model.layer.id]} compact={compactLegend}
-            onHover={legend.kind === 'categories' || legend.kind === 'classes' ? legendHover(model) : undefined}
+        <Box data-map-legend-items sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', columnGap: 1.5, rowGap: 1 }}>
+        {legends.map(({ layerIds, legend, key }) => <MapLegend key={key} legend={legend}
+            hidden={new Set([...(hidden[layerIds[0]] ?? [])].filter(value => layerIds.every(id => hidden[id]?.has(value))))} compact={compactLegend} dense={denseLegend}
+            onHover={legend.kind === 'categories' || legend.kind === 'classes' ? legendHover(layerIds) : undefined}
             onToggle={legend.kind === 'categories' ? value => setHidden(current => {
-                const next = new Set(current[model.layer.id] ?? []);
-                if (next.has(value)) next.delete(value); else next.add(value);
-                return { ...current, [model.layer.id]: next };
+                const show = layerIds.every(id => current[id]?.has(value));
+                const next = { ...current };
+                for (const id of layerIds) {
+                    const values = new Set(current[id] ?? []);
+                    if (show) values.delete(value); else values.add(value);
+                    next[id] = values;
+                }
+                return next;
             }) : undefined} />)}
+        </Box>
         {noData && <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
             <Box sx={{ width: 12, height: 12, borderRadius: '2px', bgcolor: style.noData }} />
             <Typography sx={{ fontSize: '0.66rem', color: 'text.secondary' }}>{t('map.noData')}</Typography>
@@ -655,7 +688,6 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
                 {t('map.notOnMap', { count: unplaced, formatted: unplaced.toLocaleString() })}
             </Typography>
         </Tooltip>}
-        {spec.source && <SourceNote text={spec.source} lines={compactLegend ? 1 : 2} />}
         {footer}
     </>;
 
@@ -679,14 +711,14 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
             the rest on request). */}
         {hasControls && <Box ref={widgetsRef} data-map-widgets data-map-obstacle data-map-placement={placement}
             data-map-compact={compactRow ? '' : undefined} data-map-minimized={controlsMinimized ? '' : undefined} sx={{
-            position: 'absolute', left: EDGE, ...(placement === 'bottom' ? { bottom: bottomInset(creditLine) } : { top: detailsTopLeft }),
-            ...panelSx, py: 1, px: `${ROW_PADDING}px`, display: 'flex', gap: 1, boxSizing: 'border-box',
+            position: 'absolute', left: EDGE, ...(placement === 'bottom' ? { bottom: bottomInset(footerLine) } : { top: detailsTopLeft }),
+            ...panelSx, py: 0.75, px: `${ROW_PADDING}px`, display: 'flex', gap: 1, boxSizing: 'border-box',
             // Minimised, it wraps within the room the whole box had (a column's width), so it never covers more than it did.
             ...(controlsMinimized ? { py: 0.5, px: 0.75, gap: 0.5, flexWrap: 'wrap', alignItems: 'center',
                 maxWidth: side ? WIDGET_WIDTH : Math.max(0, room + 2 * ROW_PADDING + 2) }
             // Scrolls only when a tall column of controls outgrows the panel, and never sideways.
             : side ? { width: WIDGET_WIDTH, flexDirection: 'column',
-                maxHeight: `calc(100% - ${detailsTopLeft + bottomInset(creditLine) + 8 + (legendCorner === 'bottom-left' ? legendSize.height : 0)}px)`,
+                maxHeight: `calc(100% - ${detailsTopLeft + bottomInset(footerLine) + 8 + (legendCorner === 'bottom-left' ? legendSize.height : 0)}px)`,
                 overflowY: widgetsOverflow ? 'auto' : 'hidden', overflowX: 'hidden' }
                 // At the top, the host's top-right buttons share the first row only when there is no title; at the bottom,
                 // the row stops short of the zoom buttons (and a legend beside them).
@@ -708,7 +740,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
                 </Tooltip>
                 {/* Within the minimised box's width: the box is as wide as its chips, and a legend title or note wider than them wraps. */}
                 {legendJoins && <Box data-map-joined sx={{ flexBasis: '100%', minWidth: 0, borderTop: '1px solid', borderColor: 'divider', pt: 0.75, pb: 0.5, px: 0.5 }}>
-                    <Box ref={legendRef} data-map-legends sx={{ width: 'fit-content', maxWidth: `min(100%, ${LEGEND_WIDTH}px)`, display: 'flex', flexDirection: 'column', gap: 1,
+                    <Box ref={legendRef} data-map-legends sx={{ width: 'fit-content', maxWidth: `min(100%, ${legendWidth}px)`, display: 'flex', flexDirection: 'column', gap: 1,
                         overflowWrap: 'anywhere' }}>
                         {legendBody}
                     </Box>
@@ -731,7 +763,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
             {/* The legend joined to the controls: after them in the column, or at the end of a row that fits whole. */}
             {legendJoins && <Box data-map-joined sx={{ minWidth: 0, ...(side ? { order: 2, borderTop: '1px solid', borderColor: 'divider', pt: 1 } : {}) }}>
                 {/* As wide as its content, so it measures the same joined or in its corner. */}
-                <Box ref={legendRef} data-map-legends sx={{ width: 'fit-content', maxWidth: side ? '100%' : LEGEND_WIDTH, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <Box ref={legendRef} data-map-legends sx={{ width: 'fit-content', maxWidth: side ? '100%' : legendWidth, display: 'flex', flexDirection: 'column', gap: 1 }}>
                     {legendBody}
                 </Box>
             </Box>}
@@ -740,7 +772,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
             {firstRow && <Box component="button" type="button" data-map-more aria-expanded={controlsExpanded} onClick={() => setControlsExpanded(open => !open)}
                 sx={{ position: 'absolute', left: ROW_PADDING + firstRow.width + 8, top: rowBottom !== null ? rowBottom - 25 : 24,
                     display: 'flex', alignItems: 'center', gap: 0.25, px: 0.75, py: '3px', border: 0, borderRadius: 1.5, bgcolor: 'transparent', cursor: 'pointer',
-                    font: 'inherit', fontSize: '0.7rem', fontWeight: 600, color: 'primary.main', whiteSpace: 'nowrap', '&:hover': { bgcolor: 'action.hover' },
+                    font: 'inherit', fontSize: '0.7rem', fontWeight: weight(600), color: 'primary.main', whiteSpace: 'nowrap', '&:hover': { bgcolor: 'action.hover' },
                     '&:focus:not(:focus-visible)': { outline: 'none' } }}>
                 {controlsExpanded ? t('map.showLess') : t('map.moreCount', { count: moreCount })}
                 {!controlsExpanded && changedBeyondRow > 0 && <Box component="span" title={t('map.changedCount', { count: changedBeyondRow })}
@@ -752,7 +784,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
         {/* On the box's top-right corner, shown while the box is hovered (or the button focused), so it takes none of its room. */}
         {hasControls && !controlsMinimized && <Tooltip title={t('map.minimizeControls')}>
             <IconButton data-map-minimize size="small" aria-label={t('map.minimizeControls')} onClick={() => setControlsMinimized(true)}
-                sx={{ position: 'absolute', left: EDGE + widgetsWidth - 11, ...(placement === 'bottom' ? { bottom: bottomInset(creditLine) + widgetsHeight - 11 } : { top: detailsTopLeft - 11 }),
+                sx={{ position: 'absolute', left: EDGE + widgetsWidth - 11, ...(placement === 'bottom' ? { bottom: bottomInset(footerLine) + widgetsHeight - 11 } : { top: detailsTopLeft - 11 }),
                     width: 22, height: 22, p: 0, ...panelSx, borderRadius: '50%', opacity: 0, transition: 'opacity 120ms',
                     '&:hover, &:focus-visible': { opacity: 1, bgcolor: 'background.paper' } }}>
                 <CloseFullscreenIcon sx={{ fontSize: 12 }} />
@@ -762,19 +794,21 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
         {/* The legend in its corner (when it does not join the controls' box). */}
         {panels && legendCorner && <Box ref={legendRef} data-map-legends data-map-obstacle data-map-corner={legendCorner} sx={{ position: 'absolute',
             ...(legendCorner === 'bottom-right' ? { right: EDGE + ZOOM_SPACE, bottom: tiles ? 30 : 16 }
-                : legendCorner === 'top-left' ? { left: EDGE, top: detailsTopLeft } : { left: EDGE, bottom: bottomInset(creditLine) }),
-            ...panelSx, p: 1, display: 'flex', flexDirection: 'column', gap: 1, maxWidth: side && legendCorner === 'bottom-left' ? WIDGET_WIDTH : LEGEND_WIDTH,
+                : legendCorner === 'top-left' ? { left: EDGE, top: detailsTopLeft } : { left: EDGE, bottom: bottomInset(footerLine) }),
+            ...panelSx, p: denseLegend ? 0.75 : 1, display: 'flex', flexDirection: 'column', gap: 0.75,
+            boxSizing: 'border-box',
+            maxWidth: `min(${side && legendCorner === 'bottom-left' ? WIDGET_WIDTH : legendWidth}px, calc(100% - ${2 * EDGE + (legendCorner === 'bottom-right' ? ZOOM_SPACE : 0)}px))`,
             maxHeight: foldLegend ? 'calc(100% - 24px)' : compactLegend ? '55%' : '40%', overflowY: legendOverflow ? 'auto' : 'hidden', overflowX: 'hidden',
             ...(compactLegend ? { p: 0.75, gap: 0.75 } : {}), ...(foldLegend && !legendOpen ? { p: 0 } : {}) }}>
             {foldLegend && <Box component="button" type="button" data-map-legend-toggle aria-expanded={legendOpen} onClick={() => setLegendOpen(open => !open)}
                 sx={{ display: 'flex', alignItems: 'center', gap: 0.25, border: 0, bgcolor: 'transparent', color: 'text.secondary', font: 'inherit',
-                    fontSize: '0.68rem', fontWeight: 600, cursor: 'pointer', p: legendOpen ? 0 : '3px 8px', alignSelf: 'flex-start' }}>
+                    fontSize: '0.68rem', fontWeight: weight(600), cursor: 'pointer', p: legendOpen ? 0 : '3px 8px', alignSelf: 'flex-start' }}>
                 {t('map.legend')}{legendOpen ? <ExpandMoreIcon sx={{ fontSize: 15 }} /> : <ExpandLessIcon sx={{ fontSize: 15 }} />}
             </Box>}
             {(!foldLegend || legendOpen) && legendBody}
         </Box>}
 
-        {interactive && (sideControls.length > 0 || selectedMarks.length > 0) && <SidePanel controls={sideControls} models={models}
+        {interactive && (sideControls.length > 0 || selectedMarks.length > 0) && <SidePanel panelRef={sideRef} controls={sideControls} models={models}
             selectedModel={selectedModel} selectedMarks={selectedMarks} top={topRight} onClear={() => setSelection(null)}
             corner={detailsCorner} topLeft={detailsTopLeft} />}
 
@@ -788,14 +822,16 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
                 <IconButton size="small" aria-label={t(projectionToggle.globe ? 'map.flatView' : 'map.globeView')} onClick={projectionToggle.toggle} sx={{ borderRadius: 0 }}>
                     {projectionToggle.globe ? <MapOutlinedIcon sx={{ fontSize: 17 }} /> : <PublicOutlinedIcon sx={{ fontSize: 17 }} />}</IconButton></Tooltip>}
         </Box>}
-        {/* The basemap's citation, as a footer line along the bottom (CC BY 4.0 asks for it), with the disclaimer on hover. */}
-        {creditLine && <Tooltip title={t('map.boundariesDisclaimer')} placement="top-start">
-            <Typography data-map-boundaries sx={{ position: 'absolute', left: 16, bottom: 6, maxWidth: 'calc(100% - 200px)', fontSize: '0.62rem', lineHeight: 1.3,
-                color: titleInk?.secondary ?? 'text.secondary', opacity: 0.85, textShadow: `0 0 3px ${style.background}`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                <Link href={WORLD_BANK_BOUNDARIES_URL} target="_blank" rel="noopener noreferrer" color="inherit" underline="hover">{t('map.boundariesCredit')}</Link>
-            </Typography>
-        </Tooltip>}
-        {tiles && <Typography sx={{ position: 'absolute', right: 8, bottom: 4, fontSize: '0.62rem', color: 'text.secondary', bgcolor: 'rgba(255,255,255,0.7)', px: 0.5 }}>{tiles.attribution}</Typography>}
+        {footerLine && <Box data-map-footer sx={{ position: 'absolute', left: 16, right: 200, bottom: 6, display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+            {spec.source && (interactive ? <SourceDisclosure text={spec.source} /> : <SourceNote text={spec.source} lines={2} />)}
+            {worldBoundaries && <Tooltip title={t('map.boundariesDisclaimer')} placement="top-start">
+                <Typography data-map-boundaries sx={{ minWidth: 0, fontSize: '0.62rem', lineHeight: 1.3,
+                    color: titleInk?.secondary ?? 'text.secondary', opacity: 0.85, textShadow: `0 0 3px ${style.background}`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <Link href={WORLD_BANK_BOUNDARIES_URL} target="_blank" rel="noopener noreferrer" color="inherit" underline="hover">{t('map.boundariesCredit')}</Link>
+                </Typography>
+            </Tooltip>}
+        </Box>}
+        {tiles && <Typography sx={{ position: 'absolute', right: 8, bottom: 4, fontSize: '0.62rem', color: 'text.secondary', bgcolor: paper(0.7), px: 0.5 }}>{tiles.attribution}</Typography>}
         {interactive && viewProjection(spec.view) === 'orthographic' && size.width > 0 && <Typography sx={{ position: 'absolute', right: EDGE + ZOOM_SPACE,
             // Above a legend that shares the corner.
             bottom: legendCorner === 'bottom-right' ? (tiles ? 30 : 16) + legendSize.height + 6 : 18,
@@ -808,7 +844,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     const notes = !!spec.source || worldBoundaries || !!footer;
     return <Box data-map-still sx={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', bgcolor: style.background, color: 'text.primary' }}>
         <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>{mapBox}</Box>
-        {(hasLegendItems || worldBoundaries) && <Box data-map-strip sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', columnGap: 3, rowGap: 1,
+        {(hasLegendItems || worldBoundaries || !!spec.source) && <Box data-map-strip sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', columnGap: 3, rowGap: 1,
             mx: 2, pt: 1, pb: 1.25, borderTop: '1px solid', borderColor: 'divider' }}>
             {legends.map(({ legend, key }) => <MapLegend key={key} legend={legend} thin />)}
             {noData && <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, alignSelf: 'flex-end', pb: '2px' }}>
@@ -838,7 +874,7 @@ const MapTooltip: FC<{ hover: { hit: Hit; point: [number, number] }; width: numb
     return <Box role="tooltip" data-map-tooltip sx={{ position: 'absolute', left: right ? undefined : point[0] + 14, right: right ? width - point[0] + 14 : undefined,
         top: below ? point[1] + 14 : undefined, bottom: below ? undefined : height - point[1] + 10, pointerEvents: 'none', ...panelSx,
         px: 1.25, py: 0.75, maxWidth: 260, zIndex: 5 }}>
-        <Typography sx={{ fontSize: '0.78rem', fontWeight: 600, color: 'text.primary', mb: fields.length ? 0.25 : 0 }}>{hit.mark.label}</Typography>
+        <Typography sx={{ fontSize: '0.78rem', fontWeight: weight(600), color: 'text.primary', mb: fields.length ? 0.25 : 0 }}>{hit.mark.label}</Typography>
         {fields.map(field => <Box key={fieldName(field)} sx={{ display: 'flex', gap: 1.5, justifyContent: 'space-between' }}>
             <Typography sx={{ fontSize: '0.72rem', color: 'text.secondary' }}>{fieldLabel(hit.model, field)}</Typography>
             <Typography sx={{ fontSize: '0.72rem', color: 'text.primary', fontVariantNumeric: 'tabular-nums' }}>{fieldFormat(hit.model, field)(valueOf(field))}</Typography>
@@ -849,17 +885,39 @@ const MapTooltip: FC<{ hover: { hit: Hit; point: [number, number] }; width: numb
 
 /** Long lists (checkboxes, layers) show this many until opened, so one control cannot take over the panel. */
 const LIST_PREVIEW = 4;
-const CHIP_PREVIEW = 8;
+const CHIP_LIMIT = 4;
 /** The selection's details card: its width, and the fields it shows before "more". */
 const DETAILS_WIDTH = 240;
 const DETAILS_FIELDS = 6;
 
-/** The map's source or notes under the legend: two lines, the rest on a click (and on hover). */
+/** A map's source note stays visible in still pictures. */
 const SourceNote: FC<{ text: string; lines?: number }> = ({ text, lines = 2 }) => {
     const [open, setOpen] = useState(false);
     return <Typography data-map-source title={open ? undefined : text} onClick={() => setOpen(current => !current)}
         sx={{ fontSize: '0.64rem', color: 'text.secondary', cursor: 'pointer', overflowWrap: 'anywhere',
             ...(open ? {} : { display: '-webkit-box', WebkitLineClamp: lines, WebkitBoxOrient: 'vertical', overflow: 'hidden' }) }}>{text}</Typography>;
+};
+
+const SourceDisclosure: FC<{ text: string }> = ({ text }) => {
+    const { t } = useTranslation();
+    const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+    const id = React.useId();
+    const label = t('map.sourceNotes');
+    return <>
+        <Box component="button" type="button" data-map-source-toggle title={label} aria-haspopup="dialog"
+            aria-expanded={!!anchor} aria-controls={anchor ? id : undefined} onClick={event => setAnchor(event.currentTarget)}
+            sx={{ display: 'flex', alignItems: 'center', gap: 0.25, minWidth: 0, flexShrink: 0, maxWidth: '100%', p: 0, border: 0,
+                bgcolor: 'transparent', color: 'text.secondary', font: 'inherit', fontSize: '0.62rem', lineHeight: 1.3, cursor: 'pointer' }}>
+            <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</Box>
+            <ExpandMoreIcon sx={{ fontSize: 12, flexShrink: 0, transform: anchor ? undefined : 'rotate(180deg)' }} />
+        </Box>
+        <Popover open={!!anchor} anchorEl={anchor} onClose={() => setAnchor(null)}
+            anchorOrigin={{ vertical: 'top', horizontal: 'left' }} transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+            slotProps={{ paper: { id, role: 'dialog', 'aria-label': label,
+                sx: { p: 1.25, mb: 0.5, maxWidth: 'min(360px, calc(100vw - 32px))', maxHeight: '60vh', overflowY: 'auto' } } }}>
+            <Typography data-map-source sx={{ fontSize: '0.72rem', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{text}</Typography>
+        </Popover>
+    </>;
 };
 
 /** A label that keeps to one line: cut short with the whole of it on hover. */
@@ -869,8 +927,8 @@ const ControlLabel: FC<{ label: string; sx?: Record<string, unknown> }> = ({ lab
 /** A control's label above its body (as in an app's FilterBar), with a value or action beside the label. */
 const Labeled: FC<{ label: string; aside?: React.ReactNode; children: React.ReactNode }> = ({ label, aside, children }) =>
     <Box sx={{ minWidth: 0 }}>
-        {(label || aside) && <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1, mb: 0.25, minWidth: 0 }}>
-            <ControlLabel label={label} />{aside && <Box sx={{ flexShrink: 0 }}>{aside}</Box>}
+        {(label || aside) && <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 18, gap: 1, mb: 0.25, minWidth: 0 }}>
+            <ControlLabel label={label} />{aside && <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>{aside}</Box>}
         </Box>}
         {children}
     </Box>;
@@ -882,7 +940,7 @@ const Labeled: FC<{ label: string; aside?: React.ReactNode; children: React.Reac
 const CompactControl: FC<{ label: string; summary: string; above?: boolean; children: React.ReactNode }> = ({ label, summary, above, children }) => {
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
     return <>
-        <Tooltip title={label} placement={above ? 'top' : 'bottom'}>
+        <Tooltip title={label ? `${label}: ${summary}` : summary} placement={above ? 'top' : 'bottom'}>
             <Box component="button" type="button" data-map-compact-control aria-label={label ? `${label}: ${summary}` : summary} aria-haspopup="dialog"
                 aria-expanded={!!anchor} onClick={event => setAnchor(event.currentTarget)}
                 sx={{ display: 'flex', alignItems: 'center', gap: 0.25, maxWidth: 170, px: 0.75, py: '2px', border: '1px solid', borderColor: 'divider',
@@ -944,7 +1002,7 @@ const TimeSlider: FC<{ control: Control; domain: unknown[]; value: unknown; onCh
             if (!playing && index >= discrete.length - 1) onChange(discrete[0]);
             setPlaying(current => !current);
         }}>{playing ? <PauseRoundedIcon sx={{ fontSize: 20 }} /> : <PlayArrowRoundedIcon sx={{ fontSize: 20 }} />}</IconButton>;
-        const current = <Typography data-map-time-value sx={{ fontSize: '0.8rem', fontWeight: 600, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>{String(value ?? '')}</Typography>;
+        const current = <Typography data-map-time-value sx={{ fontSize: '0.8rem', fontWeight: weight(600), fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>{String(value ?? '')}</Typography>;
         const slider = <Slider size="small" aria-label={label} value={index} min={0} max={Math.max(0, discrete.length - 1)} step={1}
             onChange={(_, next) => { setPlaying(false); onChange(discrete[next as number]); }}
             valueLabelDisplay="auto" valueLabelFormat={item => String(discrete[item] ?? '')} sx={{ mx: 1, py: '10px', flex: 1, width: 'auto', minWidth: 60 }} />;
@@ -1046,7 +1104,9 @@ const ControlWidget: FC<{
             <Autocomplete size="small" options={unique} getOptionLabel={option => option.label}
                 onChange={(_, option) => { if (option) onLocate(option.model, option.mark); else onClearLocate(); }}
                 renderInput={inputProps => <TextField {...inputProps} placeholder={t('map.findPlace')} slotProps={{ htmlInput: { ...inputProps.inputProps, 'aria-label': given.label ?? t('map.findPlace') } }}
-                    sx={{ '& .MuiInputBase-root': { fontSize: '0.74rem', py: '0 !important' }, '& .MuiInputBase-input': { py: '3px !important' } }} />} />
+                    sx={{ '& .MuiInputBase-root': { fontSize: '0.74rem', height: 26, py: '0 !important', pl: '8px !important' },
+                        '& .MuiInputBase-input': { p: '0 !important' },
+                        '& .MuiAutocomplete-popupIndicator, & .MuiAutocomplete-clearIndicator': { p: 0 } }} />} />
         </Labeled>;
     }
     return null;
@@ -1054,26 +1114,57 @@ const ControlWidget: FC<{
 
 type ListOption = { value: unknown; label?: string };
 
-/** Several values to toggle, as chips: the first few, the rest on request. */
+/** Small sets use chips; larger sets or more than two chip rows use a multi-select. */
 const ChecklistControl: FC<{ label: string; options: ListOption[]; value: unknown; onChange: (next: unknown[]) => void }> = ({ label, options, value, onChange }) => {
     const { t } = useTranslation();
     const selected = new Set((Array.isArray(value) ? value : []).map(String));
-    const { shown, toggle } = usePreview(options.slice(0, 60), CHIP_PREVIEW);
+    const chipsRef = useRef<HTMLDivElement>(null);
+    const [wrapped, setWrapped] = useState(false);
+    const condensed = options.length > CHIP_LIMIT || wrapped;
+    useLayoutEffect(() => {
+        const element = chipsRef.current;
+        if (!element) return;
+        const measure = () => setWrapped(new Set(Array.from(element.children, child => (child as HTMLElement).offsetTop)).size > 2);
+        measure();
+        const observer = new ResizeObserver(measure);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [options]);
+    const chosen = options.filter(option => selected.has(String(option.value)));
+    const summary = chosen.length === options.length ? t('map.all') : !chosen.length ? t('map.none')
+        : chosen.map(option => option.label ?? String(option.value)).join(', ');
     return <Labeled label={label} aside={<Typography component="button" type="button"
-        onClick={() => onChange(selected.size === options.length ? [] : options.map(option => option.value))}
+        onClick={() => onChange(chosen.length === options.length ? [] : options.map(option => option.value))}
         sx={{ fontSize: '0.68rem', color: 'primary.main', border: 0, bgcolor: 'transparent', cursor: 'pointer', p: 0, whiteSpace: 'nowrap' }}>
-        {selected.size === options.length ? t('map.none') : t('map.all')}</Typography>}>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5, maxHeight: 112, overflowY: 'auto' }}>
-            {shown.map(option => {
+        {chosen.length === options.length ? t('map.none') : t('map.all')}</Typography>}>
+        <Box sx={{ position: 'relative' }}>
+        {condensed && <Select multiple size="small" fullWidth displayEmpty
+            value={options.flatMap((option, index) => selected.has(String(option.value)) ? [String(index)] : [])}
+            renderValue={() => <Box component="span" title={summary} sx={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{summary}</Box>}
+            inputProps={{ 'aria-label': label }} sx={inputSx}
+            MenuProps={{ slotProps: { paper: { sx: { maxHeight: 300 } } } }}
+            onChange={event => {
+                const indices = typeof event.target.value === 'string' ? event.target.value.split(',') : event.target.value;
+                onChange(options.filter((_, index) => indices.includes(String(index))).map(option => option.value));
+            }}>
+            {options.map((option, index) => <MenuItem key={String(option.value)} value={String(index)} sx={{ fontSize: '0.76rem' }}>
+                <Checkbox size="small" checked={selected.has(String(option.value))} tabIndex={-1} sx={{ p: 0.5, mr: 0.5 }} />
+                {option.label ?? String(option.value)}
+            </MenuItem>)}
+        </Select>}
+        {options.length <= CHIP_LIMIT && <Box ref={chipsRef} data-map-chips aria-hidden={condensed || undefined}
+            sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5,
+                ...(condensed ? { position: 'absolute', top: 0, left: 0, right: 0, visibility: 'hidden', pointerEvents: 'none' } : {}) }}>
+            {options.map(option => {
                 const on = selected.has(String(option.value));
                 const text = option.label ?? String(option.value);
                 return <Chip key={String(option.value)} size="small" label={text} title={text} variant={on ? 'filled' : 'outlined'}
-                    color={on ? 'primary' : 'default'} aria-pressed={on}
+                    color={on ? 'primary' : 'default'} aria-pressed={on} tabIndex={condensed ? -1 : 0}
                     onClick={() => onChange(on ? options.filter(item => item.value !== option.value && selected.has(String(item.value))).map(item => item.value)
                         : options.filter(item => selected.has(String(item.value)) || item.value === option.value).map(item => item.value))}
                     sx={{ fontSize: '0.66rem', height: 20, maxWidth: '100%' }} />;
             })}
-            {toggle}
+        </Box>}
         </Box>
     </Labeled>;
 };
@@ -1097,10 +1188,11 @@ const LayersControl: FC<{ label: string; models: LayerModel[]; onToggle: (id: st
 };
 
 const SidePanel: FC<{
+    panelRef: React.RefObject<HTMLDivElement>;
     controls: Control[]; models: LayerModel[]; selectedModel?: LayerModel; selectedMarks: Mark[]; top: number; onClear: () => void;
     corner?: 'top-right' | 'bottom-right' | 'top-left';
     topLeft?: number;
-}> = ({ controls, models, selectedModel, selectedMarks, top, onClear, corner = 'top-right', topLeft = 64 }) => {
+}> = ({ panelRef, controls, models, selectedModel, selectedMarks, top, onClear, corner = 'top-right', topLeft = 64 }) => {
     const details = controls.find(control => control.type === 'details');
     const stats = controls.filter(control => control.type === 'stats');
     const showDetails = selectedMarks.length > 0 && (!details?.layer || details.layer === selectedModel?.layer.id);
@@ -1108,13 +1200,15 @@ const SidePanel: FC<{
     // Stats stay put, so the map avoids them; details come and go with the selection and float over it.
     const place = corner === 'top-left' ? { left: 16, top: topLeft } : corner === 'bottom-right' ? { right: 64, bottom: 16 } : { right: 16, top };
     const placedTop = corner === 'top-left' ? topLeft : corner === 'bottom-right' ? 140 : top;
-    return <Box data-map-side data-map-corner={corner} data-map-obstacle={stats.length ? '' : undefined} sx={{ position: 'absolute', ...place, width: DETAILS_WIDTH,
+    return <Box ref={panelRef} data-map-side data-map-corner={corner} data-map-obstacle={stats.length ? '' : undefined} sx={{ position: 'absolute', ...place, width: DETAILS_WIDTH, boxSizing: 'border-box',
         maxHeight: `calc(100% - ${placedTop + 16}px)`, overflowY: 'auto',
         ...panelSx, p: 1.25, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
         {showDetails && selectedModel && <DetailsCard control={details} model={selectedModel} marks={selectedMarks} onClear={onClear} />}
         {stats.map((control, index) => {
             const model = models.find(item => item.layer.id === control.layer) ?? models.find(item => item.layer.visible !== false && item.marks.length);
-            return model ? <StatsCard key={index} control={control} model={model} selection={selectedModel === model ? selectedMarks : []} /> : null;
+            return model ? <Box key={index} hidden={showDetails}>
+                <StatsCard control={control} model={model} selection={selectedModel === model ? selectedMarks : []} />
+            </Box> : null;
         })}
     </Box>;
 };
@@ -1147,7 +1241,7 @@ const DetailsCard: FC<{ control?: Control; model: LayerModel; marks: Mark[]; onC
     const { shown: shownColumns, toggle: fieldToggle } = usePreview(columns, DETAILS_FIELDS, 1);
     return <Box data-map-details>
         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
-            <Typography sx={{ fontSize: '0.85rem', fontWeight: 600, flex: 1, minWidth: 0 }}>{title}</Typography>
+            <Typography sx={{ fontSize: '0.85rem', fontWeight: weight(600), flex: 1, minWidth: 0 }}>{title}</Typography>
             <IconButton size="small" aria-label={t('map.clearSelection')} onClick={onClear} sx={{ p: 0.25, mt: -0.25 }}><CloseIcon sx={{ fontSize: 15 }} /></IconButton>
         </Box>
         {marks.length === 1 ? <>
@@ -1166,7 +1260,7 @@ const DetailsCard: FC<{ control?: Control; model: LayerModel; marks: Mark[]; onC
         </> : <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', mt: 0.5, '& td:not(:first-of-type), & th:not(:first-of-type)': { textAlign: 'right', fontVariantNumeric: 'tabular-nums' },
             '& td, & th': { fontSize: '0.7rem', py: 0.25, pr: 0.75, textAlign: 'left',
             borderBottom: '1px solid', borderColor: 'divider', whiteSpace: 'nowrap', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis' },
-            '& th': { color: 'text.secondary', fontWeight: 600 } }}>
+            '& th': { color: 'text.secondary', fontWeight: weight(600) } }}>
             <thead><tr><th />{columns.slice(0, 2).map(field => <th key={fieldName(field)}>{fieldLabel(model, field)}</th>)}</tr></thead>
             <tbody>{ranked.slice(0, ROWS).map(mark => <tr key={mark.key}><td>{mark.label}</td>
                 {columns.slice(0, 2).map(field => <td key={fieldName(field)}>{fieldFormat(model, field)(markValue(model, mark, fieldName(field)))}</td>)}</tr>)}</tbody>
@@ -1178,6 +1272,8 @@ const DetailsCard: FC<{ control?: Control; model: LayerModel; marks: Mark[]; onC
 /** A summary of a layer's visible marks (or the selection): count, total/average, and the top marks. */
 const StatsCard: FC<{ control: Control; model: LayerModel; selection: Mark[] }> = ({ control, model, selection }) => {
     const { t } = useTranslation();
+    const [open, setOpen] = useState(true);
+    const id = React.useId();
     const marks = selection.length ? selection : model.marks;
     const field = (control.fields?.[0] && fieldName(control.fields[0])) || model.colorField || model.sizeField;
     const format = control.fields?.[0] ? fieldFormat(model, control.fields[0]) : field ? model.describe(field).format : formatter();
@@ -1186,18 +1282,35 @@ const StatsCard: FC<{ control: Control; model: LayerModel; selection: Mark[] }> 
     const valueOf = (mark: Mark) => toNumber(field === model.colorField ? mark.colorValue : field === model.sizeField ? mark.sizeValue : mark.rows[0]?.[field]);
     const numbers = marks.map(valueOf).filter((value): value is number => value !== null);
     const top = marks.filter(mark => valueOf(mark) !== null).sort((a, b) => (valueOf(b) ?? 0) - (valueOf(a) ?? 0)).slice(0, 5);
+    const rankedRows = field ? top.map(mark => <Box key={mark.key} sx={{ display: 'flex', justifyContent: 'space-between', gap: 1 }}>
+        <Typography sx={{ fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mark.label}</Typography>
+        <Typography sx={{ fontSize: '0.72rem', color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>{format(valueOf(mark))}</Typography>
+    </Box>) : [];
     return <Box data-map-stats>
-        <Typography sx={{ ...labelSx, mb: 0.5 }}>{control.label ?? `${model.layer.name ?? t('map.summary')}${selection.length ? ` · ${t('map.selection')}` : ''}`}</Typography>
-        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, mb: field ? 0.75 : 0 }}>
-            <Box><Typography sx={{ fontSize: '0.66rem', color: 'text.secondary' }}>{t(MARK_NOUNS[model.layer.type] ?? 'map.places')}</Typography>
-                <Typography sx={{ fontSize: '1rem', fontWeight: 600 }}>{marks.length.toLocaleString()}</Typography></Box>
-            {field && numbers.length > 0 && <Box><Typography sx={{ fontSize: '0.66rem', color: 'text.secondary' }}>{total ? t('map.total', { field: label }) : t('map.average', { field: label })}</Typography>
-                <Typography sx={{ fontSize: '1rem', fontWeight: 600 }}>{format(total ? d3.sum(numbers) : d3.mean(numbers))}</Typography></Box>}
+        <Box component="button" type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen(current => !current)}
+            sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 0.5, width: '100%', p: 0, mb: 0.5,
+                border: 0, bgcolor: 'transparent', color: 'text.secondary', font: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+            <Typography component="span" sx={labelSx}>{control.label ?? `${model.layer.name ?? t('map.summary')}${selection.length ? ` · ${t('map.selection')}` : ''}`}</Typography>
+            {open ? <ExpandLessIcon sx={{ fontSize: 15, flexShrink: 0 }} /> : <ExpandMoreIcon sx={{ fontSize: 15, flexShrink: 0 }} />}
         </Box>
-        {field && top.map(mark => <Box key={mark.key} sx={{ display: 'flex', justifyContent: 'space-between', gap: 1 }}>
-            <Typography sx={{ fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mark.label}</Typography>
-            <Typography sx={{ fontSize: '0.72rem', color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>{format(valueOf(mark))}</Typography>
-        </Box>)}
+        <Box data-map-stats-summary sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, mb: field ? 0.75 : 0 }}>
+            <Box><Typography sx={{ fontSize: '0.66rem', color: 'text.secondary' }}>{t(MARK_NOUNS[model.layer.type] ?? 'map.places')}</Typography>
+                <Typography sx={{ fontSize: '1rem', fontWeight: weight(600) }}>{marks.length.toLocaleString()}</Typography></Box>
+            {field && numbers.length > 0 && <Box><Typography sx={{ fontSize: '0.66rem', color: 'text.secondary' }}>{total ? t('map.total', { field: label }) : t('map.average', { field: label })}</Typography>
+                <Typography sx={{ fontSize: '1rem', fontWeight: weight(600) }}>{format(total ? d3.sum(numbers) : d3.mean(numbers))}</Typography></Box>}
+        </Box>
+        <Box id={id} hidden={!open}>{rankedRows}</Box>
+        {!open && rankedRows.length > 0 && <Box data-map-stats-preview sx={{ position: 'relative', height: 28, mx: -0.75, mb: -0.75, overflow: 'hidden' }}>
+            <Box aria-hidden sx={{ px: 0.75, opacity: 0.55 }}>{rankedRows.slice(0, 1)}</Box>
+            <Box component="button" type="button" aria-label={t('map.moreCount', { count: rankedRows.length })}
+                aria-expanded={false} aria-controls={id} onClick={() => setOpen(true)}
+                sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', width: '100%',
+                    p: 0, border: 0, borderRadius: 1.5, color: 'text.secondary', cursor: 'pointer',
+                    background: theme => `linear-gradient(to bottom, ${alpha(theme.palette.background.paper, 0.15)}, ${alpha(theme.palette.background.paper, 0.96)} 75%)`,
+                    '&:hover': { color: 'text.primary' } }}>
+                <ExpandMoreIcon sx={{ fontSize: 16 }} />
+            </Box>
+        </Box>}
     </Box>;
 };
 

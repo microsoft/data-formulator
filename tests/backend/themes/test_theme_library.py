@@ -13,7 +13,7 @@ import pytest
 from data_formulator.analyst.session_edits import validate_chart
 from data_formulator.analyst.skills.base import SkillContext
 from data_formulator.analyst.skills.theme.skill import get_skill
-from data_formulator.knowledge.themes import ThemeStore, validate_theme
+from data_formulator.themes import ThemeStore, validate_theme
 
 pytestmark = [pytest.mark.backend]
 

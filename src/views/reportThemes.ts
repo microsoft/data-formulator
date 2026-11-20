@@ -11,7 +11,7 @@
  */
 
 import { alpha, Theme } from '@mui/material/styles';
-import { readingTypography } from '../app/tokens';
+import { readingTypography, weight } from '../app/tokens';
 import type { CalloutKind } from './reportBlocks';
 
 export type ReportTypeface = 'sans' | 'serif';
@@ -75,7 +75,7 @@ function proseStyles(theme: Theme): Styles {
             paddingLeft: '1em',
             margin: '0.75em 0',
             fontStyle: 'italic',
-            color: 'rgb(73, 73, 73)',
+            color: 'var(--df-reading-quiet, rgb(73, 73, 73))',
         },
         '& ul, & ol': { paddingLeft: '1.5em', marginBottom: '0.75em' },
         '& li': { marginBottom: '0.25em' },
@@ -84,14 +84,14 @@ function proseStyles(theme: Theme): Styles {
         '& li > p:last-child': { marginBottom: 0 },
         '& strong': { fontWeight: 600 },
         '& code': {
-            backgroundColor: 'rgba(247, 246, 243, 1)',
+            backgroundColor: 'var(--df-reading-wash, rgba(247, 246, 243, 1))',
             padding: '0.15em 0.4em',
             borderRadius: '3px',
             fontSize: '0.85em',
             fontFamily: 'var(--df-font-mono)',
         },
         '& pre': {
-            backgroundColor: 'rgba(247, 246, 243, 1)',
+            backgroundColor: 'var(--df-reading-wash, rgba(247, 246, 243, 1))',
             padding: '0.75em 1em',
             borderRadius: '4px',
             overflow: 'auto',
@@ -105,7 +105,7 @@ function proseStyles(theme: Theme): Styles {
             tableLayout: 'auto',
             fontSize: '0.82em',
             lineHeight: 1.35,
-            color: 'rgb(73, 73, 73)',
+            color: 'var(--df-reading-quiet, rgb(73, 73, 73))',
         },
         '& table td, & table th': {
             border: `1px solid ${alpha(theme.palette.divider, 0.55)}`,
@@ -118,7 +118,7 @@ function proseStyles(theme: Theme): Styles {
             backgroundColor: alpha(theme.palette.text.primary, 0.04),
             fontWeight: 600,
             textAlign: 'left',
-            color: 'rgb(55, 53, 47)',
+            color: readingTypography.color,
         },
         '& .tableWrapper': { overflowX: 'auto', margin: '0.75em 0' },
         '& .column-resize-handle': {
@@ -160,7 +160,7 @@ function blockStyles(theme: Theme): Styles {
             '& .report-block-body': {
                 fontSize: '0.93em',
                 lineHeight: 1.65,
-                color: 'rgb(55, 53, 47)',
+                color: readingTypography.color,
                 '& p': { marginBottom: '0.5em' },
                 '& > :last-child': { marginBottom: 0 },
             },
@@ -328,9 +328,9 @@ const serifStyles = (theme: Theme): Styles => ({
     fontSize: '1rem',
     lineHeight: 1.75,
     '& h1, & h2, & h3': { fontFamily: SERIF },
-    '& h1': { fontWeight: 600, letterSpacing: '-0.01em' },
-    '& h2': { fontWeight: 600 },
-    '& h3': { fontWeight: 600 },
+    '& h1': { fontWeight: weight(600), letterSpacing: '-0.01em' },
+    '& h2': { fontWeight: weight(600) },
+    '& h3': { fontWeight: weight(600) },
     '& .report-callout-title, & .report-column-title, & .report-details-title, & .report-references-title, & figcaption': {
         fontFamily: readingTypography.fontFamily,
     },

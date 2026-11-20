@@ -7,7 +7,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { DataFormulatorState, dfActions, dfSelectors, explanationContent } from '../app/dfSlice';
 import { textVar } from '../app/layout';
-import { readingTypography } from '../app/tokens';
+import { readingTypography, weight } from '../app/tokens';
 import { getCachedChart } from '../app/chartCache';
 import { TerminalMessageContent } from '../components/TerminalApprovalDialog';
 import { CompactMarkdown, RunPlanChecklist } from './InteractionEntryCard';
@@ -151,7 +151,7 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label, anchorId }: {
                     sx={{ display: 'flex', width: '100%', justifyContent: 'flex-start', gap: 1, px: 1.5, py: 1, textAlign: 'left',
                         '&:hover': { bgcolor: 'action.hover' }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
                     <TableChartOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary', flexShrink: 0 }} />
-                    <Typography component="span" sx={{ flex: 1, minWidth: 0, fontSize: '0.875rem', fontWeight: 500,
+                    <Typography component="span" sx={{ flex: 1, minWidth: 0, fontSize: '0.875rem', fontWeight: weight(500),
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</Typography>
                     <Typography component="span" sx={{ flexShrink: 0, fontSize: '0.8125rem', color: 'text.secondary' }}>
                         {t('conversation.tableSize', { defaultValue: '{{rows}} rows × {{columns}} columns',
@@ -200,7 +200,7 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label, anchorId }: {
         <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 3, pt: 3, pb: 6 }}>
             {/* A reading column: 14px type, generous leading, about 80 characters a line. */}
             <Box sx={{ maxWidth: 720, mx: 'auto', fontFamily: readingTypography.fontFamily, fontSize: '0.875rem', lineHeight: 1.65,
-                color: readingTypography.color, '& strong': { fontWeight: 600 },
+                color: readingTypography.color, '& strong': { fontWeight: weight(600) },
                 '--df-text-xs': '0.75rem', '--df-text-sm': '0.8125rem', '--df-text-md': '0.875rem',
             }}>
                 {/* Where the thread starts, marked as in the thread list. */}

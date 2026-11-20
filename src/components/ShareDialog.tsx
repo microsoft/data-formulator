@@ -31,6 +31,7 @@ import { CARD_SHAPES, CardShape, composeShareCard, pictureSizeFor, ShareCard } f
 import { iconVar, textVar } from '../app/layout';
 import type { ViewTarget } from '../views/agentView';
 import dfLogo from '../assets/df-logo.svg';
+import { ink, paper, weight } from '../app/tokens';
 
 const AgentViewHost = React.lazy(() => import('../views/AgentViewHost'));
 
@@ -45,12 +46,12 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
 
 const fileName = (title: string) => `${(title || 'share').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'share'}.png`;
 
-const barLabelSx = { pr: 0.75, color: 'text.secondary', fontSize: textVar.xxs, whiteSpace: 'nowrap', fontWeight: 500, userSelect: 'none' } as const;
+const barLabelSx = { pr: 0.75, color: 'text.secondary', fontSize: textVar.xxs, whiteSpace: 'nowrap', fontWeight: weight(500), userSelect: 'none' } as const;
 const underlineSx = {
     fontSize: textVar.xs, color: 'text.secondary',
-    '&:before': { borderBottomColor: 'rgba(0,0,0,0.2)' },
-    '&:hover:not(.Mui-disabled):before': { borderBottomColor: 'rgba(0,0,0,0.42)' },
-    '&:after': { borderBottomColor: 'rgba(0,0,0,0.42)' },
+    '&:before': { borderBottomColor: ink(0.2) },
+    '&:hover:not(.Mui-disabled):before': { borderBottomColor: ink(0.42) },
+    '&:after': { borderBottomColor: ink(0.42) },
 } as const;
 
 const SHAPE_ICONS: Record<CardShape, React.ReactElement> = {
@@ -181,11 +182,11 @@ export const ShareDialog: FC<{ open: boolean; onClose: () => void; target: ViewT
                     <Box sx={{ display: 'flex', justifyContent: 'center', bgcolor: 'action.hover', borderRadius: 1.5, p: 1.5 }}>
                         <Box component="img" src={card.url} alt={settledWords || title} data-share-card data-shape={card.shape}
                             sx={{ display: 'block', maxWidth: '100%', maxHeight: '52vh', width: 'auto', height: 'auto',
-                                aspectRatio: `${card.width} / ${card.height}`, borderRadius: 1, boxShadow: '0 1px 6px rgba(0,0,0,.12)', bgcolor: '#fff' }} />
+                                aspectRatio: `${card.width} / ${card.height}`, borderRadius: 1, boxShadow: '0 1px 6px rgba(0,0,0,.12)', bgcolor: paper() }} />
                     </Box>
                     {/* The card's settings in one quiet bar, like a chart's property bar (ChartQuickConfig). */}
                     <Box data-share-bar sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 18px', mt: 1.5,
-                        px: 1.5, py: 0.5, borderRadius: 2, backgroundColor: 'rgba(0,0,0,0.025)' }}>
+                        px: 1.5, py: 0.5, borderRadius: 2, backgroundColor: ink(0.025) }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 28 }}>
                             <Typography id="share-layout-label" sx={barLabelSx}>{t('share.layout', { defaultValue: 'Layout' })}</Typography>
                             <ToggleButtonGroup size="small" exclusive value={card.shape} onChange={(_, value) => value && setShape(value)}
@@ -227,7 +228,7 @@ export const ShareDialog: FC<{ open: boolean; onClose: () => void; target: ViewT
                         </Box>}
                     {online.step === 'ready' && !stale
                         ? <>
-                            <Typography sx={{ mt: 1, fontSize: 15, fontWeight: 600 }}>{t('share.scan', { defaultValue: 'Scan to post from your phone' })}</Typography>
+                            <Typography sx={{ mt: 1, fontSize: 15, fontWeight: weight(600) }}>{t('share.scan', { defaultValue: 'Scan to post from your phone' })}</Typography>
                             <Typography sx={{ mt: 0.5, fontSize: 12, color: 'text.secondary' }}>
                                 {t('share.scanDetail', { defaultValue: 'It opens this image with buttons to share it. Only the image goes on the web, for a limited time.' })}
                             </Typography>

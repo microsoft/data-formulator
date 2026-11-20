@@ -5,7 +5,7 @@ h2.view-title {
     margin: 0;
     line-height: 1.75;
     display: inline-block;
-    color: #717171;
+    color: var(--df-text-muted, #717171);
     //font-weight: 600;
     //text-transform: uppercase;
     font-size: 14px;
@@ -67,7 +67,7 @@ h2.view-title {
 .GroupHeader {
     position: sticky;
     padding: 4px 8px;
-    color: rgba(0, 0, 0, 0.6);
+    color: rgba(var(--df-ink-rgb, 0, 0, 0), 0.6);
     font-size: 12px;
 }
 
@@ -90,10 +90,10 @@ h2.view-title {
         transition: background-color 0.2s ease;
     }
     &:hover::-webkit-scrollbar-thumb {
-        background: rgba(0, 0, 0, 0.15);
+        background: rgba(var(--df-ink-rgb, 0, 0, 0), 0.15);
     }
     &:hover::-webkit-scrollbar-thumb:hover {
-        background: rgba(0, 0, 0, 0.3);
+        background: rgba(var(--df-ink-rgb, 0, 0, 0), 0.3);
     }
     &::-webkit-scrollbar-corner {
         background: transparent;
@@ -102,7 +102,7 @@ h2.view-title {
     scrollbar-width: thin;
     scrollbar-color: transparent transparent;
     &:hover {
-        scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+        scrollbar-color: rgba(var(--df-ink-rgb, 0, 0, 0), 0.15) transparent;
     }
 }
 

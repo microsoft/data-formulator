@@ -541,7 +541,7 @@ export interface DataFormulatorState {
     dataSourceSidebarOpen: boolean;
 
     /** Which data source sidebar tab is active. Persisted so it survives session refresh. */
-    dataSourceSidebarTab: 'sources' | 'sessions' | 'knowledge' | 'schedules';
+    dataSourceSidebarTab: 'sources' | 'sessions' | 'workflows' | 'schedules';
 
     /**
      * One-shot signal asking the sidebar to focus a specific connector

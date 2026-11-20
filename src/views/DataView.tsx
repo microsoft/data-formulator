@@ -22,7 +22,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Type } from '../data/types';
 import { SelectableDataGrid } from './SelectableDataGrid';
 import { formatCellValue, getColumnAlign } from './ViewUtils';
-import { borderColor, ambientShadow, cardRadius } from '../app/tokens';
+import { borderColor, ambientShadow, cardRadius, ink, weight } from '../app/tokens';
 import { iconVar, textVar } from '../app/layout';
 import { externalReferenceTitle } from '../app/workspaceService';
 
@@ -210,7 +210,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
         return [
             {
                 id: "#rowId", label: "#", minWidth: 56, align: undefined as any, width: 56,
-                format: (value: any) => <Typography fontSize="inherit" color="rgba(0,0,0,0.65)">{value}</Typography>,
+                format: (value: any) => <Typography fontSize="inherit" color={ink(0.65)}>{value}</Typography>,
                 dataType: Type.Number,
                 source: "original" as const,
             },
@@ -219,7 +219,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
     }, [targetTable, rowData, conceptShelfItems]);
 
     const grid = (
-        <Box sx={{height: "100%", display: "flex", flexDirection: "column", background: "rgba(0,0,0,0.02)"}}>
+        <Box sx={{height: "100%", display: "flex", flexDirection: "column", background: ink(0.02)}}>
             <Fade in={true} timeout={600} key={targetTable?.id}>
                 <Box sx={{height: '100%'}}>
                     <SelectableDataGrid
@@ -253,7 +253,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
         <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.5, px: 0.5, pt: 1, pb: 1 }}>
             <Box sx={{ minWidth: 0 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontSize: textVar.xl, fontWeight: 600, color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+                    <Typography sx={{ fontSize: textVar.xl, fontWeight: weight(600), color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
                         {displayName}
                     </Typography>
                     {targetTable?.derive && (

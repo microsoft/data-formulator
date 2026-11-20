@@ -29,7 +29,7 @@ import AttachFileIcon from '@mui/icons-material/AttachFile';
 import { InteractionEntry, PlanItem, ProgressStep } from '../components/ComponentType';
 import { ShimmerText } from '../components/FunComponents';
 import { AgentIcon } from '../icons';
-import { radius, borderColor } from '../app/tokens';
+import { radius, borderColor, ink, weight } from '../app/tokens';
 import { userPromptSurface } from '../app/look';
 import { textVar } from '../app/layout';
 import { ThreadReferenceChips } from '../components/ThreadReferenceIcon';
@@ -170,7 +170,7 @@ export const RunPlanChecklist: React.FC<{ items: PlanItem[]; title?: string; act
             : <RadioButtonUncheckedIcon aria-hidden sx={{ fontSize: 13, color: 'text.disabled' }} />;
     return (
         <Box component="section" aria-label={t('dataThread.plan', { defaultValue: 'Plan' })} sx={{
-            minWidth: 0, px: 1, py: 0.5, borderRadius: 1.5, bgcolor: 'rgba(0,0,0,0.035)',
+            minWidth: 0, px: 1, py: 0.5, borderRadius: 1.5, bgcolor: ink(0.035),
         }}>
             <Box component="button" type="button" aria-expanded={expanded} onClick={() => setToggled(!expanded)} sx={{
                 display: 'flex', alignItems: 'center', gap: '5px', width: '100%', m: 0, p: 0, border: 0,
@@ -261,7 +261,7 @@ export const CompactMarkdown: React.FC<{
                 ),
                 h1: ({ children }) => (
                     <Typography component="h1" sx={{
-                        fontSize: isDocument ? textVar.xxl : '1.2em', fontWeight: 600,
+                        fontSize: isDocument ? textVar.xxl : '1.2em', fontWeight: weight(600),
                         lineHeight: 1.35, mt: 0, mb: isDocument ? 1.5 : 0.5, color,
                     }}>
                         {children}
@@ -269,7 +269,7 @@ export const CompactMarkdown: React.FC<{
                 ),
                 h2: ({ children }) => (
                     <Typography component="h2" sx={{
-                        fontSize: isDocument ? textVar.xl : '1.1em', fontWeight: 600,
+                        fontSize: isDocument ? textVar.xl : '1.1em', fontWeight: weight(600),
                         lineHeight: 1.4, mt: isDocument ? 2.5 : 0.75, mb: isDocument ? 1 : 0.5, color,
                     }}>
                         {children}
@@ -277,14 +277,14 @@ export const CompactMarkdown: React.FC<{
                 ),
                 h3: ({ children }) => (
                     <Typography component="h3" sx={{
-                        fontSize: isDocument ? textVar.lg : '1em', fontWeight: 600,
+                        fontSize: isDocument ? textVar.lg : '1em', fontWeight: weight(600),
                         lineHeight: 1.45, mt: isDocument ? 2 : 0.5, mb: isDocument ? 0.75 : 0.25, color,
                     }}>
                         {children}
                     </Typography>
                 ),
                 strong: ({ children }) => (
-                    <Box component="span" sx={{ fontWeight: 600 }}>{children}</Box>
+                    <Box component="span" sx={{ fontWeight: weight(600) }}>{children}</Box>
                 ),
                 em: ({ children }) => (
                     <Box component="span" sx={{ fontStyle: 'italic' }}>{children}</Box>
@@ -309,7 +309,7 @@ export const CompactMarkdown: React.FC<{
                             whiteSpace: 'pre',
                         } : {
                             fontSize: '0.9em',
-                            bgcolor: 'rgba(0,0,0,0.04)', px: 0.4, py: 0.1, borderRadius: 0.75,
+                            bgcolor: ink(0.04), px: 0.4, py: 0.1, borderRadius: 0.75,
                         }),
                     }}>
                         {children}
@@ -328,7 +328,7 @@ export const CompactMarkdown: React.FC<{
                         '& > code': {
                             display: 'block',
                             fontSize: textVar.xxs,
-                            fontWeight: 400,
+                            fontWeight: weight(400),
                             color: theme.palette.text.secondary,
                             lineHeight: 1.5,
                             letterSpacing: 0,
@@ -362,10 +362,10 @@ export const CompactMarkdown: React.FC<{
                 th: ({ children }) => (
                     <Box component="th" sx={isDocument ? {
                         borderBottom: `1px solid ${theme.palette.divider}`, px: 1, py: 0.75, pl: 0,
-                        textAlign: 'left', fontWeight: 600, fontSize: '0.9em', color: 'text.secondary',
+                        textAlign: 'left', fontWeight: weight(600), fontSize: '0.9em', color: 'text.secondary',
                     } : {
                         border: `1px solid ${theme.palette.divider}`, px: '5px', py: '2px',
-                        textAlign: 'left', fontWeight: 600, bgcolor: 'action.hover',
+                        textAlign: 'left', fontWeight: weight(600), bgcolor: 'action.hover',
                     }}>
                         {children}
                     </Box>
@@ -662,7 +662,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         borderRadius: 1,
                         px: '2px',
                         mx: '-2px',
-                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.03)' },
+                        '&:hover': { backgroundColor: ink(0.03) },
                     } : {}),
                     ...(isCollapsible && isConversational ? {
                         '&:hover': { backgroundColor: bubbleHover },
@@ -733,7 +733,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         {(entry.role === 'clarify' || entry.role === 'explain' || entry.role === 'delegate') && !resolved && (
                             <Box component="span" sx={{
                                 display: 'inline',
-                                fontWeight: 600,
+                                fontWeight: weight(600),
                                 fontSize: textVar.xxs,
                                 mr: '4px',
                             }}>

@@ -104,6 +104,99 @@
         send('error', { message: describe(event.reason) });
     });
 
+    // srcdoc inherits the host's base URL, so any link would leave the app: keep fragments local and
+    // hand web links to the host, which opens them in a new tab or the system browser.
+    function followLink(href, trusted, download) {
+        if (download) {
+            send('error', { message: 'Downloads are not available in apps.' });
+            return;
+        }
+        if (href.charAt(0) === '#') {
+            var id;
+            try {
+                id = decodeURIComponent(href.slice(1));
+            } catch (error) {
+                send('error', { message: 'Cannot navigate to an invalid section link: ' + href });
+                return;
+            }
+            window.location.hash = href;
+            var section = document.getElementById(id) || document.getElementsByName(id)[0];
+            if (section) section.scrollIntoView();
+            else if (!id || id.toLowerCase() === 'top') window.scrollTo(0, 0);
+            return;
+        }
+        var url;
+        try {
+            url = new URL(href, href.indexOf('//') === 0 ? document.baseURI : undefined);
+        } catch (error) {
+            send('error', { message: 'App links must use a #section or an absolute HTTP(S) URL.' });
+            return;
+        }
+        if (!/^https?:$/.test(url.protocol) || url.username || url.password) {
+            send('error', { message: 'Only HTTP(S) web links without embedded credentials can be opened.' });
+        } else if (!trusted) {
+            send('error', { message: 'External links must be opened by a user click.' });
+        } else {
+            send('openExternal', { url: url.href });
+        }
+    }
+
+    var linkClicks = new WeakMap();
+    function linkHref(event) {
+        if (event.button !== (event.type === 'click' ? 0 : 1)) return null;
+        var target = event.target;
+        var link = target && target.closest && target.closest('a[href], area[href]');
+        var href = link && link.getAttribute('href').trim();
+        // `javascript:` links run in the app; a middle click on a section link has nowhere to open.
+        if (!href || /^javascript:/i.test(href) || (event.type === 'auxclick' && href.charAt(0) === '#')) return null;
+        return { href: href, download: link.hasAttribute('download') };
+    }
+    // Watch link clicks from the start: an app handler that stops propagation would hide the click from
+    // the window listener below, and the frame would navigate away.
+    function watchLink(event) {
+        var link = linkHref(event);
+        if (!link) return;
+        var click = { appPrevented: false, done: false };
+        var prevent = event.preventDefault;
+        event.preventDefault = function () {
+            click.appPrevented = true;
+            return prevent.call(event);
+        };
+        ['stopPropagation', 'stopImmediatePropagation'].forEach(function (name) {
+            var stop = event[name];
+            event[name] = function () {
+                if (!click.done) {
+                    click.done = true;
+                    if (!event.defaultPrevented) prevent.call(event);
+                    // After the app's handlers, which may still prevent the default.
+                    setTimeout(function () {
+                        if (!click.appPrevented) followLink(link.href, event.isTrusted, link.download);
+                    }, 0);
+                }
+                return stop.call(event);
+            };
+        });
+        linkClicks.set(event, { link: link, click: click });
+    }
+    function finishLink(event) {
+        var pending = linkClicks.get(event);
+        if (!pending || pending.click.done) return;
+        pending.click.done = true;
+        if (event.defaultPrevented) return;
+        event.preventDefault();
+        followLink(pending.link.href, event.isTrusted, pending.link.download);
+    }
+    ['click', 'auxclick'].forEach(function (type) {
+        window.addEventListener(type, watchLink, true);
+        window.addEventListener(type, finishLink);
+    });
+    // The sandbox blocks popups: open web pages through the host, like links.
+    window.open = function (url) {
+        var activation = navigator.userActivation;
+        followLink(url == null ? '' : String(url).trim(), !activation || activation.isActive, false);
+        return null;
+    };
+
     function query(table, options) {
         if (manifest.tables.indexOf(table) < 0) {
             var message = 'Table "' + table + '" is not declared in the app manifest.';

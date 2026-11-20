@@ -38,6 +38,7 @@ _DEMO_RULES: dict[str, tuple[tuple[str, str], ...]] = {
         ("| Find out what data exists |",
          "| Find out what data exists | Answer from the demo skill's dataset list and the session's tables. "
          "| The availability question is answered; no unsolicited load is needed. |"),
+        ("| Use earlier work from another session", ""),
         ("| Set up or manage Data Formulator", ""),
         ("| Create or revise a file |",
          "| Create or revise a file | Use `create_file` or `edit_file`. | The requested artifact exists as a "

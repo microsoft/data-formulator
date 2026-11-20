@@ -165,10 +165,9 @@ def build_catalog_metadata_lookups(
 
         from data_formulator.datalake.catalog_cache import list_cached_sources, load_catalog
 
-        # Source-only catalog: no user annotation merge. The agent now only
+        # Source-only catalog: no user annotation merge. The agent only
         # sees descriptions that came from the source system (SQL comments,
-        # Glue parameters, BigQuery field descriptions, …). User-authored
-        # guidance lives in Knowledge → Rules instead.
+        # Glue parameters, BigQuery field descriptions, …).
         catalogs: list[dict[str, Any]] = []
         for source_id in list_cached_sources(user_home):
             catalog = load_catalog(Path(user_home), source_id) or []

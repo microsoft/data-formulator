@@ -12,7 +12,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Typography, alpha, useTheme } from '@mui/material';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { useTranslation } from 'react-i18next';
-import { radius, transition } from '../app/tokens';
+import { radius, transition, weight } from '../app/tokens';
 
 const hasFiles = (event: { dataTransfer: DataTransfer | null }) => Array.from(event.dataTransfer?.types ?? []).includes('Files');
 
@@ -93,7 +93,7 @@ export const FileDropOverlay: React.FC<{ active: boolean; zIndex?: number }> = (
         transition: transition.normal,
     }}>
         <UploadFileIcon sx={{ fontSize: 22, color: 'primary.main' }} />
-        <Typography variant="body2" sx={{ fontWeight: 500, color: 'primary.main' }}>
+        <Typography variant="body2" sx={{ fontWeight: weight(500), color: 'primary.main' }}>
             {t('dataLoading.dropToAttach', { defaultValue: 'Drop file to attach' })}
         </Typography>
     </Box>;

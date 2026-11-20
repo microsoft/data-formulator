@@ -7,7 +7,7 @@ import { alpha } from '@mui/material/styles';
 import PersonIcon from '@mui/icons-material/Person';
 import ArticleIcon from '@mui/icons-material/Article';
 import { AgentToyIcon } from './AgentToyIcon';
-import { iconTone } from '../app/tokens';
+import { iconTone, weight } from '../app/tokens';
 import {
     AgentIcon, BooleanIcon, FormIcon, chartFamily, CONNECTOR_ICON_MAP, DatabaseIcon, DatabaseViewIcon, DateIcon,
     DateTimeIcon, DurationIcon, FileTypeIcon, FolderOpenIcon, InsightIcon, NumericalIcon, RelationalDBIcon, StreamIcon,
@@ -53,7 +53,7 @@ const Cell: React.FC<{ label: string; children: (size: number) => React.ReactNod
     </Box>;
 
 const Section: React.FC<{ title: string; id?: string; children: React.ReactNode }> = ({ title, id, children }) => <>
-    <Box id={id} sx={{ fontSize: 12, fontWeight: 600, mt: 2, mb: 1, scrollMarginTop: 52 }}>{title}</Box>
+    <Box id={id} sx={{ fontSize: 12, fontWeight: weight(600), mt: 2, mb: 1, scrollMarginTop: 52 }}>{title}</Box>
     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>{children}</Box>
 </>;
 

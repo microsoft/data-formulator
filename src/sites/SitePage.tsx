@@ -10,6 +10,7 @@ import { inkColor } from '../app/look';
 
 import { safeUrl } from './links';
 import type { SiteConfig, SiteLandingProps } from './types';
+import { weight } from '../app/tokens';
 
 export { safeUrl };
 
@@ -75,7 +76,7 @@ export const DemoInstall: React.FC<{ site: SiteConfig }> = ({ site }) => {
     const log = install?.job?.log ?? [];
     return <Box component="section" aria-labelledby="demo-install" sx={{ p: { xs: 2, sm: 3 }, border: '1px solid', borderColor: 'divider',
         borderRadius: 1, bgcolor: 'background.paper', textAlign: 'left' }}>
-        <Typography component="h2" id="demo-install" sx={{ fontSize: textVar.xl, fontWeight: 400 }}>
+        <Typography component="h2" id="demo-install" sx={{ fontSize: textVar.xl, fontWeight: weight(400) }}>
             {canInstall ? 'Install this demo' : 'This demo is not available yet'}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
@@ -85,7 +86,7 @@ export const DemoInstall: React.FC<{ site: SiteConfig }> = ({ site }) => {
         </Typography>
         {canInstall && <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
             <ButtonBase disabled={running} onClick={() => void request({ method: 'POST' })} sx={{ px: 2, py: 1, borderRadius: 1,
-                bgcolor: 'text.primary', color: 'background.paper', fontSize: textVar.md, fontWeight: 500, ...(running && { opacity: 0.6 }) }}>
+                bgcolor: 'text.primary', color: 'background.paper', fontSize: textVar.md, fontWeight: weight(500), ...(running && { opacity: 0.6 }) }}>
                 {running ? 'Installing…' : failed ? 'Try again' : 'Install demo'}
             </ButtonBase>
             {running && <Typography variant="body2" color="text.secondary">This takes a minute or two; you can leave this page open.</Typography>}
@@ -100,7 +101,7 @@ export const DemoInstall: React.FC<{ site: SiteConfig }> = ({ site }) => {
     </Box>;
 };
 
-const sectionTitleSx = { fontSize: textVar.xl, fontWeight: 400, minHeight: 40, display: 'flex', alignItems: 'center' } as const;
+const sectionTitleSx = { fontSize: textVar.xl, fontWeight: weight(400), minHeight: 40, display: 'flex', alignItems: 'center' } as const;
 
 const SitePage: React.FC<SiteLandingProps> = ({ site, sessions }) => {
     const installed = !site.status || site.status === 'ready';

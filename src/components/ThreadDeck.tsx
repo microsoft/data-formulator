@@ -17,7 +17,7 @@ import { getCachedChart } from '../app/chartCache';
 import { textVar } from '../app/layout';
 import { AppMiniature, ReportMiniature } from './ArtifactMiniatures';
 import { FileTypeIcon } from '../icons';
-import { iconTone } from '../app/tokens';
+import { iconTone, ink } from '../app/tokens';
 
 /**
  * Something a thread produced: a chart (`src` overrides its own picture), a report, an app, another file, a
@@ -103,7 +103,7 @@ const ChartPicture: React.FC<{ output: ThreadOutput & { kind?: 'chart' }; onAspe
             const { naturalWidth: w, naturalHeight: h } = event.currentTarget;
             if (w && h) onAspect(w / h);
         }} sx={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain' }} />
-        : <Box sx={{ width: '100%', height: '100%', bgcolor: 'rgba(0,0,0,0.03)' }} />;
+        : <Box sx={{ width: '100%', height: '100%', bgcolor: ink(0.03) }} />;
 };
 
 type Artifact = Exclude<ThreadOutput, { kind?: 'chart' } | { kind: 'table' }>;
@@ -121,9 +121,9 @@ const selectableSx = (selected: boolean, tone: 'primary' | 'secondary' = 'primar
     boxSizing: 'border-box', m: 0, font: 'inherit', cursor: 'pointer', borderRadius: 1.5, overflow: 'hidden',
     bgcolor: (theme: Theme) => tinted ? theme.palette[tone].bgcolor || alpha(theme.palette[tone].main, 0.08) : theme.palette.background.paper,
     border: '1px solid', borderColor: (theme: Theme) => selected ? theme.palette[tone].main
-        : tinted ? alpha(theme.palette[tone].main, 0.2) : 'rgba(0,0,0,0.08)',
+        : tinted ? alpha(theme.palette[tone].main, 0.2) : ink(0.08),
     outline: selected ? '1px solid' : 'none', outlineColor: `${tone}.main`, transition: 'border-color 150ms ease',
-    '&:hover': { borderColor: (theme: Theme) => selected || tinted ? theme.palette[tone].main : 'rgba(0,0,0,0.3)' },
+    '&:hover': { borderColor: (theme: Theme) => selected || tinted ? theme.palette[tone].main : ink(0.3) },
     '&:focus-visible': { outline: '2px solid', outlineColor: `${tone}.main`, outlineOffset: 1 },
 }) as const;
 

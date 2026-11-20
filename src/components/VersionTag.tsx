@@ -14,7 +14,7 @@ import { useTranslation } from 'react-i18next';
 
 import { apiRequest } from '../app/apiClient';
 import { getUrls } from '../app/utils';
-import { identText } from '../app/tokens';
+import { identText, weight } from '../app/tokens';
 
 export interface UpdateCheck {
     current: string;
@@ -52,7 +52,7 @@ export const VersionTag: FC<{ version?: string }> = ({ version }) => {
         <ButtonBase data-app-version data-update-available onClick={event => setAnchor(event.currentTarget)}
             aria-haspopup="dialog" sx={theme => ({
                 ml: 1, px: 0.75, py: '2px', borderRadius: '999px', verticalAlign: 'middle',
-                fontSize: 12, lineHeight: 1.4, fontWeight: 500, whiteSpace: 'nowrap', fontFamily: 'inherit',
+                fontSize: 12, lineHeight: 1.4, fontWeight: weight(500), whiteSpace: 'nowrap', fontFamily: 'inherit',
                 color: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.08),
                 '&:hover, &.Mui-focusVisible': { bgcolor: alpha(theme.palette.primary.main, 0.14) },
             })}>
@@ -61,7 +61,7 @@ export const VersionTag: FC<{ version?: string }> = ({ version }) => {
         <Popover open={!!anchor} anchorEl={anchor} onClose={() => setAnchor(null)}
             anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }} transformOrigin={{ vertical: 'top', horizontal: 'center' }}
             slotProps={{ paper: { sx: { mt: 1, p: 2, width: 320, textAlign: 'left' } } }}>
-            <Typography sx={{ fontSize: 14, fontWeight: 600 }}>
+            <Typography sx={{ fontSize: 14, fontWeight: weight(600) }}>
                 {t('landing.updateTitle', { defaultValue: 'Data Formulator {{version}} is available', version: update.latest })}
             </Typography>
             <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.25 }}>

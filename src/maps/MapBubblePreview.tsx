@@ -14,6 +14,7 @@ import { useMapInputs, useMapLook } from './MapPreview';
 import { MapView } from './MapView';
 import { CITIES, hash01, stateStats, worldIndicators } from './samples';
 import { parseMapSpec } from './spec';
+import { weight } from '../app/tokens';
 
 const round = (value: number, digits = 1) => Math.round(value * 10 ** digits) / 10 ** digits;
 
@@ -94,7 +95,7 @@ export default function MapBubblePreview() {
     return <Box sx={{ minHeight: '100vh', fontFamily: 'var(--df-font)' }}>
         <DevNav sections={list.map(item => [item.id, item.label])} />
         <Box sx={{ p: 2 }}>
-            <Typography sx={{ fontWeight: 600, mb: 0.5 }}>Bubbles at different panel sizes</Typography>
+            <Typography sx={{ fontWeight: weight(600), mb: 0.5 }}>Bubbles at different panel sizes</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 900 }}>
                 Each case at a thumbnail, a medium and a full panel size. The largest bubble fits the data and the panel: the
                 bubbles cover about 15% of it, never above the default size nor below 40% of it. Synthetic data.
@@ -103,7 +104,7 @@ export default function MapBubblePreview() {
                 <ToggleButton value="dark">Dark</ToggleButton><ToggleButton value="light">Light</ToggleButton>
             </ToggleButtonGroup>
             {list.map(item => <Box key={item.id} id={item.id} sx={{ mb: 4, scrollMarginTop: 48 }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{item.label}</Typography>
+                <Typography sx={{ fontSize: 13, fontWeight: weight(600) }}>{item.label}</Typography>
                 <Typography sx={{ fontSize: 11, color: 'text.secondary', mb: 1 }}>{item.note}</Typography>
                 <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start', mb: 1.5, overflowX: 'auto' }}>
                     {SIZES.map(size => <Box key={size.label} sx={{ flexShrink: 0 }}>

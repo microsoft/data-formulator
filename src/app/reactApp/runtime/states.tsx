@@ -10,6 +10,7 @@ import ErrorOutline from '@mui/icons-material/ErrorOutline';
 
 import type { Row } from './bridge';
 import type { QueryResult } from './data';
+import { weight } from '../../tokens';
 
 /**
  * Return the previous reference while the value is structurally unchanged, so
@@ -47,7 +48,7 @@ export function ErrorState({ error, height = 120, label = 'Data unavailable' }: 
             p: 2, textAlign: 'center', color: 'text.disabled', bgcolor: 'rgba(0, 0, 0, 0.025)',
             border: '1px dashed rgba(0, 0, 0, 0.15)', borderRadius: 2,
         }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: 'var(--df-text-sm)', fontWeight: 500, color: 'text.secondary' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: 'var(--df-text-sm)', fontWeight: weight(500), color: 'text.secondary' }}>
                 <ErrorOutline sx={{ fontSize: '1.15em' }} />{label}
             </Box>
             <Box sx={{

@@ -21,6 +21,7 @@ import { bridge, type Row } from './bridge';
 import { Sparkline } from './chart';
 import type { QueryResult } from './data';
 import { formatValue } from './table';
+import { weight } from '../../tokens';
 
 export interface KpiProps {
     /** What the number is ("Reports", "Avg. rating"). */
@@ -103,7 +104,7 @@ export function Kpi(props: KpiProps) {
             )}
             {change && (
                 <Typography data-kpi-change variant="caption" noWrap sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                    <Box component="span" sx={{ color: tone, fontWeight: 600 }}>{arrow}{change.text}</Box>
+                    <Box component="span" sx={{ color: tone, fontWeight: weight(600) }}>{arrow}{change.text}</Box>
                     {change.against ? <Box component="span" sx={{ color: 'text.secondary' }}> vs {change.against}</Box> : null}
                 </Typography>
             )}

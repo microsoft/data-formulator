@@ -4,6 +4,7 @@
 import React from 'react';
 import Markdown from 'markdown-to-jsx';
 import { Box, Typography } from '@mui/material';
+import { weight } from '../app/tokens';
 
 // Code, link targets and bare URLs keep their underscores; everything else is prose.
 const MARKDOWN_LITERAL = /(```[\s\S]*?```|`[^`\n]*`|\]\([^)]*\)|https?:\/\/\S+)/;
@@ -82,7 +83,7 @@ const GuideMarkdown: React.FC<{ children: string; inline?: boolean }> = ({ child
 /** A connector's setup guide: labelled sections, with examples laid out as name/value rows. */
 export const SetupGuide: React.FC<{ content: string }> = ({ content }) => {
     const blocks = parseSetupGuide(content);
-    const labelSx = { fontSize: 'inherit', fontWeight: 600, color: 'text.primary', mb: 0.25 } as const;
+    const labelSx = { fontSize: 'inherit', fontWeight: weight(600), color: 'text.primary', mb: 0.25 } as const;
     return <Box sx={{ display: 'grid', gap: 1.75 }}>
         {blocks.map((block, index) => {
             if (block.kind === 'text') return <Box key={index}><GuideMarkdown>{block.body}</GuideMarkdown></Box>;

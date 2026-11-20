@@ -87,7 +87,6 @@ import { alpha } from '@mui/material/styles';
 import { buildTableCard, buildTableRefChip, buildChartCards, BuildTableCardProps, ThreadArtifactCard, ArtifactDeleteButton, ThreadChipGroup, ThreadChip } from './DataThreadCards';
 import { SourceTableShelf, useFittingItems } from './SourceTableShelf';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
-import { AgentRulesDialog } from './AgentRulesDialog';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ChecklistIcon from '@mui/icons-material/Checklist';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
@@ -104,7 +103,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import CallMergeIcon from '@mui/icons-material/CallMerge';
 
-import { transition, radius, borderColor, cardRadius, conversationWidth, iconTone, metaText, quietText, selectionMark, selectionOutline } from '../app/tokens';
+import { transition, radius, borderColor, cardRadius, conversationWidth, iconTone, metaText, quietText, selectionMark, selectionOutline, ink, paper, weight } from '../app/tokens';
 import { focusColor, quietOffChainSteps } from '../app/look';
 import { StepMarker } from '../components/look/StepMarker';
 import { fileGlyphKind, type GlyphKind } from '../components/look/SharpGlyphs';
@@ -238,7 +237,6 @@ const WorkspacePanel: FC<{
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const isDemo = useSelector((state: DataFormulatorState) => !!state.serverConfig.SITE);
-    const [agentRulesOpen, setAgentRulesOpen] = useState(false);
     const [workspaceExpanded, setWorkspaceExpanded] = useState(false);
 
     const fileItemSx = (isActive: boolean, isNested: boolean = false) => ({
@@ -253,7 +251,7 @@ const WorkspacePanel: FC<{
         transition: transition.fast,
         backgroundColor: isActive ? alpha(theme.palette.primary.main, 0.08) : 'transparent',
         '&:hover': {
-            backgroundColor: isActive ? alpha(theme.palette.primary.main, 0.12) : 'rgba(0,0,0,0.04)',
+            backgroundColor: isActive ? alpha(theme.palette.primary.main, 0.12) : ink(0.04),
         },
     });
 
@@ -322,7 +320,7 @@ const WorkspacePanel: FC<{
         <Box sx={{ ...sx,
             py: 0,
             mb: 0.5,
-            backgroundColor: 'rgba(0,0,0,0.02)',
+            backgroundColor: ink(0.02),
             borderBottom: `1px solid ${borderColor.divider}`,
             userSelect: 'none',
         }}>
@@ -337,16 +335,16 @@ const WorkspacePanel: FC<{
             >
                 <Box
                     sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', borderRadius: 0.75,
-                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.04)' },
+                        '&:hover': { backgroundColor: ink(0.04) },
                         pr: 0.5, py: 0.5,
                     }}
                     onClick={() => setWorkspaceExpanded(!workspaceExpanded)}
                 >
                     {workspaceExpanded ?
-                        <ExpandMoreIcon sx={{ fontSize: iconVar.sm, color: 'rgba(0,0,0,0.5)' }} /> :
-                        <ChevronRightIcon sx={{ fontSize: iconVar.sm, color: 'rgba(0,0,0,0.5)' }} />
+                        <ExpandMoreIcon sx={{ fontSize: iconVar.sm, color: ink(0.5) }} /> :
+                        <ChevronRightIcon sx={{ fontSize: iconVar.sm, color: ink(0.5) }} />
                     }
-                    <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, color: 'rgba(0,0,0,0.55)', textTransform: 'uppercase', letterSpacing: '0.5px', ml: 0.5 }}>
+                    <Typography sx={{ fontSize: textVar.xs, fontWeight: weight(600), color: ink(0.55), textTransform: 'uppercase', letterSpacing: '0.5px', ml: 0.5 }}>
                         {t('dataThread.workspace')}
                     </Typography>
                 </Box>
@@ -362,7 +360,7 @@ const WorkspacePanel: FC<{
                     }}
                 >
                     <AddIcon sx={{ fontSize: iconVar.sm }} />
-                    <Typography sx={{ fontSize: textVar.xs, fontWeight: 600 }}>{t('dataThread.addData')}</Typography>
+                    <Typography sx={{ fontSize: textVar.xs, fontWeight: weight(600) }}>{t('dataThread.addData')}</Typography>
                 </Box>}
             </Box>
 
@@ -392,7 +390,7 @@ const WorkspacePanel: FC<{
                                         top: 0,
                                         bottom: isLastTable ? 'calc(100% - 10px)' : 0,
                                         width: '1px',
-                                        backgroundColor: 'rgba(0,0,0,0.1)',
+                                        backgroundColor: ink(0.1),
                                     },
                                     '&::after': {
                                         content: '""',
@@ -401,7 +399,7 @@ const WorkspacePanel: FC<{
                                         top: '10px',
                                         width: '8px',
                                         height: '1px',
-                                        backgroundColor: 'rgba(0,0,0,0.1)',
+                                        backgroundColor: ink(0.1),
                                     }
                                 }}
                             >
@@ -414,7 +412,7 @@ const WorkspacePanel: FC<{
                                         <Box sx={{ flex: 1, minWidth: 0 }}>
                                             <Typography sx={{
                                                 fontSize: textVar.xs,
-                                                fontWeight: isTableActive ? 600 : 400,
+                                                fontWeight: isTableActive ? weight(600) : weight(400),
                                                 color: isTableActive ? 'primary.main' : 'text.primary',
                                                 overflow: 'hidden',
                                                 textOverflow: 'ellipsis',
@@ -473,7 +471,7 @@ const WorkspacePanel: FC<{
                                                             top: 0,
                                                             bottom: isLast ? '50%' : 0,
                                                             width: '1px',
-                                                            backgroundColor: 'rgba(0,0,0,0.1)',
+                                                            backgroundColor: ink(0.1),
                                                         },
                                                         '&::after': {
                                                             content: '""',
@@ -482,7 +480,7 @@ const WorkspacePanel: FC<{
                                                             top: '50%',
                                                             width: '8px',
                                                             height: '1px',
-                                                            backgroundColor: 'rgba(0,0,0,0.1)',
+                                                            backgroundColor: ink(0.1),
                                                         }
                                                     }}
                                                 >
@@ -493,7 +491,7 @@ const WorkspacePanel: FC<{
                                                     {getChartIcon(chart.chartType)}
                                                     <Typography sx={{
                                                         fontSize: textVar.xs,
-                                                        fontWeight: isChartActive ? 600 : 400,
+                                                        fontWeight: isChartActive ? weight(600) : weight(400),
                                                         color: isChartActive ? 'primary.main' : 'text.primary',
                                                         overflow: 'hidden',
                                                         textOverflow: 'ellipsis',
@@ -519,10 +517,6 @@ const WorkspacePanel: FC<{
                 open={uploadDialogOpen}
                 onClose={() => setUploadDialogOpen(false)}
                 initialTab="menu"
-            />
-            <AgentRulesDialog
-                externalOpen={agentRulesOpen}
-                onExternalClose={() => setAgentRulesOpen(false)}
             />
         </Box>
     );
@@ -590,7 +584,7 @@ const ThreadResponseCard: FC<ThreadResponseCardProps> = ({
                 <Typography component="div" sx={{
                     fontSize: textVar.xs,
                     color: selected || prominent ? 'text.primary' : 'text.secondary',
-                    lineHeight: 1.4, fontWeight: 400,
+                    lineHeight: 1.4, fontWeight: weight(400),
                     display: '-webkit-box', WebkitLineClamp: workUpdate ? 4 : 2, WebkitBoxOrient: 'vertical',
                     overflow: 'hidden', wordBreak: 'break-word',
                 }}>
@@ -929,7 +923,7 @@ let SingleThreadGroupView: FC<{
                             || (focusedId?.type === 'external-table' && focusedId.referenceId === reference.id)}
                         onClick={() => dispatch(dfActions.setFocused({ type: 'reference', referenceId: node.id }))}>
                         <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-                            <Typography component="span" sx={{ minWidth: 0, fontSize: textVar.sm, fontWeight: 500,
+                            <Typography component="span" sx={{ minWidth: 0, fontSize: textVar.sm, fontWeight: weight(500),
                                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</Typography>
                             <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary', opacity: 0.75, flexShrink: 0 }}>
                                 {t('externalReference.virtualNote', { defaultValue: '(virtual)' })}</Typography>
@@ -2096,7 +2090,7 @@ let SingleThreadGroupView: FC<{
                                 '&:hover': { color: lineHL ? headTone : 'text.primary' },
                                 '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
                             <Typography component="span" sx={{ minWidth: 0, color: 'inherit',
-                                fontWeight: continued ? 600 : 700,
+                                fontWeight: continued ? weight(600) : 700,
                                 ...metaText({ fontSize: textVar.xs, textTransform: 'uppercase', letterSpacing: 0 }),
                                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                             }}>
@@ -2210,7 +2204,7 @@ const ChartThumbnail: FC<{
         return <Box 
             className="vega-thumbnail-box"
             onClick={() => onChartClick(chart.id, table.id)}
-            sx={{ width: "100%", color: 'text.secondary', height: 48, display: "flex", backgroundColor: "white", position: 'relative', flexDirection: "column" }}>
+            sx={{ width: "100%", color: 'text.secondary', height: 48, display: "flex", backgroundColor: paper(), position: 'relative', flexDirection: "column" }}>
             {pendingOverlay}
             <InsightIcon sx={{ margin: 'auto', color: 'darkgray' }}  fontSize="medium" />
         </Box>;
@@ -2221,7 +2215,7 @@ const ChartThumbnail: FC<{
         return <Box key={`unavailable-${chart.id}`} width={"100%"}
             className={"vega-thumbnail vega-thumbnail-box"}
             onClick={() => onChartClick(chart.id, table.id)}
-            sx={{ display: "flex", backgroundColor: "white", position: 'relative', flexDirection: "column" }}>
+            sx={{ display: "flex", backgroundColor: paper(), position: 'relative', flexDirection: "column" }}>
             {pendingOverlay}
             <Box sx={{ display: "flex", flexDirection: "column", margin: "auto", height: 48}}>
                 <Box sx={{ margin: "auto", transform: chart.chartType == 'Table' ? "rotate(15deg)" : undefined }} >
@@ -2275,7 +2269,7 @@ const ChartThumbnail: FC<{
                 <Box className={"vega-thumbnail"}
                     sx={{
                         display: "flex",
-                        backgroundColor: "white",
+                        backgroundColor: paper(),
                         justifyContent: 'center',
                         alignItems: 'center',
                         minHeight: 60,
@@ -3022,7 +3016,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     // `next` is the entry below this one in its column: a part continued right there needs no link to it.
     let renderThreadEntry = (entry: ThreadEntry, next?: ThreadEntry) => {
         const entrySx = {
-            backgroundColor: 'white',
+            backgroundColor: paper(),
             borderRadius: radius.md,
             padding: useDenseColumns ? 0.5 : 1,
             my: useDenseColumns ? 0.25 : 0.5,
@@ -3214,7 +3208,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
                         sx={{ width: 32, height: 30, opacity: 0.82, flexShrink: 0 }}
                     />
                     <Box sx={{ minWidth: 0 }}>
-                        <Typography sx={{ fontSize: textVar.sm, lineHeight: 1.4, fontWeight: 600, color: 'text.primary' }}>
+                        <Typography sx={{ fontSize: textVar.sm, lineHeight: 1.4, fontWeight: weight(600), color: 'text.primary' }}>
                             {t('dataThread.emptySessionTitle')}
                         </Typography>
                         <Typography variant="body2" sx={{ mt: 0.25, fontSize: textVar.xs, lineHeight: 1.5, color: 'text.secondary' }}>

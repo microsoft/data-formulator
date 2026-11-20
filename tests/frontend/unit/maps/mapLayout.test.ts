@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { chooseLayout, layoutCandidates, type Box, type LayoutFit, type LayoutInput } from '../../../../src/maps/layout';
+import { chooseLayout, layoutCandidates, topRightPanelTop, type Box, type LayoutFit, type LayoutInput } from '../../../../src/maps/layout';
 import { parseMapSpec } from '../../../../src/maps/spec';
 
 const base: LayoutInput = {
@@ -37,6 +37,29 @@ it('lets the legend join a row only when the whole row fits, and a column only w
     expect(layoutCandidates(crowded).some(candidate => candidate.layout.controls === 'top' && candidate.layout.legend === 'controls')).toBe(false);
     const tall = { ...base, items: Array.from({ length: 8 }, () => ({ width: 150, height: 56 })) };
     expect(layoutCandidates(tall).some(candidate => candidate.layout.controls === 'side' && candidate.layout.legend === 'controls')).toBe(false);
+});
+
+it('plans around the stats card in every candidate without stacking it below unrelated controls', () => {
+    const candidates = layoutCandidates({ ...base, stats: { width: 240, height: 180 } });
+    expect(candidates.length).toBeGreaterThan(1);
+    for (const { boxes } of candidates) {
+        const stats = boxes[boxes.length - 1];
+        expect(stats).toEqual([644, 12, 884, 192]);
+        for (const other of boxes.slice(0, -1)) expect(overlaps(stats, other)).toBe(false);
+    }
+    let measuredStats = false;
+    chooseLayout({ ...base, stats: { width: 240, height: 180 } }, arrangements => {
+        measuredStats = arrangements.every(boxes => boxes.some(box => box[0] === 644 && box[3] === 192));
+        return arrangements.map(() => ({ scale: 250, covered: 0, offset: 0 }));
+    });
+    expect(measuredStats).toBe(true);
+});
+
+it('moves a right-hand card down only when the title or top controls reach its column', () => {
+    const narrow: Box[] = [[16, 12, 650, 56], [16, 76, 410, 126]];
+    expect(topRightPanelTop(1000, 240, narrow, 180)).toBe(52);
+    expect(topRightPanelTop(1000, 240, [[16, 12, 950, 56], narrow[1]], 180)).toBe(64);
+    expect(topRightPanelTop(1000, 240, [narrow[0], [16, 76, 850, 126]], 180)).toBe(134);
 });
 
 it('picks the arrangement that leaves the map largest, and keeps the usual one on a tie', () => {

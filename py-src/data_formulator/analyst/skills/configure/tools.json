@@ -31,7 +31,7 @@
     "type": "function",
     "function": {
       "name": "list_sessions",
-      "description": "Find the user's saved sessions, newest first, with names, dates, counts, and a content summary (data, prompts, reports, workflows). Use query terms to search names and content.",
+      "description": "Find the user's saved sessions, newest first, with names, dates, counts, and a content summary (data, reports, workflows). Query terms search names, content and the sessions' requests; the requests themselves are not returned. To read what a session holds, use past_sessions.",
       "parameters": {
         "type": "object",
         "properties": {

@@ -21,6 +21,7 @@ import { CompactMarkdown } from './InteractionEntryCard';
 import { ExecutionCodeBlock, TerminalExecutionView } from '../components/TerminalApprovalDialog';
 import { asCodeExecution, isCodeCall } from '../app/toolCalls';
 import { formatAnalystToolProgress } from './analystToolProgress';
+import { weight } from '../app/tokens';
 
 type Call = TerminalExecution | ToolCall;
 type WorkEntry =
@@ -87,7 +88,7 @@ const rowSx = { display: 'flex', width: '100%', minWidth: 0, justifyContent: 'fl
 const iconSx = { fontSize: 14, flexShrink: 0, mt: '3px' } as const;
 const preSx = { m: 0, px: 1, py: 0.75, fontFamily: 'monospace', fontSize: '0.6875rem', lineHeight: 1.55, whiteSpace: 'pre-wrap',
     overflowWrap: 'anywhere', maxHeight: 320, overflowY: 'auto', color: 'text.primary' } as const;
-const sectionLabelSx = { px: 1, pt: 0.75, fontSize: '0.6875rem', fontWeight: 600, color: 'text.secondary' } as const;
+const sectionLabelSx = { px: 1, pt: 0.75, fontSize: '0.6875rem', fontWeight: weight(600), color: 'text.secondary' } as const;
 
 const iconOf = (call: Call) => isTerminal(call) ? TerminalIcon : isCodeCall(call) ? CodeIcon
     : call.tool === 'mcp_call' ? ExtensionOutlinedIcon

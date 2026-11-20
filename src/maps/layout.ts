@@ -4,10 +4,9 @@
 /**
  * Where a map's floating panels go. The title keeps the top left. The controls (with the timeline) go in a row
  * under it, a row along the bottom, or a column at the left; the legend takes a bottom corner, the top left, or
- * joins the controls' box when it fits there whole. Each arrangement is tried by fitting the map around its
- * panels (MapRenderer.measureLayouts): the one that leaves the map largest, least covered and most centred wins,
- * with a light preference for the usual places. So a globe (a disc) takes a narrow column rather than a
- * full-width row, and a world map crowded with land in the north moves its controls over the Southern Ocean.
+ * joins the controls' box when it fits there whole. Each arrangement is tried against the naturally fitted map
+ * (MapRenderer.measureLayouts): the least covered and most centred wins, with a light preference for the usual
+ * places. Panels move out of the data's way before the map makes a small nudge; some overlap is fine.
  *
  * The host decides when a map opens, when its projection, layers, data or controls change, or when the panel is
  * resized a lot: filtering, playing, zooming and selecting never move a panel.
@@ -26,23 +25,29 @@ export const WIDGET_WIDTH = 220;
  * Each control's width in a row, label above (as in an app's FilterBar): a dropdown needs less than a slider or
  * a list, so more of them fit in the first row.
  */
-export const ROW_WIDTH: Record<string, number> = { select: 150, search: 160, slider: 170, range: 170, checkboxes: 200, layers: 190, timeline: 220 };
+export const ROW_WIDTH: Record<string, number> = { select: 150, search: 150, slider: 170, range: 170, checkboxes: 180, layers: 190, timeline: 220 };
 /** The row's gap between controls, its box's side padding, and the room its "N more" toggle takes at the end. */
-export const ROW_GAP = 16;
-export const ROW_PADDING = 12;
+export const ROW_GAP = 12;
+export const ROW_PADDING = 10;
 export const TOGGLE_SPACE = 90;
 /** Panels keep this far from the panel's sides. */
 export const EDGE = 16;
 /** The zoom buttons' column at the right, with its gap: a bottom row or a bottom-right legend stops short of it. */
 export const ZOOM_SPACE = 48;
 /** A box's vertical padding and border, and the gap between stacked items. */
-const BOX_CHROME = 18;
+const BOX_CHROME = 14;
 const ITEM_GAP = 8;
 
 /** Where panels under the title start, from the title block's measured height (0: no title). */
 export const panelTop = (headerHeight: number) => headerHeight ? 12 + headerHeight + 8 : 12;
 /** Where panels along the bottom end (above the boundaries' credit line when it shows). */
 export const bottomInset = (creditLine: boolean) => creditLine ? 26 : 16;
+
+/** A right-hand card sits below only the top panels that reach its column. */
+export function topRightPanelTop(width: number, panelWidth: number, topPanels: Box[], reserveTopRight: number): number {
+    const left = width - EDGE - panelWidth;
+    return Math.max(reserveTopRight ? 52 : 12, ...topPanels.filter(box => box[2] + ITEM_GAP > left).map(box => box[3] + ITEM_GAP));
+}
 
 /** Room for a row's controls (inside its box's padding). */
 export function rowRoom(layout: MapLayout, width: number, options: { header: boolean; reserveTopRight: number; legendWidth: number }): number {
@@ -85,6 +90,8 @@ export interface LayoutInput extends Size {
     /** The controls are only a timeline, which reads as well along the bottom. */
     timelineOnly: boolean;
     legend: Size | null;
+    /** The persistent summary card, measured before choosing the layout. */
+    stats?: Size | null;
     /** Panels that stay put in every layout (the zoom buttons). */
     fixed: Box[];
     creditLine: boolean;
@@ -146,8 +153,13 @@ export function layoutCandidates(input: LayoutInput): Candidate[] {
                     : legendPlace === 'top-left' ? [EDGE, top, EDGE + legend.width, top + legend.height]
                     : [EDGE, bottom - legend.height, EDGE + legend.width, bottom]);
             }
-            const all = [...header, ...input.fixed, ...boxes];
-            if (all.some(box => box[2] > width || box[3] > height || box[1] < 0)) continue;
+            const stats: Box[] = [];
+            if (input.stats) {
+                const top = topRightPanelTop(width, input.stats.width, [...header, ...(place === 'top' ? boxes.slice(0, 1) : [])], input.reserveTopRight);
+                stats.push([width - EDGE - input.stats.width, top, width - EDGE, Math.min(height - EDGE, top + input.stats.height)]);
+            }
+            const all = [...header, ...input.fixed, ...boxes, ...stats];
+            if (all.some(box => box[0] < 0 || box[1] < 0 || box[2] > width || box[3] > height || box[2] <= box[0] || box[3] <= box[1])) continue;
             if (all.some((box, index) => all.slice(index + 1).some(other => overlaps(box, other)))) continue;
             candidates.push({ layout, boxes: all });
         }

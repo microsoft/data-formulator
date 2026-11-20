@@ -297,8 +297,7 @@ _TOOL_PROGRESS_ARG_KEYS: dict[str, tuple[str, ...]] = {
     "probe_data": ("source_id", "table_key", "query"),
     "list_connectors": ("source_type",),
     "list_sessions": ("query",),
-    "search_data_tables": ("query",),
-    "search_knowledge": ("query",),
+    "past_sessions": ("query", "session", "item", "copy"),
     "create_file": ("filename", "display_name"),
     "edit_file": ("path", "display_name"),
     "delete_items": ("items",),
@@ -670,16 +669,6 @@ class AnalystAgent:
         else:
             self._reasoning_log = _NullReasoningLogger()
 
-        self._knowledge_store = None
-        self._injected_knowledge: list[dict[str, Any]] = []
-        _user_home = getattr(workspace, "user_home", None)
-        if _user_home:
-            try:
-                from data_formulator.knowledge.store import KnowledgeStore
-                self._knowledge_store = KnowledgeStore(_user_home)
-            except Exception:
-                logger.warning("Failed to initialise KnowledgeStore", exc_info=True)
-
         # Per-run skill state (reset at the start of each run()). Skill code
         # modules themselves live in ``self.registry.skills`` and are always
         # available; ``_loaded_skills`` only tracks which skills the model has
@@ -882,7 +871,6 @@ class AnalystAgent:
                 rules_injected=[
                     r for r in [self.agent_exploration_rules, self.agent_coding_rules] if r
                 ],
-                knowledge_injected=[],
             )
 
             resuming = trajectory is not None
@@ -919,17 +907,7 @@ class AnalystAgent:
                     system_prompt_tokens=len(trajectory[0].get("content", "")) // 4 if trajectory else 0,
                     user_msg_tokens=len(str(trajectory[1].get("content", ""))) // 4 if len(trajectory) > 1 else 0,
                     total_tables=len(input_tables),
-                    knowledge_injected=self._injected_knowledge,
                 )
-
-                if self._injected_knowledge:
-                    yield {
-                        "type": "context_info",
-                        "knowledge_injected": [
-                            {"category": k["category"], "title": k["title"]}
-                            for k in self._injected_knowledge
-                        ],
-                    }
             else:
                 self._rehydrate_loaded_skills(trajectory)
                 system_message = {"role": "system", "content": self._build_system_prompt(
@@ -1843,7 +1821,6 @@ class AnalystAgent:
         request, placed just before it."""
         from types import SimpleNamespace
 
-        self._injected_knowledge = []
         ctx = SimpleNamespace(workspace=self.workspace, payload=getattr(self, "_run_payload", None) or {})
         context = render_turn_context(ctx, history) if history is not None else render_session_context(ctx)
         user_content = f"{context}\n\n" if context else ""
@@ -2196,9 +2173,7 @@ class AnalystAgent:
                         "purpose": tool_args.get("purpose") if tool_name == "execute_python_script" else None,
                         "code": tool_args.get("code") if tool_name == "execute_python_script" else None,
                         "skill": tool_args.get("name") if tool_name == "load_skill" else None,
-                        "query": tool_args.get("query") if tool_name in (
-                            "search_data_tables", "search_knowledge", "search",
-                        ) else None,
+                        "query": tool_args.get("query") if tool_name == "search" else None,
                     }
 
                     tool_t0 = time.time()

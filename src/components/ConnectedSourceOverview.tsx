@@ -19,6 +19,7 @@ import { VirtualizedCatalogTree } from './VirtualizedCatalogTree';
 import { ColumnMeta, ConnectorTablePreview } from './ConnectorTablePreview';
 import { iconVar, textVar } from '../app/layout';
 import { InlineLoadingStatus, LoadingStatus } from './FunComponents';
+import { weight } from '../app/tokens';
 
 const CATALOG_PREVIEW_ROW_LIMIT = 50;
 const MANUAL_PREVIEW_BYTES = 50 * 1024 * 1024;
@@ -321,9 +322,9 @@ export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = (
                         onClick={() => { previewRequest.current?.abort(); setDetailOpen(false); setPreviewLoading(false); }}><ArrowBackIcon fontSize="small" /></IconButton></span>
                 </Tooltip>}
                 <Box sx={{ minWidth: 0, flex: 1 }}>
-                    <Typography component="h2" sx={{ fontSize: 16, fontWeight: 600, color: 'text.primary', lineHeight: 1.5, overflowWrap: 'anywhere', m: 0 }}>{selected.name}</Typography>
+                    <Typography component="h2" sx={{ fontSize: 16, fontWeight: weight(600), color: 'text.primary', lineHeight: 1.5, overflowWrap: 'anywhere', m: 0 }}>{selected.name}</Typography>
                     <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', color: 'text.secondary', mt: 0.25,
-                        '& .MuiTypography-root': { fontSize: textVar.sm, fontWeight: 400, lineHeight: 1.5 } }}>
+                        '& .MuiTypography-root': { fontSize: textVar.sm, fontWeight: weight(400), lineHeight: 1.5 } }}>
                         {isFile ? <Typography variant="caption">{selected.metadata?.file_type?.toUpperCase()} · {Number(selected.metadata?.file_size || 0).toLocaleString()} bytes</Typography> : isSemantic ?
                         <Typography variant="caption">{t('sidebar.semanticModelSummary', {
                             measures: semanticMeasureCount, dimensions: selectedColumns.length - semanticMeasureCount })}</Typography> : <>
@@ -335,7 +336,7 @@ export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = (
                 </Box>
                 </Box>
                 {!splitView && <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5, ml: 'auto', minWidth: 0, maxWidth: '100%',
-                    color: 'text.secondary', '& .MuiTypography-root': { fontSize: textVar.sm, fontWeight: 400 },
+                    color: 'text.secondary', '& .MuiTypography-root': { fontSize: textVar.sm, fontWeight: weight(400) },
                     '& .MuiButton-root:not(.Mui-disabled) .MuiSvgIcon-root': { color: 'primary.main' },
                     '& .MuiButton-root:hover': { bgcolor: 'action.hover' } }}>
                 <Box sx={{ display: 'flex', gap: 0.5, ml: 'auto', minWidth: 0, maxWidth: '100%' }}>
@@ -394,13 +395,13 @@ export const ConnectedSourceOverview: React.FC<ConnectedSourceOverviewProps> = (
                 aria-label={t('chatConnector.tableDetails', { defaultValue: 'Table details' })}
                 sx={{ minHeight: 36, minWidth: 0, maxWidth: '100%',
                     '& .MuiTab-root': { minHeight: 36, minWidth: 0, px: 1.5, py: 0.75, textTransform: 'none', fontSize: textVar.md,
-                        fontWeight: 400, color: 'text.secondary', '&.Mui-selected': { color: 'primary.main', fontWeight: 600 } },
+                        fontWeight: weight(400), color: 'text.secondary', '&.Mui-selected': { color: 'primary.main', fontWeight: weight(600) } },
                     '& .MuiTabs-indicator': { height: 2 } }}>
                 <Tab value="data" id="source-tab-data" aria-controls="source-panel-data" label={t('chatConnector.sampleData', { defaultValue: 'Sample data' })} />
                 <Tab value="columns" id="source-tab-columns" aria-controls="source-panel-columns" label={t('chatConnector.columns', { defaultValue: 'Columns' })} />
                 <Tab value="overview" id="source-tab-overview" aria-controls="source-panel-overview" label={t('chatConnector.overview', { defaultValue: 'Overview' })} />
             </Tabs>
-            {activeTab === 'data' && preview && <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto', py: 0.75, fontSize: textVar.sm, fontWeight: 400 }}>
+            {activeTab === 'data' && preview && <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto', py: 0.75, fontSize: textVar.sm, fontWeight: weight(400) }}>
                 {isSemantic ? t('sidebar.semanticSampleCaption')
                     : t('chatConnector.sampleCount', { defaultValue: '{{count}} sample rows', count: preview.rows.length })}
             </Typography>}

@@ -29,6 +29,7 @@ import { ItemEmbed } from './ItemReferences';
 import { ReportBlockLabels, reportBlockExtensions } from './reportBlockNodes';
 import type { SourceLocation } from '../app/sourceLocation';
 import { ReportLook, reportContentSx } from './reportThemes';
+import { ink, weight } from '../app/tokens';
 
 /** Compact "1.2s" / "850ms" style duration for inspection steps. */
 function formatStepDuration(ms: number): string {
@@ -170,7 +171,7 @@ const InspectingStatus: FC<{ steps?: InspectStep[] }> = ({ steps }) => {
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, px: '24px', pt: '40px', pb: '16px' }}>
             <Typography sx={{
-                fontSize: textVar.xs, fontWeight: 600, letterSpacing: '0.05em',
+                fontSize: textVar.xs, fontWeight: weight(600), letterSpacing: '0.05em',
                 textTransform: 'uppercase', color: 'text.secondary', mb: 0.5,
             }}>
                 {t('editor.workingTitle')}
@@ -275,8 +276,8 @@ const ResizableImageView: FC<NodeViewProps> = ({ editor, node, updateAttributes,
                             right: 2,
                             width: 8,
                             height: 8,
-                            borderRight: '2px solid rgba(0,0,0,0.4)',
-                            borderBottom: '2px solid rgba(0,0,0,0.4)',
+                            borderRight: `2px solid ${ink(0.4)}`,
+                            borderBottom: `2px solid ${ink(0.4)}`,
                         },
                     }}
                 />

@@ -8,6 +8,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { ExecutionCodeBlock, TerminalApprovalDialog, TerminalExecutionView, TerminalMessageContent } from '../../../../src/components/TerminalApprovalDialog';
 import { apiRequest } from '../../../../src/app/apiClient';
 import { migrateState } from '../../../../src/app/stateMigrations';
+import { weight } from '../../../../src/app/tokens';
 
 vi.mock('../../../../src/app/apiClient', () => ({ apiRequest: vi.fn() }));
 beforeEach(() => vi.mocked(apiRequest).mockReset());
@@ -234,7 +235,7 @@ it('uses consistent label typography throughout expanded execution details', () 
         expect(getComputedStyle(element).fontFamily).toBe(commandStyle.fontFamily);
         expect(getComputedStyle(element).lineHeight).toBe(commandStyle.lineHeight);
     }
-    expect(screen.getByText('Sandbox policy')).toHaveStyle({ fontWeight: 400 });
+    expect(screen.getByText('Sandbox policy')).toHaveStyle({ fontWeight: weight(400) });
 });
 
 it.each([false, true])('rejects without executing and treats escape as rejection (bypass: %s)', dangerouslyDisableSandbox => {

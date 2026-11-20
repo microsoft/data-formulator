@@ -191,7 +191,7 @@ def _saved_theme_ids(ctx: Any) -> list[str]:
     user_home = getattr(getattr(ctx, "workspace", None), "user_home", None)
     if not user_home:
         return []
-    from data_formulator.knowledge.themes import ThemeStore
+    from data_formulator.themes import ThemeStore
     try:
         return [theme["id"] for theme in ThemeStore(user_home).list()]
     except Exception:

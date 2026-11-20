@@ -62,7 +62,7 @@ import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
 
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
-import { borderColor, transition, conversationWidth, ambientShadow, cardRadius } from '../app/tokens';
+import { borderColor, transition, conversationWidth, ambientShadow, cardRadius, ink, weight } from '../app/tokens';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { applySessionDeletion, type DeletionPlan } from '../app/sessionDeletion';
@@ -194,7 +194,7 @@ const AgentWorkingOverlay: FC<{ message?: string; theme: Theme; onCancel?: () =>
         }}>
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.75 }}>
                 <WritingPencil size={12} />
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: textVar.xs, lineHeight: 1.4 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: weight(500), fontSize: textVar.xs, lineHeight: 1.4 }}>
                     {t('chartRec.agentWorking')}
                 </Typography>
             </Box>
@@ -1949,25 +1949,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 return;
             }
 
-            // ── context_info: show injected rules/knowledge at the top ──
-            if (result.type === "context_info") {
-                const rules: string[] = result.rules_injected || [];
-                const knowledge: Array<{category: string; title: string}> = result.knowledge_injected || [];
-                let added = false;
-                if (rules.length > 0) {
-                    addProgressStep(t('dataThread.rulesLoaded', { rules: rules.join(', ') }), 'info');
-                    added = true;
-                }
-                if (knowledge.length > 0) {
-                    const titles = knowledge.map(k => k.title).join(', ');
-                    addProgressStep(t('dataThread.knowledgeLoaded', { knowledge: titles }), 'info');
-                    added = true;
-                }
-                if (added && currentDraftId) {
-                    publishProgress();
-                }
-            }
-
             // ── plan: the checklist the agent wrote (revised) or a step a delivered result checked off ──
             // One card per run: it appears where the plan was first written and later revisions and ticks update it.
             if (result.type === "plan" && Array.isArray(result.items)) {
@@ -2041,9 +2022,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     step.label = t('dataThread.inspectingData') + (tableNames ? ` ${tableNames}` : '');
                 } else if (result.tool === "load_skill") {
                     step.label = t('dataThread.loadingSkill', { skill: result.skill || '' });
-                } else if (result.tool === "search_data_tables" || result.tool === "search_knowledge") {
-                    const query = result.query || '';
-                    step.label = t('dataThread.searching') + (query ? ` "${query}"` : '');
                 } else {
                     step.label = formatAnalystToolProgress(
                         result.tool || 'tool',
@@ -2078,10 +2056,26 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     persistExecutionProgress(step);
                 }
                 if (result.tool === 'load_data' && isError) clearPendingLoad();
-                if (['create_data', 'update_data'].includes(result.tool) && !isError) {
-                    const output = JSON.parse(result.stdout || '{}');
-                    if (typeof output.table_name === 'string') {
-                        const { data } = await apiRequest(getUrls().LIST_TABLES, { method: 'GET' });
+                // Tables made or copied here (past_sessions copies a table or file from another session).
+                const madeTables: { table_name: string; display_name?: string; field_metadata?: unknown }[] = [];
+                const madeFiles: { path: string; display_name?: string; content_hash: string }[] = [];
+                if (['create_data', 'update_data', 'past_sessions'].includes(result.tool) && !isError) {
+                    let output: any = {};
+                    try {
+                        output = JSON.parse(result.stdout || '{}');
+                    } catch {
+                        output = {};
+                    }
+                    if (result.tool !== 'past_sessions' && typeof output.table_name === 'string') madeTables.push(output);
+                    for (const entry of Array.isArray(output.copied) ? output.copied : []) {
+                        if (entry?.kind === 'table' && typeof entry.table_name === 'string' && !entry.reused) madeTables.push(entry);
+                        if (entry?.kind === 'file' && typeof entry.path === 'string' && entry.path.startsWith('files/')
+                            && typeof entry.content_hash === 'string' && !entry.reused) madeFiles.push(entry);
+                    }
+                }
+                if (madeTables.length > 0) {
+                    const { data } = await apiRequest(getUrls().LIST_TABLES, { method: 'GET' });
+                    for (const output of madeTables) {
                         const workspaceTable = (data.tables || []).find((item: any) => item.name === output.table_name);
                         if (workspaceTable) {
                             const table = buildDictTableFromWorkspace(workspaceTable, undefined);
@@ -2090,7 +2084,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             runSourceTables.set(table.id, table);
                             dispatch(dfActions.addTableToStore(table));
                             // The semantic types the agent gave (a Year reads 2022 at once); inference fills in the rest.
-                            const semanticFields = authoredFieldSemantics(table.names, output.field_metadata, undefined);
+                            const semanticFields = authoredFieldSemantics(table.names, output.field_metadata as any, undefined);
                             if (Object.keys(semanticFields).length > 0) {
                                 dispatch(dfActions.applyAuthoredFieldSemantics({ tableId: table.id, fields: semanticFields }));
                             }
@@ -2098,6 +2092,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             dispatch(fetchFieldSemanticType(table));
                             dispatch(fetchColumnStats(table));
                         }
+                    }
+                }
+                if (madeFiles.length > 0) {
+                    notifyWorkspaceFilesChanged();
+                    for (const file of madeFiles) {
+                        const fileName = file.path.slice('files/'.length);
+                        addFileItem(fileName, file.display_name || fileName, file.content_hash);
                     }
                 }
                 if (['create_file', 'edit_file'].includes(result.tool) && !isError) {
@@ -2706,39 +2707,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         exploreFromChat(prompt, undefined, displayPrompt, explicitAttachments);
     }, [exploreFromChat, focusedId, focusedTableId, tables, textTurns, focusedReference, fileNodes, generatedReports, dispatch, focusCanvasAfterReply, threadGraph, canContinueTurn, askReference, shownReference]);
 
-    // Replay a workflow: the KnowledgePanel fires `df-replay-workflow`
-    // with a prompt describing the captured workflow; we hand it straight to
-    // the data agent on the currently focused dataset. v1 is deliberately
-    // simple — one request, let the agent reproduce the analysis on its own.
-    // See discussion/replayable-experience-workflow.md.
-    useEffect(() => {
-        const handler = (e: Event) => {
-            const prompt = (e as CustomEvent).detail?.prompt as string | undefined;
-            if (!prompt) return;
-            if (isChatFormulating) {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(), type: 'error',
-                    component: 'data-agent', value: t('knowledge.replayBusy'),
-                }));
-                return;
-            }
-            if (!focusedTableId) {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(), type: 'error',
-                    component: 'data-agent', value: t('knowledge.replayNoData'),
-                }));
-                return;
-            }
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(), type: 'info',
-                component: 'data-agent', value: t('knowledge.replayStarted'),
-            }));
-            exploreFromChat(prompt);
-        };
-        window.addEventListener('df-replay-workflow', handler);
-        return () => window.removeEventListener('df-replay-workflow', handler);
-    }, [exploreFromChat, isChatFormulating, focusedTableId, dispatch, t]);
-
     useEffect(() => {
         const handler = (event: Event) => {
             const detail = (event as CustomEvent).detail as typeof viewingToolActivity;
@@ -3171,7 +3139,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             fontSize: textVar.xxs,
                             maxWidth: 220,
                             color: theme.palette.text.secondary,
-                            backgroundColor: 'rgba(0,0,0,0.04)',
+                            backgroundColor: ink(0.04),
                             border: 'none',
                             borderRadius: 1,
                             '& .MuiChip-label': { px: '4px', overflow: 'hidden', textOverflow: 'ellipsis' },
@@ -3191,7 +3159,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                     height: 20,
                                     fontSize: textVar.xxs,
                                     color: theme.palette.text.secondary,
-                                    backgroundColor: 'rgba(0,0,0,0.04)',
+                                    backgroundColor: ink(0.04),
                                     border: 'none',
                                     borderRadius: 1,
                                     '& .MuiChip-label': { px: '6px' },
@@ -3211,7 +3179,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 height: 20,
                                 fontSize: textVar.xxs,
                                 color: theme.palette.text.secondary,
-                                backgroundColor: 'rgba(0,0,0,0.04)',
+                                backgroundColor: ink(0.04),
                                 border: 'none',
                                 borderRadius: 1,
                                 '& .MuiChip-label': { px: '4px' },
@@ -3232,7 +3200,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 fontSize: textVar.xxs,
                                 maxWidth: 160,
                                 color: theme.palette.text.secondary,
-                                backgroundColor: 'rgba(0,0,0,0.04)',
+                                backgroundColor: ink(0.04),
                                 border: 'none',
                                 borderRadius: 1,
                                 '& .MuiChip-label': { px: '4px', overflow: 'hidden', textOverflow: 'ellipsis' },
@@ -3625,7 +3593,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         {followUpsFolded ? <ButtonBase onClick={() => setFollowUpsFolded(false)} sx={{
             display: 'inline-flex', alignItems: 'center', gap: 0.5, pl: 1, pr: 1.25, py: 0.5, borderRadius: '999px',
             bgcolor: calloutFill, color: calloutText, border: `1px solid ${calloutLine}`, boxShadow: calloutPillShadow,
-            fontFamily: 'inherit', fontSize: textVar.xs, fontWeight: 500,
+            fontFamily: 'inherit', fontSize: textVar.xs, fontWeight: weight(500),
             transition: 'box-shadow 0.15s ease, transform 0.15s ease',
             '&:hover, &.Mui-focusVisible': { boxShadow: calloutShadow, transform: 'translateY(-1px)' },
         }}>

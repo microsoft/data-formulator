@@ -9,6 +9,7 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import type { DataFormulatorState } from './dfSlice';
 import { DEMO_ID } from './demo';
 import { iconVar, textVar } from './layout';
+import { ink, weight } from './tokens';
 
 const menuItemSx = { fontSize: textVar.md, minHeight: 34, py: 0.5 };
 
@@ -54,7 +55,7 @@ export const AppSwitcher: React.FC<{ appName: string; destinations: AppDestinati
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const standard = destinations.find(destination => destination.key === 'app');
     const inDemo = !!standard && !standard.current;
-    const nameSx = { fontWeight: 400, lineHeight: 1.2, letterSpacing: 0, ...(compact && { fontSize: textVar.xl }) };
+    const nameSx = { fontWeight: weight(400), lineHeight: 1.2, letterSpacing: 0, ...(compact && { fontSize: textVar.xl }) };
     // After "Data Formulator /", a demo named "… in Data Formulator" needs only its first part.
     const shown = inDemo && !compact && standard && appName.endsWith(` in ${standard.name}`)
         ? appName.slice(0, -` in ${standard.name}`.length) : appName;
@@ -62,7 +63,7 @@ export const AppSwitcher: React.FC<{ appName: string; destinations: AppDestinati
         <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
             {inDemo && !compact && <>
                 <Link href={standard.path} color="inherit" underline="none" draggable={false}
-                    sx={{ ...nameSx, whiteSpace: 'nowrap', px: 0.75, py: 0.5, borderRadius: 1, flexShrink: 0, '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' } }}>
+                    sx={{ ...nameSx, whiteSpace: 'nowrap', px: 0.75, py: 0.5, borderRadius: 1, flexShrink: 0, '&:hover': { backgroundColor: ink(0.04) } }}>
                     {standard.name}
                 </Link>
                 <Box component="span" aria-hidden="true" sx={{ ...nameSx, color: 'text.disabled', px: 0.25 }}>/</Box>
@@ -70,7 +71,7 @@ export const AppSwitcher: React.FC<{ appName: string; destinations: AppDestinati
             <Button color="inherit" onClick={(event) => setAnchorEl(event.currentTarget)} aria-haspopup="menu"
                 endIcon={<KeyboardArrowDownIcon sx={{ fontSize: iconVar.md, color: 'text.secondary' }} />}
                 sx={{ textTransform: 'none', minWidth: 0, height: compact ? undefined : 36, px: 0.75, gap: 0.25,
-                    '& .MuiButton-endIcon': { ml: 0.25 }, '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' } }}>
+                    '& .MuiButton-endIcon': { ml: 0.25 }, '&:hover': { backgroundColor: ink(0.04) } }}>
                 {logo && <Box component="img" src={logo} alt="" sx={{ height: compact ? 22 : 28, width: 'auto', mr: 0.75, display: 'block', flexShrink: 0 }} />}
                 <Typography noWrap component="h1" title={appName} sx={{ maxWidth: compact ? { xs: 160, sm: 320 } : 360, ...nameSx }}>
                     {shown}

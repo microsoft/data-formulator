@@ -16,6 +16,7 @@ import React from 'react';
 import { Box, Tooltip, Typography, useTheme } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { textVar } from '../app/layout';
+import { ink, paper, sunkSurface, weight } from '../app/tokens';
 
 const CODE_FONT = 'var(--df-font-mono)';
 
@@ -143,7 +144,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 },
                 '& th': {
-                    fontWeight: 600,
+                    fontWeight: weight(600),
                     color: 'text.secondary',
                     fontSize: headerFontSize,
                     position: 'sticky',
@@ -152,7 +153,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                     // so a scrolled row passes cleanly beneath the header.
                     bgcolor: simple
                         ? 'background.paper'
-                        : theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : '#fafafa',
+                        : theme.palette.mode === 'dark' ? paper(0.06) : sunkSurface,
                     borderBottom: simple ? '1px solid' : '2px solid',
                     borderColor: 'divider',
                     zIndex: 2,
@@ -163,8 +164,8 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                     bgcolor: simple
                         ? 'transparent'
                         : theme.palette.mode === 'dark'
-                        ? 'rgba(255,255,255,0.02)'
-                        : 'rgba(0,0,0,0.02)',
+                        ? paper(0.02)
+                        : ink(0.02),
                 },
             }}>
                 <thead>
@@ -172,7 +173,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                         {showIndex && (
                             <Typography component="th" variant="caption"
                                 sx={{
-                                    fontWeight: 600, fontSize: headerFontSize, color: 'text.disabled', textAlign: 'right',
+                                    fontWeight: weight(600), fontSize: headerFontSize, color: 'text.disabled', textAlign: 'right',
                                     width: simple ? 24 : undefined, minWidth: simple ? 24 : 28, maxWidth: simple ? 24 : undefined,
                                     px: simple ? 0.5 : undefined,
                                 }}>
@@ -184,7 +185,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                                 return (
                                     <Tooltip key={i} title={desc} placement="top" enterDelay={400}>
                                         <Typography component="th" variant="caption"
-                                            sx={{ fontWeight: 600, fontSize: headerFontSize,
+                                            sx={{ fontWeight: weight(600), fontSize: headerFontSize,
                                                 cursor: 'help', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 2,
                                             }}>
                                             {col}
@@ -195,7 +196,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                             return (
                                 <Typography component="th" key={i} variant="caption"
                                     title={col}
-                                    sx={{ fontWeight: 600, fontSize: headerFontSize, ...(col === '\u2026' ? ellipsisColSx : {}) }}>
+                                    sx={{ fontWeight: weight(600), fontSize: headerFontSize, ...(col === '\u2026' ? ellipsisColSx : {}) }}>
                                     {col}
                                 </Typography>
                             );

@@ -10,7 +10,7 @@ from typing import Any
 
 from data_formulator.analyst.session_edits import chart_catalog
 from data_formulator.analyst.skills.base import SkillContext, ToolResult
-from data_formulator.knowledge.themes import ThemeStore
+from data_formulator.themes import ThemeStore
 
 
 def _store(ctx: SkillContext) -> ThemeStore:

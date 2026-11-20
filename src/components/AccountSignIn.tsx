@@ -19,6 +19,7 @@ import { Alert, Box, Button, Checkbox, FormControlLabel, Link, TextField, alpha,
 import { useTranslation } from 'react-i18next';
 import { accountsApi, describeLocal, onProviderSite, unsavedAccount, type AccountState, type DeviceSignIn, type SignInMethod,
     type SignInScope } from '../app/accounts';
+import { weight } from '../app/tokens';
 
 const errorText = (reason: unknown) => reason instanceof Error ? reason.message : String(reason);
 
@@ -159,7 +160,7 @@ export const AccountSignIn = ({ account, onChange, prefer, sessionScope = true, 
                 {t('accounts.cancel', { defaultValue: 'Cancel' })}</Button>}>
             {t('accounts.enterCode', { defaultValue: 'Enter this code on {{name}}, then approve. This waits for you.', name })}{' '}
             <Box component="code" aria-label={t('accounts.code', { defaultValue: 'Sign-in code' })}
-                sx={{ fontFamily: 'monospace', fontWeight: 600, userSelect: 'all' }}>{flow.user_code}</Box>{' '}
+                sx={{ fontFamily: 'monospace', fontWeight: weight(600), userSelect: 'all' }}>{flow.user_code}</Box>{' '}
             <Link href={flow.authorization_url} target="_blank" rel="noopener noreferrer"
                 onClick={() => void navigator.clipboard?.writeText(flow.user_code).catch(() => undefined)}>
                 {t('accounts.open', { defaultValue: 'Copy code and open {{name}}', name })}</Link>

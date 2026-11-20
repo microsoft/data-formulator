@@ -75,7 +75,7 @@ def test_list_sessions_searches_names_and_content(sessions) -> None:
 
     assert [session["id"] for session in result["sessions"]] == ["session_gas"]
     session = result["sessions"][0]
-    assert session["prompts"] == ["Compare regional gas prices"]
+    assert "prompts" not in session
     assert session["data"] == ["Untitled Session data"]
     assert session["current"] is False
     everything = json.loads(ConfigureSkill().handle_tool("list_sessions", {}, _context()).text)

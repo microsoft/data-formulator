@@ -7,7 +7,7 @@ import { useTheme } from '@mui/material/styles';
 
 import { dfActions } from '../app/dfSlice';
 import { iconVar, textVar } from '../app/layout';
-import { agentResponseFill, borderColor } from '../app/tokens';
+import { agentResponseFill, borderColor, weight } from '../app/tokens';
 import { AgentToyIcon } from './AgentToyIcon';
 import { TerminalMessageContent } from '../components/TerminalApprovalDialog';
 import type { TerminalExecution } from '../components/ComponentType';
@@ -36,7 +36,7 @@ export const ExplanationCanvas: FC<ExplanationCanvasProps> = ({ content, textTur
             <Box sx={{ minHeight: 40, display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 0.5, boxSizing: 'border-box', borderBottom: `1px solid ${borderColor.component}` }}>
                 <AgentToyIcon sx={{ fontSize: iconVar.sm, color: 'text.secondary' }} />
                 <Typography component="h2" sx={{
-                    fontSize: textVar.md, fontWeight: 500, color: 'text.primary',
+                    fontSize: textVar.md, fontWeight: weight(500), color: 'text.primary',
                 }}>
                     {t('chartRec.agentTitle', { defaultValue: 'Agent' })}
                 </Typography>

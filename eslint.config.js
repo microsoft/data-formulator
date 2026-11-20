@@ -24,7 +24,7 @@ const lookSelectors = [
     message: "Don't branch on the active look in views: add or use a role in src/app/look/roles.ts.",
   },
   {
-    selector: "ImportSpecifier[imported.name=/^(useLook|readLook|lookOf|LOOKS)$/]",
+    selector: "ImportSpecifier[imported.name=/^(useLook|readLook|lookOf|LOOKS|LOOK_NAMES)$/]",
     message: "Don't read the active look in views: add or use a role in src/app/look/roles.ts.",
   },
 ];

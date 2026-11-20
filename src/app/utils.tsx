@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import _, {  } from "lodash";
-import { chartThemeSpec } from './savedThemes';
+import { chartLookConfig, chartThemeSpec } from './savedThemes';
 import { CHART_COLOR_CHANNELS } from './categoryColors';
 import { useEffect, useRef } from "react";
 import ts from "typescript";
@@ -740,6 +740,14 @@ export const assembleVegaChart = (
         ...(Object.keys(fieldDisplayNames).length > 0 ? { field_display_names: fieldDisplayNames } : {}),
     };
     const spec = mergeableLayerSorts(keepUnmatchedRegions(assembleVegaLite(flintInput)));
+    // Flint's default theme on a dark look: recolour text, grid and background only (see `chartLookConfig`).
+    const lookConfig = chartLookConfig(themeId);
+    if (lookConfig) {
+        spec.config = spec.config ?? {};
+        for (const [key, value] of Object.entries(lookConfig)) {
+            spec.config[key] = value && typeof value === 'object' ? { ...(spec.config[key] ?? {}), ...value } : value;
+        }
+    }
     // The complete Flint input behind the chart, for copying; not part of the Vega-Lite spec.
     Object.defineProperty(spec, FLINT_INPUT, { value: flintInput, enumerable: false });
 
@@ -754,7 +762,8 @@ export const assembleVegaChart = (
             fontWeight: 500,
             fontSize: 13,
             subtitleFontSize: 11,
-            color: '#555',
+            color: lookConfig?.title?.color ?? '#555',
+            ...(lookConfig ? { subtitleColor: lookConfig.title.subtitleColor } : {}),
             offset: 12,
         };
     }

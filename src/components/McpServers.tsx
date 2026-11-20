@@ -19,6 +19,7 @@ import type { McpServerProposal, ToolCall } from './ComponentType';
 import { textVar } from '../app/layout';
 import { saveToolsPolicy, toolsConfig } from '../app/toolsSettings';
 import { ExecutionCodeBlock } from './TerminalApprovalDialog';
+import { weight } from '../app/tokens';
 
 export type McpMode = 'off' | 'ask' | 'auto';
 
@@ -206,7 +207,7 @@ const SavedSetting = ({ pack, setting, state, busy, onSave }: {
     return <Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography variant="body2" sx={{ fontWeight: 500 }}>{label}</Typography>
+                <Typography variant="body2" sx={{ fontWeight: weight(500) }}>{label}</Typography>
                 {hint && <Typography variant="caption" component="div" color="text.secondary">{hint}</Typography>}
             </Box>
             {state?.set
@@ -295,7 +296,7 @@ export const ToolPage = ({ server, pack, previewTools, draft, onDraft, busy, onA
         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.25 }}>
             <Box sx={{ display: 'flex', color: 'primary.main', pt: 0.5, '& svg': { fontSize: 22 } }}>{toolkitIcon(pack?.id ?? server?.pack)}</Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{name}</Typography>
+                <Typography variant="subtitle1" sx={{ fontWeight: weight(600), overflowWrap: 'anywhere' }}>{name}</Typography>
                 <Typography variant="caption" component="div" sx={{ color: 'text.secondary', overflowWrap: 'anywhere',
                     fontFamily: pack ? undefined : 'monospace' }}>{location}</Typography>
                 {pack && <Typography variant="body2" sx={{ mt: 0.75 }}>{t(`mcp.pack.${pack.id}.description`, { defaultValue: pack.description })}</Typography>}
@@ -444,7 +445,7 @@ const AddServerHelp = () => {
         <Typography variant="body2" sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75 }}>
             <InfoOutlinedIcon sx={{ fontSize: 18, color: 'primary.main', mt: '1px', flexShrink: 0 }} />
             <span>
-                <Box component="span" sx={{ fontWeight: 600, mr: 0.75 }}>{t('mcp.help.toggle', { defaultValue: 'How to add a server' })}</Box>
+                <Box component="span" sx={{ fontWeight: weight(600), mr: 0.75 }}>{t('mcp.help.toggle', { defaultValue: 'How to add a server' })}</Box>
                 {t('mcp.help.intro', { defaultValue: 'Paste one server’s MCP configuration from its docs, like the examples below.' })}
             </span>
         </Typography>
@@ -572,7 +573,7 @@ export const PackSignIn = ({ pack, onChanged, beforeStart, paste }: {
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.25 }}>
                 <Typography component="code" aria-label={t('mcp.signin.code', { defaultValue: 'Sign-in code' })}
-                    sx={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '1rem', userSelect: 'all' }}>{flow.code}</Typography>
+                    sx={{ fontFamily: 'monospace', fontWeight: weight(600), fontSize: '1rem', userSelect: 'all' }}>{flow.code}</Typography>
                 <Button size="small" component="a" href={flow.url} target="_blank" rel="noopener noreferrer" sx={{ textTransform: 'none' }}
                     onClick={() => void navigator.clipboard?.writeText(flow.code).catch(() => undefined)}>
                     {t('mcp.signin.open', { defaultValue: 'Copy code and open GitHub' })}
@@ -795,7 +796,7 @@ const BrowserApprovalDialog = ({ proposal, decide }: { proposal: McpProposal; de
         <DialogContent sx={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
             {proposal.purpose && <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{proposal.purpose}</Typography>}
             <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-                <Box component="span" sx={{ fontWeight: 600 }}>{proposal.title}</Box>
+                <Box component="span" sx={{ fontWeight: weight(600) }}>{proposal.title}</Box>
                 {typeof proposal.arguments.url === 'string' && <Box component="span" sx={{ color: 'text.secondary' }}> · {proposal.arguments.url}</Box>}
             </Typography>
             {script && <ExecutionCodeBlock code={script} language="javascript"

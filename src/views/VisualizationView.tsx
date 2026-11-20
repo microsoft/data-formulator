@@ -40,7 +40,7 @@ import {
 
 import _ from 'lodash';
 
-import { cardRadius, floatingPillSx } from '../app/tokens';
+import { cardRadius, floatingPillSx, paper, weight } from '../app/tokens';
 import { CHART_SIZE_STOPS, chartSizeStopIndex, chartStretchCeiling, defaultChartSizeStop, gridSizeCaps, iconVar, textVar } from '../app/layout';
 import { useContainerSize, useLayout, useSettledValue } from '../app/LayoutProvider';
 
@@ -203,7 +203,7 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
         <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflowY: 'auto', bgcolor: 'background.default' }}>
             <Box sx={{ width: '100%', maxWidth: 1040, mx: 'auto', boxSizing: 'border-box', px: { xs: 1.5, sm: 2.5, md: 3 }, py: { xs: 1.5, md: 2.25 } }}>
                 <Box sx={{ mb: 1.75 }}>
-                    <Typography sx={{ fontSize: textVar.xl, fontWeight: 400 }}>
+                    <Typography sx={{ fontSize: textVar.xl, fontWeight: weight(400) }}>
                         {operation.canvasTitle || t('dataLoading.operation.previewHeading', { defaultValue: 'Tables to load' })}
                     </Typography>
                 </Box>
@@ -233,13 +233,13 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
                                                 <Typography title={preview?.display_name || step.displayName}
                                                     sx={{
-                                                        fontSize: textVar.sm, fontWeight: 600,
+                                                        fontSize: textVar.sm, fontWeight: weight(600),
                                                         color: selected ? 'primary.main' : 'text.primary', minWidth: 0,
                                                     }} noWrap>
                                                     {preview?.display_name || step.displayName}
                                                 </Typography>
                                                 <Typography sx={{
-                                                    fontSize: textVar.xxs, fontWeight: 500, color: 'text.secondary',
+                                                    fontSize: textVar.xxs, fontWeight: weight(500), color: 'text.secondary',
                                                     border: '1px solid', borderColor: 'divider', borderRadius: 0.75,
                                                     px: 0.5, lineHeight: 1.6, flexShrink: 0,
                                                 }}>
@@ -254,7 +254,7 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                                                 >
                                                     {connectorName && <>
                                                         {t('dataLoading.loadPlan.fromSource', { defaultValue: 'From' })}{' '}
-                                                        <Box component="span" sx={{ fontWeight: 600 }}>{connectorName}</Box>
+                                                        <Box component="span" sx={{ fontWeight: weight(600) }}>{connectorName}</Box>
                                                     </>}
                                                     {connectorName && preview?.table_description && ' · '}
                                                     {preview?.table_description}
@@ -1535,7 +1535,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             display: 'flex', alignItems: 'center', gap: 0.5, pl: 1, pr: 2.5, py: '8px',
             pointerEvents: 'none', '& > *': { pointerEvents: 'auto' },
         }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', borderRadius: 2.5, bgcolor: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(2px)' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', borderRadius: 2.5, bgcolor: paper(0.88), backdropFilter: 'blur(2px)' }}>
                 {chartResizer}
                 {focusedChart && focusedChart.chartType !== 'Table' && focusedChart.chartType !== 'Auto' && (
                     <ChartThemePicker
@@ -1617,7 +1617,7 @@ const TableLoadQueryDialog: FC<{ table: DictTable; loadQuery: NonNullable<NonNul
     const options = Object.fromEntries(Object.entries(loadQuery?.query || {}).filter(([key]) => key !== 'native'));
     return <Dialog open onClose={onClose} aria-labelledby={titleId} maxWidth="md" fullWidth>
         <DialogTitle id={titleId} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-            <Typography component="span" sx={{ fontSize: textVar.lg, fontWeight: 600, overflowWrap: 'anywhere' }}>
+            <Typography component="span" sx={{ fontSize: textVar.lg, fontWeight: weight(600), overflowWrap: 'anywhere' }}>
                 {t('chart.loadQuery', { defaultValue: 'Load query' })}: {table.displayId || table.id}
             </Typography>
             <IconButton size="small" aria-label={t('app.close')} onClick={onClose}><CloseIcon /></IconButton>
@@ -1648,7 +1648,7 @@ const TableTransformationDialog: FC<{
             <DialogTitle id={titleId} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, py: 1.25 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
                     <TerminalIcon sx={{ fontSize: iconVar.lg, color: 'text.secondary', flexShrink: 0 }} />
-                    <Typography component="span" sx={{ fontSize: textVar.lg, fontWeight: 600, overflowWrap: 'anywhere' }}>
+                    <Typography component="span" sx={{ fontSize: textVar.lg, fontWeight: weight(600), overflowWrap: 'anywhere' }}>
                         {t('chart.transformation', { defaultValue: 'Transformation' })}: {table.displayId || table.id}
                     </Typography>
                 </Box>
@@ -1975,7 +1975,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                         <Typography sx={{
                             fontSize: textVar.xs,
                             color: 'text.secondary',
-                            fontWeight: 400,
+                            fontWeight: weight(400),
                             mb: 1.5,
                             pl: 1,
                         }}>{category}</Typography>

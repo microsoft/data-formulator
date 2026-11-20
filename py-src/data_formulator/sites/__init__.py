@@ -99,7 +99,7 @@ def _profile_problem(profile: Any) -> str | None:
         return f"'logo' is not an image file name ({', '.join(LOGO_SUFFIXES)})"
     if profile.get("chart_theme") is not None:
         from data_formulator.analyst.session_edits import chart_catalog
-        from data_formulator.knowledge.themes import validate_theme
+        from data_formulator.themes import validate_theme
         try:
             validate_theme(profile["chart_theme"], list(chart_catalog()["themes"]))
         except ValueError as exc:

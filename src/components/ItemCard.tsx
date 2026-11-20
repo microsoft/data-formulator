@@ -15,7 +15,7 @@ import { alpha, Box, ButtonBase, IconButton, TextField, Tooltip, TooltipProps, T
 import StarRoundedIcon from '@mui/icons-material/StarRounded';
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded';
 import { iconVar, textVar } from '../app/layout';
-import { sidebarRowActionSx, sidebarRowDangerActionSx, sidebarRowMetaSx, sidebarRowSx, sidebarRowTitleSx, ambientShadow, hoverLift, borderColor } from '../app/tokens';
+import { sidebarRowActionSx, sidebarRowDangerActionSx, sidebarRowMetaSx, sidebarRowSx, sidebarRowTitleSx, ambientShadow, hoverLift, borderColor, ink, weight } from '../app/tokens';
 import { lineColor } from '../app/look';
 
 
@@ -43,7 +43,7 @@ export const exampleCardButtonSx = {
     '&.Mui-disabled': { opacity: 0.6 }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
 } as const;
 
-export const exampleCardTitleSx = { minWidth: 0, fontSize: textVar.md, fontWeight: 400, lineHeight: 1.4, color: 'text.primary', overflowWrap: 'anywhere' } as const;
+export const exampleCardTitleSx = { minWidth: 0, fontSize: textVar.md, fontWeight: weight(400), lineHeight: 1.4, color: 'text.primary', overflowWrap: 'anywhere' } as const;
 
 export const exampleCardDescriptionSx = {
     mt: 0.25, fontSize: textVar.xs, lineHeight: 1.5, color: 'text.secondary', overflowWrap: 'anywhere',
@@ -51,7 +51,7 @@ export const exampleCardDescriptionSx = {
 } as const;
 
 /** Filled background shared by run chips and metadata chips. */
-export const mutedChipBg = 'rgba(0, 0, 0, 0.045)';
+export const mutedChipBg = ink(0.045);
 
 /** An inert metadata chip: optional icon plus short text. */
 export const MetaChip: React.FC<{ icon?: React.ReactNode; children: React.ReactNode; label?: string }> = ({ icon, children, label }) =>
@@ -86,7 +86,7 @@ export const MetadataTooltip: React.FC<{ title: React.ReactNode; children: React
 export const MetadataCard: React.FC<{ title: React.ReactNode; summary?: React.ReactNode; description?: React.ReactNode; children?: React.ReactNode }>
     = ({ title, summary, description, children }) =>
     <Box sx={{ p: 1.25 }}>
-        <Typography sx={{ fontSize: textVar.sm, fontWeight: 600, color: 'text.primary', overflowWrap: 'anywhere' }}>{title}</Typography>
+        <Typography sx={{ fontSize: textVar.sm, fontWeight: weight(600), color: 'text.primary', overflowWrap: 'anywhere' }}>{title}</Typography>
         {summary && <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', mt: 0.5 }}>{summary}</Typography>}
         {description && <Typography sx={{ fontSize: textVar.xs, lineHeight: 1.55, color: 'text.secondary', mt: 0.5,
             whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{description}</Typography>}
@@ -220,7 +220,7 @@ const RenameField: React.FC<{ rename: NonNullable<ItemCardProps['rename']>; mini
             else if (event.key === 'Escape') { event.preventDefault(); rename.onCancel(); }
         }}
         slotProps={{ htmlInput: { 'aria-label': rename.label, maxLength: 120 },
-            input: { sx: { fontSize: textVar.sm, ...(mini ? { fontWeight: 500, py: 0 } : {}) } } }} />;
+            input: { sx: { fontSize: textVar.sm, ...(mini ? { fontWeight: weight(500), py: 0 } : {}) } } }} />;
 
 // Hidden actions take no width; hover, keyboard focus (not a mouse click), or `active` reveal them.
 const revealSx = {

@@ -232,13 +232,14 @@ export const ReportView: FC = () => {
         clone.style.top = '0';
         clone.style.width = `${reportElement.scrollWidth}px`;
         clone.style.maxWidth = `${reportElement.scrollWidth}px`;
-        clone.style.backgroundColor = '#ffffff';
+        // The page the report is drawn on (white, or the dark look's paper, whose ink the text follows).
+        clone.style.backgroundColor = theme.palette.background.paper;
         clone.style.pointerEvents = 'none';
         document.body.appendChild(clone);
 
         try {
             return await html2canvas(clone, {
-                backgroundColor: '#ffffff',
+                backgroundColor: theme.palette.background.paper,
                 scale: 2,
                 useCORS: true,
                 allowTaint: true,

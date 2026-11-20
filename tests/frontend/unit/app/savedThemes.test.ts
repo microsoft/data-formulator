@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { appThemes, chartThemeKey, chartThemeSpec, isSiteTheme, resolvedChartTheme, savedThemeFromResult, setSavedThemes, setSiteTheme, upsertSavedTheme, savedThemes } from '../../../../src/app/savedThemes';
+import { appThemes, chartLookConfig, chartThemeKey, chartThemeSpec, isSiteTheme, resolvedChartTheme, savedThemeFromResult, setChartInk, setSavedThemes, setSiteTheme, upsertSavedTheme, savedThemes } from '../../../../src/app/savedThemes';
+import { LOOKS } from '../../../../src/app/look';
 import { DEFAULT_CHART_THEME_ID, resolveDefaultChartTheme } from '../../../../src/app/dfSlice';
 import { themeInk } from '../../../../src/maps/styles';
 
 const acme = { id: 'acme', label: 'Acme', description: 'Brand', extends: 'datawrapper', ink: { series: { single: '#14213d', categorical: ['#14213d', '#fca311'] } } };
 
-afterEach(() => setSavedThemes([]));
+afterEach(() => { setSavedThemes([]); setChartInk(null); });
 
 describe('saved themes', () => {
     it('gives Flint a preset by id, a saved theme as its spec, and nothing for an id the user lacks', () => {
@@ -19,6 +20,20 @@ describe('saved themes', () => {
         // A saved theme is merged over its preset.
         expect(resolvedChartTheme('acme')?.type?.headline?.family).toMatch(/Roboto/);
         expect(appThemes([acme])).toEqual({ acme: chartThemeSpec('acme') });
+    });
+
+    it('gives Flint-default charts the dark look as Vega config and leaves themed charts as authored', () => {
+        setSavedThemes([acme]);
+        const before = { nyt: chartThemeKey('nyt'), none: chartThemeKey(undefined) };
+        setChartInk(LOOKS.dark.chartInk);
+        expect(chartThemeSpec('nyt')).toBe('nyt');
+        expect(chartThemeSpec('acme')).toEqual({ id: 'acme', label: 'Acme', extends: 'datawrapper', ink: acme.ink });
+        expect(chartThemeKey('nyt')).toBe(before.nyt);
+        expect(chartLookConfig('nyt')).toBeUndefined();
+        // Themeless: no theme object (it would replace Flint's colour schemes), a config, and a key that redraws.
+        expect(chartThemeSpec(undefined)).toBeUndefined();
+        expect(chartThemeKey(undefined)).not.toBe(before.none);
+        expect(chartLookConfig(undefined)?.background).toBe((LOOKS.dark.chartInk as any).ink.surface.canvas);
     });
 
     it('keys drawn charts by the theme content, so an edited theme redraws them', () => {

@@ -8,7 +8,6 @@ import { dataFormulatorReducer, dfActions, dfSelectors, fetchGlobalModelList, Mo
 import { apiRequest, ApiRequestError } from '../../../../src/app/apiClient';
 import modelStrings from '../../../../src/i18n/locales/en/model.json';
 import commonStrings from '../../../../src/i18n/locales/en/common.json';
-import { buildDistillModelConfig } from '../../../../src/views/workflowContext';
 
 vi.mock('react-i18next', async importOriginal => ({
     ...await importOriginal<object>(),
@@ -232,7 +231,7 @@ describe('Model connection form', () => {
         await waitFor(() => expect(store.getState().models).toHaveLength(1));
         const saved = store.getState().models[0];
         expect(saved).toMatchObject({ endpoint: provider, connection_id: provider, auth_mode: 'account', model: 'gpt-4.1' });
-        const payload = JSON.parse(JSON.stringify(buildDistillModelConfig(saved)));
+        const payload = JSON.parse(JSON.stringify(saved));
         expect(payload.connection_id).toBe(provider);
         expect(payload).not.toHaveProperty('api_key');
         expect(payload).not.toHaveProperty('api_base');
@@ -327,7 +326,7 @@ describe('Model connection form', () => {
         await waitFor(() => expect(store.getState().models).toHaveLength(1));
         const saved = store.getState().models[0];
         expect(saved).toMatchObject({ endpoint: 'openrouter', model: 'openai/test-model', connection_id: 'openrouter', auth_mode: 'account' });
-        const payload = JSON.parse(JSON.stringify(buildDistillModelConfig(saved)));
+        const payload = JSON.parse(JSON.stringify(saved));
         expect(payload.connection_id).toBe('openrouter');
         expect(payload).not.toHaveProperty('api_key');
         expect(payload).not.toHaveProperty('api_base');
@@ -573,7 +572,7 @@ describe('Model connection form', () => {
         });
         const saved = store.getState().models[0];
         expect(saved.small_model).toBe(smallModel || undefined);
-        expect(buildDistillModelConfig(saved).small_model).toBe(smallModel || undefined);
+        expect(saved.small_model).toBe(smallModel || undefined);
         expect(screen.getByText('Main').parentElement).toHaveTextContent('main-model');
         if (smallModel && smallModel !== 'main-model') {
             expect(screen.getByText('Small')).toBeVisible();

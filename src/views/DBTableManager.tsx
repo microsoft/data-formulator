@@ -41,6 +41,7 @@ import { DataFormulatorState } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { iconVar, textVar } from '../app/layout';
 import { ConnectorAuthPath } from '../components/ComponentType';
+import { paper, weight } from '../app/tokens';
 
 const KUSTO_HELP_CLUSTER = 'https://help.kusto.windows.net';
 
@@ -795,7 +796,7 @@ export const DataLoaderForm: React.FC<{
     const bodyFontSize = compact ? '0.75rem' : '0.8125rem';
     const labelSx = {
         fontSize: bodyFontSize,
-        fontWeight: 500,
+        fontWeight: weight(500),
         lineHeight: 1.4,
         mb: compact && !comfortableSpacing ? 0.25 : 0.5,
     };
@@ -872,8 +873,8 @@ export const DataLoaderForm: React.FC<{
             '& a': { color: 'primary.main', overflowWrap: 'anywhere' },
             '& ul, & ol': { paddingLeft: 2.5, margin: '10px 0' },
             '& li': { marginBottom: 0.5 },
-            '& strong': { fontWeight: 500, color: 'text.primary' },
-            '& h1, & h2, & h3, & h4': { fontWeight: 600, margin: '14px 0 6px' },
+            '& strong': { fontWeight: weight(500), color: 'text.primary' },
+            '& h1, & h2, & h3, & h4': { fontWeight: weight(600), margin: '14px 0 6px' },
             '& blockquote': { m: 0, mt: 0.75, pl: 1.25, borderLeft: '2px solid', borderColor: 'divider' },
         })}>
             <SetupGuide content={setupDetailsContent} />
@@ -905,7 +906,7 @@ export const DataLoaderForm: React.FC<{
                 px: 1.25,
                 borderRadius: 999,
                 whiteSpace: 'nowrap',
-                fontWeight: 500,
+                fontWeight: weight(500),
                 color: 'primary.main',
                 bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
                 '&:hover': { bgcolor: (theme) => alpha(theme.palette.primary.main, 0.14) },
@@ -919,7 +920,7 @@ export const DataLoaderForm: React.FC<{
     ) : null;
 
     if (configuredParams) return <Box aria-busy={isConnecting} sx={{ maxWidth: 560, width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
-        <Typography variant="subtitle1" sx={{ fontSize: titleFontSize, fontWeight: 600, lineHeight: 1.5 }}>
+        <Typography variant="subtitle1" sx={{ fontSize: titleFontSize, fontWeight: weight(600), lineHeight: 1.5 }}>
             {t('db.connectionDetails', { defaultValue: 'Connection details' })}
         </Typography>
         <Box component="dl" sx={{ m: 0, width: '100%', display: 'grid', gridTemplateColumns: 'minmax(90px, 1fr) minmax(0, 3fr)', '& > dt, & > dd': { py: 0.75, borderBottom: 1, borderColor: 'divider' } }}>
@@ -942,14 +943,14 @@ export const DataLoaderForm: React.FC<{
             {isConnecting && <Box role="status" sx={{
                 position: "absolute", top: 0, left: 0, width: "100%", height: "100%", 
                 display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, zIndex: 1000,
-                backgroundColor: "rgba(255, 255, 255, 0.25)"
+                backgroundColor: paper(0.25)
             }}>
                 <CircularProgress size={20} />
                 {connectProgress && (
                     <Typography sx={{
-                        fontSize: textVar.sm, fontWeight: 500, color: 'text.primary',
+                        fontSize: textVar.sm, fontWeight: weight(500), color: 'text.primary',
                         textAlign: 'center', px: 1.5, py: 0.5, maxWidth: 380, wordBreak: 'break-word',
-                        backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: 1,
+                        backgroundColor: paper(0.95), borderRadius: 1,
                     }}>
                         {connectProgress}
                     </Typography>
@@ -977,7 +978,7 @@ export const DataLoaderForm: React.FC<{
                 {(formTitle || askAgentButton) && (
                     // Filling the form and asking the agent are two ways to the same connection.
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', columnGap: 1.5, rowGap: 0.75, mb: 1.5 }}>
-                        {formTitle && <Typography variant="subtitle1" sx={{ fontSize: titleFontSize, fontWeight: 600, lineHeight: 1.5 }}>
+                        {formTitle && <Typography variant="subtitle1" sx={{ fontSize: titleFontSize, fontWeight: weight(600), lineHeight: 1.5 }}>
                             {formTitle}
                         </Typography>}
                         {askAgentButton}
@@ -1367,7 +1368,7 @@ export const DataLoaderForm: React.FC<{
                                                     '&:hover': { backgroundColor: 'action.hover' },
                                                     '&.Mui-selected': {
                                                         color: 'primary.dark',
-                                                        fontWeight: 600,
+                                                        fontWeight: weight(600),
                                                         backgroundColor: alpha(theme.palette.primary.main, 0.1),
                                                         '&:hover': { backgroundColor: alpha(theme.palette.primary.main, 0.14) },
                                                     },
@@ -1553,7 +1554,7 @@ export const DataLoaderForm: React.FC<{
                     {!showSideGuide && setupDetailsContent && (
                         <Box sx={{ mt: comfortableSpacing ? 0 : compact ? 1.5 : 3 }}>
                         {comfortableSpacing ? <Box sx={{ mt: 1, pt: 2.5, borderTop: 1, borderColor: 'divider' }}>
-                            <Typography variant="subtitle1" sx={{ fontSize: '0.9375rem', fontWeight: 600, lineHeight: 1.5, mb: 1 }}>
+                            <Typography variant="subtitle1" sx={{ fontSize: '0.9375rem', fontWeight: weight(600), lineHeight: 1.5, mb: 1 }}>
                                 {t('db.setupDetails', { defaultValue: 'Setup details' })}
                             </Typography>
                             {setupGuideBody}
@@ -1600,7 +1601,7 @@ export const DataLoaderForm: React.FC<{
                             display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1,
                             pl: 3, pb: 0.5,
                         }}>
-                            <Typography variant="subtitle1" sx={{ fontSize: titleFontSize, fontWeight: 600, lineHeight: 1.5 }}>
+                            <Typography variant="subtitle1" sx={{ fontSize: titleFontSize, fontWeight: weight(600), lineHeight: 1.5 }}>
                                 {t('db.setupDetails', { defaultValue: 'Setup details' })}
                             </Typography>
                         </Box>

@@ -16,6 +16,7 @@ import { useMapInputs, useMapLook } from './MapPreview';
 import { MapView } from './MapView';
 import { hash01, US_STATE_ROWS, worldIndicators } from './samples';
 import { parseMapSpec } from './spec';
+import { weight } from '../app/tokens';
 
 /** −1…1 with most values near 0: a signed power of a uniform draw. */
 const skewed = (key: string, power: number) => { const u = 2 * hash01(key) - 1; return Math.sign(u) * Math.abs(u) ** power; };
@@ -96,19 +97,19 @@ export default function MapColorPreview() {
     return <Box sx={{ minHeight: '100vh', fontFamily: 'var(--df-font)' }}>
         <DevNav sections={list.map(item => [item.id, item.label.split(' · ')[0]])} />
         <Box sx={{ p: 2 }}>
-            <Typography sx={{ fontWeight: 600, mb: 0.5 }}>Diverging colours on the dark map style</Typography>
+            <Typography sx={{ fontWeight: weight(600), mb: 0.5 }}>Diverging colours on the dark map style</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 900 }}>
                 Each row is one diverging map, drawn with the scheme it names and with none (the default), on each style. Synthetic data shaped like the eval sessions’ maps
                 (most places near the midpoint, a few far out, some without data). App chart theme: {defaultTheme ?? 'none'}.
             </Typography>
             <Box sx={{ display: 'grid', gridTemplateColumns: `repeat(${TREATMENTS.length}, minmax(300px, 1fr))`, gap: 1.5, overflowX: 'auto' }}>
                 {TREATMENTS.map(treatment => <Box key={treatment.id}>
-                    <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{treatment.label}</Typography>
+                    <Typography sx={{ fontSize: 13, fontWeight: weight(600) }}>{treatment.label}</Typography>
                     <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>{treatment.note}</Typography>
                 </Box>)}
                 {list.map(item => <React.Fragment key={item.id}>
                     <Box id={item.id} sx={{ gridColumn: '1 / -1', mt: 1.5, scrollMarginTop: 48 }}>
-                        <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{item.label}</Typography>
+                        <Typography sx={{ fontSize: 13, fontWeight: weight(600) }}>{item.label}</Typography>
                         <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>{item.note}</Typography>
                     </Box>
                     {TREATMENTS.map(treatment => <Box key={treatment.id} sx={{ height: 360, position: 'relative', borderRadius: 1, overflow: 'hidden', border: '1px solid', borderColor: 'divider' }}>

@@ -3,7 +3,7 @@
 
 import { FC, useRef, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next';
-import { radius } from '../app/tokens';
+import { radius, weight } from '../app/tokens';
 import { Divider } from "@mui/material";
 import {
 		Card,
@@ -65,7 +65,7 @@ const renderJsonAction = (message: string): React.ReactNode | null => {
     const actionType = action.action;
 
     sections.push(
-        <Typography key="action-type" sx={{ fontSize: textVar.sm, fontWeight: 600, color: 'primary.main', textTransform: 'uppercase', letterSpacing: '0.5px', mb: 0.5 }}>
+        <Typography key="action-type" sx={{ fontSize: textVar.sm, fontWeight: weight(600), color: 'primary.main', textTransform: 'uppercase', letterSpacing: '0.5px', mb: 0.5 }}>
             {actionType}
         </Typography>
     );
@@ -80,7 +80,7 @@ const renderJsonAction = (message: string): React.ReactNode | null => {
 
     if (action.display_instruction) {
         sections.push(
-            <Typography key="display" sx={{ fontSize: textVar.sm, fontWeight: 500, mb: 0.5, lineHeight: 1.4 }}>
+            <Typography key="display" sx={{ fontSize: textVar.sm, fontWeight: weight(500), mb: 0.5, lineHeight: 1.4 }}>
                 {action.display_instruction}
             </Typography>
         );
@@ -115,7 +115,7 @@ const renderJsonAction = (message: string): React.ReactNode | null => {
                     const opts = typeof q === 'object' && Array.isArray(q?.options) ? q.options : [];
                     return (
                         <Box key={`q-${i}`}>
-                            <Typography sx={{ fontSize: textVar.sm, fontWeight: 500, lineHeight: 1.4 }}>
+                            <Typography sx={{ fontSize: textVar.sm, fontWeight: weight(500), lineHeight: 1.4 }}>
                                 {i + 1}. {text}
                                 {responseType && (
                                     <Typography component="span" sx={{ fontSize: textVar.xxs, color: 'text.disabled', ml: 0.5 }}>
@@ -153,7 +153,7 @@ const renderJsonAction = (message: string): React.ReactNode | null => {
     if (action.followups && Array.isArray(action.followups) && action.followups.length > 0) {
         sections.push(
             <Box key="followups" sx={{ mb: 0.5 }}>
-                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', fontWeight: 500, lineHeight: 1.4 }}>
+                <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', fontWeight: weight(500), lineHeight: 1.4 }}>
                     Followups:
                 </Typography>
                 <Box sx={{ pl: 2 }}>
@@ -169,7 +169,7 @@ const renderJsonAction = (message: string): React.ReactNode | null => {
 
     if (action.summary) {
         sections.push(
-            <Typography key="summary" sx={{ fontSize: textVar.sm, fontWeight: 500, mb: 0.5, lineHeight: 1.4 }}>
+            <Typography key="summary" sx={{ fontSize: textVar.sm, fontWeight: weight(500), mb: 0.5, lineHeight: 1.4 }}>
                 {action.summary}
             </Typography>
         );
@@ -403,7 +403,7 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
                         <CardContent sx={{display: "flex", flexDirection: "column", flexGrow: 1, padding: '8px 12px', paddingBottom: '8px !important'}}>
                             <Typography sx={{ 
                                 fontSize: textVar.sm, 
-                                fontWeight: 600,
+                                fontWeight: weight(600),
                                 color: labelColor,
                                 textTransform: 'uppercase',
                                 letterSpacing: '0.5px'
@@ -436,7 +436,7 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 1.25 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <QuestionAnswerIcon sx={{ fontSize: iconVar.lg, color: 'text.secondary' }} />
-                    <Typography sx={{ fontSize: textVar.lg, fontWeight: 600 }}>{t('chatDialog.agentLog')}</Typography>
+                    <Typography sx={{ fontSize: textVar.lg, fontWeight: weight(600) }}>{t('chatDialog.agentLog')}</Typography>
                 </Box>
                 <IconButton size="small" aria-label={t('app.close')} onClick={() => { handleCloseDialog() }}>
                     <CloseIcon sx={{ fontSize: iconVar.lg }} />

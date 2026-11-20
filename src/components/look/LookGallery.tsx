@@ -23,11 +23,9 @@ import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 
 import type { DataFormulatorState } from '../../app/dfSlice';
 import { textVar } from '../../app/layout';
-import { LOOKS, focusColor, frameColor, inkColor, lineColor, tableHeaderSurface, type Look } from '../../app/look';
+import { LOOKS, LOOK_NAMES, focusColor, frameColor, inkColor, lineColor, tableHeaderSurface, type Look } from '../../app/look';
 import { createDfTheme } from '../../app/theme';
-import {
-    ambientShadow, borderColor, canvasPattern, cardRadius, identText, metaText, quietText, selectionMark,
-} from '../../app/tokens';
+import { ambientShadow, borderColor, canvasPattern, cardRadius, identText, metaText, quietText, selectionMark, ink, weight } from '../../app/tokens';
 import { ToolsChipFace } from '../ToolsAccess';
 import type { InteractionEntry } from '../ComponentType';
 import { InteractionEntryCard } from '../../views/InteractionEntryCard';
@@ -41,7 +39,7 @@ const scopedVariables = (look: Look): React.CSSProperties =>
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) =>
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, py: 2, borderTop: `1px solid ${borderColor.divider}` }}>
         <Typography sx={{ ...metaText({ fontSize: textVar.xs, textTransform: 'uppercase', letterSpacing: '0.04em' }),
-            fontWeight: 600, color: 'text.secondary' }}>{title}</Typography>
+            fontWeight: weight(600), color: 'text.secondary' }}>{title}</Typography>
         {children}
     </Box>;
 
@@ -65,7 +63,7 @@ const LookColumn: React.FC = () => {
             </Box>
             <Box sx={{ display: 'flex', gap: 1.5, fontSize: textVar.sm }}>
                 <span style={{ color: inkColor(theme, 0.55) }}>quiet ink 0.55</span>
-                <span style={{ color: 'var(--df-icon-muted, rgba(0,0,0,0.15))' }}>muted icon</span>
+                <span style={{ color: `var(--df-icon-muted, ${ink(0.15)})` }}>muted icon</span>
             </Box>
         </Section>
         <Section title="Thread">
@@ -136,12 +134,12 @@ const LookColumn: React.FC = () => {
 
 const LookGallery: React.FC = () => {
     const paletteKey = useSelector((state: DataFormulatorState) => state.config.paletteKey) ?? '';
-    return <Box sx={{ height: '100vh', overflowY: 'auto', boxSizing: 'border-box', p: 3, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3, alignItems: 'start' }}>
-        {(['soft', 'sharp'] as Look[]).map(look =>
+    return <Box sx={{ height: '100vh', overflowY: 'auto', boxSizing: 'border-box', p: 3, display: 'grid', gridTemplateColumns: `repeat(${LOOK_NAMES.length}, 1fr)`, gap: 3, alignItems: 'start' }}>
+        {LOOK_NAMES.map(look =>
             <ThemeProvider key={look} theme={createDfTheme(paletteKey, look)}>
                 <Box style={scopedVariables(look)} sx={{ p: 2, bgcolor: 'background.paper', color: 'text.primary',
-                    border: '1px solid rgba(0,0,0,0.12)' }}>
-                    <Typography sx={{ fontSize: textVar.xl, fontWeight: 600, mb: 1 }}>{look}</Typography>
+                    border: `1px solid ${ink(0.12)}` }}>
+                    <Typography sx={{ fontSize: textVar.xl, fontWeight: weight(600), mb: 1 }}>{look}</Typography>
                     <LookColumn />
                 </Box>
             </ThemeProvider>)}

@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { DataFormulatorState, dfSelectors } from '../app/dfSlice';
 import { fetchWithIdentity, getUrls } from '../app/utils';
 import { textVar } from '../app/layout';
+import { weight } from '../app/tokens';
 
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
 const TEXT = /\.(csv|tsv|txt|md|markdown|json|log|py|sql|xml|ya?ml)$/i;
@@ -108,13 +109,13 @@ export const TablePreview: React.FC<{ tableId: string; rows?: number; columns?: 
     const cell = { px: 0.75, py: 0.25, fontSize: textVar.xxs, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 110,
         borderBottom: (theme: any) => `1px solid ${alpha(theme.palette.text.primary, 0.08)}`, textAlign: 'left' } as const;
     return <Box sx={{ minWidth: 160 }}>
-        <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, mb: 0.25 }}>{table.displayId || table.id}</Typography>
+        <Typography sx={{ fontSize: textVar.xs, fontWeight: weight(600), mb: 0.25 }}>{table.displayId || table.id}</Typography>
         <Typography sx={{ fontSize: textVar.xxs, color: 'text.secondary', mb: 0.75 }}>
             {t('chartRec.tablePreviewSize', { defaultValue: '{{rows}} rows · {{columns}} columns',
                 rows: rowCount.toLocaleString(), columns: table.names.length })}
         </Typography>
         <Box component="table" sx={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-            <thead><tr>{columns.map(name => <Box component="th" key={name} sx={{ ...cell, fontWeight: 600 }}>{name}</Box>)}
+            <thead><tr>{columns.map(name => <Box component="th" key={name} sx={{ ...cell, fontWeight: weight(600) }}>{name}</Box>)}
                 {table.names.length > shownColumns && <Box component="th" sx={{ ...cell, color: 'text.secondary' }}>…</Box>}</tr></thead>
             <tbody>{table.rows.slice(0, shownRows).map((row, index) => <tr key={index}>
                 {columns.map(name => <Box component="td" key={name} sx={cell}>{String(row?.[name] ?? '')}</Box>)}

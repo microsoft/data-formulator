@@ -19,6 +19,7 @@ import { apiRequest } from '../app/apiClient';
 import { getUrls } from '../app/utils';
 import { refreshSavedThemes } from '../app/savedThemes';
 import SAMPLES from './devSamples.json';
+import { weight } from '../app/tokens';
 
 interface Sample {
     id: string;
@@ -74,7 +75,7 @@ function SampleSection({ sample, density, frameHeight = FRAME.height }: { sample
     return (
         <Box component="section" id={sample.id} ref={ref} sx={{ scrollMarginTop: 52 }}>
             <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5, mb: 0.5, flexWrap: 'wrap' }}>
-                <Box component="h2" sx={{ m: 0, fontSize: 16, fontWeight: 600 }}>{sample.style} · {sample.dataset}</Box>
+                <Box component="h2" sx={{ m: 0, fontSize: 16, fontWeight: weight(600) }}>{sample.style} · {sample.dataset}</Box>
                 <Box sx={{ fontSize: 12, color: 'text.secondary' }}>
                     {sample.model}{sample.seconds ? ` · ${Math.round(sample.seconds)} s` : ''}{sample.tokens ? ` · ${Math.round(sample.tokens / 1000)}k tokens` : ''}
                 </Box>
@@ -124,7 +125,7 @@ export default function DevSamplesPage() {
             <Box sx={{ maxWidth: 1800, mx: 'auto', px: 3, py: 2.5, display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <Box component="h1" sx={{ m: 0, fontSize: 20, fontWeight: 600 }}>Sample reports</Box>
+                        <Box component="h1" sx={{ m: 0, fontSize: 20, fontWeight: weight(600) }}>Sample reports</Box>
                         <ToggleButtonGroup size="small" exclusive value={density} aria-label="Density"
                             onChange={(_event, next) => next && setDensity(next)}>
                             <ToggleButton value="compact" sx={{ textTransform: 'none', py: 0.25 }}>Compact</ToggleButton>

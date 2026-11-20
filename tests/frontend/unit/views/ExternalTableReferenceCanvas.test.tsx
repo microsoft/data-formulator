@@ -13,6 +13,7 @@ import { SelectableDataGrid } from '../../../../src/views/SelectableDataGrid';
 import { MultiTablePreview } from '../../../../src/views/MultiTablePreview';
 import { MessageSnackbar } from '../../../../src/views/MessageSnackbar';
 import { Type } from '../../../../src/data/types';
+import { iconTone } from '../../../../src/app/tokens';
 
 vi.mock('../../../../src/app/apiClient', () => ({ apiRequest: vi.fn() }));
 vi.mock('react-virtuoso', () => ({
@@ -222,14 +223,14 @@ it('uses the standard table card for references and keeps their information in t
     expect(screen.queryByRole('button', { name: 'Remove reference' })).not.toBeInTheDocument();
     const referenceIcon = container.querySelector(`[data-workspace-item="${reference.id}"] svg`)!;
     const fileIcon = screen.getByTestId('FileTypeIcon');
-    expect(referenceIcon).toHaveStyle({ color: 'rgba(0, 0, 0, 0.4)' });
+    expect(referenceIcon).toHaveStyle({ color: iconTone.rest });
     fireEvent.click(referenceCard);
     expect(store.getState().focusedId).toEqual({ type: 'external-table', referenceId: reference.id });
     expect(referenceIcon).toHaveStyle({ color: 'rgb(25, 118, 210)' });
-    expect(fileIcon).toHaveStyle({ color: 'rgba(0, 0, 0, 0.4)' });
+    expect(fileIcon).toHaveStyle({ color: iconTone.rest });
     fireEvent.click(screen.getByRole('button', { name: 'notes.txt' }));
     expect(fileIcon).toHaveStyle({ color: 'rgb(25, 118, 210)' });
-    expect(referenceIcon).toHaveStyle({ color: 'rgba(0, 0, 0, 0.4)' });
+    expect(referenceIcon).toHaveStyle({ color: iconTone.rest });
     fireEvent.click(referenceCard);
     fireEvent.click(screen.getByRole('button', { name: 'Actions for Events' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Remove reference' }));
@@ -666,7 +667,7 @@ it('opens the containing connection in the source sidebar without copying or ope
     const store = configureStore({ reducer: dataFormulatorReducer });
     const path = 'https://example.org/datasets/events.csv';
     store.dispatch(dfActions.setDataSourceSidebarOpen(false));
-    store.dispatch(dfActions.setDataSourceSidebarTab('knowledge'));
+    store.dispatch(dfActions.setDataSourceSidebarTab('workflows'));
     store.dispatch(dfActions.upsertExternalTableReference({ ...reference,
         sourceTable: { id: path, name: 'events.csv' }, summary: { columns: [], sampleRows: [] } }));
     render(<Provider store={store}><ExternalTableReferenceCanvas referenceId={reference.id} /></Provider>);

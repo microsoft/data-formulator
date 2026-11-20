@@ -60,7 +60,7 @@ import {
     type WorkspaceFile,
 } from '../app/workspaceService';
 import { useDataRefresh } from '../app/useDataRefresh';
-import { cardRadius, iconTone, metaText, ViewBorderStyle, borderColor, selectionMark, selectionOutline } from '../app/tokens';
+import { cardRadius, iconTone, metaText, ViewBorderStyle, borderColor, selectionMark, selectionOutline, ink, weight } from '../app/tokens';
 import { focusColor, frameColor } from '../app/look';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { FileTypeIcon, StreamIcon, TableIcon } from '../icons';
@@ -363,7 +363,7 @@ const MetadataPopup = memo<{
 
                     {!description && codeExplanation && (
                         <Box>
-                            <Typography sx={{ fontSize: textVar.xs, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
+                            <Typography sx={{ fontSize: textVar.xs, fontWeight: weight(600), color: 'text.secondary', mb: 0.5 }}>
                                 {t('dataThread.derivationSummary', { defaultValue: 'Derivation summary' })}
                             </Typography>
                             <Typography sx={{ fontSize: textVar.xs, color: 'text.primary', whiteSpace: 'pre-wrap' }}>
@@ -457,7 +457,7 @@ const RenameTablePopup = memo<{
 /** The workspace's root name, as a file explorer shows its root folder: bold, after a chevron. */
 // A named workspace shows its name; the default heading is a section label, in the meta voice.
 const workspaceRootSx = (titled: boolean) => ({
-    flex: 1, minWidth: 0, fontSize: textVar.sm, fontWeight: 600, lineHeight: 1.4, color: 'text.primary',
+    flex: 1, minWidth: 0, fontSize: textVar.sm, fontWeight: weight(600), lineHeight: 1.4, color: 'text.primary',
     ...(titled ? {} : metaText({ fontSize: textVar.sm, textTransform: 'capitalize' })),
 } as const);
 const ROOT_CHEVRON_PX = 16;
@@ -515,7 +515,7 @@ export const WorkspaceSummary: FC<{ tables: string[]; documents: string[]; onExp
             // A section of the thread pane: its frame line where the look draws sections firmer than cards.
             borderRadius: cardRadius('8px'), bgcolor: 'background.paper', border: 1, borderColor: (theme: Theme) => frameColor(theme, 0.1),
             transition: 'background-color 120ms ease, border-color 120ms ease',
-            '&:hover': { borderColor: borderColor.view, bgcolor: 'rgba(0,0,0,0.025)' },
+            '&:hover': { borderColor: borderColor.view, bgcolor: ink(0.025) },
             '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
         <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: `${ROOT_CHEVRON_GAP_PX}px`, minHeight: 20 }}>
             <KeyboardArrowRightIcon sx={{ fontSize: ROOT_CHEVRON_PX, color: 'text.secondary', flexShrink: 0 }} />

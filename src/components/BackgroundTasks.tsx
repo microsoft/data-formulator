@@ -18,6 +18,7 @@ import { textVar } from '../app/layout';
 import { useSelector } from 'react-redux';
 import { DataFormulatorState } from '../app/dfSlice';
 import { BackgroundTask, readBackgroundTaskLog, refreshBackgroundTasks, stopBackgroundTasks, useBackgroundTasks } from '../app/backgroundTasks';
+import { ink, weight } from '../app/tokens';
 
 export const formatElapsed = (seconds: number): string => {
     if (seconds < 60) return `${seconds}s`;
@@ -49,7 +50,7 @@ const TaskLogDialog: React.FC<{ task: BackgroundTask | undefined; onClose: () =>
                 overflowWrap: 'anywhere' }}>{task?.command}</Typography>
             {log.truncated && <Typography sx={{ fontSize: textVar.xxs, color: 'text.disabled', mb: 0.5 }}>{t('backgroundTasks.logTruncated')}</Typography>}
             <Box component="pre" data-task-log sx={{ m: 0, p: 1.5, maxHeight: '60vh', overflow: 'auto', fontSize: textVar.xxs,
-                fontFamily: 'var(--df-font-mono, monospace)', bgcolor: 'rgba(0,0,0,0.04)', borderRadius: 1, whiteSpace: 'pre-wrap',
+                fontFamily: 'var(--df-font-mono, monospace)', bgcolor: ink(0.04), borderRadius: 1, whiteSpace: 'pre-wrap',
                 overflowWrap: 'anywhere' }}>{log.text || t('backgroundTasks.noOutput')}</Box>
         </DialogContent>
         <DialogActions><Button onClick={onClose} sx={{ textTransform: 'none' }}>{t('app.close', { defaultValue: 'Close' })}</Button></DialogActions>
@@ -89,7 +90,7 @@ export const BackgroundTasksPill: React.FC<{
         <Popover open={!!anchor} anchorEl={anchor} onClose={() => setAnchor(null)}
             anchorOrigin={{ vertical: 'top', horizontal: 'left' }} transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
             slotProps={{ paper: { sx: { width: 380, maxHeight: 420, mb: 0.5 } } }}>
-            <Typography sx={{ px: 1.5, pt: 1, pb: 0.5, fontSize: textVar.xs, fontWeight: 600 }}>{t('backgroundTasks.title')}</Typography>
+            <Typography sx={{ px: 1.5, pt: 1, pb: 0.5, fontSize: textVar.xs, fontWeight: weight(600) }}>{t('backgroundTasks.title')}</Typography>
             {[...tasks].reverse().map(task => {
                 const request = requestOf?.(task.conversation_id);
                 const lastLine = task.last_lines[task.last_lines.length - 1];
@@ -104,7 +105,7 @@ export const BackgroundTasksPill: React.FC<{
                             {request && <> · <Box component="span" role="button" tabIndex={0}
                                 onClick={() => { request.open(); setAnchor(null); }}
                                 onKeyDown={event => { if (event.key === 'Enter') { request.open(); setAnchor(null); } }}
-                                sx={{ cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'rgba(0,0,0,0.2)',
+                                sx={{ cursor: 'pointer', textDecoration: 'underline', textDecorationColor: ink(0.2),
                                     '&:hover': { color: 'text.primary' } }}>{request.text.length > 40 ? `${request.text.slice(0, 40)}…` : request.text}</Box></>}
                         </Typography>
                         {lastLine && <Typography sx={{ fontSize: textVar.xxs, color: 'text.disabled', mt: '2px', fontFamily: 'var(--df-font-mono, monospace)',

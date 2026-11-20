@@ -16,7 +16,6 @@
 | 文件下载 route | `workspace.confined_scratch.resolve(filename)` 后传给 `send_file()` |
 | 文件上传 route | `secure_filename()` 清洗 + `workspace.confined_scratch.resolve()` 二次校验 |
 | 任意 root + relative path | `ConfinedDir(root).resolve(relative)` |
-| 知识库文件读写 | 通过 `KnowledgeStore` 内部的 `ConfinedDir` |
 | 推理日志写入 | 通过 `ReasoningLogger` 内部的 `ConfinedDir` |
 | 读取宿主文件系统的 Loader | 必须注册多用户部署禁用规则 |
 | Sandbox 部署 | 多用户模式不得使用 `not_a_sandbox` |
@@ -208,6 +207,5 @@ LLM 生成的 Python 必须视为不可信代码。当前支持 `SANDBOX=local` 
 | `datalake/workspace.py` | `__init__` (legacy root) | `ConfinedDir(root).resolve(safe_id)` |
 | `routes/agents.py` | `scratch_serve` | `workspace.confined_scratch.resolve(filename)` |
 | `routes/agents.py` | `scratch_upload` | `workspace.confined_scratch.resolve(final_name)` |
-| `knowledge/store.py` | CRUD | `ConfinedDir(user_home / "knowledge" / category)` |
 | `agents/reasoning_log.py` | log | `ConfinedDir(DATA_FORMULATOR_HOME / "agent-logs" / date / safe_identity_id)` |
 | `local_folder_data_loader.py` | 全文件 | 已使用 `ConfinedDir`（原始采用者） |

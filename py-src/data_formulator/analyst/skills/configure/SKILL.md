@@ -177,9 +177,11 @@ on a hosted deployment, explain that instead of proposing.
 
 ## Sessions
 
-Use `list_sessions` to find sessions by name or content (data, prompts, reports,
-workflows); it also marks the current session. Judge matches from the summaries
-and counts, and state any limit, such as only the most recent sessions searched.
+Use `list_sessions` to find sessions by name or content (data, reports, workflows,
+and the requests made in them, which it searches but does not return); it also
+marks the current session. Judge matches from the summaries and counts, and state
+any limit, such as only the most recent sessions searched. Reading or reusing what
+another session holds is the past_sessions skill.
 
 Show the matches with `propose_session_changes`: a panel listing each session,
 where the user renames, opens (in a new tab), or deletes it directly. Give the
