@@ -6,7 +6,7 @@ import { beforeAll, expect, it } from 'vitest';
 
 import '../../../../src/i18n';
 import { loadGeoSet, type GeoSet } from '../../../../src/maps/geography';
-import { MapRenderer, textWidth, type Scene } from '../../../../src/maps/MapRenderer';
+import { cullShape, MapRenderer, textWidth, type Scene } from '../../../../src/maps/MapRenderer';
 import { MapView } from '../../../../src/maps/MapView';
 import { buildLayer } from '../../../../src/maps/model';
 import { parseMapSpec } from '../../../../src/maps/spec';
@@ -979,4 +979,96 @@ it('colours hexagon counts piled into a few cells by their logarithm, so the res
     // A linear scale would draw every small cell in one colour; a log one tells 1 from 2 from 3.
     expect(fills.size).toBeGreaterThan(2);
     expect(container.textContent ?? '').not.toContain('NaN');
+});
+
+it('draws boundaries in the detail chosen for the scale of each draw, so a world view never draws a finer level', () => {
+    // The "fine" France is a small square: short path data when drawn, long for the real outline.
+    const square = { type: 'Polygon', coordinates: [[[1, 45], [1, 47], [3, 47], [3, 45], [1, 45]]] };
+    const fine: GeoSet = { ...countries, features: countries.features.map(item => item.properties.id === 'FRA' ? { ...item, geometry: square } as typeof item : item) };
+    fine.byId = new Map(fine.features.map(item => [item.properties.id, item]));
+    const spec = parseMapSpec(JSON.stringify({ data: { d: { values: [{ country: 'FRA', v: 1 }] } },
+        layers: [{ id: 'c', type: 'regions', data: 'd', key: 'country', color: { field: 'v' } }] })).spec!;
+    const models = spec.layers.map(layer => buildLayer(spec, layer, { d: [{ country: 'FRA', v: 1 }] }, {}, { countries }));
+    const scales: number[] = [];
+    const detail = (set: GeoSet, worldWidth: number) => { scales.push(worldWidth); return worldWidth > 10000 ? fine : set; };
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const renderer = new MapRenderer(svg, document.createElement('canvas'), { onHover: () => {}, onClick: () => {} });
+    const france = () => Array.from(svg.querySelectorAll<SVGPathElement>('path.df-map-region'))
+        .find(path => (path as unknown as { __data__: { regionId?: string } }).__data__.regionId === 'FRA')!.getAttribute('d')!;
+    try {
+        renderer.setSize(900, 600);
+        const scene = (view: Scene['view']): Scene => ({ view, basemap: countries, models, selection: null, hidden: {}, highlight: null, interactive: true, detail });
+        // The whole world, then framed on France (its data), then the world again.
+        renderer.update(scene({ projection: 'equalEarth', fit: 'basemap' }), false);
+        renderer.drawNow();
+        expect(Math.max(...scales)).toBeLessThan(10000);
+        expect(france().length).toBeGreaterThan(200);
+        renderer.update(scene({ projection: 'equalEarth', fit: 'data' }), false);
+        renderer.drawNow();
+        expect(Math.max(...scales)).toBeGreaterThan(10000);
+        expect(france().length).toBeLessThan(80);
+        renderer.update(scene({ projection: 'equalEarth', fit: 'basemap' }), false);
+        renderer.drawNow();
+        expect(france().length).toBeGreaterThan(200);
+    } finally {
+        renderer.destroy();
+    }
+});
+
+it('leaves geometry wholly outside the drawn box out of a path, keeping what crosses it', () => {
+    const view: [number, number, number, number] = [0, 40, 10, 50];
+    const inside = [[[1, 41], [1, 42], [2, 42], [2, 41], [1, 41]]];
+    const crossing = [[[9, 45], [9, 55], [12, 55], [12, 45], [9, 45]]];
+    const outside = [[[100, 0], [100, 1], [101, 1], [101, 0], [100, 0]]];
+    const multi = { type: 'MultiPolygon', coordinates: [inside, crossing, outside] };
+    expect(cullShape(multi, view)).toEqual({ type: 'MultiPolygon', coordinates: [inside, crossing] });
+    const kept = { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: inside } };
+    expect(cullShape(kept, view)).toBe(kept);
+    expect(cullShape({ type: 'Polygon', coordinates: outside }, view)).toBeNull();
+    expect(cullShape({ type: 'MultiLineString', coordinates: [[[1, 41], [3, 43]], [[100, 0], [101, 1]]] }, view))
+        .toEqual({ type: 'MultiLineString', coordinates: [[[1, 41], [3, 43]]] });
+});
+
+it('keeps a zoomed-in view when a panel resizes, and refits to the panels once the view is reset', () => {
+    const spec = pipelineMap();
+    const models = spec.layers.map(layer => buildLayer(spec, layer, { d: pipelineRows }, {}, { countries }));
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const renderer = new MapRenderer(svg, document.createElement('canvas'), { onHover: () => {}, onClick: () => {} });
+    const landPath = () => svg.querySelector('.df-map-land path')!.getAttribute('d');
+    try {
+        renderer.setSize(900, 600);
+        const scene = (obstacles: [number, number, number, number][]): Scene =>
+            ({ view: spec.view, basemap: countries, models, selection: null, hidden: {}, highlight: null, interactive: true, obstacles });
+        renderer.update(scene([[16, 12, 300, 200]]), false);
+        renderer.drawNow();
+        // A zoom the viewer made (as d3-zoom stores it on the svg), then a legend grows a line.
+        const zoomed = d3.zoomIdentity.translate(-450, -300).scale(2);
+        (renderer as unknown as { transform: d3.ZoomTransform }).transform = zoomed;
+        renderer.update(scene([[16, 12, 300, 200]]), false);
+        renderer.drawNow();
+        const before = landPath();
+        renderer.update(scene([[16, 12, 300, 230]]), false);
+        renderer.drawNow();
+        expect(landPath()).toBe(before);
+    } finally {
+        renderer.destroy();
+    }
+});
+
+it('points a negative spike down from its place, as tall as a positive one of the same size', async () => {
+    panelSize = { width: 900, height: 600 };
+    const rows = [{ city: 'Gain', lon: -100, lat: 40, change: 20 }, { city: 'Loss', lon: -80, lat: 35, change: -20 }];
+    const spec = parseMapSpec(JSON.stringify({ template: 'spikes', data: { values: rows },
+        encoding: { lat: 'lat', lon: 'lon', size: 'change', color: 'change' }, properties: { geography: 'world' } })).spec!;
+    const { container, unmount } = render(<MapView spec={spec} data={{ main: rows }} geoSets={{ countries }} />);
+    await flush();
+    const spikes = Array.from(container.querySelectorAll('path.df-map-spike'), path => {
+        const [, baseY, , tipY] = (path.getAttribute('d')!.match(/-?\d+(\.\d+)?/g) ?? []).map(Number);
+        return tipY - baseY;
+    });
+    expect(spikes).toHaveLength(2);
+    expect(spikes.filter(rise => rise < 0)).toHaveLength(1);
+    expect(spikes.filter(rise => rise > 0)).toHaveLength(1);
+    expect(Math.abs(spikes[0])).toBeCloseTo(Math.abs(spikes[1]), 3);
+    unmount();
 });

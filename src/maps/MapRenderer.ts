@@ -37,6 +37,12 @@ export interface Scene {
     fitVersion?: number;
     /** Floating panels ([x0, y0, x1, y1] in pixels): the map may nudge aside, but stays naturally sized. */
     obstacles?: [number, number, number, number][];
+    /**
+     * Finer boundaries for the scale being drawn (`worldWidth`: the projected width of 360°): the same regions with
+     * the same ids, in more detail. Chosen at each draw, so a zoom never draws a level meant for another scale; joins,
+     * label anchors and search stay on the set itself.
+     */
+    detail?: (set: GeoSet, worldWidth: number) => GeoSet;
 }
 
 export interface RendererCallbacks {
@@ -120,6 +126,9 @@ interface Label {
     x: number; y: number; text: string; priority: number; model?: LayerModel; fill?: string;
     /** Font size in pixels (default 11, place names 10). */
     size?: number;
+    /** Letter-spacing in em (place names in capitals are spaced out, wider the larger they are). */
+    tracking?: number;
+    weight?: number;
     /** A basemap place name: smaller, quieter, below data labels. */
     place?: boolean;
     /** Text colour on the basemap (a track's name in its line colour); the halo still applies. */
@@ -128,6 +137,124 @@ interface Label {
     strong?: boolean;
     /** A second place to try when the first is taken (below a point instead of above it). */
     alt?: { x: number; y: number };
+}
+
+const labelSize = (item: Label) => item.size ?? (item.place ? 9.5 : 11);
+/** A label's drawn width, letter-spacing included. */
+const labelWidth = (item: Label) => textWidth(item.text, labelSize(item)) + (item.tracking ?? 0) * labelSize(item) * item.text.length;
+
+/** Whether the segment a–b crosses the box [x0, y0, x1, y1] grown by `pad` (Liang–Barsky clipping). */
+export function segmentHitsBox(a: [number, number], b: [number, number], box: [number, number, number, number], pad = 0): boolean {
+    const [x0, y0, x1, y1] = [box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    let t0 = 0, t1 = 1;
+    for (const [p, q] of [[-dx, a[0] - x0], [dx, x1 - a[0]], [-dy, a[1] - y0], [dy, y1 - a[1]]]) {
+        if (p === 0) { if (q < 0) return false; continue; }
+        const r = q / p;
+        if (p < 0) { if (r > t1) return false; t0 = Math.max(t0, r); } else { if (r < t0) return false; t1 = Math.min(t1, r); }
+    }
+    return true;
+}
+
+/** Signed distance from a point to a polygon's edges: positive inside (even–odd over its rings), negative outside. */
+function polygonDistance(x: number, y: number, rings: number[][][]): number {
+    let inside = false;
+    let least = Infinity;
+    for (const ring of rings) {
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+            const [ax, ay] = ring[i], [bx, by] = ring[j];
+            if ((ay > y) !== (by > y) && x < ((bx - ax) * (y - ay)) / (by - ay) + ax) inside = !inside;
+            const dx = bx - ax, dy = by - ay;
+            const t = dx || dy ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy))) : 0;
+            least = Math.min(least, (ax + t * dx - x) ** 2 + (ay + t * dy - y) ** 2);
+        }
+    }
+    return (inside ? 1 : -1) * Math.sqrt(least);
+}
+
+/**
+ * The point inside a polygon farthest from its edges (its pole of inaccessibility), found by refining square
+ * cells best-first to `precision`, as Mapbox's polylabel does. Planar coordinates.
+ */
+export function poleOfInaccessibility(rings: number[][][], precision: number): [number, number] {
+    const outer = rings[0] ?? [];
+    const xs = outer.map(point => point[0]), ys = outer.map(point => point[1]);
+    const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    const size = Math.min(maxX - minX, maxY - minY);
+    if (!outer.length || !(size > 0)) return [minX || 0, minY || 0];
+    type Cell = { x: number; y: number; h: number; d: number; max: number };
+    const cell = (x: number, y: number, h: number): Cell => {
+        const d = polygonDistance(x, y, rings);
+        return { x, y, h, d, max: d + h * Math.SQRT2 };
+    };
+    // A max-heap on each cell's best possible distance.
+    const heap: Cell[] = [];
+    const push = (item: Cell) => {
+        heap.push(item);
+        for (let i = heap.length - 1; i > 0;) {
+            const up = (i - 1) >> 1;
+            if (heap[up].max >= heap[i].max) break;
+            [heap[up], heap[i]] = [heap[i], heap[up]];
+            i = up;
+        }
+    };
+    const pop = () => {
+        const top = heap[0];
+        const last = heap.pop()!;
+        if (heap.length) {
+            heap[0] = last;
+            for (let i = 0; ;) {
+                const [l, r] = [2 * i + 1, 2 * i + 2];
+                let m = i;
+                if (l < heap.length && heap[l].max > heap[m].max) m = l;
+                if (r < heap.length && heap[r].max > heap[m].max) m = r;
+                if (m === i) break;
+                [heap[m], heap[i]] = [heap[i], heap[m]];
+                i = m;
+            }
+        }
+        return top;
+    };
+    const h = size / 2;
+    for (let x = minX; x < maxX; x += size) for (let y = minY; y < maxY; y += size) push(cell(x + h, y + h, h));
+    let best = cell((minX + maxX) / 2, (minY + maxY) / 2, 0);
+    for (let guard = 0; heap.length && guard < 5000; guard++) {
+        const next = pop();
+        if (next.d > best.d) best = next;
+        if (next.max - best.d <= precision) continue;
+        const half = next.h / 2;
+        for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) push(cell(next.x + sx * half, next.y + sy * half, half));
+    }
+    return [best.x, best.y];
+}
+
+const labelAnchors = new WeakMap<Feature, LonLat>();
+/**
+ * Where a region's name goes: the pole of inaccessibility of its largest part (computed on longitudes scaled by
+ * the cosine of its latitude, so it is roughly equal-area), which stays on the land of curved or hollow shapes
+ * (Italy, Croatia, Chile) where a centroid would fall off it. Falls back to the centroid anchor.
+ */
+function labelAnchor(feature: Feature): LonLat {
+    const cached = labelAnchors.get(feature);
+    if (cached) return cached;
+    const geometry = feature.geometry;
+    const polygons = geometry?.type === 'Polygon' ? [geometry.coordinates] : geometry?.type === 'MultiPolygon' ? geometry.coordinates : [];
+    let anchor = featureAnchor(feature);
+    const largest = polygons.reduce<number[][][] | null>((best, rings) => {
+        const area = (rings: number[][][]) => d3.geoArea({ type: 'Polygon', coordinates: rings } as never);
+        return !best || area(rings) > area(best) ? rings : best;
+    }, null);
+    if (largest?.[0]?.length) {
+        const lats = largest[0].map(point => point[1]);
+        const scale = Math.cos(((Math.min(...lats) + Math.max(...lats)) / 2) * Math.PI / 180) || 1;
+        const planar = largest.map(ring => ring.map(([lon, lat]) => [lon * scale, lat]));
+        const xs = planar[0].map(point => point[0]);
+        const precision = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...lats) - Math.min(...lats)) / 100;
+        const [x, y] = poleOfInaccessibility(planar, precision);
+        if (Number.isFinite(x) && Number.isFinite(y)) anchor = [x / scale, y];
+    }
+    labelAnchors.set(feature, anchor);
+    return anchor;
 }
 
 /**
@@ -145,6 +272,14 @@ function colorExtremity(marks: readonly Mark[]): Map<string, number> {
 
 /** One data label per this many square px of the plot: zoomed in, the marks in view share the same room. */
 const LABEL_ROOM = 36000;
+/** Place-name lettering by the place's on-screen box (px²): large countries larger, wider spaced and a touch heavier. */
+const PLACE_TIERS = [
+    { area: 40000, size: 11, tracking: 0.14, weight: 500 },
+    { area: 8000, size: 9.5, tracking: 0.11, weight: 400 },
+    { area: 0, size: 8.5, tracking: 0.08, weight: 400 },
+] as const;
+/** Place names keep this far inside the frame, in px, rather than being cut by its edge. */
+const PLACE_MARGIN = 4;
 /** Room kept round each data label, in px, so a dense map's names do not run together. */
 const LABEL_PAD = { x: 6, y: 3 };
 
@@ -188,6 +323,37 @@ const arcControl = (from: [number, number], to: [number, number], curve: string)
     const bend = curve === 'straight' ? 0 : 0.22;
     return [(from[0] + to[0]) / 2 - dy * bend, (from[1] + to[1]) / 2 + dx * bend];
 };
+
+/** The shallow-water rings round the coast, widest first (stroke widths in px; half of each shows in the water). */
+const SHORE_RINGS = [{ width: 12, opacity: 0.05 }, { width: 6, opacity: 0.06 }, { width: 2.5, opacity: 0.08 }] as const;
+/** Land smaller than this across on screen (px, the square root of its area) takes no shallow-water rings. */
+const SHORE_MIN_PX = 10;
+
+type ShoreParts = { polygons: number[][][][]; sizes: number[]; last?: { count: number; geometry: Geometry } };
+const shoreParts = new WeakMap<Feature, ShoreParts>();
+/**
+ * A coastline's land shapes, largest first, each kept with its size (the square root of its spherical area,
+ * in radians), and the outline of the shapes at least `minSize` across. The last outline is kept, so redrawing at
+ * a scale that keeps the same shapes reuses it.
+ */
+function coastAbove(feature: Feature, minSize: number): Geometry {
+    let parts = shoreParts.get(feature);
+    if (!parts) {
+        const geometry = feature.geometry;
+        const polygons = geometry?.type === 'Polygon' ? [geometry.coordinates] : geometry?.type === 'MultiPolygon' ? geometry.coordinates : [];
+        const sized = polygons.map(coordinates => {
+            const area = d3.geoArea({ type: 'Polygon', coordinates } as never);
+            // A ring wound the other way measures the rest of the sphere.
+            return { coordinates, size: Math.sqrt(Math.min(area, 4 * Math.PI - area)) };
+        }).sort((a, b) => b.size - a.size);
+        parts = { polygons: sized.map(item => item.coordinates), sizes: sized.map(item => item.size) };
+        shoreParts.set(feature, parts);
+    }
+    const index = parts.sizes.findIndex(size => size < minSize);
+    const count = index < 0 ? parts.sizes.length : index;
+    if (parts.last?.count !== count) parts.last = { count, geometry: { type: 'MultiPolygon', coordinates: parts.polygons.slice(0, count) } as Geometry };
+    return parts.last.geometry;
+}
 
 /** Layers drawn as flows, one line from place to place: flows, and routes (paths drawn leg by leg). */
 const asFlows = (layer: Layer) => layer.type === 'flows' || (layer.type === 'paths' && !!layer.legs);
@@ -353,6 +519,67 @@ export function placesCourse(places: LonLat[], project: (place: LonLat) => Scree
     };
 }
 
+/** A lon/lat box: west, south, east, north. */
+export type LonLatBox = [number, number, number, number];
+
+const coordinateBoxes = new WeakMap<object, LonLatBox>();
+
+/** The planar lon/lat box of nested coordinates, cached per array (boundaries are drawn many times, never edited). */
+function coordinatesBox(coordinates: unknown): LonLatBox {
+    const cached = coordinateBoxes.get(coordinates as object);
+    if (cached) return cached;
+    let west = Infinity, south = Infinity, east = -Infinity, north = -Infinity;
+    const visit = (value: unknown[]) => {
+        if (typeof value[0] === 'number') {
+            const lon = value[0] as number, lat = value[1] as number;
+            if (lon < west) west = lon;
+            if (lon > east) east = lon;
+            if (lat < south) south = lat;
+            if (lat > north) north = lat;
+        } else for (const item of value) visit(item as unknown[]);
+    };
+    visit(coordinates as unknown[]);
+    const box: LonLatBox = [west, south, east, north];
+    coordinateBoxes.set(coordinates as object, box);
+    return box;
+}
+
+const boxesOverlap = (a: LonLatBox, b: LonLatBox) => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
+
+/**
+ * `shape` without the polygons and lines that lie wholly outside `view`, or null when none is left. Shapes come back
+ * unchanged when nothing is dropped; anything that is not GeoJSON geometry (the sphere) is kept.
+ */
+export function cullShape(shape: unknown, view: LonLatBox): unknown {
+    const value = shape as { type?: string; geometry?: unknown; features?: unknown[]; geometries?: unknown[]; coordinates?: unknown[] } | null;
+    switch (value?.type) {
+        case 'Feature': {
+            const geometry = cullShape(value.geometry, view);
+            return geometry === value.geometry ? shape : geometry ? { ...value, geometry } : null;
+        }
+        case 'FeatureCollection':
+        case 'GeometryCollection': {
+            const key = value.type === 'FeatureCollection' ? 'features' : 'geometries';
+            const items = value[key] ?? [];
+            const kept = items.map(item => cullShape(item, view)).filter(item => item !== null);
+            return kept.length === items.length && kept.every((item, index) => item === items[index]) ? shape : kept.length ? { ...value, [key]: kept } : null;
+        }
+        case 'Polygon':
+        case 'LineString':
+        case 'MultiPoint':
+            return value.coordinates?.length && boxesOverlap(coordinatesBox(value.coordinates), view) ? shape : null;
+        case 'MultiPolygon':
+        case 'MultiLineString': {
+            const parts = value.coordinates ?? [];
+            if (!parts.length || !boxesOverlap(coordinatesBox(parts), view)) return null;
+            const kept = parts.filter(part => boxesOverlap(coordinatesBox(part), view));
+            return kept.length === parts.length ? shape : kept.length ? { ...value, coordinates: kept } : null;
+        }
+        default:
+            return shape;
+    }
+}
+
 /** A fitted map's collision outline and bounds, in units of its projection's scale from its translate. */
 interface FitShape { outline: [number, number][]; bounds: [number, number, number, number]; scale: number; translate: [number, number] }
 
@@ -385,6 +612,8 @@ export class MapRenderer {
     private transform = d3.zoomIdentity;
     private zoom: d3.ZoomBehavior<SVGSVGElement, unknown>;
     private fitKey = '';
+    /** The fit's key without the panels' places (see baseProjection). */
+    private fitFraming = '';
     /** What the map was last fitted to (null for a set centre and zoom). */
     private fitted: d3.GeoPermissibleObjects | null = null;
     private frame = 0;
@@ -402,6 +631,10 @@ export class MapRenderer {
     private circleBoxes: [number, number, number, number][] = [];
     /** Spikes' bodies: no label covers them. */
     private spikeBoxes: [number, number, number, number][] = [];
+    /** Lines drawn this frame (flows, routes, tracks) as screen polylines with half their width: place names stay off them. */
+    private lineTraces: { points: ScreenPoint[]; half: number }[] = [];
+    /** The last shallow-water outline built from several coastline features (see shoreShape). */
+    private shoreCollection: { members: Geometry[]; shape: Geometry } | null = null;
     /** Mark states for the current draw, per layer. */
     private states = new Map<string, Map<string, { dim: boolean; selected: boolean; hidden: boolean }>>();
     /** The zoom the map was last fully drawn at; gestures on big maps transform that drawing until they end. */
@@ -410,6 +643,10 @@ export class MapRenderer {
     /** Path data per element, keyed by the projection that produced it. */
     private pathKeys = new WeakMap<Element, { key: string; geometry: unknown }>();
     private projectionKey = '';
+    /** The detail a boundary set is drawn in during the current draw (see Scene.detail). */
+    private detailOf: (set: GeoSet) => GeoSet = set => set;
+    /** Zoomed in on a flat map: the lon/lat box drawn (the panel and a panel's margin); geometry outside it is skipped. */
+    private cullBox: LonLatBox | null = null;
     /** Between a zoom gesture's start and end. */
     private gesturing = false;
     /** The street-tile style and zoom level being drawn; earlier levels stay under it until it has loaded. */
@@ -424,7 +661,7 @@ export class MapRenderer {
         this.svg.selectAll('*').remove();
         this.root = this.svg.append('g').attr('class', 'df-map-root');
         // Area layers sit under the basemap's borders (which keep their edges crisp); marks stand over them.
-        for (const name of ['ocean', 'tiles', 'graticule', 'land', 'layers', 'borders', 'marks', 'labels']) this.root.append('g').attr('class', `df-map-${name}`);
+        for (const name of ['ocean', 'tiles', 'graticule', 'shore', 'land', 'layers', 'borders', 'marks', 'labels']) this.root.append('g').attr('class', `df-map-${name}`);
         this.svg.append('path').attr('class', 'df-map-lasso').attr('fill', 'rgba(31,119,180,0.08)').attr('stroke', '#1f77b4')
             .attr('stroke-width', 1).attr('stroke-dasharray', '4 3').style('pointer-events', 'none');
         this.zoom = d3.zoom<SVGSVGElement, unknown>()
@@ -497,11 +734,15 @@ export class MapRenderer {
     private setPath<E extends SVGPathElement, D>(selection: d3.Selection<E, D, d3.BaseType, unknown>, geometry: (datum: D) => unknown, path: d3.GeoPath) {
         const keys = this.pathKeys;
         const key = this.projectionKey;
+        const view = this.cullBox;
         selection.each(function (datum) {
             const shape = geometry(datum);
             const drawn = keys.get(this);
             if (drawn && drawn.key === key && drawn.geometry === shape) return;
-            this.setAttribute('d', path(shape as never) ?? '');
+            // Zoomed in, geometry far outside the view is left out before d3 projects it: detailed boundaries for
+            // the whole world would otherwise be projected and clipped on every draw.
+            const visible = view ? cullShape(shape, view) : shape;
+            this.setAttribute('d', visible ? path(visible as never) ?? '' : '');
             keys.set(this, { key, geometry: shape });
         });
     }
@@ -545,13 +786,14 @@ export class MapRenderer {
         this.canvas.style.width = `${width}px`;
         this.canvas.style.height = `${height}px`;
         this.fitKey = '';
+        this.fitFraming = '';
         if (this.scene) this.draw(false);
     }
 
     update(scene: Scene, animate = true) {
         const previous = this.scene;
         this.scene = scene;
-        if (!previous || previous.view !== scene.view) this.fitKey = '';
+        if (!previous || previous.view !== scene.view) { this.fitKey = ''; this.fitFraming = ''; }
         this.schedule(animate && !!previous);
     }
 
@@ -646,9 +888,13 @@ export class MapRenderer {
         const view = scene.view;
         const name = viewProjection(view);
         const obstacles = scene.obstacles ?? [];
-        const key = JSON.stringify([name, view.center, view.zoom, view.rotate, view.fit, view.basemap, view.tiles, this.width, this.height, obstacles,
+        const framing = JSON.stringify([name, view.center, view.zoom, view.rotate, view.fit, view.basemap, view.tiles, this.width, this.height,
             scene.basemap?.name, scene.fitVersion ?? 0]);
-        if (key === this.fitKey) {
+        const key = JSON.stringify([framing, obstacles]);
+        // Panels that resize (a legend gaining a line as a slider steps) move a map the viewer has not touched; once
+        // they have zoomed or panned, their view stays, and the panels' new places count at the next refit.
+        const moved = this.transform.k !== 1 || this.transform.x !== 0 || this.transform.y !== 0;
+        if (key === this.fitKey || (moved && framing === this.fitFraming)) {
             const projection = makeProjection(name);
             projection.scale(this.base.scale).translate(this.base.translate);
             if (name !== 'albersUsa') projection.rotate(this.base.rotate);
@@ -666,6 +912,7 @@ export class MapRenderer {
             rotate: name === 'albersUsa' ? [0, 0, 0] : projection.rotate() as [number, number, number],
         };
         this.fitKey = key;
+        this.fitFraming = framing;
         this.transform = d3.zoomIdentity;
         this.svg.property('__zoom', d3.zoomIdentity);
         this.limitZoom(projection, name);
@@ -1091,17 +1338,58 @@ export class MapRenderer {
         } else {
             projection.scale(this.base.scale * t.k).translate([this.base.translate[0] * t.k + t.x, this.base.translate[1] * t.k + t.y]);
             // Zoomed in, clip far off-screen geometry so detailed boundaries stay cheap (with room for a pan).
-            if (viewProjection(this.scene!.view) !== 'albersUsa' && t.k > 1.5) {
+            if (viewProjection(this.scene!.view) !== 'albersUsa' && this.zoomedIn(projection)) {
                 projection.clipExtent([[-this.width, -this.height], [2 * this.width, 2 * this.height]]);
             }
         }
         return projection;
     }
 
+    /**
+     * Closer than the whole world (360° spans over twice the panel), whether by zooming or by a fit to the data:
+     * finer boundaries are drawn, so off-screen geometry is culled and gestures transform the last drawing.
+     */
+    private zoomedIn(projection: d3.GeoProjection): boolean {
+        return 2 * Math.PI * projection.scale() > 2 * this.width;
+    }
+
+    /** The coastline the shallow-water rings follow: its land shapes at least `minSize` across (radians), as one stable geometry. */
+    private shoreShape(coast: Feature | FeatureCollection, minSize: number): Geometry {
+        const features = coast.type === 'FeatureCollection' ? coast.features : [coast];
+        const members = features.map(feature => coastAbove(feature, minSize));
+        if (members.length === 1) return members[0];
+        const cached = this.shoreCollection;
+        if (cached && cached.members.length === members.length && cached.members.every((member, index) => member === members[index])) return cached.shape;
+        const shape = { type: 'GeometryCollection', geometries: members } as Geometry;
+        this.shoreCollection = { members, shape };
+        return shape;
+    }
+
     private visible(point: LonLat): boolean {
         if (!this.scene || viewProjection(this.scene.view) !== 'orthographic') return true;
         const [lambda, phi] = this.projection.rotate();
         return d3.geoDistance(point, [-lambda, -phi]) < Math.PI / 2 - 0.01;
+    }
+
+    /**
+     * Zoomed in on a flat map (where the projection clips to a panel's margin around the view), the lon/lat box of
+     * that clipped area, sampled through the inverse projection and padded. Null when the whole map may show.
+     */
+    private drawnBox(projection: d3.GeoProjection): LonLatBox | null {
+        const name = this.scene ? viewProjection(this.scene.view) : null;
+        if (!name || name === 'orthographic' || name === 'albersUsa' || !this.zoomedIn(projection) || !projection.invert) return null;
+        let west = Infinity, south = Infinity, east = -Infinity, north = -Infinity;
+        const steps = 12;
+        for (let i = 0; i <= steps; i++) for (let j = 0; j <= steps; j++) {
+            const point = projection.invert([-this.width + (3 * this.width * i) / steps, -this.height + (3 * this.height * j) / steps]);
+            if (!point || !Number.isFinite(point[0]) || !Number.isFinite(point[1])) return null;
+            west = Math.min(west, point[0]); east = Math.max(east, point[0]);
+            south = Math.min(south, point[1]); north = Math.max(north, point[1]);
+        }
+        // Across the antimeridian the box would wrap; draw everything instead.
+        if (east - west > 300) return null;
+        const padX = (east - west) * 0.1 + 1, padY = (north - south) * 0.1 + 1;
+        return [west - padX, south - padY, east + padX, north + padY];
     }
 
     private draw(animate: boolean) {
@@ -1115,10 +1403,20 @@ export class MapRenderer {
         this.drawnTransform = this.transform;
         // Albers USA is a composite projection without rotate().
         this.projectionKey = JSON.stringify([projection.scale(), projection.translate(), typeof projection.rotate === 'function' ? projection.rotate() : 0]);
+        this.cullBox = this.drawnBox(projection);
+        const worldWidth = 2 * Math.PI * projection.scale();
+        // Each boundary set is drawn in the detail its scale calls for, chosen now (see Scene.detail).
+        const details = new Map<GeoSet, GeoSet>();
+        this.detailOf = set => {
+            let found = details.get(set);
+            if (!found) { found = scene.detail?.(set, worldWidth) ?? set; details.set(set, found); }
+            return found;
+        };
+        const drawnBasemap = scene.basemap ? this.detailOf(scene.basemap) : null;
         this.states.clear();
         this.heavy = (scene.basemap?.features.length ?? 0) + scene.models.reduce((count, model) => count + model.marks.length, 0) > 1500
-            || !!scene.basemap?.name.startsWith('countries') && this.transform.k > 2;
-        this.callbacks.onScale?.(2 * Math.PI * projection.scale());
+            || !!scene.basemap?.name.startsWith('countries') && this.zoomedIn(projection);
+        this.callbacks.onScale?.(worldWidth);
         const name = viewProjection(scene.view);
         const tiles = scene.view.tiles && scene.view.tiles !== 'none' ? scene.view.tiles : null;
         // Transitions only on small maps; thousands of animated paths stutter.
@@ -1149,7 +1447,8 @@ export class MapRenderer {
         const regionsLayerIds = new Set(scene.models.filter(model => model.layer.type === 'regions' && model.layer.visible !== false && model.geoSet === scene.basemap).map(model => model.layer.id));
         // Antarctica only takes room on world maps, unless the data includes it.
         const showsAntarctica = this.showsAntarctica();
-        const landFeatures = [...this.antarctica(), ...(scene.basemap?.features ?? []).filter(item => showsAntarctica || item.properties.id !== 'ATA')];
+        const withoutAntarctica = (set: GeoSet | null) => (set?.features ?? []).filter(item => showsAntarctica || item.properties.id !== 'ATA');
+        const landFeatures = [...this.antarctica(), ...withoutAntarctica(drawnBasemap)];
         const landPaths = land.selectAll<SVGPathElement, Feature>('path').data(tiles ? [] : landFeatures, item => String(item.id))
             .join('path').attr('fill', overField ? 'none' : regionsLayerIds.size ? style.noData : style.land)
             .attr('stroke', 'none');
@@ -1157,11 +1456,11 @@ export class MapRenderer {
         const borders = this.root.select<SVGGElement>('.df-map-borders');
         // Interior borders, then the coastline (the land's outline) a shade darker.
         const outlines = [
-            ...(scene.basemap?.borders ? [{ kind: 'border', shape: scene.basemap.borders as unknown }] : []),
-            ...(scene.basemap?.disputedBorders ? [{ kind: 'disputed', shape: scene.basemap.disputedBorders as unknown }] : []),
-            ...(scene.basemap?.outline && !tiles ? [{ kind: 'coast', shape: (showsAntarctica
-                ? { type: 'FeatureCollection', features: [...(scene.basemap.outline.type === 'FeatureCollection' ? scene.basemap.outline.features : [scene.basemap.outline]), ...this.antarctica()] }
-                : scene.basemap.outlineWithoutAntarctica ?? scene.basemap.outline) as unknown }] : []),
+            ...(drawnBasemap?.borders ? [{ kind: 'border', shape: drawnBasemap.borders as unknown }] : []),
+            ...(drawnBasemap?.disputedBorders ? [{ kind: 'disputed', shape: drawnBasemap.disputedBorders as unknown }] : []),
+            ...(drawnBasemap?.outline && !tiles ? [{ kind: 'coast', shape: (showsAntarctica
+                ? { type: 'FeatureCollection', features: [...(drawnBasemap.outline.type === 'FeatureCollection' ? drawnBasemap.outline.features : [drawnBasemap.outline]), ...this.antarctica()] }
+                : drawnBasemap.outlineWithoutAntarctica ?? drawnBasemap.outline) as unknown }] : []),
         ];
         const borderPaths = borders.selectAll<SVGPathElement, { kind: string; shape: unknown }>('path').data(outlines, item => item.kind)
             .join('path').attr('fill', 'none').attr('vector-effect', 'non-scaling-stroke')
@@ -1174,6 +1473,20 @@ export class MapRenderer {
             .style('pointer-events', 'none');
         this.setPath(borderPaths, item => item.shape, path);
 
+        // Shallow water: the coastline again under the land, in widening translucent rings, so the sea darkens
+        // towards the shore. The land covers each ring's inner half. Islands too small on screen to carry the rings
+        // are left out: round a speck of land they would read as a smudge on the water.
+        const coastShape = outlines.find(item => item.kind === 'coast')?.shape as Feature | FeatureCollection | undefined;
+        const shore = this.root.select<SVGGElement>('.df-map-shore');
+        const shoreShape = style.shore && coastShape && !overField ? this.shoreShape(coastShape, SHORE_MIN_PX / projection.scale()) : null;
+        const shorePaths = shore.selectAll<SVGPathElement, typeof SHORE_RINGS[number]>('path').data(shoreShape ? SHORE_RINGS : [])
+            .join('path').attr('fill', 'none').attr('vector-effect', 'non-scaling-stroke').attr('stroke-linejoin', 'round')
+            .attr('stroke', style.shore ?? 'none').attr('stroke-width', ring => ring.width).attr('stroke-opacity', ring => ring.opacity)
+            .style('pointer-events', 'none');
+        // The rings share one outline: project it once, then copy its path data.
+        this.setPath(shorePaths.filter((_, index) => index === 0), () => shoreShape, path);
+        const shoreD = shorePaths.node()?.getAttribute('d') ?? '';
+        shorePaths.filter((_, index) => index > 0).each(function () { if (this.getAttribute('d') !== shoreD) this.setAttribute('d', shoreD); });
         const visibleModels = scene.models.filter(model => model.layer.visible !== false);
         // Regions, shapes and fields fill areas, so borders draw over them; spikes, points, flows and paths stand over the
         // borders (a coastline must not cut through a spike).
@@ -1196,6 +1509,7 @@ export class MapRenderer {
         this.positions.clear();
         this.circleBoxes = [];
         this.spikeBoxes = [];
+        this.lineTraces = [];
         const dynamicLegends: Record<string, LegendModel | null> = {};
         const labelCandidates: Label[] = [];
         for (const groups of [areaGroups, markGroups]) {
@@ -1206,7 +1520,7 @@ export class MapRenderer {
             });
         }
         this.drawCanvas();
-        if (scene.view.labels !== false && !tiles && scene.interactive) this.placeLabels(landFeatures, path, labelCandidates);
+        if (scene.view.labels !== false && !tiles && scene.interactive) this.placeLabels([...this.antarctica(), ...withoutAntarctica(scene.basemap)], path, labelCandidates);
         this.drawLabels(labelCandidates);
         const legendKey = JSON.stringify(Object.entries(dynamicLegends).map(([id, legend]) => [id, legend && 'items' in legend ? legend.items.map(item => item.label) : legend && 'domain' in legend ? legend.domain : null]));
         if (legendKey !== this.dynamicLegendKey) {
@@ -1396,7 +1710,9 @@ export class MapRenderer {
         if (type === 'regions' || type === 'shapes') {
             const regions = group.selectAll<SVGPathElement, Mark>('path.df-map-region').data(model.marks, mark => mark.key)
                 .join('path').attr('class', 'df-map-region').attr('stroke-linejoin', 'round').attr('vector-effect', 'non-scaling-stroke');
-            this.setPath(regions, mark => mark.feature, path);
+            // Regions draw in the detail their set is drawn in at this scale; the mark keeps its own feature for anchors.
+            const detail = model.geoSet ? this.detailOf(model.geoSet) : undefined;
+            this.setPath(regions, mark => detail && detail !== model.geoSet && mark.regionId ? detail.byId.get(mark.regionId) ?? mark.feature : mark.feature, path);
             const fill = (mark: Mark) => model.color.color(mark.colorValue);
             (duration ? regions.transition().duration(duration) as unknown as typeof regions : regions).attr('fill', mark => this.markState(model, mark).hidden ? this.style.noData : fill(mark));
             regions
@@ -1522,6 +1838,11 @@ export class MapRenderer {
             }).filter(item => item.d);
             // Small flows over large ones (Dent; Jenny et al. 2017), so the big ones never bury the rest.
             const sorted = lineData.sort((a, b) => model.size.size(b.mark.sizeValue) - model.size.size(a.mark.sizeValue));
+            for (const item of sorted) {
+                if (this.markState(model, item.mark).hidden) continue;
+                const points = item.points.length ? item.points : courseOf(item.mark)?.points ?? [];
+                if (points.length > 1) this.lineTraces.push({ points, half: Math.max(0.5, model.size.size(item.mark.sizeValue)) / 2 + 1 });
+            }
             // Lines stay nearly opaque, as most published flow maps draw them; crossings separate by a casing
             // in the frame colour under each line, not by transparency. Only crowded maps fade (to 0.65): their widths already thin with their number.
             const shown = sorted.filter(item => !this.markState(model, item.mark).hidden).length;
@@ -1699,13 +2020,17 @@ export class MapRenderer {
         }
         if (type === 'spikes') {
             const width = 7;
+            // A negative value's spike points down from its place (a loss under a gain), as tall as its magnitude.
+            const tipOf = (mark: Mark, [x, y]: [number, number]) => {
+                const h = model.size.size(mark.sizeValue);
+                return { x, y, h, tip: Number(mark.sizeValue) < 0 ? y + h : y - h };
+            };
             const spikes = group.selectAll<SVGPathElement, Mark>('path.df-map-spike').data(placed.sort((a, b) => a.point[1] - b.point[1]).map(item => item.mark), mark => mark.key)
                 .join('path').attr('class', 'df-map-spike');
             const points = new Map(placed.map(item => [item.mark.key, item.point]));
             (duration ? spikes.transition().duration(duration) as unknown as typeof spikes : spikes).attr('d', mark => {
-                const [x, y] = points.get(mark.key)!;
-                const h = model.size.size(mark.sizeValue);
-                return `M${x - width / 2},${y}L${x},${y - h}L${x + width / 2},${y}Z`;
+                const { x, y, tip } = tipOf(mark, points.get(mark.key)!);
+                return `M${x - width / 2},${y}L${x},${tip}L${x + width / 2},${y}Z`;
             });
             // Solid, so a thin spike does not split into two tones where land meets sea behind it; outlined in the map's
             // halo, so spikes standing in front of one another (drawn back to front) stay apart.
@@ -1714,11 +2039,11 @@ export class MapRenderer {
                 .attr('stroke-width', mark => this.markState(model, mark).selected ? 1.5 : 0.6).attr('stroke-linejoin', 'round');
             spikes.order();
             this.bindMarkEvents(spikes, model);
-            for (const { mark, point: [x, y] } of placed) {
-                const h = model.size.size(mark.sizeValue);
-                this.spikeBoxes.push([x - width / 2, y - h, x + width / 2, y]);
-                // A spike's name sits over its tip.
-                if (layer.text && mark.text) labels.push({ x, y: y - h - 7, text: mark.text, priority: h, model });
+            for (const { mark, point } of placed) {
+                const { x, y, h, tip } = tipOf(mark, point);
+                this.spikeBoxes.push([x - width / 2, Math.min(y, tip), x + width / 2, Math.max(y, tip)]);
+                // A spike's name sits past its tip.
+                if (layer.text && mark.text) labels.push({ x, y: tip < y ? tip - 7 : tip + 12, text: mark.text, priority: h, model });
             }
             return undefined;
         }
@@ -1953,19 +2278,24 @@ export class MapRenderer {
         for (const feature of features) {
             const properties = feature.properties as { id: string; name: string };
             if (labelled.has(properties.id)) continue;
+            if (this.cullBox && !cullShape(feature, this.cullBox)) continue;
             const [[x0, y0], [x1, y1]] = path.bounds(feature as never);
             const width = x1 - x0;
             const height = y1 - y0;
             if (!(width > 18 && height > 10) || x1 < 0 || x0 > this.width || y1 < 0 || y0 > this.height) continue;
+            // Atlas lettering: names in spaced capitals, in three sizes by how much room the place takes on screen.
+            const tier = PLACE_TIERS.find(item => width * height >= item.area) ?? PLACE_TIERS[PLACE_TIERS.length - 1];
             // A name needs comfortable room, so small countries stay unnamed until you zoom in.
-            const fits = (text: string) => textWidth(text, 9.5) + 10 <= width * 0.6 && height >= 16;
-            const text = fits(properties.name) ? properties.name : basemap.name === 'us-states' ? stateAbbr(properties.id) : undefined;
+            const fits = (text: string) => labelWidth({ text, size: tier.size, tracking: tier.tracking } as Label) + 10 <= width * 0.6 && height >= 16;
+            const name = properties.name.toLocaleUpperCase();
+            const text = fits(name) ? name : basemap.name === 'us-states' ? stateAbbr(properties.id) : undefined;
             if (!text || !fits(text)) continue;
-            const anchor = featureAnchor(feature);
+            const anchor = labelAnchor(feature);
             if (!this.visible(anchor)) continue;
             const point = this.projection(anchor);
             if (!point) continue;
-            candidates.push({ x: point[0], y: point[1], text, place: true, priority: -1e9 + width * height, fill: fills.get(properties.id) });
+            candidates.push({ x: point[0], y: point[1], text, place: true, priority: -1e9 + width * height, fill: fills.get(properties.id),
+                size: tier.size, tracking: tier.tracking, weight: tier.weight });
         }
         // A budget by map area keeps the basemap quiet: the largest places, more as the map zooms in.
         const budget = Math.max(6, Math.min(60, Math.round(this.width * this.height / 26000)));
@@ -1978,6 +2308,7 @@ export class MapRenderer {
         const placed: [number, number, number, number][] = [];
         // Marks close together that share a name (turbines of one wind farm) are named once.
         const named = new Map<string, [number, number][]>();
+        const obstacles = this.scene?.obstacles ?? [];
         // Data labels share the plot by its area, most salient first; place names keep their own budget.
         let dataBudget = Math.max(12, Math.round((this.width * this.height) / LABEL_ROOM));
         const kept = candidates.filter(item => item.text && Number.isFinite(item.x) && Number.isFinite(item.y)
@@ -1985,7 +2316,7 @@ export class MapRenderer {
             .sort((a, b) => b.priority - a.priority)
             .filter(item => {
                 if (!item.place && dataBudget <= 0) return false;
-                const width = textWidth(item.text, item.size ?? (item.place ? 9.5 : 11)) + (item.place ? 16 : 4 + 2 * LABEL_PAD.x);
+                const width = labelWidth(item) + (item.place ? 16 : 4 + 2 * LABEL_PAD.x);
                 // A mark's name at the frame's edge slides inside it rather than being cut off.
                 if (!item.place && item.x >= 0 && item.x <= this.width) {
                     const inside = (x: number) => Math.min(this.width - width / 2, Math.max(width / 2, x));
@@ -1995,10 +2326,20 @@ export class MapRenderer {
                 if (named.get(item.text)?.some(([x, y]) => Math.hypot(x - item.x, y - item.y) < Math.max(80, width))) return false;
                 const fits = ({ x, y }: { x: number; y: number }) => {
                     const pad = item.place ? 0 : LABEL_PAD.y;
-                    const box: [number, number, number, number] = [x - width / 2, y - 8 - pad, x + width / 2, y + 6 + pad];
+                    const [above, below] = item.place ? [labelSize(item) * 0.8, labelSize(item) * 0.65] : [8, 6];
+                    const box: [number, number, number, number] = [x - width / 2, y - above - pad, x + width / 2, y + below + pad];
                     const overlaps = (other: [number, number, number, number]) => box[0] < other[2] && box[2] > other[0] && box[1] < other[3] && box[3] > other[1];
                     // No label covers a spike; place names also give way to bubbles (data labels belong on them).
                     if (placed.some(overlaps) || this.spikeBoxes.some(overlaps) || (item.place && this.circleBoxes.some(overlaps))) return null;
+                    // Place names stay whole inside the frame, off the floating panels, and off the data's lines.
+                    if (item.place) {
+                        // The box's 16px of room is the name's spacing from others, not ink: the frame may take some of it.
+                        const ink: [number, number, number, number] = [box[0] + 6, box[1], box[2] - 6, box[3]];
+                        if (ink[0] < PLACE_MARGIN || ink[1] < PLACE_MARGIN || ink[2] > this.width - PLACE_MARGIN || ink[3] > this.height - PLACE_MARGIN) return null;
+                        if (obstacles.some(overlaps)) return null;
+                        if (this.lineTraces.some(trace => trace.points.some((point, index) => index > 0
+                            && segmentHitsBox(trace.points[index - 1], point, ink, trace.half)))) return null;
+                    }
                     return box;
                 };
                 const spot = fits(item) ? item : item.alt && fits(item.alt) ? item.alt : null;
@@ -2015,9 +2356,9 @@ export class MapRenderer {
         group.selectAll<SVGTextElement, typeof kept[number]>('text').data(kept)
             .join('text').attr('x', item => item.x).attr('y', item => item.y).text(item => item.text)
             .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
-            .attr('font-size', item => item.size ?? (item.place ? 9.5 : 11)).attr('font-family', 'var(--df-font, system-ui, sans-serif)')
-            .attr('font-weight', item => item.strong ? 650 : item.place ? 400 : 500)
-            .attr('letter-spacing', item => item.place ? '0.01em' : null)
+            .attr('font-size', labelSize).attr('font-family', 'var(--df-font, system-ui, sans-serif)')
+            .attr('font-weight', item => item.weight ?? (item.strong ? 650 : item.place ? 400 : 500))
+            .attr('letter-spacing', item => item.tracking ? `${item.tracking}em` : item.place ? '0.01em' : null)
             // On a filled region, labels take the contrasting ink and no halo; on the basemap, a halo.
             // Place names on a fill stay soft (they name, the colour speaks); data labels are firm.
             .attr('fill', item => item.fill ? (isDark(item.fill) ? `rgba(255,255,255,${item.place ? 0.72 : 0.92})` : `rgba(30,30,30,${item.place ? 0.5 : 0.78})`)

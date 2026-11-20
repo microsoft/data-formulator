@@ -397,7 +397,9 @@ export function sizeScale(encoding: SizeEncoding | undefined, values: unknown[],
         const fixed = encoding?.value ?? defaults.value;
         return { size: () => fixed, legend: null };
     }
-    const numbers = values.map(toNumber).filter((value): value is number => value !== null && value >= 0);
+    // A spike stands for a value's magnitude; a negative one points down (MapRenderer), so changes read both ways.
+    const signed = shape === 'spike';
+    const numbers = values.map(toNumber).filter((value): value is number => value !== null && (signed || value >= 0)).map(value => signed ? Math.abs(value) : value);
     // A fixed domain keeps sizes comparable across maps; circles stay area-true from zero.
     const fixed = validSizeDomain(encoding.domain);
     const max = fixed?.[1] ?? d3.max(numbers) ?? 1;
@@ -409,7 +411,8 @@ export function sizeScale(encoding: SizeEncoding | undefined, values: unknown[],
         ? d3.scaleSqrt().domain([0, max || 1]).range([0, maxSize]).clamp(true)
         : d3.scaleLinear().domain([low, max > low ? max : low + 1]).range([minSize, maxSize]).clamp(true);
     const size = (value: unknown) => {
-        const number = toNumber(value);
+        const raw = toNumber(value);
+        const number = raw !== null && signed ? Math.abs(raw) : raw;
         if (number === null || number < 0) return 0;
         return Math.max(shape === 'circle' && number > 0 ? minSize : 0, scale(number));
     };

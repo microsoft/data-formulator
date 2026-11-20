@@ -222,7 +222,9 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     });
     // A theme's title ink and font, on light styles (dark styles keep their own light ink).
     const titleInk = style.mode === 'light' ? ink : undefined;
-    // Zoomed in, world boundaries swap for finer ones (same ids and set name, so joins and framing hold).
+    // Zoomed in, world boundaries draw from finer levels (same ids), loaded as the zoom first calls for them. The
+    // renderer picks the level for the scale of each draw (Scene.detail), so zooming back out never draws the world
+    // in fine detail; models, joins and anchors stay on the loaded set.
     const [detail, setDetail] = useState<0 | 1 | 2>(0);
     const [detailSets, setDetailSets] = useState<Partial<Record<1 | 2, GeoSet>>>({});
     const usesCountries = Object.keys(loadedGeoSets).some(name => name.startsWith('countries'));
@@ -232,15 +234,22 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
         loadGeoSet(COUNTRY_DETAIL_SETS[detail]).then(set => { if (!cancelled) setDetailSets(current => ({ ...current, [detail]: set })); }).catch(() => {});
         return () => { cancelled = true; };
     }, [usesCountries, detail, detailSets]);
-    const geoSets = useMemo(() => {
-        const finest = ([2, 1] as const).find(level => level <= detail && detailSets[level]);
-        if (!finest) return loadedGeoSets;
-        const swapped = { ...loadedGeoSets };
-        for (const name of ['countries', 'countries-detailed']) {
-            if (swapped[name] && COUNTRY_DETAIL_SETS.indexOf(name as never) < finest) swapped[name] = { ...detailSets[finest]!, name };
-        }
-        return swapped;
-    }, [loadedGeoSets, detail, detailSets]);
+    const geoSets = loadedGeoSets;
+    // A new function when a level arrives, so the map redraws with it.
+    const detailFor = useMemo(() => {
+        const renamed = new Map<string, GeoSet>();
+        return (set: GeoSet, worldWidth: number): GeoSet => {
+            const own = COUNTRY_DETAIL_SETS.indexOf(set.name as never);
+            if (own < 0) return set;
+            const wanted = countryDetail(worldWidth, basemapRef.current);
+            const finest = ([2, 1] as const).find(level => level <= wanted && level > own && detailSets[level]);
+            if (!finest) return set;
+            const key = `${set.name}:${finest}`;
+            let found = renamed.get(key);
+            if (!found) { found = { ...detailSets[finest]!, name: set.name }; renamed.set(key, found); }
+            return found;
+        };
+    }, [detailSets]);
     const basemapName = spec.view.basemap ?? 'world';
     const basemapRef = useRef(basemapName);
     basemapRef.current = basemapName;
@@ -526,8 +535,8 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
         // Nothing reaches the renderer before the panel has a size: its marks (bubble sizes) depend on it, and a first
         // drawing at another size would animate into place.
         if (!size.width || !size.height) return;
-        rendererRef.current?.update({ view: spec.view, basemap, models, selection, hidden, highlight, interactive, obstacles, fitVersion }, !stepped && !still);
-    }, [spec.view, basemap, models, selection, hidden, highlight, interactive, obstacles, fitVersion, timeValue, size.width, size.height]);
+        rendererRef.current?.update({ view: spec.view, basemap, models, selection, hidden, highlight, interactive, obstacles, fitVersion, detail: detailFor }, !stepped && !still);
+    }, [spec.view, basemap, models, selection, hidden, highlight, interactive, obstacles, fitVersion, detailFor, timeValue, size.width, size.height]);
 
     // Drop a selection whose marks are gone (filtered out).
     useEffect(() => {

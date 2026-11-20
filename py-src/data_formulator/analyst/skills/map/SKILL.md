@@ -41,6 +41,9 @@ as a still picture of how the map first opens (title, legend; no controls).
    - Rates, shares, per-capita values by region: `choropleth`.
    - Counts or totals by region or city: `bubbles` (area-true), or `spikes`
      for many overlapping places; `cartogram` to size regions by value.
+   - Changes at places (gains and losses, swings): `spikes` sized and coloured
+     by the change itself — negative values point down, and a change field
+     takes a diverging colour.
    - Individual locations: `points` (thousands are fine); many overlapping
      points: `density` (hexagon bins or a heatmap). To single out notable
      rows (M7+ quakes over all quakes' density), add `highlight` (below).

@@ -28,6 +28,8 @@ export interface MapStyle {
     /** The outline of the land and the sphere. */
     coast: string;
     graticule: string;
+    /** Water darkening towards the coast, as printed atlases shade shallow seas; none on styles without painted water. */
+    shore?: string;
     noData: string;
     /** Basemap place names, and the halo that keeps them readable. */
     placeLabel: string;
@@ -63,13 +65,13 @@ export const MAP_STYLE_PRESETS: Record<MapStyleName, MapStyle> = {
     // A printed atlas: water fills the whole frame (like Tableau's map tiles), warm land on it.
     atlas: {
         id: 'atlas', page: '#ffffff', background: '#dbe9f2', ocean: '#dbe9f2', land: '#f6f3eb', border: '#dad2c4', coast: '#b8cbd8',
-        graticule: '#c2d8e6', noData: '#ebe6db', placeLabel: '#958e82', halo: 'rgba(245,241,232,0.9)', text: '#2b2b2b',
+        graticule: '#c2d8e6', shore: '#9fbfd5', noData: '#ebe6db', placeLabel: '#958e82', halo: 'rgba(245,241,232,0.9)', text: '#2b2b2b',
         selection: '#1f1f1f', mode: 'light', tiles: 'light', sphere: false,
     },
     // Dark water fills the frame; dark land; bright marks read as light.
     dark: {
         id: 'dark', page: '#15181b', background: '#1d2227', ocean: '#1d2227', land: '#2e343a', border: '#424a52', coast: '#4b545d',
-        graticule: '#262c32', noData: '#383f46', placeLabel: '#78818a', halo: 'rgba(29,34,39,0.85)', text: '#e8eaec',
+        graticule: '#262c32', shore: '#3a4650', noData: '#383f46', placeLabel: '#78818a', halo: 'rgba(29,34,39,0.85)', text: '#e8eaec',
         selection: '#ffffff', mode: 'dark', tiles: 'dark', sphere: false,
     },
     // Outlines only, for print and reports.

@@ -6,7 +6,7 @@ import { Box } from '@mui/material';
 import { Link, useLocation } from 'react-router-dom';
 import { weight } from '../app/tokens';
 
-const PAGES: [string, string][] = [['/dev', 'components'], ['/dev/samples', 'sample apps'], ['/dev/maps', 'maps'], ['/dev/map-colors', 'map colours'], ['/dev/map-bubbles', 'map bubbles'], ['/dev/design', 'design']];
+const PAGES: [string, string][] = [['/dev', 'components'], ['/dev/samples', 'sample apps'], ['/dev/maps', 'maps'], ['/dev/design', 'design']];
 
 const linkSx = { fontSize: 12, color: 'text.secondary', textDecoration: 'none', '&:hover': { color: 'primary.main' } } as const;
 

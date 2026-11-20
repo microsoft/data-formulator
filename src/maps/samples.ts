@@ -238,11 +238,12 @@ export function sampleMaps(countyIds: string[] = []): SampleMap[] {
             },
         },
         {
-            id: 'spikes', label: 'US · spikes from coordinates', spec: {
-                title: 'Store revenue', template: 'spikes', data: { values: storeRevenue() },
-                encoding: { lat: 'lat', lon: 'lon', size: 'revenue', label: 'city' },
-                fields: { revenue: { semanticType: 'Amount', unit: 'USD', displayName: 'Revenue' } },
-                properties: { geography: 'us-states', sizeRange: [0, 140], color: '#4e79a7' },
+            id: 'spikes', label: 'US · spikes, gains and losses', spec: {
+                title: 'Change in store revenue', subtitle: 'Gains point up, losses down (synthetic)',
+                template: 'spikes', data: { values: storeRevenue().map(row => ({ ...row, change: round((hash01(`${row.city}Δ`) - 0.45) * 50) })) },
+                encoding: { lat: 'lat', lon: 'lon', size: 'change', color: 'change', label: 'city' },
+                fields: { change: { semanticType: 'PercentageChange', unit: '%', displayName: 'Revenue change' } },
+                properties: { geography: 'us-states', sizeRange: [0, 110] },
             },
         },
         {

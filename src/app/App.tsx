@@ -1552,14 +1552,6 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             lazy: () => import('../maps/MapGallery').then(module => ({ Component: module.default })),
         },
         {
-            path: "/dev/map-colors",
-            lazy: () => import('../maps/MapColorPreview').then(module => ({ Component: module.default })),
-        },
-        {
-            path: "/dev/map-bubbles",
-            lazy: () => import('../maps/MapBubblePreview').then(module => ({ Component: module.default })),
-        },
-        {
             path: "/dev/samples",
             lazy: () => import('../views/DevSamplesPage').then(module => ({ Component: module.default })),
         },
