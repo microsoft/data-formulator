@@ -69,11 +69,11 @@ import { SessionsDialog } from './AllSessions';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions, usePublishedExamples } from './ExampleSessions';
 import { WorkflowPanel, WorkflowRunObserver } from './WorkflowPanel';
-import { SiteLanding } from '../sites/SiteLanding';
-import { DemoDatasetTabs, inSentence } from '../sites/DemoDatasetTabs';
-import { DEMO_COLUMN, DEMO_PAGE, DEMO_CHAT_CENTRE } from '../sites/layout';
-import { DEMO_ID } from '../app/demo';
-import type { SiteStarter, SiteStory } from '../sites/types';
+import { SpaceLanding } from '../spaces/SpaceLanding';
+import { SpaceDatasetTabs, inSentence } from '../spaces/SpaceDatasetTabs';
+import { SPACE_COLUMN, SPACE_PAGE, SPACE_CHAT_CENTRE } from '../spaces/layout';
+import { SPACE_ID } from '../app/space';
+import type { SpaceStarter, SpaceStory } from '../spaces/types';
 import { listWorkflowLibrary, SchedulesPanel, useScheduleLibrary } from './WorkflowSchedules';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import { Trans, useTranslation } from 'react-i18next';
@@ -156,14 +156,14 @@ export const DataFormulatorFC = ({ }) => {
     const workflowsAvailable = serverConfig?.WORKFLOWS_AVAILABLE === true;
     const canSchedule = !!serverConfig?.IS_LOCAL_MODE && workflowsAvailable;
     const appName = getToolName(serverConfig.APP_NAME);
-    // On a demo (/demo/<id>), the landing page is the standard one filled in from its profile (design-docs/69).
-    const site = serverConfig.SITE;
-    // The dataset shown in a demo's tabs, which its "Show me your analysis of …" chip names.
-    const [demoDataset, setDemoDataset] = useState<SiteStarter>();
-    // A demo's headline may break into lines ("\n" in its profile); the longest line sets the size.
-    const headingLines = (site ? site.headline || site.name : appName).split('\n').map(line => line.trim()).filter(Boolean);
-    // A demo's title stays a little narrower than its chat box.
-    const headingSize = Math.max(32, Math.min(site ? 52 : 76, (site ? 70 : 76) * Math.sqrt(15 / Math.max(1, ...headingLines.map(line => line.length)))));
+    // In a space (/space/<id>), the landing page is the standard one filled in from its profile (design-docs/69).
+    const space = serverConfig.SPACE;
+    // The dataset shown in a space's tabs, which its "Show me your analysis of …" chip names.
+    const [spaceDataset, setSpaceDataset] = useState<SpaceStarter>();
+    // A space's headline may break into lines ("\n" in its profile); the longest line sets the size.
+    const headingLines = (space ? space.headline || space.name : appName).split('\n').map(line => line.trim()).filter(Boolean);
+    // A space's title stays a little narrower than its chat box.
+    const headingSize = Math.max(32, Math.min(space ? 52 : 76, (space ? 70 : 76) * Math.sqrt(15 / Math.max(1, ...headingLines.map(line => line.length)))));
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
     const theme = useTheme();
 
@@ -516,8 +516,8 @@ export const DataFormulatorFC = ({ }) => {
         }
     };
 
-    /** A site's starter session; with a question, the analyst starts on it once the session is open. */
-    const handleOpenStarter = async (starter: SiteStarter, question?: string, followUps?: string[]) => {
+    /** A space's starter session; with a question, the analyst starts on it once the session is open. */
+    const handleOpenStarter = async (starter: SpaceStarter, question?: string, followUps?: string[]) => {
         const opened = await handleLoadExampleSession({ id: starter.id, title: starter.title,
             description: starter.description || '', previewImage: '', workspace: starter.workspace, live: false, followUps }, starter.title);
         if (opened && question) {
@@ -533,15 +533,15 @@ export const DataFormulatorFC = ({ }) => {
         }
     };
     /** A copy of a story's saved session, its question already answered, remembered as opened from the story. */
-    const openStoryCopy = async (starter: SiteStarter, story: SiteStory) => {
+    const openStoryCopy = async (starter: SpaceStarter, story: SpaceStory) => {
         await handleLoadExampleSession({ id: story.id, title: story.headline, description: story.dek || '',
             previewImage: story.image || '', workspace: story.session, live: false, followUps: story.follow_ups },
             starter.title, `${starter.id}/${story.id}`);
     };
     // A story opened before: whether to continue that session or start a new copy.
-    const [storyReopen, setStoryReopen] = useState<{ starter: SiteStarter; story: SiteStory; previous: WorkspaceSummary }>();
+    const [storyReopen, setStoryReopen] = useState<{ starter: SpaceStarter; story: SpaceStory; previous: WorkspaceSummary }>();
     /** A story opens on its saved session (the visitor's earlier copy, if they choose it); without one the analyst runs it live. */
-    const handleOpenStory = async (starter: SiteStarter, story: SiteStory) => {
+    const handleOpenStory = async (starter: SpaceStarter, story: SpaceStory) => {
         if (!story.available) return handleOpenStarter(starter, story.prompt, story.follow_ups);
         const exampleId = `${starter.id}/${story.id}`;
         const previous = savedWorkspaces
@@ -910,10 +910,10 @@ export const DataFormulatorFC = ({ }) => {
         <Typography sx={{ display: 'inline', fontSize: textVar.sm, ml: 1 }}> @ {new Date().getFullYear()}</Typography>
     </Box>
 
-    const siteSessions = sortedSavedWorkspaces.filter(w => !w.scheduled_run);
-    const siteLibrary = site && <SiteLanding site={site}
-        sessions={siteSessions.length > 0 && <Box sx={itemCardGridSx}>
-            {siteSessions.slice(0, INITIAL_SESSION_COUNT).map(w => workspaceCard(w))}
+    const spaceSessions = sortedSavedWorkspaces.filter(w => !w.scheduled_run);
+    const spaceLibrary = space && <SpaceLanding space={space}
+        sessions={spaceSessions.length > 0 && <Box sx={itemCardGridSx}>
+            {spaceSessions.slice(0, INITIAL_SESSION_COUNT).map(w => workspaceCard(w))}
         </Box>} />;
 
     // The landing page's examples and saved items; workflow parts only where the deployment offers workflows.
@@ -1020,18 +1020,18 @@ export const DataFormulatorFC = ({ }) => {
                 </>} />
             </Box>;
 
-    const tagline = site?.tagline || serverConfig.APP_TAGLINE || t('landing.tagline');
+    const tagline = space?.tagline || serverConfig.APP_TAGLINE || t('landing.tagline');
     const taglineSx = {
-        fontSize: { xs: site ? 15 : 16, sm: site ? 16 : 21 },
-        // A demo's tagline reads as its subtitle, so it is darker than the app's.
-        color: inkColor(theme, site ? 0.82 : 0.7),
+        fontSize: { xs: space ? 15 : 16, sm: space ? 16 : 21 },
+        // A space's tagline reads as its subtitle, so it is darker than the app's.
+        color: inkColor(theme, space ? 0.82 : 0.7),
         lineHeight: 1.4,
         minWidth: 0,
         overflowWrap: 'anywhere',
         whiteSpace: 'pre-line',
         textWrap: 'balance',
     } as const;
-    const lockup = !!site?.logo;
+    const lockup = !!space?.logo;
     // The version, small and muted, at the end of the tagline; an update button when a newer release is out.
     const versionTag = <VersionTag version={serverConfig.VERSION} />;
     const heading = (size: number) => <Typography component="h1" sx={{
@@ -1041,21 +1041,21 @@ export const DataFormulatorFC = ({ }) => {
         overflowWrap: 'anywhere',
         textWrap: 'balance',
     }}>
-        {site ? headingLines.map((line, index) => <Box component="span" key={index} sx={{ display: 'block' }}>
+        {space ? headingLines.map((line, index) => <Box component="span" key={index} sx={{ display: 'block' }}>
             {/* The badge hangs off the last line's end, so the title stays centred on its words. */}
             <Box component="span" sx={{ position: 'relative' }}>
                 {line}
-                {site.badge && index === headingLines.length - 1 && <Box component="span" sx={{ position: 'absolute', left: '100%', top: '50%',
+                {space.badge && index === headingLines.length - 1 && <Box component="span" sx={{ position: 'absolute', left: '100%', top: '50%',
                     transform: 'translateY(-50%)', ml: 1.5, px: 1, py: '2px', whiteSpace: 'nowrap',
                     fontSize: { xs: 12, sm: 14 }, fontWeight: weight(600), lineHeight: 1.3, letterSpacing: 0,
                     color: 'primary.main', borderRadius: 1, bgcolor: alpha(theme.palette.primary.main, 0.1) }}>
-                    {site.badge}
+                    {space.badge}
                 </Box>}
             </Box>
         </Box>) : appName}
     </Typography>;
 
-    // The landing's sources and ways to add data: under the chat, or after a demo's centred chat.
+    // The landing's sources and ways to add data: under the chat, or after a space's centred chat.
     const landingSources = {
         onUpload: () => openUploadDialog('upload'),
         onConnect: serverConfig.DISABLE_DATA_CONNECTORS ? undefined : () => openUploadDialog('add-connection'),
@@ -1081,22 +1081,22 @@ export const DataFormulatorFC = ({ }) => {
             `, '24px 24px'),
             flex: 1, minWidth: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
         }}>
-        <Box sx={{mx:'auto', pb: 8, display: "flex", flexDirection: "column", textAlign: "center", maxWidth: site ? DEMO_PAGE : 1024, width: '100%', px: 2, boxSizing: 'border-box' }}>
+        <Box sx={{mx:'auto', pb: 8, display: "flex", flexDirection: "column", textAlign: "center", maxWidth: space ? SPACE_PAGE : 1024, width: '100%', px: 2, boxSizing: 'border-box' }}>
             {/* Hero — fills the viewport so title + input own the first screen;
                 Demos/Sessions live below the fold and just peek up. */}
-            <Box sx={site
-                // A demo's chat is at the middle of the screen whatever follows it: this block (title to chat) ends
+            <Box sx={space
+                // A space's chat is at the middle of the screen whatever follows it: this block (title to chat) ends
                 // half a chat below the middle, and the dataset tabs follow it (design-docs/69).
-                ? { minHeight: DEMO_CHAT_CENTRE, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', boxSizing: 'border-box', pt: 3 }
+                ? { minHeight: SPACE_CHAT_CENTRE, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', boxSizing: 'border-box', pt: 3 }
                 : { minHeight: 'calc(100vh - 140px)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <Box sx={{ mx: 'auto', width: '100%', minWidth: 0 }}>
                 {lockup ? (
-                    // A demo with its own logo: its logo and Data Formulator's, a rule, then the title and tagline
+                    // A space with its own logo: its logo and Data Formulator's, a rule, then the title and tagline
                     // read from the left, as a co-branded lockup centred on the page (stacked on a narrow screen).
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: { xs: 'column', sm: 'row' },
                         gap: { xs: 2, sm: 3.5 }, textAlign: { xs: 'center', sm: 'left' } }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-                            <Box component="img" src={site?.logo ?? undefined} alt="" sx={{ display: 'block', height: { xs: 40, sm: 64 }, width: 'auto' }} />
+                            <Box component="img" src={space?.logo ?? undefined} alt="" sx={{ display: 'block', height: { xs: 40, sm: 64 }, width: 'auto' }} />
                             <Box component="img" src={dfLogo} alt="Data Formulator" sx={{ display: 'block', height: { xs: 36, sm: 56 }, width: 'auto' }} />
                         </Box>
                         <Box aria-hidden sx={{ display: { xs: 'none', sm: 'block' }, width: '1px', alignSelf: 'stretch', bgcolor: 'divider' }} />
@@ -1134,8 +1134,8 @@ export const DataFormulatorFC = ({ }) => {
 
             {/* Hosted-demo notice — borderless strip (it's prose, not a
                 button) placed before the Import Data section. The rocket
-                gets a quiet lift to add a touch of life. A demo site has its own note at the foot. */}
-            {serverConfig.WORKSPACE_BACKEND === 'ephemeral' && !site && (
+                gets a quiet lift to add a touch of life. A space space has its own note at the foot. */}
+            {serverConfig.WORKSPACE_BACKEND === 'ephemeral' && !space && (
                 <Box
                     sx={{
                         mt: 2,
@@ -1223,16 +1223,16 @@ export const DataFormulatorFC = ({ }) => {
                     onStartChat={startAnalystChat}
                     ensureActiveWorkspace={() => dispatch(ensureActiveWorkspace())}
                     {...landingSources}
-                    readOnly={activeWorkspace?.readOnly || site?.status === 'not_installed'}
-                    demo={site ? {
-                        // What the demo has, and its analyses of the dataset in the tab below (design-docs/69).
+                    readOnly={activeWorkspace?.readOnly || space?.status === 'not_installed'}
+                    space={space ? {
+                        // What the space has, and its analyses of the dataset in the tab below (design-docs/69).
                         suggestions: [
                             t('landing.demoAskDatasets', { defaultValue: 'What datasets do we have here?' }),
-                            ...(demoDataset ? [t('landing.demoAskAnalysis', { defaultValue: 'Show me your analysis of {{name}}',
-                                name: inSentence(demoDataset.kicker || demoDataset.title) })] : []),
-                            ...(site.suggestions || []),
+                            ...(spaceDataset ? [t('landing.demoAskAnalysis', { defaultValue: 'Show me your analysis of {{name}}',
+                                name: inSentence(spaceDataset.kicker || spaceDataset.title) })] : []),
+                            ...(space.suggestions || []),
                         ],
-                        placeholder: site.chat_placeholder,
+                        placeholder: space.chat_placeholder,
                     } : undefined}
                     quickActionContext={{
                         hasUserSources: pageConnectors.some(conn => (conn.connected || conn.sso_auto_connect) && conn.id !== 'sample_datasets'),
@@ -1246,16 +1246,16 @@ export const DataFormulatorFC = ({ }) => {
             </Box>
             </Box>
 
-            {site ? <>
-                {site.status !== 'not_installed' && <Box sx={{ mx: 'auto', width: '100%', maxWidth: DEMO_COLUMN, textAlign: 'left' }}>
-                    {/* After the centred block, so the chat stays at the screen's middle. A demo lists its sources only,
+            {space ? <>
+                {space.status !== 'not_installed' && <Box sx={{ mx: 'auto', width: '100%', maxWidth: SPACE_COLUMN, textAlign: 'left' }}>
+                    {/* After the centred block, so the chat stays at the screen's middle. A space lists its sources only,
                         without the "Add data:" row. */}
                     <LandingSources connectors={landingSources.connectors} onSelectConnector={landingSources.onSelectConnector} />
-                    <DemoDatasetTabs starters={site.starters} disabled={sessionLoading || activeWorkspace?.readOnly}
+                    <SpaceDatasetTabs starters={space.starters} disabled={sessionLoading || activeWorkspace?.readOnly}
                         onLoad={(starter, question) => void handleOpenStarter(starter, question)}
-                        onOpenStory={(starter, story) => void handleOpenStory(starter, story)} onSelect={setDemoDataset} />
+                        onOpenStory={(starter, story) => void handleOpenStory(starter, story)} onSelect={setSpaceDataset} />
                 </Box>}
-                {siteLibrary}
+                {spaceLibrary}
             </> : workflowsAvailable ? <WorkflowPanel presentation="landing" onCreateSession={displayName => {
                 dispatch(dfActions.resetForNewWorkspace({ id: generateWorkspaceId(), displayName }));
             }} renderLanding={homeLibrary} /> : homeLibrary({})}
@@ -1292,10 +1292,10 @@ export const DataFormulatorFC = ({ }) => {
 
     const storyReopenDialog = (
             <Dialog open={!!storyReopen} onClose={() => setStoryReopen(undefined)} maxWidth="xs" fullWidth>
-                <DialogTitle>{t('demo.reopenTitle', { defaultValue: 'You opened this example before' })}</DialogTitle>
+                <DialogTitle>{t('space.reopenTitle', { defaultValue: 'You opened this example before' })}</DialogTitle>
                 <DialogContent>
                     <Typography variant="body2">
-                        {t('demo.reopenBody', { defaultValue: 'Continue in your session “{{name}}” (last saved {{date}}), or start a new copy of the example?',
+                        {t('space.reopenBody', { defaultValue: 'Continue in your session “{{name}}” (last saved {{date}}), or start a new copy of the example?',
                             name: storyReopen?.previous.display_name,
                             date: storyReopen?.previous.saved_at ? new Date(storyReopen.previous.saved_at).toLocaleString() : '' })}
                     </Typography>
@@ -1305,19 +1305,19 @@ export const DataFormulatorFC = ({ }) => {
                         const reopen = storyReopen;
                         setStoryReopen(undefined);
                         if (reopen) void openStoryCopy(reopen.starter, reopen.story);
-                    }}>{t('demo.reopenNewCopy', { defaultValue: 'Start a new copy' })}</Button>
+                    }}>{t('space.reopenNewCopy', { defaultValue: 'Start a new copy' })}</Button>
                     <Button variant="contained" disableElevation onClick={() => {
                         const reopen = storyReopen;
                         setStoryReopen(undefined);
                         if (reopen) void handleOpenWorkspace(reopen.previous.id, reopen.previous.display_name);
-                    }}>{t('demo.reopenContinue', { defaultValue: 'Continue my session' })}</Button>
+                    }}>{t('space.reopenContinue', { defaultValue: 'Continue my session' })}</Button>
                 </DialogActions>
             </Dialog>);
 
-    // A /demo/<id> page for a demo this server does not have.
-    const missingDemo = !site && DEMO_ID && <Box sx={{ m: 'auto', p: 3, textAlign: 'center' }}>
-        <Typography variant="h6">{t('demo.notFound', { defaultValue: 'There is no demo called “{{id}}” here.', id: DEMO_ID })}</Typography>
-        <Link href="/" sx={{ mt: 1, display: 'inline-block' }}>{t('demo.openApp', { defaultValue: 'Open Data Formulator' })}</Link>
+    // A /space/<id> page for a space this server does not have.
+    const missingSpace = !space && SPACE_ID && <Box sx={{ m: 'auto', p: 3, textAlign: 'center' }}>
+        <Typography variant="h6">{t('space.notFound', { defaultValue: 'There is no space called “{{id}}” here.', id: SPACE_ID })}</Typography>
+        <Link href="/" sx={{ mt: 1, display: 'inline-block' }}>{t('space.openApp', { defaultValue: 'Open Data Formulator' })}</Link>
     </Box>;
     
     return (
@@ -1335,7 +1335,7 @@ export const DataFormulatorFC = ({ }) => {
                 </Alert>
             )}
             <DndProvider backend={HTML5Backend}>
-                {inSession ? (isPhone ? phoneWorkspace : fixedSplitPane) : missingDemo || (
+                {inSession ? (isPhone ? phoneWorkspace : fixedSplitPane) : missingSpace || (
                     <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
                         <DataSourceSidebar
                             onOpenUploadDialog={(tab, tablePath) => openUploadDialog((tab ?? 'menu') as UploadTabType, tablePath)}

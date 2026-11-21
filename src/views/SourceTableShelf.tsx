@@ -566,11 +566,11 @@ export const SourceTableShelf: FC<{
     const canvasTarget = useSelector(dfSelectors.selectCanvasTarget);
     const externalReferences = useSelector((state: DataFormulatorState) => state.externalTableReferences);
     const pendingTableLoads = useSelector((state: DataFormulatorState) => state.pendingTableLoads);
-    const collapsedByDefault = useSelector((state: DataFormulatorState) => !!state.serverConfig.SITE?.workspace_collapsed);
+    const collapsedByDefault = useSelector((state: DataFormulatorState) => !!state.serverConfig.SPACE?.workspace_collapsed);
     const workspaceItemOrder = useSelector((state: DataFormulatorState) => state.workspaceItemOrder);
     const workspaceTitle = useSelector((state: DataFormulatorState) => state.workspaceTitle);
 
-    // A site can start its sessions with the workspace folded into its summary card (null: not toggled yet).
+    // A space can start its sessions with the workspace folded into its summary card (null: not toggled yet).
     const [sectionToggled, setSectionExpanded] = useState<boolean | null>(null);
     const sectionExpanded = sectionToggled ?? !collapsedByDefault;
     const [importGroupExpansion, setImportGroupExpansion] = useState<Record<string, boolean>>({});

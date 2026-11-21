@@ -18,12 +18,12 @@ export interface SavedTheme {
 }
 
 let themes: SavedTheme[] = [];
-// The site's own theme (a demo's `chart_theme`), listed with the user's and used by id the same way.
-let siteThemes: SavedTheme[] = [];
+// The space's own theme (a space's `chart_theme`), listed with the user's and used by id the same way.
+let spaceThemes: SavedTheme[] = [];
 let listed: SavedTheme[] = [];
 const listeners = new Set<() => void>();
 const emit = () => {
-    listed = [...siteThemes, ...themes.filter(theme => !siteThemes.some(site => site.id === theme.id))];
+    listed = [...spaceThemes, ...themes.filter(theme => !spaceThemes.some(space => space.id === theme.id))];
     listeners.forEach(listener => listener());
 };
 
@@ -42,7 +42,7 @@ const subscribe = (listener: () => void) => {
     return () => { listeners.delete(listener); };
 };
 
-/** The saved themes (the site's first), re-rendering when they change. */
+/** The saved themes (the space's first), re-rendering when they change. */
 export const useSavedThemes = () => useSyncExternalStore(subscribe, () => listed, () => listed);
 
 export const savedThemes = () => listed;
@@ -52,15 +52,15 @@ export function setSavedThemes(next: SavedTheme[]) {
     emit();
 }
 
-/** The theme the site brings, if any; it is not part of the user's library. */
-export function setSiteTheme(theme: SavedTheme | undefined) {
+/** The theme the space brings, if any; it is not part of the user's library. */
+export function setSpaceTheme(theme: SavedTheme | undefined) {
     const next = theme && typeof theme.id === 'string' && !(theme.id in THEME_PRESETS) ? [theme] : [];
-    if (JSON.stringify(next) === JSON.stringify(siteThemes)) return;
-    siteThemes = next;
+    if (JSON.stringify(next) === JSON.stringify(spaceThemes)) return;
+    spaceThemes = next;
     emit();
 }
 
-export const isSiteTheme = (themeId: string | undefined) => !!themeId && siteThemes.some(theme => theme.id === themeId);
+export const isSpaceTheme = (themeId: string | undefined) => !!themeId && spaceThemes.some(theme => theme.id === themeId);
 
 /** Add or replace one theme (e.g. the one a `save_theme` result carries). */
 export function upsertSavedTheme(theme: SavedTheme) {

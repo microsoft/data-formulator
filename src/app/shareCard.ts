@@ -41,7 +41,7 @@ export interface ShareCardInput {
     shape?: CardShape;
     /** The words on the card, wrapped to the lines its shape has room for. */
     title: string;
-    /** Where it was made, after "Made with": the demo's name, or Data Formulator. */
+    /** Where it was made, after "Made with": the space's name, or Data Formulator. */
     brand: string;
     /** Logos at the footer's end, in order (URLs); one that fails to load is left out. */
     logos?: string[];

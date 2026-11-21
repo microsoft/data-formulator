@@ -110,9 +110,9 @@ class SkillRegistry:
     # ``actions`` is a committing action, in ``tools`` an inspection tool).
     tool_specs: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     _doc_paths: dict[str, Path] = field(default_factory=dict)
-    # Bodies made for this registry rather than read from a SKILL.md (the demo skill's).
+    # Bodies made for this registry rather than read from a SKILL.md (the space skill's).
     _bodies: dict[str, str] = field(default_factory=dict)
-    # Passages of a skill's body this registry replaces, as (old, new) pairs (a demo's, see with_demo).
+    # Passages of a skill's body this registry replaces, as (old, new) pairs (a space's, see with_space).
     _body_edits: dict[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)
     terminal_mode: str = "ask"
     browser_mode: str = "off"
@@ -205,26 +205,26 @@ class SkillRegistry:
                 collection.pop(name, None)
         return registry
 
-    def with_demo(self, site_id: str | None) -> SkillRegistry:
-        """This registry for a request on the demo ``site_id`` (design-docs/69); unchanged without one.
+    def with_space(self, space_id: str | None) -> SkillRegistry:
+        """This registry for a request in the space ``space_id`` (design-docs/69); unchanged without one.
 
-        The copy keeps every skill and gains the ``demo`` skill, made for that demo. What data it reaches is
-        decided by the demo's sources (``sites.current_site_connector_ids``), not by removing skills.
+        The copy keeps every skill and gains the ``space`` skill, made for that space. What data it reaches is
+        decided by the space's sources (``spaces.current_space_connector_ids``), not by removing skills.
         """
-        from data_formulator.sites.skill import DEMO_SKILL, SKILL_DIR, demo_skill_available, demo_skill_body
+        from data_formulator.spaces.skill import SPACE_SKILL, SKILL_DIR, space_skill_available, space_skill_body
 
-        if not demo_skill_available(site_id):
+        if not space_skill_available(space_id):
             return self
-        from data_formulator.sites.skill.skill import get_skill
+        from data_formulator.spaces.skill.skill import get_skill
 
         registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
                            tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
                            _bodies=dict(self._bodies), _body_edits=dict(self._body_edits))
         raw, _ = _parse_front_matter((SKILL_DIR / SKILL_DOC_NAME).read_text(encoding="utf-8"))
-        registry.metas[DEMO_SKILL] = _meta_from_frontmatter(raw, DEMO_SKILL)
-        registry.skills[DEMO_SKILL] = get_skill()
-        registry.tool_specs[DEMO_SKILL] = _load_tool_specs(SKILL_DIR)
-        registry._bodies[DEMO_SKILL] = demo_skill_body(site_id)
+        registry.metas[SPACE_SKILL] = _meta_from_frontmatter(raw, SPACE_SKILL)
+        registry.skills[SPACE_SKILL] = get_skill()
+        registry.tool_specs[SPACE_SKILL] = _load_tool_specs(SKILL_DIR)
+        registry._bodies[SPACE_SKILL] = space_skill_body(space_id)
         return registry
 
     def canonical_name(self, name: str) -> str:

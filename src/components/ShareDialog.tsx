@@ -63,7 +63,7 @@ const SHAPE_ICONS: Record<CardShape, React.ReactElement> = {
 
 export const ShareDialog: FC<{ open: boolean; onClose: () => void; target: ViewTarget; title: string }> = ({ open, onClose, target, title }) => {
     const { t } = useTranslation();
-    const site = useSelector((state: DataFormulatorState) => state.serverConfig.SITE);
+    const space = useSelector((state: DataFormulatorState) => state.serverConfig.SPACE);
     const sharesOnline = useSelector((state: DataFormulatorState) => !!state.serverConfig.SHARE_LINKS);
     const [picture, setPicture] = useState<Picture | null>(null);
     const [failure, setFailure] = useState<string | null>(null);
@@ -100,11 +100,11 @@ export const ShareDialog: FC<{ open: boolean; onClose: () => void; target: ViewT
         if (!picture) return;
         let cancelled = false;
         composeShareCard({ picture: picture.image, density: picture.density, crop: target.kind === 'app', shape,
-            title: settledWords, brand: site?.name || 'Data Formulator', logos: [...(site?.logo ? [site.logo] : []), dfLogo] })
+            title: settledWords, brand: space?.name || 'Data Formulator', logos: [...(space?.logo ? [space.logo] : []), dfLogo] })
             .then(made => { if (!cancelled) { setCard(made); setCopied(false); } },
                 error => { if (!cancelled) setFailure(message(error)); });
         return () => { cancelled = true; };
-    }, [picture, shape, settledWords, site?.name, site?.logo, target.kind]);
+    }, [picture, shape, settledWords, space?.name, space?.logo, target.kind]);
 
     /** The card's link on the web (put online now, unless it already is); undefined when that failed. */
     const putOnline = async (): Promise<string | undefined> => {

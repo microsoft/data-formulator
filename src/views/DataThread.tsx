@@ -1447,7 +1447,7 @@ let SingleThreadGroupView: FC<{
                         const tableCount = chips.filter(chip => chip.kind === 'table').length;
                         const fileCount = chips.length - tableCount;
                         const firstFile = run.map(fileOf).find(Boolean);
-                        // A set that came in as one thing (a demo dataset) leads with its name, so its tables
+                        // A set that came in as one thing (a space dataset) leads with its name, so its tables
                         // read as the dataset loaded, not as results of the question.
                         const setLabel = artifactSets.find(set => set.id === id)?.label;
                         const label = allChips ? [

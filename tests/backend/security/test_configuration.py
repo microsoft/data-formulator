@@ -22,7 +22,7 @@ def test_terminal_policy_persistence_and_deployment_ceiling(monkeypatch, mode):
 
     monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: True)
     monkeypatch.setattr(configuration.sys, 'platform', 'darwin')
-    monkeypatch.setattr(configuration, 'deployment_disables_user_connectors', lambda: False)
+    monkeypatch.setattr(configuration, 'user_connectors_disabled', lambda: False)
     assert configuration.terminal_mode() == 'ask'
     save_configuration({'terminal_mode': mode}, 0)
     assert configuration.terminal_mode() == mode
@@ -41,7 +41,7 @@ def test_terminal_policy_persistence_and_deployment_ceiling(monkeypatch, mode):
     monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: False)
     assert configuration.terminal_mode() == 'off'
     monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: True)
-    monkeypatch.setattr(configuration, 'deployment_disables_user_connectors', lambda: True)
+    monkeypatch.setattr(configuration, 'user_connectors_disabled', lambda: True)
     assert configuration.terminal_mode() == 'off'
 
 
@@ -173,45 +173,48 @@ def test_configured_only_connectors_block_creation_and_personal_lookup(monkeypat
         assert data_connector._visible_connector_items('user:test') == [('admin', admin, True)]
 
 
-def test_a_demo_offers_only_the_connections_its_profile_lists(monkeypatch):
+def test_a_space_shows_its_sources_and_leaves_capabilities_to_the_deployment(monkeypatch):
     from flask import Flask
-    from data_formulator import data_connector, sites
+    from data_formulator import data_connector, spaces
     from data_formulator import configuration
     from data_formulator.configuration import terminal_available, user_connectors_disabled
     from data_formulator.errors import AppError, ErrorCode
     monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: True)
     monkeypatch.setattr(configuration.sys, 'platform', 'darwin')
-    offered, other, samples, personal = object(), object(), object(), object()
-    monkeypatch.setattr(data_connector, 'DATA_CONNECTORS', {'dataverse': offered, 'warehouse': other,
-                                                           'sample_datasets': samples, 'personal': personal})
+    offered, other, samples = object(), object(), object()
+    monkeypatch.setattr(data_connector, 'DATA_CONNECTORS', {'dataverse': offered, 'warehouse': other, 'sample_datasets': samples})
     monkeypatch.setattr(data_connector, '_ADMIN_CONNECTOR_IDS', {'dataverse', 'warehouse', 'sample_datasets'})
     monkeypatch.setattr(data_connector, '_sync_installation_connectors', lambda: None)
+    monkeypatch.setattr(data_connector, 'load_connectors', lambda identity: None)
     monkeypatch.setattr(data_connector.DataConnector, '_get_identity', staticmethod(lambda: 'user:test'))
-    monkeypatch.setattr(sites, 'known_site_id', lambda site_id: site_id if site_id == 'demo' else None)
-    monkeypatch.setattr(sites, 'site_profile', lambda site_id: {'sources': [{'connector': 'dataverse'}]} if site_id == 'demo' else None)
+    monkeypatch.setattr(spaces, 'known_space_id', lambda space_id: space_id if space_id == 'demo' else None)
+    monkeypatch.setattr(spaces, 'space_profile', lambda space_id: {'sources': [{'connector': 'dataverse'}]} if space_id == 'demo' else None)
     app = Flask(__name__)
-    with app.test_request_context(headers={'X-DF-Demo': 'demo'}, json={'loader_type': 'mysql'}):
-        assert user_connectors_disabled()
-        # Only connections are limited: the visitor's local tools stay.
-        assert terminal_available()
-        assert data_connector._visible_connector_items('user:test') == [('dataverse', offered, True)]
+    with app.test_request_context(headers={'X-DF-Space': 'demo'}, json={'loader_type': 'mysql'}):
+        # The space alone takes nothing away: own connections and local tools follow the deployment.
+        assert not user_connectors_disabled() and terminal_available()
+        # It shows its own sources; other administrator connections only when the operator exposes them.
         assert data_connector.visible_admin_connector_ids() == {'dataverse'}
         assert data_connector._resolve_connector_with_key({'connector_id': 'dataverse'}) == ('dataverse', offered)
-        for refused in ('warehouse', 'sample_datasets', 'personal'):
+        for refused in ('warehouse', 'sample_datasets'):
             with pytest.raises(AppError) as caught:
                 data_connector._resolve_connector_with_key({'connector_id': refused})
             assert caught.value.code == ErrorCode.ACCESS_DENIED
+        monkeypatch.setenv('DF_SPACES__demo__connectors', 'sample_datasets')
+        assert data_connector.visible_admin_connector_ids() == {'dataverse', 'sample_datasets'}
+        # A deployment that blocks own connections does so in a space as in the standard app.
+        monkeypatch.setattr(configuration, 'user_connectors_locked', lambda: True)
+        assert user_connectors_disabled() and not terminal_available()
         with pytest.raises(AppError) as caught:
             data_connector.create_connector()
         assert caught.value.code == ErrorCode.ACCESS_DENIED
     with app.test_request_context():
-        assert not user_connectors_disabled()
         assert data_connector.visible_admin_connector_ids() == {'dataverse', 'warehouse', 'sample_datasets'}
 
 
-def test_a_demo_offers_only_the_models_and_server_workflows_its_profile_lists(monkeypatch, tmp_path):
+def test_a_space_offers_only_the_models_and_server_workflows_it_lists(monkeypatch, tmp_path):
     from flask import Flask
-    from data_formulator import sites
+    from data_formulator import spaces
     from data_formulator.model_registry import model_registry
     from data_formulator.workflows.instances import WorkflowStore
     workflow = "version: 1\nname: {}\noverview: Shared\ndeliverables: [A report]\nsteps:\n  - id: s\n    description: d\n    instructions: i\n"
@@ -219,17 +222,20 @@ def test_a_demo_offers_only_the_models_and_server_workflows_its_profile_lists(mo
                                       'server/other.yaml': {'content': workflow.format('Other')}}}, 0)
     model = {'endpoint': 'openai', 'model': 'm', 'api_key': 'k', 'api_base': '', 'api_version': ''}
     monkeypatch.setattr(model_registry, '_models', {'offered': {**model, 'id': 'offered'}, 'kept-back': {**model, 'id': 'kept-back'}})
-    monkeypatch.setattr(sites, 'known_site_id', lambda site_id: site_id if site_id == 'demo' else None)
-    monkeypatch.setattr(sites, 'site_profile', lambda site_id: {'models': ['offered'], 'workflows': ['server/listed.yaml']}
-                        if site_id == 'demo' else None)
+    monkeypatch.setattr(spaces, 'known_space_id', lambda space_id: space_id if space_id == 'demo' else None)
+    monkeypatch.setattr(spaces, 'space_profile', lambda space_id: {'models': ['offered'], 'workflows': ['server/listed.yaml']}
+                        if space_id == 'demo' else None)
     store = WorkflowStore(tmp_path / 'home')
     app = Flask(__name__)
-    with app.test_request_context(headers={'X-DF-Demo': 'demo'}):
+    with app.test_request_context(headers={'X-DF-Space': 'demo'}):
         assert [item['id'] for item in model_registry.list_public()] == ['offered']
         assert model_registry.get_config('kept-back') is None and model_registry.get_config('offered')
         assert [item['path'] for item in store.list_all()] == ['server/listed.yaml']
         with pytest.raises(ValueError):
             store.read('server/other.yaml')
+        # The operator's per-space list replaces the profile's.
+        monkeypatch.setenv('DF_SPACES__demo__models', 'kept-back')
+        assert [item['id'] for item in model_registry.list_public()] == ['kept-back']
     with app.test_request_context():
         assert {item['id'] for item in model_registry.list_public()} == {'offered', 'kept-back'}
         assert {'server/listed.yaml', 'server/other.yaml'} <= {item['path'] for item in store.list_all()}

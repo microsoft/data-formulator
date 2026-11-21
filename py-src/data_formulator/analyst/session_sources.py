@@ -72,7 +72,7 @@ class Sources:
     def __init__(self, workspace: Any, layer: Any = None, *, enabled: bool = True):
         self.user_home = getattr(workspace, "user_home", None)
         self.layer = layer
-        # Off on a demo, whose only data is its own datasets (design-docs/69).
+        # Callers without sources to show may turn it off.
         self.enabled = enabled
         self._catalogs: dict[str, list[CatalogTable]] = {}
         self._refreshed: set[str] = set()

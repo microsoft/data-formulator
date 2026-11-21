@@ -8,9 +8,9 @@
  * owned by the server workspace and are removed from IndexedDB during upgrade.
  */
 
-import { demoScoped } from './demo';
+import { spaceScoped } from './space';
 
-const DB_NAME = demoScoped('data-formulator-workspaces');
+const DB_NAME = spaceScoped('data-formulator-workspaces');
 const DB_VERSION = 3;
 const STORE_WORKSPACES = 'workspaces';
 const LEGACY_STORE_TABLE_DATA = 'table_data';

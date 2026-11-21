@@ -14,11 +14,11 @@ import { apiRequest } from '../app/apiClient';
 import { getUrls } from '../app/utils';
 import { iconVar, textVar } from '../app/layout';
 import { frameColor, heroInputLine, inkColor } from '../app/look';
-import { DEMO_COLUMN, demoText } from '../sites/layout';
+import { SPACE_COLUMN, spaceText } from '../spaces/layout';
 import { ambientShadow, cardRadius, metaText, weight } from '../app/tokens';
 
-/** A demo's landing (design-docs/69): its own suggested questions and chat placeholder. */
-export interface LandingDemo {
+/** A space's landing (design-docs/69): its own suggested questions and chat placeholder. */
+export interface LandingSpace {
     /** Short questions offered as chips; sending one starts the chat with it. */
     suggestions: string[];
     placeholder?: string;
@@ -34,11 +34,11 @@ interface LandingDataEntryProps {
     connectors: ConnectorInstance[];
     readOnly?: boolean;
     quickActionContext?: QuickActionContext;
-    demo?: LandingDemo;
+    space?: LandingSpace;
 }
 
 export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
-    onStartChat, ensureActiveWorkspace, onUpload, onConnect, onLinkFolder, onSelectConnector, connectors, readOnly = false, quickActionContext, demo,
+    onStartChat, ensureActiveWorkspace, onUpload, onConnect, onLinkFolder, onSelectConnector, connectors, readOnly = false, quickActionContext, space,
 }) => {
     const { t } = useTranslation();
     const [input, setInput] = useState('');
@@ -61,15 +61,15 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
         requestAutoSend: (payload: { text: string; images: string[]; attachments: string[] }) =>
             submit(payload.text, payload.images, payload.attachments),
     };
-    return <Box sx={{ width: '100%', maxWidth: demo ? DEMO_COLUMN : 800, mx: 'auto', textAlign: 'left' }}>
+    return <Box sx={{ width: '100%', maxWidth: space ? SPACE_COLUMN : 800, mx: 'auto', textAlign: 'left' }}>
         <Box sx={{ mb: 1.75, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75 }}>
-            {(demo
-                ? demo.suggestions.map(text => ({ kind: text, label: text, onClick: () => submit(text, [], []) }))
+            {(space
+                ? space.suggestions.map(text => ({ kind: text, label: text, onClick: () => submit(text, [], []) }))
                 : buildDataLoadingQuickActions(suggestionArgs, quickActionContext, quickActionSeed)).map(action => <Chip key={action.kind}
                 icon={<BoltOutlinedIcon />} label={action.label} onClick={action.onClick} disabled={disabled}
-                variant="outlined" size="small" sx={{ fontSize: demo ? demoText.body : textVar.md, minHeight: demo ? 34 : 30, height: { xs: 'auto', sm: demo ? 34 : 30 }, maxWidth: '100%', borderRadius: cardRadius('8px'),
+                variant="outlined" size="small" sx={{ fontSize: space ? spaceText.body : textVar.md, minHeight: space ? 34 : 30, height: { xs: 'auto', sm: space ? 34 : 30 }, maxWidth: '100%', borderRadius: cardRadius('8px'),
                     // Sharp: the input below is the one near-black box; its suggestions sit a level lighter, as in the workspace.
-                    color: demo ? theme => inkColor(theme, 0.8) : 'text.secondary', borderColor: theme => frameColor(theme, 0.12, 'divider'),
+                    color: space ? theme => inkColor(theme, 0.8) : 'text.secondary', borderColor: theme => frameColor(theme, 0.12, 'divider'),
                     '& .MuiChip-label': { whiteSpace: 'normal' },
                     '& .MuiChip-icon': { fontSize: textVar.lg, ml: 0.5, color: 'text.disabled' },
                     '&:hover': { bgcolor: 'action.hover', borderColor: theme => frameColor(theme, 0.2) } }} />)}
@@ -77,7 +77,7 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
         {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 1 }}>{error}</Alert>}
         <AgentChatInput value={input} onChange={setInput} images={images} onImagesChange={setImages}
             trailingSlot={<ToolsAccessButton />}
-            onSend={() => submit(input, images, attachments)} disabled={disabled} layout="stacked" minRows={demo ? 3 : 4}
+            onSend={() => submit(input, images, attachments)} disabled={disabled} layout="stacked" minRows={space ? 3 : 4}
             attachments={attachments} onAttachmentsChange={setAttachments}
             onNonImageFile={async file => {
                 if (readOnly) return;
@@ -93,25 +93,25 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
                 } catch (reason) { setError(String(reason)); }
                 finally { setUploadCount(count => count - 1); }
             }}
-            tabSuggestion={demo ? demo.suggestions[0] : t('upload.agentChatTabSuggestion', { defaultValue: 'What dataset do we have here?' })}
+            tabSuggestion={space ? space.suggestions[0] : t('upload.agentChatTabSuggestion', { defaultValue: 'What dataset do we have here?' })}
             focusSuggestionsLabel={t('upload.agentChatSuggestionsLabel', { defaultValue: 'Try asking' })}
-            focusSuggestions={demo ? undefined : buildDataLoadingSuggestions(suggestionArgs)}
-            placeholder={demo ? demo.placeholder || t('upload.demoChatPlaceholder', { defaultValue: 'Ask a question about the data…' })
+            focusSuggestions={space ? undefined : buildDataLoadingSuggestions(suggestionArgs)}
+            placeholder={space ? space.placeholder || t('upload.demoChatPlaceholder', { defaultValue: 'Ask a question about the data…' })
                 : t('upload.agentChatPlaceholder', { defaultValue: 'Ask the agent to find datasets, or extract data from an image or text...' })}
             sendTooltip={t('upload.agentChatSendTooltip', { defaultValue: 'Start chatting with the agent' })}
             sx={{ borderColor: (theme: Theme) => heroInputLine(theme),
-                ...(demo && { '& textarea': { fontSize: demoText.input } }),
+                ...(space && { '& textarea': { fontSize: spaceText.input } }),
                 boxShadow: ambientShadow('0 5px 18px rgba(32, 33, 36, 0.11), 0 1px 4px rgba(32, 33, 36, 0.07)'),
                 '&:hover': { boxShadow: ambientShadow('0 6px 20px rgba(32, 33, 36, 0.11), 0 2px 6px rgba(32, 33, 36, 0.06)') } }} />
-        {!demo && <LandingSources connectors={connectors} onSelectConnector={onSelectConnector} onUpload={onUpload}
+        {!space && <LandingSources connectors={connectors} onSelectConnector={onSelectConnector} onUpload={onUpload}
             onLinkFolder={onLinkFolder} onConnect={onConnect} />}
     </Box>;
 };
 
 type LandingSourcesProps = Pick<LandingDataEntryProps, 'connectors' | 'onSelectConnector' | 'onUpload' | 'onLinkFolder' | 'onConnect'>;
 
-/** Under the landing chat: the sources it is connected to, and the ways to add data this deployment allows. A demo
- *  page places it after its centred chat, and gets only the demo's sources (the server limits them). */
+/** Under the landing chat: the sources it is connected to, and the ways to add data this deployment allows. A space
+ *  page places it after its centred chat, and gets only the space's sources (the server limits them). */
 export const LandingSources: React.FC<LandingSourcesProps> = ({ connectors, onSelectConnector, onUpload, onLinkFolder, onConnect }) => {
     const { t } = useTranslation();
     const linkStyle = {

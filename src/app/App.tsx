@@ -14,9 +14,9 @@ import {
     DEFAULT_ROW_LIMIT,
     DEFAULT_CHART_THEME_ID,
     resolveDefaultChartTheme,
-    siteChartThemeId,
+    spaceChartThemeId,
 } from './dfSlice'
-import { setSiteTheme, type SavedTheme } from './savedThemes';
+import { setSpaceTheme, type SavedTheme } from './savedThemes';
 import { getBrowserId, generateUUID } from './identity';
 import type { AuthInfo } from './oidcConfig';
 import { OidcCallback } from './OidcCallback';
@@ -71,10 +71,8 @@ import { createDfTheme } from './theme';
 import { applyLookVariables, DEFAULT_LOOK, LOOK_NAMES, LOOKS, saveLook, useLook, type Look } from './look';
 import { setChartInk } from './savedThemes';
 import { MIN_SUPPORTED } from './layout';
-import { getSerializableState, useAutoSave } from './useAutoSave';
-import { copySessionToApp, saveWorkspaceState } from './workspaceService';
+import { useAutoSave } from './useAutoSave';
 import { SESSION_PARAM } from './sessionTabs';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useWorkspaceConsistency } from './workspaceConsistency';
 import { useWorkspaceAutoName } from './useWorkspaceAutoName';
 
@@ -111,7 +109,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import SaveIcon from '@mui/icons-material/Save';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import { getUrls } from './utils';
-import { APP_PATH, DEMO_ID } from './demo';
+import { APP_PATH, SPACE_ID, spacePath } from './space';
 import { AppSwitcher, destinationItems, useAppDestinations, type AppDestination } from './AppSwitcher';
 import { apiRequest } from './apiClient';
 import { leaveSession } from './sessionThunks';
@@ -293,7 +291,7 @@ const useIsNarrow = (ref: React.RefObject<HTMLElement | null>, threshold: number
 
 /**
  * Whether the session name fits centred in the toolbar: clear of the brand and page links on its left
- * and the actions on its right (a long app name, as a demo's, can reach the middle). Uses the name's
+ * and the actions on its right (a long app name, as a space's, can reach the middle). Uses the name's
  * content width, so laying it out between them instead does not change the answer.
  */
 const useCentreFits = (toolbar: React.RefObject<HTMLElement | null>, left: React.RefObject<HTMLElement | null>,
@@ -600,44 +598,8 @@ const WorkspaceMenu: React.FC = () => {
                 </ButtonBase>
             </Tooltip>} />
             <WormholeMenuButton />
-            {DEMO_ID && <OpenInAppButton />}
         </>
     );
-};
-
-/** On a demo: copy the open session into Data Formulator (the standard app) and continue there. */
-const OpenInAppButton: React.FC = () => {
-    const { t } = useTranslation();
-    const [copying, setCopying] = useState(false);
-    const [error, setError] = useState<string>();
-    const label = t('demo.openInApp', { defaultValue: 'Open in Data Formulator' });
-    const open = async () => {
-        const state = store.getState();
-        const workspace = state.activeWorkspace;
-        if (!workspace || copying) return;
-        setCopying(true);
-        setError(undefined);
-        try {
-            // Copy what the visitor sees: save the session's latest changes first.
-            if (!workspace.readOnly && !dfSelectors.selectSessionEmpty(state)) {
-                try { await saveWorkspaceState(getSerializableState(state)); } catch { /* the saved copy is copied */ }
-            }
-            const copy = await copySessionToApp(workspace.id);
-            // The standard app's page (APP_PATH is the demo's own on a demo page).
-            window.location.assign(`/app?${SESSION_PARAM}=${encodeURIComponent(copy.id)}`);
-        } catch (reason) {
-            setError(reason instanceof Error ? reason.message : String(reason));
-            setCopying(false);
-        }
-    };
-    return <Tooltip title={error || t('demo.openInAppTooltip', { defaultValue: 'Copy this session into Data Formulator and continue there' })}>
-        <span>
-            <IconButton size="small" aria-label={label} disabled={copying} onClick={() => void open()}
-                sx={{ p: 0.5, color: error ? 'error.main' : 'text.secondary', '&:hover': { color: 'text.primary', backgroundColor: ink(0.04) } }}>
-                <OpenInNewIcon fontSize="small" />
-            </IconButton>
-        </span>
-    </Tooltip>;
 };
 
 // Exit the current session and return to the front-page (no workspace).
@@ -646,13 +608,13 @@ const useExitSession = () => {
     return useCallback(() => dispatch(leaveSession()), [dispatch]);
 };
 
-/** `/`: the standard app, or the server's default demo (`DF_SITE`), which loads as its own page. */
+/** `/`: the standard app, or the server's default space (`DF_SPACE`), which loads as its own page. */
 const HomePage: React.FC = () => {
-    const defaultDemo = useSelector((state: DataFormulatorState) => state.serverConfig.DEFAULT_DEMO);
-    const redirect = !DEMO_ID && !!defaultDemo;
+    const defaultSpace = useSelector((state: DataFormulatorState) => state.serverConfig.DEFAULT_SPACE);
+    const redirect = !SPACE_ID && !!defaultSpace;
     useEffect(() => {
-        if (redirect) window.location.replace(`/demo/${defaultDemo}${window.location.search}${window.location.hash}`);
-    }, [redirect, defaultDemo]);
+        if (redirect) window.location.replace(`${spacePath(defaultSpace!)}${window.location.search}${window.location.hash}`);
+    }, [redirect, defaultSpace]);
     return redirect ? null : <DataFormulatorFC />;
 };
 
@@ -736,8 +698,8 @@ const ConfigDialog: React.FC<{
     // The look, like the display size, is this browser's preference, not the session's.
     const savedLook = useLook();
     const [look, setLook] = useState<Look>(savedLook);
-    const siteThemeId = useSelector(siteChartThemeId);
-    const configChartThemeId = resolveDefaultChartTheme(config, siteThemeId) ?? '';
+    const spaceThemeId = useSelector(spaceChartThemeId);
+    const configChartThemeId = resolveDefaultChartTheme(config, spaceThemeId) ?? '';
     const [defaultChartThemeId, setDefaultChartThemeId] = useState(configChartThemeId);
     const themeChoices = useThemeChoices();
     // UI size is a per-browser preference: Auto follows the window width, the others pin it.
@@ -1029,7 +991,7 @@ const ConfigDialog: React.FC<{
                         setFrontendRowLimit(rowLimitDefault);
                         setPaletteKey(defaultPaletteKey);
                         setLook(DEFAULT_LOOK);
-                        setDefaultChartThemeId(siteThemeId ?? DEFAULT_CHART_THEME_ID);
+                        setDefaultChartThemeId(spaceThemeId ?? DEFAULT_CHART_THEME_ID);
                         setDisplaySize('auto');
                     }}>{t('session.resetToDefault')}</Button>
                     <Button onClick={() => setOpen(false)}>{t('app.cancel')}</Button>
@@ -1251,7 +1213,7 @@ const AppShell: FC = () => {
                                 <PageNavMenu isAdministrationPage={isAdministrationPage} appName={appName}
                                     destinations={destinations} onGoHome={goHome} />
                             ) : destinations.length > 0 ? (
-                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} compact logo={serverConfig.SITE?.logo} />
+                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} compact />
                             ) : (
                                 <Button component={RouterLink} to={APP_PATH} onClick={goHome} color="inherit"
                                     sx={{ textTransform: 'none', minWidth: 0, px: 0.75, '&:hover': { backgroundColor: ink(0.04) } }}>
@@ -1266,7 +1228,7 @@ const AppShell: FC = () => {
                         <Box ref={brandRef} sx={{ display: 'flex', alignItems: 'baseline', minWidth: 0 }}>
                         {destinations.length > 0 ? (
                             <Box sx={{ display: { xs: 'none', sm: 'block' }, minWidth: 0 }}>
-                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} logo={serverConfig.SITE?.logo} />
+                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} />
                             </Box>
                         ) : (
                         <Button component={RouterLink} to={APP_PATH} onClick={goHome} sx={{
@@ -1433,9 +1395,9 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             });
     }, []);
 
-    // A site's own chart theme is used by id like a saved theme.
-    const siteTheme = useSelector((state: DataFormulatorState) => state.serverConfig.SITE?.chart_theme);
-    useEffect(() => { setSiteTheme(siteTheme as SavedTheme | undefined); }, [siteTheme]);
+    // A space's own chart theme is used by id like a saved theme.
+    const spaceTheme = useSelector((state: DataFormulatorState) => state.serverConfig.SPACE?.chart_theme);
+    useEffect(() => { setSpaceTheme(spaceTheme as SavedTheme | undefined); }, [spaceTheme]);
 
     // Validate persisted workspace still exists on the backend
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);

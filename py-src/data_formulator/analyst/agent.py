@@ -615,7 +615,7 @@ class AnalystAgent:
         identity_id: str | None = None,
         execution_config: AnalystExecutionConfig | None = None,
         workspace_id: str | None = None,
-        demo: str | None = None,
+        space: str | None = None,
         mcp: bool = False,
     ):
         self.client = client
@@ -623,18 +623,19 @@ class AnalystAgent:
         self.identity_id = identity_id
         self.workspace_id = workspace_id
         from data_formulator.configuration import browser_mode, terminal_mode
-        # The demo the request came from (its X-DF-Demo header), or None for the standard app; only then is
-        # the demo skill in the registry (design-docs/69).
-        self.demo = demo
+        # The space the request came from (its X-DF-Space header), or None for the standard app; only then is
+        # the space skill in the registry (design-docs/69). A space adds that skill and takes no tool away: what
+        # the agent may use is the deployment's, as in the standard app (design-docs/77).
+        self.space = space
         # The browser, like MCP tools, needs a person at hand (approvals, signing in): interactive chats only.
         self.registry = ((skill_registry or build_registry()).with_terminal_policy(terminal_mode())
-                         .with_browser_policy(browser_mode() if mcp and not demo else "off").with_demo(demo))
-        if mcp and not demo:
+                         .with_browser_policy(browser_mode() if mcp else "off").with_space(space))
+        if mcp:
             # The user's MCP servers, each a skill the agent loads when it needs it (local mode only).
             from data_formulator.mcp_servers.skill import usable_servers
             self.registry = self.registry.with_mcp_servers(*usable_servers())
         from data_formulator.mcp_servers.config import mcp_available
-        if not (mcp and not demo and mcp_available()):
+        if not (mcp and mcp_available()):
             self.registry = self.registry.without_tools(MCP_SETUP_TOOLS)
         # view draws in the user's browser: runs without one (workflows) do not get it.
         if not mcp:
@@ -643,7 +644,7 @@ class AnalystAgent:
         from data_formulator.accounts import accounts_available
         from data_formulator.configuration import tools_mode
         self.registry = self.registry.with_accounts_policy(
-            mcp and not demo and accounts_available() and tools_mode() != "off")
+            mcp and accounts_available() and tools_mode() != "off")
         self.agent_exploration_rules = agent_exploration_rules
         self.agent_coding_rules = agent_coding_rules
         self.language_instruction = language_instruction
@@ -762,7 +763,7 @@ class AnalystAgent:
         - A session with no data or files preloads ``connected_data``, ``configure`` and, where it exists,
           ``terminal``: such a request starts by acquiring data or setting up a source.
         - A connector form on the canvas preloads ``configure``, to read and revise that form in place.
-        - A demo request preloads ``demo``, which nearly every question there starts from (design-docs/69).
+        - A space's request preloads ``space``, which nearly every question there starts from (design-docs/69).
 
         What else is on the canvas is not used: preloading app guidance while an app was open pulled some chart
         requests into editing the app (design-docs/68).
@@ -772,8 +773,8 @@ class AnalystAgent:
             wanted |= {"connected_data", "configure", "terminal"}
         if connector_form:
             wanted.add("configure")
-        if self.demo:
-            wanted.add("demo")
+        if self.space:
+            wanted.add("space")
         return {_META_SKILL} | {name for name in wanted if self.registry.has(name)}
 
     # ------------------------------------------------------------------
@@ -850,8 +851,8 @@ class AnalystAgent:
             "identity_id": self.identity_id,
             "workspace_id": self.workspace_id,
             "conversation_id": conversation_id,
-            # The demo this run belongs to; the demo skill's handlers act only for it.
-            "demo": self.demo if self.registry.has("demo") else None,
+            # The space this run belongs to; the space skill's handlers act only for it.
+            "space": self.space if self.registry.has("space") else None,
             # Skill instances are registry singletons, so mutable per-run state
             # belongs here. SkillContext receives shallow payload copies; this
             # nested mapping intentionally remains shared across tool calls in
@@ -1794,9 +1795,6 @@ class AnalystAgent:
                 f"actions are active now.\n\n{body}"
             )
 
-        if self.registry.has("demo"):
-            # A demo has no connector forms (design-docs/69).
-            prompt = prompt.replace(" and connector forms pause", " pause")
         if self.agent_coding_rules and self.agent_coding_rules.strip():
             prompt += (
                 "\n\n## Agent Coding Rules\n\n"

@@ -32,8 +32,8 @@ def client(tmp_path, monkeypatch):
     app.register_blueprint(shares_bp)
     register_error_handlers(app)
     with patch("data_formulator.auth.identity.get_identity_id", return_value="browser:visitor"), \
-            patch("data_formulator.sites.current_site", return_value="neurips"), \
-            patch("data_formulator.sites.site_profile", side_effect=lambda site: NEURIPS if site == "neurips" else None):
+            patch("data_formulator.spaces.current_space", return_value="neurips"), \
+            patch("data_formulator.spaces.space_profile", side_effect=lambda site: NEURIPS if site == "neurips" else None):
         with app.test_client() as test_client:
             yield test_client
 
@@ -51,7 +51,7 @@ def test_a_share_opens_on_a_phone_with_its_image_caption_and_link_preview(client
     assert 'width="2400" height="2400"' in text
     assert "Where &lt;NeurIPS&gt; met · Made with NeurIPS in Data Formulator #NeurIPS2026" in text
     assert "<NeurIPS>" not in text
-    assert 'href="https://demo.example.org/demo/neurips"' in text
+    assert 'href="https://demo.example.org/space/neurips"' in text
     assert "script-src 'nonce-" in page.headers["Content-Security-Policy"]
 
     image = client.get(f"{created['path']}.png")

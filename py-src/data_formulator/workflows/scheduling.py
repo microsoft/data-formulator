@@ -29,7 +29,7 @@ SCHEDULE_SCHEMA = {
         "max_retries": {"type": "integer", "minimum": 0, "maximum": 3},
         "catch_up": {"type": "boolean"},
         "language": {"type": "string", "pattern": r"^[a-z]{2,3}$"},
-        # The demo the schedule was made on (routes/schedules.py sets it): it lists and runs there.
+        # The space the schedule was made in (routes/schedules.py sets it): it lists and runs there.
         "site": {"type": "string", "pattern": r"^[a-z0-9][a-z0-9-]{0,40}$"},
     },
 }

@@ -15,7 +15,7 @@ import { assembleVegaLite, type ChartEncoding, type AssembleOptions } from "flin
 import { mergeableLayerSorts, resolveColumnSorts } from "./chartSort";
 import { choroplethRegion, keepUnmatchedRegions } from "./chartMaps";
 import { getBrowserId } from './identity';
-import { DEMO_HEADER, DEMO_ID } from './demo';
+import { SPACE_HEADER, SPACE_ID } from './space';
 
 export function getUrls() {
     return {
@@ -77,7 +77,6 @@ export function getUrls() {
         SESSION_LOAD: `/api/sessions/load`,
         SESSION_DELETE: `/api/sessions/delete`,
         SESSION_EXPORT: `/api/sessions/export`,
-        SESSION_COPY_TO_APP: `/api/sessions/copy-to-app`,
         SESSION_IMPORT: `/api/sessions/import`,
         SESSION_UPDATE_META: `/api/sessions/update-meta`,
         SESSION_WORMHOLE_SEND: `/api/sessions/wormhole/send`,
@@ -260,7 +259,7 @@ async function _doFetch(
 
         headers.set('Accept-Language', getAgentLanguage());
 
-        if (DEMO_ID) headers.set(DEMO_HEADER, DEMO_ID);
+        if (SPACE_ID) headers.set(SPACE_HEADER, SPACE_ID);
 
         // Attach OIDC Bearer token when available (frontend mode only).
         // In backend mode the session cookie handles auth — no Bearer needed.

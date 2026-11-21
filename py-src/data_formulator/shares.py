@@ -3,11 +3,11 @@
 
 """Share images: a picture of an app, map or chart, put on the web to post from a phone.
 
-The person clicks Share on the canvas; their browser draws a card (the picture, its title, the demo's name) and
+The person clicks Share on the canvas; their browser draws a card (the picture, its title, the space's name) and
 uploads it here. The canvas then shows a QR code to ``/s/<id>``, a small page that opens on their phone with the
 image and buttons to post it. Only the image and its words are stored, never data or the session.
 
-Shares live beside the workspaces, in ``<data home>/shares/``, but outside any one: a demo's workspaces are
+Shares live beside the workspaces, in ``<data home>/shares/``, but outside any one: a space's workspaces are
 deleted within a day, and a posted link has to keep working. Each share keeps ``DF_SHARE_DAYS`` (default 30).
 They need a server others can reach, so they are on for hosted (multi-user) deployments and off on a person's own
 computer; ``DF_SHARE_LINKS=on|off`` overrides that (e.g. a kiosk serving its laptop on the local network).
@@ -93,7 +93,7 @@ def png_size(image: bytes) -> tuple[int, int]:
     return int.from_bytes(image[16:20], "big"), int.from_bytes(image[20:24], "big")
 
 
-def create(image: bytes, *, title: str, caption: str, site: str | None, owner: str) -> dict[str, Any]:
+def create(image: bytes, *, title: str, caption: str, space: str | None, owner: str) -> dict[str, Any]:
     """Store a share; raises ``ValueError`` for a bad image or ``PermissionError`` when the owner made too many."""
     if not image.startswith(PNG_SIGNATURE):
         raise ValueError("A share image is a PNG.")
@@ -111,7 +111,7 @@ def create(image: bytes, *, title: str, caption: str, site: str | None, owner: s
     png, meta = _paths(share_id)
     png.parent.mkdir(parents=True, exist_ok=True)
     record = {"id": share_id, "title": _clip(title, MAX_TITLE_CHARS), "caption": _clip(caption, MAX_CAPTION_CHARS),
-              "site": site or "", "width": width, "height": height, "created": now, "expires": now + keep_days() * 86400}
+              "site": space or "", "width": width, "height": height, "created": now, "expires": now + keep_days() * 86400}
     png.write_bytes(image)
     meta.write_text(json.dumps(record), encoding="utf-8")
     return record

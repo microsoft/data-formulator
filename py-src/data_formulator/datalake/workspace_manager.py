@@ -204,7 +204,7 @@ class WorkspaceManager:
             meta["scheduledRun"] = scheduled_run
         elif existing.get("scheduledRun"):
             meta["scheduledRun"] = existing["scheduledRun"]
-        # The demo example the session was opened from, so opening it again can offer this session.
+        # The space's example the session was opened from, so opening it again can offer this session.
         if example_id:
             meta["exampleId"] = example_id
         elif isinstance(existing.get("exampleId"), str):

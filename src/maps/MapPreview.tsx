@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import { apiRequest } from '../app/apiClient';
-import { dfActions, dfSelectors, resolveDefaultChartTheme, siteChartThemeId, type DataFormulatorState } from '../app/dfSlice';
+import { dfActions, dfSelectors, resolveDefaultChartTheme, spaceChartThemeId, type DataFormulatorState } from '../app/dfSlice';
 import { getUrls } from '../app/utils';
 import { readWorkspaceTextFile } from '../app/workspaceService';
 import { customGeoSet, loadGeoSet, type GeoSet } from './geography';
@@ -86,7 +86,7 @@ export function useMapInputs(spec: MapSpec | null, reloadKey = 0) {
 /** What a map's look follows besides its spec: the default chart theme, its tables' field annotations, and the session's category colours. */
 export function useMapLook(spec: MapSpec | null) {
     const dispatch = useDispatch();
-    const defaultTheme = useSelector((state: DataFormulatorState) => resolveDefaultChartTheme(state.config, siteChartThemeId(state)));
+    const defaultTheme = useSelector((state: DataFormulatorState) => resolveDefaultChartTheme(state.config, spaceChartThemeId(state)));
     const tableSemantics = useSelector((state: DataFormulatorState) => state.tableSemantics);
     const session = useSelector(dfSelectors.getSessionCategoryColors);
     const categoryColors = useMemo<MapCategoryColors>(() => ({

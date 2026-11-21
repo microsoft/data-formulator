@@ -152,18 +152,18 @@ it('shows a failed save and keeps the previous mode', async () => {
     unmount();
 });
 
-it('is hidden on a demo site', () => {
+it('is offered in a space as in the standard app', () => {
     store.dispatch(dfActions.resetState());
-    store.dispatch(dfActions.setServerConfig({ ...store.getState().serverConfig, TOOLS_MODE: 'ask', SITE: 'unesco' } as any));
+    store.dispatch(dfActions.setServerConfig({ ...store.getState().serverConfig, TOOLS_MODE: 'ask', SPACE: { id: 'unesco' } } as any));
     const { container, unmount } = render(<Provider store={store}><ToolsAccessButton /></Provider>);
-    expect(container).toBeEmptyDOMElement();
+    expect(container).not.toBeEmptyDOMElement();
     unmount();
 });
 
 const proposalStore = (form: FormArtifact) => {
     store.dispatch(dfActions.resetState());
     store.dispatch(dfActions.setServerConfig({ ...store.getState().serverConfig, TOOLS_MODE: 'ask', TERMINAL_MODE: 'ask',
-        TERMINAL_AVAILABLE: true, MCP_AVAILABLE: true, IS_LOCAL_MODE: true, DISABLE_DATA_CONNECTORS: false, SITE: undefined } as any));
+        TERMINAL_AVAILABLE: true, MCP_AVAILABLE: true, IS_LOCAL_MODE: true, DISABLE_DATA_CONNECTORS: false, SPACE: undefined } as any));
     store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'turn-mcp', displayId: 'turn-mcp', textKind: 'explain', content: 'Review',
         parentNodeId: 'root', createdAt: 1, form } as any));
 };

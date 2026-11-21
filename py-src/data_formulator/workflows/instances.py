@@ -234,8 +234,8 @@ class WorkflowStore:
     def read(self, name: str) -> str:
         if isinstance(name, str) and name.startswith(('demo/', 'server/')):
             from data_formulator.configuration import resource_options, workflow_content
-            from data_formulator.sites import current_site_workflows
-            offered = current_site_workflows()
+            from data_formulator.spaces import current_space_workflows
+            offered = current_space_workflows()
             if offered is not None and name not in offered:
                 raise ValueError('Workflow is not published.')
             options = resource_options('workflows', name)
@@ -265,10 +265,10 @@ class WorkflowStore:
     def list_all(self, language: str = "en") -> list[dict]:
         items = []
         sources = [(path, path.name, "user") for pattern in ("*.yaml", "*.yml") for path in sorted(self.files.rglob(pattern))]
-        from data_formulator.sites import current_site_workflows
-        # A demo offers its visitors' own workflows and the server workflows it lists; Data Formulator's example
+        from data_formulator.spaces import current_space_workflows
+        # A space offers its visitors' own workflows and the server workflows it lists; Data Formulator's example
         # workflows are the standard app's.
-        offered = current_site_workflows()
+        offered = current_space_workflows()
         if offered is None:
             sources.extend((path, f"demo/{path.name}", "demo") for path in sorted(Path(__file__).parent.glob("*.yaml")))
         from data_formulator.configuration import read_configuration

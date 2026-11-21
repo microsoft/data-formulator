@@ -249,7 +249,7 @@ export interface ArtifactSetNode {
     parentNodeId: string;
     /** Member item ids in the order they were produced; each member's `parentNodeId` is this set. */
     memberIds: string[];
-    /** What the members are together, when they came in as one thing (a demo dataset's title). */
+    /** What the members are together, when they came in as one thing (a space dataset's title). */
     label?: string;
     createdAt: number;
 }

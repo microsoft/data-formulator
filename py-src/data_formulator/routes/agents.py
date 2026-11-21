@@ -596,11 +596,11 @@ def analyst_streaming():
     except ValueError as exc:
         return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, str(exc)))
     agent_exploration_rules = content.get("agent_exploration_rules", "")
-    from data_formulator.sites import current_site, site_analyst_rules
-    demo_site = current_site()
-    site_rules = site_analyst_rules(demo_site)
-    if site_rules:
-        agent_exploration_rules = "\n\n".join(rules for rules in (site_rules, agent_exploration_rules) if rules)
+    from data_formulator.spaces import current_space, space_analyst_rules
+    space_id = current_space()
+    space_rules = space_analyst_rules(space_id)
+    if space_rules:
+        agent_exploration_rules = "\n\n".join(rules for rules in (space_rules, agent_exploration_rules) if rules)
     agent_coding_rules = content.get("agent_coding_rules", "")
     attached_images = content.get("attached_images", None)
     scratch_files = content.get("scratch_files", None)
@@ -886,7 +886,7 @@ def analyst_streaming():
                 execution_config=execution_config,
                 identity_id=identity_id,
                 workspace_id=active_workspace_id,
-                demo=demo_site,
+                space=space_id,
                 mcp=True,
             )
 

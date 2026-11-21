@@ -22,16 +22,16 @@ shares_bp = Blueprint("shares", __name__)
 PNG_URL_PREFIX = "data:image/png;base64,"
 
 
-def _site_name(site: str) -> str:
-    from data_formulator.sites import site_profile
-    return str((site_profile(site) or {}).get("name") or "") if site else ""
+def _space_name(space: str) -> str:
+    from data_formulator.spaces import space_profile
+    return str((space_profile(space) or {}).get("name") or "") if space else ""
 
 
-def _caption(title: str, site: str) -> str:
-    """The words posted with the image: its title, where it was made, and the demo's hashtags."""
-    from data_formulator.sites import site_profile
-    hashtags = str(((site_profile(site) or {}).get("share") or {}).get("hashtags") or "") if site else ""
-    made = f"Made with {_site_name(site) or 'Data Formulator'}"
+def _caption(title: str, space: str) -> str:
+    """The words posted with the image: its title, where it was made, and the space's hashtags."""
+    from data_formulator.spaces import space_profile
+    hashtags = str(((space_profile(space) or {}).get("share") or {}).get("hashtags") or "") if space else ""
+    made = f"Made with {_space_name(space) or 'Data Formulator'}"
     return " ".join(part for part in (f"{title} · {made}" if title else made, hashtags) if part)
 
 
@@ -41,7 +41,7 @@ def create_share():
     if not shares.shares_available():
         raise AppError(ErrorCode.ACCESS_DENIED, "Sharing to the web is available on hosted Data Formulator.")
     from data_formulator.auth.identity import get_identity_id
-    from data_formulator.sites import current_site
+    from data_formulator.spaces import current_space
     body = request.get_json(silent=True) or {}
     image = body.get("image")
     if not isinstance(image, str) or not image.startswith(PNG_URL_PREFIX):
@@ -50,10 +50,10 @@ def create_share():
         png = base64.b64decode(image[len(PNG_URL_PREFIX):], validate=True)
     except ValueError:
         raise AppError(ErrorCode.INVALID_REQUEST, "The share image is not valid base64.") from None
-    site = current_site() or ""
+    space = current_space() or ""
     title = str(body.get("title") or "")
     try:
-        record = shares.create(png, title=title, caption=_caption(" ".join(title.split()), site), site=site,
+        record = shares.create(png, title=title, caption=_caption(" ".join(title.split()), space), space=space,
                                owner=get_identity_id())
     except PermissionError as exc:
         raise AppError(ErrorCode.ACCESS_DENIED, str(exc)) from None
@@ -97,10 +97,10 @@ def share_page(share_id: str):
     origin = _origin()
     url = f"{origin}/s/{record['id']}"
     image_url = f"{url}.png"
-    site = record.get("site") or ""
-    demo_url = f"{origin}/demo/{quote(site)}" if site else f"{origin}/"
-    site_name = _site_name(site) or "Data Formulator"
-    title = record.get("title") or site_name
+    space = record.get("site") or ""
+    space_url = f"{origin}/space/{quote(space)}" if space else f"{origin}/"
+    space_name = _space_name(space) or "Data Formulator"
+    title = record.get("title") or space_name
     caption = record.get("caption") or ""
     # Shares made before sizes were kept were all wide cards (1200×630).
     width = int(record.get("width") or 1200)
@@ -143,8 +143,8 @@ footer{{margin-top:28px;font-size:12px;color:#8a8fa3}}
 <a class="btn" href="{e(image_url)}" download="{e(record['id'])}.png">Save image</a>
 <button id="copy" type="button">Copy caption</button>
 </div>
-<a class="try" href="{e(demo_url)}">Try it yourself: {e(site_name)} →</a>
-<footer>Shared from {e(site_name)}. Shares are removed after a while.</footer>
+<a class="try" href="{e(space_url)}">Try it yourself: {e(space_name)} →</a>
+<footer>Shared from {e(space_name)}. Shares are removed after a while.</footer>
 </main>
 <script nonce="{nonce}">
 (function () {{

@@ -127,7 +127,7 @@ describe('DataSourceSidebar', () => {
         mockState.dataSourceSidebarTab = 'sources';
         mockState.serverConfig.DISABLE_DATA_CONNECTORS = false;
         mockState.serverConfig.WORKFLOWS_AVAILABLE = true;
-        delete (mockState.serverConfig as { SITE?: unknown }).SITE;
+        delete (mockState.serverConfig as { SPACE?: unknown }).SPACE;
         vi.stubGlobal('ResizeObserver', class {
             observe() {}
             unobserve() {}
@@ -668,7 +668,7 @@ describe('DataSourceSidebar', () => {
         // A tab remembered from before must not reopen a hidden panel.
         mockState.dataSourceSidebarTab = 'schedules';
         mockState.serverConfig.WORKFLOWS_AVAILABLE = workflows;
-        if (demo) Object.assign(mockState.serverConfig, { SITE: { id: 'unesco', name: 'UIS', starters: [] } });
+        if (demo) Object.assign(mockState.serverConfig, { SPACE: { id: 'unesco', name: 'UIS', starters: [] } });
         render(<DataSourceSidebar />);
 
         const railButtons = ['Upload data', 'Saved workspaces', 'Data connectors', 'workflow.title', 'Schedules']

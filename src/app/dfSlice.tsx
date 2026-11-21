@@ -24,7 +24,7 @@ import { REHYDRATE } from 'redux-persist';
 import { setInputTablePreview } from './inputTablePreviewCache';
 import { materializeInputTablePreview, materializeTables } from './tableResolution';
 import { buildThreadGraph, conversationNodeIds, threadChatNodeIds, threadOfNode } from './threadGraph';
-import type { SiteConfig } from '../sites/types';
+import type { SpaceConfig } from '../spaces/types';
 import { splitFrontMatter, type ReportGenre } from '../views/reportBlocks';
 
 enableMapSet();
@@ -76,14 +76,14 @@ export interface SSEMessage {
 export interface ServerConfig {
     APP_NAME?: string;
     APP_TAGLINE?: string;
-    /** Set when this hostname serves a site profile (py-src/data_formulator/sites). */
-    SITE?: SiteConfig;
-    /** Demos visitors can open on this server (installed, or installable from their page). */
-    DEMOS?: { id: string; name: string }[];
-    /** The standard app's name (APP_NAME is the demo's name on a demo page). */
+    /** Set when this hostname serves a space profile (py-src/data_formulator/spaces). */
+    SPACE?: SpaceConfig;
+    /** Spaces visitors can open on this server (installed, or installable from their page). */
+    SPACES?: { id: string; name: string }[];
+    /** The standard app's name (APP_NAME is the space's name on a space page). */
     STANDARD_APP_NAME?: string;
-    /** The demo `/` opens (`DF_SITE`), if any. */
-    DEFAULT_DEMO?: string | null;
+    /** The space `/` opens (`DF_SPACE`), if any. */
+    DEFAULT_SPACE?: string | null;
     MANAGED_MODE?: boolean;
     CAN_CONFIGURE?: boolean;
     /** The terminal's effective mode: off when unavailable or switched off, else TOOLS_MODE. */
@@ -341,21 +341,21 @@ export interface ClientConfig {
 }
 
 /**
- * The theme new charts start with, or undefined for Flint's own defaults. A site's own theme (`siteThemeId`)
+ * The theme new charts start with, or undefined for Flint's own defaults. A space's own theme (`spaceThemeId`)
  * takes the place of the app's default, but not of a theme the user chose.
  */
-export const resolveDefaultChartTheme = (config: Partial<ClientConfig> | undefined, siteThemeId?: string): string | undefined => {
+export const resolveDefaultChartTheme = (config: Partial<ClientConfig> | undefined, spaceThemeId?: string): string | undefined => {
     const themeId = config?.defaultChartThemeId ?? DEFAULT_CHART_THEME_ID;
-    if (siteThemeId && themeId === DEFAULT_CHART_THEME_ID) return siteThemeId;
+    if (spaceThemeId && themeId === DEFAULT_CHART_THEME_ID) return spaceThemeId;
     return themeId || undefined;
 };
 
-/** The site's own chart theme id (a demo's `chart_theme`), if it has one. */
-export const siteChartThemeId = (state: Pick<DataFormulatorState, 'serverConfig'>): string | undefined =>
-    state.serverConfig?.SITE?.chart_theme?.id;
+/** The space's own chart theme id (a space's `chart_theme`), if it has one. */
+export const spaceChartThemeId = (state: Pick<DataFormulatorState, 'serverConfig'>): string | undefined =>
+    state.serverConfig?.SPACE?.chart_theme?.id;
 
-const withDefaultChartTheme = (chart: Chart, config: ClientConfig, siteThemeId?: string): Chart =>
-    chart.themeId === undefined ? { ...chart, themeId: resolveDefaultChartTheme(config, siteThemeId) } : chart;
+const withDefaultChartTheme = (chart: Chart, config: ClientConfig, spaceThemeId?: string): Chart =>
+    chart.themeId === undefined ? { ...chart, themeId: resolveDefaultChartTheme(config, spaceThemeId) } : chart;
 
 export interface GeneratedReport {
     id: string;
@@ -419,7 +419,7 @@ export interface DataFormulatorState {
     artifactSets: ArtifactSetNode[];
     externalTableReferences: ExternalTableReference[];
     workspaceItemOrder: string[];
-    /** The title of the dataset the session was opened from (a demo starter), shown in the folded workspace card. */
+    /** The title of the dataset the session was opened from (a space starter), shown in the folded workspace card. */
     workspaceTitle: string | null;
     tableSemantics: TableSemanticsInfo[];
     /** The session's category colours: which palette slot each value of a kind of field has taken (categoryColors.ts). */
@@ -533,7 +533,7 @@ export interface DataFormulatorState {
         autoName?: { name: string; sources: string[] };
         /** Another tab took over editing this session; this tab is view-only until it takes it back. */
         openElsewhere?: boolean;
-        /** The demo example (`<dataset id>/<story id>`) the session was opened from; opening it again offers this session. */
+        /** The space example (`<dataset id>/<story id>`) the session was opened from; opening it again offers this session. */
         exampleId?: string } | null;
 
     /** Backend-synchronized count of persisted non-table files in the active workspace. */
@@ -1825,7 +1825,7 @@ export const dataFormulatorSlice = createSlice({
             let chartType = action.payload.chartType;
             const tables = collectAllTables(state);
             let tableId = action.payload.tableId || tables[0].id;
-            let freshChart = withDefaultChartTheme(generateFreshChart(tableId, chartType, "user"), state.config, siteChartThemeId(state));
+            let freshChart = withDefaultChartTheme(generateFreshChart(tableId, chartType, "user"), state.config, spaceChartThemeId(state));
             
             // Auto-populate encodings based on table metadata
             let table = tables.find(t => t.id === tableId);
@@ -1844,11 +1844,11 @@ export const dataFormulatorSlice = createSlice({
             state.focusedId = { type: 'chart', chartId: freshChart.id };
         },
         addChart: (state, action: PayloadAction<Chart>) => {
-            let chart = withDefaultChartTheme(action.payload, state.config, siteChartThemeId(state));
+            let chart = withDefaultChartTheme(action.payload, state.config, spaceChartThemeId(state));
             state.charts = [chart, ...state.charts];
         },
         addAndFocusChart: (state, action: PayloadAction<Chart>) => {
-            let chart = withDefaultChartTheme(action.payload, state.config, siteChartThemeId(state));
+            let chart = withDefaultChartTheme(action.payload, state.config, spaceChartThemeId(state));
             state.charts = [chart, ...state.charts];
             state.focusedId = { type: 'chart', chartId: chart.id };
         },

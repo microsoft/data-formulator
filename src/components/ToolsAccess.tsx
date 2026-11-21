@@ -258,8 +258,8 @@ export const ToolsAccessButton = () => {
         if (open && proposalSettled) { setOpen(false); setProposalTurnId(undefined); }
     }, [open, proposalSettled]);
 
-    // A demo's analyst has no tools (design-docs/69).
-    if (!config.TOOLS_MODE || config.SITE) return null;
+    // Tools are the deployment's, the same in a space as in the standard app (design-docs/77).
+    if (!config.TOOLS_MODE) return null;
     const busy = saving || mcp.busy;
     const mode: ToolsMode = policy?.mode ?? config.TOOLS_MODE;
     const available = policy ? policy.available || !!config.MCP_AVAILABLE : true;

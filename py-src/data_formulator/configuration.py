@@ -60,22 +60,16 @@ def user_connectors_locked() -> bool:
         os.environ.get(name, 'false').lower() == 'true' for name in ('DISABLE_DATA_CONNECTORS', 'DISABLE_DATABASE')))
 
 
-def deployment_disables_user_connectors() -> bool:
-    """The deployment's policy alone (flags and settings): it also turns off the terminal and MCP servers."""
-    return user_connectors_locked() or user_resource_policy('disable_user_connectors')
-
-
 def user_connectors_disabled() -> bool:
-    from data_formulator.sites import current_site
-
-    # A demo's visitors use only the sources the demo provides (sites.current_site_connector_ids).
-    return deployment_disables_user_connectors() or current_site() is not None
+    """The deployment's policy (flags and settings), the same in the standard app and every space
+    (design-docs/77): it also turns off the terminal and MCP servers."""
+    return user_connectors_locked() or user_resource_policy('disable_user_connectors')
 
 
 def terminal_available() -> bool:
     from data_formulator.auth.identity import is_local_mode
 
-    return is_local_mode() and sys.platform in {'darwin', 'linux', 'win32'} and not deployment_disables_user_connectors()
+    return is_local_mode() and sys.platform in {'darwin', 'linux', 'win32'} and not user_connectors_disabled()
 
 
 def tools_mode() -> str:
@@ -85,7 +79,7 @@ def tools_mode() -> str:
     """
     from data_formulator.auth.identity import is_local_mode
 
-    if not is_local_mode() or deployment_disables_user_connectors():
+    if not is_local_mode() or user_connectors_disabled():
         return 'off'
     mode = os.environ.get('DF_TERMINAL_MODE', read_configuration()['overrides'].get('terminal_mode', 'ask'))
     return mode if mode in ('off', 'ask', 'auto') else 'off'

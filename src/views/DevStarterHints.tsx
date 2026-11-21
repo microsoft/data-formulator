@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-// A mock of the hint shown above the chat when an example session or demo dataset opens, styled as in
+// A mock of the hint shown above the chat when an example session or space dataset opens, styled as in
 // SimpleChartRecBox (design-docs/69); /dev only.
 
 import React from 'react';

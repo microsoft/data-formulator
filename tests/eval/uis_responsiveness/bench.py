@@ -12,8 +12,8 @@ tokens), and every tool's duration. Two modes:
     uv run python tests/eval/uis_responsiveness/bench.py --models gpt-6.1-sol --datasets education-opri
     uv run python tests/eval/uis_responsiveness/bench.py --report experiment_data/uis_bench/runs/<run>
 
-UIS sessions come from the installed demo (``<DF_SITES_DIR>/unesco/<release>/<dataset>.zip``; install
-it from ``/demo/unesco`` or with ``demos/unesco/build.py``). Runs go to ``experiment_data/uis_bench/runs``.
+UIS sessions come from the installed demo (``<DF_SPACES_DIR>/unesco/<release>/<dataset>.zip``; install
+it from ``/space/unesco`` or with ``spaces/shipped/unesco/build.py``). Runs go to ``experiment_data/uis_bench/runs``.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ REPO = harness.REPO
 ROOT = REPO / "experiment_data" / "uis_bench"
 SESSIONS = ROOT / "sessions"
 PROFILE = REPO / "py-src" / "data_formulator" / "demos" / "unesco" / "profile.yaml"
-SITE_CONTENT = Path(os.getenv("DF_SITES_DIR", Path.home() / ".data_formulator" / "site-content")).expanduser()
+SITE_CONTENT = Path(os.getenv("DF_SPACES_DIR", Path.home() / ".data_formulator" / "site-content")).expanduser()
 DEMO = "unesco"
 
 _LATEST_PER_COUNTRY = ("import pandas as pd\n"
@@ -207,7 +207,7 @@ class BenchServer(harness.Server):
         state = json.loads((source / "state.json").read_text())
         state["activeWorkspace"] = {**(state.get("activeWorkspace") or {}), "id": workspace_id}
         requests.post(f"{self.base}/api/sessions/save", json={"id": workspace_id, "state": state},
-                      headers={"X-DF-Demo": DEMO}, timeout=60).raise_for_status()
+                      headers={"X-DF-Space": DEMO}, timeout=60).raise_for_status()
         return state
 
 
@@ -227,7 +227,7 @@ def run_one(server: BenchServer, dataset: str, question: str, model_id: str,
     try:
         with requests.post(f"{server.base}/api/agent/analyst-streaming", json=body, stream=True,
                            headers={"X-Workspace-Id": workspace_id, "Origin": server.base,
-                                    "Sec-Fetch-Site": "same-origin", "X-DF-Demo": DEMO},
+                                    "Sec-Fetch-Site": "same-origin", "X-DF-Space": DEMO},
                            timeout=(15, 600)) as response:
             headers_at = round(time.time() - start, 3)
             if not response.ok:

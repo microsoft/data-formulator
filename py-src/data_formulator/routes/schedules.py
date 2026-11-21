@@ -18,9 +18,9 @@ def schedule_owner():
 
 
 def here(schedule: dict) -> bool:
-    """Whether the schedule was made where this request is: the standard app, or the same demo."""
-    from data_formulator.sites import current_site
-    return schedule["config"].get("site") == current_site()
+    """Whether the schedule was made where this request is: the standard app, or the same space."""
+    from data_formulator.spaces import current_space
+    return schedule["config"].get("site") == current_space()
 
 
 @schedule_bp.route("", methods=["GET"])
@@ -79,11 +79,11 @@ def save_schedule():
     config = body.get("config")
     try:
         schedule_trigger(config)
-        from data_formulator.sites import current_site
-        # A schedule made on a demo lists and runs there (its workflows and run sessions are the demo's).
+        from data_formulator.spaces import current_space
+        # A schedule made in a space lists and runs there (its workflows and run sessions are the space's).
         config.pop("site", None)
-        if current_site():
-            config["site"] = current_site()
+        if current_space():
+            config["site"] = current_space()
         if body.get("id"):
             try:
                 existing = scheduler.schedule_store().get(UUID(str(body["id"])).hex)

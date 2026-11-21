@@ -507,7 +507,7 @@ class TestLoadConnectors:
         homes = {None: tmp_path / "users" / "alice", "demo": tmp_path / "sites" / "demo" / "users" / "alice"}
         user_home = lambda identity: homes[scope["site"]]
         mock_loaders = {"stub": _StubLoader}
-        with patch("data_formulator.sites.current_site", side_effect=lambda: scope["site"]), \
+        with patch("data_formulator.spaces.current_space", side_effect=lambda: scope["site"]), \
              patch("data_formulator.datalake.workspace.get_user_home", side_effect=user_home), \
              patch("data_formulator.data_loader.DATA_LOADERS", mock_loaders):
             for site, name in ((None, "Main PG"), ("demo", "Demo PG")):

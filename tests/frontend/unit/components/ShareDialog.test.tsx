@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../../../src/i18n';
 
 const mocks = vi.hoisted(() => ({
-    serverConfig: { SHARE_LINKS: true, SITE: { name: 'NeurIPS in Data Formulator', logo: '/api/demos/neurips/logo' } } as any,
+    serverConfig: { SHARE_LINKS: true, SPACE: { name: 'NeurIPS in Data Formulator', logo: '/api/spaces/neurips/logo' } } as any,
     apiRequest: vi.fn(),
     compose: vi.fn(async (input: any) => ({ url: `data:image/png;base64,CARD-${input.shape ?? 'square'}`, shape: input.shape ?? 'square', width: 2400, height: 2400 })),
 }));
@@ -39,7 +39,7 @@ describe('ShareDialog', () => {
         const make = await screen.findByRole('button', { name: 'Get a QR code' });
         expect(mocks.apiRequest).not.toHaveBeenCalled();
         expect(mocks.compose).toHaveBeenCalledWith(expect.objectContaining({ picture: 'data:image/png;base64,PIC', density: 2, crop: true,
-            title: 'From 90 papers to 9,000', brand: 'NeurIPS in Data Formulator', logos: ['/api/demos/neurips/logo', expect.any(String)] }));
+            title: 'From 90 papers to 9,000', brand: 'NeurIPS in Data Formulator', logos: ['/api/spaces/neurips/logo', expect.any(String)] }));
         fireEvent.click(make);
         const qr = await screen.findByAltText(`${window.location.origin}/s/abcdefghijklmnop`);
         expect(qr.getAttribute('src')).toBe(`data:image/png;base64,QR:${window.location.origin}/s/abcdefghijklmnop`);

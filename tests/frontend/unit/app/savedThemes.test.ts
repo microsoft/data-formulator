@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { appThemes, chartLookConfig, chartThemeKey, chartThemeSpec, isSiteTheme, resolvedChartTheme, savedThemeFromResult, setChartInk, setSavedThemes, setSiteTheme, upsertSavedTheme, savedThemes } from '../../../../src/app/savedThemes';
+import { appThemes, chartLookConfig, chartThemeKey, chartThemeSpec, isSpaceTheme, resolvedChartTheme, savedThemeFromResult, setChartInk, setSavedThemes, setSpaceTheme, upsertSavedTheme, savedThemes } from '../../../../src/app/savedThemes';
 import { LOOKS } from '../../../../src/app/look';
 import { DEFAULT_CHART_THEME_ID, resolveDefaultChartTheme } from '../../../../src/app/dfSlice';
 import { themeInk } from '../../../../src/maps/styles';
@@ -65,10 +65,10 @@ describe('saved themes', () => {
     it('uses a site\'s theme by id beside the user\'s, as the default unless the user chose another', () => {
         const site = { id: 'uis', label: 'UIS', extends: 'datawrapper', ink: { series: { single: '#0069b4' } } };
         try {
-            setSiteTheme(site);
+            setSpaceTheme(site);
             setSavedThemes([acme]);
             expect(savedThemes().map(theme => theme.id)).toEqual(['uis', 'acme']);
-            expect(isSiteTheme('uis') && !isSiteTheme('acme')).toBe(true);
+            expect(isSpaceTheme('uis') && !isSpaceTheme('acme')).toBe(true);
             expect(resolvedChartTheme('uis')?.ink?.series?.single).toBe('#0069b4');
             // Refreshing the user's library keeps the site's theme.
             setSavedThemes([]);
@@ -79,7 +79,7 @@ describe('saved themes', () => {
             expect(resolveDefaultChartTheme({ defaultChartThemeId: '' }, 'uis')).toBeUndefined();
             expect(resolveDefaultChartTheme({ defaultChartThemeId: DEFAULT_CHART_THEME_ID })).toBe(DEFAULT_CHART_THEME_ID);
         } finally {
-            setSiteTheme(undefined);
+            setSpaceTheme(undefined);
         }
         expect(chartThemeSpec('uis')).toBeUndefined();
     });

@@ -19,7 +19,7 @@ DF_EVAL_BACKEND=/tmp/head/py-src uv run python tests/eval/uis_responsiveness/ben
 `--fake` replaces the model with an instant scripted one (`--script`: `none`, `inspect`, `python`,
 `duckdb`, `visualize`, `python+visualize`), so what remains is the server's own time. Requests carry
 the demo header, so sessions live where the demo keeps them (`<home>/sites/unesco/...`). Sessions
-come from the installed demo (`/demo/unesco` → Install, or `demos/unesco/build.py`). Runs go to
+come from the installed space (`/space/unesco` → Install, or `spaces/shipped/unesco/build.py`). Runs go to
 `experiment_data/uis_bench/runs/`.
 
 Experiment flags (environment): `DF_EVAL_SHARED_CACHE_KEY=<key>` (one prompt cache key for every

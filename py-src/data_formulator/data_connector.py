@@ -226,11 +226,11 @@ def _catalog_tree_payload(
 
 
 def _scope_key() -> str:
-    """The current scope's part of a user connector's registry key: empty in the standard app, ``site:<id>::`` on a
-    demo, whose user connectors are stored apart (``get_user_home``) and must not be mixed up in memory either."""
-    from data_formulator.sites import current_site
-    site = current_site()
-    return f"site:{site}::" if site else ""
+    """The current scope's part of a user connector's registry key: empty in the standard app, ``site:<id>::`` (named before spaces were) in a
+    space, whose user connectors are stored apart (``get_user_home``) and must not be mixed up in memory either."""
+    from data_formulator.spaces import current_space
+    space = current_space()
+    return f"site:{space}::" if space else ""
 
 
 def _user_connector_key(identity: str, source_id: str) -> str:
@@ -293,19 +293,19 @@ def _loader_auth_mode(loader_class: type[ExternalDataLoader]) -> str:
 
 
 def _admin_connector_visible(key: str) -> bool:
-    """Whether the current request may use the admin connector ``key``: in the standard app, all but the demos'
-    data folders; on a demo, only the connections and folders its profile lists."""
-    from data_formulator.sites import current_site, current_site_connector_ids
+    """Whether the current request may use the admin connector ``key``: in the standard app, all but the spaces'
+    data folders; in a space, those it shows (``spaces.current_space_connector_ids``)."""
+    from data_formulator.spaces import current_space, current_space_connector_ids
 
-    if key in _DEMO_FOLDER_SITES:
-        return current_site() == _DEMO_FOLDER_SITES[key]
-    allowed = current_site_connector_ids()
+    if key in _SPACE_FOLDER_CONNECTORS:
+        return current_space() == _SPACE_FOLDER_CONNECTORS[key]
+    allowed = current_space_connector_ids()
     return allowed is None or key in allowed
 
 
 def visible_admin_connector_ids() -> set[str]:
     """The admin connector ids the current request may use (see ``_admin_connector_visible``)."""
-    _sync_demo_folder_connectors()
+    _sync_space_folder_connectors()
     return {key for key in _ADMIN_CONNECTOR_IDS if _admin_connector_visible(key)}
 
 
@@ -332,7 +332,7 @@ def _visible_connector_items(identity: str | None) -> list[tuple[str, "DataConne
     user_prefix = f"{_USER_CONNECTOR_PREFIX}{_scope_key()}{identity}::" if identity else None
     from data_formulator.configuration import read_configuration
     _sync_installation_connectors()
-    _sync_demo_folder_connectors()
+    _sync_space_folder_connectors()
     configured_connectors = read_configuration()['overrides'].get('connectors', {})
     for key, connector in DATA_CONNECTORS.items():
         if key in _ADMIN_CONNECTOR_IDS:
@@ -373,13 +373,13 @@ def _resolve_connector_with_key(data: dict[str, Any]) -> tuple[str, "DataConnect
 
     # Admin/global connector IDs are public registry keys.
     _sync_installation_connectors()
-    _sync_demo_folder_connectors()
+    _sync_space_folder_connectors()
     if connector_id in _ADMIN_CONNECTOR_IDS and connector_id in DATA_CONNECTORS:
         from data_formulator.configuration import resource_enabled
         if not resource_enabled('connectors', connector_id):
             raise AppError(ErrorCode.ACCESS_DENIED, 'This connector is disabled by the administrator.')
         if not _admin_connector_visible(connector_id):
-            raise AppError(ErrorCode.ACCESS_DENIED, 'This demo does not offer this connector.')
+            raise AppError(ErrorCode.ACCESS_DENIED, 'This space does not offer this connector.')
         return connector_id, DATA_CONNECTORS[connector_id]
 
     if user_connectors_disabled():
@@ -496,7 +496,7 @@ class DataConnector:
 
     def _uses_configured_params(self) -> bool:
         from data_formulator.configuration import user_connectors_disabled
-        return bool(getattr(self, '_installation_reference', None) or getattr(self, '_demo_site', None) or (
+        return bool(getattr(self, '_installation_reference', None) or getattr(self, '_space_id', None) or (
             self._source_id in _ADMIN_CONNECTOR_IDS and user_connectors_disabled()))
 
     def get_frontend_config(self, include_pinned_in_form: bool = False) -> dict[str, Any]:
@@ -592,10 +592,10 @@ class DataConnector:
         return get_credential_vault()
 
     def _vault_owner(self, identity: str) -> str:
-        """Whose credentials these are: a demo's own (user) connection keeps them apart from the standard app's;
+        """Whose credentials these are: a space's own (user) connection keeps them apart from the standard app's;
         an admin connection's sign-in is the user's in every scope."""
-        site = getattr(self, "_owner_site", None)
-        return f"{identity}@site:{site}" if site else identity
+        space = getattr(self, "_owner_space", None)
+        return f"{identity}@site:{space}" if space else identity
 
     def _vault_store(self, identity: str, user_params: dict[str, Any]) -> bool:
         """Encrypt and persist user_params for this source. Returns True on success."""
@@ -942,7 +942,7 @@ def resolve_catalog_refresh_target(
         if not resource_enabled('connectors', source_id):
             raise AppError(ErrorCode.ACCESS_DENIED, 'This connector is disabled by the administrator.')
         if not _admin_connector_visible(source_id):
-            raise AppError(ErrorCode.ACCESS_DENIED, 'This demo does not offer this connector.')
+            raise AppError(ErrorCode.ACCESS_DENIED, 'This space does not offer this connector.')
         connector = DATA_CONNECTORS[source_id]
     else:
         _, connector = _resolve_connector_with_key({"connector_id": source_id})
@@ -1606,8 +1606,8 @@ def create_connector():
         default_params=default_params,
         icon=icon,
     )
-    from data_formulator.sites import current_site
-    connector._owner_site = current_site()
+    from data_formulator.spaces import current_space
+    connector._owner_space = current_space()
     registry_key = _user_connector_key(identity, instance_id)
     DATA_CONNECTORS[registry_key] = connector
 
@@ -2942,31 +2942,31 @@ def _sync_installation_connectors():
         DATA_CONNECTORS[identifier] = connector
         _ADMIN_CONNECTOR_IDS.add(identifier)
 
-# A demo's data folders (sites.site_folder_sources), by connector id: the demo each belongs to.
-_DEMO_FOLDER_SITES: dict[str, str] = {}
+# Spaces' data folders (spaces.space_folder_sources), by connector id: the space each belongs to.
+_SPACE_FOLDER_CONNECTORS: dict[str, str] = {}
 
 
-def _sync_demo_folder_connectors() -> None:
-    """Register the current request's demo data folders as admin connectors: read-only local folders the server
-    chose, so not subject to the local-folder loader's local-mode limit, and offered only on that demo."""
-    from data_formulator.sites import current_site, site_folder_sources
+def _sync_space_folder_connectors() -> None:
+    """Register the current request's space data folders as admin connectors: read-only local folders the server
+    chose, so not subject to the local-folder loader's local-mode limit, and offered only in that space."""
+    from data_formulator.spaces import current_space, space_folder_sources
 
-    site = current_site()
-    if site is None:
+    space = current_space()
+    if space is None:
         return
     from data_formulator.data_loader.local_folder_data_loader import LocalFolderDataLoader
 
-    for identifier, label, path in site_folder_sources(site):
+    for identifier, label, path in space_folder_sources(space):
         existing = DATA_CONNECTORS.get(identifier)
         if existing is not None and existing._default_params.get("root_dir") == str(path):
             continue
         connector = DataConnector.from_loader(LocalFolderDataLoader, identifier, display_name=label,
                                               default_params={"root_dir": str(path), "recursive": True}, icon="local_folder")
         connector._auto_connect = True
-        connector._demo_site = site
+        connector._space_id = space
         DATA_CONNECTORS[identifier] = connector
         _ADMIN_CONNECTOR_IDS.add(identifier)
-        _DEMO_FOLDER_SITES[identifier] = site
+        _SPACE_FOLDER_CONNECTORS[identifier] = space
 
 
 # Track identities whose user connectors have been loaded.
@@ -2981,10 +2981,10 @@ def load_connectors(identity: str | None = None) -> None:
     request.  Subsequent calls for the same identity are no-ops.
     """
     from data_formulator.data_loader import DATA_LOADERS
-    from data_formulator.sites import current_site
+    from data_formulator.spaces import current_space
 
-    # Each scope (the standard app, each demo) has its own user connectors on disk (get_user_home).
-    loaded = (current_site(), identity)
+    # Each scope (the standard app, each space) has its own user connectors on disk (get_user_home).
+    loaded = (current_space(), identity)
     if not identity or loaded in _LOADED_USER_IDENTITIES:
         return
 
@@ -3007,7 +3007,7 @@ def load_connectors(identity: str | None = None) -> None:
             default_params=spec.default_params,
             icon=spec.icon or spec.loader_type,
         )
-        source._owner_site = current_site()
+        source._owner_space = current_space()
         DATA_CONNECTORS[registry_key] = source
         logger.info("Loaded user connector '%s' (type=%s)", spec.source_id, spec.loader_type)
 

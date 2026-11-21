@@ -439,12 +439,12 @@ def test_published_example_sessions_can_be_imported_and_unpublished_by_admins(ex
 
 
 
-DEMO = {"X-DF-Demo": "demo"}
+DEMO = {"X-DF-Space": "demo"}
 
 
 def _a_demo(monkeypatch):
-    from data_formulator import sites
-    monkeypatch.setattr(sites, "known_site_id", lambda site_id: site_id if site_id == "demo" else None)
+    from data_formulator import spaces
+    monkeypatch.setattr(spaces, "known_space_id", lambda space_id: space_id if space_id == "demo" else None)
 
 
 def test_a_demo_lists_and_manages_only_its_own_schedules(execution_context, monkeypatch):

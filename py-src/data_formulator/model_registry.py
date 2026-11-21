@@ -91,10 +91,10 @@ class ModelRegistry:
     def get_config(self, model_id: str, *, configured: bool = True) -> Optional[dict]:
         """Return the full config (including credentials) for a global model."""
         from data_formulator.configuration import resource_enabled
-        from data_formulator.sites import current_site_model_ids
+        from data_formulator.spaces import current_space_model_ids
         if configured and not resource_enabled('models', model_id):
             return None
-        offered = current_site_model_ids() if configured else None
+        offered = current_space_model_ids() if configured else None
         if offered is not None and model_id not in offered:
             return None
         if isinstance(model_id, str) and model_id.startswith('installation-'):
@@ -145,8 +145,8 @@ class ModelRegistry:
                    **({'reasoning_effort': options[model['id']]['reasoning_effort']}
                    if options.get(model['id'], {}).get('reasoning_effort') else {})}
                   for model in models if options.get(model['id'], {}).get('enabled', True)]
-        from data_formulator.sites import current_site_model_ids
-        offered = current_site_model_ids()
+        from data_formulator.spaces import current_space_model_ids
+        offered = current_space_model_ids()
         if offered is not None:
             models = [model for model in models if model['id'] in offered]
         default = overrides.get('default_model') or os.environ.get('DF_DEFAULT_MODEL', '').strip()

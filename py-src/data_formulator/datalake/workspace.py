@@ -101,12 +101,12 @@ def get_user_home(identity_id: str) -> Path:
 
     Shared helper used by workspace_factory, data_connector, and any
     code that needs per-user storage paths. Requests for a site (see
-    ``data_formulator.sites``) use DATA_FORMULATOR_HOME/sites/<site>/users/<safe_id>/.
+    ``data_formulator.spaces``) use DATA_FORMULATOR_HOME/sites/<site>/users/<safe_id>/.
     """
-    from data_formulator.sites import site_scope
+    from data_formulator.spaces import space_scope
 
     safe_id = sanitize_identity_dirname(identity_id)
-    return site_scope(get_data_formulator_home()) / "users" / safe_id
+    return space_scope(get_data_formulator_home()) / "users" / safe_id
 
 
 def sanitize_identity_dirname(identity_id: str) -> str:

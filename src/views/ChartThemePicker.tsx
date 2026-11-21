@@ -11,7 +11,7 @@ import { Box, alpha, useTheme, Tooltip, Divider, Menu, MenuItem } from '@mui/mat
 import { DEFAULT_THEME_ICON, THEME_PRESETS } from 'flint-chart';
 
 import { dfActions, dfSelectors } from '../app/dfSlice';
-import { deleteSavedTheme, isSiteTheme, resolvedChartTheme, useSavedThemes, type SavedTheme } from '../app/savedThemes';
+import { deleteSavedTheme, isSpaceTheme, resolvedChartTheme, useSavedThemes, type SavedTheme } from '../app/savedThemes';
 import { AppDispatch } from '../app/store';
 import { transition } from '../app/tokens';
 import { Chart } from '../components/ComponentType';
@@ -53,15 +53,15 @@ const savedThemeIcon = (theme: SavedTheme) => {
 
 export type ThemeChoice = typeof THEME_CHOICES[number] & { saved?: boolean; removable?: boolean };
 
-/** Flint's presets, then the site's theme and the user's saved themes. */
+/** Flint's presets, then the space's theme and the user's saved themes. */
 export function useThemeChoices(): ThemeChoice[] {
     const saved = useSavedThemes();
     return useMemo(() => [
         ...THEME_CHOICES,
         ...saved.map(theme => ({ id: theme.id, label: theme.label || theme.id, icon: savedThemeIcon(theme),
             description: theme.description ?? `Your saved theme${theme.extends ? `, based on ${theme.extends}` : ''}.`, saved: true,
-            // The site's theme comes with the site, not from the user's library.
-            removable: !isSiteTheme(theme.id) })),
+            // The space's theme comes with the space, not from the user's library.
+            removable: !isSpaceTheme(theme.id) })),
     ], [saved]);
 }
 

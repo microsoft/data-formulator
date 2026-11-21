@@ -108,20 +108,20 @@ include = ["data_formulator*"]
 "data_formulator.analyst.skills.map" = ["countries.json"]
 "data_formulator.workflows" = ["*.yaml", "*.md"]
 "data_formulator.analyst" = ["chart_catalog.json"]
-# Demos shipped with the app (see data_formulator/demos/README.md): profile, front-page
+# Spaces shipped with the app (see data_formulator/spaces/README.md): profile, front-page
 # images, story seeds and the build script that installs the rest from the page.
 "data_formulator" = [
-    "demos/README.md",
-    "demos/*/README.md",
-    "demos/*/profile.yaml",
-    "demos/*/skill/SKILL.md",
-    "demos/*/*.py",
-    "demos/*/*.csv",
-    "demos/*/assets/**/*.png",
-    "demos/*/assets/**/*.svg",
-    "demos/*/stories/*/state.json",
-    "demos/*/stories/*/*.parquet",
-    "demos/*/stories/*/files/*",
+    "spaces/README.md",
+    "spaces/shipped/*/README.md",
+    "spaces/shipped/*/profile.yaml",
+    "spaces/shipped/*/skill/SKILL.md",
+    "spaces/shipped/*/*.py",
+    "spaces/shipped/*/*.csv",
+    "spaces/shipped/*/assets/**/*.png",
+    "spaces/shipped/*/assets/**/*.svg",
+    "spaces/shipped/*/stories/*/state.json",
+    "spaces/shipped/*/stories/*/*.parquet",
+    "spaces/shipped/*/stories/*/files/*",
 ]
 
 [project.scripts]

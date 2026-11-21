@@ -113,7 +113,7 @@ it('lists every item in a capped scrolling box, with no fold or Show all', () =>
 it('starts a workspace as a summary box when the site asks, and expands it to the list', () => {
     const store = configureStore({ reducer: dataFormulatorReducer });
     store.dispatch(dfActions.setServerConfig({ ...store.getState().serverConfig,
-        SITE: { id: 'unesco', name: 'UIS', starters: [], workspace_collapsed: true } } as any));
+        SPACE: { id: 'unesco', name: 'UIS', starters: [], workspace_collapsed: true } } as any));
     const tables = [1_200_000, 1_056].map((rowCount, index) => ({ kind: 'table' as const,
         id: `table-${index}`, displayId: `Table ${index}`, names: [], rows: [], metadata: {}, description: '',
         virtual: { tableId: `table-${index}`, rowCount } }));
@@ -134,7 +134,7 @@ it('starts a workspace as a summary box when the site asks, and expands it to th
 it('names the folded card after the dataset title, and keeps the title with the session', () => {
     const store = configureStore({ reducer: dataFormulatorReducer });
     store.dispatch(dfActions.setServerConfig({ ...store.getState().serverConfig,
-        SITE: { id: 'unesco', name: 'UIS', starters: [], workspace_collapsed: true } } as any));
+        SPACE: { id: 'unesco', name: 'UIS', starters: [], workspace_collapsed: true } } as any));
     store.dispatch(dfActions.setWorkspaceTitle('Culture: SDG 11.4'));
     const table = { kind: 'table' as const, id: 'sdg11', displayId: 'sdg11_national', names: [], rows: [], metadata: {}, description: '',
         virtual: { tableId: 'sdg11', rowCount: 1183 } };
